@@ -709,6 +709,8 @@ def _readme_stack(readme: str) -> str:
     heading makes the second split return the rest of the file and the slice stops
     being a section.
     """
+    for heading in (README_STACK_HEADING, README_STACK_NEXT):
+        assert heading in readme, f"README has no '{heading}' heading"
     assert readme.index(README_STACK_HEADING) < readme.index(README_STACK_NEXT), (
         f"README must keep '{README_STACK_HEADING}' before '{README_STACK_NEXT}'"
     )

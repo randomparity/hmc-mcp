@@ -59,6 +59,7 @@ def _section(text: str, heading: str, next_heading: str | None = None) -> str:
     assert heading in text, f"missing heading: {heading}"
     if next_heading is None:
         return text.split(heading, 1)[1]
+    assert next_heading in text, f"missing heading: {next_heading}"
     assert text.index(heading) < text.index(next_heading), (
         f"'{heading}' must come before '{next_heading}'"
     )

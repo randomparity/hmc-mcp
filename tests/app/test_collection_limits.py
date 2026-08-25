@@ -276,7 +276,11 @@ def _collection_limit_section(readme: str) -> str:
     the second split return the rest of the file, and the slice silently stops being a
     section.
     """
-    assert readme.index(COLLECTION_LIMIT_HEADING) < readme.index(COLLECTION_LIMIT_NEXT), (
+    for heading in (COLLECTION_LIMIT_HEADING, COLLECTION_LIMIT_NEXT):
+        assert heading in readme, f"README has no '{heading}' heading"
+    assert readme.index(COLLECTION_LIMIT_HEADING) < readme.index(
+        COLLECTION_LIMIT_NEXT
+    ), (
         f"README must keep '{COLLECTION_LIMIT_HEADING}' before "
         f"'{COLLECTION_LIMIT_NEXT}'"
     )
