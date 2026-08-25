@@ -38,6 +38,17 @@ from hmc_mcp.client_templates import TemplatesMixin
 ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {}
 ADR_0029_TYPE_EXCLUSIONS: dict[tuple[str, str], str] = {}
 
+
+class FacadeContractError(AssertionError):
+    """A signature this contract cannot read, reported with what it was reading.
+
+    The clauses below walk annotation source text. When that text does not parse, the
+    guard cannot say whether the contract holds -- which is a failure of the guard, not
+    a passing signature. Raising a named error carrying the operation and the raw
+    annotation keeps that distinguishable from a bare ``SyntaxError`` surfacing from
+    inside ``ast``.
+    """
+
 _ADR_CITATION = re.compile(r"ADR 0029|docs/adr/0029")
 
 _ADR_0029_PATH = (
@@ -357,15 +368,49 @@ def _attribute_path(node: ast.Attribute) -> tuple[str, ...] | None:
     return tuple(reversed(parts))
 
 
-def _annotation_paths(annotation: str) -> set[tuple[str, ...]]:
+def _is_literal_subscript(node: ast.AST) -> bool:
+    """Whether *node* subscripts ``Literal``, however ``Literal`` was imported."""
+    if not isinstance(node, ast.Subscript):
+        return False
+    value = node.value
+    if isinstance(value, ast.Attribute):  # typing.Literal, t.Literal
+        return value.attr == "Literal"
+    return isinstance(value, ast.Name) and value.id == "Literal"
+
+
+def _annotation_paths(annotation: str, *, origin: str = "") -> set[tuple[str, ...]]:
     """Every dotted path an annotation's source text refers to.
 
     ``jobs.RemoteRestartOperation`` names an alias as surely as a bare
     ``RemoteRestartOperation`` does, and a quoted forward reference hides one inside a
     string literal, so both are walked. Underscore segments are internal and dropped.
+
+    A ``Literal``'s arguments are values, not type references, so the walk does not
+    descend into them. Descending treats the value as source: ``Literal["ok"]`` would
+    contribute a phantom ``ok`` alias, and a value that is not a Python expression --
+    ``Literal["Virtual IO Server"]``, which ``provision_lpar`` carries -- would fail
+    to parse at all.
     """
+    try:
+        tree = ast.parse(annotation, mode="eval")
+    except SyntaxError as exc:
+        raise FacadeContractError(
+            f"{origin or 'annotation'}: {annotation!r} does not parse as an "
+            f"annotation, so ADR 0029's type and literal-alias clauses cannot be "
+            f"applied to it ({exc.msg})."
+        ) from exc
+
     paths: set[tuple[str, ...]] = set()
-    for node in ast.walk(ast.parse(annotation, mode="eval")):
+    literal_slices = {
+        id(node.slice) for node in ast.walk(tree) if _is_literal_subscript(node)
+    }
+    skip: set[int] = set()
+    for node in ast.walk(tree):
+        if id(node) in literal_slices:
+            skip |= {id(child) for child in ast.walk(node)}
+    for node in ast.walk(tree):
+        if id(node) in skip:
+            continue
         if isinstance(node, ast.Name):
             paths.add((node.id,))
         elif isinstance(node, ast.Attribute):
@@ -373,7 +418,7 @@ def _annotation_paths(annotation: str) -> set[tuple[str, ...]]:
             if path is not None:
                 paths.add(path)
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            paths |= _annotation_paths(node.value)
+            paths |= _annotation_paths(node.value, origin=origin)
     return {path for path in paths if not any(s.startswith("_") for s in path)}
 
 
@@ -461,7 +506,7 @@ def _owned_literal_aliases(
                 f"{module_name}.{name} has an evaluated annotation; ADR 0029's "
                 "literal-alias clause needs `from __future__ import annotations`"
             )
-            for path in _annotation_paths(annotation):
+            for path in _annotation_paths(annotation, origin=f"{module_name}.{name}"):
                 value = _literal_alias(vars(module), path)
                 owner = _alias_owner(module, path) if value is not None else None
                 if owner is not None:
@@ -704,6 +749,45 @@ def test_literal_alias_clause_reads_paths_the_resolved_hints_lose(
         assert _owned_literal_aliases({(lpm.__name__, name)}, {lpm.__name__: lpm}) == {
             ("hmc_mcp.jobs", "RemoteRestartOperation"): api.RemoteRestartOperation
         }, name
+
+
+def test_annotation_walk_does_not_read_literal_values_as_type_references() -> None:
+    """A ``Literal``'s arguments are data, so neither crash nor phantom alias.
+
+    ``provision_lpar`` really carries ``Literal["Virtual IO Server", ...]``, so a walk
+    that descends into literal values re-parses ``Virtual IO Server`` as source and
+    raises. The spaceless case is the quieter half of the same bug: it parses, and
+    contributes an alias named after a value that is not a type at all.
+    """
+    assert _annotation_paths('Literal["Virtual IO Server"]') == {("Literal",)}
+    assert _annotation_paths('Literal["ok"]') == {("Literal",)}
+    assert ("ok",) not in _annotation_paths('Literal["ok"]')
+    # A dotted path contributes its root too, as every attribute walk here does.
+    assert _annotation_paths('typing.Literal["Virtual IO Server"]') == {
+        ("typing",),
+        ("typing", "Literal"),
+    }
+    assert _annotation_paths('dict[str, Literal["a b"]] | None') == {
+        ("dict",),
+        ("str",),
+        ("Literal",),
+    }
+
+
+def test_annotation_walk_still_resolves_a_quoted_forward_reference() -> None:
+    """The literal skip must not cost the quoted-forward-reference walk."""
+    assert ("jobs", "RemoteRestartOperation") in _annotation_paths(
+        '"jobs.RemoteRestartOperation"'
+    )
+
+
+def test_annotation_walk_names_the_operation_when_an_annotation_will_not_parse() -> None:
+    """An unreadable signature is a guard failure, and must report as one."""
+    with pytest.raises(FacadeContractError) as error:
+        _annotation_paths("not a valid annotation", origin="operations_x.do_thing")
+
+    assert "operations_x.do_thing" in str(error.value)
+    assert "not a valid annotation" in str(error.value)
 
 
 def test_literal_alias_clause_unwraps_annotated_and_stops_at_the_package_edge() -> None:
