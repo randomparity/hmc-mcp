@@ -9,9 +9,9 @@ Accepted (2026-08-25)
 Every long-running HMC operation returns a job, and the package has three ways to learn what
 happened to one. None is usable by a supported library consumer:
 
-- `jobs.wait_for_submitted_job` (`src/hmc_mcp/jobs.py:210`) lives in `jobs.py`, which ADR 0029's
+- `jobs.wait_for_submitted_job` (`src/hmc_mcp/jobs.py:219`) lives in `jobs.py`, which ADR 0029's
   selection rule does not reach — the rule governs `operations_*.py` modules
-  (`docs/adr/0029-supported-reusable-python-api-contract.md:47`).
+  (`docs/adr/0029-supported-reusable-python-api-contract.md:47-49`).
 - `HMCClient.get_job` (`src/hmc_mcp/client.py:904`) and `HMCClient.wait_for_job` (`:931`) are
   inherited mixin methods outside the supported lifecycle allowlist, which ADR 0029 fixes at
   exactly `__init__`, `__aenter__`, `__aexit__`, `is_logged_on`, `logon`, and `logoff` (`:39-45`).
@@ -103,7 +103,7 @@ multi-hour install — the same flooding this ADR designs against for the substi
 
 `JobOutcome` is exported and its fields are supported under ADR 0029 — unlike the `job` field it
 carries, which stays an opaque HMC resource mapping whose keys, nesting, and firmware-dependent
-extensions are explicitly not a package contract (ADR 0029 `:102-106`). Consumers read `status`,
+extensions are explicitly not a package contract (ADR 0029 `:109-113`). Consumers read `status`,
 `timed_out`, `error`, `found`, `job_id`, and `job_href`; they read `job` at their own risk.
 
 The type is shared, and the polling reading of its fields is scoped to this decision's two
