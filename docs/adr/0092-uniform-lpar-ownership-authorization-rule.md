@@ -134,8 +134,8 @@ first, exactly as for the tool rows in §3.2.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `set_lpar_boot_order` | `operations_lpar.py:1102` | guarded (`:1147`) | — |
-| `clear_lpar_boot_order` | `operations_lpar.py:1169` | guarded (`:1201`) | — |
+| `set_lpar_boot_order` | `operations_lpar.py:1163` | guarded (`:1208`) | — |
+| `clear_lpar_boot_order` | `operations_lpar.py:1230` | guarded (`:1262`) | — |
 | `assign_dedicated_pcie_slot` | `operations_pcie.py:160` | guarded (`:220`, via `_authorize_pcie_profile_request`) | — |
 | `unassign_dedicated_pcie_slot` | `operations_pcie.py:180` | guarded (`:220`) | — |
 | `assign_sriov_logical_port` | `operations_pcie.py:315` | guarded (`:311`, via `_resolve_lpar`) | — |
@@ -143,8 +143,8 @@ first, exactly as for the tool rows in §3.2.
 | `add_vnic` | `operations_ssh_network.py:614` | guarded (`:409`, via `_preflight_add:496` → `_resolve:403`) | — |
 | `remove_vnic` | `operations_ssh_network.py:737` | guarded (`:409`, via `_resolve`) | — |
 | `set_minimum_affinity_policy` | `operations_ssh_network.py:280` | guarded (`:293`) | — |
-| `set_lpar_processors` | `operations_lpar.py:987` | guarded (`:941`, `:962`, via `_apply_dlpar_document:966` → `_resolve_and_authorize_lpar:916`) | — |
-| `set_lpar_memory` | `operations_lpar.py:1023` | guarded (`:941`, `:962`, via `_apply_dlpar_document`) | — |
+| `set_lpar_processors` | `operations_lpar.py:1048` | guarded (`:999`, `:1023`, via `_apply_dlpar_document:1027` → `_resolve_and_authorize_lpar:973`) | — |
+| `set_lpar_memory` | `operations_lpar.py:1084` | guarded (`:999`, `:1023`, via `_apply_dlpar_document`) | — |
 | `apply_lpar_pcie_assignments` | `operations_assignments.py:272` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
 | `add_network_adapter` | `operations_adapters.py:32` | **unguarded** | #372 |
 | `add_vios_adapter` | `operations_adapters.py:51` | **unguarded** | #372 |

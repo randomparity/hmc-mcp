@@ -845,14 +845,6 @@ async def rename_lpar(
 # ====================================================================== #
 
 
-def _incomplete_inventory(lpar_label: str) -> ValueError:
-    """Reject a fleet entry the walk cannot address, as the sibling walk does."""
-    return ValueError(
-        f"Cannot identify the managed system owning LPAR {lpar_label!r}: "
-        "incomplete managed-system inventory metadata"
-    )
-
-
 def _fleet_within_discovery_bound(
     systems: list[dict[str, Any]], lpar_label: str
 ) -> list[dict[str, Any]]:
@@ -871,6 +863,45 @@ def _fleet_within_discovery_bound(
     return systems
 
 
+def _discovery_candidate(system: dict[str, Any]) -> tuple[str, str] | None:
+    """Return one fleet entry's UUID and CLI name, or None if unusable."""
+    system_uuid = system.get("UUID")
+    system_name = (system.get("Resource") or {}).get("SystemName")
+    if not isinstance(system_uuid, str) or not system_uuid:
+        return None
+    if not isinstance(system_name, str) or not system_name:
+        return None
+    return system_uuid, system_name
+
+
+async def _search_fleet_for_partition(
+    hmc: HMCClient, lpar_uuid: str, skipped: list[str]
+) -> tuple[str, str] | None:
+    """Return the system containing *lpar_uuid*, recording frames it could not read."""
+    for system in _fleet_within_discovery_bound(
+        await hmc.list_managed_systems(), lpar_uuid
+    ):
+        candidate = _discovery_candidate(system)
+        if candidate is None:
+            skipped.append("an entry with incomplete inventory metadata")
+            continue
+        system_uuid, system_name = candidate
+        try:
+            partitions = await hmc.list_logical_partitions(system_uuid)
+        except HMCError as exc:
+            _logger.warning(
+                "Owning-system discovery could not read managed system %s: %s",
+                system_uuid,
+                exc,
+                exc_info=exc,
+            )
+            skipped.append(system_uuid)
+            continue
+        if any(entry.get("UUID") == lpar_uuid for entry in partitions):
+            return system_uuid, system_name
+    return None
+
+
 async def _discover_owning_system(
     hmc: HMCClient, lpar_uuid: str, lpar_label: str
 ) -> tuple[str, str]:
@@ -886,31 +917,57 @@ async def _discover_owning_system(
     The name comes from the inventory entry that matched, so the guard never
     falls back to running ``lssyscfg -m <uuid>``, which the HMC CLI cannot
     satisfy.
+
+    A frame whose partition feed errors, or whose inventory entry is unusable,
+    is skipped rather than made fatal: the walk crosses frames the caller never
+    named, and one unhealthy frame sorting early must not take DLPAR down for
+    every partition in the fleet. Skipping never widens what may be mutated —
+    the search still ends in a raise unless it *positively* matched the
+    partition — and the raise names how many frames went unread, so a degraded
+    fleet is diagnosed rather than reported as an absent partition.
     """
-    systems = _fleet_within_discovery_bound(
-        await hmc.list_managed_systems(), lpar_label
-    )
+    skipped: list[str] = []
     try:
         async with asyncio.timeout(PARENT_DISCOVERY_TIMEOUT_SECONDS):
-            for system in systems:
-                system_uuid = system.get("UUID")
-                system_name = (system.get("Resource") or {}).get("SystemName")
-                if not isinstance(system_uuid, str) or not system_uuid:
-                    raise _incomplete_inventory(lpar_label)
-                if not isinstance(system_name, str) or not system_name:
-                    raise _incomplete_inventory(lpar_label)
-                partitions = await hmc.list_logical_partitions(system_uuid)
-                if any(entry.get("UUID") == lpar_uuid for entry in partitions):
-                    return system_uuid, system_name
+            found = await _search_fleet_for_partition(hmc, lpar_uuid, skipped)
     except TimeoutError as exc:
         raise ValueError(
             f"Cannot identify the managed system owning LPAR {lpar_label!r}: "
             "parent discovery timed out; supply managed-system scope"
         ) from exc
+    if found is not None:
+        return found
+    unread = (
+        f" ({len(skipped)} could not be read: {', '.join(skipped)})" if skipped else ""
+    )
     raise ValueError(
         f"Cannot identify the managed system owning LPAR {lpar_label!r}: "
-        "no managed system reports it; supply managed-system scope"
+        f"no managed system reports it{unread}; supply managed-system scope"
     )
+
+
+async def _verify_partition_on_system(
+    hmc: HMCClient, system_uuid: str, lpar_uuid: str, lpar_label: str
+) -> None:
+    """Reject a partition UUID that does not live on the selected system.
+
+    ADR 0094. ``resolve_lpar_uuid`` passes a canonical UUID straight through, so
+    a caller can pair any partition UUID with any managed-system selector —
+    and ADR 0039 actively recommends UUIDs in policy allowlists, so that pairing
+    is the recommended input shape. Without this check the guard would read
+    ``lssyscfg -m <the selected system> --filter lpar_names=<the partition's
+    name>``: on a cross-system name collision that reads a *different*
+    partition's token, and can approve mutating a foreign-owned one. The
+    omitted-selector path gets the same containment from
+    :func:`_discover_owning_system`'s UUID match.
+    """
+    partitions = await hmc.list_logical_partitions(system_uuid)
+    if not any(entry.get("UUID") == lpar_uuid for entry in partitions):
+        raise ValueError(
+            f"LPAR {lpar_label!r} does not belong to managed system "
+            f"{system_uuid}; name the managed system that hosts it, or omit "
+            "the selector to have it discovered"
+        )
 
 
 async def _resolve_and_authorize_lpar(
@@ -923,16 +980,17 @@ async def _resolve_and_authorize_lpar(
     """Resolve one LPAR, authorize the mutation, and return its UUID.
 
     The guarded counterpart of the resolve chain in :func:`rename_lpar`, for the
-    operations whose managed-system selector is optional. With a selector the
-    chain is identical; without one the owning system is discovered first
-    (:func:`_discover_owning_system`) so the guard still runs (ADR 0092).
+    operations whose managed-system selector is optional. Either way the
+    partition is established to live on the system whose token the guard reads:
+    by discovery when the selector is omitted, by
+    :func:`_verify_partition_on_system` when it is supplied (ADR 0092).
 
     An approved override reads no token, so it resolves nothing the guard alone
     needs (ADR 0092 §4: that path pays nothing). Discovery is skipped entirely
     there — otherwise an oversized fleet, a slow one, or an unreachable owning
     frame would *block* the operator's exception on exactly the degraded
-    inventory that provokes it. The audit record then carries the caller's own
-    selectors, which is what the operator actually asserted.
+    inventory that provokes it. The audit record then carries the resolved
+    partition UUID and the system selector the operator actually asserted.
     """
     if ownership_override:
         lpar_uuid = await resolve_lpar_uuid(
@@ -941,7 +999,7 @@ async def _resolve_and_authorize_lpar(
         await authorize_lpar_mutation(
             hmc,
             system_name_or_uuid or "",
-            lpar_name_or_uuid,
+            lpar_uuid,
             ownership_override=True,
         )
         return lpar_uuid
@@ -954,6 +1012,9 @@ async def _resolve_and_authorize_lpar(
         system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
         lpar_uuid = await resolve_lpar_uuid(
             hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
+        )
+        await _verify_partition_on_system(
+            hmc, system_uuid, lpar_uuid, lpar_name_or_uuid
         )
         system_selector = system_name_or_uuid
     system_name, lpar_name = await resolve_lpar_ownership_names(

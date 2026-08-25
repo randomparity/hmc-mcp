@@ -76,6 +76,21 @@ def _mock_dlpar_authorization(router) -> None:
     router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
+    router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=_partition_feed())
+    )
+
+
+def _partition_feed() -> str:
+    """The per-system feed both ADR 0094 containment paths read."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<feed xmlns="http://www.w3.org/2005/Atom">'
+        + LPAR_ENTRY.split("?>", 1)[1]
+        .strip()
+        .replace(' xmlns="http://www.w3.org/2005/Atom"', "", 1)
+        + "</feed>"
+    )
 
 
 def _unowned_partition():
@@ -100,16 +115,8 @@ def _mock_owning_system_discovery(router) -> None:
     router.get("/rest/api/uom/ManagedSystem").mock(
         return_value=httpx.Response(200, text=feed)
     )
-    partitions = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<feed xmlns="http://www.w3.org/2005/Atom">'
-        + LPAR_ENTRY.split("?>", 1)[1]
-        .strip()
-        .replace(' xmlns="http://www.w3.org/2005/Atom"', "", 1)
-        + "</feed>"
-    )
     router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
-        return_value=httpx.Response(200, text=partitions)
+        return_value=httpx.Response(200, text=_partition_feed())
     )
 
 

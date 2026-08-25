@@ -59,14 +59,26 @@ fleet-ambiguous partition name — `MAX_PARENT_DISCOVERY_SYSTEMS` and
 `PARENT_DISCOVERY_TIMEOUT_SECONDS` — and names the same operator remedy, *supply
 managed-system scope*. It does not reuse `bounded_parent_systems` itself, whose
 message asserts an ambiguous partition name; nothing is ambiguous on this path,
-because the UUID resolved uniquely before the walk began. A fleet entry with no
-usable UUID or `SystemName` is a hard error naming incomplete inventory metadata,
-matching the sibling walk rather than being skipped into a misleading "no managed
-system reports it".
+because the UUID resolved uniquely before the walk began. It also diverges from
+the sibling on unusable fleet entries — see the Consequences below, where the
+reason for that divergence belongs.
 
-Containment is established by UUID equality against the system's own partition
-feed, so a partition name that collides across systems cannot cause the guard to
-read the token off the wrong partition.
+**Both branches establish containment, and neither may skip it.** The guard reads
+`lssyscfg -m <system> --filter lpar_names=<partition>`, so if the system it is
+told about is not the system the partition lives on, it reads *some other*
+partition's token — and on a cross-system name collision that token may approve
+the mutation. The omitted-selector branch gets containment from discovery's UUID
+match. The selector-supplied branch has none for free: `resolve_lpar_uuid` passes
+a canonical UUID straight through without checking it against the selector, and
+ADR 0039 actively recommends UUIDs in policy `lpar` allowlists, so "a partition
+UUID paired with a managed-system selector" is the *recommended* input shape.
+`_verify_partition_on_system` therefore reads the selected system's partition
+feed and rejects a UUID that is not in it, before the guard runs. One REST read,
+against an operation that already pays an SSH login.
+
+`rename_lpar`, `delete_lpar` and the PCIe/SR-IOV resolve chain share the
+unchecked shape. They are not changed here — this ADR governs the two operations
+#365 introduces — and the sweep is tracked in #465.
 
 **An approved override skips discovery entirely.** `ownership_override=True`
 reads no token (ADR 0092 §5), so it needs none of the resolution the guard alone
@@ -75,10 +87,17 @@ body did, audits the override, and writes. Without this short-circuit the
 operator's exception would be *blocked* by discovery's failure modes — an
 oversized fleet, a slow one, an unreachable owning frame — which are precisely
 the degraded conditions that provoke an operator into using it, and ADR 0092 §4's
-"that path pays nothing" would stop being true. The audit record then carries the
-selectors the caller supplied, with an empty `system` when none was named: that is
-what the operator actually asserted, and inventing a resolved name for a system
-the caller never chose would make the record less faithful, not more.
+"that path pays nothing" would stop being true.
+
+The audit record for that bypass carries the **resolved partition UUID**, which
+is already in hand and is fleet-unique, so the record identifies exactly one
+partition however the caller named it — a record for a deliberate bypass of the
+ownership control has to be attributable to a specific partition, and the raw
+selector string is not. The `system` field carries what the caller supplied, and
+is empty when the caller named no system: that is what the operator actually
+asserted, and resolving a system name the caller never chose — at the cost of the
+discovery this branch exists to skip — would make the record less faithful, not
+more.
 
 The cost lands only on the guarded, omitted-selector path: 1 + N REST reads, N
 bounded by the cap. A caller that supplies the selector pays nothing new, any
@@ -106,6 +125,17 @@ size before it writes. On a large fleet that is visible latency, and the remedy
 is the selector. A partition whose owning system is not in
 `list_managed_systems()` — an unreachable or unmanaged frame — fails with a named
 error rather than mutating unguarded.
+
+**The walk crosses frames the caller never named, so it tolerates their
+failures.** A frame whose partition feed errors, or whose inventory entry carries
+no usable UUID or `SystemName`, is skipped and recorded rather than made fatal:
+otherwise one unhealthy frame that happens to sort early in
+`list_managed_systems()` takes DLPAR down for every partition in the fleet, and
+whether a call works depends on inventory order. Skipping cannot widen what may
+be mutated — the walk returns only on a positive UUID match, so a skipped owner
+ends in the same raise as an absent one — and the raise names how many frames
+went unread, so a degraded fleet reads as degraded instead of as a missing
+partition.
 
 **The two DLPAR entry points now require SSH reachability to the HMC.** They were
 REST-only; the guard reads the token over SSH (ADR 0092 §4), so an environment

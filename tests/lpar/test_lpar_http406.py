@@ -83,12 +83,29 @@ def _hmc_env(monkeypatch) -> None:
 
 
 def _mock_dlpar_authorization(router) -> None:
-    """The system/partition reads ADR 0092's guard makes before a DLPAR write."""
+    """The reads ADR 0092's guard and ADR 0094's containment check make."""
     router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
     router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
+    router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=_partition_feed(LPAR_ENTRY))
+    )
+
+
+def _partition_feed(*entries: str) -> str:
+    """Wrap rendered LPAR entries in the Atom feed envelope the client parses."""
+    inner = "".join(
+        entry.split("?>", 1)[1].strip().replace(
+            ' xmlns="http://www.w3.org/2005/Atom"', "", 1
+        )
+        for entry in entries
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<feed xmlns="http://www.w3.org/2005/Atom">' + inner + "</feed>"
     )
 
 
