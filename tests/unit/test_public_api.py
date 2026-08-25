@@ -81,6 +81,8 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "delete_lpar",
         "power_lpar",
         "rename_lpar",
+        "set_lpar_processors",
+        "set_lpar_memory",
         "LparCreation",
         "LparCreationResult",
         "LparPowerResult",
@@ -366,12 +368,19 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #366, which extracted the ``installios`` install
+        Last moved by issue #365, which extracted the DLPAR processor and
+        memory workflows out of the ``hmc_dlpar_proc`` / ``hmc_dlpar_mem``
+        tool bodies into ``set_lpar_processors`` and ``set_lpar_memory`` —
+        async, guarded per ADR 0092 §3.2, and callable from inside a running
+        event loop, which the ``asyncio.run`` tool bodies were not. ADR 0094
+        records how each derives the managed system its ownership guard needs
+        when the caller omits the optional selector.
+        Before that, issue #366 extracted the ``installios`` install
         orchestration out of the MCP tool bodies into ``operations_install``
         and exported ``install_lpar_os`` and ``install_vios``. Both return the
         CLI bridge's detach handle, not an HMC job identifier: ADR 0069 found
         no ``InstallLPAR``/``InstallVIOS`` REST job on any surveyed HMC and
-        ADR 0070 replaced them with the detached CLI submission, so this
+        ADR 0070 replaced them with the detached CLI submission, so that
         addition composes with #364's ``wait_for_job`` nowhere.
         Before that, issue #364 added the cross-process job-polling
         operations ``get_job`` and ``wait_for_job`` and exported the
@@ -427,8 +436,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #366: the two operations_install install operations join the manifest.
-    expected_digest = "5c7b317e26306041156eaa0def8a06e5a9827cb9350576150a12a60b4d6edf33"  # pragma: allowlist secret
+    # Moved by #365: the two extracted async DLPAR operations join the facade.
+    expected_digest = "0e10de9b9d4e6f704078c55b38f25173b66abf9c51c9cf0fbcb41c3b132eae97"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

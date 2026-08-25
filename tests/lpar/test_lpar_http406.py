@@ -82,6 +82,41 @@ def _hmc_env(monkeypatch) -> None:
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
 
 
+def _mock_dlpar_authorization(router) -> None:
+    """The reads ADR 0092's guard and ADR 0094's containment check make."""
+    router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
+    router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
+    router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=_partition_feed(LPAR_ENTRY))
+    )
+
+
+def _partition_feed(*entries: str) -> str:
+    """Wrap rendered LPAR entries in the Atom feed envelope the client parses."""
+    inner = "".join(
+        entry.split("?>", 1)[1].strip().replace(
+            ' xmlns="http://www.w3.org/2005/Atom"', "", 1
+        )
+        for entry in entries
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<feed xmlns="http://www.w3.org/2005/Atom">' + inner + "</feed>"
+    )
+
+
+def _unowned_partition():
+    """Patch the SSH ownership read to report a partition with no ADR 0011 stamp."""
+    return patch(
+        "hmc_mcp.operations_lpar.get_lpar_description",
+        new=AsyncMock(return_value=""),
+    )
+
+
 # ---------------------------------------------------------------------- #
 # hmc_create_lpar — HTTP 406 triggers CLI fallback
 # ---------------------------------------------------------------------- #
@@ -180,19 +215,17 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
 def test_dlpar_proc_http_406_actionable(monkeypatch, mock_hmc):
     """hmc_dlpar_proc returns an actionable message on HTTP 406."""
     _hmc_env(monkeypatch)
-    # LPAR UUID resolution
-    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(200, text=LPAR_ENTRY)
-    )
+    _mock_dlpar_authorization(mock_hmc)
     # DLPAR POST returns 406
     mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
-    with pytest.raises(HMCError) as exc_info:
+    with _unowned_partition(), pytest.raises(HMCError) as exc_info:
         hmc_dlpar_proc(
             lpar_name_or_uuid=LPAR_UUID,
             resources=LparResources(desired_procs=0.5),
+            system_name_or_uuid=SYSTEM_UUID,
         )
 
     assert exc_info.value.status_code == 406
@@ -209,19 +242,17 @@ def test_dlpar_proc_http_406_actionable(monkeypatch, mock_hmc):
 def test_dlpar_mem_http_406_actionable(monkeypatch, mock_hmc):
     """hmc_dlpar_mem returns an actionable message on HTTP 406."""
     _hmc_env(monkeypatch)
-    # LPAR UUID resolution
-    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(200, text=LPAR_ENTRY)
-    )
+    _mock_dlpar_authorization(mock_hmc)
     # DLPAR POST returns 406
     mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
-    with pytest.raises(HMCError) as exc_info:
+    with _unowned_partition(), pytest.raises(HMCError) as exc_info:
         hmc_dlpar_mem(
             lpar_name_or_uuid=LPAR_UUID,
             resources=LparResources(desired_memory=8192),
+            system_name_or_uuid=SYSTEM_UUID,
         )
 
     assert exc_info.value.status_code == 406
