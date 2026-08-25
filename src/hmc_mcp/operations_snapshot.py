@@ -5,7 +5,15 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import UTC, datetime
 import math
+import re
 from typing import Any
+
+from hmc_mcp.affinity_assessment import (
+    AffinityAssessmentInput,
+    AffinityAssessmentResult,
+    PolicyState,
+    assess_affinity,
+)
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.common import resolve_lpar_uuid, resolve_system_name, resolve_system_uuid
@@ -47,6 +55,95 @@ from hmc_mcp.ssh_commands import read_lpar_profile_record
 
 def _utcnow() -> datetime:
     return datetime.now(UTC).replace(microsecond=0)
+
+
+def _captured_lpar_score(snapshot: LparSnapshot) -> int | None:
+    """Select the captured LPAR score that matches the snapshot identity."""
+    scores = snapshot.observations.scores
+    if scores is None:
+        return None
+    current = scores.data.get("current")
+    if not isinstance(current, dict):
+        return None
+    rows = current.get("lpar")
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not isinstance(rows, list):
+        return None
+    identity = snapshot.source.lpar
+    matches: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        has_name = "lpar_name" in row
+        has_id = "lpar_id" in row
+        name_matches = not has_name or row.get("lpar_name") == identity.name
+        id_matches = not has_id or str(row.get("lpar_id")) == str(identity.partition_id)
+        if name_matches and id_matches and (has_name or has_id):
+            matches.append(row)
+    if len(matches) != 1:
+        return None
+    raw = matches[0].get("curr_lpar_score")
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        return None
+    if isinstance(raw, str) and re.fullmatch(r"(?:0|[1-9][0-9]{0,2})", raw) is None:
+        return None
+    score = int(raw)
+    return score if 0 <= score <= 100 else None
+
+
+async def assess_snapshot_affinity(
+    document: str,
+    *,
+    current_score: int | None,
+    predicted_score: int | None,
+    policy_state: PolicyState = "absent",
+    configured_minimum: int | None = None,
+    regression_threshold: int | None = None,
+    optimization_threshold: int | None = None,
+    stale_after_seconds: int = 86400,
+    assessed_at: datetime | None = None,
+) -> AffinityAssessmentResult:
+    """Assess explicit current evidence against one validated captured snapshot."""
+    snapshot = parse_snapshot(document)
+    captured_policy = snapshot.observations.minimum_affinity_policy
+    policy_capability = next(
+        (
+            capability
+            for capability in snapshot.capabilities
+            if capability.name == "minimum-affinity-policy"
+        ),
+        None,
+    )
+    if policy_capability is None:
+        captured_policy_state = "missing"
+    elif not policy_capability.supported:
+        captured_policy_state = "unsupported"
+    elif captured_policy is None:
+        captured_policy_state = "absent"
+    else:
+        captured_policy_state = "configured"
+    captured_minimum = (
+        captured_policy.data.get("min_affinity_score")
+        if captured_policy is not None
+        else None
+    )
+    return assess_affinity(
+        AffinityAssessmentInput(
+            captured_score=_captured_lpar_score(snapshot),
+            current_score=current_score,
+            predicted_score=predicted_score,
+            policy_state=policy_state,
+            captured_policy_state=captured_policy_state,
+            configured_minimum=configured_minimum,
+            captured_minimum=captured_minimum,
+            captured_at=snapshot.captured_at,
+            assessed_at=assessed_at or _utcnow(),
+            stale_after_seconds=stale_after_seconds,
+            regression_threshold=regression_threshold,
+            optimization_threshold=optimization_threshold,
+        )
+    )
 
 
 async def validate_lpar_snapshot(document: str) -> dict[str, object]:
@@ -169,9 +266,7 @@ async def capture_lpar_snapshot(
     predicted_system = await plan_system_memopt_score(config, system_name)
     current_groups = await list_resource_group_memopt_scores(config, system_name)
     predicted_groups = await plan_resource_group_memopt_scores(config, system_name)
-    minimum_policy = await get_minimum_affinity_policy(
-        config, system_name, lpar_name
-    )
+    minimum_policy = await get_minimum_affinity_policy(config, system_name, lpar_name)
     mtms = system_resource.get("MachineTypeModelSerialNumber")
     if isinstance(mtms, dict):
         machine_type = _text(mtms.get("MachineType"), "system machine type")

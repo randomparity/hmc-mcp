@@ -8,9 +8,15 @@ import pytest
 from typer.testing import CliRunner
 
 from hmc_mcp import cli
+from hmc_mcp.affinity_assessment import (
+    AffinityAssessmentInput,
+    assess_affinity,
+)
+from datetime import UTC, datetime
 from hmc_mcp.cli_snapshot import _publish
 from hmc_mcp.server import TOOL_SECURITY
 from hmc_mcp.server_snapshot import hmc_snapshot_inspect
+from hmc_mcp.server_snapshot import hmc_snapshot_assess_affinity
 
 RUNNER = CliRunner()
 
@@ -19,8 +25,10 @@ def test_snapshot_tools_have_read_only_security_contracts() -> None:
     assert TOOL_SECURITY["hmc_snapshot_capture"].effect == "read"
     assert TOOL_SECURITY["hmc_snapshot_validate"].effect == "read"
     assert TOOL_SECURITY["hmc_snapshot_inspect"].effect == "read"
+    assert TOOL_SECURITY["hmc_snapshot_assess_affinity"].effect == "read"
     assert TOOL_SECURITY["hmc_snapshot_capture"].target_kind == "lpar"
     assert TOOL_SECURITY["hmc_snapshot_validate"].connection_argument is None
+    assert TOOL_SECURITY["hmc_snapshot_assess_affinity"].connection_argument is None
 
 
 def test_mcp_inspect_accepts_newer_version_without_validation() -> None:
@@ -31,13 +39,95 @@ def test_mcp_inspect_accepts_newer_version_without_validation() -> None:
     }
 
 
+def test_mcp_affinity_assessment_delegates_and_serializes(monkeypatch) -> None:
+    expected = assess_affinity(
+        AffinityAssessmentInput(
+            captured_score=90,
+            current_score=90,
+            predicted_score=94,
+            policy_state="absent",
+            captured_policy_state="absent",
+            configured_minimum=None,
+            captured_minimum=None,
+            captured_at=datetime(2026, 8, 24, 20, tzinfo=UTC),
+            assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+            stale_after_seconds=7200,
+            regression_threshold=5,
+            optimization_threshold=5,
+        )
+    )
+
+    async def fake_assessment(*args, **kwargs):
+        return expected
+
+    monkeypatch.setattr(
+        "hmc_mcp.server_snapshot.assess_snapshot_affinity", fake_assessment
+    )
+    result = hmc_snapshot_assess_affinity(
+        "{}", 90, 94, regression_threshold=5, optimization_threshold=5
+    )
+
+    assert result["classification"] == "none"
+    assert result["evidence"]["captured_score"] == 90
+
+
 def test_cli_snapshot_group_has_no_replay_command() -> None:
     result = RUNNER.invoke(cli.app, ["snapshot", "--help"])
     assert result.exit_code == 0
     assert "capture" in result.stdout
     assert "validate" in result.stdout
     assert "inspect" in result.stdout
+    assert "assess-affinity" in result.stdout
     assert "replay" not in result.stdout
+
+
+def test_cli_affinity_assessment_prints_shared_result(
+    tmp_path: Path, monkeypatch
+) -> None:
+    path = tmp_path / "snapshot.json"
+    path.write_text("{}", encoding="utf-8")
+    result_value = assess_affinity(
+        AffinityAssessmentInput(
+            captured_score=90,
+            current_score=90,
+            predicted_score=94,
+            policy_state="absent",
+            captured_policy_state="absent",
+            configured_minimum=None,
+            captured_minimum=None,
+            captured_at=datetime(2026, 8, 24, 20, tzinfo=UTC),
+            assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+            stale_after_seconds=7200,
+            regression_threshold=5,
+            optimization_threshold=5,
+        )
+    )
+
+    async def fake_assessment(*args, **kwargs):
+        return result_value
+
+    monkeypatch.setattr(
+        "hmc_mcp.cli_snapshot.assess_snapshot_affinity", fake_assessment
+    )
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "snapshot",
+            "assess-affinity",
+            str(path),
+            "--current-score",
+            "90",
+            "--predicted-score",
+            "94",
+            "--regression-threshold",
+            "5",
+            "--optimization-threshold",
+            "5",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["classification"] == "none"
 
 
 def test_publish_refuses_existing_destination(tmp_path: Path) -> None:

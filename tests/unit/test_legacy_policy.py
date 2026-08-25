@@ -319,10 +319,10 @@ def test_uom_user_replacement_reduces_unboundable_tool_count():
         / "0076-use-uom-user-profile-and-remote-access.md"
     )
     assert decision.is_file()
-    assert len(unboundable) == 26
+    assert len(unboundable) == 27
     assert len(connection_bearing) == 22
-    assert len(connectionless) == 4
-    assert len(all_nonexhaustive) == 27
+    assert len(connectionless) == 5
+    assert len(all_nonexhaustive) == 28
 
 
 # ---------------------------------------------------------------------------

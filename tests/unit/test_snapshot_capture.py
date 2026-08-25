@@ -55,7 +55,13 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
     )
     monkeypatch.setattr(
         "hmc_mcp.operations_snapshot.get_lpar_memopt_score",
-        AsyncMock(return_value={"curr_lpar_score": "95"}),
+        AsyncMock(
+            return_value={
+                "lpar_name": "aix",
+                "lpar_id": "7",
+                "curr_lpar_score": "95",
+            }
+        ),
     )
     monkeypatch.setattr(
         "hmc_mcp.operations_snapshot.get_system_memopt_score",

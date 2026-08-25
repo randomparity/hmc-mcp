@@ -30,7 +30,6 @@ from hmc_mcp.server import TOOL_SECURITY, create_mcp
 mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))
 
 
-
 # These tools make no network calls and therefore have no profile= parameter.
 # They are excluded from the profile-routing registry check.
 _NO_NETWORK_TOOLS = frozenset(
@@ -39,6 +38,7 @@ _NO_NETWORK_TOOLS = frozenset(
         "hmc_effective_permissions",  # reads this application's own registry
         "hmc_snapshot_validate",  # validates caller-supplied JSON locally
         "hmc_snapshot_inspect",  # inspects caller-supplied JSON locally
+        "hmc_snapshot_assess_affinity",  # assesses caller-supplied JSON locally
     }
 )
 
@@ -252,7 +252,7 @@ def _toml_with_nickname(tmp_path: Path) -> Path:
         "[profiles.prod]\n"
         "host = 'prod-hmc.test'\n"
         "user = 'hscroot'\n"
-        "password = 'prod-pass'\n"   # pragma: allowlist secret
+        "password = 'prod-pass'\n"  # pragma: allowlist secret
         "\n"
         "[nicknames]\n"
         "big-iron = 'prod'\n"

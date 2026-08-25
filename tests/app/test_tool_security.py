@@ -488,6 +488,7 @@ def test_only_local_tools_open_no_hmc_connection():
         "hmc_effective_permissions",
         "hmc_snapshot_validate",
         "hmc_snapshot_inspect",
+        "hmc_snapshot_assess_affinity",
     }
     for name, security in TOOL_SECURITY.items():
         if name in local_only:
@@ -1198,6 +1199,7 @@ _NOT_EXHAUSTIVE = frozenset(
         "hmc_list_systems",
         "hmc_snapshot_validate",
         "hmc_snapshot_inspect",
+        "hmc_snapshot_assess_affinity",
         "hmc_run_command",
         # Selectors, but they do not name every resource the call acts on.
         "hmc_backup_lpar_profiles",

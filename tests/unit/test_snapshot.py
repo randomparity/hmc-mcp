@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 import pytest
 
@@ -10,6 +11,7 @@ from hmc_mcp.snapshot import (
     parse_snapshot,
     serialize_snapshot,
 )
+from hmc_mcp.operations_snapshot import assess_snapshot_affinity
 
 
 def _document() -> dict:
@@ -82,9 +84,184 @@ def _document() -> dict:
     }
 
 
+def _assessment_document() -> dict:
+    document = _document()
+    document["capabilities"].insert(
+        2,
+        {
+            "name": "minimum-affinity-policy",
+            "version": 1,
+            "supported": True,
+            "collection": "hmc-cli",
+        },
+    )
+    document["observations"]["minimum_affinity_policy"] = {
+        "media_type": (
+            "application/vnd.hmc-mcp.minimum-affinity-policy+json;version=1"
+        ),
+        "data": {"min_affinity_score": 80, "min_affinity_score_action": "warn"},
+    }
+    return document
+
+
 def test_complete_snapshot_round_trips_value_semantically() -> None:
     snapshot = parse_snapshot(json.dumps(_document()))
     assert json.loads(serialize_snapshot(snapshot)) == _document()
+
+
+@pytest.mark.asyncio
+async def test_snapshot_affinity_assessment_composes_captured_evidence() -> None:
+    document = _assessment_document()
+    document["observations"]["scores"]["data"]["current"] = {
+        "lpar": {"lpar_name": "aix", "lpar_id": "7", "curr_lpar_score": "90"},
+        "system": {"curr_sys_score": "91"},
+    }
+
+    result = await assess_snapshot_affinity(
+        json.dumps(document),
+        current_score=80,
+        predicted_score=95,
+        policy_state="configured",
+        configured_minimum=80,
+        regression_threshold=5,
+        optimization_threshold=5,
+        assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+    )
+
+    assert result.classification == "regression"
+    assert result.evidence["captured_score"] == 90
+    assert result.evidence["assessed_at"] == "2026-08-24T21:00:00+00:00"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_affinity_rejects_single_foreign_lpar_score() -> None:
+    document = _assessment_document()
+    document["observations"]["scores"]["data"]["current"] = {
+        "lpar": {
+            "lpar_name": "wrong-lpar",
+            "lpar_id": "999",
+            "curr_lpar_score": "90",
+        },
+        "system": {"curr_sys_score": "91"},
+    }
+
+    result = await assess_snapshot_affinity(
+        json.dumps(document),
+        current_score=80,
+        predicted_score=95,
+        policy_state="configured",
+        configured_minimum=80,
+        regression_threshold=5,
+        optimization_threshold=5,
+        assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+    )
+
+    assert result.classification == "unsupported-data"
+    assert "captured score is missing" in result.explanation
+
+
+@pytest.mark.parametrize("raw", [80.9, "80.0", " 80", "080", True])
+@pytest.mark.asyncio
+async def test_snapshot_affinity_rejects_noncanonical_captured_scores(raw) -> None:
+    document = _assessment_document()
+    document["observations"]["scores"]["data"]["current"] = {
+        "lpar": {"lpar_name": "aix", "lpar_id": "7", "curr_lpar_score": raw},
+        "system": {"curr_sys_score": "91"},
+    }
+
+    result = await assess_snapshot_affinity(
+        json.dumps(document),
+        current_score=80,
+        predicted_score=95,
+        policy_state="configured",
+        configured_minimum=80,
+        regression_threshold=5,
+        optimization_threshold=5,
+        assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+    )
+
+    assert result.classification == "unsupported-data"
+    assert "captured score is missing" in result.explanation
+
+
+@pytest.mark.asyncio
+async def test_snapshot_affinity_rejects_anonymous_captured_score() -> None:
+    document = _assessment_document()
+    document["observations"]["scores"]["data"]["current"] = {
+        "lpar": {"curr_lpar_score": "90"},
+        "system": {"curr_sys_score": "91"},
+    }
+
+    result = await assess_snapshot_affinity(
+        json.dumps(document),
+        current_score=80,
+        predicted_score=95,
+        policy_state="configured",
+        configured_minimum=80,
+        regression_threshold=5,
+        optimization_threshold=5,
+        assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+    )
+
+    assert result.classification == "unsupported-data"
+    assert "captured score is missing" in result.explanation
+
+
+@pytest.mark.parametrize("raw", [101, "101"])
+@pytest.mark.asyncio
+async def test_snapshot_affinity_returns_unsupported_for_out_of_range_score(
+    raw,
+) -> None:
+    document = _assessment_document()
+    document["observations"]["scores"]["data"]["current"] = {
+        "lpar": {"lpar_name": "aix", "lpar_id": "7", "curr_lpar_score": raw},
+        "system": {"curr_sys_score": "91"},
+    }
+
+    result = await assess_snapshot_affinity(
+        json.dumps(document),
+        current_score=80,
+        predicted_score=95,
+        policy_state="configured",
+        configured_minimum=80,
+        regression_threshold=5,
+        optimization_threshold=5,
+        assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+    )
+
+    assert result.classification == "unsupported-data"
+    assert "captured score is missing" in result.explanation
+
+
+@pytest.mark.asyncio
+async def test_snapshot_affinity_uses_thresholds_when_policy_is_unsupported() -> None:
+    document = _document()
+    document["capabilities"].insert(
+        2,
+        {
+            "name": "minimum-affinity-policy",
+            "version": 1,
+            "supported": False,
+            "collection": "hmc-cli",
+            "unavailable_reason": "unsupported platform",
+        },
+    )
+    document["observations"]["scores"]["data"]["current"] = {
+        "lpar": {"lpar_name": "aix", "lpar_id": "7", "curr_lpar_score": "90"},
+        "system": {"curr_sys_score": "91"},
+    }
+
+    result = await assess_snapshot_affinity(
+        json.dumps(document),
+        current_score=80,
+        predicted_score=95,
+        regression_threshold=5,
+        optimization_threshold=5,
+        assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+    )
+
+    assert result.classification == "regression"
+    assert result.evidence["captured_policy_state"] == "unsupported"
 
 
 def test_minimum_affinity_policy_observation_round_trips() -> None:
@@ -104,7 +281,9 @@ def test_minimum_affinity_policy_observation_round_trips() -> None:
         ),
         "data": {"min_affinity_score": 80, "min_affinity_score_action": "warn"},
     }
-    assert json.loads(serialize_snapshot(parse_snapshot(json.dumps(document)))) == document
+    assert (
+        json.loads(serialize_snapshot(parse_snapshot(json.dumps(document)))) == document
+    )
 
 
 def test_unsupported_minimum_affinity_policy_requires_reason_and_no_observation():
