@@ -18,14 +18,20 @@ already guards in the README. Two patterns hold the document to the same rule �
 counts of reason codes, one for counts of records or events, which is the class that had
 actually gone stale ("The two records", written when there were two).
 
-Restated *constants* are checked where the constant is exported and nothing else. The
-`source` values on the TLS record are the notable gap: `client._verify_ssl_source`
-returns bare strings with no `Literal` behind them, so there is nothing to derive from.
-Issue #497 owns closing that.
+Restated *constants* are checked where the constant is exported and nothing else.
+
+What this does not reach, so a green run is not read as more coverage than it is:
+
+- an enumeration written out in prose rather than as a table or a heading — the guard
+  compares vocabularies, so a sentence listing the members by name goes stale silently.
+  The document avoids them where it can and states the rule instead;
+- the `source` values on the TLS record. `client._verify_ssl_source` returns bare strings
+  with no `Literal` behind them, so there is nothing to derive from. Issue #497 owns it.
 """
 
 import re
 from pathlib import Path
+from typing import get_args
 
 from hmc_mcp import audit, tool_registry
 
@@ -36,6 +42,7 @@ DOCUMENT = ROOT / "docs" / "authorization-audit.md"
 TABLE_ROW_CODE = re.compile(r"^\|\s*`([^`]+)`\s*\|", re.MULTILINE)
 EVENT_HEADING = re.compile(r'^### `event: "([^"]+)"`\s*$', re.MULTILINE)
 EFFECT_ROW = re.compile(r"^\|\s*`effect`\s*\|([^|]*)\|", re.MULTILINE)
+STATE_SENTENCE = re.compile(r"`connection\.state` is ([^.]*)\.")
 BACKTICKED = re.compile(r"`([^`]+)`")
 
 #: A count — spelled or numeric, bold or plain — pinned to the reason-code
@@ -88,6 +95,13 @@ def _documented_effects(document: str) -> frozenset[str]:
     rows = EFFECT_ROW.findall(document)
     assert len(rows) == 1, f"expected one `effect` field row, found {len(rows)}"
     return frozenset(BACKTICKED.findall(rows[0]))
+
+
+def _documented_states(document: str) -> frozenset[str]:
+    """The `connection.state` arms, which one sentence enumerates in backticks."""
+    sentences = STATE_SENTENCE.findall(document)
+    assert len(sentences) == 1, f"expected one state sentence, found {len(sentences)}"
+    return frozenset(BACKTICKED.findall(sentences[0]))
 
 
 def test_documented_reason_codes_are_exactly_the_audit_vocabulary() -> None:
@@ -178,6 +192,30 @@ def test_effect_drift_is_caught_in_both_directions() -> None:
     )
     assert orphaned != document
     assert _documented_effects(orphaned) - tool_registry.EFFECTS == {"retired-effect"}
+
+
+def test_documented_connection_states_are_exactly_the_audit_vocabulary() -> None:
+    assert _documented_states(_document()) == frozenset(get_args(audit.State))
+
+
+def test_connection_state_drift_is_caught_in_both_directions() -> None:
+    document = _document()
+    states = frozenset(get_args(audit.State))
+    dangling = sorted(states)[0]
+    sentence = STATE_SENTENCE.search(document)
+    assert sentence is not None
+
+    undocumented = document.replace(
+        sentence.group(1), sentence.group(1).replace(f"`{dangling}`", dangling, 1), 1
+    )
+    assert undocumented != document
+    assert states - _documented_states(undocumented) == {dangling}
+
+    orphaned = document.replace(
+        sentence.group(1), f"{sentence.group(1)}, or `retired-state` otherwise", 1
+    )
+    assert orphaned != document
+    assert _documented_states(orphaned) - states == {"retired-state"}
 
 
 def test_the_prose_pins_no_literal_vocabulary_count() -> None:
