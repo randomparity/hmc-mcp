@@ -45,11 +45,14 @@ exercise operations in tests, but this ADR does not define or promise a public a
 protocol.
 
 Every current `operations_*.py` module is governed by one deterministic rule: export every
-non-underscore top-level asynchronous function and each package-owned input, result, enum, or
-literal-alias type appearing in a selected function's public signature. A synchronous function is
-a transformation, parser, or validator rather than an asynchronous domain operation and is
-excluded for that concrete contract-readiness reason. Imported transport types such as `Any` and
-built-in containers are not facade exports. The initial inventory is:
+non-underscore top-level coroutine function the module itself defines, and each package-owned
+input, result, enum, or literal-alias type appearing in a selected function's public signature.
+An asynchronous helper that a module imports from elsewhere is a top-level name in that module's
+namespace but is owned by the module that defines it, so ownership decides selection and no name
+is selected twice; the per-module exclusion notes below concern only names a module defines. A
+synchronous function is a transformation, parser, or validator rather than an asynchronous domain
+operation and is excluded for that concrete contract-readiness reason. Imported transport types
+such as `Any` and built-in containers are not facade exports. The initial inventory is:
 
 - `operations_adapters`: operations `list_adapters`, `add_network_adapter`,
   `add_vios_adapter`, and `delete_adapter`; types `AdapterResult` and `AdapterType`; no
@@ -122,10 +125,12 @@ layout. Contract tests must freeze the exact `__all__`, lifecycle allowlist, asy
 signatures, enum and literal value sets, presentation-import isolation, and absence of presentation
 types. Future operation modules and public top-level functions do not enter the facade
 automatically: maintainers must consciously update the facade, inventory, and tests. A contract
-test applies the selection rule above to every `operations_*` module by introspection and fails
-when a selected operation is missing from `__all__` without a recorded justification naming the
-ADR text that excludes it, so the manifest cannot drift silently the way the optical-media
-operations did.
+test applies the *operation* half of the selection rule above to every `operations_*` module by
+introspection and fails when a selected coroutine function is missing from `__all__` without a
+recorded justification citing this ADR, so operation-side drift of the kind the optical-media
+operations went through cannot recur silently. Two parts of this section remain hand-maintained
+and untested: the type half of the rule, and the per-module inventory prose above. Neither is
+compared against the code by any test, so both can be wrong while the suite is green.
 
 The initial surface is broad because the deterministic rule includes every asynchronous domain
 operation, including policy-enforcement workflows. That breadth is preferable to an undocumented
