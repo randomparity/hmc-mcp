@@ -38,6 +38,10 @@ _BACKTICKED = re.compile(r"`([^`]+)`")
 # silently stops matching; §6 only ever adds rows, so it never needs lowering.
 _MINIMUM_ROWS = 40
 
+# The one §3 row whose subject is not a Python definition: it names a CLI command, and
+# cites the line inside the command body that writes without an ownership check.
+_UNCHECKED_ROWS = frozenset({"`hmc lpar modify` (CLI)"})
+
 
 class Citation(NamedTuple):
     """One §3 row's claim: `symbol` is defined at `path`:`line`."""
@@ -71,7 +75,7 @@ def _row_citations(cells: list[str]) -> list[tuple[str, int]]:
     that are not definitions, so only the cell that carries the row's own location is
     read.
     """
-    source = cells[0] if _CITATION.search(cells[0]) else cells[1]
+    source = next((cell for cell in cells[:2] if _CITATION.search(cell)), "")
     resolved: list[tuple[str, int]] = []
     for name, line in _CITATION.findall(source):
         if not name:
@@ -87,12 +91,16 @@ def _parse_citations() -> list[Citation]:
         if not line.startswith("|"):
             continue
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        # Header and separator rows carry no backticks; the `hmc lpar modify` (CLI)
-        # row names a command rather than a Python definition.
         symbols = [
             token for token in _BACKTICKED.findall(cells[0]) if token.isidentifier()
         ]
         if not symbols:
+            # Header and separator rows cite nothing, so they drop out here. A row
+            # that cites a location must name a definition, or it would leave the
+            # check silently — the drift this module exists to catch.
+            assert not _CITATION.search(line) or cells[0] in _UNCHECKED_ROWS, (
+                f"§3 row cites a location but names no Python definition: {line}"
+            )
             continue
         located = _row_citations(cells)
         assert len(symbols) == len(located), (
@@ -117,10 +125,19 @@ def _definitions(path: Path) -> dict[int, str]:
     }
 
 
-_CITATIONS = _parse_citations()
+try:
+    _CITATIONS = _parse_citations()
+    _PARSE_FAILURE: str | None = None
+except AssertionError as exc:
+    # Parsing runs at import because `parametrize` needs the rows at collection
+    # time. Carrying the failure into a test keeps a malformed §3 from aborting
+    # collection for the whole suite.
+    _CITATIONS = []
+    _PARSE_FAILURE = str(exc)
 
 
 def test_section_3_rows_are_all_parsed() -> None:
+    assert _PARSE_FAILURE is None, _PARSE_FAILURE
     assert len(_CITATIONS) >= _MINIMUM_ROWS, (
         f"parsed only {len(_CITATIONS)} §3 citations; the table format changed and "
         "this guard is no longer reading it"
