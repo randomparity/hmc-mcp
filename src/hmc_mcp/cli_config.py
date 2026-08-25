@@ -216,6 +216,12 @@ def config_show(
         "timeout": cfg.timeout,
         "audit_memento": cfg.audit_memento,
         "schema_version": cfg.schema_version or "(not set)",
+        # Reported because this setting fails open: a mistyped profile key or
+        # environment variable is dropped silently (the model ignores extras),
+        # and the result is indistinguishable from a correct `false` — an
+        # authorization check absent without saying so. This is the only way to
+        # read its effective, post-precedence value.
+        "authorize_power_operations": cfg.authorize_power_operations,
         "password_configured": password_configured,
         "ssh_key_configured": ssh_key_configured,
     }

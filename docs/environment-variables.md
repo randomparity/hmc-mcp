@@ -84,8 +84,23 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   includes `power-off --immediate`, the call an operator most wants during an
   incident. It is fail-closed by design — an ownership token that cannot be read
   has not been checked — and `ownership_override` is the escape, because it skips
-  the read. A deployment whose HMC credentials work for REST but not for SSH should
-  leave this setting off.
+  the read. It is not an unconditional SSH-free path, though: the name resolution
+  that runs before the override falls back to an SSH lookup when the REST read of
+  the managed system fails or returns no `SystemName`, so a degraded HMC can still
+  cost an `HMC_SSH_TIMEOUT` wait on the override path. A deployment whose HMC
+  credentials work for REST but not for SSH should leave this setting off.
+
+  **Set the environment variable, not the TOML key, to make the guard hold
+  everywhere.** The value is read from the resolved config, so a TOML
+  `authorize_power_operations = true` applies only to the profile that carries it —
+  every other profile stays unguarded, including a second profile pointing at the
+  same HMC, and both the MCP tools and the CLI take a caller-supplied profile
+  selector. `HMC_AUTHORIZE_POWER_OPERATIONS` overrides every profile's TOML value,
+  so it is the setting that cannot be selected around.
+
+  Read the effective, post-precedence value with `hmc-mcp config show`. It is worth
+  checking: this setting fails **open**, and a mistyped profile key or environment
+  variable is dropped silently — indistinguishable from a correct `false`.
 
   When the setting is off, `power_lpar` reads no ownership token and opens no SSH
   connection — the call path is exactly what it was before this setting existed.

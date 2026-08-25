@@ -279,7 +279,10 @@ async def _power_on(
     mechanisms — it is audited — rather than adding a call-site-conditional
     guard. With ``authorize_power_operations`` on it spares the SSH ownership
     read, though not the two REST name lookups that precede it; with the
-    setting off nothing here runs at all.
+    setting off nothing here runs at all. It also means every successful
+    provision emits an ``ownership-override`` audit record once the setting is
+    on — ``docs/authorization-audit.md`` records that the event is not
+    human-triggered only.
     """
     result = await power_lpar(
         hmc,

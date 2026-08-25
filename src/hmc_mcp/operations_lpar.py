@@ -813,8 +813,10 @@ async def power_lpar(
     With the setting on, ``system_name_or_uuid`` becomes required and
     ``ownership_override=True`` bypasses the rejection for this one call and
     records an audited override. The override skips the SSH ownership read, not
-    the two REST name lookups that precede it; when the ownership read fails or
-    times out, the call fails with :class:`HMCCLIError` and submits no job.
+    the two REST name lookups that precede it — and those can themselves fall
+    back to an SSH lookup when the REST read of the managed system fails, so the
+    override is not an unconditional SSH-free path. When the ownership read fails
+    or times out, the call fails with :class:`HMCCLIError` and submits no job.
     """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     guard_system: str | None = None

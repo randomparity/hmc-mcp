@@ -90,8 +90,20 @@ rendering; a boolean records `unreadable`.
 
 ### `event: "ownership-override"`
 
-Emitted when an operator approves an [ADR 0011](adr/0011-multi-agent-lpar-ownership.md)
-LPAR ownership override. Always `WARNING`.
+Emitted when an [ADR 0011](adr/0011-multi-agent-lpar-ownership.md) LPAR ownership
+override is exercised. Always `WARNING`.
+
+**Not every record is a human decision.** Most are: a caller passing
+`ownership_override` is an operator-approved exception to a single mutation. One
+internal caller also emits it — `provision_lpar`'s activation leg passes the
+override unconditionally, because the ownership token it would authorize against is
+the one the same workflow stamped moments earlier
+([ADR 0092](adr/0092-uniform-lpar-ownership-authorization-rule.md) Consequences).
+That leg is reached only when `HMC_AUTHORIZE_POWER_OPERATIONS` is on, so with the
+guard off — the default — every record in this stream is caller-supplied. With it
+on, expect one record per `provision_lpar(power_on=True)`. The record carries no
+field distinguishing the two sources; an alert on this event should account for that
+before the guard is enabled.
 
 ```json
 {"time":"2026-08-19T18:00:00+00:00","event":"ownership-override","system":"sys-a","lpar":"db-01","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
