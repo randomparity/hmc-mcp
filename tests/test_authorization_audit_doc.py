@@ -43,6 +43,9 @@ TABLE_ROW_CODE = re.compile(r"^\|\s*`([^`]+)`\s*\|", re.MULTILINE)
 EVENT_HEADING = re.compile(r'^### `event: "([^"]+)"`\s*$', re.MULTILINE)
 EFFECT_ROW = re.compile(r"^\|\s*`effect`\s*\|([^|]*)\|", re.MULTILINE)
 STATE_SENTENCE = re.compile(r"`connection\.state` is ([^.]*)\.")
+#: One arm of that sentence. Anchored on the `x` when … shape rather than taking every
+#: backticked token, so an unrelated term added to the sentence is not read as a state.
+STATE_ARM = re.compile(r"`([a-z-]+)`\s+when\b")
 BACKTICKED = re.compile(r"`([^`]+)`")
 
 #: A count — spelled or numeric, bold or plain — pinned to the reason-code
@@ -67,6 +70,13 @@ PLURAL_COUNT = (
 FIXED_KIND_COUNT = re.compile(
     rf"\b{PLURAL_COUNT}\s+(?:[\w-]+\s+)?(?:records?|events?)\b", re.IGNORECASE
 )
+
+#: The same count in pronoun form, which names no noun for the pattern above to anchor
+#: on. "Both are one physical line of ASCII JSON" is how the other half of this
+#: document's drift was written, and it is why this is a separate pattern: it is safe
+#: only in the lead paragraph that introduces the record kinds, where the whole subject
+#: is how many there are.
+PRONOUN_COUNT = re.compile(r"\b(?:both|neither|either)\b", re.IGNORECASE)
 
 
 def _document() -> str:
@@ -97,11 +107,16 @@ def _documented_effects(document: str) -> frozenset[str]:
     return frozenset(BACKTICKED.findall(rows[0]))
 
 
+def _records_lead(document: str) -> str:
+    """The paragraph introducing the record kinds, before the first one's section."""
+    return _section(document, "## The records").split("\n### ", 1)[0]
+
+
 def _documented_states(document: str) -> frozenset[str]:
-    """The `connection.state` arms, which one sentence enumerates in backticks."""
+    """The `connection.state` arms, which one sentence enumerates."""
     sentences = STATE_SENTENCE.findall(document)
     assert len(sentences) == 1, f"expected one state sentence, found {len(sentences)}"
-    return frozenset(BACKTICKED.findall(sentences[0]))
+    return frozenset(STATE_ARM.findall(sentences[0]))
 
 
 def test_documented_reason_codes_are_exactly_the_audit_vocabulary() -> None:
@@ -212,10 +227,25 @@ def test_connection_state_drift_is_caught_in_both_directions() -> None:
     assert states - _documented_states(undocumented) == {dangling}
 
     orphaned = document.replace(
-        sentence.group(1), f"{sentence.group(1)}, or `retired-state` otherwise", 1
+        sentence.group(1),
+        f"{sentence.group(1)}, and `retired-state` when nothing else applies",
+        1,
     )
     assert orphaned != document
     assert _documented_states(orphaned) - states == {"retired-state"}
+
+
+def test_state_arms_survive_an_unrelated_backticked_term() -> None:
+    """The arms are read structurally, so editing the sentence's prose is safe."""
+    document = _document()
+    sentence = STATE_SENTENCE.search(document)
+    assert sentence is not None
+
+    reworded = document.replace(
+        sentence.group(1), f"{sentence.group(1)}, such as `bytes`", 1
+    )
+    assert reworded != document
+    assert _documented_states(reworded) == frozenset(get_args(audit.State))
 
 
 def test_the_prose_pins_no_literal_vocabulary_count() -> None:
@@ -223,6 +253,7 @@ def test_the_prose_pins_no_literal_vocabulary_count() -> None:
 
     assert not FIXED_REASON_COUNT.search(document)
     assert not FIXED_KIND_COUNT.search(document)
+    assert not PRONOUN_COUNT.search(_records_lead(document))
 
 
 def test_a_pinned_reason_count_would_be_caught() -> None:
@@ -251,6 +282,16 @@ def test_a_pinned_record_count_would_be_caught() -> None:
     assert not FIXED_KIND_COUNT.search("Two other things produce no record, by design")
 
 
+def test_a_pinned_count_in_pronoun_form_would_be_caught() -> None:
+    """The document's other stale sentence named no noun: "Both are one physical line"."""
+    document = _document()
+
+    stale = document.replace("Each is one physical line", "Both are one physical line", 1)
+    assert stale != document
+    assert not FIXED_KIND_COUNT.search(stale)
+    assert PRONOUN_COUNT.search(_records_lead(stale))
+
+
 def test_restated_constants_are_the_exported_ones() -> None:
     """Only where a source of truth exists to restate — see the module docstring."""
     document = _document()
@@ -258,3 +299,4 @@ def test_restated_constants_are_the_exported_ones() -> None:
     assert f"**{audit.MAX_VALUE_LENGTH} characters**" in document
     assert f"`{audit.DEFAULT_RENDERING}`" in document
     assert f"`{audit.UNRESOLVED_RENDERING}`" in document
+    assert f'"environment:{audit.ATTRIBUTION_ENV}"' in document
