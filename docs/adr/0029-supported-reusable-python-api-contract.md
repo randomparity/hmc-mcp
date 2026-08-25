@@ -70,9 +70,14 @@ such as `Any` and built-in containers are not facade exports. The initial invent
   to reject a malformed argument before a client is opened, which the operations cannot do.
   Both submit the detached `installios` CLI bridge ADR 0070 selected
   after ADR 0069 found no `InstallLPAR` or `InstallVIOS` REST job on any surveyed HMC, so each
-  returns the bridge's detach handle — an opaque `dict[str, Any]` carrying the resolved system
+  returns the bridge's detach handle — a `dict[str, Any]` carrying the resolved system
   and partition names, the remote PID, the install log path, and a restating message — rather
-  than an HMC job identifier. Nothing on this path is pollable, so no wait parameters are
+  than an HMC job identifier. That mapping is **not** one of the opaque HMC resource payloads
+  the Consequences section below describes: this package composes all five keys itself and no
+  firmware level can vary them, so `system`, `partition`, `pid`, `log_path` and `message` are a
+  package-owned contract, frozen by a test rather than by the signature digest, and changing one
+  needs the same minor release an `__all__` change does. Recording that shape in the annotation
+  so the digest can see it is tracked by #468. Nothing on this path is pollable, so no wait parameters are
   offered and none may be added without a superseding decision. Both are classified for
   ownership authorization in ADR 0092 §3.4a, which is the authoritative record; §6's
   recording obligation for a new facade export is discharged there, not here.
