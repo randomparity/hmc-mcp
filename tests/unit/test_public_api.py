@@ -428,7 +428,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     # Moved by #366: the two operations_install install operations join the manifest.
-    expected_digest = "RECOMPUTE"  # pragma: allowlist secret
+    expected_digest = "5c7b317e26306041156eaa0def8a06e5a9827cb9350576150a12a60b4d6edf33"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

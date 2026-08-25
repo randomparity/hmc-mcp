@@ -155,6 +155,7 @@ carry a `### Facade manifest` section.
   `system`, `partition`, `pid`, `log_path` and `message` are pinned by a contract test
   (`tests/unit/test_install_operations.py`). Changing one is a consumer-visible break even though
   it moves neither the manifest nor the signature digest, so it needs the same minor release.
+  Typing the shape so the digest can see it is tracked by #468.
 - Removed: none.
 - Renamed: none.
 - Exported model/literal changes: `LparCreation` gained the
