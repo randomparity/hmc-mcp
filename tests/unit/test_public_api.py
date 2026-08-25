@@ -665,6 +665,63 @@ def _field_literal_aliases(models: list[type]) -> dict[tuple[str, str], object]:
     return aliases
 
 
+def _constructor_surfaces() -> list[type]:
+    """The exported owned classes whose supported surface is their constructor.
+
+    ADR 0029 pins that set to ``HMCClient`` and the exported error types, and the test
+    above fails when a class in a fourth shape joins it. For a model the constructor
+    parameters *are* the fields, so the field walk already reaches them; for these the
+    field walk reads nothing at all, which is why the type clause reads ``__init__``
+    directly (#502).
+    """
+    return [
+        exported
+        for name in api.__all__
+        if inspect.isclass(exported := getattr(api, name))
+        and _is_owned(exported.__module__)
+        and _model_field_hints(exported) is None
+    ]
+
+
+def _constructor_owned_types(owners: list[type]) -> dict[tuple[str, str], object]:
+    """Every package-owned type the constructors of *owners* name.
+
+    A constructor inherited from a builtin exception carries no annotation, so
+    ``get_type_hints`` reports an empty mapping and that class contributes nothing.
+    """
+    owned: dict[tuple[str, str], object] = {}
+    for owner in owners:
+        for hint in get_type_hints(owner.__init__).values():
+            _collect_owned_types(hint, owned)
+    return owned
+
+
+def _constructor_literal_aliases(owners: list[type]) -> dict[tuple[str, str], object]:
+    """The literal-alias clause read off those same constructor annotations.
+
+    ``get_type_hints`` erases an alias on a constructor parameter exactly as it does on
+    an operation's parameter, so this half reads source text too — resolved in the
+    module that *defines* the constructor, which is a base's module when ``__init__`` is
+    inherited. A constructor inherited from outside the package can define no owned
+    alias, and is skipped rather than read: its module need not carry ``from __future__
+    import annotations``, which this half requires of the source text it parses.
+    """
+    aliases: dict[tuple[str, str], object] = {}
+    for owner in owners:
+        initialiser = owner.__init__
+        module_name = getattr(initialiser, "__module__", None)
+        if not isinstance(module_name, str) or not _is_owned(module_name):
+            continue
+        aliases.update(
+            _aliases_in_annotations(
+                sys.modules[module_name],
+                inspect.get_annotations(initialiser).values(),
+                origin=f"{owner.__module__}.{owner.__qualname__}.__init__",
+            )
+        )
+    return aliases
+
+
 def _unexported_owned_types(
     selected: set[tuple[str, str]], modules: dict[str, ModuleType]
 ) -> dict[str, list[str]]:
@@ -673,14 +730,20 @@ def _unexported_owned_types(
     Opaque HMC payloads (``dict[str, Any]`` and friends) own no ``hmc_mcp`` type and
     so fall out by construction, which is exactly the distinction ADR 0029's
     Consequences section draws. The walk then closes over the fields of every owned
-    model it reached, because the Decision's type clause is transitive through them.
+    model it reached, because the Decision's type clause is transitive through them,
+    and over the constructor of every exported class that has no such fields to read.
+    Constructor types are collected before that closure runs, so an owned model a
+    constructor names is itself walked for fields.
     """
     owned: dict[tuple[str, str], object] = {}
     for module_name, name in selected:
         for hint in get_type_hints(getattr(modules[module_name], name)).values():
             _collect_owned_types(hint, owned)
     owned.update(_owned_literal_aliases(selected, modules))
+    constructors = _constructor_surfaces()
+    owned.update(_constructor_owned_types(constructors))
     owned.update(_field_literal_aliases(_supported_models(owned)))
+    owned.update(_constructor_literal_aliases(constructors))
 
     manifest = set(api.__all__)
     exported = {
@@ -816,6 +879,27 @@ SyntheticNested.__module__ = "hmc_mcp.operations_typed"
 SyntheticSnapshot.__module__ = "hmc_mcp.operations_typed"
 
 
+class SyntheticPartialError(Exception):
+    """An exported error whose constructor names a type and an alias no facade exports.
+
+    None of the three model shapes, so ``_model_field_hints`` reads no field off it and
+    the transitive field walk reaches neither parameter. ``__init__`` carries its own
+    ``__module__``, reassigned alongside the class's, because the alias half resolves a
+    constructor's annotation source in the module that *defines* the constructor.
+    """
+
+    def __init__(
+        self, message: str, result: SyntheticResult, flavour: SyntheticFlavour
+    ) -> None:
+        super().__init__(message)
+        self.result = result
+        self.flavour = flavour
+
+
+SyntheticPartialError.__module__ = "hmc_mcp.operations_typed"
+SyntheticPartialError.__init__.__module__ = "hmc_mcp.operations_typed"
+
+
 def test_adr_0029_type_rule_reddens_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -876,6 +960,32 @@ def test_adr_0029_type_rule_descends_into_owned_model_fields(
         "hmc_mcp.operations_typed:SyntheticFlavour",
         "hmc_mcp.operations_typed:SyntheticNested",
         "hmc_mcp.operations_typed:SyntheticSnapshot",
+    ]
+
+
+def test_adr_0029_type_rule_reaches_a_fieldless_exports_constructor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The constructor half must redden on its own, with no operation involved.
+
+    ``SriovLogicalPortPartialError`` and ``VnicPartialError`` each name a package-owned
+    result in their constructor and both results are exported today, so the live check
+    exercises the clean path only: the clause would stay green if it read nothing at
+    all (#502). Driving it with an empty operation set isolates this half, so every
+    fault below arrives through ``__init__`` and through nothing else.
+    """
+    module = ModuleType("hmc_mcp.operations_typed")
+    module.SyntheticFlavour = SyntheticFlavour  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setattr(
+        api, "SyntheticPartialError", SyntheticPartialError, raising=False
+    )
+    monkeypatch.setattr(api, "__all__", [*api.__all__, "SyntheticPartialError"])
+
+    faults = _unexported_owned_types(set(), {})
+    assert faults["selected but not exported or excluded"] == [
+        "hmc_mcp.operations_typed:SyntheticFlavour",
+        "hmc_mcp.operations_typed:SyntheticResult",
     ]
 
 
