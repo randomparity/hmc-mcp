@@ -125,6 +125,7 @@ jobs:
           assert find_spec("mcp") is None
           assert find_spec("rich") is None
           assert find_spec("typer") is None
+          assert (package_path.parent / "py.typed").is_file(), package_path
 
           class FakeHMC:
               async def list_managed_systems(self):
@@ -162,6 +163,36 @@ jobs:
               "running_lpars": 1,
           }]
           PY
+      - name: Prove the marker makes the installed facade readable to a checker
+        run: |
+          cat > consumer_probe.py <<'PY'
+          from hmc_mcp.api import LparCreation
+
+
+          def probe(request: LparCreation) -> object:
+              return request.field_that_does_not_exist
+          PY
+          # mypy is the checker that enforces PEP 561 as written: without a
+          # readable py.typed it refuses the import outright ([import-untyped])
+          # rather than reading the annotations anyway, which is what makes this
+          # a real gate. The repo's own ty does read them regardless, so it
+          # cannot tell a marked distribution from an unmarked one.
+          #
+          # Asserting "no diagnostics" would pass vacuously against an untyped
+          # package, so assert the diagnostic that only a resolved type
+          # produces, and reject the one that means the marker was not read.
+          uv run --no-project --with "mypy==2.3.1" mypy \
+            --python-executable .library-wheel-venv/bin/python \
+            --no-incremental consumer_probe.py > probe.txt 2>&1 || true
+          cat probe.txt
+          if grep -q 'import-untyped' probe.txt; then
+            printf 'installed distribution is missing a readable py.typed\n' >&2
+            exit 1
+          fi
+          if ! grep -q 'attr-defined' probe.txt; then
+            printf 'installed facade did not resolve as a typed package\n' >&2
+            exit 1
+          fi
 
   library-range-floors:
     needs: ci
