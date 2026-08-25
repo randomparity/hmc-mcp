@@ -82,7 +82,10 @@ differs from the returned `job_id` on firmware that reports both, with no substi
 The warning therefore fires only when a `job_href` was supplied (without one the request path is
 built from the identifier, so a differing label cannot mean a different job was read) and at most
 once per `wait_for_job` call rather than once per poll — an hour at the default five-second
-interval would otherwise emit some seven hundred identical lines and bury the signal.
+interval would otherwise emit some seven hundred identical lines and bury the signal. It fires on
+**first detection**, not at loop exit: deferring it would leave a wait polling the wrong job silent
+for the whole multi-hour window, and silent altogether when the wait is cancelled or aborted by an
+`HMCError`, which are exactly the exits clauses 5 and 6 anticipate.
 
 A supplied link also carries a failure mode of its own. A per-operation SELF link embeds the
 target resource, not just the job — `.../LogicalPartition/{uuid}/do/PowerOn/Job/{id}` — so it can
@@ -98,6 +101,10 @@ that worked, so a consumer re-persisting the handle from every outcome never sto
 not to resolve; and a wait stops using the link for its remaining polls, so the confirming second
 request and its warning happen once per wait rather than on all several hundred polls of a
 multi-hour install — the same flooding this ADR designs against for the substitution warning.
+
+"Dropped" has to mean dropped from the *outcome*, not merely not re-attached. An HMC job entry's
+SELF link is the per-operation link, so the global path can serve an entry advertising the very
+link that just 404'd; the outcome's `job_href` is cleared in that case rather than handed back.
 
 ### 3. `JobOutcome` is a package-owned model contract
 
@@ -190,6 +197,12 @@ has already been told the job is gone. The wait re-reads once, one poll interval
 paragraph is scoped to failures that propagate as `HMCError`, where the caller knows something went
 wrong. A job missing from the *first* read is still reported immediately — there is no earlier
 observation for it to contradict.
+
+The confirming read is **owed**, which makes `timeout_seconds` a soft bound: a disappearance seen
+on the last poll before the deadline extends the wait by one poll interval rather than shipping an
+unconfirmed vanish. The alternative — honour the deadline strictly and skip the confirmation —
+would put the hole exactly where every bounded wait ends, and this ADR's own recommended usage
+chops a multi-hour install into many bounded waits, so it would fire routinely.
 
 Once accepted, the disappearance is returned as a bare `found=False`. The status observed on
 the poll before is not carried on the outcome: `found=False` means the HMC produced no entry, and

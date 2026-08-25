@@ -361,7 +361,9 @@ async def test_get_job_confirms_a_stale_link_against_the_global_path(
         return_value=httpx.Response(404, text="Unknown job")
     )
     fallback = mock_hmc.get(_GLOBAL_PATH).mock(
-        return_value=httpx.Response(200, text=_job_entry("RUNNING"))
+        return_value=httpx.Response(
+            200, text=_job_entry("RUNNING", self_href=_SELF_HREF)
+        )
     )
 
     with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
@@ -629,3 +631,60 @@ async def test_wait_for_job_rejects_invalid_polling_settings(
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
             )
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_confirms_a_disappearance_that_lands_on_the_deadline(
+    mock_hmc,
+) -> None:
+    """The confirming read is owed even when the deadline arrives first.
+
+    Every bounded wait ends at its deadline, and the documented usage chops a
+    multi-hour install into many bounded waits, so skipping the confirmation
+    there would put the hole where it fires routinely.
+    """
+    route = mock_hmc.get(_GLOBAL_PATH).mock(
+        side_effect=[
+            httpx.Response(200, text=_job_entry("RUNNING")),
+            httpx.Response(404, text="Unknown job"),
+            httpx.Response(200, text=_job_entry("COMPLETED_OK")),
+        ]
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await wait_for_job(hmc, _JOB_ID, timeout_seconds=1, poll_interval=1)
+
+    assert route.call_count == 3
+    assert (outcome.found, outcome.status) == (True, "COMPLETED_OK")
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_warns_about_a_substituted_job_on_the_first_poll(
+    mock_hmc, caplog
+) -> None:
+    """A wait on the wrong job must not stay silent until it ends.
+
+    Cancellation and a non-404 ``HMCError`` both leave the loop without reaching
+    its final return, so a warning deferred to loop exit can never be emitted.
+    """
+    other = _job_entry("RUNNING").replace(_JOB_ID, "some-other-job")
+    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(200, text=other))
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+        async with HMCClient(make_config()) as hmc:
+            waiter = asyncio.create_task(
+                wait_for_job(
+                    hmc,
+                    _JOB_ID,
+                    job_href=_SELF_HREF,
+                    timeout_seconds=3600,
+                    poll_interval=600,
+                )
+            )
+            while not any("returned job" in r.getMessage() for r in caplog.records):
+                await asyncio.sleep(0)
+            waiter.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiter
+
+    assert len([r for r in caplog.records if "returned job" in r.getMessage()]) == 1

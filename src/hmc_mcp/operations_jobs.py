@@ -134,22 +134,30 @@ async def _read_job(
             job = await _confirm_missing(hmc, identifier, link, exc)
             stale_link = job is not None
     outcome = job_outcome(identifier, job)
-    if link is not None and not stale_link and outcome.job_href != link:
+    if stale_link:
+        # The read that worked can advertise the very link that just 404'd: an
+        # HMC job entry's SELF link is the per-operation link either path serves.
+        if outcome.job_href == link:
+            outcome = replace(outcome, job_href=None)
+    elif link is not None and outcome.job_href != link:
         outcome = replace(outcome, job_href=link)
     return outcome, stale_link
 
 
 def _warn_if_another_job_answered(
     identifier: str, outcome: JobOutcome, link: str | None
-) -> None:
-    """Warn once when a caller-supplied link produced a differently named job.
+) -> bool:
+    """Warn when a caller-supplied link produced a differently named job.
 
     Only a supplied link can substitute a job: without one the request path is
     built from the identifier, so a differing ``job_id`` there only means the
     response labelled the same job with its other identifier.
+
+    Returns whether it warned, so a wait can fire this on first detection and
+    then stay quiet for the rest of its polls.
     """
     if link is None or not outcome.found or outcome.job_id == identifier:
-        return
+        return False
     _logger.warning(
         "HMC job_href %s returned job %s for requested identifier %s. The "
         "outcome describes the job that was read. This is expected when the "
@@ -159,6 +167,7 @@ def _warn_if_another_job_answered(
         outcome.job_id,
         identifier,
     )
+    return True
 
 
 async def get_job(
@@ -246,8 +255,11 @@ async def wait_for_job(
     momentary one — a proxy reload, a failover — be reported as a vanished job to
     a consumer the ADR expects to act on that destructively. The wait re-reads
     once, one poll interval later, and reports ``found=False`` only if the second
-    read agrees. A job missing from the *first* read is reported immediately:
-    there is no earlier observation to contradict it.
+    read agrees. That confirming read is owed even when the disappearance lands on
+    the last poll before the deadline, so a wait can run one poll interval past
+    ``timeout_seconds`` rather than return an unconfirmed vanish. A job missing
+    from the *first* read is reported immediately: there is no earlier observation
+    to contradict it.
 
     The disappearance is returned as a bare ``found=False``: the outcome does not
     carry the status observed on the poll before, because ``found=False`` means
@@ -264,10 +276,13 @@ async def wait_for_job(
     last_status: str | None = None
     observed = False
     rereading = False
+    warned = False
     while True:
         outcome, stale_link = await _read_job(hmc, identifier, link)
         if stale_link:
             link = None
+        if not warned:
+            warned = _warn_if_another_job_answered(identifier, outcome, link)
         if outcome.found:
             observed, rereading, last_status = True, False, outcome.status
             if outcome.status in TERMINAL_JOB_STATUSES:
@@ -284,7 +299,10 @@ async def wait_for_job(
             )
         remaining = deadline - loop.time()
         if remaining <= 0:
-            break
+            if not rereading:
+                break
+            # The confirming read is owed, so it outlives the deadline by one
+            # interval rather than shipping an unconfirmed "your job is gone".
+            remaining = poll_interval
         await asyncio.sleep(min(poll_interval, remaining))
-    _warn_if_another_job_answered(identifier, outcome, link)
     return outcome
