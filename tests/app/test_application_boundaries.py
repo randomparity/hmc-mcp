@@ -67,16 +67,17 @@ def test_create_mcp_returns_independent_complete_applications():
     # affinity-planning tools; #312 adds two resource-group affinity tools; #314
     # adds three portable snapshot tools; #315 adds one minimum-affinity policy
     # read; #316 adds one guarded minimum-affinity policy write; #317 adds one
-        # local read-only affinity assessment; #320 adds one affinity-aware LPM
-        # operation, for 148 total.
+    # local read-only affinity assessment; #320 adds one affinity-aware LPM
+    # operation; #362 removes hmc_detach_optical_mapping, which duplicated
+    # hmc_unmount_optical_media, for 147 total.
     policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
 
     first = create_mcp(policy)
     second = create_mcp(policy)
 
     assert first is not second
-    assert len(asyncio.run(first.list_tools())) == 148
-    assert len(asyncio.run(second.list_tools())) == 148
+    assert len(asyncio.run(first.list_tools())) == 147
+    assert len(asyncio.run(second.list_tools())) == 147
 
 
 def test_operations_do_not_import_application_modules():

@@ -662,28 +662,22 @@ async def unmount_optical_media(
     hmc: HMCClient, vios: str, lpar: str, media_name: str,
     system_name_or_uuid: str | None = None,
 ) -> None:
-    """Remove the VirtualSCSIMapping for an optical device (unmount and detach).
+    """Remove the VirtualSCSIMapping for an optical device (unmount).
 
     Identifies the mapping by lpar + media_name using a read-modify-write pattern
     against the full VirtualIOServer document.  The backing VirtualOpticalMedia
     (ISO container) is preserved and can be remounted later.
-    """
-    vios_uuid = await resolve_vios_uuid(hmc, vios)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar, system_name_or_uuid=system_name_or_uuid
-    )
-    await hmc.delete_optical_mapping(vios_uuid, lpar_uuid, media_name)
 
+    Removing the mapping is the whole unmount as this client implements it:
+    mount_optical_media creates a VirtualSCSIMapping with the media referenced
+    inside it, and no unload-without-detach path has been identified on the
+    surveyed firmware, so detaching the mapping and unmounting the image are one
+    operation here.  (#403 and ADR 0079 record only that a detailed
+    VirtualSCSIMapping is not directly addressable; establishing the absence of
+    an unload path would need its own live survey, on the ADR 0069 pattern.)
 
-async def detach_optical_mapping(
-    hmc: HMCClient, vios: str, lpar: str, media_name: str,
-    system_name_or_uuid: str | None = None,
-) -> None:
-    """Remove a VirtualSCSIMapping for an optical device (detach mapping).
-
-    Identifies the mapping by lpar + media_name using a read-modify-write pattern
-    against the full VirtualIOServer document.  The backing VirtualOpticalMedia
-    (ISO container) is preserved and can be remounted later.
+    Selection is currently a substring match over the serialized mapping and
+    does not reject an empty media_name or refuse an ambiguous match; see #439.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios)
     lpar_uuid = await resolve_lpar_uuid(
