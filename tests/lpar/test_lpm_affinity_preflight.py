@@ -143,6 +143,13 @@ async def test_preflight_timeout_obeys_explicit_response(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("timeout", [float("nan"), float("inf"), float("-inf"), -1])
+async def test_preflight_rejects_unbounded_timeout(timeout: float) -> None:
+    with pytest.raises(ValueError, match="preflight_timeout_seconds"):
+        await run_lpm_affinity_preflight(_request(preflight_timeout_seconds=timeout))
+
+
+@pytest.mark.asyncio
 async def test_fail_closed_preflight_timeout_submits_no_hmc_work() -> None:
     hmc = AsyncMock()
 

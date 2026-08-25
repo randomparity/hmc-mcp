@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, replace
+import math
 from typing import Any, Literal
 
 from .client import HMCClient
@@ -165,7 +166,12 @@ async def run_lpm_affinity_preflight(
     if request.response not in {"warn", "fail"}:
         raise ValueError("affinity preflight response must be warn or fail")
     timeout = request.preflight_timeout_seconds
-    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout < 0:
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(timeout)
+        or timeout < 0
+    ):
         raise ValueError("preflight_timeout_seconds must be non-negative")
 
     async def _evaluate() -> LpmAffinityPreflightOutcome:
