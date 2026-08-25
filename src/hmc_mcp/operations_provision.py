@@ -445,6 +445,31 @@ def _score(row: dict[str, object], field_name: str) -> int | None:
         return None
 
 
+def _validate_affinity_request(request: ProvisionAffinityAssessment) -> None:
+    """Validate every caller-controlled assessment value without HMC traffic."""
+    policy_state: Literal["configured", "absent", "unsupported"] = (
+        request.captured_policy_state
+        if request.captured_policy_state in {"configured", "absent"}
+        else "unsupported"
+    )
+    assess_affinity(
+        AffinityAssessmentInput(
+            captured_score=request.captured_score,
+            current_score=request.captured_score,
+            predicted_score=request.captured_score,
+            policy_state=policy_state,
+            captured_policy_state=request.captured_policy_state,
+            configured_minimum=request.captured_minimum,
+            captured_minimum=request.captured_minimum,
+            captured_at=request.captured_at,
+            assessed_at=request.captured_at,
+            stale_after_seconds=request.stale_after_seconds,
+            regression_threshold=request.regression_threshold,
+            optimization_threshold=request.optimization_threshold,
+        )
+    )
+
+
 async def _assess_post_activation_affinity(
     hmc: HMCClient,
     system: str,
@@ -588,6 +613,7 @@ async def provision_lpar(
             raise ValueError("affinity assessment timeout_seconds must be non-negative")
         if affinity_assessment.poll_interval <= 0:
             raise ValueError("affinity assessment poll_interval must be positive")
+        _validate_affinity_request(affinity_assessment)
     if minimum_affinity_policy is not None:
         validate_minimum_affinity_policy(minimum_affinity_policy)
     if caller_token is not None:
@@ -749,9 +775,7 @@ async def provision_lpar(
             warning = f"Post-activation affinity assessment: {classification}"
             if affinity_assessment.response == "fail":
                 steps.append(_step("affinity_assessment", "error", result))
-                return _provision_result(
-                    creation, created_uuid, steps, False, (warning,)
-                )
+                return _provision_result(creation, created_uuid, steps, False)
             steps.append(_step("affinity_assessment", "ok", result))
             return _provision_result(creation, created_uuid, steps, True, (warning,))
         steps.append(_step("affinity_assessment", "ok", result))

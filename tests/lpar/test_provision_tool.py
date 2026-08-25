@@ -319,6 +319,27 @@ def test_provision_affinity_rejects_foreign_evidence_before_hmc(monkeypatch, moc
     assert_no_mutating_requests(mock_hmc)
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"captured_score": 101},
+        {"captured_at": datetime(2026, 8, 24)},
+        {"stale_after_seconds": 0},
+        {"regression_threshold": -1},
+        {"captured_policy_state": "unknown"},
+    ],
+)
+def test_provision_affinity_rejects_invalid_evidence_before_hmc(
+    monkeypatch, mock_hmc, change
+):
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError):
+        hmc_provision_lpar(
+            **_provision_args(affinity_assessment=_affinity_request(**change))
+        )
+    assert_no_mutating_requests(mock_hmc)
+
+
 def _assessment_result(classification="none"):
     return {
         "assessment": {
@@ -396,7 +417,7 @@ def test_provision_affinity_power_off_is_skipped(monkeypatch, mock_hmc):
         ("none", "warn", True, "ok", False),
         ("policy-violation", "warn", True, "ok", True),
         ("unsupported-data", "warn", True, "ok", True),
-        ("policy-violation", "fail", False, "error", True),
+        ("policy-violation", "fail", False, "error", False),
     ],
 )
 def test_provision_affinity_response_is_explicit(
