@@ -52,7 +52,6 @@ def test_layout_block_lists_filenames_and_globs() -> None:
 
     assert "client_*.py" in entries
     assert "config.py" in entries
-    assert len(entries) > 20
 
 
 def test_every_module_has_a_layout_entry() -> None:
@@ -67,6 +66,19 @@ def test_every_module_has_a_layout_entry() -> None:
     )
 
 
+def test_every_named_entry_is_a_module_that_exists() -> None:
+    """The other drift direction: an entry left behind by a deleted module."""
+    phantoms = [
+        entry
+        for entry in _layout_entries(_readme())
+        if "*" not in entry and not (PACKAGE / entry).is_file()
+    ]
+
+    assert phantoms == [], (
+        f"'{LAYOUT_HEADING}' names modules that no longer exist: {', '.join(phantoms)}"
+    )
+
+
 def test_a_module_no_entry_names_is_reported(tmp_path: Path) -> None:
     """Adding a top-level module without a layout entry must fail the check."""
     package = tmp_path / "hmc_mcp"
@@ -74,6 +86,6 @@ def test_a_module_no_entry_names_is_reported(tmp_path: Path) -> None:
     (package / "client_lpars.py").touch()
     (package / "brand_new_module.py").touch()
 
-    uncovered = _uncovered(_module_names(package), _layout_entries(_readme()))
+    uncovered = _uncovered(_module_names(package), ["config.py", "client_*.py"])
 
     assert uncovered == ["brand_new_module.py"]
