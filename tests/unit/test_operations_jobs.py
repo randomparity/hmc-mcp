@@ -160,14 +160,37 @@ async def test_get_job_reports_a_reaped_identifier_as_not_found(mock_hmc) -> Non
 
 
 @pytest.mark.asyncio
-async def test_get_job_reports_an_empty_job_response_as_not_found(mock_hmc) -> None:
-    """An HMC that answers with no job entry is the same observation as a 404."""
+async def test_get_job_reports_an_empty_job_response_as_not_found(
+    mock_hmc, caplog
+) -> None:
+    """An HMC that answers with no job entry is the same observation as a 404.
+
+    It is also the same destructive signal, so it is as loud: an HMC answering
+    the jobs path with no content reports every job gone, forever.
+    """
     mock_hmc.get(_GLOBAL_PATH).mock(return_value=httpx.Response(204))
 
-    async with HMCClient(make_config()) as hmc:
-        outcome = await get_job(hmc, _JOB_ID)
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+        async with HMCClient(make_config()) as hmc:
+            outcome = await get_job(hmc, _JOB_ID)
 
     assert outcome.found is False
+    assert any(
+        record.levelno == logging.WARNING and _JOB_ID in record.getMessage()
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_job_does_not_hand_back_a_link_on_a_missing_job(mock_hmc) -> None:
+    """A found=False outcome carries no handle: nothing resolved to persist."""
+    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text="Unknown job"))
+    mock_hmc.get(_GLOBAL_PATH).mock(return_value=httpx.Response(404, text="Unknown job"))
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
+
+    assert (outcome.found, outcome.job_href) == (False, None)
 
 
 @pytest.mark.asyncio
@@ -386,8 +409,8 @@ async def test_wait_for_job_drops_a_stale_link_after_confirming_it_once(
     )
     fallback = mock_hmc.get(_GLOBAL_PATH).mock(
         side_effect=[
-            httpx.Response(200, text=_job_entry("RUNNING")),
-            httpx.Response(200, text=_job_entry("COMPLETED_OK")),
+            httpx.Response(200, text=_job_entry("RUNNING", self_href=_SELF_HREF)),
+            httpx.Response(200, text=_job_entry("COMPLETED_OK", self_href=_SELF_HREF)),
         ]
     )
 
@@ -404,6 +427,9 @@ async def test_wait_for_job_drops_a_stale_link_after_confirming_it_once(
     assert stale.call_count == 1, "the stale link must not be retried every poll"
     assert fallback.call_count == 2
     assert outcome.status == "COMPLETED_OK"
+    assert outcome.job_href is None, (
+        "a link retired earlier in the wait must not come back on a later poll"
+    )
     assert len([r for r in caplog.records if "no longer resolves" in r.getMessage()]) == 1
 
 

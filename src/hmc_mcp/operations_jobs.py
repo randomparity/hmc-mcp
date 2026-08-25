@@ -107,20 +107,27 @@ async def _confirm_missing(
 
 
 async def _read_job(
-    hmc: HMCClient, identifier: str, link: str | None
+    hmc: HMCClient,
+    identifier: str,
+    link: str | None,
+    dead_link: str | None = None,
 ) -> tuple[JobOutcome, bool]:
     """Perform one poll; also report whether *link* proved stale on this read.
 
-    A stale link changes what the caller should keep: the outcome then carries the
-    href from the read that worked rather than the one that 404'd, and a wait stops
-    using the link for its remaining polls.
+    *dead_link* is a link an earlier read in the same wait already proved stale.
+    It has to be carried, not just stopped being used: an HMC job entry's SELF
+    link is the per-operation link, so a later read through the global path can
+    advertise the dead link right back, and the outcome a consumer re-persists
+    would then carry a link this package knows does not resolve.
     """
+    reported = False
     stale_link = False
     try:
         job = await hmc.get_job(identifier, job_href=link)
     except HMCError as exc:
         if exc.status_code != _JOB_MISSING_STATUS:
             raise
+        reported = True
         if link is None:
             _logger.warning(
                 "HMC job %s not found via the global jobs path: reporting "
@@ -133,15 +140,40 @@ async def _read_job(
         else:
             job = await _confirm_missing(hmc, identifier, link, exc)
             stale_link = job is not None
+    if job is None and not reported:
+        _logger.warning(
+            "HMC returned no entry for job %s %s: reporting found=False. An HMC "
+            "answering the jobs path with no content gives the same answer for "
+            "every identifier.",
+            identifier,
+            f"via job_href {link}" if link else "via the global jobs path",
+        )
     outcome = job_outcome(identifier, job)
-    if stale_link:
-        # The read that worked can advertise the very link that just 404'd: an
-        # HMC job entry's SELF link is the per-operation link either path serves.
-        if outcome.job_href == link:
-            outcome = replace(outcome, job_href=None)
-    elif link is not None and outcome.job_href != link:
-        outcome = replace(outcome, job_href=link)
-    return outcome, stale_link
+    # A link this read just retired is no longer supplied; it is dead.
+    supplied = None if stale_link else link
+    dead = link if stale_link else dead_link
+    handle = _handle(outcome, job, supplied, dead)
+    return replace(outcome, job_href=handle), stale_link
+
+
+def _handle(
+    outcome: JobOutcome,
+    job: dict[str, Any] | None,
+    link: str | None,
+    dead_link: str | None,
+) -> str | None:
+    """Return the link worth persisting from this read, or ``None`` if none is.
+
+    A link the caller supplied is kept only when the read through it produced the
+    job. A link already known dead — the one supplied on a read that 404'd, or one
+    an earlier read in this wait retired — is never handed back, so a consumer
+    re-persisting from every outcome cannot store a link known not to work.
+    """
+    if job is None:
+        return None
+    if link is not None:
+        return link
+    return None if outcome.job_href == dead_link else outcome.job_href
 
 
 def _warn_if_another_job_answered(
@@ -277,10 +309,11 @@ async def wait_for_job(
     observed = False
     rereading = False
     warned = False
+    dead_link: str | None = None
     while True:
-        outcome, stale_link = await _read_job(hmc, identifier, link)
+        outcome, stale_link = await _read_job(hmc, identifier, link, dead_link)
         if stale_link:
-            link = None
+            dead_link, link = link, None
         if not warned:
             warned = _warn_if_another_job_answered(identifier, outcome, link)
         if outcome.found:

@@ -102,9 +102,12 @@ not to resolve; and a wait stops using the link for its remaining polls, so the 
 request and its warning happen once per wait rather than on all several hundred polls of a
 multi-hour install — the same flooding this ADR designs against for the substitution warning.
 
-"Dropped" has to mean dropped from the *outcome*, not merely not re-attached. An HMC job entry's
-SELF link is the per-operation link, so the global path can serve an entry advertising the very
-link that just 404'd; the outcome's `job_href` is cleared in that case rather than handed back.
+"Dropped" has to mean dropped from the *outcome*, not merely not re-attached, and it has to hold
+for the rest of the wait rather than only on the read that detected it. An HMC job entry's SELF
+link is the per-operation link, so any later read through the global path can advertise the very
+link that 404'd; a wait therefore carries the retired link and clears it from every subsequent
+outcome. A `found=False` outcome carries no link at all — nothing resolved, so there is no handle
+worth persisting.
 
 ### 3. `JobOutcome` is a package-owned model contract
 
@@ -169,7 +172,9 @@ a reaped job, and a deployment in that state answers `found=False` for every job
 can do is be loud: the translation logs at **warning**, naming the identifier, whether a
 `job_href` was used, and the discarded `HMCError` detail. A `found=False` a consumer acts on
 destructively is not an INFO-level event, and a systematically 404-ing deployment shows up in
-ordinary logs rather than only under debug.
+ordinary logs rather than only under debug. Both routes log, not just the 404 one: an HMC that
+answers the jobs path with no content reports every identifier gone just as permanently, and does
+so without an exception to carry any detail, so silence there would be the worse of the two.
 
 ### 5. `wait_for_job` owns its poll loop
 
