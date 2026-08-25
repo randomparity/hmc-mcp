@@ -193,9 +193,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 ### Facade manifest
 
 - Added: the exports below landed between the `[0.1.0]` entry's enumerated manifest and this
-  cycle with no manifest bullet of their own (#479). Each moved the frozen public signature
-  digest when it landed, and this records the manifest catching up rather than new capability.
-  Grouped by the change that added them:
+  cycle with no manifest bullet of their own (#479). Each is an entry in `hmc_mcp.api.__all__`,
+  so each contributes to the frozen public signature digest. This records the manifest catching
+  up, not new capability. Grouped by the change that added them:
   - `get_lpar_memopt_score`, `list_lpar_memopt_scores` (#252): memory-optimization scores read
     per LPAR over the SSH command surface.
   - `get_system_memopt_score`, `plan_lpar_memopt_scores`, `plan_system_memopt_score`, and the
@@ -205,9 +205,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
     `list_resource_group_memopt_scores`, `plan_resource_group_memopt_scores` (#312): the
     resource-group scope of the same surface.
   - `LparSnapshot`, `SnapshotInspection`, `SnapshotValidationError`, `capture_lpar_snapshot`,
-    `inspect_lpar_snapshot`, `validate_lpar_snapshot` (#314): portable LPAR snapshot capture
-    and the read-side operations over a captured snapshot. `LparSnapshot` is the model the
-    #482 bullet below describes the fields of.
+    `inspect_lpar_snapshot`, `validate_lpar_snapshot` (#314): portable LPAR snapshot capture,
+    plus the two operations that parse a captured snapshot document locally without reaching
+    the HMC. `LparSnapshot` is the model the #482 bullet below describes the fields of.
   - `MinimumAffinityPolicy`, `MinimumAffinityPolicyResult`, `get_minimum_affinity_policy`,
     `set_minimum_affinity_policy` (#315): read and write of the minimum affinity policy.
   - `AffinityAssessmentInput`, `AffinityAssessmentResult`, `AffinityEvidence`,

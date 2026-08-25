@@ -32,6 +32,8 @@ import tomllib
 from collections.abc import Iterable
 from pathlib import Path
 
+import pytest
+
 from hmc_mcp import api
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -84,6 +86,15 @@ def _facade_manifests() -> dict[str, str]:
     return {name: section for name, section in found if section is not None}
 
 
+def _released_manifests() -> list[str]:
+    """Return the facade-manifest sections of every entry except ``[Unreleased]``."""
+    return [
+        manifest
+        for name, manifest in _facade_manifests().items()
+        if name != _UNRELEASED
+    ]
+
+
 def _names_in(manifest: str) -> set[str]:
     return set(_CODE_FORMATTED_NAME.findall(manifest))
 
@@ -132,15 +143,13 @@ def test_every_facade_manifest_section_says_something() -> None:
         )
 
 
-def test_unreleased_facade_manifest_names_every_export_added_since_the_baseline() -> None:
+def test_unreleased_manifest_names_every_export_added_since_the_baseline() -> None:
     manifests = _facade_manifests()
     assert _UNRELEASED in manifests, (
         f"CHANGELOG.md has no '[{_UNRELEASED}]' entry with a '### Facade manifest' "
         f"section, so no entry can account for exports added since the last release"
     )
-    released = [
-        manifest for name, manifest in manifests.items() if name != _UNRELEASED
-    ]
+    released = _released_manifests()
     assert released, (
         "CHANGELOG.md has no released entry with a facade manifest, so there is no "
         "baseline to derive the export delta against"
@@ -159,16 +168,26 @@ def test_unreleased_facade_manifest_names_every_export_added_since_the_baseline(
 
 
 def test_an_export_dropped_from_the_unreleased_manifest_is_caught() -> None:
-    """The negative variant: the real manifest, minus one export it does declare."""
-    manifests = _facade_manifests()
-    released = [
-        manifest for name, manifest in manifests.items() if name != _UNRELEASED
-    ]
+    """The negative variant: the real manifest, minus one export it does declare.
+
+    Skips in the window between cutting a release and the next addition, when the
+    delta is empty and there is no declared export to take away. The synthetic
+    controls below carry the detector's proof through that window.
+    """
+    released = _released_manifests()
     baseline = set().union(*(_names_in(manifest) for manifest in released))
-    dropped = sorted(set(api.__all__) - baseline)[0]
+    delta = sorted(set(api.__all__) - baseline)
+    if not delta:
+        pytest.skip("no export has been added since the baseline manifest")
+    dropped = delta[0]
+    unreleased = _facade_manifests()[_UNRELEASED]
 
-    stale = manifests[_UNRELEASED].replace(f"`{dropped}`", dropped)
+    stale = unreleased.replace(f"`{dropped}`", dropped)
 
+    assert stale != unreleased, (
+        f"the real '[{_UNRELEASED}]' manifest does not name `{dropped}` as code, so "
+        f"this control mutated nothing"
+    )
     assert _exports_missing_from_the_unreleased_manifest(
         api.__all__, released, stale
     ) == {dropped}, (
@@ -179,17 +198,21 @@ def test_an_export_dropped_from_the_unreleased_manifest_is_caught() -> None:
 
 def test_a_complete_unreleased_manifest_is_not_flagged() -> None:
     """The look-alike: the same section, unmutated, must stay silent."""
-    manifests = _facade_manifests()
-    released = [
-        manifest for name, manifest in manifests.items() if name != _UNRELEASED
-    ]
-
     assert (
         _exports_missing_from_the_unreleased_manifest(
-            api.__all__, released, manifests[_UNRELEASED]
+            api.__all__, _released_manifests(), _facade_manifests()[_UNRELEASED]
         )
         == set()
     )
+
+
+def test_an_export_the_unreleased_manifest_omits_entirely_is_caught() -> None:
+    """The synthetic variant, independent of what the real changelog happens to say."""
+    assert _exports_missing_from_the_unreleased_manifest(
+        ["published", "added", "omitted"],
+        ["- Initial manifest: `published`."],
+        "- Added: `added`.\n- Removed: none.\n",
+    ) == {"omitted"}
 
 
 def test_an_export_named_only_in_uncoded_prose_does_not_count() -> None:
