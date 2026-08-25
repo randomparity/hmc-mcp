@@ -126,6 +126,15 @@ async def install_lpar_os(
     Requires hmcsuperadmin-level HMC authority (e.g. hscroot) and a powered-off
     target partition that already exists with a profile.
 
+    ADR 0092 §6 classification: Destructive under §2, and out of scope for §1's
+    ownership guard by resource type. ``installios`` requires its ``-p``
+    partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there
+    is no ownership token to authorize against — the determination ADR 0092 §1
+    already recorded for the ``hmc_install_lpar_os`` tool body this operation
+    was extracted from. The extraction moves the code, not the classification;
+    the ADR 0092 §6 obligation attaches to a *new* install path that can
+    complete against a ``LogicalPartition``, which this one cannot.
+
     Args:
         hmc: Connected client; its configuration also carries the SSH
             credentials the CLI bridge submits with.

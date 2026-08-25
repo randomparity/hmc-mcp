@@ -71,7 +71,10 @@ such as `Any` and built-in containers are not facade exports. The initial invent
   returns the bridge's detach handle — an opaque `dict[str, Any]` carrying the resolved system
   and partition names, the remote PID, the install log path, and a restating message — rather
   than an HMC job identifier. Nothing on this path is pollable, so no wait parameters are
-  offered and none may be added without a superseding decision.
+  offered and none may be added without a superseding decision. Both carry the ADR 0092 §6
+  classification recorded in their docstrings: Destructive under §2, outside §1's ownership
+  guard by resource type, because `installios` requires a Virtual I/O Server partition and
+  ADR 0011 stamps no ownership token on one.
 - `operations_lpar`: operations `assess_post_activation_affinity`,
   `authorize_decommission_lpar_ownership_snapshot`,
   `authorize_lpar_mutation`, `resolve_lpar_ownership_names`, `stamp_created_lpar_ownership`,
