@@ -66,10 +66,11 @@ presentation modules are implementation details. They may remain importable or d
 they are unsupported and may change without a compatibility release.
 
 The distribution ships a PEP 561 `py.typed` marker, so a type-checker reads the facade's inline
-annotations instead of treating every value as `Any`. That covers the signatures of the exported
-callables, the fields and constructors of the exported dataclasses, and the members of the exported
-enums and literal aliases — the same surface `__all__` declares. Modules outside `hmc_mcp.api` carry
-annotations too, but they are implementation details and their types are not part of the contract.
+annotations instead of treating every value as `Any`. That covers exactly the surface `__all__`
+declares: each export's call signature, the fields and constructor of each exported package-owned
+model, each exported exception type, and the members and values of each exported enum and literal
+alias. Modules outside `hmc_mcp.api` carry annotations too, but they are implementation details and
+their types are not part of the contract.
 
 While hmc-mcp is in `0.x`, strict SemVer applies to this supported surface: removing or renaming an
 export, invalidating a compatible call, changing an owned model incompatibly, changing an exported

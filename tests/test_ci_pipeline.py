@@ -461,7 +461,7 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     active_workflow, _ = _inactive_ppc64le_job(workflow)
     consumer = re.search(
-        r"^  library-wheel-smoke:\n(?P<body>.*?)(?=^  wheel-smoke:)",
+        r"^  library-wheel-smoke:\n(?P<body>.*?)(?=^  library-range-floors:)",
         active_workflow,
         re.MULTILINE | re.DOTALL,
     )
