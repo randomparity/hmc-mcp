@@ -337,7 +337,10 @@ def write_pages(pages: Mapping[str, str], output: Path) -> None:
     for path in sorted(output.glob("*.md")):
         if path.name in pages:
             continue
-        if not path.read_text(encoding="utf-8").startswith(BANNER):
+        # A file this script wrote is UTF-8 and starts with the ASCII banner, so an
+        # undecodable byte is proof it is not ours. Replacing it keeps that verdict
+        # inside the ToolReferenceError funnel instead of raising UnicodeDecodeError.
+        if not path.read_text(encoding="utf-8", errors="replace").startswith(BANNER):
             raise ToolReferenceError(
                 f"{path} was not written by this script, so {output} is not a "
                 f"generated tree. Refusing to delete it; move it aside or point "

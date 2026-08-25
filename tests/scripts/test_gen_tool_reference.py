@@ -233,6 +233,22 @@ def test_writing_refuses_to_delete_a_page_it_did_not_write(tmp_path) -> None:
 
     assert str(hand_written) in str(error.value)
     assert hand_written.read_text(encoding="utf-8") == "# Architecture\n"
+    # The refusal has to happen before any page is written, or a run that ends in
+    # ToolReferenceError still leaves 35 generated pages in someone's directory.
+    assert list(tmp_path.iterdir()) == [hand_written]
+
+
+def test_writing_refuses_on_a_page_it_cannot_decode(tmp_path) -> None:
+    undecodable = tmp_path / "notes.md"
+    undecodable.write_bytes(b"\xff\xfe not utf-8\n")
+
+    with pytest.raises(gen_tool_reference.ToolReferenceError) as error:
+        gen_tool_reference.write_pages(
+            gen_tool_reference.render_pages(_records()), tmp_path
+        )
+
+    assert str(undecodable) in str(error.value)
+    assert list(tmp_path.iterdir()) == [undecodable]
 
 
 def test_check_mode_exits_one_on_a_stale_tree_and_names_the_fix(tmp_path, capsys) -> None:
