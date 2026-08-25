@@ -204,7 +204,15 @@ class HMCConfig(BaseSettings):
 
         Validation is unchanged: field validators and the model validator run
         exactly as they do for ``HMCConfig(...)``. Keys naming no field are
-        ignored, matching the ``extra="ignore"`` in ``model_config``.
+        ignored, matching the ``extra="ignore"`` in ``model_config``. A key whose
+        value is ``None`` is applied like any other — a nullable database column
+        arriving as ``None`` is a validation error for every field but
+        ``ssh_key_file`` and ``agent_id``, so omit the key rather than passing
+        ``None`` when the intent is "use the default".
+
+        ``model_fields_set`` reports the keys *values* supplied, not the full
+        field set, so ``model_dump(exclude_unset=True)`` round-trips and the
+        ``verify_ssl`` provenance in the TLS audit record stays accurate.
 
         Raises:
             ValueError: When *values* omits a field that has no default, which
@@ -228,7 +236,18 @@ class HMCConfig(BaseSettings):
             )
             for name, field in cls.model_fields.items()
         }
-        return cls(**explicit)
+        config = cls(**explicit)
+        # Passing every field explicitly is what closes the leak, but it would
+        # also report every field as caller-set. ``model_fields_set`` is a
+        # consumer-visible fact: ``model_dump(exclude_unset=True)`` reads it, and
+        # ``client._verify_ssl_source`` uses it to name where ``verify_ssl`` came
+        # from in the ``tls-verification-disabled`` audit record (#379), which
+        # would otherwise say ``explicit-argument`` for a value that came from the
+        # field default. Restore it to the keys the caller actually supplied.
+        object.__setattr__(
+            config, "__pydantic_fields_set__", set(values) & set(cls.model_fields)
+        )
+        return config
 
     @field_validator("iso_url_allowlist")
     @classmethod

@@ -135,6 +135,16 @@ mapping omits takes its declared default. Keys that name no field are ignored
 `id`, `name`, or other columns can be passed as-is. Validation is unchanged —
 field validators and the `HMC_AGENT_ID` grammar check still run.
 
+Two properties worth knowing when the mapping is a database row:
+
+- **A key present with a `None` value is applied, not treated as absent.** A
+  nullable column arriving as SQL `NULL` is a validation error for every field
+  except `ssh_key_file` and `agent_id`. Drop the key when the intent is "use the
+  default": `{k: v for k, v in row.items() if v is not None}`.
+- **`model_fields_set` reports the keys the mapping supplied**, so
+  `config.model_dump(exclude_unset=True)` round-trips back to the settings the
+  row actually named.
+
 The **exhaustive** list of fields the environment can supply is the
 [Reference](#reference) table above: every row except `HMC_PROFILE` names an
 `HMCConfig` field, and every `HMCConfig` field has a row. `HMC_PROFILE` is read

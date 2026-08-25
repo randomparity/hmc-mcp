@@ -1009,6 +1009,51 @@ def test_from_mapping_runs_model_validators_once(monkeypatch):
     assert cfg.effective_audit_memento == "hmc-mcp:row-agent"
 
 
+def test_from_mapping_reports_only_the_supplied_keys_as_set():
+    """model_fields_set must mean "the caller set this", not "from_mapping did".
+
+    Passing every field explicitly is what closes the env leak, but it would
+    also mark every field as caller-set. That is consumer-visible through
+    ``model_dump(exclude_unset=True)`` and, more sharply, through
+    ``client._verify_ssl_source``, which reads ``model_fields_set`` to name
+    where ``verify_ssl`` came from in the #379 TLS audit record.
+    """
+    cfg = HMCConfig.from_mapping(
+        {"host": "row-host.example.com", "user": "rowuser", "id": 7}
+    )
+
+    assert cfg.model_fields_set == {"host", "user"}
+    assert cfg.model_dump(exclude_unset=True) == {
+        "host": "row-host.example.com",
+        "user": "rowuser",
+    }
+
+
+def test_from_mapping_keeps_the_tls_audit_provenance_accurate(monkeypatch):
+    """#379's `source` names the knob to turn; from_mapping must not lie about it.
+
+    Without the ``model_fields_set`` restoration this reports
+    ``explicit-argument`` for a value nobody supplied, pointing an operator at
+    an argument that does not exist.
+    """
+    from hmc_mcp.client import _verify_ssl_source
+
+    monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
+
+    assert _verify_ssl_source(HMCConfig.from_mapping({"host": "h"})) == "field-default"
+    assert (
+        _verify_ssl_source(HMCConfig.from_mapping({"host": "h", "verify_ssl": False}))
+        == "explicit-argument"
+    )
+
+
+def test_from_mapping_applies_a_none_value_rather_than_defaulting():
+    """A NULL column is a value, not an omission — it must not silently default."""
+    assert HMCConfig.from_mapping({"ssh_key_file": None}).ssh_key_file is None
+    with pytest.raises(ValueError, match="host"):
+        HMCConfig.from_mapping({"host": None})
+
+
 def test_from_mapping_returns_a_plain_hmcconfig():
     """Not a private subclass: ``type()`` and pydantic equality both have to hold."""
     cfg = HMCConfig.from_mapping({"host": "row-host.example.com"})
