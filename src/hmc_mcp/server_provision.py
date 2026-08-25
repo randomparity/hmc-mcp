@@ -8,6 +8,7 @@ from ._app import _run
 from .common import client_from_env
 from .documents import LparResources, PartitionType
 from .operations_provision import (
+    ProvisionAffinityAssessment,
     ProvisionNetwork,
     ProvisionResult,
     ProvisionStorage,
@@ -56,6 +57,7 @@ def hmc_provision_lpar(
     assignments: LparPcieAssignments = LparPcieAssignments(),
     caller_token: str | None = None,
     minimum_affinity_policy: MinimumAffinityPolicy | None = None,
+    affinity_assessment: ProvisionAffinityAssessment | None = None,
     profile: str | None = None,
 ) -> ProvisionResult:
     """Provision an LPAR with network, vSCSI storage, and optional power-on.
@@ -75,6 +77,9 @@ def hmc_provision_lpar(
             1–64 printable ASCII characters, no whitespace or , = " [ ] \\.
         minimum_affinity_policy: Optional POWER11 score and deliberately selected
             action. Omission preserves HMC defaults; ``fail`` is never implicit.
+        affinity_assessment: Optional target-bound captured evidence and explicit
+            warning or fail response. Assessment waits for successful activation;
+            omission preserves asynchronous power-on behavior.
         profile: Optional TOML profile name; uses environment defaults when omitted.
 
     Returns:
@@ -103,6 +108,7 @@ def hmc_provision_lpar(
                 assignments=assignments,
                 caller_token=caller_token,
                 minimum_affinity_policy=minimum_affinity_policy,
+                affinity_assessment=affinity_assessment,
             )
 
     return _run(_go)
