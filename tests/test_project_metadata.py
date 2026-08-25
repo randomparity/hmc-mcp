@@ -59,11 +59,20 @@ def test_readme_links_canonical_governance_files() -> None:
 
 def test_readme_documents_the_typed_facade_and_its_covered_surface() -> None:
     readme = (ROOT / "README.md").read_text()
-    library = readme.split("## Reusable Python API", 1)[1].split("## Configure", 1)[0]
+    library = " ".join(
+        readme.split("## Reusable Python API", 1)[1].split("## Configure", 1)[0].split()
+    )
 
     assert "PEP 561" in library
     assert "py.typed" in library
-    for covered in ("dataclass", "literal alias", "signature"):
+    # ADR 0029's own terms for the supported surface, so the note cannot drift
+    # into claiming a narrower or wider contract than the ADR defines.
+    for covered in (
+        "call signature",
+        "package-owned model",
+        "exception type",
+        "enum and literal alias",
+    ):
         assert covered in library
 
 
