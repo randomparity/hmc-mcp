@@ -198,9 +198,11 @@ template on purpose. To find malformed calls, filter
 
 ## Attribution is never identity
 
-`verified` is always `false` on both records, and neither value influences an
-authorization decision at the dispatch boundary. Where they come from differs, and the
-`source` field is what tells you which you are reading.
+`attribution` appears on the `authorization` and `ownership-override` records and
+nowhere else — the sink's own marker and the TLS record carry none. `verified` is always
+`false` on it, and neither value influences an authorization decision at the dispatch
+boundary. Where they come from differs, and the `source` field is what tells you which
+you are reading.
 
 **`source: "environment:HMC_AGENT_ID"`** — on the `authorization` record. Read straight
 from the server process's environment at emission.
@@ -230,8 +232,8 @@ than the value's authority everywhere.
 
 ## Routing, levels, and silencing
 
-Records go to the `hmc_mcp.audit` logger. Denials and ownership overrides are
-`WARNING`; permits are `INFO`.
+Records go to the `hmc_mcp.audit` logger. Denials, ownership overrides and
+TLS-verification records are `WARNING`; permits are `INFO`.
 
 Importing `hmc_mcp.audit` sets `propagate = False`, so no ancestor handler receives
 audit records — including on the in-process path, where an embedder composes an
@@ -247,8 +249,13 @@ defers to a handler that is already there and will not add a second.
 > for the same reason.
 
 > To set the level from the command line, pass `--audit-level LEVEL` to `hmc-mcp serve`:
-> `DEBUG` and `INFO` keep both records, `WARNING` keeps denials only, and `ERROR` or
-> `CRITICAL` silences the stream. The name is validated — a misspelling is a usage error
+> `DEBUG` and `INFO` keep everything the logger emits, `WARNING` drops permits and keeps
+> the rest — denials, ownership overrides and TLS-verification records — and `ERROR` or
+> `CRITICAL` silences the stream. Read `WARNING` as a volume floor rather than a quiet
+> setting: on a server left at the insecure `HMC_VERIFY_SSL` default it still carries one
+> TLS record per tool call, which the deduplication advice above applies to. The
+> `records-dropped` marker survives every setting, since it comes from the sink rather
+> than the logger. The name is validated — a misspelling is a usage error
 > that starts nothing. Omitted, the shipped sink's own `INFO` default stands. An in-process
 > caller keeps configuring the logger directly, before calling `main_stdio` / `main_http`.
 
