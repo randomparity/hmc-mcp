@@ -248,9 +248,10 @@ def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
         "env-vars",
         "nicknames",
         "tool-docs-check",
+        "adr-numbering",
     ):
         assert f"entry: just {recipe}" in config
-    assert config.count("pass_filenames: false") == 7
+    assert config.count("pass_filenames: false") == 8
     assert "entry: uv run" not in config
 
 
