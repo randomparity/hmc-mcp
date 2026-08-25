@@ -344,13 +344,103 @@ def _collect_owned_types(hint: object, owned: dict[tuple[str, str], object]) -> 
         owned[(module_name, type_name)] = hint
 
 
-def _annotation_names(annotation: str) -> set[str]:
-    """Every non-underscore bare identifier an annotation's source text refers to."""
+def _attribute_path(node: ast.Attribute) -> tuple[str, ...] | None:
+    """``jobs.RemoteRestartOperation`` -> ``("jobs", "RemoteRestartOperation")``."""
+    parts: list[str] = []
+    current: ast.expr = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return None
+    parts.append(current.id)
+    return tuple(reversed(parts))
+
+
+def _annotation_paths(annotation: str) -> set[tuple[str, ...]]:
+    """Every dotted path an annotation's source text refers to.
+
+    ``jobs.RemoteRestartOperation`` names an alias as surely as a bare
+    ``RemoteRestartOperation`` does, and a quoted forward reference hides one inside a
+    string literal, so both are walked. Underscore segments are internal and dropped.
+    """
+    paths: set[tuple[str, ...]] = set()
+    for node in ast.walk(ast.parse(annotation, mode="eval")):
+        if isinstance(node, ast.Name):
+            paths.add((node.id,))
+        elif isinstance(node, ast.Attribute):
+            path = _attribute_path(node)
+            if path is not None:
+                paths.add(path)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            paths |= _annotation_paths(node.value)
+    return {path for path in paths if not any(s.startswith("_") for s in path)}
+
+
+def _literal_alias(
+    namespace: dict[str, object], path: tuple[str, ...]
+) -> object | None:
+    """Resolve a dotted path in a namespace, keeping only what is a literal alias.
+
+    ``Annotated[Literal[...], ...]`` is unwrapped first: the metadata is decoration and
+    the alias underneath is what ADR 0029's literal clause is about.
+    """
+    value: object | None = namespace.get(path[0])
+    for segment in path[1:]:
+        value = getattr(value, segment, None)
+    if getattr(value, "__metadata__", None) is not None:
+        value = get_args(value)[0]
+    return value if get_origin(value) is Literal else None
+
+
+@functools.cache
+def _module_import_bindings(module: ModuleType) -> dict[str, str]:
+    """``name -> source module`` for every ``from ... import`` in a module's source."""
+    if getattr(module, "__file__", None) is None:
+        return {}
+    tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
     return {
-        node.id
-        for node in ast.walk(ast.parse(annotation, mode="eval"))
-        if isinstance(node, ast.Name) and not node.id.startswith("_")
+        alias.asname or alias.name: (
+            f"hmc_mcp.{node.module}" if node.level else node.module
+        )
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+        for alias in node.names
     }
+
+
+def _defining_module(module: ModuleType, name: str) -> str | None:
+    """Follow ``from ... import`` bindings to the module that defines a bare name.
+
+    A literal alias is a plain assignment with no ``__module__`` to read, so its owner
+    is recovered from the import statements instead, keeping the type clause keyed by
+    the defining module the way the resolved-hint walk already is. ``None`` means the
+    name entered from outside the package, and ADR 0029 makes an imported transport
+    type no facade export.
+    """
+    seen: set[str] = set()
+    while module.__name__ not in seen:
+        seen.add(module.__name__)
+        origin = _module_import_bindings(module).get(name)
+        if origin is None:
+            break
+        if origin != "hmc_mcp" and not origin.startswith("hmc_mcp."):
+            return None
+        module = import_module(origin)
+    owner = module.__name__
+    return owner if owner == "hmc_mcp" or owner.startswith("hmc_mcp.") else None
+
+
+def _alias_owner(module: ModuleType, path: tuple[str, ...]) -> str | None:
+    """The module defining the alias a dotted path names, or ``None`` if outside."""
+    if len(path) == 1:
+        return _defining_module(module, path[0])
+    container: object = module
+    for segment in path[:-1]:
+        container = getattr(container, segment, None)
+    if not isinstance(container, ModuleType):
+        return None
+    return _defining_module(container, path[-1])
 
 
 def _owned_literal_aliases(
@@ -360,21 +450,23 @@ def _owned_literal_aliases(
 
     ``get_type_hints`` evaluates ``PcmCategory`` down to ``Literal["ManagedSystem",
     ...]`` and the alias's name is gone with it, so the walk above cannot see one.
-    Every ``operations_*`` module uses ``from __future__ import annotations``, which
-    leaves the raw annotation as source text: parse it, resolve each bare name in the
-    module that carries the operation, and keep whatever is a literal alias.
+    Every ``operations_*`` module carries ``from __future__ import annotations``, which
+    leaves the raw annotation as source text — asserted below rather than assumed,
+    because a module without it would drop out of this clause entirely.
     """
     aliases: dict[tuple[str, str], object] = {}
     for module_name, name in selected:
-        namespace = vars(modules[module_name])
-        annotations = inspect.get_annotations(getattr(modules[module_name], name))
-        for annotation in annotations.values():
-            if not isinstance(annotation, str):
-                continue
-            for referenced in _annotation_names(annotation):
-                value = namespace.get(referenced)
-                if get_origin(value) is Literal:
-                    aliases[(module_name, referenced)] = value
+        module = modules[module_name]
+        for annotation in inspect.get_annotations(getattr(module, name)).values():
+            assert isinstance(annotation, str), (
+                f"{module_name}.{name} has an evaluated annotation; ADR 0029's "
+                "literal-alias clause needs `from __future__ import annotations`"
+            )
+            for path in _annotation_paths(annotation):
+                value = _literal_alias(vars(module), path)
+                owner = _alias_owner(module, path) if value is not None else None
+                if owner is not None:
+                    aliases[(owner, path[-1])] = value
     return aliases
 
 
@@ -504,6 +596,8 @@ class SyntheticResult:
     value: str
 
 
+# Reassigned after ``@dataclass`` runs, not before: the decorator resolves field types
+# through ``sys.modules[cls.__module__]`` and would fail on a name that is not one.
 SyntheticResult.__module__ = "hmc_mcp.operations_typed"
 SyntheticFlavour = Literal["thin", "thick"]
 
@@ -570,9 +664,42 @@ def test_owned_type_walk_reaches_nested_and_callable_annotations() -> None:
     _collect_owned_types(list[pcm_resource | None], collected)
     # A ``Callable`` parameter list is a plain list, not a subscripted generic.
     _collect_owned_types(Callable[[pcm_resource], None], collected)
-    # An opaque HMC payload mapping and an underscore-private type contribute nothing.
+    # An opaque HMC payload mapping contributes nothing.
     _collect_owned_types(dict[str, object], collected)
+    # Nor does an underscore-private owned type: ADR 0029 keeps it internal.
+    _collect_owned_types(
+        type("_Internal", (), {"__module__": "hmc_mcp.operations_pcm"}), collected
+    )
+    # Nor a ``TypeVar``, which names no type; its bound is walked in its place.
+    _collect_owned_types(TypeVar("Bound", bound=pcm_resource), collected)
     assert collected == {("hmc_mcp.operations_pcm", "PcmResource"): pcm_resource}
+
+
+def test_literal_alias_clause_reads_paths_the_resolved_hints_lose(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The alias half must see what ``get_type_hints`` erases, however it is written.
+
+    A dotted reference and a quoted forward reference each name an alias as surely as
+    a bare name does. Both are attributed to the module that *defines* the alias, not
+    the one whose operation consumes it: ``operations_lpm`` names
+    ``RemoteRestartOperation`` and ``jobs`` owns it.
+    """
+    lpm = import_module("hmc_mcp.operations_lpm")
+    jobs = import_module("hmc_mcp.jobs")
+
+    async def dotted(hmc: object, operation: jobs.RemoteRestartOperation) -> None: ...
+
+    async def quoted(hmc: object, operation: "RemoteRestartOperation") -> None: ...  # noqa: F821
+
+    for operation in (dotted, quoted):
+        operation.__module__ = lpm.__name__
+        monkeypatch.setattr(lpm, operation.__name__, operation, raising=False)
+    monkeypatch.setattr(lpm, "jobs", jobs, raising=False)
+
+    assert _owned_literal_aliases(
+        {(lpm.__name__, "dotted"), (lpm.__name__, "quoted")}, {lpm.__name__: lpm}
+    ) == {("hmc_mcp.jobs", "RemoteRestartOperation"): api.RemoteRestartOperation}
 
 
 def _unselectable_shape(module_name: str, name: str, value: object) -> str | None:
@@ -736,9 +863,8 @@ def _inventory_entries() -> dict[str, str]:
             )
             if not in_note:
                 entries[current] += " " + line.strip()
-        else:
-            assert not line.strip(), f"ADR 0029 has stray inventory text: {line!r}"
-            current, in_note = None, False
+        elif line.strip():
+            raise AssertionError(f"ADR 0029 has stray inventory text: {line!r}")
 
     assert list(entries) == sorted(entries), "ADR 0029's inventory is not in order"
     return entries
@@ -760,7 +886,7 @@ def _adr_0029_inventory() -> dict[str, dict[str, list[str]]]:
     inventory: dict[str, dict[str, list[str]]] = {}
     for module, text in _inventory_entries().items():
         clauses: dict[str, list[str]] = {}
-        for chunk in text.rstrip(".").split("; "):
+        for chunk in text.strip().rstrip(".").split("; "):
             match = _INVENTORY_CLAUSE.match(chunk.strip())
             assert match is not None, (
                 f"ADR 0029's {module} entry has an unlabelled clause {chunk!r}"

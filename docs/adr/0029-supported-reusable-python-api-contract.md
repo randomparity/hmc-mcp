@@ -233,14 +233,18 @@ The type half is mechanised the same way: a second test resolves each selected o
 annotations with `typing.get_type_hints`, collects every `hmc_mcp`-owned type they name — through
 containers, unions, and `Callable` parameter lists — and fails when one is not in `__all__` and
 bound on `hmc_mcp.api` under that name, unless an exclusion cites this ADR. `get_type_hints`
-evaluates a literal alias down to its value set and loses the alias's name, so that clause is
-read from the annotation source text instead: each `operations_*` module carries `from __future__
-import annotations`, so a bare name in a raw annotation can be resolved in its module and kept
-when it turns out to be a literal alias. `PcmResource` and `RemoteRestartOperation` were the two
-omissions the two halves found. An opaque HMC payload mapping owns no `hmc_mcp` type and so is
-excluded by construction. Two limits are deliberate: the walk covers the types an operation
-*names*, not those reachable only through an exported model's own fields (#482), and an
-underscore name is internal here as everywhere.
+evaluates a literal alias down to its value set and loses the alias's name, so that clause is read
+from the annotation source text instead. Each `operations_*` module carries `from __future__
+import annotations` — asserted, not assumed, because a module without it would drop out of this
+clause — which leaves every annotation as source: a bare name, a dotted reference, and a quoted
+forward reference are all resolved in the module that carries the operation, `Annotated` metadata
+is unwrapped, and whatever turns out to be a literal alias is kept. Both halves key on the module
+that *defines* a type, which for an alias is recovered by following the `from ... import`
+statements that bound the name, so an alias arriving from outside the package is not a facade
+export. `PcmResource` and `RemoteRestartOperation` were the two omissions the two halves found. An
+opaque HMC payload mapping owns no `hmc_mcp` type and so is excluded by construction. Two limits
+are deliberate: the walk covers the types an operation *names*, not those reachable only through
+an exported model's own fields (#482), and an underscore name is internal here as everywhere.
 
 A third test parses the inventory above and asserts each clause against the facade's own import
 statements and the modules' contents, rejecting any other text inside the fence rather than
