@@ -233,9 +233,10 @@ def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
         "workflow-security",
         "env-vars",
         "nicknames",
+        "tool-docs-check",
     ):
         assert f"entry: just {recipe}" in config
-    assert config.count("pass_filenames: false") == 6
+    assert config.count("pass_filenames: false") == 7
     assert "entry: uv run" not in config
 
 

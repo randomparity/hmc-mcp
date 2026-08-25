@@ -31,3 +31,8 @@ repos:
         entry: just nicknames
         language: system
         pass_filenames: false
+      - id: tool-docs
+        name: Generated tool reference guard
+        entry: just tool-docs-check
+        language: system
+        pass_filenames: false

@@ -147,6 +147,15 @@ def test_grouping_is_a_parameter_not_a_hardcoded_domain() -> None:
     assert set(pages) == {"read.md", "destructive.md", "index.md"}
 
 
+def test_a_group_named_index_raises_instead_of_losing_its_page() -> None:
+    with pytest.raises(gen_tool_reference.ToolReferenceError) as error:
+        gen_tool_reference.render_pages(
+            _records(), group_key=lambda record: "index"
+        )
+
+    assert "index.md" in str(error.value)
+
+
 def test_every_page_carries_the_banner_and_the_registered_set_decision() -> None:
     pages = gen_tool_reference.render_pages(_records())
 
@@ -195,6 +204,35 @@ def test_writing_removes_a_page_the_generator_no_longer_emits(tmp_path) -> None:
 
     assert not (tmp_path / "beta.md").exists()
     assert (tmp_path / "alpha.md").exists()
+
+
+def test_check_caps_the_full_diffs_but_still_names_every_stale_page(tmp_path) -> None:
+    cap = gen_tool_reference._MAX_DIFFS
+    pages = {
+        f"page{index}.md": f"{gen_tool_reference.BANNER}\ngenerated {index}\n"
+        for index in range(cap + 2)
+    }
+    gen_tool_reference.write_pages(pages, tmp_path)
+    for name in pages:
+        (tmp_path / name).write_text("hand-edited\n", encoding="utf-8")
+
+    problems = gen_tool_reference.check_pages(pages, tmp_path)
+
+    assert len(problems) == len(pages)
+    assert sum("hand-edited" in problem for problem in problems) == cap
+
+
+def test_writing_refuses_to_delete_a_page_it_did_not_write(tmp_path) -> None:
+    hand_written = tmp_path / "architecture.md"
+    hand_written.write_text("# Architecture\n", encoding="utf-8")
+
+    with pytest.raises(gen_tool_reference.ToolReferenceError) as error:
+        gen_tool_reference.write_pages(
+            gen_tool_reference.render_pages(_records()), tmp_path
+        )
+
+    assert str(hand_written) in str(error.value)
+    assert hand_written.read_text(encoding="utf-8") == "# Architecture\n"
 
 
 def test_check_mode_exits_one_on_a_stale_tree_and_names_the_fix(tmp_path, capsys) -> None:

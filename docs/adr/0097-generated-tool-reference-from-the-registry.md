@@ -73,7 +73,9 @@ Six decisions inside that:
   find a tool.
 
 - **Grouping is a parameter, not a rule.** `render_pages(records, *, group_key=...)`
-  takes the grouping function; `domain_of` is the default. The tool count is itself
+  takes the grouping function, defaulting to the record's operation domain. A group
+  that would be named `index` raises rather than having its page silently overwritten
+  by the index page. The tool count is itself
   a known concern and workflow tools that hide low-level ones are planned, so when a
   `tier` field arrives the change is a different `group_key`, not a rewrite of the
   renderer. **No such field is added here.** The default derives the domain by
@@ -106,7 +108,9 @@ Six decisions inside that:
   which is the difference between "regenerate and commit" and reading a build log.
   The recipe is the single source of truth; only its invocation is duplicated,
   which is what `CLAUDE.md` asks of hooks and CI alike. Membership in `static` is
-  what keeps a local `just verify` honest.
+  what keeps a local `just verify` honest, and a prek hook — one per `static`
+  member, as every other gate already has — is what makes the drift a failed commit
+  rather than a failed CI run twenty minutes later.
 
 ## Consequences
 
@@ -124,8 +128,11 @@ Six decisions inside that:
   second is a failed check rather than a silent omission. `just tool-docs` is the
   whole remedy and the failure message says so.
 - The reference is 35 files where it was one section. Renaming a domain renames a
-  page; `write_pages` deletes Markdown files it no longer emits, so the directory
-  cannot accumulate orphans, and `--check` reports one it finds.
+  page; `write_pages` deletes the pages it emitted before and no longer emits, so
+  the directory cannot accumulate orphans, and `--check` reports one it finds. It
+  identifies its own output by the banner and **raises** rather than deleting a
+  Markdown file it did not write, so a mistaken `--output` cannot destroy
+  hand-written documentation.
 - Descriptions are now whatever the docstring's first line says. A vague first line
   is now a documentation defect with a visible blast radius, which is the intended
   pressure.
