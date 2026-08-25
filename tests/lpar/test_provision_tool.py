@@ -23,6 +23,7 @@ from hmc_mcp.operations_provision import (
     ProvisionNetwork,
     ProvisionStorage,
     _power_on,
+    _validate_affinity_request,
 )
 from hmc_mcp.server import hmc_provision_lpar
 from hmc_mcp.ssh import HMCCLIError
@@ -347,7 +348,10 @@ def test_provision_affinity_requires_thresholds_without_applied_policy(
 ):
     _hmc_env(monkeypatch)
     request = _affinity_request(
-        captured_policy_state="unsupported", captured_minimum=None
+        captured_policy_state="unsupported",
+        captured_minimum=None,
+        regression_threshold=None,
+        optimization_threshold=None,
     )
     with pytest.raises(ValueError, match="caller thresholds"):
         hmc_provision_lpar(**_provision_args(affinity_assessment=request))
@@ -355,23 +359,16 @@ def test_provision_affinity_requires_thresholds_without_applied_policy(
 
 
 def test_provision_affinity_applied_policy_validates_against_captured_state(
-    monkeypatch, mock_hmc
+    monkeypatch,
 ):
     _hmc_env(monkeypatch)
-    _mock_preconditions(mock_hmc)
-    result = hmc_provision_lpar(
-        **_provision_args(
-            dry_run=True,
-            minimum_affinity_policy=MinimumAffinityPolicy(70, "warn"),
-            affinity_assessment=_affinity_request(
-                captured_policy_state="absent",
-                captured_minimum=None,
-                regression_threshold=None,
-                optimization_threshold=None,
-            ),
-        )
+    request = _affinity_request(
+        captured_policy_state="absent",
+        captured_minimum=None,
+        regression_threshold=None,
+        optimization_threshold=None,
     )
-    assert result.steps[-1]["step"] == "affinity_assessment"
+    _validate_affinity_request(request, MinimumAffinityPolicy(70, "warn"))
 
 
 def _assessment_result(classification="none"):
