@@ -16,7 +16,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
-from typing import Literal, TypeVar, get_args, get_origin, get_type_hints
+from typing import Annotated, Literal, TypeVar, get_args, get_origin, get_type_hints
 
 import pytest
 
@@ -420,15 +420,14 @@ def _defining_module(module: ModuleType, name: str) -> str | None:
     """
     seen: set[str] = set()
     while module.__name__ not in seen:
+        if not module.__name__.startswith("hmc_mcp"):
+            return None
         seen.add(module.__name__)
         origin = _module_import_bindings(module).get(name)
         if origin is None:
-            break
-        if origin != "hmc_mcp" and not origin.startswith("hmc_mcp."):
-            return None
+            return module.__name__
         module = import_module(origin)
-    owner = module.__name__
-    return owner if owner == "hmc_mcp" or owner.startswith("hmc_mcp.") else None
+    return module.__name__
 
 
 def _alias_owner(module: ModuleType, path: tuple[str, ...]) -> str | None:
@@ -670,9 +669,12 @@ def test_owned_type_walk_reaches_nested_and_callable_annotations() -> None:
     _collect_owned_types(
         type("_Internal", (), {"__module__": "hmc_mcp.operations_pcm"}), collected
     )
-    # Nor a ``TypeVar``, which names no type; its bound is walked in its place.
-    _collect_owned_types(TypeVar("Bound", bound=pcm_resource), collected)
     assert collected == {("hmc_mcp.operations_pcm", "PcmResource"): pcm_resource}
+
+    # A ``TypeVar`` names no type either; its bound is walked in its place.
+    from_bound: dict[tuple[str, str], object] = {}
+    _collect_owned_types(TypeVar("Bound", bound=pcm_resource), from_bound)
+    assert from_bound == collected
 
 
 def test_literal_alias_clause_reads_paths_the_resolved_hints_lose(
@@ -697,9 +699,41 @@ def test_literal_alias_clause_reads_paths_the_resolved_hints_lose(
         monkeypatch.setattr(lpm, operation.__name__, operation, raising=False)
     monkeypatch.setattr(lpm, "jobs", jobs, raising=False)
 
-    assert _owned_literal_aliases(
-        {(lpm.__name__, "dotted"), (lpm.__name__, "quoted")}, {lpm.__name__: lpm}
-    ) == {("hmc_mcp.jobs", "RemoteRestartOperation"): api.RemoteRestartOperation}
+    # Each form is checked alone: together, either one would cover for the other.
+    for name in ("dotted", "quoted"):
+        assert _owned_literal_aliases({(lpm.__name__, name)}, {lpm.__name__: lpm}) == {
+            ("hmc_mcp.jobs", "RemoteRestartOperation"): api.RemoteRestartOperation
+        }, name
+
+
+def test_literal_alias_clause_unwraps_annotated_and_stops_at_the_package_edge() -> None:
+    decorated = Annotated[Literal["thin", "thick"], "decoration"]
+    namespace: dict[str, object] = {"Decorated": decorated, "Plain": SyntheticFlavour}
+    assert _literal_alias(namespace, ("Decorated",)) is SyntheticFlavour
+    assert _literal_alias(namespace, ("Plain",)) is SyntheticFlavour
+    assert _literal_alias(namespace, ("Absent",)) is None
+
+    # An alias a module imports from outside the package is no facade export:
+    # ``operations_pcm`` takes ``Literal`` itself from ``typing``.
+    pcm = import_module("hmc_mcp.operations_pcm")
+    assert _defining_module(pcm, "Literal") is None
+    assert _defining_module(pcm, "PcmCategory") == "hmc_mcp.operations_pcm"
+
+
+def test_literal_alias_clause_rejects_an_evaluated_annotation() -> None:
+    """The clause rests on the future import; a module without it must not go quiet."""
+    module = ModuleType("hmc_mcp.operations_evaluated")
+
+    async def evaluated(hmc: object) -> None: ...
+
+    evaluated.__module__ = module.__name__
+    evaluated.__annotations__ = {"return": None}
+    module.evaluated = evaluated  # type: ignore[attr-defined]
+
+    with pytest.raises(AssertionError, match="from __future__ import annotations"):
+        _owned_literal_aliases(
+            {(module.__name__, "evaluated")}, {module.__name__: module}
+        )
 
 
 def _unselectable_shape(module_name: str, name: str, value: object) -> str | None:
