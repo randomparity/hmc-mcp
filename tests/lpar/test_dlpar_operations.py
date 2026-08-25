@@ -501,6 +501,7 @@ async def test_discovery_reports_frames_it_could_not_read(mock_hmc):
     positive UUID match — but a degraded fleet must read as degraded rather
     than as an absent partition.
     """
+    _mock_lpar_detail(mock_hmc)
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
         return_value=httpx.Response(
             200,
@@ -568,6 +569,7 @@ async def test_an_unhealthy_frame_does_not_block_a_healthy_one(mock_hmc):
 @pytest.mark.asyncio
 async def test_discovery_rejects_an_oversized_fleet(mock_hmc):
     """The fan-out cap names the fleet size, not a partition-name ambiguity."""
+    _mock_lpar_detail(mock_hmc)
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
         return_value=httpx.Response(
             200,
@@ -602,6 +604,7 @@ async def test_discovery_translates_its_own_timeout(mock_hmc, monkeypatch):
     The delay sits on the HMC boundary rather than on a zero-second deadline,
     which would race the mock transport and flake either way.
     """
+    _mock_lpar_detail(mock_hmc)
     monkeypatch.setattr(
         "hmc_mcp.operations_lpar.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0.01
     )
@@ -660,6 +663,125 @@ async def test_a_partition_uuid_off_the_selected_system_is_rejected(
 
 
 @pytest.mark.asyncio
+async def test_an_unknown_partition_uuid_never_reaches_the_fleet_walk(mock_hmc):
+    """``is_uuid`` is a format check, so existence is confirmed before the walk.
+
+    Without the precheck one caller-supplied string that names no partition
+    drives up to a hundred full partition-feed reads before failing — cheap,
+    caller-controlled amplification against a capacity-limited appliance.
+    Registering no fleet route is the assertion.
+    """
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(404, text="<error>no such partition</error>")
+    )
+    route = _mock_modify(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises((ValueError, HMCError)):
+            await set_lpar_processors(
+                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+            )
+
+    assert not route.called
+
+
+@pytest.mark.asyncio
+async def test_a_nameless_partition_is_rejected_before_the_fleet_walk(mock_hmc):
+    """A resource that parses but names no partition also stops before the walk."""
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<entry xmlns="http://www.w3.org/2005/Atom">'
+                f"<id>urn:uuid:{LPAR_UUID}</id>"
+                '<content type="application/vnd.ibm.powervm.uom+xml">'
+                '<LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/'
+                'firmware/uom/mc/2012_10/"><PartitionState>running</PartitionState>'
+                "</LogicalPartition></content></entry>"
+            ),
+        )
+    )
+    route = _mock_modify(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="No LPAR"):
+            await set_lpar_processors(
+                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+            )
+
+    assert not route.called
+
+
+@pytest.mark.parametrize("operation", [set_lpar_processors, set_lpar_memory])
+@pytest.mark.asyncio
+async def test_a_partition_name_is_not_re_read_for_containment(mock_hmc, operation):
+    """A name resolved against the system's feed needs no second read of it.
+
+    ``find_partition_by_name`` scoped to the system *is* that feed, so the
+    containment question is already answered; re-fetching the largest payload
+    in the guarded chain would answer it twice.
+    """
+    _mock_lpar_detail(mock_hmc)
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(
+            200, text=SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name=SYSTEM_NAME)
+        )
+    )
+    feed = mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=_feed(LPAR_ENTRY.format(uuid=LPAR_UUID, name=LPAR_NAME))
+        )
+    )
+    route = _mock_modify(mock_hmc)
+
+    with patch(
+        "hmc_mcp.operations_lpar.get_lpar_description", new=_owned_by("hmc-mcp")
+    ):
+        async with HMCClient(make_config()) as hmc:
+            await operation(
+                hmc,
+                LPAR_NAME,
+                LparResources(desired_procs=1.0, desired_memory=1024),
+                system_name_or_uuid=SYSTEM_UUID,
+            )
+
+    assert route.called
+    assert feed.call_count == 1
+
+
+@pytest.mark.parametrize("operation", [set_lpar_processors, set_lpar_memory])
+@pytest.mark.asyncio
+async def test_an_unreadable_containment_feed_names_the_retry(mock_hmc, operation):
+    """The one guarded read with no selector remedy still says what to do."""
+    _mock_lpar_detail(mock_hmc)
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(
+            200, text=SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name=SYSTEM_NAME)
+        )
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(500, text="<error>feed down</error>")
+    )
+    route = _mock_modify(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="Cannot confirm LPAR") as info:
+            await operation(
+                hmc,
+                LPAR_UUID,
+                LparResources(desired_procs=1.0, desired_memory=1024),
+                system_name_or_uuid=SYSTEM_UUID,
+            )
+
+    assert "retry" in str(info.value)
+    assert isinstance(info.value.__cause__, HMCError)
+    assert not route.called
+
+
+@pytest.mark.asyncio
 async def test_an_unavailable_fleet_inventory_names_the_operator_remedy(mock_hmc):
     """A firmware-fragile inventory read still points at the selector.
 
@@ -668,6 +790,7 @@ async def test_an_unavailable_fleet_inventory_names_the_operator_remedy(mock_hmc
     nothing — so the one degraded dependency the selector actually fixes must
     not be the one failure that never mentions it.
     """
+    _mock_lpar_detail(mock_hmc)
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
         return_value=httpx.Response(503, text="<error>inventory offline</error>")
     )
@@ -687,6 +810,7 @@ async def test_an_unavailable_fleet_inventory_names_the_operator_remedy(mock_hmc
 @pytest.mark.asyncio
 async def test_undiscoverable_system_names_the_operator_remedy(mock_hmc):
     """No owning system found: the error names the selector that fixes it."""
+    _mock_lpar_detail(mock_hmc)
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
         return_value=httpx.Response(
             200, text=_feed(SYSTEM_ENTRY.format(uuid=OTHER_SYSTEM_UUID, name="server0"))

@@ -81,7 +81,25 @@ ADR 0039 actively recommends UUIDs in policy `lpar` allowlists, so "a partition
 UUID paired with a managed-system selector" is the *recommended* input shape.
 `_verify_partition_on_system` therefore reads the selected system's partition
 feed and rejects a UUID that is not in it, before the guard runs. One REST read,
-against an operation that already pays an SSH login.
+against an operation that already pays an SSH login — and only for a UUID: a
+partition *name* was resolved through `find_partition_by_name` against that same
+feed, so its containment is already established and re-reading the largest
+payload in the guarded chain would answer a settled question. That read is the
+one guarded lookup with no selector remedy to offer, since the selector was
+supplied, so its failure names *retry* explicitly rather than propagating raw.
+
+**A UUID is checked for existence before the walk, not after.** `is_uuid` is a
+format check: nothing upstream of `_discover_owning_system` establishes that a
+canonical UUID names a partition, or anything at all. Without a precheck a single
+caller-supplied string that matches nothing drives the worst case by
+construction — up to `MAX_PARENT_DISCOVERY_SYSTEMS` full partition feeds — which
+is cheap, caller-controlled request amplification against a capacity-limited
+management appliance, and reports "no managed system reports it; supply
+managed-system scope" for what is really a stale or mistyped UUID. The chain
+already reads that partition for its CLI name, so the read is *moved* ahead of the
+walk rather than added, and the selector-less branch no longer calls
+`resolve_lpar_ownership_names` at all — discovery already returned the system
+name, so that branch now makes one REST call fewer than before.
 
 `rename_lpar`, `delete_lpar` and the PCIe/SR-IOV resolve chain share the
 unchecked shape. They are not changed here — this ADR governs the two operations

@@ -21,7 +21,7 @@ from .client_resolution import (
     MAX_PARENT_DISCOVERY_SYSTEMS,
     PARENT_DISCOVERY_TIMEOUT_SECONDS,
 )
-from .common import resolve_lpar_uuid, resolve_system_uuid
+from .common import is_uuid, resolve_lpar_uuid, resolve_system_uuid
 from .documents import (
     Keylock,
     LparResources,
@@ -1032,8 +1032,22 @@ async def _verify_partition_on_system(
     partition's token, and can approve mutating a foreign-owned one. The
     omitted-selector path gets the same containment from
     :func:`_discover_owning_system`'s UUID match.
+
+    Only a UUID needs the read. A partition *name* was resolved through
+    ``find_partition_by_name`` against this same feed, so its containment is
+    already established and re-reading the largest payload in the chain would
+    answer a settled question.
     """
-    partitions = await hmc.list_logical_partitions(system_uuid)
+    if not is_uuid(lpar_label):
+        return
+    try:
+        partitions = await hmc.list_logical_partitions(system_uuid)
+    except HMCError as exc:
+        raise ValueError(
+            f"Cannot confirm LPAR {lpar_label!r} belongs to managed system "
+            f"{system_uuid} ({exc}); retry, or omit the selector to have the "
+            "system discovered"
+        ) from exc
     if not _hosts_partition(partitions, lpar_uuid):
         raise ValueError(
             f"LPAR {lpar_label!r} does not belong to managed system "
@@ -1074,7 +1088,11 @@ async def _resolve_and_authorize_lpar(
         return await _authorize_override(hmc, lpar_name_or_uuid, selector)
     if selector is None:
         lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-        system_uuid, system_selector = await _discover_owning_system(
+        # Establish the partition exists *before* the walk: `is_uuid` is a format
+        # check, so an unknown or non-partition UUID would otherwise drive up to
+        # 100 full partition-feed reads from one caller-supplied string.
+        lpar_name = await _partition_name(hmc, lpar_uuid, lpar_name_or_uuid)
+        system_uuid, system_name = await _discover_owning_system(
             hmc, lpar_uuid, lpar_name_or_uuid
         )
     else:
@@ -1085,12 +1103,23 @@ async def _resolve_and_authorize_lpar(
         await _verify_partition_on_system(
             hmc, system_uuid, lpar_uuid, lpar_name_or_uuid
         )
-        system_selector = selector
-    system_name, lpar_name = await resolve_lpar_ownership_names(
-        hmc, system_uuid, system_selector, lpar_uuid
-    )
+        system_name, lpar_name = await resolve_lpar_ownership_names(
+            hmc, system_uuid, selector, lpar_uuid
+        )
     await authorize_lpar_mutation(hmc, system_name, lpar_name)
     return lpar_uuid
+
+
+async def _partition_name(hmc: HMCClient, lpar_uuid: str, lpar_label: str) -> str:
+    """Read one partition's CLI name, rejecting a UUID that names no partition."""
+    lpar = await hmc.get_logical_partition(lpar_uuid)
+    lpar_name = ((lpar or {}).get("Resource") or {}).get("PartitionName")
+    if not lpar_name:
+        raise ValueError(
+            f"No LPAR {lpar_label!r} found. "
+            "Use hmc_list_lpars to list available partitions."
+        )
+    return str(lpar_name)
 
 
 async def _authorize_override(
@@ -1100,10 +1129,7 @@ async def _authorize_override(
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=selector
     )
-    lpar = await hmc.get_logical_partition(lpar_uuid)
-    lpar_name = ((lpar or {}).get("Resource") or {}).get("PartitionName")
-    if not lpar_name:
-        raise ValueError(f"LPAR {lpar_uuid!r} has no partition name")
+    lpar_name = await _partition_name(hmc, lpar_uuid, lpar_name_or_uuid)
     await authorize_lpar_mutation(
         hmc, selector or "", lpar_name, ownership_override=True
     )

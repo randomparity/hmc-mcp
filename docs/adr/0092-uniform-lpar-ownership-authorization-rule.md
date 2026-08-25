@@ -96,12 +96,11 @@ decision in this class.
 
 ### 3. Classification
 
-Exhaustive as of `b41e658`. Guard-call sites are `authorize_lpar_mutation` unless
+Exhaustive as of the current commit. Guard-call sites are `authorize_lpar_mutation` unless
 noted. "Unguarded" is a defect against this ADR, not a standing exemption; standing
 exemptions are §3.4 only. The **Tracking** column names the issue that closes each
 defect; a row with no issue must read `none yet` rather than be left blank, so the
-gap is visible. No row reads `none yet` at this commit, and #369 must not close
-while one does.
+gap is visible. No row reads `none yet`, and #369 must not close while one does.
 
 §3, §4 and §5 are maintained forward: a PR that moves a cited definition
 re-verifies the `file:line` citations in those sections, and a PR that adds or
@@ -204,8 +203,8 @@ either wrapper.
 |---|---|---|---|
 | `power_lpar` | `operations_lpar.py:770` | **unguarded**; decision in §4 | #371 |
 
-`power_lpar` is the whole class. Both `hmc_power_on_lpar` (`server_lpars.py:500`)
-and `hmc_power_off_lpar` (`server_lpars.py:611`) delegate to it, and so does the
+`power_lpar` is the whole class. Both `hmc_power_on_lpar` (`server_lpars.py:504`)
+and `hmc_power_off_lpar` (`server_lpars.py:615`) delegate to it, and so does the
 CLI, so one decision covers every entry path.
 
 #### 3.4 Standing exemptions
