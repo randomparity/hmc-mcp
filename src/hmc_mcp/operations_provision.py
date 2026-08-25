@@ -22,8 +22,15 @@ from .operations_lpar import (
     create_and_stamp_lpar,
     power_lpar,
 )
+from .operations_ssh_network import set_minimum_affinity_policy
+from .ssh_selectors import resolve_ssh_names
 from .operations_storage import create_virtual_disk, map_storage
-from .ssh_commands import validate_caller_token
+from .ssh_commands import (
+    MinimumAffinityPolicy,
+    require_minimum_affinity_policy_capability,
+    validate_caller_token,
+    validate_minimum_affinity_policy,
+)
 from .operations_assignments import (
     LparPcieAssignments,
     _apply_validated_lpar_pcie_assignments,
@@ -370,6 +377,7 @@ async def provision_lpar(
     dry_run: bool = False,
     assignments: LparPcieAssignments = LparPcieAssignments(),
     caller_token: str | None = None,
+    minimum_affinity_policy: MinimumAffinityPolicy | None = None,
 ) -> ProvisionResult:
     """Provision a new LPAR end-to-end: create, add network adapter, add vSCSI
     adapter, map disk storage, and power on — in a single call.
@@ -428,6 +436,8 @@ async def provision_lpar(
       landed (one combined write); ``False`` means both were lost.
     """
 
+    if minimum_affinity_policy is not None:
+        validate_minimum_affinity_policy(minimum_affinity_policy)
     if caller_token is not None:
         # First statement, before any HMC round trip: the public operation is
         # reachable directly (api.__all__) without the MCP tool's entry check,
@@ -438,6 +448,10 @@ async def provision_lpar(
     # 1. Resolve system UUID
     # ----------------------------------------------------------------
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    if minimum_affinity_policy is not None:
+        system_name, _ = await resolve_ssh_names(hmc.config, system_name_or_uuid, None)
+        assert system_name is not None
+        await require_minimum_affinity_policy_capability(hmc.config, system_name)
 
     # ----------------------------------------------------------------
     # 2. Preconditions (always, including dry-run)
@@ -457,7 +471,10 @@ async def provision_lpar(
         *(f"sriov[{index}]" for index, _ in enumerate(assignments.sriov)),
         *(f"vnic[{index}]" for index, _ in enumerate(assignments.vnics)),
     ]
-    step_names = ["create", "network", "vscsi", "storage", *assignment_names]
+    step_names = ["create"]
+    if minimum_affinity_policy is not None:
+        step_names.append("minimum_affinity_policy")
+    step_names.extend(["network", "vscsi", "storage", *assignment_names])
     if power_on:
         step_names.append("power_on")
 
@@ -492,12 +509,27 @@ async def provision_lpar(
         return _provision_result(creation, None, steps, False)
     steps.append(_step("create", "ok", created_lpar))
 
+    if minimum_affinity_policy is not None:
+        if not await _record_hmc_step(
+            steps,
+            "minimum_affinity_policy",
+            set_minimum_affinity_policy(
+                hmc,
+                system_name_or_uuid,
+                name,
+                minimum_affinity_policy,
+            ),
+        ):
+            _skip_steps(steps, step_names[2:])
+            return _provision_result(creation, created_uuid, steps, False)
+
     if not await _record_hmc_step(
         steps,
         "network",
         _add_network(hmc, created_uuid, network.port_vlan_id),
     ):
-        _skip_steps(steps, step_names[2:])
+        network_index = step_names.index("network")
+        _skip_steps(steps, step_names[network_index + 1 :])
         return _provision_result(creation, created_uuid, steps, False)
 
     storage_steps, storage_completed = await _run_storage_leg(

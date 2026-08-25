@@ -9,7 +9,7 @@ interactions are mocked with the respx ``mock_hmc`` fixture from conftest.py.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
@@ -17,6 +17,8 @@ import pytest
 from hmc_mcp.documents import LparResources
 from hmc_mcp.operations_provision import ProvisionNetwork, ProvisionStorage
 from hmc_mcp.server import hmc_provision_lpar
+from hmc_mcp.ssh import HMCCLIError
+from hmc_mcp.ssh_commands import MinimumAffinityPolicy
 from conftest import JOB_ENTRY, assert_no_mutating_requests
 
 
@@ -518,6 +520,43 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     assert result.lpar_uuid == LPAR_UUID
 
 
+def test_policy_provision_network_failure_records_each_step_once(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(201, text=CREATED_LPAR_FEED)
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
+    mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
+    ).mock(return_value=httpx.Response(500, text="<error>network failed</error>"))
+    with (
+        patch(
+            "hmc_mcp.operations_provision.resolve_ssh_names",
+            AsyncMock(return_value=("system", None)),
+        ),
+        patch(
+            "hmc_mcp.operations_provision.require_minimum_affinity_policy_capability",
+            AsyncMock(),
+        ),
+        patch(
+            "hmc_mcp.operations_provision.set_minimum_affinity_policy",
+            AsyncMock(return_value="changed"),
+        ),
+    ):
+        result = hmc_provision_lpar(
+            **_provision_args(minimum_affinity_policy=MinimumAffinityPolicy(90, "fail"))
+        )
+    names = [step["step"] for step in result.steps]
+    assert names.count("network") == 1
+    assert (
+        next(step for step in result.steps if step["step"] == "network")["status"]
+        == "error"
+    )
+
+
 def test_provision_lpar_propagates_unexpected_step_failure(monkeypatch, mock_hmc):
     """Programming defects are not disguised as ordinary partial results."""
     _hmc_env(monkeypatch)
@@ -576,7 +615,9 @@ def test_provision_lpar_dry_run_issues_no_mutating_request(monkeypatch, mock_hmc
     assert requests > 0
 
 
-def test_provision_invalid_caller_token_fails_before_preconditions(monkeypatch, mock_hmc):
+def test_provision_invalid_caller_token_fails_before_preconditions(
+    monkeypatch, mock_hmc
+):
     """dry_run=True still fails fast on a bad token (spec guarantee 3)."""
     _hmc_env(monkeypatch)
     with pytest.raises(ValueError, match="caller_token"):
@@ -606,3 +647,55 @@ def test_provision_passes_caller_token_to_creation(monkeypatch, mock_hmc):
     )
     assert result.resource_created is True
     assert result.ownership_stamped is True
+
+
+def test_provision_policy_rejects_unsupported_system_before_mutation(
+    monkeypatch, mock_hmc
+):
+    _hmc_env(monkeypatch)
+    with (
+        patch(
+            "hmc_mcp.operations_provision.resolve_ssh_names",
+            AsyncMock(return_value=("system", None)),
+        ),
+        patch(
+            "hmc_mcp.operations_provision.require_minimum_affinity_policy_capability",
+            AsyncMock(side_effect=HMCCLIError("POWER11 required")),
+        ),
+    ):
+        with pytest.raises(HMCCLIError, match="POWER11"):
+            hmc_provision_lpar(
+                **_provision_args(
+                    minimum_affinity_policy=MinimumAffinityPolicy(80, "warn")
+                )
+            )
+    assert_no_mutating_requests(mock_hmc)
+
+
+def test_provision_applies_explicit_fail_policy_before_network(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    _mock_execution_steps(mock_hmc)
+    policy = MinimumAffinityPolicy(90, "fail")
+    setter = AsyncMock(return_value="changed")
+    with (
+        patch(
+            "hmc_mcp.operations_provision.resolve_ssh_names",
+            AsyncMock(return_value=("system", None)),
+        ),
+        patch(
+            "hmc_mcp.operations_provision.require_minimum_affinity_policy_capability",
+            AsyncMock(),
+        ),
+        patch("hmc_mcp.operations_provision.set_minimum_affinity_policy", setter),
+    ):
+        result = hmc_provision_lpar(
+            **_provision_args(minimum_affinity_policy=policy, power_on=False)
+        )
+    assert result.workflow_completed is True
+    assert [step["step"] for step in result.steps][:3] == [
+        "create",
+        "minimum_affinity_policy",
+        "network",
+    ]
+    setter.assert_awaited_once_with(ANY, SYSTEM_UUID, "web01", policy)

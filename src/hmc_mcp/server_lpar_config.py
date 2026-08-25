@@ -14,6 +14,7 @@ from .operations_ssh_network import (
     ResourceGroupAffinityResult,
     get_lpar_memopt_score,
     get_minimum_affinity_policy,
+    set_minimum_affinity_policy,
     get_system_memopt_score,
     list_lpar_memopt_scores,
     plan_lpar_memopt_scores,
@@ -24,6 +25,7 @@ from .operations_ssh_network import (
 from .ssh_commands import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
+    MinimumAffinityPolicy,
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,
@@ -84,6 +86,40 @@ def hmc_get_minimum_affinity_policy(
             build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
         )
     )
+
+
+@tool(effect="mutate", operation="lpar.set_minimum_affinity_policy", target_kind="lpar")
+def hmc_set_minimum_affinity_policy(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    policy: MinimumAffinityPolicy,
+    ownership_override: bool = False,
+    profile: str | None = None,
+) -> str:
+    """Set an LPAR's POWER11 minimum-affinity policy after authorization.
+
+    ``fail`` is never selected by default; callers must pass it explicitly in
+    ``policy.min_affinity_score_action``.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        policy: Required score and deliberately selected action.
+        ownership_override: Bypass ownership rejection after operator approval.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+
+    async def _go() -> str:
+        async with client_from_env(profile) as hmc:
+            return await set_minimum_affinity_policy(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                policy,
+                ownership_override=ownership_override,
+            )
+
+    return _run(_go)
 
 
 @tool(effect="read", operation="lpar.get_memopt_score", target_kind="lpar")

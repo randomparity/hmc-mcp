@@ -104,6 +104,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "list_fc_ports",
         "get_lpar_memopt_score",
         "get_minimum_affinity_policy",
+        "set_minimum_affinity_policy",
         "get_system_memopt_score",
         "list_lpar_memopt_scores",
         "plan_lpar_memopt_scores",
@@ -112,6 +113,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "MemoptResourceGroupSelector",
         "ResourceGroupAffinityResult",
         "MinimumAffinityPolicyResult",
+        "MinimumAffinityPolicy",
         "list_resource_group_memopt_scores",
         "plan_resource_group_memopt_scores",
         "list_sea_adapters",
@@ -288,8 +290,9 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "VnicCapabilityError",
             "VnicPartialError",
             "add_vnic",
-                "get_lpar_memopt_score",
-                "get_minimum_affinity_policy",
+            "get_lpar_memopt_score",
+            "get_minimum_affinity_policy",
+            "set_minimum_affinity_policy",
             "get_system_memopt_score",
             "list_fc_ports",
             "list_lpar_memopt_scores",
@@ -297,8 +300,8 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "plan_system_memopt_score",
             "MemoptLparSelector",
             "MemoptResourceGroupSelector",
-                "ResourceGroupAffinityResult",
-                "MinimumAffinityPolicyResult",
+            "ResourceGroupAffinityResult",
+            "MinimumAffinityPolicyResult",
             "list_resource_group_memopt_scores",
             "plan_resource_group_memopt_scores",
             "list_sea_adapters",
@@ -346,7 +349,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "SnapshotValidationError",
         },
         "hmc_mcp.ssh": {"HMCCLIError"},
-        "hmc_mcp.ssh_commands": {"SriovMode"},
+        "hmc_mcp.ssh_commands": {"MinimumAffinityPolicy", "SriovMode"},
     }
     tested = set()
     for module_name, names in sources.items():
@@ -366,7 +369,8 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #315, which added the Power11 minimum-affinity policy read.
+        Last moved by issue #316, which added the Power11 minimum-affinity policy write.
+        Before that, issue #315 added the Power11 minimum-affinity policy read.
         Before that, issue #312 added capability-aware resource-group affinity.
         Before that, issue #311 added read-only affinity planning operations.
         Before that, issue #310 added the LPAR memory-optimization score operations.
@@ -407,8 +411,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #315: minimum-affinity policy reads are reusable under ADR 0086.
-    expected_digest = "a7a25affda5682db5fda2630a45cd243835dbf34fa08136d2f4ff413cbf8530a"  # pragma: allowlist secret
+    # Moved by #316: minimum-affinity policy writes are reusable under ADR 0087.
+    expected_digest = "2e1772410182af117821678eb8567221aa62c545fffc224bce28c34d6d7f945b"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

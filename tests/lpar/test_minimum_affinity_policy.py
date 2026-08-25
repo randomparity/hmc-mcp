@@ -17,10 +17,15 @@ from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.operations_ssh_network import (
     MinimumAffinityPolicyResult,
     get_minimum_affinity_policy,
+    set_minimum_affinity_policy,
 )
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.ssh import HMCCLIError
-from hmc_mcp.ssh_commands import query_minimum_affinity_policy
+from hmc_mcp.ssh_commands import (
+    MinimumAffinityPolicy,
+    query_minimum_affinity_policy,
+    set_minimum_affinity_policy_cli,
+)
 
 
 def _config() -> HMCConfig:
@@ -99,6 +104,91 @@ async def test_policy_query_rejects_malformed_output(output):
             await query_minimum_affinity_policy(_config(), "system", "lpar")
 
 
+@pytest.mark.parametrize("score", [-1, 101, True])
+@pytest.mark.asyncio
+async def test_policy_setter_rejects_invalid_score_before_hmc_call(score):
+    runner = AsyncMock()
+    policy = MinimumAffinityPolicy(score, "warn")
+    with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):
+        with pytest.raises(ValueError, match="integer from 0 through 100"):
+            await set_minimum_affinity_policy_cli(_config(), "system", "lpar", policy)
+    runner.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_policy_setter_rejects_unsupported_system_before_mutation():
+    runner = AsyncMock(return_value="default,POWER10\n")
+    with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):
+        with pytest.raises(HMCCLIError, match="advertises POWER11"):
+            await set_minimum_affinity_policy_cli(
+                _config(), "system", "lpar", MinimumAffinityPolicy(80, "warn")
+            )
+    runner.assert_awaited_once()
+    assert runner.await_args.args[1].startswith("lssyscfg -r sys")
+
+
+@pytest.mark.asyncio
+async def test_policy_setter_requires_deliberate_fail_and_quotes_command():
+    runner = AsyncMock(side_effect=["POWER11\n", "changed\n"])
+    with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):
+        result = await set_minimum_affinity_policy_cli(
+            _config(), "system one", "lpar one", MinimumAffinityPolicy(90, "fail")
+        )
+    assert result == "changed\n"
+    assert runner.await_args_list[1].args[1] == (
+        "chsyscfg -r lpar -m 'system one' "
+        "-i 'name=lpar one,min_affinity_score=90,min_affinity_score_action=fail'"
+    )
+
+
+@pytest.mark.asyncio
+async def test_public_policy_setter_validates_before_resolution():
+    hmc = AsyncMock()
+    hmc.config = _config()
+    resolver = AsyncMock()
+    with patch("hmc_mcp.operations_ssh_network.resolve_system_uuid", resolver):
+        with pytest.raises(ValueError, match="none, warn, or fail"):
+            await set_minimum_affinity_policy(
+                hmc,
+                "system",
+                "lpar",
+                MinimumAffinityPolicy(80, "invalid"),  # type: ignore[arg-type]
+            )
+    resolver.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_public_policy_setter_authorizes_before_mutation():
+    hmc = AsyncMock()
+    hmc.config = _config()
+    events: list[str] = []
+    authorize = AsyncMock(
+        side_effect=lambda *args, **kwargs: events.append("authorize")
+    )
+    mutate = AsyncMock(side_effect=lambda *args: events.append("mutate") or "changed")
+    with (
+        patch(
+            "hmc_mcp.operations_ssh_network.resolve_system_uuid",
+            AsyncMock(return_value="su"),
+        ),
+        patch(
+            "hmc_mcp.operations_ssh_network.resolve_lpar_uuid",
+            AsyncMock(return_value="lu"),
+        ),
+        patch(
+            "hmc_mcp.operations_ssh_network.resolve_lpar_ownership_names",
+            AsyncMock(return_value=("system", "lpar")),
+        ),
+        patch("hmc_mcp.operations_ssh_network.authorize_lpar_mutation", authorize),
+        patch("hmc_mcp.operations_ssh_network.set_minimum_affinity_policy_cli", mutate),
+    ):
+        result = await set_minimum_affinity_policy(
+            hmc, "system", "lpar", MinimumAffinityPolicy(80, "warn")
+        )
+    assert result == "changed"
+    assert events == ["authorize", "mutate"]
+
+
 @pytest.mark.asyncio
 async def test_shared_policy_operation_resolves_names_and_wraps_result():
     query = AsyncMock(
@@ -138,9 +228,7 @@ def test_mcp_policy_adapter_delegates_to_shared_operation():
         patch.object(server_lpar_config, "build_config", return_value=_config()),
         patch.object(server_lpar_config, "get_minimum_affinity_policy", operation),
     ):
-        actual = server_lpar_config.hmc_get_minimum_affinity_policy(
-            "system", "lpar"
-        )
+        actual = server_lpar_config.hmc_get_minimum_affinity_policy("system", "lpar")
 
     assert actual == expected
     operation.assert_awaited_once_with(ANY, "system", "lpar")

@@ -853,6 +853,7 @@ def test_the_scan_finds_every_known_site():
         "set_lpar_description",
         "set_lpar_msp",
         "set_lpar_proc_compat",
+        "set_minimum_affinity_policy_cli",
         "sync_lpar_profile",
         "_change_profile_io_slot",
         "unassign_sriov_logical_port_profile",

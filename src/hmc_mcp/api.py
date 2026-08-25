@@ -118,6 +118,7 @@ from hmc_mcp.operations_ssh_network import (
     add_vnic,
     get_lpar_memopt_score,
     get_minimum_affinity_policy,
+    set_minimum_affinity_policy,
     get_system_memopt_score,
     list_fc_ports,
     list_lpar_memopt_scores,
@@ -129,6 +130,7 @@ from hmc_mcp.operations_ssh_network import (
     plan_resource_group_memopt_scores,
     remove_vnic,
 )
+from hmc_mcp.ssh_commands import MinimumAffinityPolicy
 from .operations_storage import (
     create_logical_unit,
     create_media_repository,
@@ -259,6 +261,7 @@ __all__ = [
     "list_fc_ports",
     "get_lpar_memopt_score",
     "get_minimum_affinity_policy",
+    "set_minimum_affinity_policy",
     "get_system_memopt_score",
     "list_lpar_memopt_scores",
     "plan_lpar_memopt_scores",
@@ -267,6 +270,7 @@ __all__ = [
     "MemoptResourceGroupSelector",
     "ResourceGroupAffinityResult",
     "MinimumAffinityPolicyResult",
+    "MinimumAffinityPolicy",
     "list_resource_group_memopt_scores",
     "plan_resource_group_memopt_scores",
     "list_sea_adapters",
