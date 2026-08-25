@@ -48,6 +48,15 @@ carry a `### Facade manifest` section.
   P1–P8 live-hardware prototype recorded on #385 (HMC V10R3 M1060); only idle
   partition streams were observed live, so the ANSI truncation rule is
   protocol-derived.
+- Facade exports for four operations ADR 0029's selection rule already covered but the manifest
+  omitted: `list_optical_mappings`, `mount_optical_media`, `unmount_optical_media` (shipped
+  unexported by #205) and `assess_post_activation_affinity` (shipped unexported by #318) (#363).
+  A contract test now applies the selection rule to every `operations_*` module by introspection
+  and replaces the hand-written module-to-names map that could not detect the omission, since the
+  same edit maintained both the map and `__all__`. **Consumer note:** ADR 0092 §3.2 records
+  `mount_optical_media` and `unmount_optical_media` as ownership-unguarded — they mutate a named
+  client partition without an ADR 0011 ownership check. Exporting them does not change that; #440
+  adds the guard, and doing so will add an `ownership_override` keyword to both signatures.
 
 ### Changed
 
@@ -99,6 +108,10 @@ carry a `### Facade manifest` section.
 - Added: `capture_lpar_console`, `ConsoleCapture`, `ConsoleHeldError` (#385,
   ADR 0072); this moves the frozen public signature digest.
 - Added: `list_lpar_ownership`.
+- Added: `list_optical_mappings`, `mount_optical_media`, `unmount_optical_media`,
+  `assess_post_activation_affinity` (#363); this moves the frozen public signature digest. All four
+  were already selected by ADR 0029's rule and were absent from the manifest by omission, not by
+  decision, so this records the manifest catching up rather than a new capability.
 - Removed: none.
 - Renamed: none.
 - Exported model/literal changes: `LparCreation` gained the
