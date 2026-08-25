@@ -1042,7 +1042,15 @@ JOB_ENTRY_EMPTY_RESOURCE = """<?xml version="1.0" encoding="UTF-8" standalone="y
 </entry>
 """
 
-JOB_OUTCOME_KEYS = {"job_id", "status", "timed_out", "error", "job"}
+JOB_OUTCOME_KEYS = {
+    "job_id",
+    "status",
+    "timed_out",
+    "error",
+    "job",
+    "found",
+    "job_href",
+}
 
 
 def test_wait_for_job_immediate_completed(monkeypatch, mock_hmc):

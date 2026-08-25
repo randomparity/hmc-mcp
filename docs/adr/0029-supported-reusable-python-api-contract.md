@@ -81,6 +81,10 @@ such as `Any` and built-in containers are not facade exports. The initial invent
   offered and none may be added without a superseding decision. Both are classified for
   ownership authorization in ADR 0092 §3.4a, which is the authoritative record; §6's
   recording obligation for a new facade export is discharged there, not here.
+- `operations_jobs`: operations `get_job` and `wait_for_job`; type `JobOutcome`, whose fields are
+  a package-owned model contract except the opaque `job` mapping (ADR 0093); the synchronous
+  helpers `job_identifier`, `job_outcome`, and `validate_wait_timing` remain in `jobs.py` and are
+  excluded as transformations and validators; underscore helpers are internal.
 - `operations_lpar`: operations `assess_post_activation_affinity`,
   `authorize_decommission_lpar_ownership_snapshot`,
   `authorize_lpar_mutation`, `resolve_lpar_ownership_names`, `stamp_created_lpar_ownership`,
