@@ -51,6 +51,22 @@ async def test_policy_query_uses_compatibility_gate_and_exact_projection():
 
 
 @pytest.mark.asyncio
+async def test_policy_query_accepts_quoted_compatibility_modes():
+    runner = AsyncMock(
+        side_effect=[
+            '"default,POWER9,POWER9_base,POWER10,POWER11"\n',
+            "min_affinity_score,min_affinity_score_action\n0,none\n",
+        ]
+    )
+    with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):
+        result = await query_minimum_affinity_policy(_config(), "system", "lpar")
+
+    assert result.min_affinity_score == 0
+    assert result.min_affinity_score_action == "none"
+    assert runner.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_policy_query_returns_capability_absence_without_policy_command():
     runner = AsyncMock(return_value="default,POWER9,POWER10\n")
     with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):

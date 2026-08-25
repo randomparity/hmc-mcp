@@ -1672,7 +1672,18 @@ async def get_proc_compat_modes(
     raw = await run_hmc_command(config, cmd)
     if not raw.strip():
         return []
-    return [mode.strip() for mode in raw.strip().split(",") if mode.strip()]
+    try:
+        values = list(csv.reader([raw.strip()], strict=True))[0]
+    except csv.Error as error:
+        raise HMCCLIError(
+            f"malformed processor compatibility mode output: {error}"
+        ) from error
+    return [
+        mode.strip()
+        for value in values
+        for mode in value.split(",")
+        if mode.strip()
+    ]
 
 
 async def get_lpar_proc_compat(
