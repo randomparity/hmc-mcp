@@ -210,6 +210,9 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "assess_snapshot_affinity",
         "inspect_lpar_snapshot",
         "validate_lpar_snapshot",
+        "get_job",
+        "wait_for_job",
+        "JobOutcome",
     ]
 
 
@@ -361,7 +364,10 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #363, which exported four operations ADR 0029's
+        Last moved by issue #364, which added the cross-process job-polling
+        operations ``get_job`` and ``wait_for_job`` and exported the
+        ``JobOutcome`` result model (ADR 0093).
+        Before that, issue #363 exported four operations ADR 0029's
         selection rule already covered but the manifest omitted: the
         optical-media operations ``list_optical_mappings``,
         ``mount_optical_media``, and ``unmount_optical_media``, which #205
@@ -412,8 +418,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #363: four already-selected operations join the facade manifest.
-    expected_digest = "2aaae04d6a8b2f85f39ed9762fa650ef9c108076caff1f68497fca1c12e5f2e7"  # pragma: allowlist secret
+    # Moved by #364: the job-polling operations and the JobOutcome result model.
+    expected_digest = "925fd693d33ce1036f41053686350af752ea69cc03a368afc0f79daa4ad222ed"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
