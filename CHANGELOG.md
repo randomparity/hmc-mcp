@@ -16,9 +16,14 @@ into a positive statement for consumers deciding whether an upgrade can break th
 manifest changed, the section names every added, removed, and renamed export, and every changed
 exported enum member or literal alternative.
 
-A metadata test (`tests/unit/test_changelog.py`) enforces both halves of this contract: the
-version declared in `pyproject.toml` must have a matching entry, and every release entry must
-carry a `### Facade manifest` section.
+A metadata test (`tests/unit/test_changelog.py`) enforces this contract: the version declared in
+`pyproject.toml` must have a matching entry, every release entry must carry a non-empty
+`### Facade manifest` section, and that section's *content* is checked — every export in
+`hmc_mcp.api.__all__` that the oldest entry's enumerated manifest does not already name must be
+named in the `[Unreleased]` manifest. The repository carries no git tags, so that enumeration,
+not a tag, is the boundary the delta is derived against. Removals and renames stay outside the
+mechanism: a removed export is absent from `__all__`, and with no per-release snapshot to diff
+against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ## [Unreleased]
 
@@ -187,6 +192,32 @@ carry a `### Facade manifest` section.
 
 ### Facade manifest
 
+- Added: the exports below landed between the `[0.1.0]` entry's enumerated manifest and this
+  cycle with no manifest bullet of their own (#479). Each is an entry in `hmc_mcp.api.__all__`,
+  so each contributes to the frozen public signature digest. This records the manifest catching
+  up, not new capability. Grouped by the change that added them:
+  - `get_lpar_memopt_score`, `list_lpar_memopt_scores` (#252): memory-optimization scores read
+    per LPAR over the SSH command surface.
+  - `get_system_memopt_score`, `plan_lpar_memopt_scores`, `plan_system_memopt_score`, and the
+    `MemoptLparSelector` model (#311): the same scores at managed-system scope, plus the
+    planning variants that project a score without applying anything.
+  - `MemoptResourceGroupSelector`, `ResourceGroupAffinityResult`,
+    `list_resource_group_memopt_scores`, `plan_resource_group_memopt_scores` (#312): the
+    resource-group scope of the same surface.
+  - `LparSnapshot`, `SnapshotInspection`, `SnapshotValidationError`, `capture_lpar_snapshot`,
+    `inspect_lpar_snapshot`, `validate_lpar_snapshot` (#314): portable LPAR snapshot capture,
+    plus the two operations that parse a captured snapshot document locally without reaching
+    the HMC. `LparSnapshot` is the model the #482 bullet below describes the fields of.
+  - `MinimumAffinityPolicy`, `MinimumAffinityPolicyResult`, `get_minimum_affinity_policy`,
+    `set_minimum_affinity_policy` (#315): read and write of the minimum affinity policy.
+  - `AffinityAssessmentInput`, `AffinityAssessmentResult`, `AffinityEvidence`,
+    `CapturedPolicyState`, `PolicyState`, `assess_snapshot_affinity` (#317): affinity
+    assessment over a captured snapshot and the evidence and policy-state models it reports.
+  - `ProvisionAffinityAssessment` (#318): the assessment `provision_lpar` reports from the
+    activation leg of the workflow.
+  - `LpmAffinityMigrationResult`, `LpmAffinityPreflightOutcome`, `LpmAffinityPreflightRequest`,
+    `migrate_lpar_with_affinity_preflight`, `run_lpm_affinity_preflight` (#320): the
+    affinity-aware LPM preflight and the migration that runs it first.
 - Added: `get_job`, `wait_for_job`, `JobOutcome` (#364, ADR 0093); this moves the frozen public
   signature digest.
 - Added: `set_lpar_ownership_description`.
@@ -280,8 +311,9 @@ frozen signature digest
 
 ### Facade manifest
 
-Initial manifest of `hmc_mcp.api.__all__` (127 exports; `set_lpar_ownership_description` above is
-the only addition since):
+Initial manifest of `hmc_mcp.api.__all__` (127 exports). This enumeration is the boundary the
+`[Unreleased]` manifest's delta is derived against, so it names the 0.1.0 export set and nothing
+added afterwards; every later addition is recorded above.
 
 `AdapterResult`, `AdapterType`, `AssignmentResult`, `AssignmentStep`, `AttachDiskResult`,
 `BootDeviceSelector`, `ConfigError`, `DecommissionResult`, `DedicatedPcieAssignment`,
