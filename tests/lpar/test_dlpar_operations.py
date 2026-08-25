@@ -677,11 +677,21 @@ async def test_an_unknown_partition_uuid_never_reaches_the_fleet_walk(mock_hmc):
     route = _mock_modify(mock_hmc)
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises((ValueError, HMCError)):
+        with pytest.raises(HMCError) as info:
             await set_lpar_processors(
                 hmc, LPAR_UUID, LparResources(desired_procs=1.0)
             )
 
+    # The 404 names the partition the caller got wrong. Accepting any of several
+    # exception types here would keep passing if the precheck silently moved
+    # back behind the walk, which is the regression this guards.
+    assert info.value.status_code == 404
+    assert LPAR_UUID in str(info.value)
+    assert [
+        call.request.url.path
+        for call in mock_hmc.calls
+        if call.request.method == "GET"
+    ] == [f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"]
     assert not route.called
 
 

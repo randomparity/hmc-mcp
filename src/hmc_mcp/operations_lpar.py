@@ -1019,7 +1019,7 @@ async def _discover_owning_system(
 
 
 async def _verify_partition_on_system(
-    hmc: HMCClient, system_uuid: str, lpar_uuid: str, lpar_label: str
+    hmc: HMCClient, system_uuid: str, lpar_uuid: str, lpar_selector: str
 ) -> None:
     """Reject a partition UUID that does not live on the selected system.
 
@@ -1033,24 +1033,25 @@ async def _verify_partition_on_system(
     omitted-selector path gets the same containment from
     :func:`_discover_owning_system`'s UUID match.
 
-    Only a UUID needs the read. A partition *name* was resolved through
-    ``find_partition_by_name`` against this same feed, so its containment is
-    already established and re-reading the largest payload in the chain would
-    answer a settled question.
+    Only a UUID needs the read, so *lpar_selector* must be the string the caller
+    passed, not a resolved value: a partition *name* was resolved through
+    ``find_partition_by_name`` against this very feed, which establishes its
+    containment already, and re-reading the largest payload in the guarded chain
+    would answer a settled question.
     """
-    if not is_uuid(lpar_label):
+    if not is_uuid(lpar_selector):
         return
     try:
         partitions = await hmc.list_logical_partitions(system_uuid)
     except HMCError as exc:
         raise ValueError(
-            f"Cannot confirm LPAR {lpar_label!r} belongs to managed system "
+            f"Cannot confirm LPAR {lpar_selector!r} belongs to managed system "
             f"{system_uuid} ({exc}); retry, or omit the selector to have the "
             "system discovered"
         ) from exc
     if not _hosts_partition(partitions, lpar_uuid):
         raise ValueError(
-            f"LPAR {lpar_label!r} does not belong to managed system "
+            f"LPAR {lpar_selector!r} does not belong to managed system "
             f"{system_uuid}; name the managed system that hosts it, or omit "
             "the selector to have it discovered"
         )
