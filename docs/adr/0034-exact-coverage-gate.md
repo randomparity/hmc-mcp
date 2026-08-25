@@ -5,7 +5,8 @@
 Accepted
 
 > **Term-missing presentation superseded by
-> [0054](0054-structured-quiet-verification-output.md)** (2026-08-20). The exact
+> [0099](0099-structured-quiet-verification-output.md)** (2026-08-20, renumbered
+> from 0054 on 2026-08-25). The exact
 > coverage-gate decision remains accepted.
 
 ## Context
