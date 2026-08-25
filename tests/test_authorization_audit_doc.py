@@ -100,6 +100,10 @@ STATE_SENTENCE = re.compile(r"`connection\.state` is ([^.]*)\.")
 STATE_ARM = re.compile(r"`([a-z-]+)`\s+when\b")
 BACKTICKED = re.compile(r"`([^`]+)`")
 
+#: `docs/authorization-audit.md`'s editor marker is one of these and quotes the anchor
+#: phrase, so comments come out of a passage before the clause is read.
+HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+
 #: The passage describing the TLS record in each document that restates its `source`
 #: values: the event's own section in the audit document, the `HMC_VERIFY_SSL` note in the
 #: environment-variable one. Anchored on the record's own name, as every sibling extractor
@@ -197,15 +201,17 @@ def _records_lead(document: str) -> str:
     return _section(document, "## The records").split("\n### ", 1)[0]
 
 
-def _tls_passage(path: Path) -> str:
-    """The passage in *path* describing the TLS record, where the `source` clause lives.
+def _tls_passage(document: str, name: str) -> str:
+    """The passage of *document* describing the TLS record, where the `source` clause lives.
 
-    Returned with whitespace collapsed, so no pattern below can acquire a dependency on
-    where a hard wrap happens to fall. Nothing the extractors read spans a blank line.
+    HTML comments are dropped first: the editor marker quotes the anchor phrase, so a
+    marker moved inside the section it describes — which is where its own wording points —
+    would otherwise be read as a second clause. Then whitespace is collapsed, so no
+    pattern below can depend on where a hard wrap happens to fall.
     """
-    match = TLS_PASSAGE[path.name].search(path.read_text())
-    assert match is not None, f"no TLS record passage in {path.name}"
-    return re.sub(r"\s+", " ", match.group(0))
+    match = TLS_PASSAGE[name].search(document)
+    assert match is not None, f"no TLS record passage in {name}"
+    return re.sub(r"\s+", " ", HTML_COMMENT.sub("", match.group(0)))
 
 
 def _source_sentence(passage: str) -> str:
@@ -399,12 +405,15 @@ SOURCE_DOCUMENTS = (DOCUMENT, ENVIRONMENT_DOCUMENT)
 
 @pytest.mark.parametrize("path", SOURCE_DOCUMENTS, ids=lambda path: path.name)
 def test_documented_tls_sources_are_exactly_the_client_vocabulary(path: Path) -> None:
-    assert _documented_sources(_tls_passage(path)) == client.VERIFY_SSL_SOURCES
+    assert (
+        _documented_sources(_tls_passage(path.read_text(), path.name))
+        == client.VERIFY_SSL_SOURCES
+    )
 
 
 @pytest.mark.parametrize("path", SOURCE_DOCUMENTS, ids=lambda path: path.name)
 def test_tls_source_drift_is_caught_in_both_directions(path: Path) -> None:
-    passage = _tls_passage(path)
+    passage = _tls_passage(path.read_text(), path.name)
     listing = _source_list(passage)
     #: The first value listed, which is never the last one — so dropping it and the
     #: separator that follows leaves a run the extractor still reads.
@@ -427,7 +436,7 @@ def test_tls_sources_survive_an_unrelated_backticked_term(path: Path) -> None:
     The added term is itself list-shaped, so what excludes it is the run's own
     comma-and-`or` anchoring rather than the value pattern.
     """
-    passage = _tls_passage(path)
+    passage = _tls_passage(path.read_text(), path.name)
     sentence = _source_sentence(passage)
 
     reworded = passage.replace(
@@ -435,6 +444,38 @@ def test_tls_sources_survive_an_unrelated_backticked_term(path: Path) -> None:
     )
     assert reworded != passage
     assert _documented_sources(reworded) == client.VERIFY_SSL_SOURCES
+
+
+def test_the_editor_marker_quotes_the_anchor_it_names() -> None:
+    """The marker is the only warning an editor of the document gets, so it is derived.
+
+    Deleting it, or letting its quoted phrase drift from `SOURCE_CLAUSE`, reddens here
+    rather than leaving the guard's one piece of documentation silently wrong.
+    """
+    quoted = [
+        phrase
+        for marker in HTML_COMMENT.findall(_document())
+        for phrase in re.findall(r'"([^"]+)"', marker)
+    ]
+
+    assert quoted, "the TLS section's editor marker is missing"
+    assert any(SOURCE_CLAUSE.fullmatch(phrase) for phrase in quoted), quoted
+
+
+def test_a_marker_moved_inside_the_section_is_not_read_as_a_clause() -> None:
+    """Its own wording says "the values below", so inside the section is where it lands."""
+    document = _document()
+    heading = '### `event: "tls-verification-disabled"`'
+    marker = HTML_COMMENT.search(document)
+    assert marker is not None
+
+    moved = document.replace(
+        f"{marker.group(0)}\n{heading}", f"{heading}\n{marker.group(0)}", 1
+    )
+    assert moved != document
+    assert _documented_sources(_tls_passage(moved, DOCUMENT.name)) == (
+        client.VERIFY_SSL_SOURCES
+    )
 
 
 def test_the_prose_pins_no_literal_vocabulary_count() -> None:
