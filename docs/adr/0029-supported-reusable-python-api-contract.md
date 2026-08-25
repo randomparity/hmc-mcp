@@ -50,10 +50,9 @@ input, result, enum, or literal-alias type appearing in a selected function's pu
 An asynchronous helper that a module imports from elsewhere is a top-level name in that module's
 namespace but is owned by the module that defines it, so ownership decides selection and no name
 is selected twice; the per-module exclusion notes below concern only names a module defines. A
-synchronous function is
-a transformation, parser, or validator rather than an asynchronous domain operation and is
-excluded for that concrete contract-readiness reason. Imported transport types such as `Any` and
-built-in containers are not facade exports. The initial inventory is:
+synchronous function is a transformation, parser, or validator rather than an asynchronous domain
+operation and is excluded for that concrete contract-readiness reason. Imported transport types
+such as `Any` and built-in containers are not facade exports. The initial inventory is:
 
 - `operations_adapters`: operations `list_adapters`, `add_network_adapter`,
   `add_vios_adapter`, and `delete_adapter`; types `AdapterResult` and `AdapterType`; no
