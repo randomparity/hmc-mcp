@@ -89,15 +89,36 @@ oversized fleet, a slow one, an unreachable owning frame — which are precisely
 the degraded conditions that provoke an operator into using it, and ADR 0092 §4's
 "that path pays nothing" would stop being true.
 
-The audit record for that bypass carries the **resolved partition UUID**, which
-is already in hand and is fleet-unique, so the record identifies exactly one
-partition however the caller named it — a record for a deliberate bypass of the
-ownership control has to be attributable to a specific partition, and the raw
-selector string is not. The `system` field carries what the caller supplied, and
-is empty when the caller named no system: that is what the operator actually
-asserted, and resolving a system name the caller never chose — at the cost of the
-discovery this branch exists to skip — would make the record less faithful, not
-more.
+The override branch does still resolve the **partition name**, one REST read that
+needs no system. The audit stream is the only durable record of a deliberate
+bypass of the ownership control, and every other guarded operation writes a CLI
+partition name into that field; a UUID there would leave `lpar` carrying two
+vocabularies with nothing to distinguish them, so a query for overrides against a
+named partition would silently miss the DLPAR ones. One GET on a path that is
+about to POST is a proportionate price for a single vocabulary, and unlike
+discovery it cannot be blocked by an unrelated frame's health.
+
+The `system` field carries what the caller supplied, and is empty when the caller
+named no system. That is what the operator actually asserted; resolving a system
+the caller never chose would cost exactly the discovery this branch exists to
+skip. The consequence is that an override record from a selector-less call cannot
+say which frame it touched — recorded here rather than mitigated, because the
+alternative reintroduces the failure mode.
+
+A blank selector (`""` or whitespace) is read as absent on both branches. MCP
+clients that serialise an unset optional string as `""` sent it to these tools
+before the extraction, where `resolve_lpar_uuid` ignored it for a partition given
+by UUID; treating it as a real selector would resolve a managed system named `""`
+and break a call shape that worked.
+
+**UUID comparison is case-insensitive.** `resolve_lpar_uuid` returns a
+caller-supplied UUID verbatim and `is_uuid` admits upper-case hex, while the HMC
+renders UUIDs lower-case. Both containment checks are the first place in the
+package where a *user-supplied* UUID is equality-compared against HMC output, so
+a case difference would otherwise fail closed on both branches at once and leave
+`ownership_override=True` — bypassing the control this change adds — as the only
+working call. The normalisation lives in the comparison rather than in
+`resolve_lpar_uuid`, whose value also reaches URL path segments.
 
 The cost lands only on the guarded, omitted-selector path: 1 + N REST reads, N
 bounded by the cap. A caller that supplies the selector pays nothing new, any
@@ -135,7 +156,28 @@ whether a call works depends on inventory order. Skipping cannot widen what may
 be mutated — the walk returns only on a positive UUID match, so a skipped owner
 ends in the same raise as an absent one — and the raise names how many frames
 went unread, so a degraded fleet reads as degraded instead of as a missing
-partition.
+partition. That evidence is bounded — a handful of frame UUIDs plus a count of
+the rest — rather than one line per frame, so a wholly degraded fleet cannot turn
+an error message into kilobytes of log and MCP-client context.
+
+**The walk is sequential, and the budget is inherited.** One full
+`LogicalPartition` feed per frame, in inventory order, under the 30-second
+deadline `find_partition_by_name` uses. There, that budget covers a rare path — a
+fleet-ambiguous partition *name*; here it covers the default MCP invocation, so a
+rare-path shape has been promoted to a common one unchanged. On a fleet where the
+owning frame sorts late, the deadline can expire well below the 100-frame cap,
+and the call then reports the timeout and names the selector as the remedy. Fanning
+the membership reads out concurrently would fit the same ceiling, and is
+deliberately not done here: this package has no precedent for concurrent
+per-frame REST fan-out against an HMC, the HMC publishes no concurrency limit, and
+a serial walk is the conservative load profile to ship first. If measurement on a
+real fleet shows the default shape timing out, bounded concurrency is a change
+contained entirely within `_search_fleet_for_partition`.
+
+On the success path the derived system is logged at `INFO` with the partition
+UUID, the system UUID and its `SystemName`. Where the caller supplied the
+selector, the guarded system is reconstructible from the request; where it was
+derived, nothing else records which frame's token gated the write.
 
 **The two DLPAR entry points now require SSH reachability to the HMC.** They were
 REST-only; the guard reads the token over SSH (ADR 0092 §4), so an environment

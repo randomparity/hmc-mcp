@@ -74,9 +74,9 @@ def _feed(*entries: str) -> str:
     )
 
 
-def _mock_lpar_detail(router) -> None:
+def _mock_lpar_detail(router, uuid: str = LPAR_UUID) -> None:
     """``resolve_lpar_ownership_names`` reads the partition name from this GET."""
-    router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+    router.get(f"/rest/api/uom/LogicalPartition/{uuid}").mock(
         return_value=httpx.Response(
             200, text=LPAR_ENTRY.format(uuid=LPAR_UUID, name=LPAR_NAME)
         )
@@ -128,8 +128,8 @@ def _mock_fleet(router) -> None:
     )
 
 
-def _mock_modify(router) -> httpx.Response:
-    return router.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+def _mock_modify(router, uuid: str = LPAR_UUID) -> httpx.Response:
+    return router.post(f"/rest/api/uom/LogicalPartition/{uuid}").mock(
         return_value=httpx.Response(
             200, text=LPAR_ENTRY.format(uuid=LPAR_UUID, name=LPAR_NAME)
         )
@@ -355,12 +355,14 @@ async def test_a_supplied_system_skips_fleet_discovery(mock_hmc):
 async def test_an_override_without_a_selector_skips_discovery_entirely(
     mock_hmc, operation
 ):
-    """ADR 0092 §4: the override path pays nothing — and is blocked by nothing.
+    """ADR 0092 §4: the override is blocked by no part of the fleet walk.
 
     Discovery exists only to feed the guard, so an approved override must not
-    depend on it. Registering no fleet routes at all is the assertion: respx
-    raises on an unmocked request, so any discovery call fails this test.
+    depend on it. No fleet route is registered, so respx fails this test if the
+    walk runs at all; the partition read that names the audit record is the only
+    GET allowed.
     """
+    _mock_lpar_detail(mock_hmc)
     route = _mock_modify(mock_hmc)
     read = _owned_by("bob")
 
@@ -375,13 +377,24 @@ async def test_an_override_without_a_selector_skips_discovery_entirely(
 
     read.assert_not_awaited()
     assert route.called
-    assert [call.request.url.path for call in mock_hmc.calls if
-            call.request.method == "GET"] == []
+    assert [
+        call.request.url.path
+        for call in mock_hmc.calls
+        if call.request.method == "GET"
+    ] == [f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"]
 
 
 @pytest.mark.asyncio
-async def test_an_override_audits_the_selectors_the_caller_supplied(mock_hmc, caplog):
-    """With no system named, the audit records that absence rather than a guess."""
+async def test_an_override_audits_one_partition_and_the_caller_s_selector(
+    mock_hmc, caplog
+):
+    """The bypass record names the partition as every other record does.
+
+    A partition name keeps the ``lpar`` field in one vocabulary across
+    operations; the empty ``system`` records that the caller named no system,
+    which is what the operator actually asserted.
+    """
+    _mock_lpar_detail(mock_hmc)
     _mock_modify(mock_hmc)
 
     with (
@@ -403,8 +416,81 @@ async def test_an_override_audits_the_selectors_the_caller_supplied(mock_hmc, ca
     ]
     assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
     assert records[0]["event"] == "ownership-override"
-    assert records[0]["lpar"] == LPAR_UUID
+    assert records[0]["lpar"] == LPAR_NAME
     assert records[0]["system"] == ""
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+@pytest.mark.asyncio
+async def test_a_blank_system_selector_is_read_as_absent(mock_hmc, blank):
+    """An MCP client that serialises an unset optional as "" keeps working.
+
+    Before the extraction the tool passed the blank straight to
+    ``resolve_lpar_uuid``, which ignored it for a partition given by UUID.
+    Treating it as a real selector would resolve a managed system named ""
+    and fail a call shape that worked.
+    """
+    _mock_lpar_detail(mock_hmc)
+    _mock_system_detail(mock_hmc)
+    _mock_fleet(mock_hmc)
+    route = _mock_modify(mock_hmc)
+    read = _owned_by("hmc-mcp")
+
+    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+        async with HMCClient(make_config()) as hmc:
+            await set_lpar_processors(
+                hmc,
+                LPAR_UUID,
+                LparResources(desired_procs=1.0),
+                system_name_or_uuid=blank,
+            )
+
+    assert route.called
+    assert read.await_args.args[1:] == (SYSTEM_NAME, LPAR_NAME)
+
+
+@pytest.mark.asyncio
+async def test_an_upper_case_partition_uuid_still_matches_the_hmc_feed(mock_hmc):
+    """``is_uuid`` admits upper-case hex; the HMC renders UUIDs lower-case.
+
+    Both containment checks compare a caller-supplied UUID against HMC output,
+    so a case difference must not turn a working call into a failure whose only
+    escape is bypassing the ownership control.
+    """
+    _mock_lpar_detail(mock_hmc, LPAR_UUID.upper())
+    _mock_system_detail(mock_hmc)
+    route = _mock_modify(mock_hmc, LPAR_UUID.upper())
+    read = _owned_by("hmc-mcp")
+
+    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+        async with HMCClient(make_config()) as hmc:
+            await set_lpar_processors(
+                hmc,
+                LPAR_UUID.upper(),
+                LparResources(desired_procs=1.0),
+                system_name_or_uuid=SYSTEM_UUID,
+            )
+
+    assert route.called
+
+
+@pytest.mark.asyncio
+async def test_an_upper_case_partition_uuid_is_discoverable(mock_hmc):
+    """The same normalisation holds on the fleet walk."""
+    _mock_lpar_detail(mock_hmc, LPAR_UUID.upper())
+    _mock_system_detail(mock_hmc)
+    _mock_fleet(mock_hmc)
+    route = _mock_modify(mock_hmc, LPAR_UUID.upper())
+    read = _owned_by("hmc-mcp")
+
+    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+        async with HMCClient(make_config()) as hmc:
+            await set_lpar_processors(
+                hmc, LPAR_UUID.upper(), LparResources(desired_procs=1.0)
+            )
+
+    assert route.called
+    assert read.await_args.args[1:] == (SYSTEM_NAME, LPAR_NAME)
 
 
 @pytest.mark.asyncio

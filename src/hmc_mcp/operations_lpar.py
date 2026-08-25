@@ -874,16 +874,60 @@ def _discovery_candidate(system: dict[str, Any]) -> tuple[str, str] | None:
     return system_uuid, system_name
 
 
+def _hosts_partition(partitions: list[dict[str, Any]], lpar_uuid: str) -> bool:
+    """Whether *partitions* contains *lpar_uuid*, compared case-insensitively.
+
+    ``resolve_lpar_uuid`` returns a caller-supplied UUID verbatim and ``is_uuid``
+    admits upper-case hex, while the HMC renders UUIDs lower-case. These are the
+    only places in the package where a *user-supplied* UUID is equality-compared
+    against HMC output, so the normalisation belongs here rather than in the
+    shared resolver, whose value also reaches URL path segments.
+    """
+    wanted = lpar_uuid.casefold()
+    return any(
+        str(entry.get("UUID") or "").casefold() == wanted for entry in partitions
+    )
+
+
+@dataclass
+class _SkippedFrames:
+    """Frames the owning-system walk could not read, bounded for reporting."""
+
+    unreadable: list[str] = field(default_factory=list)
+    unusable_entries: int = 0
+
+    @property
+    def total(self) -> int:
+        return len(self.unreadable) + self.unusable_entries
+
+    def describe(self) -> str:
+        """Render the skips as bounded evidence, never one line per frame."""
+        if not self.total:
+            return ""
+        shown = self.unreadable[:_MAX_REPORTED_SKIPS]
+        parts = list(shown)
+        if len(self.unreadable) > len(shown):
+            parts.append(f"and {len(self.unreadable) - len(shown)} more")
+        if self.unusable_entries:
+            parts.append(
+                f"{self.unusable_entries} with incomplete inventory metadata"
+            )
+        return f" ({self.total} could not be read: {', '.join(parts)})"
+
+
+_MAX_REPORTED_SKIPS = 5
+
+
 async def _search_fleet_for_partition(
-    hmc: HMCClient, lpar_uuid: str, skipped: list[str]
+    hmc: HMCClient, lpar_uuid: str, lpar_label: str, skipped: _SkippedFrames
 ) -> tuple[str, str] | None:
     """Return the system containing *lpar_uuid*, recording frames it could not read."""
     for system in _fleet_within_discovery_bound(
-        await hmc.list_managed_systems(), lpar_uuid
+        await hmc.list_managed_systems(), lpar_label
     ):
         candidate = _discovery_candidate(system)
         if candidate is None:
-            skipped.append("an entry with incomplete inventory metadata")
+            skipped.unusable_entries += 1
             continue
         system_uuid, system_name = candidate
         try:
@@ -895,9 +939,15 @@ async def _search_fleet_for_partition(
                 exc,
                 exc_info=exc,
             )
-            skipped.append(system_uuid)
+            skipped.unreadable.append(system_uuid)
             continue
-        if any(entry.get("UUID") == lpar_uuid for entry in partitions):
+        if _hosts_partition(partitions, lpar_uuid):
+            _logger.info(
+                "LPAR %s authorized against discovered managed system %s (%s)",
+                lpar_uuid,
+                system_name,
+                system_uuid,
+            )
             return system_uuid, system_name
     return None
 
@@ -926,10 +976,12 @@ async def _discover_owning_system(
     partition — and the raise names how many frames went unread, so a degraded
     fleet is diagnosed rather than reported as an absent partition.
     """
-    skipped: list[str] = []
+    skipped = _SkippedFrames()
     try:
         async with asyncio.timeout(PARENT_DISCOVERY_TIMEOUT_SECONDS):
-            found = await _search_fleet_for_partition(hmc, lpar_uuid, skipped)
+            found = await _search_fleet_for_partition(
+                hmc, lpar_uuid, lpar_label, skipped
+            )
     except TimeoutError as exc:
         raise ValueError(
             f"Cannot identify the managed system owning LPAR {lpar_label!r}: "
@@ -937,12 +989,10 @@ async def _discover_owning_system(
         ) from exc
     if found is not None:
         return found
-    unread = (
-        f" ({len(skipped)} could not be read: {', '.join(skipped)})" if skipped else ""
-    )
     raise ValueError(
         f"Cannot identify the managed system owning LPAR {lpar_label!r}: "
-        f"no managed system reports it{unread}; supply managed-system scope"
+        f"no managed system reports it{skipped.describe()}; "
+        "supply managed-system scope"
     )
 
 
@@ -962,7 +1012,7 @@ async def _verify_partition_on_system(
     :func:`_discover_owning_system`'s UUID match.
     """
     partitions = await hmc.list_logical_partitions(system_uuid)
-    if not any(entry.get("UUID") == lpar_uuid for entry in partitions):
+    if not _hosts_partition(partitions, lpar_uuid):
         raise ValueError(
             f"LPAR {lpar_label!r} does not belong to managed system "
             f"{system_uuid}; name the managed system that hosts it, or omit "
@@ -985,42 +1035,56 @@ async def _resolve_and_authorize_lpar(
     by discovery when the selector is omitted, by
     :func:`_verify_partition_on_system` when it is supplied (ADR 0092).
 
-    An approved override reads no token, so it resolves nothing the guard alone
-    needs (ADR 0092 §4: that path pays nothing). Discovery is skipped entirely
-    there — otherwise an oversized fleet, a slow one, or an unreachable owning
-    frame would *block* the operator's exception on exactly the degraded
-    inventory that provokes it. The audit record then carries the resolved
-    partition UUID and the system selector the operator actually asserted.
+    An approved override reads no token, so it skips the fleet walk the guard
+    alone requires — otherwise an oversized fleet, a slow one, or an unreachable
+    owning frame would *block* the operator's exception on exactly the degraded
+    inventory that provokes it (ADR 0092 §4). It still resolves the partition
+    name, one REST read, so the audit record for a deliberate bypass of the
+    ownership control names the partition in the same vocabulary as every other
+    override record.
+
+    A blank *system_name_or_uuid* is read as absent on both branches: MCP
+    clients that serialise an unset optional string as ``""`` sent it before
+    this operation existed, and it was ignored.
     """
+    selector = (system_name_or_uuid or "").strip() or None
     if ownership_override:
-        lpar_uuid = await resolve_lpar_uuid(
-            hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
-        )
-        await authorize_lpar_mutation(
-            hmc,
-            system_name_or_uuid or "",
-            lpar_uuid,
-            ownership_override=True,
-        )
-        return lpar_uuid
-    if system_name_or_uuid is None:
+        return await _authorize_override(hmc, lpar_name_or_uuid, selector)
+    if selector is None:
         lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
         system_uuid, system_selector = await _discover_owning_system(
             hmc, lpar_uuid, lpar_name_or_uuid
         )
     else:
-        system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+        system_uuid = await resolve_system_uuid(hmc, selector)
         lpar_uuid = await resolve_lpar_uuid(
             hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
         )
         await _verify_partition_on_system(
             hmc, system_uuid, lpar_uuid, lpar_name_or_uuid
         )
-        system_selector = system_name_or_uuid
+        system_selector = selector
     system_name, lpar_name = await resolve_lpar_ownership_names(
         hmc, system_uuid, system_selector, lpar_uuid
     )
     await authorize_lpar_mutation(hmc, system_name, lpar_name)
+    return lpar_uuid
+
+
+async def _authorize_override(
+    hmc: HMCClient, lpar_name_or_uuid: str, selector: str | None
+) -> str:
+    """Audit an operator-approved ownership bypass and return the LPAR's UUID."""
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=selector
+    )
+    lpar = await hmc.get_logical_partition(lpar_uuid)
+    lpar_name = ((lpar or {}).get("Resource") or {}).get("PartitionName")
+    if not lpar_name:
+        raise ValueError(f"LPAR {lpar_uuid!r} has no partition name")
+    await authorize_lpar_mutation(
+        hmc, selector or "", lpar_name, ownership_override=True
+    )
     return lpar_uuid
 
 

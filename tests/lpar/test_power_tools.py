@@ -239,10 +239,14 @@ def test_dlpar_override_without_a_selector_needs_no_discovery(
     """The operator's approved exception is not blocked by fleet discovery.
 
     No fleet route is registered, so respx fails the test if the tool tries to
-    walk the fleet — the regression this asserts against.
+    walk the fleet — the regression this asserts against. The partition read
+    that names the audit record is the only lookup the override pays for.
     """
     _hmc_env(monkeypatch)
     monkeypatch.setenv("HMC_AGENT_ID", "alice")
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
