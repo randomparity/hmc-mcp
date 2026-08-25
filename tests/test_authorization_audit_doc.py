@@ -54,13 +54,25 @@ What this does not reach, so a green run is not read as more coverage than it is
   the field (`audit` imports nothing from `hmc_mcp`, so its parameter is a plain `str`),
   and `tests/unit/test_audit.py`'s TLS record test. Both spell the three values out and
   neither is reachable from here. Issue #504 owns replacing them with a pointer;
+- the literal values inside the documents' JSON sample records. `"event"` and `"source"`
+  are written unbackticked there, so no extractor reads them: rename a vocabulary member
+  and every list restatement reddens while the samples — the one place a consumer copies a
+  log query from — keep the old value behind a green run. Document-wide and pre-existing,
+  not specific to the TLS record; guarding it means a sample extractor across every event
+  section, which is more machinery than the residual is worth here. Issue #506 owns it;
 - the editing constraint this guard puts on the two documents. Both TLS passages must keep
-  the clause "where the [effective] setting came from" — the environment-variable note
-  writes no `source` identifier to anchor on, so eight words of prose are the only anchor
-  available — and that note must stay one `- **` bullet. Every violation fails loud, but it
-  fails naming a regex, and an editor of a settings document has no reason to open a test
-  named for a different one. `docs/authorization-audit.md` carries a marker saying so;
-  #504 covers the same marker for the other document.
+  those eight words in that order — the environment-variable note writes no `source`
+  identifier to anchor on, so ordinary prose is the only anchor available — and that note
+  must stay one `- **` bullet. Line breaks within the clause do not matter: `_tls_passage`
+  collapses whitespace, so re-wrapping either paragraph is safe. Every violation fails
+  loud, but it fails naming a regex, and an editor of a settings document has no reason to
+  open a test named for a different one. `docs/authorization-audit.md` carries a marker
+  saying so; #504 covers the same marker for the other document.
+
+The environment-variable restatement is kept rather than replaced by a cross-reference,
+which would have deleted half this machinery. It is where an operator deciding whether to
+leave verification off actually reads, and #497's fourth criterion asked for it to be
+covered. Guarding it is the price of leaving it there, and that price is this ledger.
 """
 
 import re
@@ -106,8 +118,11 @@ TLS_PASSAGE = {
 }
 #: The clause both passages introduce the `source` values with. Anchored on the wording
 #: rather than the punctuation, which differs between them: em dashes in the audit
-#: document, parentheses in the environment-variable note.
-SOURCE_CLAUSE = re.compile(r"where the (?:effective )?setting came\s+from\b")
+#: document, parentheses in the environment-variable note. Single spaces are enough
+#: because `_tls_passage` has already collapsed the passage's line breaks; both documents
+#: are hard-wrapped prose, so where a break lands inside these eight words is an accident
+#: of the surrounding paragraph rather than anything an editor chose.
+SOURCE_CLAUSE = re.compile(r"where the (?:effective )?setting came from\b")
 #: One `source` value: a lowercase hyphenated name, optionally suffixed with the
 #: environment variable it names, as `environment:HMC_VERIFY_SSL` is.
 SOURCE_VALUE = r"[a-z][a-z-]*(?::[A-Z][A-Z0-9_]*)?"
@@ -183,10 +198,14 @@ def _records_lead(document: str) -> str:
 
 
 def _tls_passage(path: Path) -> str:
-    """The passage in *path* that describes the TLS record, where the `source` clause lives."""
+    """The passage in *path* describing the TLS record, where the `source` clause lives.
+
+    Returned with whitespace collapsed, so no pattern below can acquire a dependency on
+    where a hard wrap happens to fall. Nothing the extractors read spans a blank line.
+    """
     match = TLS_PASSAGE[path.name].search(path.read_text())
     assert match is not None, f"no TLS record passage in {path.name}"
-    return match.group(0)
+    return re.sub(r"\s+", " ", match.group(0))
 
 
 def _source_sentence(passage: str) -> str:
