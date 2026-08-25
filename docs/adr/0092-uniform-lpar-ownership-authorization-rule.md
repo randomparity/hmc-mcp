@@ -253,6 +253,20 @@ When true, `power_lpar` calls `authorize_lpar_mutation` with the same
 not, and its docstring carries the ADR 0011 advisory language telling the caller to
 read the description first.
 
+**The selector becomes required when the flag is on.** `power_lpar` is the only
+guarded LPAR operation whose `system_name_or_uuid` is optional; every sibling in
+§3.1 and §3.2 takes it positionally and required. The token is read per managed
+system — `resolve_lpar_ownership_names` needs a system UUID to reach
+`get_managed_system`, and nothing this package already reads names a partition's
+parent system — so with the flag on and no selector the guard cannot identify
+which system's token applies. #371 refuses that call with a `ValueError`, before
+any HMC traffic, rather than powering a partition whose ownership was never read.
+The refusal is unconditional on `ownership_override`: the override waives the
+ownership *decision*, not the guard's need to name the partition it is auditing.
+The two entry paths that could omit the selector gained one — `hmc-mcp lpars
+power-on` and `power-off` take `--system` — and `hmc_power_on_lpar` /
+`hmc_power_off_lpar` already accepted it.
+
 **The cost, stated.** Guarding `power_lpar` costs **one SSH login plus two REST
 GETs** on every call that does not carry `ownership_override=True`.
 

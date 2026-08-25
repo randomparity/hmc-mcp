@@ -506,6 +506,7 @@ def hmc_power_on_lpar(
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
     affinity_assessment: ProvisionAffinityAssessment | None = None,
+    ownership_override: bool = False,
 ) -> LparPowerOnOutcome:
     """Submit a PowerOn job for a logical partition.
 
@@ -531,8 +532,11 @@ def hmc_power_on_lpar(
         profile: Optional configured HMC profile name; uses the default when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
+            Required when the server runs with HMC_AUTHORIZE_POWER_OPERATIONS set.
         affinity_assessment: Optional target-bound captured affinity evidence and
             explicit warning or fail-closed response intent.
+        ownership_override: Bypass ADR 0011 ownership rejection only after operator
+            approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
     """
 
     validate_wait_timing(wait, timeout_seconds, poll_interval)
@@ -560,6 +564,7 @@ def hmc_power_on_lpar(
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
+                ownership_override=ownership_override,
             )
             if (
                 affinity_assessment is None
@@ -616,12 +621,14 @@ def hmc_power_off_lpar(
     poll_interval: int = 5,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Submit a PowerOff job for a logical partition.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID.
-    system_name_or_uuid disambiguates duplicate partition names; it is ignored
-    when lpar_name_or_uuid is already a UUID.
+    system_name_or_uuid disambiguates duplicate partition names; it is otherwise
+    unused when lpar_name_or_uuid is already a UUID, unless the server runs with
+    HMC_AUTHORIZE_POWER_OPERATIONS set, which requires it either way.
     immediate=True forces an immediate power off (no graceful OS shutdown).
     Returns the submitted job. This changes the state of a real partition.
 
@@ -635,6 +642,9 @@ def hmc_power_off_lpar(
         poll_interval: Seconds between job polls when waiting; must be positive.
         profile: Optional configured HMC profile name; uses the default when omitted.
         system_name_or_uuid: Optional SystemName or UUID used to disambiguate its name.
+            Required when the server runs with HMC_AUTHORIZE_POWER_OPERATIONS set.
+        ownership_override: Bypass ADR 0011 ownership rejection only after operator
+            approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
     """
 
     validate_wait_timing(wait, timeout_seconds, poll_interval)
@@ -650,6 +660,7 @@ def hmc_power_off_lpar(
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
+                ownership_override=ownership_override,
             )
             return result.job
 

@@ -396,7 +396,7 @@ def test_provision_affinity_power_on_waits_for_terminal_result():
         "hmc_mcp.operations_provision.power_lpar",
         new=AsyncMock(return_value=LparPowerResult(LPAR_UUID, terminal_job)),
     ) as power:
-        result = asyncio.run(_power_on(hmc, LPAR_UUID, _affinity_request()))  # type: ignore[arg-type]
+        result = asyncio.run(_power_on(hmc, SYSTEM_UUID, LPAR_UUID, _affinity_request()))  # type: ignore[arg-type]
     assert isinstance(result, JobOutcome)
     assert result.status == "COMPLETED_OK"
     assert result.timed_out is False
@@ -404,10 +404,12 @@ def test_provision_affinity_power_on_waits_for_terminal_result():
         hmc,
         LPAR_UUID,
         power_on=True,
+        system_name_or_uuid=SYSTEM_UUID,
         force=True,
         wait=True,
         timeout_seconds=30,
         poll_interval=1,
+        ownership_override=True,
     )
 
 

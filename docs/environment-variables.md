@@ -21,6 +21,7 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | `HMC_SSH_TIMEOUT` | float | `300.0` | SSH command timeout in seconds. SSH-backed HMC CLI operations (e.g. `bkprofdata`/`rstprofdata`) are significantly slower than REST calls |
 | `HMC_AUDIT_MEMENTO` | string | `hmc-mcp` | Value sent in the `X-Audit-Memento` request header; appears in HMC audit logs |
 | `HMC_AGENT_ID` | string | _(none)_ | Per-agent identifier for multi-agent LPAR ownership. When set, the `X-Audit-Memento` header is sent as `hmc-mcp:<agent_id>` and new LPARs are stamped with `[hmc-mcp owner:<agent_id> created:<date>]` in their description field. Must be 1–64 printable ASCII characters; no commas, `=`, square brackets, forward slashes, colons, or spaces; must not be the reserved value `hmc-mcp` (the default fallback used when no agent_id is set). **Note:** when `HMC_AGENT_ID` is set, `HMC_AUDIT_MEMENTO` is ignored — the prefix `hmc-mcp` is always used. |
+| `HMC_AUTHORIZE_POWER_OPERATIONS` | bool | `false` | Enforce the ADR 0011 ownership guard on LPAR power operations. Off by default, so powering a partition another agent owns is permitted and ownership stays advisory on this path. When `true`, `power_lpar` (and everything that delegates to it: `hmc_power_on_lpar`, `hmc_power_off_lpar`, `hmc-mcp lpars power-on/power-off`) reads the ownership token before submitting the job, requires a managed-system selector, and refuses a foreign-owned partition unless the caller passes `ownership_override`. See the note below and ADR 0092 §4 |
 | `HMC_ISO_URL_ALLOWLIST` | string | _(empty — refuses every URL)_ | Comma-separated hosts that `hmc_upload_iso` / `hmc-mcp storage upload-iso` may download an ISO from, each written as `host` or `host:port` (no scheme, no path) — e.g. `iso.example.internal,localhost:18765`. An entry without a port permits any port on that host. **Empty is fail-closed: every URL is refused**, because the download runs from the MCP server's network position and there is no safe default destination. See the note below and ADR 0050 |
 | `HMC_SCHEMA_VERSION` | string | _(unset)_ | Pins the `X-HMC-Schema-Version` request header on `GET` requests only. **Leave unset for normal operation** — see note below. |
 
@@ -51,6 +52,31 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 - **SSH key file** (`HMC_SSH_KEY_FILE`): only used by SSH-passthrough commands
   (`hmc_run_command`, CLI subcommands backed by `ssh.py`). REST commands always
   use `HMC_PASSWORD`.
+
+- **Power ownership guard** (`HMC_AUTHORIZE_POWER_OPERATIONS`): ADR 0011 ownership
+  is advisory by default on the power path, and ADR 0092 §4 records why. The guard
+  costs **one SSH login plus two REST GETs** on every call that does not carry
+  `ownership_override=True` — `authorize_lpar_mutation` reads the token over SSH,
+  and `resolve_lpar_ownership_names` performs both REST reads unconditionally to
+  turn UUIDs into the CLI names the SSH command takes. A power-cycling
+  orchestrator is the highest-frequency caller of this operation, and power is the
+  one mutation class whose inverse is a single call with no prior state to
+  reconstruct, so the cost is opt-in rather than default. Turn it on when the HMC
+  is shared with other agents or human operators and that cost is acceptable.
+
+  Turning it on changes two things beyond the ownership check. A managed-system
+  selector becomes required — the token is read per managed system, so without one
+  the guard cannot tell which system's token applies, and the call is refused
+  before any HMC traffic. And a partition another agent owns is refused with a
+  `PermissionError`; retry it as a deliberate, audited exception with
+  `ownership_override` (`--ownership-override` on the CLI). `provision_lpar`
+  passes that override on its own activation leg, because the partition it powers
+  is the one the same workflow just created and stamped.
+
+  When the setting is off, `power_lpar` reads no ownership token and opens no SSH
+  connection — the call path is exactly what it was before this setting existed.
+  A caller that wants ownership facts without the guard can read them in one REST
+  call with `list_lpar_ownership` / `hmc_list_lpar_ownership` (ADR 0071).
 
 - **ISO download allowlist** (`HMC_ISO_URL_ALLOWLIST`): `hmc_upload_iso` fetches
   the ISO from the MCP server's own network position, so the caller of the tool

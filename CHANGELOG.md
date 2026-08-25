@@ -24,6 +24,18 @@ carry a `### Facade manifest` section.
 
 ### Added
 
+- Opt-in ADR 0011 ownership guard on LPAR power operations (#371, ADR 0092 §4): the new
+  `authorize_power_operations` setting (`HMC_AUTHORIZE_POWER_OPERATIONS`, TOML profile key
+  `authorize_power_operations`) defaults to `false`, leaving the `power_lpar` call path
+  unchanged and opening no SSH connection. When `true`, `power_lpar` reads the ownership
+  token before submitting the job and refuses a partition another agent owns; it accepts a
+  new `ownership_override` parameter with the same audited semantics as its guarded
+  siblings, and requires `system_name_or_uuid` because the token is read per managed
+  system. `hmc_power_on_lpar`, `hmc_power_off_lpar`, and `hmc-mcp lpars power-on` /
+  `power-off` gained the matching `ownership_override` argument, and the two CLI commands
+  gained `--system`. `provision_lpar` passes the override on its own activation leg, which
+  targets the partition that workflow just created and stamped. Both new parameters move
+  the frozen public signature digest.
 - `set_lpar_ownership_description` operation and facade export (#376, ADR 0066).
 - Strict LPAR ownership stamping (#377, ADR 0067): `provision_lpar` accepts a new
   `stamp_policy` field on `LparCreation` with literal alternatives `"best-effort"` (default) and
@@ -114,6 +126,11 @@ carry a `### Facade manifest` section.
   decision, so this records the manifest catching up rather than a new capability.
 - Removed: none.
 - Renamed: none.
+- Exported signature changes: `power_lpar` gained `ownership_override: bool = False`, and
+  `HMCConfig` gained the `authorize_power_operations: bool = False` field (#371, ADR 0092 §4).
+  A pydantic model's `__init__` signature is derived from its fields, so the setting moves the
+  frozen public signature digest even though no operation's parameters changed by it; the
+  `power_lpar` parameter moves it again. No export was added, removed, or renamed.
 - Exported model/literal changes: `LparCreation` gained the
   `stamp_policy: Literal["best-effort", "required"]` field (defaults to `"best-effort"`), which
   moves the frozen public signature digest. The audit event vocabulary gained the

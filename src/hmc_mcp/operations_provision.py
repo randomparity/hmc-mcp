@@ -267,17 +267,30 @@ async def _create_disk(
 
 async def _power_on(
     hmc: HMCClient,
+    system_name_or_uuid: str,
     lpar_uuid: str,
     assessment: ProvisionAffinityAssessment | None,
 ) -> dict[str, Any] | JobOutcome | None:
+    """Activate the partition this workflow just created and stamped.
+
+    ``ownership_override=True`` because the token this leg would authorize
+    against is the one the same call stamped moments earlier (ADR 0092
+    Consequences). The override keeps the resolution inside ADR 0092 §5's two
+    mechanisms — it is audited — rather than adding a call-site-conditional
+    guard. It also spares the SSH login when an operator has
+    ``authorize_power_operations`` on; with the setting off nothing here runs
+    at all.
+    """
     result = await power_lpar(
         hmc,
         lpar_uuid,
         power_on=True,
+        system_name_or_uuid=system_name_or_uuid,
         force=True,
         wait=assessment is not None,
         timeout_seconds=assessment.timeout_seconds if assessment else 300,
         poll_interval=assessment.poll_interval if assessment else 5,
+        ownership_override=True,
     )
     if assessment is None:
         return result.job
@@ -624,7 +637,9 @@ async def provision_lpar(
 
     if power_on:
         try:
-            power_result = await _power_on(hmc, created_uuid, affinity_assessment)
+            power_result = await _power_on(
+                hmc, system_name_or_uuid, created_uuid, affinity_assessment
+            )
         except HMCError as exc:
             steps.append(_step("power_on", "error", str(exc)))
             if affinity_assessment is not None:

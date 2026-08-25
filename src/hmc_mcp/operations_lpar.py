@@ -760,6 +760,29 @@ async def delete_lpar(
     return lpar_uuid
 
 
+async def _authorize_power_lpar(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_uuid: str,
+    *,
+    ownership_override: bool,
+) -> None:
+    """Run the ADR 0011 ownership guard for one opted-in power operation.
+
+    Reached only when ``authorize_power_operations`` is set (ADR 0092 §4).
+    """
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    system_name, lpar_name = await resolve_lpar_ownership_names(
+        hmc, system_uuid, system_name_or_uuid, lpar_uuid
+    )
+    await authorize_lpar_mutation(
+        hmc,
+        system_name,
+        lpar_name,
+        ownership_override=ownership_override,
+    )
+
+
 async def power_lpar(
     hmc: HMCClient,
     lpar_name_or_uuid: str,
@@ -771,12 +794,49 @@ async def power_lpar(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    ownership_override: bool = False,
 ) -> LparPowerResult:
-    """Apply shared LPAR power policy, submit the job, and optionally wait."""
+    """Apply shared LPAR power policy, submit the job, and optionally wait.
+
+    ADR 0011 ownership is advisory here by default. Powering a partition another
+    agent owns is only rejected when the operator sets
+    ``authorize_power_operations`` (``HMC_AUTHORIZE_POWER_OPERATIONS``), the
+    opt-in ADR 0092 §4 records; with the setting off this call reads no
+    ownership token and opens no SSH connection, so a caller that cares should
+    read the description itself — ``list_lpar_ownership`` reports it for a whole
+    managed system in one REST call.
+
+    With the setting on, ``system_name_or_uuid`` becomes required and
+    ``ownership_override=True`` bypasses the rejection for this one call and
+    records an audited override.
+    """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
+    guard_system: str | None = None
+    if hmc.config.authorize_power_operations:
+        if system_name_or_uuid is None:
+            # Refused before any HMC traffic. The ownership token is read per
+            # managed system, so with no selector the guard cannot identify
+            # which system's token applies — and powering a partition whose
+            # ownership was never read is the state this setting exists to
+            # leave.
+            raise ValueError(
+                "system_name_or_uuid is required while "
+                "authorize_power_operations is enabled: the ADR 0011 ownership "
+                "token is read per managed system, so the guard cannot "
+                "identify which system's token applies. Pass the SystemName or "
+                "UUID that hosts the partition."
+            )
+        guard_system = system_name_or_uuid
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
+    if guard_system is not None:
+        await _authorize_power_lpar(
+            hmc,
+            guard_system,
+            lpar_uuid,
+            ownership_override=ownership_override,
+        )
     if power_on and not force:
         state = await hmc.get_quick_property(
             "LogicalPartition", lpar_uuid, "PartitionState"
