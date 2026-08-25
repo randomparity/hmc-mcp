@@ -75,12 +75,9 @@ verify-artifacts:
     uv run --no-sync python tests/validate_release_artifacts.py dist .
 
 # full verification: tests + handshake + CLI groups load
+# The root help goes through the installed console script, so the entry point is
+# covered; the group helps are derived from the Typer app rather than listed here.
 verify: static test smoke build verify-artifacts
     uv run --no-sync hmc-mcp --help >/dev/null
-    uv run --no-sync hmc-mcp lpars --help >/dev/null
-    uv run --no-sync hmc-mcp storage --help >/dev/null
-    uv run --no-sync hmc-mcp network --help >/dev/null
-    uv run --no-sync hmc-mcp templates --help >/dev/null
-    uv run --no-sync hmc-mcp metrics --help >/dev/null
-    uv run --no-sync hmc-mcp snapshot --help >/dev/null
+    uv run --no-sync python scripts/smoke_cli_groups.py
     @echo "verify: all groups load OK"

@@ -204,7 +204,12 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         in justfile
     )
     assert "--baseline .secrets.baseline --no-verify --" in justfile
-    assert "uv run --no-sync hmc-mcp metrics --help" in justfile
+    assert "uv run --no-sync hmc-mcp --help >/dev/null" in justfile
+    assert "uv run --no-sync python scripts/smoke_cli_groups.py" in justfile
+    # The group helps are derived, so a per-group line is the hand-maintained
+    # mirror growing back. `hmc-mcp --help` above is not one: the pattern needs a
+    # group token before the flag, which `--help` itself cannot supply.
+    assert re.search(r"hmc-mcp [a-z][a-z-]* --help", justfile) is None
 
 
 def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> None:
