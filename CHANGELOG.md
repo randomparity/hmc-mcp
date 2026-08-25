@@ -72,8 +72,8 @@ carry a `### Facade manifest` section.
 - Strict LPAR ownership stamping (#377, ADR 0067): `provision_lpar` accepts a new
   `stamp_policy` field on `LparCreation` with literal alternatives `"best-effort"` (default) and
   `"required"`.
-- Audit sink emits a `tls-verification-disabled` event when TLS verification is turned off via
-  `HMC_INSECURE_TLS` (#379).
+- Audit sink emits a `tls-verification-disabled` event when TLS verification is off, as
+  controlled by `HMC_VERIFY_SSL` (#379).
 - `list_lpar_ownership` operation, facade export, and `hmc_list_lpar_ownership` MCP tool
   (#375, ADR 0071): parsed ADR 0011 ownership per LPAR from the REST bulk list feed — one
   call covers every partition on a managed system. Partitions with no description
