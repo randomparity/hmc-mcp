@@ -479,6 +479,9 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "import hmc_mcp.api" not in body
     for package in ("fastmcp", "mcp", "rich", "typer"):
         assert f'assert find_spec("{package}") is None' in body
+    # PEP 561: the marker is asserted against the installed distribution, so a
+    # build-configuration regression that omits it fails this job.
+    assert 'assert (package_path.parent / "py.typed").is_file(), package_path' in body
     assert "class FakeHMC:" in body
     assert "async def list_managed_systems(" in body
     assert "async def list_logical_partitions(" in body

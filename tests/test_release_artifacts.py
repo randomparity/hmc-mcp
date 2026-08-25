@@ -90,6 +90,20 @@ def test_validates_clean_wheel_and_sdist(built_project: tuple[Path, Path]) -> No
     assert main([str(artifacts), str(project)]) == 0
 
 
+def test_built_artifacts_ship_the_pep_561_marker(
+    built_project: tuple[Path, Path],
+) -> None:
+    """PEP 561: the marker is only meaningful where a consumer reads it — the
+    built distribution, not the source checkout."""
+    artifacts, _ = built_project
+
+    wheel = validator._read_wheel(next(artifacts.glob("*.whl")))
+    _, sdist = validator._read_sdist(next(artifacts.glob("*.tar.gz")))
+
+    assert wheel["hmc_mcp/py.typed"] == b""
+    assert sdist["src/hmc_mcp/py.typed"] == b""
+
+
 def _artifact_copy(
     tmp_path: Path,
     built_project: tuple[Path, Path],
@@ -833,6 +847,36 @@ def test_rejects_unexpected_wheel_payload_with_valid_record(
     )
 
     _assert_invalid(artifacts, project, capsys, "wheel member set is not closed")
+
+
+def test_rejects_wheel_that_drops_the_pep_561_marker(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A build-configuration regression that silently omits the marker must fail
+    validation rather than ship an untyped distribution."""
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+
+    _rewrite_wheel(wheel, lambda members: members.pop("hmc_mcp/py.typed"))
+
+    _assert_invalid(artifacts, project, capsys, "wheel member set is not closed")
+
+
+def test_rejects_checkout_without_the_pep_561_marker(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    stripped = tmp_path / "stripped"
+    shutil.copytree(project, stripped, ignore=shutil.ignore_patterns("dist"))
+    (stripped / "src" / "hmc_mcp" / "py.typed").unlink()
+
+    _assert_invalid(
+        artifacts, stripped, capsys, "missing package sentinel: hmc_mcp/py.typed"
+    )
 
 
 @pytest.mark.parametrize(
