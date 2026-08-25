@@ -445,12 +445,16 @@ def _score(row: dict[str, object], field_name: str) -> int | None:
         return None
 
 
-def _validate_affinity_request(request: ProvisionAffinityAssessment) -> None:
+def _validate_affinity_request(
+    request: ProvisionAffinityAssessment,
+    applied_policy: MinimumAffinityPolicy | None,
+) -> None:
     """Validate every caller-controlled assessment value without HMC traffic."""
-    policy_state: Literal["configured", "absent", "unsupported"] = (
-        request.captured_policy_state
-        if request.captured_policy_state in {"configured", "absent"}
-        else "unsupported"
+    policy_state: Literal["configured", "absent"] = (
+        "configured" if applied_policy is not None else "absent"
+    )
+    configured_minimum = (
+        applied_policy.min_affinity_score if applied_policy is not None else None
     )
     assess_affinity(
         AffinityAssessmentInput(
@@ -459,7 +463,7 @@ def _validate_affinity_request(request: ProvisionAffinityAssessment) -> None:
             predicted_score=request.captured_score,
             policy_state=policy_state,
             captured_policy_state=request.captured_policy_state,
-            configured_minimum=request.captured_minimum,
+            configured_minimum=configured_minimum,
             captured_minimum=request.captured_minimum,
             captured_at=request.captured_at,
             assessed_at=request.captured_at,
@@ -612,9 +616,10 @@ async def provision_lpar(
             raise ValueError("affinity assessment timeout_seconds must be non-negative")
         if affinity_assessment.poll_interval <= 0:
             raise ValueError("affinity assessment poll_interval must be positive")
-        _validate_affinity_request(affinity_assessment)
     if minimum_affinity_policy is not None:
         validate_minimum_affinity_policy(minimum_affinity_policy)
+    if affinity_assessment is not None:
+        _validate_affinity_request(affinity_assessment, minimum_affinity_policy)
     if caller_token is not None:
         # First statement, before any HMC round trip: the public operation is
         # reachable directly (api.__all__) without the MCP tool's entry check,

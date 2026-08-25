@@ -299,6 +299,8 @@ def _affinity_request(**overrides):
         captured_at=datetime(2026, 8, 24, tzinfo=UTC),
         stale_after_seconds=86400,
         response="warn",
+        regression_threshold=5,
+        optimization_threshold=5,
         timeout_seconds=30,
         poll_interval=1,
     )
@@ -338,6 +340,38 @@ def test_provision_affinity_rejects_invalid_evidence_before_hmc(
             **_provision_args(affinity_assessment=_affinity_request(**change))
         )
     assert_no_mutating_requests(mock_hmc)
+
+
+def test_provision_affinity_requires_thresholds_without_applied_policy(
+    monkeypatch, mock_hmc
+):
+    _hmc_env(monkeypatch)
+    request = _affinity_request(
+        captured_policy_state="unsupported", captured_minimum=None
+    )
+    with pytest.raises(ValueError, match="caller thresholds"):
+        hmc_provision_lpar(**_provision_args(affinity_assessment=request))
+    assert_no_mutating_requests(mock_hmc)
+
+
+def test_provision_affinity_applied_policy_validates_against_captured_state(
+    monkeypatch, mock_hmc
+):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    result = hmc_provision_lpar(
+        **_provision_args(
+            dry_run=True,
+            minimum_affinity_policy=MinimumAffinityPolicy(70, "warn"),
+            affinity_assessment=_affinity_request(
+                captured_policy_state="absent",
+                captured_minimum=None,
+                regression_threshold=None,
+                optimization_threshold=None,
+            ),
+        )
+    )
+    assert result.steps[-1]["step"] == "affinity_assessment"
 
 
 def _assessment_result(classification="none"):
