@@ -326,6 +326,7 @@ def _facade_import_bindings() -> dict[str, str]:
         module = f"hmc_mcp.{node.module}" if node.level else node.module
         for alias in node.names:
             assert alias.asname is None, f"the facade renames {alias.name} on import"
+            assert alias.name not in bindings, f"the facade imports {alias.name} twice"
             bindings[alias.name] = module
     return bindings
 
