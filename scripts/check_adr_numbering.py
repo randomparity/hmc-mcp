@@ -38,14 +38,10 @@ _DEFAULT_ADR_DIR = _REPO_ROOT / "docs" / "adr"
 _RECORD_NAME = re.compile(r"^(\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 
 
-def _validate(adr_dir: Path) -> list[str]:
+def _validate(records: list[str]) -> list[str]:
     """Return failure messages; empty when every record number is unique."""
     errors: list[str] = []
     by_number: dict[str, list[str]] = defaultdict(list)
-
-    records = sorted(path.name for path in adr_dir.glob("*.md"))
-    if not records:
-        return [f"no decision records found in {adr_dir}"]
 
     for name in records:
         match = _RECORD_NAME.match(name)
@@ -58,7 +54,10 @@ def _validate(adr_dir: Path) -> list[str]:
 
     for number, names in sorted(by_number.items()):
         if len(names) > 1:
-            errors.append(f"number {number} is used by {len(names)} records: " + ", ".join(names))
+            errors.append(
+                f"number {number} is used by {len(names)} records: "
+                + ", ".join(names)
+            )
 
     return errors
 
@@ -78,15 +77,19 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: record directory not found: {adr_dir}", file=sys.stderr)
         return 1
 
-    errors = _validate(adr_dir)
+    records = sorted(path.name for path in adr_dir.glob("*.md"))
+    if not records:
+        print(f"ERROR: no decision records found in {adr_dir}", file=sys.stderr)
+        return 1
+
+    errors = _validate(records)
     if errors:
         print(f"ERROR: ADR numbering check failed for {adr_dir}:", file=sys.stderr)
         for err in errors:
             print(f"     {err}", file=sys.stderr)
         return 1
 
-    count = len(list(adr_dir.glob("*.md")))
-    print(f"OK: {count} decision records in {adr_dir} have unique numbers.")
+    print(f"OK: {len(records)} decision records in {adr_dir} have unique numbers.")
     return 0
 
 
