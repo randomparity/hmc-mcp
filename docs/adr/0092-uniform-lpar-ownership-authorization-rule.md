@@ -157,7 +157,7 @@ first, exactly as for the tool rows in §3.2.
 | `add_vios_adapter` | `operations_adapters.py:51` | **unguarded** | #372 |
 | `delete_adapter` | `operations_adapters.py:69` | **unguarded** | #372 |
 | `map_storage` | `operations_storage.py:105` | **unguarded** | #372 |
-| `attach_disk_to_lpar` | `operations_provision.py:323` | **unguarded** | #372 |
+| `attach_disk_to_lpar` | `operations_provision.py:339` | **unguarded** | #372 |
 | `mount_optical_media` | `operations_storage.py:641` | **unguarded** | #440 |
 | `unmount_optical_media` | `operations_storage.py:661` | **unguarded** | #440 |
 | `migrate_lpar` | `operations_lpm.py:268` | **unguarded**; the guard belongs on the `validate=False` branch (see below) | #373 |
@@ -229,7 +229,7 @@ exempt anyway.
 | `create_and_stamp_lpar` (`operations_lpar.py:591`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
 | `provision_lpar` (`operations_provision.py:432`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
 | `deploy_partition_template` (`operations_templates.py:88`) | Creates the partition and stamps it per ADR 0014. |
-| `capture_lpar_console` (`server_console.py:25`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
+| `hmc_capture_lpar_console` (`server_console.py:25`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_migrate_validate_lpar` (`server_lpm.py:140`) | Calls `migrate_lpar(validate=True)`, which submits an LPM validation job and changes nothing. Once #373 guards the migrating branch, this tool reaches a guarded function on a branch that never mutates. |
 | `install_lpar_os` (`operations_install.py:152`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation *can be handed* a `LogicalPartition` selector and does not check the type locally; `installios` refuses a non-VIOS `-p` on the HMC, and because submission is detached that refusal reaches only the install log. That honesty gap is tracked by #460; it does not create an ownership decision, because a refused install mutates nothing. |
 | `install_vios` (`operations_install.py:268`) | Added by #366. Same reason. Resolves its target through the `VirtualIOServer` feed, so a name selector cannot name a `LogicalPartition` at all; a UUID selector is passed through unchecked, with the same #460 caveat. |
