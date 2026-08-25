@@ -219,13 +219,17 @@ def _normalize_platform_update_response(payload: Any) -> dict[str, Any]:
                 raise _platform_response_error("Result ParameterName")
             if not isinstance(value, str):
                 raise _platform_response_error("Result ParameterValue")
-            normalized_results.append({"ParameterName": name, "ParameterValue": value})
+            normalized_results.append(
+                {"ParameterName": name, "ParameterValue": value}
+            )
         resource["Results"] = {"JobParameter": normalized_results}
 
     normalized: dict[str, Any] = {"UUID": job_id.strip(), "Resource": resource}
     if isinstance(self_link, str):
         normalized["link"] = self_link.strip()
     return normalized
+
+
 
 
 class HMCClient(
@@ -528,7 +532,6 @@ class HMCClient(
         resp = await self._request("DELETE", path, headers=self._uom_headers(None))
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
-
     # ------------------------------------------------------------------ #
     # Brokered file upload helpers (/rest/api/web/File/)
     # ------------------------------------------------------------------ #
@@ -542,9 +545,7 @@ class HMCClient(
     # Reference: project-pim/cli/utils/iso_util.py (create_iso_path pattern)
     # ------------------------------------------------------------------ #
 
-    async def _broker_file_create(
-        self, vios_uuid: str, vg_uuid: str, filename: str
-    ) -> str:
+    async def _broker_file_create(self, vios_uuid: str, vg_uuid: str, filename: str) -> str:
         """Create a brokered file handle for upload (verification primitive).
 
         Returns the brokered file URI from the Location header.
@@ -684,7 +685,6 @@ class HMCClient(
         if not resp_text:
             return None
         return None
-
     # ------------------------------------------------------------------ #
     # Web endpoint helpers (/rest/api/web/)
     #
