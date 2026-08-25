@@ -10,8 +10,10 @@ sides could drift apart silently. They had.
 
 `docs/environment-variables.md`'s `HMC_VERIFY_SSL` note describes the same TLS record, so
 its restatement of the `source` values is held to the same set and neither document can
-drift alone (#497). Two further restatements are in code and are *not* reached; they are
-in the ledger below.
+drift alone (#497). Two further restatements were in code — `audit`'s record builder and
+its test — and are gone: each names `client.VerifySSLSource` instead, and the last check
+below holds the pointer rather than a vocabulary, since there is no longer one there to
+compare (#504).
 
 Every equality check below is a set comparison, so it fails on an orphan (documented,
 not defined) and on a dangling entry (defined, not documented) alike — with one bounded
@@ -49,11 +51,6 @@ What this does not reach, so a green run is not read as more coverage than it is
   prose — and the same tradeoff means `..., or `field-default`, and `config-file`` reads as
   three values plus prose. The dangling direction is unaffected; only the orphan half has
   the hole, and only for those two extractors;
-- the `source` restatements that live in code rather than in a document:
-  `audit.record_tls_verification_disabled`'s docstring, which is where a consumer reads
-  the field (`audit` imports nothing from `hmc_mcp`, so its parameter is a plain `str`),
-  and `tests/unit/test_audit.py`'s TLS record test. Both spell the three values out and
-  neither is reachable from here. Issue #504 owns replacing them with a pointer;
 - the literal values inside the documents' JSON sample records. `"event"` and `"source"`
   are written unbackticked there, so no extractor reads them: rename a vocabulary member
   and every list restatement reddens while the samples — the one place a consumer copies a
@@ -68,8 +65,17 @@ What this does not reach, so a green run is not read as more coverage than it is
   breaks within the clause do not matter, because `_tls_passage` collapses whitespace, so
   re-wrapping either paragraph is safe. Every violation fails loud, but it fails naming a
   regex, and an editor of a settings document has no reason to open a test named for a
-  different one. `docs/authorization-audit.md` carries a marker saying so; #504 covers the
-  same marker for the other document.
+  different one. Both documents now carry an editor marker saying so —
+  `docs/authorization-audit.md`'s since #497, the settings document's since #504 — and
+  each marker's quoted phrase is derived from `SOURCE_CLAUSE`, so it cannot be deleted,
+  moved away from its passage, or left behind by a rewording without reddening a check.
+  The marker is a pointer, not a guard: it tells an editor where the rule lives;
+- the module half of the two code pointers. `_alias_name` finds the alias wherever in
+  `client` it is bound, so a rename reddens — but both docstrings write the dotted path
+  `hmc_mcp.client.VerifySSLSource` in prose, and moving the alias to another module would
+  leave that prefix wrong behind a green run. A third pointer, `_verify_ssl_source`'s own
+  `:data:` reference, is not read here at all: it sits beside the alias, so a rename that
+  misses it is a name error in the same file rather than silent prose.
 
 The environment-variable restatement is kept rather than replaced by a cross-reference,
 which would have deleted half this machinery. It is where an operator deciding whether to
@@ -80,12 +86,13 @@ Its check is filed here rather than in `tests/test_env_var_guard.py`, which is t
 an editor of that document already opens. Weighed and chosen: this is one vocabulary with
 one extractor, and splitting the two arms across modules would put half a set comparison
 in each and leave the ledger describing coverage that lives somewhere else. The
-discoverability cost is what the marker in #504 pays down.
+discoverability cost is what that document's editor marker pays down.
 """
 
+import ast
 import re
 from pathlib import Path
-from typing import get_args
+from typing import Literal, get_args, get_origin
 
 import pytest
 
@@ -95,6 +102,8 @@ from hmc_mcp import audit, client, tool_registry
 ROOT = Path(__file__).parents[1]
 DOCUMENT = ROOT / "docs" / "authorization-audit.md"
 ENVIRONMENT_DOCUMENT = ROOT / "docs" / "environment-variables.md"
+AUDIT_MODULE = ROOT / "src" / "hmc_mcp" / "audit.py"
+AUDIT_TEST = ROOT / "tests" / "unit" / "test_audit.py"
 
 TABLE_ROW_CODE = re.compile(r"^\|\s*`([^`]+)`\s*\|", re.MULTILINE)
 EVENT_HEADING = re.compile(r'^### `event: "([^"]+)"`\s*$', re.MULTILINE)
@@ -108,10 +117,11 @@ STATE_SENTENCE = re.compile(r"`connection\.state` is ([^.]*)\.")
 STATE_ARM = re.compile(r"`([a-z-]+)`\s+when\b")
 BACKTICKED = re.compile(r"`([^`]+)`")
 
-#: `docs/authorization-audit.md`'s editor marker is one of these and quotes the anchor
-#: phrase, so comments come out of a passage before the clause is read.
+#: Each document's editor marker is one of these and quotes the anchor phrase, so
+#: comments come out of a passage before the clause is read.
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 TLS_HEADING = '### `event: "tls-verification-disabled"`'
+TLS_BULLET = "- **TLS verification** (`HMC_VERIFY_SSL`):"
 
 #: The passage describing the TLS record in each document that restates its `source`
 #: values: the event's own section in the audit document, the `HMC_VERIFY_SSL` note in the
@@ -125,9 +135,17 @@ TLS_PASSAGE = {
         re.MULTILINE | re.DOTALL,
     ),
     "environment-variables.md": re.compile(
-        r"^- \*\*TLS verification\*\* \(`HMC_VERIFY_SSL`\):.*?(?=^- \*\*|\Z)",
+        rf"^{re.escape(TLS_BULLET)}.*?(?=^- \*\*|\Z)",
         re.MULTILINE | re.DOTALL,
     ),
+}
+#: What each document's editor marker sits immediately above: the record's own heading in
+#: the audit document, the `HMC_VERIFY_SSL` note's bullet in the environment-variable one.
+#: The same string the passage above is anchored on, so a marker cannot end up adjacent to
+#: something other than the passage it warns about.
+TLS_ANCHOR = {
+    "authorization-audit.md": TLS_HEADING,
+    "environment-variables.md": TLS_BULLET,
 }
 #: The clause both passages introduce the `source` values with. Anchored on the wording
 #: rather than the punctuation, which differs between them: em dashes in the audit
@@ -210,18 +228,19 @@ def _records_lead(document: str) -> str:
     return _section(document, "## The records").split("\n### ", 1)[0]
 
 
-def _tls_marker(document: str) -> str:
-    """The editor marker: the HTML comment immediately above the TLS record's heading.
+def _tls_marker(document: str, name: str) -> str:
+    """The editor marker: the HTML comment immediately above *document*'s TLS anchor.
 
     Identified by where it sits rather than by document order. Its adjacency to the
     passage is the whole mechanism — a marker relocated to the top of the document warns
     nobody — so an unrelated comment elsewhere neither stands in for it nor is mistaken
     for it.
     """
-    head, separator, _ = document.partition(f"\n{TLS_HEADING}")
-    assert separator, f"missing heading: {TLS_HEADING}"
+    anchor = TLS_ANCHOR[name]
+    head, separator, _ = document.partition(f"\n{anchor}")
+    assert separator, f"missing anchor in {name}: {anchor}"
     preceding = head.rstrip()
-    assert preceding.endswith("-->"), f"no editor marker above {TLS_HEADING}"
+    assert preceding.endswith("-->"), f"no editor marker above {anchor} in {name}"
     return preceding[preceding.rindex("<!--") :]
 
 
@@ -470,29 +489,49 @@ def test_tls_sources_survive_an_unrelated_backticked_term(path: Path) -> None:
     assert _documented_sources(reworded) == client.VERIFY_SSL_SOURCES
 
 
-def test_the_editor_marker_quotes_the_anchor_it_names() -> None:
+@pytest.mark.parametrize("path", SOURCE_DOCUMENTS, ids=lambda path: path.name)
+def test_the_editor_marker_quotes_the_anchor_it_names(path: Path) -> None:
     """The marker is the only warning an editor of the document gets, so it is derived.
 
     Deleting it, moving it away from the passage it warns about, or letting its quoted
     phrase drift from `SOURCE_CLAUSE` reddens here, rather than leaving the guard's one
-    piece of documentation silently wrong or somewhere nobody meets it.
+    piece of documentation silently wrong or somewhere nobody meets it. Both documents
+    carry one, because the environment-variable note is the more likely of the two to be
+    edited by somebody who has never opened this module (#504).
     """
-    quoted = re.findall(r'"([^"]+)"', _tls_marker(_document()))
+    quoted = re.findall(r'"([^"]+)"', _tls_marker(path.read_text(), path.name))
 
-    assert quoted, "the editor marker quotes no phrase"
+    assert quoted, f"the editor marker in {path.name} quotes no phrase"
     assert any(SOURCE_CLAUSE.fullmatch(phrase) for phrase in quoted), quoted
 
 
-def test_a_marker_moved_inside_the_section_is_not_read_as_a_clause() -> None:
-    """Its own wording says "the values below", so inside the section is where it lands."""
-    document = _document()
-    marker = _tls_marker(document)
+@pytest.mark.parametrize("path", SOURCE_DOCUMENTS, ids=lambda path: path.name)
+def test_a_marker_moved_inside_the_passage_is_not_read_as_a_clause(path: Path) -> None:
+    """Its own wording says "the values below", so inside the passage is where it lands."""
+    document = path.read_text()
+    marker = _tls_marker(document, path.name)
+    anchor = TLS_ANCHOR[path.name]
 
-    moved = document.replace(f"{marker}\n{TLS_HEADING}", f"{TLS_HEADING}\n{marker}", 1)
+    moved = document.replace(f"{marker}\n{anchor}", f"{anchor}\n{marker}", 1)
     assert moved != document
-    assert _documented_sources(_tls_passage(moved, DOCUMENT.name)) == (
+    assert _documented_sources(_tls_passage(moved, path.name)) == (
         client.VERIFY_SSL_SOURCES
     )
+
+
+@pytest.mark.parametrize("path", SOURCE_DOCUMENTS, ids=lambda path: path.name)
+def test_an_unrelated_comment_does_not_stand_in_for_the_marker(path: Path) -> None:
+    """Adjacency is the mechanism, so a comment anywhere else is not the marker."""
+    document = path.read_text()
+    marker = _tls_marker(document, path.name)
+
+    elsewhere = f"<!-- an unrelated note -->\n{document}"
+    assert _tls_marker(elsewhere, path.name) == marker
+
+    removed = document.replace(f"{marker}\n", "", 1)
+    assert removed != document
+    with pytest.raises(AssertionError, match="no editor marker"):
+        _tls_marker(f"<!-- an unrelated note -->\n{removed}", path.name)
 
 
 def test_the_prose_pins_no_literal_vocabulary_count() -> None:
@@ -549,3 +588,65 @@ def test_restated_constants_are_the_exported_ones() -> None:
     assert f"`{audit.DEFAULT_RENDERING}`" in document
     assert f"`{audit.UNRESOLVED_RENDERING}`" in document
     assert f'"environment:{audit.ATTRIBUTION_ENV}"' in document
+
+
+#: The two `source` restatements that lived in code rather than in a document. Neither
+#: spells the values any more; each names the alias instead, so there is a pointer to hold
+#: rather than a vocabulary to compare (#504). `audit` still cannot import the alias — it
+#: imports nothing from `hmc_mcp` — which is why the pointer is prose and needs a check.
+POINTER_DOCSTRINGS = (
+    (AUDIT_MODULE, "record_tls_verification_disabled"),
+    (AUDIT_TEST, "test_the_tls_record_carries_host_and_source"),
+)
+
+
+def _alias_name() -> str:
+    """The name `client` exports the `source` vocabulary under, found rather than spelled.
+
+    Renaming the alias moves the name the two docstrings must quote, so the rename reddens
+    the check below instead of leaving them pointing at something that is gone.
+    """
+    names = [
+        name
+        for name, value in vars(client).items()
+        if get_origin(value) is Literal
+        and frozenset(get_args(value)) == client.VERIFY_SSL_SOURCES
+    ]
+    assert len(names) == 1, f"expected one `source` alias in client, found {names}"
+    return names[0]
+
+
+def _docstring(path: Path, function: str) -> str:
+    """The docstring of *function*, read from the file rather than imported.
+
+    `tests/unit/` is not an importable package from here, and reading both the same way
+    keeps the two halves of this check symmetric.
+    """
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.FunctionDef) and node.name == function:
+            documentation = ast.get_docstring(node)
+            assert documentation, f"{function} in {path.name} has no docstring"
+            return documentation
+    raise AssertionError(f"no {function} in {path.name}")
+
+
+@pytest.mark.parametrize(
+    ("path", "function"),
+    POINTER_DOCSTRINGS,
+    ids=[path.name for path, _ in POINTER_DOCSTRINGS],
+)
+def test_the_code_restatements_name_the_alias_instead_of_the_values(
+    path: Path, function: str
+) -> None:
+    """Neither docstring may spell the vocabulary out, and both must name where it lives.
+
+    These are the two restatements the ledger above used to record as out of reach. They
+    are reachable now because there is nothing left in them to drift: re-adding a value
+    reddens the second assertion, and renaming the alias reddens the first.
+    """
+    documentation = _docstring(path, function)
+
+    assert _alias_name() in documentation, f"{function} names no `source` alias"
+
+    spelled = sorted(v for v in client.VERIFY_SSL_SOURCES if v in documentation)
+    assert not spelled, f"{function} spells the `source` values out: {spelled}"

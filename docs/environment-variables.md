@@ -34,6 +34,10 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   phase, not across both attempts. A lost 443 logon response may leave an
   unreachable server-side session until the HMC expires it.
 
+<!-- The `source` values below are read by tests/test_authorization_audit_doc.py and held
+     to `client.VERIFY_SSL_SOURCES`. Keep them a comma-and-`or` run introduced by the
+     words "where the setting came from"; that clause is the anchor, and this note must
+     stay one `- **` bullet. -->
 - **TLS verification** (`HMC_VERIFY_SSL`): HMCs ship self-signed certificates,
   so TLS verification is off by default. To verify the HMC certificate, install
   its CA locally and set `HMC_VERIFY_SSL=true` — otherwise credentials are at

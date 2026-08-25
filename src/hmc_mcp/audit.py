@@ -298,12 +298,14 @@ def record_tls_verification_disabled(*, host: str, source: str) -> None:
     stream can answer "were credentials ever sent over an unverified channel,
     and to which HMC".
 
-    *source* names where the effective setting came from — ``explicit-argument``,
-    ``environment:HMC_VERIFY_SSL`` or ``field-default`` — because an operator
-    needs to know which knob to turn to fix it. It carries no credential, no
-    session token and no request body; like every caller-supplied field, *host*
-    and *source* pass through ``_value``, so they are bounded and an unset
-    ``HMCConfig.host`` renders as an empty string.
+    *source* names where the effective setting came from, because an operator
+    needs to know which knob to turn to fix it. Its closed vocabulary is
+    ``hmc_mcp.client.VerifySSLSource``, at the only place that produces a value;
+    this parameter stays a plain ``str`` because this module imports nothing from
+    the package (#504 — spelling the values here left them to drift silently).
+    It carries no credential, no session token and no request body; like every
+    caller-supplied field, *host* and *source* pass through ``_value``, so they
+    are bounded and an unset ``HMCConfig.host`` renders as an empty string.
 
     Always ``WARNING``, matching :func:`record_ownership_override`, so a CLI user
     whose process never installed the sink still sees it through

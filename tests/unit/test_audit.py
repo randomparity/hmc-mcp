@@ -401,10 +401,11 @@ def test_an_empty_override_host_renders_empty_and_is_bounded():
 def test_the_tls_record_carries_host_and_source():
     """#379. The durable counterpart of the logon warning names the HMC and the knob.
 
-    `source` is the operator-facing half of the record: it says which of
-    `explicit-argument`, `environment:HMC_VERIFY_SSL` or `field-default` to turn
-    to stop the exposure. No credential, session token or request body travels —
-    a construction-time event has none to carry.
+    `source` is the operator-facing half of the record: it says which knob to turn
+    to stop the exposure. Its closed vocabulary is `hmc_mcp.client.VerifySSLSource`
+    and the value below is one member of it, not a restatement of the set (#504).
+    No credential, session token or request body travels — a construction-time
+    event has none to carry.
     """
     lines = _capture()
     audit.record_tls_verification_disabled(host="hmc.test", source="field-default")
