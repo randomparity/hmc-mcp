@@ -58,6 +58,17 @@ synchronous function is a transformation, parser, or validator rather than an as
 operation and is excluded for that concrete contract-readiness reason. Imported transport types
 such as `Any` and built-in containers are not facade exports.
 
+That type half is transitive through an exported model's fields. This Decision already calls the
+fields of an exported package-owned model supported, and a supported field is a promise a consumer
+cannot use unless they can name the field's type: they cannot annotate a variable holding one,
+write a helper that takes one, or narrow a union containing one. So selection follows a selected
+model's own fields — a dataclass's `dataclasses.fields`, a Pydantic model's `model_fields`, and a
+`TypedDict`'s keys — to a fixed point, and every package-owned type or literal alias reached that
+way is itself selected. The closure is seeded from `__all__` as well as from operation signatures,
+because an exported model need not appear in any selected operation's signature. A field annotated
+as an opaque HMC payload mapping owns no `hmc_mcp` type and adds nothing, and an underscore name is
+internal here as everywhere.
+
 The rule reads a module attribute exactly as `inspect.iscoroutinefunction` and `__module__`
 ownership report it, so three operation shapes fall outside it by decision rather than by
 oversight: an asynchronous generator, which satisfies `inspect.isasyncgenfunction` and not
@@ -89,17 +100,19 @@ names are internal everywhere and are never inventoried.
 <!-- ADR-0029-INVENTORY:BEGIN -->
 
 - `affinity_assessment` — exports: `AffinityAssessmentInput`, `AffinityAssessmentResult`,
-  `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`.
+  `AffinityClassification`, `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`.
 - `client` — exports: `HMCClient`.
 - `client_adapters` — exports: `AdapterType`.
 - `config` — exports: `ConfigError`, `HMCConfig`, `load_profile`.
   - Note: `load_profile` is synchronous and exported all the same. It is a configuration
     constructor, not a domain operation, and the synchronous-exclusion reason above does not
     reach it.
-- `console_capture` — exports: `ConsoleCapture`, `ConsoleHeldError`, `capture_lpar_console`.
+- `console_capture` — exports: `ConsoleCapture`, `ConsoleHeldError`, `StopReason`,
+  `capture_lpar_console`.
   - Note: `capture_lpar_console` is an operation living outside `operations_*` (ADR 0072), so
     the selection rule does not reach it; it is exported by this entry alone.
-- `documents` — exports: `BootDeviceSelector`, `LparResources`, `PartitionType`, `StorageKind`.
+- `documents` — exports: `BootDeviceSelector`, `Keylock`, `LparResources`, `OsType`,
+  `PartitionType`, `SharingMode`, `StorageKind`.
 - `errors` — exports: `HMCError`, `HMCTransportError`.
 - `jobs` — exports: `DeviceType`, `JobOutcome`, `LuType`, `RemoteRestartOperation`.
   - Note: `JobOutcome`'s fields are a package-owned model contract except the opaque `job`
@@ -165,9 +178,9 @@ names are internal everywhere and are never inventoried.
 - `operations_pcie` — operations: `assign_dedicated_pcie_slot`, `assign_sriov_logical_port`,
   `list_dedicated_slots`, `list_sriov_adapters`, `list_sriov_logical_ports`,
   `list_sriov_physical_ports`, `set_sriov_adapter_mode`, `unassign_dedicated_pcie_slot`,
-  `unassign_sriov_logical_port`; types: `DedicatedSlot`, `InventoryResult`, `InventorySelector`,
-  `PcieAssignmentUnavailableError`, `SriovAdapter`, `SriovLogicalPort`,
-  `SriovLogicalPortCapabilityError`, `SriovLogicalPortChangeResult`,
+  `unassign_sriov_logical_port`; types: `CapabilityState`, `DedicatedSlot`, `InventoryResult`,
+  `InventorySelector`, `PcieAssignmentUnavailableError`, `ResourceKind`, `SriovAdapter`,
+  `SriovLogicalPort`, `SriovLogicalPortCapabilityError`, `SriovLogicalPortChangeResult`,
   `SriovLogicalPortPartialError`, `SriovLogicalPortSnapshot`, `SriovPhysicalPort`; excluded
   synchronous: none.
 - `operations_pcm` — operations: `get_pcm_preferences`, `metric_data`, `metric_links`,
@@ -199,7 +212,13 @@ names are internal everywhere and are never inventoried.
 - `operations_templates` — operations: `deploy_partition_template`, `get_partition_template`,
   `list_partition_templates`; types: none; excluded synchronous: none.
 - `operations_vios` — operations: `power_vios`; types: none; excluded synchronous: none.
-- `snapshot` — exports: `LparSnapshot`, `SnapshotInspection`, `SnapshotValidationError`.
+- `snapshot` — exports: `HmcIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
+  `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,
+  `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotInspection`, `SnapshotObservations`,
+  `SnapshotSource`, `SnapshotValidationError`, `SystemIdentity`.
+  - Note: every name here but the three that were already exported is a field type of
+    `LparSnapshot` or `SnapshotInspection`, selected by the Decision's transitive type clause
+    rather than by appearing in an operation's signature.
 - `ssh` — exports: `HMCCLIError`.
 - `ssh_commands` — exports: `MinimumAffinityPolicy`, `SriovMode`.
 
@@ -246,9 +265,17 @@ is unwrapped, and whatever turns out to be a literal alias is kept. Both halves 
 that *defines* a type, which for an alias is recovered by following the `from ... import`
 statements that bound the name, so an alias arriving from outside the package is not a facade
 export. `PcmResource` and `RemoteRestartOperation` were the two omissions the two halves found. An
-opaque HMC payload mapping owns no `hmc_mcp` type and so is excluded by construction. Two limits
-are deliberate: the walk covers the types an operation *names*, not those reachable only through
-an exported model's own fields (#482), and an underscore name is internal here as everywhere.
+opaque HMC payload mapping owns no `hmc_mcp` type and so is excluded by construction.
+
+Both halves then run again over model fields, which is how the mechanism carries the Decision's
+transitive clause. The walk closes over the `dataclasses.fields`, `model_fields`, or `TypedDict`
+keys of every owned model it has reached and of every model `__all__` exports, and the source-text
+alias clause is read off those same field annotations — through each model's MRO, because an
+inherited field carries its annotation on the base that declares it. That closure found nineteen
+further omissions (#482): twelve `snapshot` models behind `LparSnapshot` and `SnapshotInspection`,
+and seven literal aliases — `AffinityClassification`, `CapabilityState`, `Keylock`, `OsType`,
+`ResourceKind`, `SharingMode`, and `StopReason` — that no selected signature named. One limit
+remains deliberate: an underscore name is internal here as everywhere.
 
 A third test parses the inventory above and asserts each clause against the facade's own import
 statements and the modules' contents, rejecting every line inside the fence that is neither an

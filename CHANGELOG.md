@@ -216,6 +216,23 @@ carry a `### Facade manifest` section.
   through a supported call with no supported import path to name them — visible to a downstream
   type-checker since the PEP 561 marker shipped (#367). This records the manifest catching up,
   not a new capability.
+- Added: nineteen types ADR 0029's type clause now reaches through the fields of an exported
+  model (#482); this moves the frozen public signature digest. Twelve `hmc_mcp.snapshot` models
+  behind `LparSnapshot` and `SnapshotInspection` — `HmcIdentity`, `LparIdentity`,
+  `MemoryProjection`, `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`,
+  `ProcessorProjection`, `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotObservations`,
+  `SnapshotSource`, `SystemIdentity` — and seven literal aliases: `AffinityClassification`
+  (`regression`, `optimization-opportunity`, `policy-violation`, `unsupported-data`, `none`),
+  `CapabilityState` (`available`, `capability-unavailable`), `Keylock` (`normal`, `manual`,
+  `auto`), `OsType` (`aix`, `linux`, `ibmi`), `ResourceKind` (`dedicated_slot`, `sriov_adapter`,
+  `sriov_physical_port`, `sriov_logical_port`), `SharingMode` (`capped`, `uncapped`,
+  `keep_idle_procs`, `share_idle_procs`, `share_idle_procs_active`, `share_idle_procs_always`),
+  and `StopReason` (`duration`, `max_bytes`, `idle`, `remote-close`, `error`). ADR 0029's
+  Decision already called the fields of an exported model supported, while its walk stopped at
+  the types an operation *names*; a consumer therefore met `LparSnapshot.configuration` as
+  `hmc_mcp.snapshot.SnapshotConfiguration` with no supported import path to name it. This
+  records the manifest catching up, not a new capability. No type moved modules and no value set
+  changed.
 - Fixed: `set_sriov_adapter_mode` appeared twice in `hmc_mcp.api.__all__` (#446). The name is
   imported once, so the duplicate was inert at runtime, but ADR 0029 calls `__all__` an
   exhaustive manifest and a repeated entry makes it malformed. The export set is unchanged.
