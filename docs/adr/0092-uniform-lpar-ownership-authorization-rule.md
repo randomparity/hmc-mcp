@@ -214,7 +214,7 @@ exempt anyway.
 | `capture_lpar_console` (`server_console.py:25`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_migrate_validate_lpar` (`server_lpm.py:140`) | Calls `migrate_lpar(validate=True)`, which submits an LPM validation job and changes nothing. Once #373 guards the migrating branch, this tool reaches a guarded function on a branch that never mutates. |
 | `install_lpar_os` (`operations_install.py:101`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation *can be handed* a `LogicalPartition` selector and does not check the type locally; `installios` refuses a non-VIOS `-p` on the HMC, and because submission is detached that refusal reaches only the install log. That honesty gap is tracked by #460; it does not create an ownership decision, because a refused install mutates nothing. |
-| `install_vios` (`operations_install.py:198`) | Added by #366. Same reason. Resolves its target through the `VirtualIOServer` feed, so a name selector cannot name a `LogicalPartition` at all; a UUID selector is passed through unchecked, with the same #460 caveat. |
+| `install_vios` (`operations_install.py:209`) | Added by #366. Same reason. Resolves its target through the `VirtualIOServer` feed, so a name selector cannot name a `LogicalPartition` at all; a UUID selector is passed through unchecked, with the same #460 caveat. |
 
 **3.4b — LPAR-mutating, exempt because the signature cannot express the check**
 
@@ -249,6 +249,16 @@ always could, but `installios` refuses a non-VIOS `-p`, so no mutation of a
 §3.4a rather than §3.1, and §6's recording obligation is discharged there. The
 condition above is closed; it reopens only for an install path that can complete
 against a `LogicalPartition`.
+
+**What that closure rests on.** The refusal is ADR 0070's *assumption 5*, which
+that ADR lists under "Assumptions and unverified behaviors" — none of which had
+live-HMC verification. Confirming or refuting it in the next live-HMC window
+therefore reopens this classification, not merely ADR 0070's scope note: if any
+release has widened `installios` beyond VIOS-type targets, `install_lpar_os`
+becomes Destructive under §2 and moves to §3.1 with a guard. Nothing detects the
+widening on its own — submission is detached, so acceptance and refusal both
+reach only the HMC-side log — so the pointer in ADR 0070's item 5 is the
+detector, and it is deliberate.
 
 ### 4. The `power_lpar` decision
 

@@ -187,6 +187,20 @@ async def test_operation_surfaces_a_failed_submission(operation):
             await operation(hmc, "target1", "sys1", **_REQUEST)
 
 
+@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.asyncio
+async def test_unresolvable_uuid_target_raises_before_submitting(operation):
+    """An HMCCLIError from name resolution must leave nothing submitted."""
+    hmc = _hmc(get_managed_system={"Resource": {"SystemName": "sys1"}})
+    ssh = _Ssh(name_rows="99999999-9999-4999-8999-999999999999,other\n")
+
+    with _patch_ssh(ssh):
+        with pytest.raises(HMCCLIError, match="Could not resolve"):
+            await operation(hmc, LPAR_UUID, SYSTEM_UUID, **_REQUEST)
+
+    assert ssh.commands == ["lssyscfg -r lpar -m sys1 -F UUID,PartitionName"]
+
+
 @pytest.mark.parametrize("name", ["install_lpar_os", "install_vios"])
 def test_operations_are_exported_from_the_facade(name):
     """ADR 0029: every selected operation is part of the supported manifest."""

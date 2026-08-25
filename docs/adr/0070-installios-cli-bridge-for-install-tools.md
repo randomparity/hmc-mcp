@@ -142,7 +142,12 @@ live-HMC window:
 4. Whether `installios -p` accepts a partition UUID (we assume not and always
    send names).
 5. Whether any HMC release has widened `installios` beyond VIOS-type targets;
-   if so, `hmc_install_lpar_os`'s scope note can be revisited.
+   if so, `hmc_install_lpar_os`'s scope note can be revisited. **This one now
+   carries an authorization consequence:** ADR 0092 §3.4a exempts
+   `install_lpar_os` and `install_vios` from the ADR 0011 ownership guard
+   *because* a non-VIOS `-p` is refused. Confirming the widening reopens that
+   classification, not only the scope note — revisit ADR 0092 §3's disposition
+   of #366 in the same window.
 6. Exact exit-status semantics recorded in the log file (the tool does not
    parse them).
 

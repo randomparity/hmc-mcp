@@ -144,12 +144,16 @@ async def install_lpar_os(
     returned handle means the process was backgrounded, not that ``installios``
     accepted the target. Tracked by #460.
 
-    Submission is not idempotent. Nothing detects an install already running
-    against the partition, so a second call submits a second detached process.
-    Both then write the same target disk, and because the log path is derived
-    from the partition name the second submission truncates the first install's
-    log — destroying the only diagnostic record either one has. Serializing
-    calls per partition is the caller's responsibility.
+    Submission is not idempotent, and the log path collides more widely than
+    the partition. Nothing detects an install already running against the
+    target, so a second call submits a second detached process and both write
+    the same disk. Separately, the log path is keyed on the **partition name
+    alone** — the managed system is not part of it — and the redirect
+    truncates, so two same-named partitions on two different managed systems
+    behind one HMC share one log file and each destroys the other's only
+    diagnostic record. The returned ``log_path`` is therefore not unique per
+    system. Serializing per partition name *across every managed system on the
+    HMC* is the caller's responsibility.
 
     Args:
         hmc: Connected client; its configuration also carries the SSH
@@ -178,7 +182,14 @@ async def install_lpar_os(
         ValueError: If an argument cannot be part of an ``installios``
             invocation, or if a name resolves to no partition or system. Both
             are raised before anything is submitted.
-        HMCCLIError: If the SSH submission fails or reports no PID.
+        HMCCLIError: Either from mapping a UUID target to its CLI name over
+            SSH — no matching ``lssyscfg`` row, or a transport failure on that
+            read — or from the submission itself failing or reporting no PID.
+            The exception type alone does not say which, so it does not tell a
+            caller whether an ``installios`` was started: a resolution failure
+            submits nothing and needs no ``installios -u`` cleanup, while a
+            failed submission may. When that distinction matters, resolve the
+            target to a name first and pass the name.
     """
     return await _submit_install(
         hmc,
@@ -218,7 +229,8 @@ async def install_vios(
     ``LogicalPartition`` one, so a *name* selector cannot name a logical
     partition; a UUID selector is still passed through without a lookup, so the
     unchecked-target caveat and #460 apply to it unchanged. Submission is not
-    idempotent here either.
+    idempotent here either, and the same partition-name-only log-path collision
+    applies across every managed system on the HMC.
 
     Args:
         hmc: Connected client; its configuration also carries the SSH
@@ -241,7 +253,9 @@ async def install_vios(
         ValueError: If an argument cannot be part of an ``installios``
             invocation, or if a name resolves to no VIOS or system. Both are
             raised before anything is submitted.
-        HMCCLIError: If the SSH submission fails or reports no PID.
+        HMCCLIError: Same two sources as :func:`install_lpar_os` — UUID-to-CLI
+            name resolution over SSH, or the submission — and the same
+            inability to tell them apart from the exception type.
     """
     return await _submit_install(
         hmc,

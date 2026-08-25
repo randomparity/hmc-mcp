@@ -68,8 +68,12 @@ carry a `### Facade manifest` section.
   requires a Virtual I/O Server partition and ADR 0011 stamps no token on one.
   **Consumer note:** submission is not idempotent and neither operation checks the target's
   partition type. A second concurrent call submits a second detached `installios` against the same
-  partition and truncates the first install's log; serializing per partition is the caller's
-  responsibility. A returned handle means the process was backgrounded, not that `installios`
+  partition, and the install log path is keyed on the partition *name* alone — the managed system
+  is not part of it, and the redirect truncates — so two same-named partitions on different
+  managed systems behind one HMC share one log and destroy each other's only diagnostic record.
+  The returned `log_path` is not unique per system; serializing per partition name across every
+  managed system on the HMC is the caller's responsibility. A returned handle means the process
+  was backgrounded, not that `installios`
   accepted the target — a refused non-VIOS target surfaces only in the HMC-side log (#460). Adding
   a target-type check raises a new `ValueError` but adds no parameter, so it will not move the
   frozen signature digest.
