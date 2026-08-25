@@ -24,7 +24,12 @@ LOCAL_PATH_COMMANDS = (
     "just verify",
     "UV_NO_SYNC=1 uv run prek run --all-files",
 )
-LOCAL_PATH_EXPECTATIONS = ("focused", "test", "pull request")
+LOCAL_PATH_EXPECTATIONS = (
+    "focused",
+    "test",
+    "pull request",
+    "[security policy](security.md)",
+)
 SECURITY_TITLE = "# Security policy"
 SECURITY_HEADING = "## Reporting a vulnerability"
 SECURITY_EXPECTATIONS = (
@@ -217,14 +222,13 @@ def test_contribution_guide_defines_the_complete_local_path() -> None:
             f"'{CONTRIBUTING_HEADING}' must name `{command}`"
         )
     for expectation in LOCAL_PATH_EXPECTATIONS:
-        assert expectation in local_path.lower()
-    # Deliberately not section-scoped: the pointer sits *after* '## Changelog', so the
-    # only slice containing it is a section it is not about. Presence is the claim.
-    assert "[security policy](security.md)" in guide.lower()
+        assert expectation in local_path.lower(), (
+            f"'{CONTRIBUTING_HEADING}' must state {expectation!r}"
+        )
 
 
-def test_local_path_commands_relocated_into_another_section_are_caught() -> None:
-    """The negative variant: the commands stay in the guide but leave the local path."""
+def test_local_path_relocated_into_another_section_is_caught() -> None:
+    """The negative variant: the guidance stays in the guide but leaves its section."""
     guide = (ROOT / "CONTRIBUTING.md").read_text()
     relocated = _relocate(
         guide,
@@ -233,9 +237,17 @@ def test_local_path_commands_relocated_into_another_section_are_caught() -> None
     )
 
     assert all(f"`{command}`" in relocated for command in LOCAL_PATH_COMMANDS)
+    assert all(
+        expectation in relocated.lower() for expectation in LOCAL_PATH_EXPECTATIONS
+    )
     moved = _section(relocated, CONTRIBUTING_HEADING, CONTRIBUTING_NEXT)
     assert [
         command for command in LOCAL_PATH_COMMANDS if f"`{command}`" in moved
+    ] == []
+    assert [
+        expectation
+        for expectation in LOCAL_PATH_EXPECTATIONS
+        if expectation in moved.lower()
     ] == []
 
 
