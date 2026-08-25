@@ -125,6 +125,7 @@ jobs:
           assert find_spec("mcp") is None
           assert find_spec("rich") is None
           assert find_spec("typer") is None
+          assert (package_path.parent / "py.typed").is_file(), package_path
 
           class FakeHMC:
               async def list_managed_systems(self):

@@ -57,6 +57,16 @@ def test_readme_links_canonical_governance_files() -> None:
         assert link in readme, f"README must link {path}"
 
 
+def test_readme_documents_the_typed_facade_and_its_covered_surface() -> None:
+    readme = (ROOT / "README.md").read_text()
+    library = readme.split("## Reusable Python API", 1)[1].split("## Configure", 1)[0]
+
+    assert "PEP 561" in library
+    assert "py.typed" in library
+    for covered in ("dataclass", "literal alias", "signature"):
+        assert covered in library
+
+
 def test_vios_backup_hmc_floor_is_published_without_narrowing_general_support() -> None:
     readme = (ROOT / "README.md").read_text()
     cheatsheet = (ROOT / "docs" / "hmc-cli-cheatsheet.md").read_text()
