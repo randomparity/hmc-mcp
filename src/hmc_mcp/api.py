@@ -29,6 +29,7 @@ from hmc_mcp.operations_capacity import capacity_report, find_placement
 from hmc_mcp.operations_composite import lpar_summary, system_summary
 from hmc_mcp.operations_decommission import DecommissionResult, decommission_lpar
 from hmc_mcp.operations_health import FleetHealthResult, fleet_health
+from hmc_mcp.operations_install import install_lpar_os, install_vios
 from hmc_mcp.operations_lpar import (
     LparCreation,
     LparCreationResult,
@@ -219,6 +220,8 @@ __all__ = [
     "DecommissionResult",
     "fleet_health",
     "FleetHealthResult",
+    "install_lpar_os",
+    "install_vios",
     "assess_post_activation_affinity",
     "authorize_decommission_lpar_ownership_snapshot",
     "authorize_lpar_mutation",

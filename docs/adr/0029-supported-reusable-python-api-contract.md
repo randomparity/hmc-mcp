@@ -65,6 +65,13 @@ such as `Any` and built-in containers are not facade exports. The initial invent
   underscore helpers and `_Inventory` are internal.
 - `operations_health`: operation `fleet_health`; type `FleetHealthResult`; underscore helpers are
   internal.
+- `operations_install`: operations `install_lpar_os` and `install_vios`; no owned types or
+  public-name exclusions. Both submit the detached `installios` CLI bridge ADR 0070 selected
+  after ADR 0069 found no `InstallLPAR` or `InstallVIOS` REST job on any surveyed HMC, so each
+  returns the bridge's detach handle — an opaque `dict[str, Any]` carrying the resolved system
+  and partition names, the remote PID, the install log path, and a restating message — rather
+  than an HMC job identifier. Nothing on this path is pollable, so no wait parameters are
+  offered and none may be added without a superseding decision.
 - `operations_lpar`: operations `assess_post_activation_affinity`,
   `authorize_decommission_lpar_ownership_snapshot`,
   `authorize_lpar_mutation`, `resolve_lpar_ownership_names`, `stamp_created_lpar_ownership`,

@@ -59,6 +59,8 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "DecommissionResult",
         "fleet_health",
         "FleetHealthResult",
+        "install_lpar_os",
+        "install_vios",
         "assess_post_activation_affinity",
         "authorize_decommission_lpar_ownership_snapshot",
         "authorize_lpar_mutation",
@@ -352,7 +354,13 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #363, which exported four operations ADR 0029's
+        Last moved by issue #366, which extracted the ``installios`` install
+        orchestration out of the MCP tool bodies into ``operations_install``
+        and exported ``install_lpar_os`` and ``install_vios``. Both return the
+        CLI bridge's detach handle, not an HMC job identifier: ADR 0069 found
+        no ``InstallLPAR``/``InstallVIOS`` REST job on any surveyed HMC and
+        ADR 0070 replaced them with the detached CLI submission.
+        Before that, issue #363 exported four operations ADR 0029's
         selection rule already covered but the manifest omitted: the
         optical-media operations ``list_optical_mappings``,
         ``mount_optical_media``, and ``unmount_optical_media``, which #205
@@ -403,8 +411,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #363: four already-selected operations join the facade manifest.
-    expected_digest = "2aaae04d6a8b2f85f39ed9762fa650ef9c108076caff1f68497fca1c12e5f2e7"  # pragma: allowlist secret
+    # Moved by #366: the two operations_install install operations join the manifest.
+    expected_digest = "70574aad00762b329d7f11d1c4f06396b383c9c92b93093fec3e44ed385c108b"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
