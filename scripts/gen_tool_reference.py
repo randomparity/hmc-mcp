@@ -9,8 +9,8 @@ The reference documents every tool in ``TOOL_SECURITY`` -- the registered set, n
 the smaller set a default deployment exposes -- so the arbitrary-command escape
 hatch is documented where an operator looks for it. See ADR 0097.
 
-Names, summaries and input surfaces come from an MCP ``list_tools()`` walk, the
-same walk ``scripts/smoke_mcp.py`` performs; effect, operation and target kind come
+Names and summaries come from an MCP ``list_tools()`` walk, the same walk
+``scripts/smoke_mcp.py`` performs; effect, operation and target kind come
 from the ``ToolSecurity`` record the registry already holds. No HMC credential is
 needed and no network call is made.
 """
