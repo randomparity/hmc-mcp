@@ -29,7 +29,10 @@ the TLS record's top-level `source` from the `attribution.source` beside it — 
 naming a different vocabulary. Only `event` is held in both directions there, because one
 section and at least one sample apiece makes coverage checkable; one sample record shows
 one `reason`, one `effect`, one `state`, one `kind` and one `decision`, so those are held
-to naming nothing undefined and the table, the row and the sentence keep the other half.
+to naming nothing undefined. For `reason`, `effect` and `state` the other half is kept by
+the reason-code table, the `effect` row and the state sentence, which are checked above;
+`kind` and `decision` restate no such passage, so they are held in the orphan direction
+alone and the ledger records it.
 Coverage reads `event` at the top level and the orphan half reads it at any depth, so a
 nested value cannot stand in for a missing record. The price is an editing constraint:
 every `json` fence in that document must open one of these records, written at the start
@@ -75,12 +78,22 @@ What this does not reach, so a green run is not read as more coverage than it is
   field's range rather than its vocabulary. `kind` is the closed half of that pair and is
   read. Every `Literal`-derived vocabulary a record carries is read, `decision` included:
   it has no module-level alias, so it comes from the record builder's own signature;
+- the dangling direction for the samples' `kind` and `decision`. The document restates
+  neither vocabulary in a table row or a sentence the way it does `effect` and the
+  connection states, so there is no second passage to compare against and no coverage to
+  check — `decision` does have a field-table cell spelling both values, and nothing reads
+  it; #518 owns that. Add an arm to either vocabulary and the samples stay silently
+  right, showing one of however many there now are;
+- the sample's `attribution.source` value on the `ownership-override` record,
+  `config:agent_id`, which restates no exported constant. Its counterpart on the
+  `authorization` record is held to `audit.ATTRIBUTION_ENV` in the sample itself, because
+  the constant check below is satisfied by the prose under the record and would stay green
+  while the sample drifted;
 - a `source` written anywhere in a sample but the top level of the TLS record. The
   extractor is scoped there because `attribution.source` under the same key names where an
-  identity claim came from instead: `environment:HMC_AGENT_ID` is held by the constant
-  check below, `config:agent_id` by nothing, and holding either to the TLS vocabulary would
-  redden on a document that is right. A future event carrying a top-level `source` from
-  some third vocabulary would go unread for the same reason;
+  identity claim came from instead, and holding it to the TLS vocabulary would redden on a
+  document that is right. A future event carrying a top-level `source` from some third
+  vocabulary would go unread for the same reason;
 - the sample records' editing constraint, which unlike the TLS passage's carries no editor
   marker in the document. It needs none in the same way: the failure names the offending
   block and quotes it, so an editor who adds a non-record `json` fence is told what is
@@ -381,9 +394,13 @@ def _sample_records(document: str) -> tuple[dict[str, object], ...]:
     )
     blocks = JSON_SAMPLE.findall(document)
     assert blocks, f"no fenced JSON sample records in the document — {rule}"
-    opened = JSON_FENCE.findall(document)
+    opened = [
+        f"line {document.count(chr(10), 0, match.start()) + 1}: {match.group(0).strip()}"
+        for match in JSON_FENCE.finditer(document)
+    ]
     assert len(opened) == len(blocks), (
-        f"{len(opened)} JSON fences open but {len(blocks)} were read — {rule}"
+        f"{len(opened)} JSON fences open but {len(blocks)} were read — {rule}. "
+        f"Fences found: {opened}"
     )
 
     records = []
@@ -882,6 +899,19 @@ def test_a_fence_carrying_an_info_string_is_still_read() -> None:
     annotated = document.replace("```json\n", '```json title="sample"\n', 1)
     assert annotated != document
     assert _sampled_events(annotated) == _sampled_events(document)
+
+
+def test_the_sampled_attribution_source_is_the_exported_environment_variable() -> None:
+    """The one `attribution.source` value with a source of truth to restate.
+
+    `test_restated_constants_are_the_exported_ones` holds the same string somewhere in the
+    document, which the prose beneath the record satisfies on its own — so without this the
+    sample's copy could drift while that check stayed green. The other one,
+    `config:agent_id`, restates no constant and is in the ledger.
+    """
+    document = _document()
+
+    assert f"environment:{audit.ATTRIBUTION_ENV}" in _sampled_values(document, "source")
 
 
 def test_a_sample_that_stopped_being_valid_json_is_caught() -> None:
