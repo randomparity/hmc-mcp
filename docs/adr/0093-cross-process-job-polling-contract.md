@@ -320,12 +320,18 @@ it to the full outcome would be a second, larger shape change that nothing here 
 What changes for a caller: a reaped job that used to raise `HMCError` now returns successfully, so
 a caller that only caught the exception must read `found` (or the null) instead; `timeout_seconds`
 becomes the soft bound clause 5 describes, because the owed confirming read can outlive the
-deadline by one poll interval; and an identifier that addresses something other than one job now
-raises `ValueError` at the boundary rather than reaching the HMC. Every non-404 HMC failure still
-raises, which is what keeps `found=False` meaning "gone" rather than "the read failed".
+deadline by a whole poll interval, which is not bounded by `timeout_seconds`; and an identifier
+that addresses something other than one job now raises `ValueError` at the boundary rather than
+reaching the HMC — including an empty one, and including the case where a `job_href` was supplied,
+which is where the client previously ignored the identifier altogether. Every non-404 HMC failure
+still raises, which is what keeps `found=False` meaning "gone" rather than "the read failed".
 
-The CLI (`cli_jobs`) still calls `HMCClient` directly and still has the older contract; #526 owns
-that pass, because the CLI's output contract is its own decision.
+Two residuals stay open, both named in the tool docstrings rather than fixed here. Clause 2's
+promise that a re-persisted `job_href` is never a link known not to resolve does not hold when the
+caller's spelling of the link differs from the HMC's own — `operations_jobs._handle` compares them
+as raw strings — so the `hmc_wait_for_job` docstring states the weaker guarantee until #529 closes
+it. And the CLI (`cli_jobs`) still calls `HMCClient` directly and still has the older contract;
+#526 owns that pass, because the CLI's output contract is its own decision.
 
 ## Considered & rejected
 

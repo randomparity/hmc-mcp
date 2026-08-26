@@ -150,11 +150,17 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   it rather than running to the deadline — read `found` first, and note that a caller which only
   caught `HMCError` for a vanished job now gets a successful result. The output schema is
   unchanged: `found` was already a required property of the shared wait shape. Two smaller
-  changes come with the shared operation: `timeout_seconds` is now a soft bound, because a job
-  that disappears after being seen alive is re-read once before being reported gone, and a
-  `job_uuid` that carries a path, query, or whitespace character now raises `ValueError` at the
-  boundary rather than reaching the HMC. Every non-404 HMC failure still raises. The `hmc jobs`
-  CLI commands keep the previous behaviour; #526 owns that pass.
+  changes come with the shared operation. `timeout_seconds` is now a soft bound: a job that
+  disappears after being seen alive is re-read once before being reported gone, and that read is
+  owed past the deadline, so `hmc_wait_for_job` can return a whole `poll_interval` late —
+  more than the deadline itself if `poll_interval` exceeds `timeout_seconds`. And a `job_uuid`
+  that is empty, is a bare dot, or carries a path, query, fragment, percent, or interior
+  whitespace character now raises `ValueError` at the boundary rather than reaching the HMC;
+  surrounding whitespace is still trimmed. That check applies **even when `job_href` is
+  supplied**, where the client previously ignored `job_uuid` altogether — so an issue #95 caller
+  that persisted only the submission link must now pass the identifier too. Every non-404 HMC
+  failure still raises. The `hmc jobs` CLI commands keep the previous behaviour; #526 owns that
+  pass.
 - `HMC_AGENT_ID` values containing double quotes or backslashes are rejected at config load
   instead of being passed through into SSH command construction (#386).
 - `hmc_install_lpar_os` and `hmc_install_vios` now drive the HMC CLI

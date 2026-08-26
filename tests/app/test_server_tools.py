@@ -193,6 +193,26 @@ def test_get_job_rejects_identifier_addressing_something_else(monkeypatch, mock_
         hmc_get_job("jobs/job-uuid-999")
 
 
+def test_get_job_requires_identifier_even_with_href(monkeypatch, mock_hmc):
+    """The identifier is now checked even when job_href would decide the path.
+
+    The client ignored ``job_uuid`` entirely when a link was supplied, so this is
+    the one rejection that changes behaviour rather than moving an error (#474).
+    """
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="must be a non-empty HMC job identifier"):
+        hmc_get_job("", job_href=_JOB_OP_HREF)
+
+
+def test_get_job_trims_surrounding_whitespace(monkeypatch, mock_hmc):
+    """Padding from a stored handle is trimmed, not rejected — as documented."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+    assert hmc_get_job("  job-uuid-999  ")["Resource"]["JobID"] == "job-uuid-999"
+
+
 def test_lpars_by_name(monkeypatch, mock_hmc):
     """hmc_list_lpars resolves a non-UUID selector as a PartitionName."""
     _hmc_env(monkeypatch)

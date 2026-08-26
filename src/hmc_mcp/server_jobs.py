@@ -46,9 +46,18 @@ def hmc_get_job(
 
     Returns null when the HMC has no job for this identifier — reaped, deleted,
     or never present. Any other HMC failure still raises, so null means "gone",
-    not "the read failed" (ADR 0093). An identifier that carries a path, query,
-    or whitespace character addresses something other than one job and is
-    rejected outright rather than reported as a missing job.
+    not "the read failed" (ADR 0093).
+
+    An empty identifier, a bare dot, or one carrying a path, query, fragment,
+    percent, or interior whitespace character addresses something other than one
+    job and is rejected outright rather than reported as a missing job;
+    surrounding whitespace is trimmed. That check runs even when ``job_href`` is
+    supplied, so an empty ``job_uuid`` no longer passes through on the strength of
+    the link alone.
+
+    A ``job_href`` that stops resolving is re-read against the global jobs path
+    before the job is called gone, so the ``link`` in the returned mapping can be
+    the link that failed. Poll by ``job_uuid`` alone once that happens (#529).
 
     Args:
         job_uuid: UUID or JobID returned when the job was submitted.
@@ -140,12 +149,23 @@ def hmc_wait_for_job(
     ``timeout_seconds`` is a soft bound. A job that disappears after this wait has
     already seen it alive is re-read once, one ``poll_interval`` later, before
     being reported gone, and that confirming read is owed even past the deadline.
+    The overshoot is a whole ``poll_interval``, unrelated to the deadline, so a
+    ``poll_interval`` larger than ``timeout_seconds`` overshoots by more than the
+    deadline itself. Keep ``poll_interval`` well under ``timeout_seconds``.
 
-    ``job_href`` on the result is the link worth persisting for the next call: the
-    link you passed when the read through it worked, otherwise the successful
-    read's own link, and null when nothing resolved. An identifier that carries a
-    path, query, or whitespace character addresses something other than one job
-    and is rejected outright rather than reported as ``found`` false.
+    ``job_href`` on the result is usually the link worth persisting for the next
+    call: the link you passed when the read through it worked, otherwise the
+    successful read's own link, and null when nothing resolved. A link that stopped
+    resolving is dropped only when the HMC's own SELF link is spelled the same way,
+    so one you stored in another spelling — a relative path against an absolute
+    href — can come back unchanged after it has already failed (#529). After a
+    stale-link warning, poll by ``job_uuid`` alone; that is the reliable recovery.
+
+    An empty identifier, a bare dot, or one carrying a path, query, fragment,
+    percent, or interior whitespace character addresses something other than one
+    job and is rejected outright rather than reported as ``found`` false;
+    surrounding whitespace is trimmed. That check runs even when ``job_href`` is
+    supplied.
 
     The same two fields appear on the outcomes returned by the submit-and-wait
     tools (the migrate, remote-restart and power tools), where they describe a
