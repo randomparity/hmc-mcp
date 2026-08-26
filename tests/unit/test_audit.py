@@ -325,6 +325,17 @@ def test_attribution_is_unverified_and_sourced_when_the_env_is_unset(monkeypatch
     }
 
 
+def test_decisions_matches_the_literal():
+    """The authorization outcome is closed, and a checker can see that (#518).
+
+    Pinned here beside its siblings rather than only derived: `DECISIONS` is what the
+    document guard compares the field table against, so without this a widened
+    `Decision` would move the vocabulary and the guard's own expectation together.
+    """
+    assert audit.DECISIONS == frozenset(get_args(audit.Decision))
+    assert audit.DECISIONS == {"allow", "deny"}
+
+
 def test_reasons_matches_the_literal():
     """Spec 8. The vocabulary is closed."""
     assert audit.REASONS == frozenset(get_args(audit.Reason))

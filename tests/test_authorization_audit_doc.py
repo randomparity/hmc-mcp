@@ -12,10 +12,12 @@ sides could drift apart silently. They had.
 and as the reason-code table's middle column (#518). It was the one vocabulary with no
 alias to derive from — its `Literal` was written inline in `record_authorization`'s own
 signature — so it has been lifted to `audit.Decision` beside its siblings rather than
-read back off the signature here. Both `Literal`-annotated parameters of that builder are
-now held to the frozenset derived from their alias, so re-inlining either one reddens
-instead of leaving every check below comparing against a vocabulary the builder has
-stopped accepting.
+read back off the signature here. Every `Literal`-annotated parameter of that builder, and
+the same two on the `dispatch_scope` closure that calls it, are now held to naming their
+alias — read from source, because a resolved hint cannot tell an alias from an inline
+`Literal` — and each alias is held to the frozenset the checks below compare against. So
+re-inlining one reddens instead of leaving those checks describing a vocabulary the
+builder has stopped accepting.
 
 `docs/environment-variables.md`'s `HMC_VERIFY_SSL` note describes the same TLS record, so
 its restatement of the `source` values is held to the same set and neither document can
@@ -101,12 +103,10 @@ What this does not reach, so a green run is not read as more coverage than it is
   `REASON_ROW` reads both cells at once, so a decision cell widened into prose takes its
   whole row out of the reason vocabulary and reddens the equality check above, rather than
   quietly ceasing to be read;
-- the `decision` and `reason` annotations on `dispatch_scope`'s own `record` closure,
-  which name `audit.Decision` and `audit.Reason`. Only the record builder's signature is
-  held to naming its alias; re-inline a `Literal` there and nothing reddens. The exposure
-  is smaller than the builder's — that closure derives no frozenset and no document reads
-  it, so a re-inlined copy goes stale without taking a check with it — but it is the third
-  restatement #518 removed, and nothing keeps it removed;
+- a `Literal` re-inlined in any signature but the two held below. `record_authorization`
+  and `dispatch_scope.record` are read from source and must name their aliases, and the
+  first is held to covering every `Literal` parameter it has — but a fourth restatement
+  written somewhere else entirely is reached by nothing here;
 - the sample records' `policy`, `tool` and `targets[].argument` values, none of which is a
   closed vocabulary. `policy` is an example name; `tool` names a registry entry rather
   than a `Literal`, and deriving that set means importing the server, which this module
@@ -202,6 +202,7 @@ DOCUMENT = ROOT / "docs" / "authorization-audit.md"
 ENVIRONMENT_DOCUMENT = ROOT / "docs" / "environment-variables.md"
 AUDIT_MODULE = ROOT / "src" / "hmc_mcp" / "audit.py"
 AUDIT_TEST = ROOT / "tests" / "unit" / "test_audit.py"
+DISPATCH_MODULE = ROOT / "src" / "hmc_mcp" / "dispatch_scope.py"
 
 #: One reason-code table row: the code it names and the decision that code yields. Both
 #: cells are read by one pattern, so a row whose decision cell stops being a bare token
@@ -1358,6 +1359,43 @@ def test_the_record_builder_binds_the_derived_alias(
     assert annotation == _alias_name(audit, vocabulary)
     resolved = get_type_hints(audit.record_authorization)[parameter]
     assert frozenset(get_args(resolved)) == vocabulary
+
+
+def test_every_literal_parameter_of_the_builder_is_held() -> None:
+    """`BUILDER_VOCABULARIES` is a list, and this is what stops it going stale.
+
+    A third closed vocabulary added to the record would otherwise join the signature
+    unread, exactly as `decision` sat unread until #518. Unlike the sample keys in the
+    ledger, this needs no exclusion list: the signature's own `Literal` parameters are
+    the whole population.
+    """
+    annotated = get_type_hints(audit.record_authorization)
+    literals = {
+        parameter
+        for parameter, hint in annotated.items()
+        if get_origin(hint) is Literal
+    }
+
+    assert literals == set(BUILDER_PARAMETERS)
+
+
+@pytest.mark.parametrize(
+    ("parameter", "vocabulary"), BUILDER_VOCABULARIES, ids=BUILDER_PARAMETERS
+)
+def test_the_dispatch_closure_names_the_alias_too(
+    parameter: str, vocabulary: frozenset[str]
+) -> None:
+    """The third restatement #518 removed, and what keeps it removed.
+
+    `dispatch_scope.record` is where these two vocabularies are enforced on the way in,
+    and `decision` was spelled out inline there on the line above `reason: audit.Reason`
+    — for the same reason it was inline in the builder, there being no alias to name.
+    Held from source like the builder's own signature, and dotted because that module
+    imports `audit` rather than the aliases.
+    """
+    annotation = _annotation_source(DISPATCH_MODULE, "record", parameter)
+
+    assert annotation == f"audit.{_alias_name(audit, vocabulary)}"
 
 
 @pytest.mark.parametrize(
