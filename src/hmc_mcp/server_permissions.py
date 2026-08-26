@@ -333,17 +333,16 @@ def _log_unresolved(connection: str, detail: str, reason: str) -> None:
     flood is the one an operator reads to diagnose exactly this. *detail* is the
     dedup key rather than *reason*; see :data:`_reported_unresolved`.
 
-    **This line is written outside ADR 0043's bounded stderr sink.** Nothing
-    binds the ``hmc_mcp`` logger namespace to it — ``install_audit_sink`` binds
-    only the reserved audit logger, and ``install_third_party_stderr_sinks``
-    names ``fastmcp``, ``uvicorn`` and ``mcp`` — so in a served process this record
-    reaches fd 2 through ``logging.lastResort``: unbounded, synchronous, and
-    without ADR 0051's ``StreamSafeFormatter`` prefix and control-character
-    escaping. The dedup above is what keeps that route to one line per distinct
-    failure; the sink-coverage gap itself is #534, and it predates this module —
-    ``hmc_mcp.config`` already writes there. This is the first design that
-    *depends* on the channel, which is why it is written down here rather than
-    assumed.
+    **In a served process this line goes through ADR 0043's bounded stderr sink**,
+    under the ``hmc_mcp:`` producer prefix ``server.install_package_stderr_sink``
+    installs (#534). Before that binding it reached fd 2 through
+    ``logging.lastResort`` — unbounded, synchronous, unprefixed and unescaped —
+    which is why the dedup above exists. The dedup stays: it is worth keeping on a
+    bounded channel too, since a queue this floods is the one an operator reads to
+    diagnose exactly this, and a drop is counted rather than free. Outside a
+    served process — a direct API caller that never installs the sink — the
+    ``lastResort`` route is still what carries it, as it does for every other
+    library logger.
     """
     seen = (connection, detail)
     if seen in _reported_unresolved:

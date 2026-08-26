@@ -4,6 +4,12 @@
 
 Accepted (2026-08-19)
 
+> **Amended (2026-08-26, issue #534):** the `hmc_mcp` logger namespace joins this sink. It had
+> never been on it — only the reserved `hmc_mcp.audit` logger and (through ADR 0051) the
+> third-party set were — so this record's "every stderr write this package makes" was false for
+> every other `hmc_mcp.*` logger. The Consequences clause that overstated it is corrected in
+> place and the amendment section at the end records what changed; the rest is unchanged history.
+
 ## Context
 
 ADR 0040 put one audit record on `sys.stderr` per authorization decision, written synchronously
@@ -138,14 +144,61 @@ pipe buffer it is standing in for.
   traceback of no fixed length — the 0.5 MiB figure is a typical case rather than a ceiling,
   and the bound on outstanding writes is the part that keeps the server answering. #330's
   amendment to ADR 0051 widens it again: `uvicorn`, `uvicorn.access` and `mcp` join the
-  `fastmcp` logger on this queue, on both transports, so every stderr write the served process
-  makes through a logger now goes through the sink. Neither record claims fd 2 has a *single*
-  writer — rich's startup banner and `Handler.handleError` still write directly, both recorded
-  as residuals in ADR 0051 — but no log *record* reaches fd 2 any other way.
+  `fastmcp` logger on this queue, on both transports. That still left this package's *own*
+  non-audit loggers off the sink, which is #534 and the amendment below; with it, every
+  logger a served process writes through — third-party or `hmc_mcp.*` — is on this queue.
+  Neither record claims fd 2 has a *single* writer: rich's startup banner and
+  `Handler.handleError` still write directly, both recorded as residuals in ADR 0051, and a
+  namespace outside the bound set with no handler of its own — `asyncio`, say — still walks to
+  `logging.lastResort`.
 - **A process that never installs the sink is unchanged.** `logging.lastResort` writes
   synchronously at `WARNING`, so a CLI ownership-override record still blocks on an undrained
   stderr. No dispatch path exists in such a process, and `install_audit_sink` runs on every serve
   path, so the exposure #269 describes is closed where it exists.
+
+## Amendment (#534): the `hmc_mcp` namespace joins the sink
+
+**`server.install_package_stderr_sink` binds the `hmc_mcp` logger to this queue, and
+`_serve_application` calls it beside `install_audit_sink`.** The record's own reasoning already
+covered these writes; only the wiring was missing. `install_audit_sink` bound `hmc_mcp.audit`
+alone, ADR 0051 bound the third-party set, and a record on any other `hmc_mcp.*` logger found
+zero handlers in its `callHandlers` walk and went to `logging.lastResort` — a `StreamHandler` on
+fd 2, synchronous and unbounded, without ADR 0051's prefix or its escaping. Two producers were
+already on that route: `HMCConfig._warn_audit_memento_override`, and `_log_unresolved`, which
+#470 deduplicated to one line per distinct failure *because* the route was unbounded.
+
+One binding on the namespace covers every producer in it, present and future, because
+`callHandlers` reaches a parent's handler. Three choices inside it:
+
+- **Prefix `hmc_mcp: `, through the same `StreamSafeFormatter`** the third-party bindings use.
+  A rendered `str(ConfigError)` carries the config path and the profile inventory, and a TOML
+  quoted key can put a newline in either, so this package's own text needs the marking and the
+  control-character escaping as much as a foreign package's does.
+- **No handler is displaced, and no level is set.** ADR 0051's wholesale removal answers a
+  problem that does not exist here — nothing but an operator attaches a handler to `hmc_mcp` —
+  so the sink goes on only when the logger is bare, which also makes a second call add nothing.
+  The logger stays at `NOTSET`, so its effective level is still root's `WARNING`, the level
+  `logging.lastResort` used: this reroutes records rather than changing which ones exist.
+- **`propagate = False`, for ADR 0040's reason rather than a new one.** Under stdio a
+  `StreamHandler(sys.stdout)` above this namespace would put a package record into the JSON-RPC
+  stream. ADR 0040 set the flag on `hmc_mcp.audit` at import for exactly that; this extends the
+  same rule to the namespace around it. The cost is real and it is the one ADR 0040 already
+  accepted: an operator's root handler stops seeing these records, and they reach fd 2 anyway.
+
+`hmc_mcp.audit` is unaffected — its own `propagate = False` keeps it off the parent handler, so
+the audit stream stays bare one-line JSON with no prefix and no second rendering. The tests are
+in `tests/app/test_connection_authorization.py`; `tests/conftest.py` resets the binding between
+tests, without which one serving test would silence every later `caplog` assertion on an
+`hmc_mcp.*` record.
+
+**Which channel a non-audit `hmc_mcp.*` record uses.** This sink carries two grammars: ADR 0040's
+audit records, which are one line of ASCII JSON on the reserved `hmc_mcp.audit` logger, and
+diagnostics, which are prefixed prose. A record belongs on the audit stream only if it is an
+authorization decision in ADR 0040's schema — machine-parsed, with the stability rule that schema
+carries. Everything else this package says is a diagnostic and belongs on its own `hmc_mcp.*`
+module logger, where it now lands on the same queue, prefixed and escaped, beside
+`server._warn`'s startup lines. Startup state an operator should see — the effective value of a
+setting, say — is a diagnostic under this rule, not an audit record.
 
 ## Considered & rejected
 

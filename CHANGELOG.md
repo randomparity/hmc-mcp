@@ -260,6 +260,19 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   absent-element empty semantics), superseding the issue's N×SSH sketch, and the
   parse-failure honesty policy (#375). Also corrects the disproven "not exposed via REST"
   claim in `get_lpar_description`'s docstring.
+- A served process now routes its own `hmc_mcp.*` log records through ADR 0043's bounded stderr
+  sink (#534, ADR 0043 amendment). Only the reserved `hmc_mcp.audit` logger and the third-party
+  set were on it, so a warning from any other module — `hmc_mcp.config`'s audit-memento override,
+  `hmc_mcp.server_permissions`' unresolved-profile line — reached fd 2 through
+  `logging.lastResort`: synchronous, unbounded, and unescaped. Those lines now carry the
+  `hmc_mcp:` producer prefix and are drop-counted like every other line on the queue.
+  **Two visible changes for an operator:** the prefix, and `propagate = False` on the `hmc_mcp`
+  logger — a handler you attached to the root logger no longer sees these records in a served
+  process, for the reason ADR 0040 already applied to `hmc_mcp.audit` (under stdio, a root
+  handler on `sys.stdout` puts a package record into the JSON-RPC stream). A handler you attach
+  to `hmc_mcp` itself is left in place and takes the records instead. Nothing changes for a
+  library or CLI process, which installs no sink. Record volume is unchanged: the logger stays
+  at `NOTSET`, so `WARNING` is still the floor.
 
 ### Facade manifest
 
