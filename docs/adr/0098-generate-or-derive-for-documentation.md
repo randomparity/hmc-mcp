@@ -143,6 +143,37 @@ per-format comment syntax, and there is no such surface today. Extending the wal
 the change to make when one arrives, and until then §4 lists this among what is not
 covered rather than leaving it implied.
 
+**The `*-docs` suffix is a safety boundary, not only a name.** §2 requires the suffix so
+the grammar cannot admit `Regenerate: just setup`. That requirement is also the whole of
+what stands between a tracked Markdown file and the command it causes to run: the guard
+executes what a banner names, a banner is a file's first line, and nothing downstream
+narrows the choice — the grammar admits any recipe carrying the suffix, and `just
+--summary` admits any recipe the justfile defines. Naming a recipe `*-docs` is therefore
+what makes it executable by anyone who can land a Markdown file here, and the name is
+the moment that decision is made. Two obligations follow, and they bind whoever names a
+recipe rather than whoever writes a banner.
+
+**A recipe matching `*-docs` must be side-effect-free and idempotent.** It may write into
+the tree it is run in and must reach nothing outside it: no publish, no upload, no
+deploy, no push, no external service, no credentialed call. Running it twice must leave
+what running it once left, because §3 runs it in a scratch tree on every gate and a CI
+leg reaches the walker several times over (Consequences). A recipe that acts outside the
+working tree is not a documentation generator; name it `publish-documentation` rather
+than `publish-docs`, and the grammar keeps it unreachable.
+
+**A recipe matching `*-docs` must not read a secret.** §3 folds a failed command's
+captured stdout and stderr into the message it prints, and that message lands in CI logs.
+GitHub masks the secrets it has been given and nothing masks the rest, so a generator
+that reads a token puts it one non-zero exit away from a log. Truncating that message
+would bound its volume and not its disclosure — a credential inside any retained prefix
+still reaches the log — so the control is what a generator may read, not how much of its
+output is quoted back. Today's generator reads the tool registry and no credential; this
+is a constraint on the next one.
+
+`publish-docs`, `upload-docs`, and `deploy-docs` are all natural names for recipes that
+would break both obligations, and the person choosing one has no reason to open
+`scripts/check_generated_docs.py`. §4 records that nothing checks any of this.
+
 ### 3. One check, executing rather than inspecting
 
 `scripts/check_generated_docs.py` (`just doc-freshness`) reads the first line of
@@ -230,6 +261,18 @@ below, and the rest is a reviewer's job.
   than accepted, so the convention has to be followed to opt in at all. The other
   clauses reach a surface the moment a conforming banner names it; only the deletion
   catch depends on the name.
+- **Nothing checks that a recipe named `*-docs` is safe to run (§2a).** The orphan
+  clause makes a new one *visible* — add `publish-docs` and `just doc-freshness` reddens
+  until a banner names it — but visibility is not safety, and the banner that clears the
+  orphan clause is the same act that makes the recipe reachable from any Markdown file.
+  What would have to be checked is that a recipe writes nothing outside the tree it runs
+  in, re-runs to the same bytes, and reads no credential. The first and third are
+  properties of arbitrary shell and of every program it invokes, and §5's scratch tree
+  isolates the working directory rather than the process, so the guard has no sandbox to
+  measure them against. Idempotence alone could be had by running each command twice and
+  diffing, at the cost of doubling §3's runtime for the weakest of the three. So the
+  suffix's safety half is a reviewer's, and the review to do falls when a recipe is
+  named, not when a banner is written.
 - **A generated surface outside `docs/`, or in a format that cannot carry a Markdown
   comment, is out of the walk (§2a).** A banner outside `docs/` is at least
   reported; a generated `.json` cannot register at all and its `*-docs` recipe would
