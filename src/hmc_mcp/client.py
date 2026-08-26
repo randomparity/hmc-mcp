@@ -140,9 +140,11 @@ VerifySSLSource = Literal[
 #: ``audit.Reason``. ``audit`` imports nothing from ``hmc_mcp``, so its TLS record
 #: builder still takes a plain ``str``; the narrowing lives here, at the only place
 #: that produces a value. ``tests/test_authorization_audit_doc.py`` holds the two
-#: documents that restate this set to it (#497). It also names the restatements that
-#: guard does *not* reach, ``record_tls_verification_disabled``'s docstring among them;
-#: #504 owns those.
+#: documents that restate this set to it (#497), and holds
+#: ``record_tls_verification_disabled``'s docstring and its test to naming this alias
+#: instead of the values (#504). Its ledger records what is still out of reach; for this
+#: vocabulary that is the literals in the documents' JSON sample records, unbackticked so
+#: no extractor reads them, which #506 owns.
 VERIFY_SSL_SOURCES: frozenset[str] = frozenset(get_args(VerifySSLSource))
 
 
