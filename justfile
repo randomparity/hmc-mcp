@@ -8,6 +8,7 @@
 #   just smoke-verbose     # MCP handshake / exposed tool names
 #   just tool-docs         # regenerate docs/tools/ from the registry
 #   just tool-docs-check   # fail when docs/tools/ has fallen behind the registry
+#   just doc-freshness     # fail when any generated document has fallen behind
 
 # synchronize locked dependencies and install repository hooks
 setup:
@@ -51,8 +52,12 @@ tool-docs-check:
 adr-numbering:
     uv run --no-sync python scripts/check_adr_numbering.py
 
+# verify every generated document still matches its declared regeneration command
+doc-freshness:
+    uv run --no-sync python scripts/check_generated_docs.py
+
 # local and hosted static-analysis gate
-static: lint typecheck secrets workflow-security env-vars nicknames tool-docs-check adr-numbering
+static: lint typecheck secrets workflow-security env-vars nicknames tool-docs-check adr-numbering doc-freshness
 
 # run the full pytest suite with one semantic summary
 test:

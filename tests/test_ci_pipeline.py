@@ -160,6 +160,7 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "tool-docs",
         "tool-docs-check",
         "adr-numbering",
+        "doc-freshness",
         "static",
         "test",
         "test-verbose",
@@ -169,11 +170,16 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         assert f"\n{recipe}:" in justfile
     assert (
         "\nstatic: lint typecheck secrets workflow-security env-vars nicknames "
-        "tool-docs-check adr-numbering\n" in justfile
+        "tool-docs-check adr-numbering doc-freshness\n" in justfile
     )
     assert (
         "\nadr-numbering:\n"
         "    uv run --no-sync python scripts/check_adr_numbering.py\n"
+        in justfile
+    )
+    assert (
+        "\ndoc-freshness:\n"
+        "    uv run --no-sync python scripts/check_generated_docs.py\n"
         in justfile
     )
     assert (
@@ -237,21 +243,31 @@ def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> Non
 
 
 def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
+    """One hook per `static` member, derived from both files rather than restated.
+
+    The recipe list and the hook list both live in the tree, so a test that writes
+    either one down again is a hand-maintained mirror and a literal hook count is
+    a number kept in step by memory -- exactly what ADR 0098 §1c calls a defect.
+    Deriving both sides and comparing them is the property anyone wanted: every
+    gate `just verify` reaches is also a commit-time hook, and no hook runs
+    something `just verify` does not.
+    """
+    justfile = (ROOT / "justfile").read_text()
     config = (ROOT / ".pre-commit-config.yaml").read_text()
 
+    static = re.search(r"^static:(?P<dependencies>[^\n]*)$", justfile, re.MULTILINE)
+    assert static
+    members = static["dependencies"].split()
+    assert members
+
+    hooks = re.findall(r"^\s*- id: (\S+)$", config, re.MULTILINE)
+    entries = re.findall(r"^\s*entry: just (\S+)$", config, re.MULTILINE)
+
     assert config.count("repo: local") == 1
-    for recipe in (
-        "lint",
-        "typecheck",
-        "secrets",
-        "workflow-security",
-        "env-vars",
-        "nicknames",
-        "tool-docs-check",
-        "adr-numbering",
-    ):
-        assert f"entry: just {recipe}" in config
-    assert config.count("pass_filenames: false") == 8
+    # Every hook delegates to a recipe, and the delegated set is `static` exactly.
+    assert len(entries) == len(hooks)
+    assert sorted(entries) == sorted(members)
+    assert config.count("pass_filenames: false") == len(hooks)
     assert "entry: uv run" not in config
 
 
@@ -321,8 +337,9 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     for command in (
         "just setup",
         # Named as its own step as well as reached through `static` -> `verify`,
-        # so generated-docs drift is its own failed check (ADR 0097).
+        # so generated-docs drift is its own failed check (ADR 0097, ADR 0098).
         "just tool-docs-check",
+        "just doc-freshness",
         "just verify",
         "UV_NO_SYNC=1 uv run prek run --all-files",
     ):

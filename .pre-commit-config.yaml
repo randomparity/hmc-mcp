@@ -41,3 +41,8 @@ repos:
         entry: just adr-numbering
         language: system
         pass_filenames: false
+      - id: doc-freshness
+        name: Generated documentation guard
+        entry: just doc-freshness
+        language: system
+        pass_filenames: false
