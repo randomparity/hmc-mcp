@@ -173,13 +173,17 @@ def test_an_ambient_host_makes_a_profile_key_ineffective(monkeypatch, tmp_path):
     )
     monkeypatch.setenv("HMC_HOST", "hmc-c.example.com")
     policy = _policy([
-        {"effects": ["read"], "connections": ["guarded"], "targets": "all-targets"}
+        {
+            "effects": ["read"],
+            "connections": ["<default>", "guarded"],
+            "targets": "all-targets",
+        }
     ])
 
     guards = _by_connection(resolve_power_guards(policy))
 
-    assert guards["guarded"].authorized is False
-    assert guards["guarded"].source == "default"
+    assert guards[DEFAULT_CONNECTION_TOKEN].authorized is False
+    assert guards[DEFAULT_CONNECTION_TOKEN].source == "default"
 
 
 def test_a_case_variant_environment_variable_asserts_no_origin(monkeypatch):
@@ -300,6 +304,107 @@ def test_an_invalid_setting_names_its_field_without_echoing_the_value(monkeypatc
     assert guard.authorized is None
     assert guard.source == "unresolved"
     assert guard.detail == "ValidationError: authorize_power_operations"
+
+
+def test_one_malformed_profile_does_not_take_down_the_whole_report(
+    monkeypatch, tmp_path
+):
+    """`build_config` can raise outside any list this module could enumerate.
+
+    A profile key spelled `_env_file` collides with the keyword
+    `_load_profile_from_document` passes and raises `TypeError`. This is the only
+    path that builds a config for every granted connection in one call, so an
+    escaping exception would cost the operator the guard state of the
+    connections that resolve fine — in exactly the situation the report exists
+    to diagnose.
+    """
+    _write_config(
+        monkeypatch,
+        tmp_path,
+        """
+        default_profile = "sound"
+
+        [profiles.sound]
+        host = "hmc-a.example.com"
+        user = "admin"
+        authorize_power_operations = true
+
+        [profiles.broken]
+        host = "hmc-b.example.com"
+        user = "admin"
+        _env_file = "/etc/passwd"
+        """,
+    )
+    policy = _policy([
+        {
+            "effects": ["read"],
+            "connections": ["sound", "broken"],
+            "targets": "all-targets",
+        }
+    ])
+
+    guards = _by_connection(resolve_power_guards(policy))
+
+    assert guards["broken"].authorized is None
+    assert guards["broken"].source == "unresolved"
+    assert guards["broken"].detail == "TypeError"
+    assert guards["sound"].authorized is True
+    assert guards["sound"].source == "profile"
+
+
+def test_an_ambient_host_collapses_the_reported_set_to_the_default(
+    monkeypatch, tmp_path
+):
+    """`HMC_HOST` collapses every token to the default connection at dispatch.
+
+    `connection_scope.selected_connection` rule 1, because `build_config` gates
+    its whole TOML branch on it. Without the same collapse here the report would
+    list rows for named profiles nothing can reach and omit the one every
+    permitted call resolves to.
+    """
+    _write_config(
+        monkeypatch,
+        tmp_path,
+        """
+        default_profile = "guarded"
+
+        [profiles.guarded]
+        host = "hmc-a.example.com"
+        user = "admin"
+
+        [profiles.open]
+        host = "hmc-b.example.com"
+        user = "admin"
+        """,
+    )
+    monkeypatch.setenv("HMC_HOST", "hmc-c.example.com")
+    policy = _policy([
+        {
+            "effects": ["read"],
+            "connections": ["<default>", "guarded", "open"],
+            "targets": "all-targets",
+        }
+    ])
+
+    guards = resolve_power_guards(policy)
+
+    assert [guard.connection for guard in guards] == [DEFAULT_CONNECTION_TOKEN]
+
+
+def test_an_ambient_host_with_no_default_grant_reports_nothing():
+    """The collapse is an intersection, not a substitution.
+
+    Every token becomes the default connection, and a policy that does not grant
+    the default connection then denies every call — so there is no connection
+    whose guard state describes a call this server would make.
+    """
+    policy = _policy([
+        {"effects": ["read"], "connections": ["lab"], "targets": "all-targets"}
+    ])
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("HMC_HOST", "hmc-c.example.com")
+        assert resolve_power_guards(policy) == ()
 
 
 def test_a_connection_no_grant_names_is_not_reported():

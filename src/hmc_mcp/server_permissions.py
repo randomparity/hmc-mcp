@@ -114,8 +114,8 @@ _UNRESOLVED_LOG = (
 #: outranked by the profile on that path and wins on the env-only path.
 _CASE_VARIANT_DETAIL = (
     "a case variant of HMC_AUTHORIZE_POWER_OPERATIONS is set; only the exact "
-    "upper-case spelling overrides a profile's value, so this value may have "
-    "come from either"
+    "upper-case spelling overrides a profile's value, so this label does not "
+    "assert where the value came from"
 )
 
 
@@ -286,8 +286,8 @@ def _unresolved_detail(exc: Exception) -> str:
     ``HMCConfig`` field names — compiled-in identifiers, not configuration — and
     without them the report reached for as the last word on this variable answers
     a malformed ``HMC_AUTHORIZE_POWER_OPERATIONS`` with a bare word naming no
-    setting. ``loc`` and ``type`` are read; ``input`` and ``msg``, which quote the
-    rejected value, are not.
+    setting. Only ``loc`` is read; ``input`` and ``msg``, which quote the rejected
+    value, are not, and neither is ``type``.
     """
     if not isinstance(exc, ValidationError):
         return type(exc).__name__
@@ -311,6 +311,14 @@ def _guard_source(config: HMCConfig) -> tuple[str, str | None]:
     the guard ignore them, and called this tool to find out why is exactly the
     reader `source` exists for; ``environment`` would end their search on the
     wrong answer.
+
+    ``default`` also covers a ``config.toml`` that exists but could not be read,
+    parsed, or resolved to a profile, on the ``<default>`` connection only:
+    :func:`~hmc_mcp.common.build_config` catches that ``ConfigError`` itself when
+    no profile was named and falls through to env-only construction, so
+    :func:`_power_guard` is handed a valid config and never sees the failure.
+    The boolean stays right — the runtime resolves ``false`` the same way — but
+    nothing on either channel says the file was discarded.
     """
     spelling = _guard_env_spelling()
     if spelling == "exact":
@@ -349,6 +357,15 @@ def _power_guard(profile: str | None) -> PowerOwnershipGuard:
     message goes to the server's log, which is the operator's channel rather than
     the caller's — and only for a ``ConfigError``, whose text names paths and keys
     but never their values.
+
+    The second arm is deliberately total. ``build_config`` reaches pydantic and
+    ``tomllib`` over operator-authored data and can raise outside any list this
+    module could enumerate — a profile key spelled ``_env_file`` collides with
+    the keyword ``_load_profile_from_document`` passes and raises ``TypeError``,
+    to name one that exists today. This is the only path that builds a config for
+    *every* granted connection in one call, so an escaping exception costs the
+    operator the guard state of the connections that resolve fine, in exactly the
+    situation the report exists to diagnose.
     """
     connection = DEFAULT_CONNECTION_TOKEN if profile is None else profile
     try:
@@ -356,7 +373,7 @@ def _power_guard(profile: str | None) -> PowerOwnershipGuard:
     except ConfigError as exc:
         _logger.warning(_UNRESOLVED_LOG, connection, exc)
         return PowerOwnershipGuard(connection, None, "unresolved", "ConfigError")
-    except (ValueError, OSError, RuntimeError) as exc:
+    except Exception as exc:  # noqa: BLE001 — reported, not raised; see above
         detail = _unresolved_detail(exc)
         _logger.warning(_UNRESOLVED_LOG, connection, detail)
         return PowerOwnershipGuard(connection, None, "unresolved", detail)
@@ -383,9 +400,29 @@ def resolve_power_guards(
     produce since ADR 0041, so this binds a direct caller — the default
     resolution is the only connection there is.
 
+    The intersection carries the other half of that rule. An ambient ``HMC_HOST``
+    collapses *every* connection token to the default one at dispatch
+    (``connection_scope.selected_connection`` rule 1), because ``build_config``
+    gates its whole TOML branch on it. Without the intersection this report would
+    list rows for named profiles nothing can reach and omit the one every
+    permitted call resolves to — in precisely the scenario
+    ``docs/environment-variables.md`` singles out as the fail-open direction, and
+    which this report is now the recommended way to see.
+
     Reads the environment and the filesystem, so it is called per request rather
     than folded into the registration: an edited ``config.toml`` changes what the
     *next* tool call resolves, and this reports that call, not the startup.
+
+    Two costs of resolving through ``build_config`` per connection, recorded
+    rather than designed around — routing the reads through the resolution every
+    tool entry point runs is the property the whole report rests on, and a
+    private faster path would forfeit it. **The report is not a snapshot:** each
+    connection re-reads and re-parses ``config.toml``, so a file edited mid-call
+    can yield rows read from different versions of it, and those blocking reads
+    happen on the event loop. **Constructing a config re-runs ``HMCConfig``'s
+    model validators**, so a profile that pairs ``agent_id`` with a customised
+    ``audit_memento`` re-emits that warning to the operator's log once per
+    connection per call.
     """
     connections: set[str | None] = set()
     if policy is None:
@@ -393,6 +430,8 @@ def resolve_power_guards(
     else:
         for grant in policy.grants:
             connections.update(grant.connections)
+    if os.environ.get("HMC_HOST"):
+        connections &= {None}
     ordered = sorted(connections, key=lambda name: (name is not None, name or ""))
     return tuple(_power_guard(name) for name in ordered)
 

@@ -120,7 +120,13 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   name, each carrying the effective post-precedence `authorized` value and the
   `source` that supplied it — `environment`, `profile`, or `default`. `default` is
   the answer that means *nothing you wrote arrived*, which is the case a bare
-  `false` cannot distinguish. A fourth value, `ambiguous`, means a **case variant**
+  `false` cannot distinguish. It also covers one case that is not your memory's
+  fault: a `config.toml` that exists but cannot be read, parsed, or resolved to a
+  profile is discarded silently on the default connection — no error, no log line,
+  from this report or from any tool call — and every setting in it reverts to its
+  built-in default. **If you have a `config.toml` and the default connection reads
+  `default`, check the file itself** before you go looking for a typo in the key.
+  A fourth value, `ambiguous`, means a **case variant**
   of `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: only the exact upper-case
   spelling is dropped from a profile's keys before the config is built, so a
   variant loses to a profile there and wins where no profile is read — and nothing
