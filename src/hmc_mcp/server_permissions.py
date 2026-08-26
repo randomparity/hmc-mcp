@@ -15,12 +15,15 @@ authoritative tool index arrives as a parameter for that reason.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from fastmcp import FastMCP
 
 from .access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy, AllTargets, Grant
+from .common import build_config
+from .config import ConfigError
 from .tool_registry import (
     Authorize,
     ToolSecurity,
@@ -88,6 +91,32 @@ class DeclaredGrant:
     effects: tuple[str, ...] = ()
 
 
+#: The environment variable ``HMCConfig`` reads ``authorize_power_operations``
+#: from. Spelled out rather than derived from ``env_prefix`` so the report names
+#: the variable an operator actually exports.
+POWER_GUARD_ENV_VAR = "HMC_AUTHORIZE_POWER_OPERATIONS"
+
+
+@dataclass(frozen=True)
+class PowerOwnershipGuard:
+    """The effective ``authorize_power_operations`` for one connection.
+
+    The ADR 0092 §4 guard fails *open* and ``HMCConfig`` sets ``extra="ignore"``,
+    so a mistyped profile key or environment variable is dropped with no error
+    and is observably identical to a correct ``false`` (#470). ``source`` is what
+    separates them: a value an operator meant to set reports ``environment`` or
+    ``profile``, and one that never arrived reports ``default``.
+
+    ``authorized`` is ``None`` only when the connection's configuration could not
+    be built at all, which ``source: unresolved`` names and ``detail`` explains.
+    """
+
+    connection: str
+    authorized: bool | None
+    source: str
+    detail: str | None
+
+
 @dataclass(frozen=True)
 class EffectivePermissions:
     """What one composed application may currently do."""
@@ -100,6 +129,7 @@ class EffectivePermissions:
     declared_grants: tuple[DeclaredGrant, ...]
     enforced_dimensions: tuple[str, ...]
     declared_only_dimensions: tuple[str, ...]
+    power_ownership_guards: tuple[PowerOwnershipGuard, ...]
 
 
 EFFECTIVE_PERMISSIONS_SECURITY = ToolSecurity(
@@ -200,10 +230,74 @@ def _targets_enforced(
     return True
 
 
+def _power_guard(profile: str | None) -> PowerOwnershipGuard:
+    """Resolve the guard for one connection the way a tool call would.
+
+    :func:`~hmc_mcp.common.build_config` is the resolution every tool and CLI
+    entry point runs, so asking it is what makes the answer *effective* rather
+    than merely declared — including the case an operator cannot see from the
+    file alone, where an ambient ``HMC_HOST`` sends resolution down the env-only
+    path and a profile's ``authorize_power_operations`` never reaches the config
+    the guard reads.
+
+    A connection that cannot be resolved is reported, not raised: a tool that
+    describes the surface must not be the first thing to break when the surface
+    changes, which is the same contract :func:`_permission` keeps for a name
+    outside the index.
+
+    Only :class:`~hmc_mcp.config.ConfigError` is forwarded verbatim. Its messages
+    name paths, profile names, and environment-variable names, never their
+    values. Pydantic quotes the rejected input in a ``ValidationError`` and the
+    fields it validates include ``password``, so those carry the exception type
+    alone — this report states that it contains no credentials.
+    """
+    connection = DEFAULT_CONNECTION_TOKEN if profile is None else profile
+    try:
+        config = build_config(profile=profile)
+    except ConfigError as exc:
+        return PowerOwnershipGuard(connection, None, "unresolved", str(exc))
+    except (ValueError, OSError, RuntimeError) as exc:
+        return PowerOwnershipGuard(connection, None, "unresolved", type(exc).__name__)
+    if POWER_GUARD_ENV_VAR in os.environ:
+        source = "environment"
+    elif "authorize_power_operations" in config.model_fields_set:
+        source = "profile"
+    else:
+        source = "default"
+    return PowerOwnershipGuard(
+        connection, config.authorize_power_operations, source, None
+    )
+
+
+def resolve_power_guards(
+    policy: AccessPolicy | None,
+) -> tuple[PowerOwnershipGuard, ...]:
+    """Resolve the guard for every connection this server can route a call to.
+
+    One value would be false whenever profiles disagree, and they can: the guard
+    is read from the resolved config, so a TOML ``authorize_power_operations``
+    binds only the profile that carries it, and both the MCP tools and the CLI
+    take a caller-supplied profile selector. The set is the policy's connection
+    dimension (ADR 0038) — what a call may actually select — plus the default
+    resolution, which is the whole set when no ``config.toml`` exists.
+
+    Reads the environment and the filesystem, so it is called per request rather
+    than folded into the registration: an edited ``config.toml`` changes what the
+    *next* tool call resolves, and this reports that call, not the startup.
+    """
+    connections: set[str | None] = {None}
+    if policy is not None:
+        for grant in policy.grants:
+            connections.update(grant.connections)
+    ordered = sorted(connections, key=lambda name: (name is not None, name or ""))
+    return tuple(_power_guard(name) for name in ordered)
+
+
 def describe(
     handlers: Mapping[str, object],
     policy: AccessPolicy | None,
     tool_security: Mapping[str, ToolSecurity],
+    power_guards: tuple[PowerOwnershipGuard, ...],
 ) -> EffectivePermissions:
     """Build the report for a registry of *handlers* by name, under *policy*.
 
@@ -230,6 +324,10 @@ def describe(
     The state is unreachable through the tool — its own registration is what
     makes *handlers* non-empty — so this only binds a direct caller of
     :func:`describe`.
+
+    *power_guards* arrives resolved rather than being read here, so this stays a
+    pure function of its arguments; :func:`resolve_power_guards` owns the
+    environment and filesystem reads it needs.
     """
     names = sorted(handlers)
     tools = tuple(_permission(name, tool_security) for name in names)
@@ -259,6 +357,7 @@ def describe(
             if policy is None
             else tuple(d for d in DIMENSIONS if d not in enforced)
         ),
+        power_ownership_guards=power_guards,
     )
 
 
@@ -302,7 +401,13 @@ def register_permissions_tool(
         `enforced_dimensions` and `declared_only_dimensions`, checked against
         this registry rather than assumed. A tool reporting
         `exhaustive_targets: false` can only be granted by a grant whose targets
-        are the `all-targets` sentinel. Contains no credentials.
+        are the `all-targets` sentinel.
+
+        `power_ownership_guards` reports the effective, post-precedence
+        `authorize_power_operations` (ADR 0092 §4) for each connection a call may
+        select, with the source that supplied it — so a setting that was dropped
+        silently reads as `default` rather than as a deliberate `false`. Contains
+        no credentials.
         """
         # `getattr`, because fastmcp declares `fn` on `FunctionTool` and not on
         # the `Tool` base the provider is typed to return. A registration that
@@ -313,7 +418,7 @@ def register_permissions_tool(
             tool.name: getattr(tool, "fn", None)
             for tool in await mcp.local_provider.list_tools()
         }
-        return describe(handlers, policy, tool_security)
+        return describe(handlers, policy, tool_security, resolve_power_guards(policy))
 
     validate_security(EFFECTIVE_PERMISSIONS_SECURITY, hmc_effective_permissions)
     # Wrapped like every other tool since #297, and it is this site that made the

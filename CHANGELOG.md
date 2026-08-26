@@ -151,6 +151,20 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `event == "ownership-override"` filter keeps counting approved bypasses and nothing else.
   `docs/authorization-audit.md` documents the record and the caveats on alerting from it.
   No exported signature changes.
+- `hmc_effective_permissions` reports `power_ownership_guards` (#470): the effective,
+  post-precedence `authorize_power_operations` (ADR 0092 §4) for every connection a call may
+  select, resolved inside the running server rather than in the shell that asks. The guard
+  fails **open** and `HMCConfig` sets `extra="ignore"`, so a mistyped profile key or
+  environment variable is dropped silently and is otherwise indistinguishable from a correct
+  `false`; each entry carries the `source` that supplied the value — `environment`, `profile`,
+  or `default`, where `default` is the answer that means nothing the operator wrote arrived.
+  A connection whose config cannot be built reports `authorized: null` with
+  `source: unresolved` and a `detail` naming the cause. `hmc-mcp config show` could not answer
+  either deployment the documentation recommends: it exits 1 with no `config.toml`, and it
+  reads the invoking shell's environment rather than the served process's. The entries carry
+  no host, user, or credential. `describe()` takes the resolved guards as a fourth argument
+  and stays a pure function of its arguments; `EffectivePermissions` is not a
+  `hmc_mcp.api` export, so the facade manifest is unaffected.
 
 ### Changed
 

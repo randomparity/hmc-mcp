@@ -109,19 +109,34 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   selector. `HMC_AUTHORIZE_POWER_OPERATIONS` overrides every profile's TOML value,
   so it is the setting that cannot be selected around.
 
-  **Check that it actually took.** This setting fails **open**, and a mistyped
-  profile key or environment variable is dropped silently — indistinguishable from
-  a correct `false`. `hmc-mcp config show` reports the profile's resolved value,
-  with three limits worth knowing before you trust it. It requires a `config.toml`
-  and exits 1 without one, so it cannot answer for an env-var-only setup. It reads
-  the environment of the shell that invoked it, not of the `hmc-mcp serve` process
-  an MCP host launched with its own environment block. And when `HMC_HOST` (or an
+  **Check that it actually took — ask the server, not the shell.** This setting
+  fails **open**, and a mistyped profile key or environment variable is dropped
+  silently — indistinguishable from a correct `false`. Call
+  `hmc_effective_permissions` against the running server and read
+  `power_ownership_guards`: one entry per connection a call may select, each
+  carrying the effective post-precedence `authorized` value and the `source` that
+  supplied it — `environment`, `profile`, or `default`. `default` is the answer
+  that means *nothing you wrote arrived*, which is the case a bare `false` cannot
+  distinguish. A connection whose config cannot be built reports
+  `authorized: null` with `source: unresolved` and a `detail` naming the cause.
+  The entries carry no host, user, or credential.
+
+  Because the report is resolved inside the process being asked, it answers where
+  `hmc-mcp config show` cannot. `config show` requires a `config.toml` and exits 1
+  without one, so it cannot answer for an env-var-only setup at all. It reads the
+  environment of the shell that invoked it, not of the `hmc-mcp serve` process an
+  MCP host launched with its own environment block. And when `HMC_HOST` (or an
   explicit `--host`) is set, a tool run skips the profile entirely and builds its
   config from environment variables alone — so a TOML-only
-  `authorize_power_operations = true` is shown as enabled while the runtime
-  resolves it to `false`. That last one is the fail-open direction, and it is
-  another reason to set `HMC_AUTHORIZE_POWER_OPERATIONS` rather than the TOML key.
-  #470 tracks reporting the value from the running server itself.
+  `authorize_power_operations = true` is shown by `config show` as enabled while
+  the runtime resolves it to `false`. That last one is the fail-open direction; the
+  server's own report resolves it the same way a tool call does and says `default`,
+  and it is another reason to set `HMC_AUTHORIZE_POWER_OPERATIONS` rather than the
+  TOML key.
+
+  One limit remains: an access policy that does not grant `hmc_effective_permissions`
+  withholds the tool, and then neither route answers for the running process. A
+  deployment that relies on this guard should grant the inspection tool.
 
   When the setting is off, `power_lpar` reads no ownership token and opens no SSH
   connection — the call path is exactly what it was before this setting existed.
