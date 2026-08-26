@@ -155,6 +155,35 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 ### Changed
 
 
+- `hmc_wait_for_job` and `hmc_get_job` now read through `operations_jobs` instead of calling
+  `HMCClient` directly, so an MCP caller can tell a reaped job from a running one (#474, ADR 0093
+  amendment). **Tool behaviour changes:** a job the HMC no longer has returns `found: false`
+  (`hmc_wait_for_job`) or null (`hmc_get_job`) instead of raising `HMCError`, and polling stops on
+  it rather than running to the deadline — read `found` first, and note that a caller which only
+  caught `HMCError` for a vanished job now gets a successful result. `found: false` still carries
+  `timed_out: true`, now returned immediately rather than after the deadline, so `timed_out` must
+  not be read as "still running" without checking `found`. `hmc_wait_for_job`'s `job_href` also
+  changes: a `job_href` you passed that resolved is echoed back verbatim, where the value
+  previously came from the HMC's own SELF link. A 404 on the *first* read is
+  reported straight through, so a momentary one now reads as `found: false` where it previously
+  raised; only a disappearance after the job has been seen alive gets the confirming re-read. The
+  output schema is
+  unchanged: `found` was already a required property of the shared wait shape. Two smaller
+  changes come with the shared operation. `timeout_seconds` is now a soft bound: a job that
+  disappears after being seen alive is re-read once before being reported gone, and that read is
+  owed past the deadline, so `hmc_wait_for_job` can return a whole `poll_interval` late —
+  more than the deadline itself if `poll_interval` exceeds `timeout_seconds`. And a `job_uuid`
+  that is empty, is a bare dot, or carries a path, query, fragment, percent, or interior
+  whitespace character now raises `ValueError` before any request for the job is made — though
+  after the session is opened, so a malformed handle still costs a logon and logoff;
+  surrounding whitespace is still trimmed. That check applies **even when `job_href` is
+  supplied**, where the client previously ignored `job_uuid` altogether — so an issue #95 caller
+  that persisted only the submission link must now pass the identifier too. Every non-404 HMC
+  failure still raises. Two consequences specific to `hmc_get_job`: null no longer separates a
+  reaped job from an HMC that produced no entry, where the `HMCError` used to, and because that
+  tool returns the HMC entry rather than the outcome, the `link` it carries can be one a read just
+  proved dead — ADR 0093 clause 2's never-store-a-dead-link guarantee does not reach it. The
+  `hmc jobs` CLI commands keep the previous behaviour; #526 owns that pass.
 - `HMC_AGENT_ID` values containing double quotes or backslashes are rejected at config load
   instead of being passed through into SSH command construction (#386).
 - `hmc_install_lpar_os` and `hmc_install_vios` now drive the HMC CLI
