@@ -170,14 +170,21 @@ banner reaches, with no rename and no new banner. Two obligations follow.
 
 **A recipe matching `*-docs` must be side-effect-free and deterministic.** Its whole
 effect must be the generated documents under its working directory's `docs/`: no publish,
-no upload, no deploy, no push, no external service, no credentialed call, no write outside
-that `docs/` that outlives the run. And its output must be a function of the tracked source
-alone. That is
+no upload, no deploy, no push, no external service, no credentialed call, and no write
+outside that `docs/` that outlives the run — beyond the caches the interpreter and
+toolchain write for themselves. That carve-out is not a loophole but the line's actual
+position: `tool-docs` imports `hmc_mcp` through the symlinked `.venv`, so it leaves
+`__pycache__` in the real checkout on every run whose sources moved. An obligation the only
+recipe it governs already breaks is one a reviewer learns to read loosely, and a loosely
+read one stops telling `__pycache__` apart from a `publish-docs` that pushes a branch.
+
+And its output must be a function of the tracked source alone. That is
 stronger than what §3 measures, which is that the same tree produced the same bytes on the
 day the check ran: §3 compares what the command produces against the tracked page in the
-working tree, so it catches an unordered mapping or a hostname straight away, and catches
-a date stamp a day late — reddening all eight legs against a tree nobody edited. §4 splits
-the mechanical half from the rest.
+working tree, so it catches an unordered mapping straight away — that varies between two
+runs on one machine — and catches a hostname or a date stamp only where the check runs
+somewhere, or somewhen, other than where the page was written, reddening all eight legs
+against a tree nobody edited. §4 splits the mechanical half from the rest.
 
 Determinism is the word §3 earns, and idempotence falls out of the first obligation rather
 than standing beside it: a recipe that produces nothing but its own `docs/` leaves no
@@ -331,10 +338,11 @@ below, and the rest is a reviewer's job.
   can still reach it as a dependency (§2a).
   What would have to be checked is that a recipe — and everything its dependency list and
   body reach — produces nothing but its own `docs/` and reads no credential. Both are
-  properties of arbitrary shell and of every program it invokes, and §5's scratch tree
+  properties of arbitrary shell and of every program it invokes, and §3's scratch tree
   isolates the working directory rather than the process — and not even that, since it
-  symlinks `.venv` — so the guard has no sandbox to measure them against. The third
-  property §2a asks for is partly mechanical, and the split is the point. §3 catches output
+  symlinks `.venv` — so the guard has no sandbox to measure them against. Determinism, the
+  remaining property §2a asks for, is partly mechanical, and the split is the point.
+  §3 catches output
   that differs from the tracked copy *at the moment it runs*, which reaches variation
   faster than the gap between generating a page and checking it. It does not reach output
   that depends on the environment — the symlinked `.venv` and `sys.path` this section and
