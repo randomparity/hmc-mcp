@@ -170,8 +170,9 @@ banner reaches, with no rename and no new banner. Two obligations follow.
 
 **A recipe matching `*-docs` must be side-effect-free and deterministic.** Its whole
 effect must be the generated documents under its working directory's `docs/`: no publish,
-no upload, no deploy, no push, no external service, no credentialed call, no write that
-outlives the run. And its output must be a function of the tracked source alone. That is
+no upload, no deploy, no push, no external service, no credentialed call, no write outside
+that `docs/` that outlives the run. And its output must be a function of the tracked source
+alone. That is
 stronger than what §3 measures, which is that the same tree produced the same bytes on the
 day the check ran: §3 compares what the command produces against the tracked page in the
 working tree, so it catches an unordered mapping or a hostname straight away, and catches
@@ -206,15 +207,27 @@ into a page it produces discloses it on the first run, through the ordinary stal
 path, with nothing exceptional involved. And §3 is not the only such gate: a per-surface
 `*-docs-check` recipe prints the same diff from the generator itself
 (`scripts/gen_tool_reference.py --check`), reached through `static` and through its own
-prek hook, and §6 keeps that arrangement — so every future surface adds another. GitHub
-masks the secrets it has been given and nothing masks the rest.
+prek hook, and §6 keeps that arrangement for `docs/tools/`. What scales with the surface
+count is the walker's own path — each new surface adds a regeneration command §3 runs and
+diffs — while a `*-docs-check` recipe stays a per-surface decision (§6, Consequences).
+GitHub masks the secrets it has been given and nothing masks the rest.
+
+The channel a secret arrives by is the ambient environment. `regenerate` passes no `env=`
+to `Popen`, so a recipe inherits the whole of its caller's — `HMC_PASSWORD`, or whatever
+variable a profile's `password_env` names, is readable by any `*-docs` recipe on every prek
+hook and every `just static`. Keeping a developer's `.env` out of the scratch copy (§2a)
+does not touch this: that is a filesystem exclusion and says nothing about `os.environ`.
+Reading it as "the run is credential-free by construction" is the inference this obligation
+exists to block.
 
 Bounding the quoted output is not the control. §3 caps how many differing files get a full
 diff — `_MAX_DIFFS` keeps three whole diffs and only names the rest — and quotes a failed
 command's output whole, because that output is what makes a failed generator diagnosable.
-Neither is a disclosure bound, and the first is not even a size bound: a retained page goes
-in at whatever length it is, and a credential inside any retained page, or any retained
-prefix, reaches the log. What a generator may read is the control. Today's generator reads
+Neither is a disclosure bound. `_MAX_DIFFS` caps how many files are diffed, not how much of
+one: `difflib.unified_diff` runs at its default three lines of context, so what reaches the
+log is every changed hunk plus its neighbours — which is exactly where a credential sits
+once a generator starts writing one. The failure message is not bounded at all.
+What a generator may read is the control. Today's generator reads
 the tool registry and no credential; this is a constraint on the next one.
 
 `publish-docs`, `upload-docs`, and `deploy-docs` are all natural names for recipes that
@@ -231,7 +244,7 @@ regeneration command:
 1. copies the tracked files into a temporary directory **without the top-level
    `docs/`**, symlinking `.venv` rather than copying it;
 2. runs the command there;
-3. compares what it produced against what is committed.
+3. compares what it produced against the tracked pages in the working tree (§2a).
 
 Executing is the point. A recipe whose body is `true` produces nothing, so every
 document claiming that command is reported as un-produced and the check reddens.
