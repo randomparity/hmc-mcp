@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import inspect
 import json
 import logging
 from pathlib import Path
@@ -346,6 +347,228 @@ def test_authorize_lpar_mutation_normal_access_has_no_override_audit(caplog):
         asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
 
     assert _override_records(caplog) == []
+
+
+# #467 / ADR 0100. The denial half of the same guard: one record per refused
+# ADR 0011 check, emitted from `_authorize_lpar_ownership_description` before the
+# `PermissionError`, on every guarded operation.
+
+
+def _denied(hmc, description, run, caplog):
+    """Run *run* against a stubbed description, expect a refusal, return the records."""
+    with (
+        patch(
+            "hmc_mcp.operations_lpar.get_lpar_description",
+            new=AsyncMock(return_value=description),
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        with pytest.raises(PermissionError, match="ownership_override=true"):
+            asyncio.run(run(hmc))
+    return _override_records(caplog)
+
+
+def test_a_foreign_owner_denial_records_both_halves_of_the_comparison(caplog):
+    """The claimed owner and the acting agent, on the branch that compared them."""
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
+    )()
+    records = _denied(
+        hmc,
+        "[hmc-mcp owner:bob created:2026-08-14]",
+        lambda h: authorize_lpar_mutation(h, "sys1", "lpar1"),
+        caplog,
+    )
+
+    assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
+    assert records[0] == {
+        "time": records[0]["time"],
+        "event": "ownership-denied",
+        "operation": "lpar-mutation",
+        "denial": "foreign-owner",
+        "system": "sys1",
+        "lpar": "lpar1",
+        "owner": "bob",
+        "host": "hmc.test",
+        "attribution": {
+            "claim": "alice",
+            "source": "config:agent_id",
+            "verified": False,
+        },
+    }
+    assert [r for r in caplog.records if r.name == "hmc_mcp.operations_lpar"] == []
+
+
+def test_a_malformed_token_denial_is_recorded_as_its_own_branch(caplog):
+    """The other denial branch, distinguishable from the first by `denial` alone.
+
+    `owner` is `null` here because nothing parsed — the branch refuses before any
+    comparison is reached, so the record carries the actor and no counterparty.
+    """
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
+    )()
+    records = _denied(
+        hmc,
+        "[hmc-mcp owner:broken]",
+        lambda h: authorize_lpar_mutation(h, "sys1", "lpar1"),
+        caplog,
+    )
+
+    assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
+    assert records[0]["denial"] == "malformed-token"
+    assert records[0]["owner"] is None
+    assert records[0]["attribution"]["claim"] == "alice"
+
+
+def test_an_unconfigured_agent_is_recorded_under_the_literal_the_guard_compared(caplog):
+    """`HMCConfig.agent_id` defaults to `None` and the guard compares `hmc-mcp`.
+
+    Recording the bare field would leave an unconfigured deployment's denial and
+    override records naming different actors and therefore unjoinable.
+    """
+    hmc = type("StubHMC", (), {"config": _config()})()
+    records = _denied(
+        hmc,
+        "[hmc-mcp owner:bob created:2026-08-14]",
+        lambda h: authorize_lpar_mutation(h, "sys1", "lpar1"),
+        caplog,
+    )
+
+    assert len(records) == 1
+    assert records[0]["attribution"]["claim"] == "hmc-mcp"
+
+
+def test_the_decommission_entry_point_records_its_own_operation(caplog):
+    """`operation` names which guard entry point refused, not which tool called it."""
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
+    )()
+    records = _denied(
+        hmc,
+        "[hmc-mcp owner:bob created:2026-08-14]",
+        lambda h: authorize_decommission_lpar_ownership_snapshot(
+            h, "sys2", "lpar2", ownership_override=False
+        ),
+        caplog,
+    )
+
+    assert len(records) == 1
+    assert records[0]["operation"] == "lpar-decommission-snapshot"
+    assert records[0]["system"] == "sys2"
+
+
+def test_a_new_guard_entry_point_cannot_omit_the_operation():
+    """ADR 0100 §4. `operation` is required, so forgetting it is a type error.
+
+    Defaulted, a third entry point that forgot the argument would file its
+    refusals under an existing operation's name — and a stream that asserts
+    something false is worse than one that is silent. Checked on the signature
+    rather than by calling, because the point is what a *checker* sees.
+    """
+    parameter = inspect.signature(
+        operations_lpar._authorize_lpar_ownership_description
+    ).parameters["operation"]
+
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameter.default is inspect.Parameter.empty
+
+
+def test_a_permitted_mutation_emits_no_denial_record(caplog):
+    """The control: the record must mark refusals, not every guarded call."""
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
+    )()
+    with (
+        patch(
+            "hmc_mcp.operations_lpar.get_lpar_description",
+            new=AsyncMock(return_value="[hmc-mcp owner:alice created:2026-08-14]"),
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
+
+    assert _override_records(caplog) == []
+
+
+def test_an_override_emits_the_override_record_and_no_denial(caplog):
+    """The two ownership events stay disjoint: a bypass is not a refusal.
+
+    This is what the rejected `decision` arm would have blurred — an
+    `event == "ownership-override"` filter must keep counting approved bypasses
+    and nothing else.
+    """
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
+    )()
+    with (
+        patch(
+            "hmc_mcp.operations_lpar.get_lpar_description",
+            new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        asyncio.run(
+            authorize_lpar_mutation(hmc, "sys1", "lpar1", ownership_override=True)
+        )
+
+    assert [record["event"] for record in _override_records(caplog)] == [
+        "ownership-override"
+    ]
+
+
+def test_the_denial_still_reaches_stderr_without_a_sink(capsys):
+    """ADR 0100 §3, and the same mechanism `test_the_override_still_reaches_stderr…`
+    pins: `logging.lastResort` is consulted only when the ancestor walk finds zero
+    handlers, and it drops anything below `WARNING`. So this is what asserts the
+    level — a denial recorded at `INFO` would leave stderr empty here.
+    """
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
+    )()
+    saved = list(logging.root.handlers)
+    logging.root.handlers.clear()
+    try:
+        with patch(
+            "hmc_mcp.operations_lpar.get_lpar_description",
+            new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
+        ):
+            with pytest.raises(PermissionError):
+                asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
+        captured = capsys.readouterr()
+    finally:
+        logging.root.handlers[:] = saved
+
+    assert captured.out == ""
+    assert json.loads(captured.err.strip())["event"] == "ownership-denied"
+
+
+def test_the_denial_record_is_bounded_and_escaped(caplog):
+    """The same bound and the same escaping as every other record on this stream.
+
+    `owner` is HMC-supplied text parsed out of an operator-authored description,
+    so it is the field this record adds that most needs both.
+    """
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
+    )()
+    hostile = "[hmc-mcp owner:" + "B" * 500 + " created:2026-08-14]"
+    with (
+        patch(
+            "hmc_mcp.operations_lpar.get_lpar_description",
+            new=AsyncMock(return_value=hostile),
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        with pytest.raises(PermissionError):
+            asyncio.run(authorize_lpar_mutation(hmc, "A" * 500, "x\ny‮z"))
+
+    raw = [r.getMessage() for r in caplog.records if r.name == audit.AUDIT_LOGGER_NAME]
+    assert len(raw) == 1
+    assert raw[0].isascii() and "\n" not in raw[0]
+    record = json.loads(raw[0])
+    assert len(record["system"]) == audit.MAX_VALUE_LENGTH
+    assert len(record["owner"]) == audit.MAX_VALUE_LENGTH
 
 
 from hmc_mcp.ssh_commands import validate_caller_token  # noqa: E402

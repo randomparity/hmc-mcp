@@ -58,6 +58,9 @@ Not spec-numbered, each pinning something a review round found:
   test_an_unconfigured_logger_still_reaches_last_resort (#272's other half)
   test_the_override_record_carries_the_hmc_host       (#271)
   test_an_empty_override_host_renders_empty_and_is_bounded (#271)
+  test_the_denial_record_names_both_halves_of_the_refusal (#467, ADR 0100)
+  test_a_malformed_token_denial_records_a_null_owner   (#467)
+  test_the_denial_record_is_bounded_and_escaped        (#467)
   test_a_foreign_writers_bad_record_does_not_raise_into_them
   test_the_tls_record_carries_host_and_source          (#379)
   test_an_empty_tls_host_renders_empty_and_is_bounded  (#379)
@@ -351,15 +354,20 @@ def test_reasons_matches_the_literal():
 
 
 def test_events_matches_the_literal_and_every_emitter_uses_it():
-    """The `event` vocabulary is four values, and a checker can see that.
+    """The `event` vocabulary is restated here, and a checker can see the alias.
 
     ADR 0043 added `records-dropped`, which is the sink's own event rather than a
     decision, so it is emitted by the sink and not through the logger — which is
-    why it is reached here through `_drop_marker` and the other three are not.
+    why it is reached here through `_drop_marker` and the others are not.
+
+    `EVENTS` is derived from the `Literal`, so the two assertions below cannot
+    disagree by accident — but the restated set and the emitter walk are written
+    by hand, which is what makes adding a member an edit here (ADR 0100 §1).
     """
     assert audit.EVENTS == frozenset(get_args(audit.Event))
     assert audit.EVENTS == {
         "authorization",
+        "ownership-denied",
         "ownership-override",
         "records-dropped",
         "tls-verification-disabled",
@@ -369,6 +377,17 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
     audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
     emitted = {json.loads(lines[0])["event"]}
     emitted.add(_authorization()["event"])
+    lines = _capture()
+    audit.record_ownership_denied(
+        operation="lpar-mutation",
+        denial="foreign-owner",
+        system="s",
+        lpar="l",
+        owner="other",
+        host="hmc.test",
+        agent_id="a",
+    )
+    emitted.add(_one(lines)["event"])
     lines = _capture()
     audit.record_tls_verification_disabled(host="hmc.test", source="field-default")
     emitted.add(_one(lines)["event"])
@@ -407,6 +426,102 @@ def test_an_empty_override_host_renders_empty_and_is_bounded():
         system="s", lpar="l", host="H" * 500, agent_id="a"
     )
     assert len(_one(lines)["host"]) == audit.MAX_VALUE_LENGTH
+
+
+def test_the_denial_record_names_both_halves_of_the_refusal():
+    """#467 / ADR 0100 §2. A refusal carries the comparison that failed.
+
+    The override record knows only the actor, because it never read the token.
+    A `foreign-owner` denial read one, so it carries the owner the LPAR claims
+    beside the agent that was refused — which is what lets an operator count
+    refusals per agent and per partition rather than only observing that some
+    happened. `operation` and `denial` say which entry point refused and under
+    which of the two rules.
+    """
+    lines = _capture()
+    audit.record_ownership_denied(
+        operation="lpar-mutation",
+        denial="foreign-owner",
+        system="sys-a",
+        lpar="db-01",
+        owner="agent-3",
+        host="hmc.test",
+        agent_id="agent-7",
+    )
+    record = _one(lines)
+    assert list(record) == [
+        "time", "event", "operation", "denial", "system", "lpar", "owner",
+        "host", "attribution",
+    ]
+    assert record["event"] == "ownership-denied"
+    assert record["operation"] == "lpar-mutation"
+    assert record["denial"] == "foreign-owner"
+    assert record["owner"] == "agent-3"
+    assert record["attribution"] == {
+        "claim": "agent-7", "source": "config:agent_id", "verified": False
+    }
+
+
+def test_a_malformed_token_denial_records_a_null_owner():
+    """ADR 0100 §2. Nothing parsed, so there is no claimed owner to name.
+
+    `null` rather than an empty string, which is `_value`'s rendering of a value
+    that *was* supplied and was empty — the same distinction the connection
+    object's `selector` keeps.
+    """
+    lines = _capture()
+    audit.record_ownership_denied(
+        operation="lpar-decommission-snapshot",
+        denial="malformed-token",
+        system="sys-a",
+        lpar="db-01",
+        owner=None,
+        host="hmc.test",
+        agent_id="agent-7",
+    )
+    record = _one(lines)
+    assert record["owner"] is None
+    assert record["denial"] == "malformed-token"
+    assert record["operation"] == "lpar-decommission-snapshot"
+
+
+def test_the_denial_record_is_bounded_and_escaped():
+    """Every caller-supplied field on it takes the same bound as its siblings.
+
+    `owner` is the one this record adds, and it is HMC-supplied text parsed out
+    of an operator-authored description — so it is the field most worth pinning.
+    """
+    lines = _capture()
+    audit.record_ownership_denied(
+        operation="lpar-mutation",
+        denial="foreign-owner",
+        system="S" * 500,
+        lpar="x\ny‮z",
+        owner="O" * 500,
+        host="H" * 500,
+        agent_id="A" * 500,
+    )
+    assert len(lines) == 1
+    assert lines[0].isascii() and "\n" not in lines[0]
+    record = json.loads(lines[0])
+    for field in ("system", "owner", "host"):
+        assert len(record[field]) == audit.MAX_VALUE_LENGTH, field
+    assert len(record["attribution"]["claim"]) == audit.MAX_VALUE_LENGTH
+
+
+def test_an_empty_denial_host_renders_empty():
+    """As on the override record: an unset `HMCConfig.host` is the empty string."""
+    lines = _capture()
+    audit.record_ownership_denied(
+        operation="lpar-mutation",
+        denial="foreign-owner",
+        system="s",
+        lpar="l",
+        owner="o",
+        host="",
+        agent_id="a",
+    )
+    assert _one(lines)["host"] == ""
 
 
 def test_the_tls_record_carries_host_and_source():

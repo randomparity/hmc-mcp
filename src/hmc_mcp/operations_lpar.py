@@ -452,21 +452,67 @@ def _audit_lpar_ownership_override(
     )
 
 
+def _audit_lpar_ownership_denied(
+    hmc: HMCClient,
+    system_name: str,
+    lpar_name: str,
+    *,
+    operation: audit.OwnershipOperation,
+    denial: audit.OwnershipDenial,
+    owner: str | None,
+) -> None:
+    """Record a refused ADR 0011 ownership check on the audit sink.
+
+    #467, ADR 0100. The counterpart of :func:`_audit_lpar_ownership_override`, and
+    the reason the guard records the rule as well as the exception: before this, an
+    operator reading the stream could not tell "nobody tried to mutate a partition
+    they do not own" from "many attempts were refused", and on the CLI and Python
+    API paths — which no access policy reaches — a refusal left no trace at all.
+    """
+    audit.record_ownership_denied(
+        operation=operation,
+        denial=denial,
+        system=system_name,
+        lpar=lpar_name,
+        owner=owner,
+        host=hmc.config.host,
+        agent_id=hmc.config.agent_id or "hmc-mcp",
+    )
+
+
 def _authorize_lpar_ownership_description(
     hmc: HMCClient,
     system_name: str,
     lpar_name: str,
     description: str,
     *,
+    operation: audit.OwnershipOperation,
     ownership_override: bool = False,
 ) -> str | None:
-    """Authorize a supplied description snapshot and return its parsed owner."""
+    """Authorize a supplied description snapshot and return its parsed owner.
+
+    *operation* is required rather than defaulted (ADR 0100 §4): a third entry
+    point that forgot the argument would otherwise file its refusals under an
+    existing operation's name, and a stream that asserts something false is worse
+    than one that is silent. So a new *call site* of an existing entry point
+    inherits the denial record for free, while a new *entry point* is a type error
+    until its author adds an ``audit.OwnershipOperation`` member and the matching
+    row in ``docs/authorization-audit.md``.
+    """
     owner = parse_lpar_ownership_owner(description)
     if ownership_override:
         _audit_lpar_ownership_override(hmc, system_name, lpar_name)
         return owner
     if owner is None:
         if "[hmc-mcp" in description:
+            _audit_lpar_ownership_denied(
+                hmc,
+                system_name,
+                lpar_name,
+                operation=operation,
+                denial="malformed-token",
+                owner=None,
+            )
             raise PermissionError(
                 f"LPAR {lpar_name!r} has a malformed hmc-mcp ownership token; "
                 "retry only with ownership_override=true after operator approval"
@@ -474,6 +520,14 @@ def _authorize_lpar_ownership_description(
         return None
     current_owner = hmc.config.agent_id or "hmc-mcp"
     if owner != current_owner:
+        _audit_lpar_ownership_denied(
+            hmc,
+            system_name,
+            lpar_name,
+            operation=operation,
+            denial="foreign-owner",
+            owner=owner,
+        )
         raise PermissionError(
             f"LPAR {lpar_name!r} is owned by {owner!r}, not {current_owner!r}; "
             "retry only with ownership_override=true after operator approval"
@@ -495,6 +549,7 @@ async def authorize_decommission_lpar_ownership_snapshot(
         system_name,
         lpar_name,
         description,
+        operation="lpar-decommission-snapshot",
         ownership_override=ownership_override,
     )
 
@@ -511,7 +566,9 @@ async def authorize_lpar_mutation(
         _audit_lpar_ownership_override(hmc, system_name, lpar_name)
         return
     description = await get_lpar_description(hmc.config, system_name, lpar_name)
-    _authorize_lpar_ownership_description(hmc, system_name, lpar_name, description)
+    _authorize_lpar_ownership_description(
+        hmc, system_name, lpar_name, description, operation="lpar-mutation"
+    )
 
 
 async def resolve_lpar_ownership_names(

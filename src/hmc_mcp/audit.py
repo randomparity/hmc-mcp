@@ -100,6 +100,7 @@ REASONS: frozenset[str] = frozenset(get_args(Reason))
 
 Event = Literal[
     "authorization",
+    "ownership-denied",
     "ownership-override",
     "records-dropped",
     "tls-verification-disabled",
@@ -117,6 +118,25 @@ EVENTS: frozenset[str] = frozenset(get_args(Event))
 #: boundary declines to read. ``reason`` names the *decision*; these name the *input*,
 #: which is why there is no ``connection-selector-unreadable`` reason code.
 State = Literal["present", "absent", "unreadable"]
+
+#: Which ADR 0011 guard entry point refused, on the ``ownership-denied`` record. Two
+#: members rather than the MCP tool or API function name: threading the caller's name
+#: through would move the frozen public signature digest across two exports and fourteen
+#: call sites, and per-tool granularity is a later issue's (ADR 0100).
+OwnershipOperation = Literal["lpar-mutation", "lpar-decommission-snapshot"]
+
+#: Derived, as :data:`REASONS` and :data:`EVENTS` are, so
+#: ``tests/test_authorization_audit_doc.py`` holds the document's field row to it in both
+#: directions rather than to a set spelled a second time.
+OWNERSHIP_OPERATIONS: frozenset[str] = frozenset(get_args(OwnershipOperation))
+
+#: Which of the guard's two rules refused. Named ``denial`` on the record and not
+#: ``reason``, which already names ADR 0040's access-policy vocabulary: one key cannot
+#: name two boundaries' vocabularies and still tell a reader which it is reading.
+OwnershipDenial = Literal["malformed-token", "foreign-owner"]
+
+#: Derived, as :data:`OWNERSHIP_OPERATIONS` is, and held to the document the same way.
+OWNERSHIP_DENIALS: frozenset[str] = frozenset(get_args(OwnershipDenial))
 
 _DENY_LEVEL: Final = logging.WARNING
 _ALLOW_LEVEL: Final = logging.INFO
@@ -287,6 +307,59 @@ def record_ownership_override(
             "event": event,
             "system": _value(system),
             "lpar": _value(lpar),
+            "host": _value(host),
+            "attribution": _attribution(agent_id, "config:agent_id"),
+        }
+
+    _emit(_DENY_LEVEL, build)
+
+
+def record_ownership_denied(
+    *,
+    operation: OwnershipOperation,
+    denial: OwnershipDenial,
+    system: str,
+    lpar: str,
+    owner: str | None,
+    host: str,
+    agent_id: str,
+) -> None:
+    """Emit one record for a refused ADR 0011 LPAR ownership check.
+
+    #467, ADR 0100. A separate event rather than a ``decision`` arm on
+    :func:`record_ownership_override`: the two answer different questions and carry
+    different facts, and folding them together would silently change what an
+    existing ``event == "ownership-override"`` filter counts — a query for approved
+    bypasses would start matching refusals.
+
+    *operation* names which guard entry point refused and *denial* which of its two
+    rules did. *owner* is the owner token parsed out of the LPAR description: the
+    claimed owner on ``foreign-owner``, and ``None`` on ``malformed-token``, where
+    nothing parsed and the record carries the actor alone. It is HMC-supplied text,
+    so like every caller-supplied field it passes through :func:`_value`.
+
+    Carries no ``policy``, ``decision``, ``reason``, ``targets`` or ``connection``,
+    and not as nulls, for the reason :func:`record_ownership_override` gives: an
+    ownership check on a token parsed from an LPAR description is not an
+    access-policy decision, and this path also runs from the CLI and the Python API
+    where no policy connection exists.
+
+    Always ``WARNING``, matching the override, so a CLI or API process that never
+    installed the sink still sees it through ``logging.lastResort`` — which drops
+    anything below that level. It also means ``--audit-level WARNING``, the setting
+    that drops permits, keeps denials.
+    """
+
+    def build() -> dict[str, Any]:
+        event: Event = "ownership-denied"
+        return {
+            "time": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            "operation": operation,
+            "denial": denial,
+            "system": _value(system),
+            "lpar": _value(lpar),
+            "owner": _value(owner),
             "host": _value(host),
             "attribution": _attribution(agent_id, "config:agent_id"),
         }

@@ -15,10 +15,12 @@ record at all, for the same reason it enforced nothing at all. There is no such 
 so every deployment writes one record per decision, and the delivery guarantee below
 applies to every deployment rather than only to those that opted in.
 
-**`ownership-override` records are not policy-gated.** They come from the ADR 0011
-ownership check inside the handler, which runs whether or not a policy is selected — and
-on the CLI and Python API paths, which have no policy at all. So an unpolicied server can
-still produce those, and only those.
+**`ownership-override` and `ownership-denied` records are not policy-gated.** They come
+from the ADR 0011 ownership check inside the handler, which runs whether or not a policy
+is selected — and on the CLI and Python API paths, which have no policy at all. So an
+unpolicied server can still produce those. For an `hmc_mcp.api` consumer that check is the
+only authorization boundary that applies, which is why its refusals are recorded here
+rather than left to the `authorization` event ([ADR 0100](adr/0100-ownership-denial-audit-record.md)).
 
 Other things produce no record, by design:
 
@@ -113,14 +115,10 @@ The parameter is read only inside the guarded branch, so with the setting off it
 inert — nothing was bypassed, because nothing was checked. Silence in this stream on
 the power path is therefore not evidence that no override was requested.
 
-**Denials emit nothing.** This event records ownership checks that were *bypassed*,
-never ones that *refused*: the denial path raises `PermissionError` with no audit
-call, on every guarded operation. The `authorization` event above does not fill the
-gap — it is #218's dispatch-time policy, which covers MCP tool calls only, so for a
-CLI or `hmc_mcp.api` caller a refused mutation leaves no trace anywhere. An alert
-built on this stream therefore measures approved exceptions, not attempts, and
-cannot tell "nobody tried" from "many were refused". #467 tracks a denial record
-across all guarded operations.
+**This event records ownership checks that were *bypassed*, never ones that
+*refused*.** A refusal is the `ownership-denied` record below, which #467 added; an
+alert on *this* event therefore counts approved exceptions rather than attempts, and
+the one below is what tells "nobody tried" from "many were refused".
 
 ```json
 {"time":"2026-08-19T18:00:00+00:00","event":"ownership-override","system":"sys-a","lpar":"db-01","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
@@ -135,6 +133,81 @@ empty string.
 It carries no `policy`, `decision`, `reason`, or `targets`, and not as nulls —
 an ownership check on a token parsed from an LPAR description is not an
 access-policy decision, and empty fields would read as one.
+
+### `event: "ownership-denied"`
+
+Emitted when an [ADR 0011](adr/0011-multi-agent-lpar-ownership.md) LPAR ownership
+check *refuses*, immediately before the `PermissionError` is raised. Always
+`WARNING`, so `--audit-level WARNING` — the setting that drops permits — keeps
+these. The decision is [ADR 0100](adr/0100-ownership-denial-audit-record.md).
+
+| field | value |
+|---|---|
+| `time` | UTC, ISO 8601 |
+| `event` | `"ownership-denied"` |
+| `operation` | `lpar-mutation` or `lpar-decommission-snapshot` |
+| `denial` | `malformed-token` or `foreign-owner` |
+| `system` | the managed system the partition lives on |
+| `lpar` | the partition whose mutation was refused |
+| `owner` | the owner the LPAR's token claims, or `null` |
+| `host` | the HMC the check read the token from |
+| `attribution` | `{"claim", "source", "verified"}` |
+
+```json
+{"time":"2026-08-26T18:00:00+00:00","event":"ownership-denied","operation":"lpar-mutation","denial":"foreign-owner","system":"sys-a","lpar":"db-01","owner":"agent-3","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+```
+
+`operation` names which guard entry point refused — `lpar-mutation` covers every
+guarded mutation, `lpar-decommission-snapshot` the ownership read that precedes a
+decommission — and not which MCP tool or API function called it. Per-tool
+granularity is deliberately out of scope; where the caller matters and the transport
+is MCP, join on the `authorization` record for the same call.
+
+`denial` names which of the guard's two rules refused. `foreign-owner` is a
+well-formed token naming another agent, and the record carries *both* halves of the
+comparison that failed: `owner` is the claimed owner, `attribution.claim` the agent
+that was refused. `malformed-token` is a description carrying `[hmc-mcp` that no
+token could be parsed from, and there `owner` is `null` — nothing parsed, so the
+record carries the actor alone.
+
+A `malformed-token` record identifies the partition but not the malformation. Triage
+means reading the description off the HMC out of band, and two alerts on one
+permanently-broken token read the same as an ongoing incident. That is accepted
+rather than closed: a description is unbounded operator-authored text that would be
+cut at 128 characters — often before the malformation — and it can carry an ADR 0064
+caller token beside the ownership one, so a field for it would disclose more than it
+triages.
+
+**A denial count is not a count of hostile attempts.** `docs/environment-variables.md`
+prescribes retry-after-refusal as the sanctioned override procedure, so a legitimate
+override is now *preceded* by a denial record carrying the same `system`, `lpar`, and
+`attribution.claim` as the `ownership-override` record seconds later. There is no
+correlation identifier, so pairing them means matching those three fields inside a
+time window — and an override that was never refused (`provision_lpar`'s activation
+leg, or any caller who passes `ownership_override` on the first attempt) will pair
+against an unrelated earlier denial if one is in the window. A refused `--dry-run`
+decommission preflight — the sequence `README.md` prescribes — emits the same record
+as a refused destructive one, because the inventory read authorizes ahead of the
+dry-run return. No field distinguishes either case; this is the same caveat the
+override record above carries for its own two sources.
+
+**Silence here is not proof of no refusal**, for one specific reason worth writing
+down: with `HMC_AUTHORIZE_POWER_OPERATIONS` off — the default — the power path never
+runs the guard, so no denial is possible there and none is recorded.
+
+A denied caller can drive these at attempt rate, bounded in practice by the HMC round
+trip each denial costs. Under `hmc-mcp serve` they land on the bounded sink, which
+drops and says so with a `records-dropped` count; on the CLI and Python API paths
+nothing installs a sink, so the line goes synchronously to stderr through
+`logging.lastResort` with no bound and no drop count — exactly as the
+`ownership-override` record already does there.
+
+The denial record names its `operation` and the override record does not. Closing
+that asymmetry would mean adding a field to the override record, which #467
+deliberately left alone; the denial stream is complete without it.
+
+It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as
+nulls, for the reason the override record gives.
 
 <!-- The `source` values below are read by tests/test_authorization_audit_doc.py and held
      to `client.VERIFY_SSL_SOURCES`. Keep them a comma-and-`or` run introduced by the
@@ -210,11 +283,14 @@ the `source` field is what tells you which you are reading.
 **`source: "environment:HMC_AGENT_ID"`** — on the `authorization` record. Read straight
 from the server process's environment at emission.
 
-**`source: "config:agent_id"`** — on the `ownership-override` record. This is
-`HMCConfig.agent_id`, the effective value the ADR 0011 check compared, and it differs
-from the other in three ways worth knowing: it may come from a `config.toml` profile
-rather than the environment, it *is* validated by `validate_agent_id`, and it renders
-the literal `hmc-mcp` when no identity is configured at all rather than `null`.
+**`source: "config:agent_id"`** — on the `ownership-override` and `ownership-denied`
+records. This is `HMCConfig.agent_id`, the effective value the ADR 0011 check compared,
+and it differs from the other in three ways worth knowing: it may come from a
+`config.toml` profile rather than the environment, it *is* validated by
+`validate_agent_id`, and it renders the literal `hmc-mcp` when no identity is configured
+at all rather than `null`. The last of those is what lets an unconfigured deployment's
+ownership records be joined on the actor: the guard compares that literal, so the record
+names it too.
 
 Two things follow for the `authorization` record that are easy to get wrong:
 
@@ -222,7 +298,7 @@ Two things follow for the `authorization` record that are easy to get wrong:
   client and the two coincide. Under streamable HTTP one process serves many clients,
   so every record carries the same claim and the field tells you nothing per-caller.
 - **It is the raw environment value, unvalidated.** This applies to the `authorization`
-  record only — the ownership-override claim goes through `validate_agent_id`.
+  record only — the ownership records' claims go through `validate_agent_id`.
   `docs/environment-variables.md` documents
   `HMC_AGENT_ID` as 1–64 printable ASCII with a forbidden-character set; that is the
   rule for *configuration*, and this record deliberately bypasses it so a malformed
