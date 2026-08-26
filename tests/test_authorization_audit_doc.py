@@ -87,10 +87,16 @@ What this does not reach, so a green run is not read as more coverage than it is
   the set can drift. The pairing is not held. It is fixed in code, at
   `dispatch_scope.dispatch_authorizer`'s four `record(...)` call sites — `permitted` with
   `allow`, every other reason with `deny` — and nothing compares the column to them, so a
-  row whose decision stops matching its emitter goes stale silently. Equality against the
-  vocabulary would not close that and is not what is missing here: a decision arm that no
-  reason code yields belongs in the field row and legitimately not in this table, so
-  requiring every decision to appear in the column would redden a document that is right.
+  row whose decision stops matching its emitter goes stale silently. Reading those call
+  sites with `ast`, as `_annotation_source` reads a signature, would reach three of the
+  four; the fourth passes `denial_reason(...)` rather than a literal. So a scrape returns
+  a subset of the mapping that shrinks silently as call sites are refactored, and holding
+  it to a size means pinning a count of them — the stale literal this module refuses to
+  write anywhere else, and the reason this was weighed and declined rather than costed.
+  The column is held in the orphan direction instead, which is a claim about the
+  vocabulary rather than the mapping; equality there would be wrong on its own terms,
+  because a decision arm that no reason code yields belongs in the field row and
+  legitimately not in this table.
   What the column does carry is an editing constraint, and that one fails loud:
   `REASON_ROW` reads both cells at once, so a decision cell widened into prose takes its
   whole row out of the reason vocabulary and reddens the equality check above, rather than
@@ -579,7 +585,13 @@ def _sampled_tls_sources(document: str) -> frozenset[str]:
 
 
 def test_documented_reason_codes_are_exactly_the_audit_vocabulary() -> None:
-    assert _documented_reasons(_document()) == audit.REASONS
+    #: The message names the second way this fails, which the comparison cannot show: a
+    #: row is read only when its code is backticked *and* its decision cell is a bare
+    #: lowercase token, so a cosmetic edit to that cell arrives here as a missing code.
+    assert _documented_reasons(_document()) == audit.REASONS, (
+        "reason-code table drift, or a row `REASON_ROW` could not read — a decision "
+        "cell widened into prose takes its whole row out of this comparison"
+    )
 
 
 def test_reason_code_drift_is_caught_in_both_directions() -> None:
