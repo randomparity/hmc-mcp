@@ -28,13 +28,13 @@ and copy-pasteable (#506). Parsing reads them structurally, which is also what s
 the TLS record's top-level `source` from the `attribution.source` beside it — the same key
 naming a different vocabulary. Only `event` is held in both directions there, because one
 section and at least one sample apiece makes coverage checkable; one sample record shows
-one `reason`, one `effect`, one `state` and one `kind`, so those are held to naming
-nothing undefined and the table, the row and the sentence keep the other half. Coverage
-reads `event` at the top level and the orphan half reads it at any depth, so a nested
-value cannot stand in for a missing record. The price is an editing
-constraint: every fenced `json` block in that document must be one of these records, and a
-fence added for anything else fails naming the block. `docs/environment-variables.md`
-carries no JSON block and so has no arm of this check.
+one `reason`, one `effect`, one `state`, one `kind` and one `decision`, so those are held
+to naming nothing undefined and the table, the row and the sentence keep the other half.
+Coverage reads `event` at the top level and the orphan half reads it at any depth, so a
+nested value cannot stand in for a missing record. The price is an editing constraint:
+every `json` fence in that document must open one of these records, written at the start
+of its line, and a fence that does not fails quoting the block and stating the rule.
+`docs/environment-variables.md` carries no JSON block and so has no arm of this check.
 
 The counts stay out of the assertions on purpose: pinning one here would recreate the
 stale literal this guard exists to remove, the same anti-pattern
@@ -66,13 +66,15 @@ What this does not reach, so a green run is not read as more coverage than it is
   prose — and the same tradeoff means `..., or `field-default`, and `config-file`` reads as
   three values plus prose. The dangling direction is unaffected; only the orphan half has
   the hole, and only for those two extractors;
-- the sample records' `decision`, `policy`, `tool` and `targets[].argument` values, none of
-  which restates a closed vocabulary there is anything to compare them against. `audit`
-  declares no `Decision` alias, only the two strings the document spells; `policy` is an
-  example name; `tool` names a registry entry rather than a `Literal`, and deriving that
-  set means importing the server, which this module does not do; and `TargetSelector`
-  types `argument` as a plain `str`, its `kind` being the closed half of the pair. Every
-  `Literal`-derived vocabulary a record does carry is read;
+- the sample records' `policy`, `tool` and `targets[].argument` values, none of which is a
+  closed vocabulary. `policy` is an example name; `tool` names a registry entry rather
+  than a `Literal`, and deriving that set means importing the server, which this module
+  does not do; and `argument` is a plain `str` on `TargetSelector`, drawn from
+  `REQUIRED_TARGET_ARGUMENTS`'s keys *and* from whatever a tool's own `extra_targets`
+  declares, so that mapping — which is imported here, for `kind` — is a subset of the
+  field's range rather than its vocabulary. `kind` is the closed half of that pair and is
+  read. Every `Literal`-derived vocabulary a record carries is read, `decision` included:
+  it has no module-level alias, so it comes from the record builder's own signature;
 - a `source` written anywhere in a sample but the top level of the TLS record. The
   extractor is scoped there because `attribution.source` under the same key names where an
   identity claim came from instead: `environment:HMC_AGENT_ID` is held by the constant
@@ -128,7 +130,7 @@ import re
 from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Literal, get_args, get_origin
+from typing import Literal, get_args, get_origin, get_type_hints
 
 import pytest
 
@@ -170,6 +172,17 @@ TLS_EVENT = EVENT_HEADING.findall(TLS_HEADING)[0]
 #: — several renderers take one — while `jsonc` and the like are not this fence, and a
 #: document whose fences are all renamed out of reach fails rather than reading nothing.
 JSON_SAMPLE = re.compile(r"^```json\b[^\n]*\n(.*?)^```$", re.MULTILINE | re.DOTALL)
+#: Anything that opens a JSON block, wherever and however it is written — indented, inside
+#: a blockquote, tilde-fenced, or capitalised. `JSON_SAMPLE` reads only the column-0
+#: backtick form the document uses; counting both is what stops a sample written any other
+#: way from being skipped in silence instead of held to the checks below.
+JSON_FENCE = re.compile(
+    r"^\s*(?:>\s*)*(?:```|~~~)\s*json\b", re.MULTILINE | re.IGNORECASE
+)
+
+#: `decision`'s vocabulary, which has no module-level alias: its `Literal` is written
+#: inline in the record builder's own signature, still the source of truth for the field.
+DECISIONS = frozenset(get_args(get_type_hints(audit.record_authorization)["decision"]))
 
 #: The `Literal`-derived vocabularies a sample record draws its own values from, keyed by
 #: the JSON key each sits at. Read by key at any depth, because `state` is nested twice —
@@ -182,6 +195,7 @@ SAMPLE_VOCABULARIES: tuple[tuple[str, frozenset[str]], ...] = (
     ("effect", tool_registry.EFFECTS),
     ("state", frozenset(get_args(audit.State))),
     ("kind", tool_registry.TARGET_KINDS),
+    ("decision", DECISIONS),
 )
 SAMPLE_KEYS = [key for key, _ in SAMPLE_VOCABULARIES]
 
@@ -361,17 +375,27 @@ def _sample_records(document: str) -> tuple[dict[str, object], ...]:
     silently skip. A `json` fence added for something other than a record fails here,
     quoting the block, which is the editing constraint the ledger records.
     """
+    rule = (
+        "every ```json fence in the document must open one audit record, written at the "
+        "start of its line; fence anything else as ```text"
+    )
     blocks = JSON_SAMPLE.findall(document)
-    assert blocks, "no fenced JSON sample records in the document"
+    assert blocks, f"no fenced JSON sample records in the document — {rule}"
+    opened = JSON_FENCE.findall(document)
+    assert len(opened) == len(blocks), (
+        f"{len(opened)} JSON fences open but {len(blocks)} were read — {rule}"
+    )
 
     records = []
     for block in blocks:
         try:
             record = json.loads(block)
         except json.JSONDecodeError as error:
-            raise AssertionError(f"sample is not valid JSON: {block!r}") from error
-        assert isinstance(record, dict), f"sample is not a JSON object: {block!r}"
-        assert "event" in record, f"sample carries no `event`: {block!r}"
+            raise AssertionError(
+                f"sample is not valid JSON — {rule}: {block!r}"
+            ) from error
+        assert isinstance(record, dict), f"sample is not a JSON object — {rule}: {block!r}"
+        assert "event" in record, f"sample carries no `event` — {rule}: {block!r}"
         records.append(record)
     return tuple(records)
 
@@ -733,6 +757,33 @@ def test_an_event_with_no_sample_record_is_caught() -> None:
     assert audit.EVENTS - _sampled_events(uncovered) == {dangling}
 
 
+def test_a_nested_event_does_not_cover_for_a_missing_sample_record() -> None:
+    """Why coverage reads the top level: at any depth this mutation would pass.
+
+    The same shape as the TLS `source` control — the real document carries no nested
+    `event` to catch a widened extractor out, so the control has to plant one.
+    """
+    document = _document()
+    sampled = Counter(str(record["event"]) for record in _sample_records(document))
+    once = sorted(name for name, count in sampled.items() if count == 1)
+    assert once, f"every event is sampled more than once: {sampled}"
+    dangling = once[0]
+    others = sorted(str(name) for name in sampled if name != dangling)
+    assert others, "only one event is sampled, so there is nothing to retarget at"
+
+    hidden, replaced = re.subn(
+        rf'"event"\s*:\s*"{re.escape(dangling)}"',
+        f'"event": "{others[0]}", "nested": {{"event": "{dangling}"}}',
+        document,
+        count=1,
+    )
+    assert replaced == 1
+    #: The plant has to survive `json.loads` for the assertion below to mean anything —
+    #: under a key of its own, because a duplicate one is dropped for the last wins.
+    assert dangling in _sampled_values(hidden, "event")
+    assert audit.EVENTS - _sampled_events(hidden) == {dangling}
+
+
 def test_documented_sample_tls_sources_are_drawn_from_the_client_vocabulary() -> None:
     """Membership, not equality: one record carries one `source`. The clause above holds
     the other direction, so between them the vocabulary is covered and the sample cannot
@@ -803,11 +854,14 @@ def test_a_source_nested_inside_the_tls_sample_is_not_read() -> None:
 
     nested, replaced = re.subn(
         rf'"source"\s*:\s*"{re.escape(real)}"',
-        f'"source": "{real}", "attribution": {{"source": "retired-source"}}',
+        f'"source": "{real}", "nested": {{"source": "retired-source"}}',
         document,
         count=1,
     )
     assert replaced == 1
+    #: As in the event control: under a key of its own, so the plant survives `json.loads`
+    #: rather than being dropped as a duplicate, and the assertion below is not vacuous.
+    assert "retired-source" in _sampled_values(nested, "source")
     assert _sampled_tls_sources(nested) == _sampled_tls_sources(document)
 
 
