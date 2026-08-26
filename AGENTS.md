@@ -34,18 +34,21 @@ pager, or a prompt will stall the agent with no recovery path.
     `scripts/gen_tool_reference.py` writes `_REPO_ROOT / "docs" / "tools"` and
     `scripts/check_adr_numbering.py` globs `docs/adr/*.md`, so no search for a
     path or a filename can see those at all. Work from this floor instead:
-    - **Everything under `docs/` is asserted by something.** `just adr-numbering`
-      globs every `docs/adr/*.md` and checks its filename shape and H1;
-      `just doc-freshness` walks `docs/` and regenerates every page carrying a
-      generation banner; `just tool-docs-check` diffs `docs/tools/`;
-      `just env-vars` checks `docs/environment-variables.md` field by field;
-      and contract tests open individual ADRs and spec pages — ADR 0029's
-      inventory block, for one.
-    - `CHANGELOG.md`, `CONTRIBUTING.md`, `README.md`, and `SECURITY.md` are all
-      asserted by tests. `CHANGELOG.md`'s `### Facade manifest` is checked
-      against `hmc_mcp.api.__all__`.
-    - In practice that leaves `AGENTS.md` and not much else. A genuinely
-      documentation-only PR here is rare.
+    - **Content-asserted:** `docs/tools/` (diffed by `just tool-docs-check`),
+      every page carrying a generation banner (regenerated and diffed by
+      `just doc-freshness`), `docs/environment-variables.md` (checked field by
+      field by `just env-vars`), `docs/hmc-cli-cheatsheet.md` and
+      `docs/authorization-audit.md` (opened by `tests/`), ADR 0029's inventory
+      block (parsed by `tests/unit/test_public_api.py`), and `CHANGELOG.md`,
+      `CONTRIBUTING.md`, `README.md`, `SECURITY.md`.
+    - **Name-asserted only:** `just adr-numbering` checks an ADR's *filename*
+      and H1, never its body — so editing an ADR's prose is not caught by that
+      gate. Most ADRs are in this class, which is why a prose-only ADR edit is
+      one of the few real documentation-only changes here.
+    - **Asserted by nothing** today: the `docs/plan-*`, `docs/spec-*`,
+      `docs/scorecard-*`, `docs/workflow/` and `docs/superpowers/` pages. Test
+      modules cite some of those specs in module docstrings, which asserts
+      nothing about the file.
   - **When the answer is not obvious, use `--merge`.** It costs one merge
     commit. A wrong `--squash` is not reversible once it is on `main`.
   - Two shell mechanics, for whatever check you do write over
@@ -217,12 +220,21 @@ Common causes worth checking first:
   autouse fixtures in `tests/conftest.py` already pin both for every test, so
   exporting them here would prove nothing.
 
-  `HMC_PROFILE` is a fourteenth hazard of a different kind — it is not an
-  `HMCConfig` field. `load_profile` reads it from `os.environ` directly to
-  choose which profile in `config.toml` to load, so an exported value selects a
-  profile that a test's fixture config may not define and the test fails with a
-  `ConfigError` rather than a wrong-value assertion. Check for it separately
-  when a config test fails in a way the block above does not reproduce.
+  Two names in play here leak in a second way, and neither shows up as a
+  wrong-value assertion:
+
+  - **`HMC_PROFILE` is not an `HMCConfig` field at all.** `load_profile` reads
+    it from `os.environ` directly to choose which profile in `config.toml` to
+    load, so an exported value selects a profile a test's fixture config may not
+    define, and the test fails with a `ConfigError`.
+  - **`HMC_HOST` reroutes the authorization path**, on top of being a field.
+    `connection_scope.selected_connection` returns `None` — collapsing every
+    `connection=` token to the environment connection — whenever `HMC_HOST` is
+    set; `connection_denial` adds a clause to the ADR 0038 denial text on the
+    same condition; and `build_config` skips its whole TOML/profile branch. So
+    an authorization or profile test failing under the probe above is reporting
+    a *rerouted decision*, not a leaked value. Do not "fix" an access-policy
+    assertion to match it — unset `HMC_HOST` and re-run that test first.
 
   #461 tracks the tests outside `tests/unit/test_config.py` that still fail
   this way, and the suite-wide fixture that should stop it recurring.
