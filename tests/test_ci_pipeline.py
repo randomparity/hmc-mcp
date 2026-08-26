@@ -52,6 +52,20 @@ ACTION_PINS = {
         "v4.2.0",
     ),
 }
+# The gates this repository must not lose. Not derived on purpose: `static` and
+# .pre-commit-config.yaml agreeing with each other is silent when a gate is deleted
+# from both, and which gates must exist is a judgement no file states (ADR 0098 §1b).
+STATIC_GATES = {
+    "lint",
+    "typecheck",
+    "secrets",
+    "workflow-security",
+    "env-vars",
+    "nicknames",
+    "tool-docs-check",
+    "adr-numbering",
+    "doc-freshness",
+}
 SUPPORTED_PYTHONS = ["3.11", "3.12", "3.13", "3.14"]
 NATIVE_MATRIX = [
     ("amd64", "ubuntu-24.04", version) for version in SUPPORTED_PYTHONS
@@ -160,6 +174,7 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "tool-docs",
         "tool-docs-check",
         "adr-numbering",
+        "doc-freshness",
         "static",
         "test",
         "test-verbose",
@@ -167,13 +182,17 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "smoke-verbose",
     ):
         assert f"\n{recipe}:" in justfile
-    assert (
-        "\nstatic: lint typecheck secrets workflow-security env-vars nicknames "
-        "tool-docs-check adr-numbering\n" in justfile
-    )
+    # `static`'s membership is not restated here. It is derived and compared against
+    # the prek hook set by test_prek_hooks_delegate_to_focused_just_recipes, and a
+    # literal copy of it would only pin how the line happens to wrap today.
     assert (
         "\nadr-numbering:\n"
         "    uv run --no-sync python scripts/check_adr_numbering.py\n"
+        in justfile
+    )
+    assert (
+        "\ndoc-freshness:\n"
+        "    uv run --no-sync python scripts/check_generated_docs.py\n"
         in justfile
     )
     assert (
@@ -236,22 +255,81 @@ def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> Non
     assert all("uv run --no-sync" in line for line in run_lines)
 
 
+def _static_members(justfile: str) -> list[str]:
+    """`static`'s dependency list, with `just`'s backslash continuation joined."""
+    static = re.search(
+        r"^static:(?P<dependencies>[^\n]*)$",
+        justfile.replace("\\\n", ""),
+        re.MULTILINE,
+    )
+    assert static
+    return static["dependencies"].split()
+
+
+def _prek_hook_blocks(config: str) -> list[str]:
+    """Each hook's own slice of the config, split at the `- id:` that opens it.
+
+    Per-hook, not per-file: a whole-file `count(...)` cannot tell one hook carrying
+    a setting twice from two hooks carrying it once, which is the shape of mistake
+    a config edit actually makes.
+    """
+    _, _, body = config.partition("hooks:\n")
+    blocks = [
+        block
+        for block in re.split(r"\n(?=\s*- id: )", body)
+        if re.match(r"^\s*- id: ", block)
+    ]
+    # One indentation for all of them. A block at another level is a different node
+    # in the document, and prek would not run it as a hook.
+    indents = {len(block) - len(block.lstrip(" ")) for block in blocks}
+    assert len(indents) == 1, f"hook blocks sit at {len(indents)} indentation levels"
+    return blocks
+
+
 def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
+    """One hook per `static` member, derived from both files rather than restated.
+
+    The recipe list and the hook list both live in the tree, so a test that writes
+    either one down again is a hand-maintained mirror and a literal hook count is a
+    number kept in step by memory -- exactly what ADR 0098 §1c calls a defect. What
+    is derived is the *correspondence*: every gate `just verify` reaches is a
+    commit-time hook, and no hook runs something `just verify` does not.
+
+    STATIC_GATES is deliberately not derived. Two files agreeing with each other
+    says nothing when a gate is deleted from both, and which gates this repository
+    must not lose is a judgement, not a fact any file states.
+    """
+    justfile = (ROOT / "justfile").read_text()
     config = (ROOT / ".pre-commit-config.yaml").read_text()
 
+    members = _static_members(justfile)
+    assert STATIC_GATES <= set(members), "a static gate was deleted"
+    for member in members:
+        assert f"\n{member}:" in justfile, f"static depends on undefined {member!r}"
+
+    blocks = _prek_hook_blocks(config)
+    entries = []
+    for block in blocks:
+        identifier = re.search(r"^ *- id: (\S+)$", block, re.MULTILINE)
+        entry = re.search(r"^ +entry: just (\S+)$", block, re.MULTILINE)
+        assert entry, f"hook does not delegate to a just recipe: {block!r}"
+        # The id is the recipe, so `SKIP=<id>` and `prek run <id>` name the gate
+        # the reader thinks they name. Swap the two and the wrong gate is skipped.
+        assert identifier and identifier[1] == entry[1]
+        # Each setting as its own key, not the string anywhere in the block.
+        assert len(re.findall(r"^ +pass_filenames: false$", block, re.MULTILINE)) == 1
+        # `entry` is only executed when the hook is a system hook that always has
+        # files to run on. `language: pygrep`, `stages: [manual]` and `exclude: .*`
+        # each leave the recipe unrun while the entry line still reads correctly.
+        assert len(re.findall(r"^ +language: system$", block, re.MULTILINE)) == 1
+        narrowing = re.search(
+            r"^ +(stages|exclude|files|types|types_or|always_run):", block, re.MULTILINE
+        )
+        assert narrowing is None, f"hook narrows when it must always run: {narrowing}"
+        entries.append(entry[1])
+
     assert config.count("repo: local") == 1
-    for recipe in (
-        "lint",
-        "typecheck",
-        "secrets",
-        "workflow-security",
-        "env-vars",
-        "nicknames",
-        "tool-docs-check",
-        "adr-numbering",
-    ):
-        assert f"entry: just {recipe}" in config
-    assert config.count("pass_filenames: false") == 8
+    assert sorted(entries) == sorted(members)
     assert "entry: uv run" not in config
 
 
@@ -321,8 +399,9 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     for command in (
         "just setup",
         # Named as its own step as well as reached through `static` -> `verify`,
-        # so generated-docs drift is its own failed check (ADR 0097).
+        # so generated-docs drift is its own failed check (ADR 0097, ADR 0098).
         "just tool-docs-check",
+        "just doc-freshness",
         "just verify",
         "UV_NO_SYNC=1 uv run prek run --all-files",
     ):
