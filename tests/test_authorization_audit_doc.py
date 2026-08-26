@@ -769,13 +769,19 @@ def test_the_reason_table_names_no_undefined_decision() -> None:
 def _reason_row_text(document: str, index: int = 0) -> tuple[str, str, str]:
     """One reason-code row as written, with the code and decision it was read as.
 
-    Located by rewriting what the extractor returned and asserting the result is present,
-    so a mutation below cannot silently edit nothing when the table's spacing changes.
+    Located with the extractor's own tolerance for padding rather than by reconstructing
+    the row, so the mutations below cannot silently edit nothing and do not pin the
+    table's alignment. The whole matched text comes back, because that is what they
+    rewrite.
     """
     code, decision = _reason_rows(document)[index]
-    written = f"| `{code}` | {decision} |"
-    assert written in document, f"reason row not written as expected: {written!r}"
-    return code, decision, written
+    written = re.search(
+        rf"^\|\s*`{re.escape(code)}`\s*\|\s*{re.escape(decision)}\s*\|",
+        document,
+        re.MULTILINE,
+    )
+    assert written is not None, f"reason row not found for `{code}`"
+    return code, decision, written.group(0)
 
 
 def test_a_drifted_reason_table_decision_is_caught() -> None:
