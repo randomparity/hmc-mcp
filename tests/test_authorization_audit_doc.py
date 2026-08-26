@@ -81,16 +81,26 @@ What this does not reach, so a green run is not read as more coverage than it is
   prose — and the same tradeoff means `..., or `field-default`, and `config-file`` reads as
   three values plus prose. The dangling direction is unaffected; only the orphan half has
   the hole, and only for those two extractors;
-- the dangling direction for the reason-code table's middle column. Every cell there is
-  held to naming a defined decision, and the `decision` field row above holds the other
-  half — but nothing requires each decision to appear in that column, because which reason
-  code yields which decision is a claim this document makes rather than one the code
-  derives: `reason` and `decision` are independent parameters of the record builder. A
-  decision arm that no reason code yields would be documented in the row and absent from
-  the table, and that is not drift. What the column does carry is an editing constraint,
-  and it fails loud: `REASON_ROW` reads both cells at once, so a decision cell widened
-  into prose takes its whole row out of the reason vocabulary and reddens the equality
-  check, rather than quietly ceasing to be read;
+- the *mapping* the reason-code table's middle column states — which decision each reason
+  code is emitted with. Every cell there is held to naming a defined decision, and the
+  `decision` field row above holds the other half of that vocabulary, so neither side of
+  the set can drift. The pairing is not held. It is fixed in code, at
+  `dispatch_scope.dispatch_authorizer`'s four `record(...)` call sites — `permitted` with
+  `allow`, every other reason with `deny` — and nothing compares the column to them, so a
+  row whose decision stops matching its emitter goes stale silently. Equality against the
+  vocabulary would not close that and is not what is missing here: a decision arm that no
+  reason code yields belongs in the field row and legitimately not in this table, so
+  requiring every decision to appear in the column would redden a document that is right.
+  What the column does carry is an editing constraint, and that one fails loud:
+  `REASON_ROW` reads both cells at once, so a decision cell widened into prose takes its
+  whole row out of the reason vocabulary and reddens the equality check above, rather than
+  quietly ceasing to be read;
+- the `decision` and `reason` annotations on `dispatch_scope`'s own `record` closure,
+  which name `audit.Decision` and `audit.Reason`. Only the record builder's signature is
+  held to naming its alias; re-inline a `Literal` there and nothing reddens. The exposure
+  is smaller than the builder's — that closure derives no frozenset and no document reads
+  it, so a re-inlined copy goes stale without taking a check with it — but it is the third
+  restatement #518 removed, and nothing keeps it removed;
 - the sample records' `policy`, `tool` and `targets[].argument` values, none of which is a
   closed vocabulary. `policy` is an example name; `tool` names a registry entry rather
   than a `Literal`, and deriving that set means importing the server, which this module
@@ -173,6 +183,7 @@ import re
 from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
+from types import ModuleType
 from typing import Literal, get_args, get_origin, get_type_hints
 
 import pytest
@@ -205,10 +216,12 @@ FIELD_ROW = {
     field: re.compile(rf"^\|\s*`{re.escape(field)}`\s*\|([^|]*)\|", re.MULTILINE)
     for field, _ in FIELD_ROW_VOCABULARIES
 }
-#: One member of such a cell. Optionally quoted, because the `decision` row writes its
+#: One member of such a cell. Quoted or bare, because the `decision` row writes its
 #: members as the JSON literals `"allow"` and `"deny"` while the `effect` row writes bare
-#: names; holding both spellings is what lets one extractor read either row unedited.
-FIELD_VALUE = r'`"?[a-z][a-z-]*"?`'
+#: names; holding both spellings is what lets one extractor read either row unedited. The
+#: quotes must balance — an optional one on each end would read `"allow` as a member and
+#: leave a cell with a dropped quote green.
+FIELD_VALUE = r'`(?:"[a-z][a-z-]*"|[a-z][a-z-]*)`'
 #: The comma-and-`or` run at the head of that cell, so a clarification appended after it
 #: is prose rather than another member. Same reason as STATE_ARM below. A bare `or` with
 #: no comma is a separator too — a two-member run is written "`x` or `y`" — while bare
@@ -309,8 +322,10 @@ SOURCE_CLAUSE = re.compile(r"where the (?:effective )?setting came from\b")
 #: One `source` value: a lowercase hyphenated name, optionally suffixed with the
 #: environment variable it names, as `environment:HMC_VERIFY_SSL` is.
 SOURCE_VALUE = r"[a-z][a-z-]*(?::[A-Z][A-Z0-9_]*)?"
-#: The comma-and-`or` run of them, as EFFECT_LIST is for effects — so a clarification
-#: appended after the run is prose rather than a fourth source.
+#: The comma-and-`or` run of them, as FIELD_VALUE_LIST is for a field row's cell — so a
+#: clarification appended after the run is prose rather than a fourth source. The two
+#: differ in one place: this one takes `or` only after a comma, because the clause it
+#: reads always lists more than two.
 SOURCE_LIST = re.compile(rf"`{SOURCE_VALUE}`(?:,\s*(?:or\s+)?`{SOURCE_VALUE}`)*")
 
 #: A count — spelled or numeric, bold or plain — pinned to the reason-code
@@ -637,24 +652,6 @@ def test_event_names_are_read_from_headings_only() -> None:
     )
     assert in_table != document
     assert "not-a-row" not in _documented_events(in_table)
-
-
-@pytest.mark.parametrize(
-    ("parameter", "vocabulary"), BUILDER_VOCABULARIES, ids=BUILDER_PARAMETERS
-)
-def test_the_record_builder_binds_the_derived_alias(
-    parameter: str, vocabulary: frozenset[str]
-) -> None:
-    """The code end of every check that reads one of these frozensets.
-
-    Each is derived from an alias the builder's signature is supposed to name. Inline a
-    `Literal` in the signature instead — which is how `decision` was written until #518 —
-    and the frozenset keeps describing the old vocabulary while the builder accepts
-    another, behind a green run of every document check below.
-    """
-    annotation = get_type_hints(audit.record_authorization)[parameter]
-
-    assert frozenset(get_args(annotation)) == vocabulary
 
 
 @pytest.mark.parametrize(
@@ -1274,20 +1271,42 @@ POINTER_DOCSTRINGS = (
 )
 
 
-def _alias_name() -> str:
-    """The name `client` exports the `source` vocabulary under, found rather than spelled.
+def _alias_name(module: ModuleType, vocabulary: frozenset[str]) -> str:
+    """The name *module* binds *vocabulary*'s `Literal` under, found rather than spelled.
 
-    Renaming the alias moves the name the two docstrings must quote, so the rename reddens
-    the check below instead of leaving them pointing at something that is gone.
+    Renaming an alias moves the name its dependents must quote or name, so the rename
+    reddens the checks that read it instead of leaving them pointing at something that is
+    gone.
     """
     names = [
         name
-        for name, value in vars(client).items()
-        if get_origin(value) is Literal
-        and frozenset(get_args(value)) == client.VERIFY_SSL_SOURCES
+        for name, value in vars(module).items()
+        if get_origin(value) is Literal and frozenset(get_args(value)) == vocabulary
     ]
-    assert len(names) == 1, f"expected one `source` alias in client, found {names}"
+    assert len(names) == 1, (
+        f"expected one alias for {sorted(vocabulary)} in {module.__name__}: {names}"
+    )
     return names[0]
+
+
+def _annotation_source(path: Path, function: str, parameter: str) -> str:
+    """How *function*'s signature writes *parameter*'s annotation, as source text.
+
+    Read from the file for the same reason `_docstring` is, and because that is the only
+    place the distinction lives: `audit` imports `annotations` from `__future__`, and a
+    resolved type hint is the same object whether the signature named an alias or spelled
+    a `Literal` out inline.
+    """
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.FunctionDef) and node.name == function:
+            for argument in node.args.args + node.args.kwonlyargs:
+                if argument.arg == parameter:
+                    assert argument.annotation is not None, (
+                        f"{parameter} on {function} is unannotated"
+                    )
+                    return ast.unparse(argument.annotation)
+            raise AssertionError(f"no {parameter} parameter on {function}")
+    raise AssertionError(f"no {function} in {path.name}")
 
 
 def _docstring(path: Path, function: str) -> str:
@@ -1302,6 +1321,31 @@ def _docstring(path: Path, function: str) -> str:
             assert documentation, f"{function} in {path.name} has no docstring"
             return documentation
     raise AssertionError(f"no {function} in {path.name}")
+
+
+@pytest.mark.parametrize(
+    ("parameter", "vocabulary"), BUILDER_VOCABULARIES, ids=BUILDER_PARAMETERS
+)
+def test_the_record_builder_binds_the_derived_alias(
+    parameter: str, vocabulary: frozenset[str]
+) -> None:
+    """The code end of every check that reads one of these frozensets.
+
+    Two halves, and neither holds alone. The signature must *name* the alias — read from
+    the source, because a resolved hint cannot tell an alias from an inline `Literal` —
+    and the alias must resolve to the frozenset every check above compares against. Inline
+    a `Literal` in the signature instead, which is how `decision` was written until #518,
+    and the frozenset goes on describing a vocabulary the builder may no longer accept,
+    behind a green run of every document check in this module.
+
+    The alias name is found rather than spelled, as `client`'s is, so renaming it reddens
+    only where the rename is wrong.
+    """
+    annotation = _annotation_source(AUDIT_MODULE, "record_authorization", parameter)
+
+    assert annotation == _alias_name(audit, vocabulary)
+    resolved = get_type_hints(audit.record_authorization)[parameter]
+    assert frozenset(get_args(resolved)) == vocabulary
 
 
 @pytest.mark.parametrize(
@@ -1320,7 +1364,8 @@ def test_the_code_restatements_name_the_alias_instead_of_the_values(
     """
     documentation = _docstring(path, function)
 
-    assert _alias_name() in documentation, f"{function} names no `source` alias"
+    alias = _alias_name(client, client.VERIFY_SSL_SOURCES)
+    assert alias in documentation, f"{function} names no `source` alias"
 
     spelled = sorted(v for v in client.VERIFY_SSL_SOURCES if v in documentation)
     assert not spelled, f"{function} spells the `source` values out: {spelled}"
