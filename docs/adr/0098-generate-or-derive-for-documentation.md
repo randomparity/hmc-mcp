@@ -178,13 +178,13 @@ position: `tool-docs` imports `hmc_mcp` through the symlinked `.venv`, so it lea
 recipe it governs already breaks is one a reviewer learns to read loosely, and a loosely
 read one stops telling `__pycache__` apart from a `publish-docs` that pushes a branch.
 
-And its output must be a function of the tracked source alone. That is
-stronger than what §3 measures, which is that the same tree produced the same bytes on the
-day the check ran: §3 compares what the command produces against the tracked page in the
-working tree, so it catches an unordered mapping straight away — that varies between two
-runs on one machine — and catches a hostname or a date stamp only where the check runs
-somewhere, or somewhen, other than where the page was written, reddening all eight legs
-against a tree nobody edited. §4 splits the mechanical half from the rest.
+And its output must be a function of the tracked source alone. That is stronger than what
+§3 measures, which is that the same tree produced the same bytes on the day the check ran.
+§3 compares what the command produces against the tracked page in the working tree, so it
+catches an unordered mapping straight away — that varies between two runs on one machine —
+and catches a hostname or a date stamp only where the check runs somewhere, or somewhen,
+other than where the page was written, reddening all eight legs against a tree nobody
+edited. §4 splits the mechanical half from the rest.
 
 Determinism is the word §3 earns, and idempotence falls out of the first obligation rather
 than standing beside it: a recipe that produces nothing but its own `docs/` leaves no
@@ -230,12 +230,12 @@ exists to block.
 Bounding the quoted output is not the control. §3 caps how many differing files get a full
 diff — `_MAX_DIFFS` keeps three whole diffs and only names the rest — and quotes a failed
 command's output whole, because that output is what makes a failed generator diagnosable.
-Neither is a disclosure bound. `_MAX_DIFFS` caps how many files are diffed, not how much of
-one: `difflib.unified_diff` runs at its default three lines of context, so what reaches the
-log is every changed hunk plus its neighbours — which is exactly where a credential sits
-once a generator starts writing one. The failure message is not bounded at all.
-What a generator may read is the control. Today's generator reads
-the tool registry and no credential; this is a constraint on the next one.
+Neither is a disclosure bound: the cap counts files rather than bytes within one, and
+`difflib.unified_diff` runs at its default three lines of context, so what reaches the log
+is every changed hunk plus its neighbours — exactly where a credential sits once a
+generator starts writing one. The failure message is not bounded at all. What a generator
+may read is the control: today's generator reads the tool registry and no credential, and
+this is a constraint on the next one.
 
 `publish-docs`, `upload-docs`, and `deploy-docs` are all natural names for recipes that
 would break these obligations, and the person choosing one is editing `justfile` rather
@@ -341,10 +341,10 @@ below, and the rest is a reviewer's job.
   properties of arbitrary shell and of every program it invokes, and §3's scratch tree
   isolates the working directory rather than the process — and not even that, since it
   symlinks `.venv` — so the guard has no sandbox to measure them against. Determinism, the
-  remaining property §2a asks for, is partly mechanical, and the split is the point.
-  §3 catches output
-  that differs from the tracked copy *at the moment it runs*, which reaches variation
-  faster than the gap between generating a page and checking it. It does not reach output
+  remaining property §2a asks for, is partly mechanical, and the split is the point. §3
+  catches output that differs from the tracked copy *at the moment it runs*, which reaches
+  variation faster than the gap between generating a page and checking it. It does not
+  reach output
   that depends on the environment — the symlinked `.venv` and `sys.path` this section and
   §5 already record — and it does not reach variation slower than that gap: a page carrying
   a date stamp matches on the day it is written, so its own eight legs go green and it
