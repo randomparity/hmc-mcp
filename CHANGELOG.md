@@ -156,8 +156,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   disks and detach; the path has no HMC job, no ADR 0011 ownership guard, and — for an
   `hmc_mcp.api` consumer — no dispatch-boundary `authorization` record. The two `INFO` lines
   it left instead went to the unconfigured `hmc_mcp.operations_install` logger, whose
-  effective level is the root's `WARNING`, so on the served MCP path they were dropped before
-  formatting and a submission left no local trace at all. One `WARNING` record now goes to the
+  effective level is the root's `WARNING`, so they were dropped before formatting. That left a
+  bare `hmc_mcp.api` consumer with no local trace at all, and a served deployment with only
+  the `authorization` permit for the tool call — which names the tool but never the resolved
+  system, partition, or log path, and which `--audit-level WARNING` drops. One `WARNING`
+  record now goes to the
   reserved `hmc_mcp.audit` logger immediately **before** the submit — the ambiguous case,
   since the raised exception cannot say whether anything was submitted — carrying the resolved
   system and partition, the HMC-side `log_path`, the HMC, and the acting agent. The

@@ -385,15 +385,16 @@ def record_install_attempted(
     per managed system — which is why the record carries *system* and *host*
     beside it, and why an operator correlating installs needs all three.
 
-    This path has no HMC job to poll, no ADR 0011 ownership guard and so no
-    :func:`record_ownership_denied`, and on a ``hmc_mcp.api`` consumer no #218
-    dispatch-boundary :func:`record_authorization` either. This record is the only
-    one it produces.
+    This path has no HMC job to poll and no ADR 0011 ownership guard, so no
+    :func:`record_ownership_denied`. A served deployment does write a
+    :func:`record_authorization` permit for the tool call, but that one names the
+    tool and none of the three values above; a ``hmc_mcp.api`` consumer gets no
+    record at all without this one.
 
     Always ``WARNING``, matching :func:`record_ownership_denied`, and for the same
-    reason: a CLI or API process that never installed the sink has no handler here
-    and no propagation, so ``logging.lastResort`` — which drops anything below that
-    level — is what puts the line on stderr.
+    reason: a process that never installed the sink has no handler here and no
+    propagation, so ``logging.lastResort`` — which drops anything below that level —
+    is what puts the line on stderr.
     """
 
     def build() -> dict[str, Any]:

@@ -17,9 +17,16 @@ alone, shared across managed systems, and truncated by the next submission.
 Nothing configures that namespace: `server.py` binds only the reserved `hmc_mcp.audit`
 logger and the four third-party ones, and no `basicConfig` or `dictConfig` exists in
 `src/hmc_mcp`. The module logger's effective level is the root's `WARNING`, so an `INFO`
-record is dropped before formatting, and `logging.lastResort` is `WARNING` too. On the
-served MCP deployment an unguarded detached install therefore produces no local trace at
-all — `server.py` already documents this failure mode where it pins `uvicorn` to `INFO`.
+record is dropped before formatting, and `logging.lastResort` is `WARNING` too —
+`server.py` already documents this failure mode where it pins `uvicorn` to `INFO`.
+
+What that leaves depends on the caller. A bare `hmc_mcp.api` consumer gets no local trace
+at all. A served deployment gets one: `dispatch_scope.authorize` emits an `authorization`
+permit for the tool call, unconditionally since ADR 0041 made a policy mandatory. But that
+record names the tool and never the resolved system, partition, or `log_path` — the three
+things an operator chasing an install in flight needs — and it is a permit at
+`_ALLOW_LEVEL`, so `--audit-level WARNING` drops it. Neither caller can answer "which
+partition, and where is its log".
 
 ## Decision
 
@@ -49,23 +56,23 @@ submission — so a record written afterwards would be missing exactly where an 
 needs to know a partition may have an install in flight and where its log is.
 
 `log_path` is what a raised submission leaves the operator to read, and the reason
-`system` and `host` sit beside it: the path is keyed on the partition name alone, so two
+`system` and `host` sit beside it: the path is keyed on the partition name alone, so
 same-named partitions on one HMC share one log file. `host` and `attribution` follow
 ADR 0100 §2 — `hmc.config.agent_id or "hmc-mcp"`, the same claim the ownership records
 carry, so an unconfigured deployment's records name one actor and can be joined. Every
 value passes through `_value`, so each is truncated and JSON-escaped by the shared
 renderer. It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not
-as nulls: no access-policy decision was taken on this path, and it runs from the CLI and
-the Python API where no policy connection exists.
+as nulls: this builder takes no access-policy decision, and it also runs from the Python
+API, where no policy connection exists to name.
 
 ### 3. `WARNING`, matching the denial record
 
-`_DENY_LEVEL`. A CLI or `hmc_mcp.api` process that never called `install_audit_sink` has no
-handler on this logger and no propagation, so `logging.lastResort` is what puts the line on
-stderr — and it drops anything below `WARNING`. That path is where this record is the *only*
-authorization-adjacent trace in existence, so `INFO` would silence it precisely there. It
-also means `hmc-mcp serve --audit-level WARNING`, the setting that drops permits, keeps
-this.
+`_DENY_LEVEL`. A process that never called `install_audit_sink` — every `hmc_mcp.api`
+consumer — has no handler on this logger and no propagation, so `logging.lastResort` is
+what puts the line on stderr, and it drops anything below `WARNING`. That is the caller
+with no trace of any kind today, so `INFO` would silence the record precisely where it is
+the only one. `WARNING` also survives `hmc-mcp serve --audit-level WARNING`, the setting
+that drops the `authorization` permit named in the Context.
 
 ### 4. The post-submit line stays on the module logger
 
@@ -83,10 +90,16 @@ value the caller already holds.
   Pairing it with an outcome means reading the HMC-side log the record names, which the next
   submission against that partition name truncates.
 - A caller can drive these records at attempt rate. Under `hmc-mcp serve` they land on the
-  bounded ADR 0043 sink, which drops and says so with a `records-dropped` count; on the CLI
-  and Python API paths the record goes synchronously to stderr through `logging.lastResort`
-  with no bound, exactly as the `ownership-override` record already does there. Reaching one
+  bounded ADR 0043 sink, which drops and says so with a `records-dropped` count; on the
+  Python API path the record goes synchronously to stderr through `logging.lastResort` with
+  no bound, exactly as the `ownership-override` record already does there. Reaching one
   costs a REST resolution round trip and, for a UUID target, an SSH one.
+- Absence of the record is not proof no install was submitted, and the reasons are in this
+  change's own delivery path: the serve-path sink drops under load with only a
+  `records-dropped` count to show for it, `--audit-level ERROR` silences the reserved logger
+  outright, and `_emit` swallows a failure to build or write rather than failing the call.
+  `docs/authorization-audit.md` carries this caveat for the record, as it does for its
+  siblings.
 - No change to `hmc_mcp.api.__all__` and no movement of the frozen public signature digest:
   the builder lives in `audit`, which the facade does not export, and no exported signature
   changes. `CHANGELOG.md` records the widened literal under ADR 0029's convention.

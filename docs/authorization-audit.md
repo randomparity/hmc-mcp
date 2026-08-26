@@ -244,16 +244,25 @@ ahead of the submit deliberately, because a submission that raises cannot tell a
 resolution failure from a failed submit — the case where an operator most needs the
 partition and the path.
 
-**It is the only record this path produces.** There is no HMC job
-([ADR 0069](adr/0069-installlpar-and-installvios-absent-from-hmc-rest.md)), no
+**It is the only record naming the partition.** There is no HMC job
+([ADR 0069](adr/0069-installlpar-and-installvios-absent-from-hmc-rest.md)), and no
 [ADR 0011](adr/0011-multi-agent-lpar-ownership.md) ownership check and so no
-`ownership-denied` or `ownership-override`, and for an `hmc_mcp.api` consumer no
-`authorization` record either. Silence here is not evidence that no install was
-submitted through some other tool, but for this package it is.
+`ownership-denied` or `ownership-override`. A served deployment also writes an
+`authorization` permit for the tool call, but that record names the tool and never the
+resolved system, partition, or `log_path`, and being a permit it is dropped by
+`--audit-level WARNING`. An `hmc_mcp.api` consumer gets no `authorization` record at all.
+
+**Absence of this record is not proof that no install was submitted**, for the reasons the
+lead section gives generally and three that apply here specifically: under `hmc-mcp serve`
+it lands on the bounded sink, which drops under load and reports only a `records-dropped`
+count — a number, not an identity, so a reader cannot tell whether a dropped line was an
+install; `--audit-level ERROR` or `CRITICAL` silences the reserved logger outright; and a
+record that fails to build or write is swallowed rather than failing the call, because a
+diagnostic must not abort an operation. Alert on the records you have, not on their absence.
 
 It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as
-nulls: no access-policy decision was taken on this path, and it runs from the CLI and
-the Python API where no policy connection exists.
+nulls: the record is not an access-policy decision, and it is also emitted on the Python
+API path, where no policy connection exists to name.
 
 <!-- The `source` values below are read by tests/test_authorization_audit_doc.py and held
      to `client.VERIFY_SSL_SOURCES`. Keep them a comma-and-`or` run introduced by the
