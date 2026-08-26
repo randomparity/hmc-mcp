@@ -163,9 +163,10 @@ def hmc_wait_for_job(
 
     ``found`` false is what the read that was made saw. It is a *confirmed*
     disappearance only once this wait has already seen the job alive, in which
-    case a second read has to agree; a 404 on the very first poll is reported
-    straight through, so a momentary one — a proxy reload, a failover — reads as
-    ``found`` false with no re-read.
+    case a second read has to agree. A first poll that produces no entry — a 404,
+    or a response the HMC answers with no job entry at all — is reported straight
+    through with no re-read, so one momentary or degraded response at the start of
+    a wait ends it immediately.
     ``found`` false does not say *why*, and is not proof the work did or did not
     happen: confirm that against the affected resource, not the job record. A
     ``found`` false that repeats for every identifier is a deployment whose jobs
@@ -196,6 +197,10 @@ def hmc_wait_for_job(
     echoed back, so if you passed one and get a ``found`` true outcome whose
     ``job_href`` is null, that link was retired. Drop it and poll by ``job_uuid``
     alone, which is also the reliable recovery whenever a stored link is suspect.
+    An echoed link is the exact string you passed, validated only that its path
+    addresses a job resource: host, query and fragment are neither checked nor
+    normalized, and only the path is ever requested. It is your own input coming
+    back, not something the HMC attested — do not dereference it as one.
 
     An empty identifier, a bare dot, or one carrying a path, query, fragment,
     percent, or interior whitespace character addresses something other than one

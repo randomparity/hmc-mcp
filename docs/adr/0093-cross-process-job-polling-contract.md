@@ -350,6 +350,13 @@ it to whatever remains when the disappearance is seen with less than an interval
 the case clause 5 names when it justifies owing the read at all. The docstring says "up to one
 `poll_interval`" until #532 closes it.
 
+Clause 2's echo rule now reaches a presentation surface, where "the link the caller passed" means
+the caller's exact string. The client validates only that its path addresses a job resource and
+requests only that path, so host, query and fragment round-trip unchecked into a field this record
+tells consumers to re-persist. Normalizing the echo to the requested path would change the
+persisted-handle shape clause 2 fixes, so the `hmc_wait_for_job` docstring says instead that an
+echoed link is the caller's own input rather than something the HMC attested.
+
 `_confirm_missing` treats the HTTP 400 REST000E of issue #95 firmware as absence, so on exactly the
 firmware `job_href` exists to serve, a link whose parent resource was removed makes one live job
 read as absent. ADR clause 2 settled that trade at the operations layer on the strength of a

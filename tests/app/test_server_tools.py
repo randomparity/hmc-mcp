@@ -1202,6 +1202,20 @@ def test_wait_for_job_reaped_returns_found_false(monkeypatch, mock_hmc):
     assert route.call_count == 1
 
 
+def test_wait_for_job_empty_feed_is_also_reported_gone(monkeypatch, mock_hmc):
+    """The other way the HMC produces no entry ends the wait the same way (#474)."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(204)
+    )
+
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=300, poll_interval=5)
+
+    assert result.found is False
+    assert result.status is None
+    assert route.call_count == 1
+
+
 def test_wait_for_job_running_is_found_true(monkeypatch, mock_hmc):
     """The other side of the distinction: still running is found=True (#474)."""
     _hmc_env(monkeypatch)
