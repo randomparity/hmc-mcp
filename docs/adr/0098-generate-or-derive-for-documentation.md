@@ -143,6 +143,105 @@ per-format comment syntax, and there is no such surface today. Extending the wal
 the change to make when one arrives, and until then §4 lists this among what is not
 covered rather than leaving it implied.
 
+**The `*-docs` suffix is a safety boundary, not only a name.** §2 requires the suffix so
+the grammar cannot admit `Regenerate: just setup`. The guard executes what a banner names
+and a banner is a file's first line, so that requirement is what stands between a tracked
+Markdown file and the command it causes to run — but read exactly what it bounds, which is
+the recipe a banner may *name*, and nothing past it. `just` runs a recipe's dependencies,
+so `api-docs: setup` puts `setup` one banner away again, and every clause here is blind to
+it: the grammar and the orphan clause test names, and §3 tests produced bytes. The
+obligations below therefore bind everything a `*-docs` recipe reaches — its dependency
+list and its body, transitively — and not merely the recipe carrying the name.
+
+Recipe names come from `just --summary`, which narrows the set in both directions, and only
+one of them fails closed. `just --summary` does not list `[private]` recipes, so a private
+`*-docs` recipe cannot be named by a banner at all and a banner naming it is reported as
+dangling (§2) — that half fails closed. But the orphan clause reads the same list, so a
+private recipe is equally *un-orphanable*: it needs no banner, reddens no clause, and stays
+reachable as a dependency of a public one. `[private] publish-docs` wired into `tool-docs:
+publish-docs` runs on every gate and trips nothing here — this paragraph's own worked
+example, made *more* hidden by being private, and `[private]` is the ordinary `just` idiom
+for a helper recipe.
+
+Naming a recipe `*-docs` is what first makes something executable by anyone who can land a
+Markdown file here, so the name is where the decision is most visible. It is not where the
+decision is closed: adding a dependency to an existing `*-docs` recipe widens what its
+banner reaches, with no rename and no new banner. Two obligations follow.
+
+**A recipe matching `*-docs` must be side-effect-free and deterministic.** Its whole
+effect must be the generated documents under its working directory's `docs/`: no publish,
+no upload, no deploy, no push, no external service, no credentialed call, and no write
+outside that `docs/` that outlives the run — beyond the caches the interpreter and
+toolchain write for themselves. That carve-out is not a loophole but the line's actual
+position: `tool-docs` imports `hmc_mcp` through the symlinked `.venv`, so it leaves
+`__pycache__` in the real checkout on every run whose sources moved. An obligation the only
+recipe it governs already breaks is one a reviewer learns to read loosely, and a loosely
+read one stops telling `__pycache__` apart from a `publish-docs` that pushes a branch.
+
+And its output must be a function of the tracked source alone. That is stronger than what
+§3 measures, which is that the same tree produced the same bytes on the day the check ran.
+§3 compares what the command produces against the tracked page in the working tree, so it
+catches an unordered mapping straight away — that varies between two runs on one machine —
+and catches a hostname or a date stamp only where the check runs somewhere, or somewhen,
+other than where the page was written, reddening all eight legs against a tree nobody
+edited. §4 splits the mechanical half from the rest.
+
+Determinism is the word §3 earns, and idempotence falls out of the first obligation rather
+than standing beside it: a recipe that produces nothing but its own `docs/` leaves no
+residue for a second run to meet. What §3 exercises is repetition from identical state —
+each walker run gets a fresh temporary directory and a fresh copy of the tracked tree, and
+runs the command once — so what it can catch is a page whose bytes vary between runs, and
+only as promptly as the gate happens to run. §4 says which part of that is mechanical.
+
+Read that as an obligation on the recipe and not as a claim about the scratch tree,
+because §3's copy is not a write boundary. It symlinks `.venv`, and this project is
+installed editable, so `.venv/` and anything reached through `import hmc_mcp` resolve to
+the real checkout — the asymmetry §5 records for reading, in the writing direction. A
+recipe writing through either one writes into the developer's own tree, on every prek
+hook and every `just static`, and nothing stops it. So *writes only inside the tree it
+runs in* is the wrong test to hand a reviewer; *produces nothing but its own `docs/`* is
+the right one. A recipe that acts outside that is not a documentation generator and does
+not belong under this suffix — but renaming it `publish-documentation` removes it from the
+banner grammar only, not from a `*-docs` recipe's dependency list, so the rename is
+bookkeeping and the obligation is what does the work.
+
+**A recipe matching `*-docs` must not read a secret.** Every gate that compares generated
+bytes quotes them into CI logs, and the likelier path does not involve failing. On a
+non-zero exit §3 folds the command's captured stdout and stderr into the message it
+prints. On a *successful* run whose output differs from what is tracked, §3 prints a
+unified diff of the generated bytes themselves — so a generator that writes a credential
+into a page it produces discloses it on the first run, through the ordinary staleness
+path, with nothing exceptional involved. And §3 is not the only such gate: a per-surface
+`*-docs-check` recipe prints the same diff from the generator itself
+(`scripts/gen_tool_reference.py --check`), reached through `static` and through its own
+prek hook, and §6 keeps that arrangement for `docs/tools/`. What scales with the surface
+count is the walker's own path — each new surface adds a regeneration command §3 runs and
+diffs — while a `*-docs-check` recipe stays a per-surface decision (§6, Consequences).
+GitHub masks the secrets it has been given and nothing masks the rest.
+
+The channel a secret arrives by is the ambient environment. `regenerate` passes no `env=`
+to `Popen`, so a recipe inherits the whole of its caller's — `HMC_PASSWORD`, or whatever
+variable a profile's `password_env` names, is readable by any `*-docs` recipe on every prek
+hook and every `just static`. Keeping a developer's `.env` out of the scratch copy (§2a)
+does not touch this: that is a filesystem exclusion and says nothing about `os.environ`.
+Reading it as "the run is credential-free by construction" is the inference this obligation
+exists to block.
+
+Bounding the quoted output is not the control. §3 caps how many differing files get a full
+diff — `_MAX_DIFFS` keeps three whole diffs and only names the rest — and quotes a failed
+command's output whole, because that output is what makes a failed generator diagnosable.
+Neither is a disclosure bound: the cap counts files rather than bytes within one, and
+`difflib.unified_diff` runs at its default three lines of context, so what reaches the log
+is every changed hunk plus its neighbours — exactly where a credential sits once a
+generator starts writing one. The failure message is not bounded at all. What a generator
+may read is the control: today's generator reads the tool registry and no credential, and
+this is a constraint on the next one.
+
+`publish-docs`, `upload-docs`, and `deploy-docs` are all natural names for recipes that
+would break these obligations, and the person choosing one is editing `justfile` rather
+than `scripts/check_generated_docs.py`. §4 records that nothing checks any of this, and
+where the constraint is and is not written down.
+
 ### 3. One check, executing rather than inspecting
 
 `scripts/check_generated_docs.py` (`just doc-freshness`) reads the first line of
@@ -152,7 +251,7 @@ regeneration command:
 1. copies the tracked files into a temporary directory **without the top-level
    `docs/`**, symlinking `.venv` rather than copying it;
 2. runs the command there;
-3. compares what it produced against what is committed.
+3. compares what it produced against the tracked pages in the working tree (§2a).
 
 Executing is the point. A recipe whose body is `true` produces nothing, so every
 document claiming that command is reported as un-produced and the check reddens.
@@ -230,6 +329,44 @@ below, and the rest is a reviewer's job.
   than accepted, so the convention has to be followed to opt in at all. The other
   clauses reach a surface the moment a conforming banner names it; only the deletion
   catch depends on the name.
+- **Nothing checks that a recipe named `*-docs` is safe to run (§2a).** The orphan
+  clause makes a new *public* one visible — add `publish-docs` and `just doc-freshness`
+  reddens until a banner names it — but visibility is not safety, and the banner that
+  clears the orphan clause is the same act that makes the recipe reachable from any
+  Markdown file. Visibility also stops at `[private]`: such a recipe is absent from `just
+  --summary`, so no clause here quantifies over it at all, while a public `*-docs` recipe
+  can still reach it as a dependency (§2a).
+  What would have to be checked is that a recipe — and everything its dependency list and
+  body reach — produces nothing but its own `docs/` and reads no credential. Both are
+  properties of arbitrary shell and of every program it invokes, and §3's scratch tree
+  isolates the working directory rather than the process — and not even that, since it
+  symlinks `.venv` — so the guard has no sandbox to measure them against. Determinism, the
+  remaining property §2a asks for, is partly mechanical, and the split is the point. §3
+  catches output that differs from the tracked copy *at the moment it runs*, which reaches
+  variation faster than the gap between generating a page and checking it. It does not
+  reach output
+  that depends on the environment — the symlinked `.venv` and `sys.path` this section and
+  §5 already record — and it does not reach variation slower than that gap: a page carrying
+  a date stamp matches on the day it is written, so its own eight legs go green and it
+  merges, and it reddens for everyone the next day against a tree nobody edited. That half
+  is a reviewer's too.
+  So the suffix's safety half is a reviewer's, and the review to do falls when a recipe is
+  named — and again on any edit to a `*-docs` recipe's dependency list or body, which
+  widens what an existing banner reaches while every clause here stays green.
+  That review is detective rather than preventive, and §4 should not imply otherwise: one
+  change can add the recipe and the banner together, CI runs the walker on
+  `pull_request`, and a contributor's prek hook runs it locally, so the recipe's first
+  execution precedes anyone reading its name. What the review buys is stopping the second
+  one — and only where recipe edits are being read as security-relevant at all, which a
+  one-word dependency added to an existing `*-docs` recipe does not look like.
+  Nor is the obligation written where the recipe is named: it is recorded in
+  §2a and at `_RECIPE`, which is where #524 judged an author most likely to meet it, while
+  `justfile` — the file that author actually edits — carries no note. That omission is
+  deliberate, and it is §1's own argument turned on this record: a third hand-maintained
+  copy of a prose constraint, with nothing deriving one from another, is one more copy to
+  drift. Someone who decides the duplication is worth its drift can add the line; until
+  then this is where the obligation lives, and this bullet is why it is a review
+  obligation rather than something an author trips over.
 - **A generated surface outside `docs/`, or in a format that cannot carry a Markdown
   comment, is out of the walk (§2a).** A banner outside `docs/` is at least
   reported; a generated `.json` cannot register at all and its `*-docs` recipe would
