@@ -22,6 +22,11 @@ unpolicied server can still produce those. For an `hmc_mcp.api` consumer that ch
 only authorization boundary that applies, which is why its refusals are recorded here
 rather than left to the `authorization` event ([ADR 0100](adr/0100-ownership-denial-audit-record.md)).
 
+**`install-attempted` records are not policy-gated either**, and for a stronger reason:
+the detached `installios` path has no ownership check to gate and no HMC job to poll, so
+for an `hmc_mcp.api` consumer this record is the only trace an irreversible install
+leaves in this process ([ADR 0102](adr/0102-install-submission-audit-record.md)).
+
 Other things produce no record, by design:
 
 - a call to a tool the policy's ceiling withheld — it is never registered, so nothing
@@ -208,6 +213,47 @@ deliberately left alone; the denial stream is complete without it.
 
 It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as
 nulls, for the reason the override record gives.
+
+### `event: "install-attempted"`
+
+Emitted immediately **before** `install_lpar_os` or `install_vios` submits a detached
+`installios` to the HMC. Always `WARNING`, so `--audit-level WARNING` keeps it. The
+decision is [ADR 0102](adr/0102-install-submission-audit-record.md).
+
+```json
+{"time":"2026-08-26T18:00:00+00:00","event":"install-attempted","system":"sys-a","partition":"vios-01","log_path":"/var/hmc/log/installios.vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+```
+
+`system` and `partition` are the resolved HMC CLI names the submission was composed
+with; `host` is the `HMCConfig.host` of the client that submitted, and an unset
+`HMC_HOST` renders as an empty string. `attribution.claim` is the acting agent —
+`HMC_AGENT_ID`, or `hmc-mcp` when unset — the same claim the ownership records carry,
+so an unconfigured deployment's records name one actor and can be joined.
+
+`log_path` is the HMC-side path the install writes to, and the field to read when a
+submission raises. It is keyed on the **partition name alone**: the managed system is
+not part of it, and the redirect truncates, so same-named partitions on different
+managed systems behind one HMC share one file and each destroys the other's only
+diagnostic record. That is why `system` and `host` sit beside it here.
+
+**This record names an attempt, never an outcome.** The submission is detached, so
+there is no HMC job to poll and nothing observes whether `installios` accepted the
+target. A record means the process reached the point of submitting against that
+partition's disks; whether anything started is in the log it names. It is emitted
+ahead of the submit deliberately, because a submission that raises cannot tell a
+resolution failure from a failed submit — the case where an operator most needs the
+partition and the path.
+
+**It is the only record this path produces.** There is no HMC job
+([ADR 0069](adr/0069-installlpar-and-installvios-absent-from-hmc-rest.md)), no
+[ADR 0011](adr/0011-multi-agent-lpar-ownership.md) ownership check and so no
+`ownership-denied` or `ownership-override`, and for an `hmc_mcp.api` consumer no
+`authorization` record either. Silence here is not evidence that no install was
+submitted through some other tool, but for this package it is.
+
+It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as
+nulls: no access-policy decision was taken on this path, and it runs from the CLI and
+the Python API where no policy connection exists.
 
 <!-- The `source` values below are read by tests/test_authorization_audit_doc.py and held
      to `client.VERIFY_SSL_SOURCES`. Keep them a comma-and-`or` run introduced by the

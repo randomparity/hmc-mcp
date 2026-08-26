@@ -1,0 +1,116 @@
+# ADR 0102: An audit record for a detached `installios` submission
+
+## Status
+
+Accepted (2026-08-26)
+
+## Context
+
+`install_lpar_os` and `install_vios` submit an irreversible OS install against a
+partition's disks and detach. There is no HMC job to poll (ADR 0069/0070), no ADR 0011
+ownership guard and therefore no `ownership-denied` or `ownership-override` record
+(ADR 0092 §3.4a), and for a `hmc_mcp.api` consumer no #218 dispatch-boundary
+`authorization` record either. The HMC-side install log is keyed on the partition name
+alone, shared across managed systems, and truncated by the next submission.
+
+#366 left two `_logger.info` calls on `hmc_mcp.operations_install` in place of a record.
+Nothing configures that namespace: `server.py` binds only the reserved `hmc_mcp.audit`
+logger and the four third-party ones, and no `basicConfig` or `dictConfig` exists in
+`src/hmc_mcp`. The module logger's effective level is the root's `WARNING`, so an `INFO`
+record is dropped before formatting, and `logging.lastResort` is `WARNING` too. On the
+served MCP deployment an unguarded detached install therefore produces no local trace at
+all — `server.py` already documents this failure mode where it pins `uvicorn` to `INFO`.
+
+## Decision
+
+### 1. A new `install-attempted` event on the reserved logger
+
+`audit.Event` gains `install-attempted`, built by a new `audit.record_install_attempted`
+and called from `operations_install._submit_install`. The reserved logger is the one path
+already installed at `INFO` with the bounded ADR 0043 sink and `propagate=False` in both
+serve paths, and an unguarded destructive submission is what that stream is for.
+
+Additive in the sense `audit.py`'s stability rule covers — a consumer ignores what it does
+not know — and no existing filter changes meaning, which is the ground ADR 0100 §1 used for
+the same addition. `EVENTS` is derived from the `Literal`, but
+`test_events_matches_the_literal_and_every_emitter_uses_it` restates the set and enumerates
+its emitters by hand, so it is edited here too.
+
+### 2. Fields, and why it is emitted *before* the submit
+
+```json
+{"time":"2026-08-26T18:00:00+00:00","event":"install-attempted","system":"sys-a","partition":"vios-01","log_path":"/var/hmc/log/installios.vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+```
+
+The record names the attempt, not the outcome, and is emitted immediately before
+`run_installios`. A submit that raises is the ambiguous case — the operations' own
+`Raises:` blocks say the exception cannot distinguish a resolution failure from a failed
+submission — so a record written afterwards would be missing exactly where an operator
+needs to know a partition may have an install in flight and where its log is.
+
+`log_path` is what a raised submission leaves the operator to read, and the reason
+`system` and `host` sit beside it: the path is keyed on the partition name alone, so two
+same-named partitions on one HMC share one log file. `host` and `attribution` follow
+ADR 0100 §2 — `hmc.config.agent_id or "hmc-mcp"`, the same claim the ownership records
+carry, so an unconfigured deployment's records name one actor and can be joined. Every
+value passes through `_value`, so each is truncated and JSON-escaped by the shared
+renderer. It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not
+as nulls: no access-policy decision was taken on this path, and it runs from the CLI and
+the Python API where no policy connection exists.
+
+### 3. `WARNING`, matching the denial record
+
+`_DENY_LEVEL`. A CLI or `hmc_mcp.api` process that never called `install_audit_sink` has no
+handler on this logger and no propagation, so `logging.lastResort` is what puts the line on
+stderr — and it drops anything below `WARNING`. That path is where this record is the *only*
+authorization-adjacent trace in existence, so `INFO` would silence it precisely there. It
+also means `hmc-mcp serve --audit-level WARNING`, the setting that drops permits, keeps
+this.
+
+### 4. The post-submit line stays on the module logger
+
+It carries the PID, which the returned `InstallHandle` already carries, so it is a
+convenience for an embedder that configures the `hmc_mcp` namespace rather than part of the
+audit trail. Routing it too would put a second record per install on a bounded sink for a
+value the caller already holds.
+
+## Consequences
+
+- An operator can count and locate detached installs per system, per partition, per HMC and
+  per acting agent, on every transport — including the two the dispatch-boundary policy does
+  not reach.
+- A record is not evidence that an install started; it is evidence that one was attempted.
+  Pairing it with an outcome means reading the HMC-side log the record names, which the next
+  submission against that partition name truncates.
+- A caller can drive these records at attempt rate. Under `hmc-mcp serve` they land on the
+  bounded ADR 0043 sink, which drops and says so with a `records-dropped` count; on the CLI
+  and Python API paths the record goes synchronously to stderr through `logging.lastResort`
+  with no bound, exactly as the `ownership-override` record already does there. Reaching one
+  costs a REST resolution round trip and, for a UUID target, an SSH one.
+- No change to `hmc_mcp.api.__all__` and no movement of the frozen public signature digest:
+  the builder lives in `audit`, which the facade does not export, and no exported signature
+  changes. `CHANGELOG.md` records the widened literal under ADR 0029's convention.
+- This closes the observability half of the gap only. The install path still has no
+  ownership guard and no preflight on partition type or power state; ADR 0092 §3.4a and #460
+  own those.
+
+## Considered & rejected
+
+- **Configuring the `hmc_mcp` namespace so the existing `_logger.info` survives.** verified:
+  ADR 0040 rejects installing logging state at import, and `install_audit_sink` is called
+  only from `server._serve_application` — so a library consumer would still get nothing
+  unless it configured logging itself, which is the case this issue names. judgment: a
+  package that configures the root of its own namespace takes a choice that belongs to the
+  embedding application.
+- **An `operation` field naming which of the two entry points submitted.** verified: both
+  reach one `_submit_install` and compose the same `installios` command against the same log
+  path; the vocabulary would need a `Literal`, a derived frozenset, a field row in
+  `docs/authorization-audit.md`, and an entry in that document's drift guard. judgment: the
+  distinction is the resolution feed, not the submission, and nothing in the record's use
+  turns on it.
+- **Emitting after the submit, with the PID.** verified: the `Raises:` blocks on both
+  operations say the exception does not say whether anything was submitted. judgment: the
+  one case with no return value is the one the record exists for.
+- **Reusing the `ownership-override` or `authorization` event.** verified: neither applies —
+  no ownership token is read on this path and no policy decision is taken. judgment: an event
+  whose name asserts a check that never ran is worse than no event.

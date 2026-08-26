@@ -151,6 +151,18 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `event == "ownership-override"` filter keeps counting approved bypasses and nothing else.
   `docs/authorization-audit.md` documents the record and the caveats on alerting from it.
   No exported signature changes.
+- `install-attempted` audit record for a detached `installios` submission (#469, ADR 0102).
+  `install_lpar_os` and `install_vios` submit an irreversible install against a partition's
+  disks and detach; the path has no HMC job, no ADR 0011 ownership guard, and — for an
+  `hmc_mcp.api` consumer — no dispatch-boundary `authorization` record. The two `INFO` lines
+  it left instead went to the unconfigured `hmc_mcp.operations_install` logger, whose
+  effective level is the root's `WARNING`, so on the served MCP path they were dropped before
+  formatting and a submission left no local trace at all. One `WARNING` record now goes to the
+  reserved `hmc_mcp.audit` logger immediately **before** the submit — the ambiguous case,
+  since the raised exception cannot say whether anything was submitted — carrying the resolved
+  system and partition, the HMC-side `log_path`, the HMC, and the acting agent. The
+  post-submit "Detached" line stays on the module logger; the PID it adds is already in the
+  returned `InstallHandle`. No exported signature changes.
 
 ### Changed
 
@@ -309,6 +321,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `"tls-verification-disabled"` literal on `hmc_mcp.audit.Event`; that module is not part of the
   `hmc_mcp.api` facade, so it does not expand the manifest itself but is recorded here because it
   widens a public literal vocabulary.
+- Exported model/literal changes: the audit event vocabulary gained the `"install-attempted"`
+  literal on `hmc_mcp.audit.Event` (#469, ADR 0102). Recorded here on the same terms as
+  `"tls-verification-disabled"` above — `hmc_mcp.audit` is not part of the `hmc_mcp.api` facade,
+  so the manifest and the frozen public signature digest are unmoved, but the literal vocabulary
+  a consumer reading the audit stream matches against is wider.
 - Unchanged otherwise: #410 rebuilt `hmc_install_lpar_os` / `hmc_install_vios`
   on the HMC CLI `installios` bridge (ADR 0070). These are MCP tools, not
   `hmc_mcp.api` exports; their parameter changes do not move the frozen

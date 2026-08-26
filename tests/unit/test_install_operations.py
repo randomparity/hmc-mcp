@@ -8,6 +8,8 @@ detach handle rather than an HMC job identifier (there is no job on this path).
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 from typing import get_type_hints
 from unittest.mock import AsyncMock, patch
 
@@ -15,7 +17,7 @@ import pytest
 
 from conftest import make_config
 
-from hmc_mcp import api
+from hmc_mcp import api, audit
 from hmc_mcp.operations_install import InstallHandle, install_lpar_os, install_vios
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_commands import INSTALLIOS_PID_PREFIX, build_installios_command
@@ -202,6 +204,148 @@ async def test_unresolvable_uuid_target_raises_before_submitting(operation):
             await operation(hmc, LPAR_UUID, SYSTEM_UUID, **_REQUEST)
 
     assert ssh.commands == ["lssyscfg -r lpar -m sys1 -F UUID,PartitionName"]
+
+
+def _reserve_the_audit_logger() -> logging.Logger:
+    """The reserved logger as a fresh interpreter has it, ready for one delivery test.
+
+    ``audit`` sets ``propagate = False`` at import (#272), and the autouse
+    ``isolate_audit_logging`` fixture resets it to ``True`` between tests — so
+    restoring it here is restoring the shipped state, not configuring anything.
+    """
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.handlers.clear()
+    logger.setLevel(logging.NOTSET)
+    logger.propagate = False
+    return logger
+
+
+def _install_records(text: str) -> list[dict]:
+    """Every ``install-attempted`` record a consumer would parse out of *text*."""
+    records = []
+    for line in text.splitlines():
+        try:
+            candidate = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(candidate, dict) and candidate.get("event") == "install-attempted":
+            records.append(candidate)
+    return records
+
+
+def _one_install_record(text: str) -> dict:
+    records = _install_records(text)
+    assert len(records) == 1, f"expected one record, got {len(records)}: {text!r}"
+    return records[0]
+
+
+@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.asyncio
+async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
+    """#469, ADR 0102. Only ``install_audit_sink`` is configured — no ``basicConfig``.
+
+    That is what ``server._serve_application`` does and all it does for this
+    package's own namespace, so this is the served MCP deployment's real state.
+    Before ADR 0102 the submission's only trace was an ``INFO`` record on the
+    unconfigured ``hmc_mcp.operations_install`` logger, whose effective level is
+    the root's ``WARNING`` — dropped before formatting, and below
+    ``logging.lastResort``'s threshold too.
+    """
+    _reserve_the_audit_logger()
+    audit.install_audit_sink()
+    hmc = _hmc()
+    hmc.config = make_config(host="hmc.test", agent_id="agent-7")
+
+    with _patch_ssh(_Ssh()):
+        result = await operation(hmc, "target1", "sys1", **_REQUEST)
+
+    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink did not settle"
+    captured = capsys.readouterr()
+    assert captured.out == "", "an audit record must never reach the JSON-RPC stream"
+    record = _one_install_record(captured.err)
+    assert (record["system"], record["partition"]) == ("sys1", "target1")
+    assert record["log_path"] == result["log_path"]
+    assert record["host"] == "hmc.test"
+    assert record["attribution"]["claim"] == "agent-7"
+
+
+@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.asyncio
+async def test_a_submission_is_recorded_for_a_bare_api_consumer(operation, capsys):
+    """The other half of #469: a process that configures no logging at all.
+
+    A ``hmc_mcp.api`` consumer calls no ``install_audit_sink``, so the reserved
+    logger has no handler and does not propagate — which is exactly when
+    ``Logger.callHandlers`` consults ``logging.lastResort``. It drops anything
+    below ``WARNING``, which is why ADR 0102 §3 fixes the record's level there.
+    """
+    _reserve_the_audit_logger()
+    saved_root = list(logging.root.handlers)
+    logging.root.handlers.clear()
+    hmc = _hmc()
+    try:
+        with _patch_ssh(_Ssh()):
+            await operation(hmc, "target1", "sys1", **_REQUEST)
+        captured = capsys.readouterr()
+    finally:
+        logging.root.handlers[:] = saved_root
+
+    assert captured.out == ""
+    record = _one_install_record(captured.err)
+    assert (record["system"], record["partition"]) == ("sys1", "target1")
+
+
+@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.asyncio
+async def test_a_failed_submission_is_still_recorded(operation, capsys):
+    """The record is written *before* the submit, which is the case it exists for.
+
+    ``HMCCLIError`` does not say whether an ``installios`` was started (both
+    operations' ``Raises:`` blocks say so), so this is where an operator most
+    needs the partition and the log path — and where a record written after a
+    successful submit would not exist.
+    """
+    _reserve_the_audit_logger()
+    audit.install_audit_sink()
+    hmc = _hmc()
+
+    async def fail(config, command):
+        raise HMCCLIError("SSH command failed with exit status 127")
+
+    with patch("hmc_mcp.ssh_commands.run_hmc_command", new=fail):
+        with pytest.raises(HMCCLIError):
+            await operation(hmc, "target1", "sys1", **_REQUEST)
+
+    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink did not settle"
+    record = _one_install_record(capsys.readouterr().err)
+    assert (record["system"], record["partition"]) == ("sys1", "target1")
+
+
+@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.asyncio
+async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
+    operation, capsys
+):
+    """A request refused by validation or name resolution submits nothing, so it
+    is not an attempt against any partition's disks and leaves no record."""
+    _reserve_the_audit_logger()
+    audit.install_audit_sink()
+
+    with _patch_ssh(_Ssh()):
+        with pytest.raises(ValueError, match="IPv4"):
+            await operation(
+                _hmc(), "target1", "sys1", **{**_REQUEST, "gateway": "not-an-ip"}
+            )
+        with pytest.raises(ValueError, match="No "):
+            await operation(
+                _hmc(find_partition_by_name=None, find_vios_by_name=None),
+                "nosuchtarget",
+                "sys1",
+                **_REQUEST,
+            )
+
+    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink did not settle"
+    assert _install_records(capsys.readouterr().err) == []
 
 
 @pytest.mark.parametrize("name", ["install_lpar_os", "install_vios"])

@@ -100,6 +100,7 @@ REASONS: frozenset[str] = frozenset(get_args(Reason))
 
 Event = Literal[
     "authorization",
+    "install-attempted",
     "ownership-denied",
     "ownership-override",
     "records-dropped",
@@ -360,6 +361,49 @@ def record_ownership_denied(
             "system": _value(system),
             "lpar": _value(lpar),
             "owner": _value(owner),
+            "host": _value(host),
+            "attribution": _attribution(agent_id, "config:agent_id"),
+        }
+
+    _emit(_DENY_LEVEL, build)
+
+
+def record_install_attempted(
+    *, system: str, partition: str, log_path: str, host: str, agent_id: str
+) -> None:
+    """Emit one record for an ``installios`` submission about to be made.
+
+    #469, ADR 0102. Named for the attempt and emitted *before* the submission,
+    because a submission that raises is the ambiguous case: the caller cannot tell
+    a resolution failure from a failed submit, so a record written afterwards
+    would be missing exactly when it is most needed. A record here therefore says
+    an irreversible detached install was attempted against these disks, not that
+    one started.
+
+    *log_path* is the HMC-side path the install writes to. It is keyed on the
+    partition name alone and truncated by the next submission, so it is not unique
+    per managed system — which is why the record carries *system* and *host*
+    beside it, and why an operator correlating installs needs all three.
+
+    This path has no HMC job to poll, no ADR 0011 ownership guard and so no
+    :func:`record_ownership_denied`, and on a ``hmc_mcp.api`` consumer no #218
+    dispatch-boundary :func:`record_authorization` either. This record is the only
+    one it produces.
+
+    Always ``WARNING``, matching :func:`record_ownership_denied`, and for the same
+    reason: a CLI or API process that never installed the sink has no handler here
+    and no propagation, so ``logging.lastResort`` — which drops anything below that
+    level — is what puts the line on stderr.
+    """
+
+    def build() -> dict[str, Any]:
+        event: Event = "install-attempted"
+        return {
+            "time": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            "system": _value(system),
+            "partition": _value(partition),
+            "log_path": _value(log_path),
             "host": _value(host),
             "attribution": _attribution(agent_id, "config:agent_id"),
         }
