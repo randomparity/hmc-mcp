@@ -1195,6 +1195,9 @@ def test_wait_for_job_reaped_returns_found_false(monkeypatch, mock_hmc):
     assert result.error is None
     assert result.job is None
     assert result.job_href is None
+    # timed_out rides along on a gone job because no terminal status was seen;
+    # it is not a "still running" signal, which is why found is read first.
+    assert result.timed_out is True
     # The whole point: gone is answered on the first poll, not after the timeout.
     assert route.call_count == 1
 

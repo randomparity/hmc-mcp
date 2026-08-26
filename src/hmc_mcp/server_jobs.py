@@ -46,9 +46,12 @@ def hmc_get_job(
 
     Returns null when the HMC produced no entry for this identifier — reaped,
     deleted, or never present. Any other HMC failure still raises. Null is what
-    one read saw, not a confirmed disappearance: this tool makes a single read,
-    so a momentary 404 from a proxy reload or a failover reads as null too, and a
-    null that repeats for every identifier is a deployment whose jobs path is
+    one poll saw, not a confirmed disappearance: this tool polls once and never
+    re-reads to confirm (a 404 against a supplied ``job_href`` is second-sourced
+    against the global jobs path, but that is one poll, not a confirmation over
+    time), so a momentary 404 from a proxy reload or a failover reads as null
+    too, and a null that repeats for every identifier is a deployment whose jobs
+    path is
     absent rather than a fleet of vanished jobs (ADR 0093). Absence can also be
     confined to one job: on firmware that does not serve the global jobs path, a
     ``job_href`` that has stopped resolving reads as null for that identifier
@@ -146,8 +149,12 @@ def hmc_wait_for_job(
     FAILED_TO_START. If the timeout expires first, the last observed job is
     returned with ``timed_out`` set to true.
 
-    Read ``found`` first. A job the HMC no longer has — reaped, deleted, or never
-    present — returns ``found`` false with a null ``status``, rather than raising;
+    Read ``found`` first, before ``timed_out``. A job the HMC no longer has —
+    reaped, deleted, or never present — returns ``found`` false with a null
+    ``status``, rather than raising. It also returns ``timed_out`` true, because
+    no terminal status was observed, and it does so immediately rather than after
+    ``timeout_seconds``: on a ``found`` false outcome ``timed_out`` carries no
+    information and must not be read as "still running". Only
     ``found`` true with ``timed_out`` true means the HMC still has the job and it
     has not reached a terminal status, and a null ``status`` there means the entry
     carried no readable Status rather than that the job is running. Polling stops

@@ -148,7 +148,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   amendment). **Tool behaviour changes:** a job the HMC no longer has returns `found: false`
   (`hmc_wait_for_job`) or null (`hmc_get_job`) instead of raising `HMCError`, and polling stops on
   it rather than running to the deadline — read `found` first, and note that a caller which only
-  caught `HMCError` for a vanished job now gets a successful result. A 404 on the *first* read is
+  caught `HMCError` for a vanished job now gets a successful result. `found: false` still carries
+  `timed_out: true`, now returned immediately rather than after the deadline, so `timed_out` must
+  not be read as "still running" without checking `found`. `hmc_wait_for_job`'s `job_href` also
+  changes: a `job_href` you passed that resolved is echoed back verbatim, where the value
+  previously came from the HMC's own SELF link. A 404 on the *first* read is
   reported straight through, so a momentary one now reads as `found: false` where it previously
   raised; only a disappearance after the job has been seen alive gets the confirming re-read. The
   output schema is
