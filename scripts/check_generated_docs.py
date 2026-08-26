@@ -79,7 +79,9 @@ _UNCOPIED = frozenset({
     "htmlcov",
     "node_modules",
 })
-_TIMEOUT_SECONDS = 900
+# Comfortably inside the 20-minute CI job, so a hung generator is reported as a
+# timeout with the command that hung rather than as a cancelled job.
+_TIMEOUT_SECONDS = 600
 # How many differing files get a full diff before the rest are only named. A change
 # to a generator's output format makes every page differ at once, and 35 whole-file
 # diffs on each of eight CI legs buries the one line saying what to do about it.
@@ -274,8 +276,8 @@ def check_command(root: Path, command: str, claimed: set[Path]) -> list[str]:
     return compare(root, command, claimed, produced)
 
 
-def check(root: Path) -> list[str]:
-    """Every failure in *root*, or an empty list."""
+def check(root: Path) -> tuple[list[str], dict[Path, str]]:
+    """Every failure in *root*, plus the banners the walk found."""
     docs = root / "docs"
     if not docs.is_dir():
         raise GeneratedDocsError(f"documentation directory not found: {docs}")
@@ -299,7 +301,7 @@ def check(root: Path) -> list[str]:
             claimed[f"just {recipe}"].add(path)
     for command, paths in sorted(claimed.items()):
         errors.extend(check_command(root, command, paths))
-    return errors
+    return errors, banners
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -314,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
     root: Path = args.repo_root.resolve()
 
     try:
-        errors = check(root)
+        errors, banners = check(root)
     except GeneratedDocsError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
@@ -328,7 +330,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {problem}", file=sys.stderr)
         return 1
 
-    banners, _ = read_banners(root / "docs", root)
     commands = ", ".join(sorted({f"`just {recipe}`" for recipe in banners.values()}))
     print(
         f"OK: {len(banners)} generated document(s) under {root / 'docs'} match "

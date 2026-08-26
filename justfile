@@ -57,7 +57,8 @@ doc-freshness:
     uv run --no-sync python scripts/check_generated_docs.py
 
 # local and hosted static-analysis gate
-static: lint typecheck secrets workflow-security env-vars nicknames tool-docs-check adr-numbering doc-freshness
+static: lint typecheck secrets workflow-security env-vars nicknames \
+        tool-docs-check adr-numbering doc-freshness
 
 # run the full pytest suite with one semantic summary
 test:

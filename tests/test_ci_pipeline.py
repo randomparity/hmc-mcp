@@ -169,8 +169,8 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
     ):
         assert f"\n{recipe}:" in justfile
     assert (
-        "\nstatic: lint typecheck secrets workflow-security env-vars nicknames "
-        "tool-docs-check adr-numbering doc-freshness\n" in justfile
+        "\nstatic: lint typecheck secrets workflow-security env-vars nicknames \\\n"
+        "        tool-docs-check adr-numbering doc-freshness\n" in justfile
     )
     assert (
         "\nadr-numbering:\n"
@@ -255,7 +255,12 @@ def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
     justfile = (ROOT / "justfile").read_text()
     config = (ROOT / ".pre-commit-config.yaml").read_text()
 
-    static = re.search(r"^static:(?P<dependencies>[^\n]*)$", justfile, re.MULTILINE)
+    # `static`'s dependency list wraps, and `just` joins it with a backslash.
+    static = re.search(
+        r"^static:(?P<dependencies>[^\n]*)$",
+        justfile.replace("\\\n", ""),
+        re.MULTILINE,
+    )
     assert static
     members = static["dependencies"].split()
     assert members
