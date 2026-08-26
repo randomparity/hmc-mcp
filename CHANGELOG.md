@@ -168,6 +168,18 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `mac_address` (`-m`) join; `wait`/`wait_timeout_seconds`/`poll_interval`/
   `hmc_timeout_minutes` are removed because there is no job to poll (#410,
   ADR 0070).
+- A lower- or mixed-case `HMC_*` export now overrides a TOML profile's matching key, for
+  every `HMCConfig` field (#531). `HMCConfig` leaves pydantic-settings' `case_sensitive`
+  at its `False` default, so `hmc_host=…` always reached the `host` field; the profile
+  loader's exact-case membership test did not agree, and handed the profile's value to the
+  constructor as an init kwarg, which outranks every environment source. The three other
+  hand-rolled `HMC_*` reads that mirror or report on that resolution move to the same
+  case-insensitive rule: `build_config`'s `HMC_HOST` branch gate, the ADR 0038
+  `connection_scope` mirror of that gate — where the disagreement was fail-open, resolving
+  a token to a profile key while the call reached the exported host — and the #379 TLS
+  audit record's `source` field, which named `explicit-argument` for a value only the
+  environment had supplied. `HMC_PROFILE` is unchanged and still matched exactly; it names
+  no `HMCConfig` field and no settings loader reads it.
 
 ### Removed
 

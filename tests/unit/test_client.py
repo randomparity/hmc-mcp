@@ -461,6 +461,33 @@ def test_tls_audit_record_names_where_the_setting_came_from(
     assert "abc123" not in json.dumps(caught[0])
 
 
+@pytest.mark.parametrize("env_name", ["hmc_verify_ssl", "Hmc_Verify_Ssl"])
+def test_tls_audit_record_names_the_environment_for_a_case_variant_export(
+    monkeypatch, env_name
+):
+    """#531. pydantic-settings folded the variant in, so the record must name it.
+
+    The vocabulary keeps the canonical spelling — it names the knob, not the
+    operator's spelling of it — but reading only that spelling would report
+    ``explicit-argument`` for a value nothing in the call supplied.
+    """
+    monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
+    monkeypatch.setenv(env_name, "false")
+    caught = _capture_audit()
+
+    HMCClient(
+        HMCConfig(
+            host="hmc.test",
+            user="hscroot",
+            password="abc123",  # pragma: allowlist secret
+            _env_file=None,
+        )
+    )
+
+    assert len(caught) == 1
+    assert caught[0]["source"] == "environment:HMC_VERIFY_SSL"
+
+
 @pytest.mark.parametrize(
     ("kwargs", "expected_source"),
     [

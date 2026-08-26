@@ -17,13 +17,12 @@ connection that will actually be selected before it is compared.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Container
 from typing import Any
 
 from .access_policy import DEFAULT_CONNECTION_TOKEN
 from .audit import MAX_VALUE_LENGTH
-from .config import ConfigError, list_profiles_and_nicknames
+from .config import ConfigError, env_var_value, list_profiles_and_nicknames
 
 
 class ConnectionScopeError(Exception):
@@ -78,7 +77,11 @@ def selected_connection(token: Any, *, tool: str) -> str | None:
     0. a token that is not ``str | None`` names no connection, uninspected and
        uncoerced;
     1. ``HMC_HOST`` set and non-empty collapses every token to the environment
-       connection, because ``build_config`` gates its whole TOML branch on it;
+       connection, because ``build_config`` gates its whole TOML branch on it.
+       Read through :func:`config.env_var_value`, as that gate is: reading it
+       exact-case while ``build_config`` reads it case-insensitively would
+       resolve the token to a profile key, let a grant naming that profile
+       authorize the call, and send the call to the exported host anyway (#531);
     2. a falsy token is the default connection. ``HMC_PROFILE`` and
        ``default_profile`` are deliberately *not* consulted: ADR 0036 fixed
        ``<default>`` as the denotation of the omitted argument and recorded its
@@ -92,7 +95,7 @@ def selected_connection(token: Any, *, tool: str) -> str | None:
     """
     if token is not None and not isinstance(token, str):
         return UNRESOLVED
-    if os.environ.get("HMC_HOST"):
+    if env_var_value("HMC_HOST"):
         return None
     if not token:
         return None
@@ -168,7 +171,7 @@ def connection_denial(
     # describe a collapse that actually happened: a non-string token normalizes
     # to UNRESOLVED before rule 1 is reached, and an HMC_HOST that changed
     # between the two reads simply yields no clause.
-    collapsed = connection is None and bool(os.environ.get("HMC_HOST"))
+    collapsed = connection is None and bool(env_var_value("HMC_HOST"))
     return ConnectionScopeError(
         _DENIED.format(
             tool=tool,

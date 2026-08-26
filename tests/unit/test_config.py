@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
+from hmc_mcp.common import build_config
 from hmc_mcp.config import (
     ConfigError,
     HMCConfig,
@@ -1113,3 +1114,178 @@ def test_env_file_none_does_not_suppress_environment_variables(monkeypatch):
     monkeypatch.setenv("HMC_HOST", "leaked-host.example.com")
 
     assert HMCConfig(_env_file=None).host == "leaked-host.example.com"
+
+
+# ---------------------------------------------------------------------------
+# Case-variant HMC_* exports beat a profile's TOML key (issue #531)
+# ---------------------------------------------------------------------------
+
+CASE_VARIANT_TOML = """\
+default_profile = "guarded"
+
+[profiles.guarded]
+host = "toml-hmc.example.com"
+user = "tomluser"
+password = "tomlpass"  # pragma: allowlist secret
+verify_ssl = true
+authorize_power_operations = true
+"""
+
+
+def _hmc_env_names() -> dict[str, str]:
+    """``{field_name: HMC_FIELD_NAME}`` for every ``HMCConfig`` field."""
+    prefix = HMCConfig.model_config["env_prefix"]
+    return {name: f"{prefix}{name.upper()}" for name in HMCConfig.model_fields}
+
+
+@pytest.fixture
+def profile_home(tmp_path, monkeypatch):
+    """An isolated home holding ``CASE_VARIANT_TOML`` at the platform-native path.
+
+    ``build_config`` resolves its own config path, so the profile has to be
+    reachable through ``resolve_config_path`` rather than passed in — which is
+    the point: these tests drive the whole ``build_config`` branch, not
+    ``load_profile`` alone.
+
+    Every canonical ``HMC_*`` name is cleared, including the ``HMC_VERIFY_SSL``
+    the autouse TLS fixture sets, so a variant a test exports is the only
+    environment value in play.
+    """
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    for env_name in _hmc_env_names().values():
+        monkeypatch.delenv(env_name, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    return _write_toml(config_dir() / "config.toml", CASE_VARIANT_TOML)
+
+
+@pytest.mark.parametrize(
+    "env_name",
+    ["hmc_authorize_power_operations", "Hmc_Authorize_Power_Operations"],
+)
+def test_case_variant_export_beats_a_profile_boolean(
+    profile_home, monkeypatch, env_name
+):
+    """The ADR 0092 §4 guard an operator turns off for an incident actually goes off.
+
+    The profile says ``true``; the export says ``false``. pydantic-settings
+    matches ``HMC_*`` case-insensitively, so the export reaches the field — and
+    the profile's value must not be handed to the constructor ahead of it.
+    """
+    monkeypatch.setenv(env_name, "false")
+
+    assert build_config(profile="guarded").authorize_power_operations is False
+
+
+@pytest.mark.parametrize("env_name", ["hmc_user", "Hmc_User"])
+def test_case_variant_export_beats_a_profile_string(
+    profile_home, monkeypatch, env_name
+):
+    monkeypatch.setenv(env_name, "envuser")
+
+    config = build_config(profile="guarded")
+
+    assert config.user == "envuser"
+    # The profile is still the source of everything the export did not name.
+    assert config.host == "toml-hmc.example.com"
+
+
+def test_every_field_takes_a_case_variant_export_over_the_profile(
+    profile_home, monkeypatch
+):
+    """The hole was never specific to two fields, so neither is the guard.
+
+    Enumerated from ``model_fields``, so a setting added later is covered here
+    without editing this test. ``host`` is deliberately left to the profile: it
+    is the field ``build_config`` gates its whole TOML branch on, so exporting
+    it would skip the profile entirely and make every other assertion vacuous.
+    Its TOML value arriving intact is what proves the profile was consulted.
+    """
+    env_names = _hmc_env_names()
+    fields = {
+        name: HMCConfig.model_fields[name] for name in env_names if name != "host"
+    }
+    profile = "\n".join(
+        f"{name} = {_toml_literal(name, info)}" for name, info in fields.items()
+    )
+    _write_toml(
+        profile_home,
+        f'default_profile = "guarded"\n\n[profiles.guarded]\n'
+        f'host = "toml-hmc.example.com"\n{profile}\n',
+    )
+    for name, info in fields.items():
+        monkeypatch.setenv(env_names[name].lower(), _non_default_env_value(name, info))
+
+    with warnings.catch_warnings():
+        # A fully-populated environment sets agent_id and audit_memento
+        # together, which the model validator warns about; that is this test's
+        # setup, not its subject.
+        warnings.simplefilter("ignore", UserWarning)
+        config = build_config(profile="guarded")
+
+    assert config.host == "toml-hmc.example.com"
+    assert {name: getattr(config, name) for name in fields} == {
+        name: _expected_env_value(name, info) for name, info in fields.items()
+    }
+
+
+def _toml_literal(field_name: str, field_info) -> str:
+    """A TOML literal for *field_name* that differs from its env-side value."""
+    annotation = field_info.annotation
+    if annotation is bool:
+        return "false"  # _non_default_env_value yields "true"
+    if annotation is int:
+        return "1234"
+    if annotation is float:
+        return "1.5"
+    return f'"toml-{field_name}"'
+
+
+def _expected_env_value(field_name: str, field_info):
+    """``_non_default_env_value`` as the model parses it."""
+    annotation = field_info.annotation
+    if annotation is bool:
+        return True
+    if annotation is int:
+        return 9999
+    if annotation is float:
+        return 9.5
+    return f"leak-{field_name}"
+
+
+@pytest.mark.parametrize("env_name", ["HMC_HOST", "hmc_host", "Hmc_Host"])
+def test_a_host_export_skips_the_profile_whatever_its_case(
+    profile_home, monkeypatch, env_name
+):
+    """``build_config``'s TOML branch is gated on ``HMC_HOST``; the gate is case-blind.
+
+    Spelling the variable differently must not choose a different resolution
+    path, or ``connection_scope``'s mirror of this gate names a profile the
+    connection is not actually using.
+    """
+    monkeypatch.setenv(env_name, "env-hmc.example.com")
+
+    config = build_config(profile="guarded")
+
+    assert config.host == "env-hmc.example.com"
+    assert config.user == ""
+    assert config.authorize_power_operations is False
+
+
+def test_hmc_profile_is_matched_exactly(profile_home, monkeypatch):
+    """The one documented exception, pinned so the doc cannot drift away from it.
+
+    ``HMC_PROFILE`` names no ``HMCConfig`` field. Both readers of it —
+    ``build_config``'s branch gate and ``load_profile``'s selection — read it
+    directly, so there is no case-insensitive settings loader for them to
+    disagree with, and nothing to reconcile.
+    """
+    _write_toml(
+        profile_home,
+        CASE_VARIANT_TOML + '\n[profiles.other]\nhost = "other-hmc.example.com"\n',
+    )
+    monkeypatch.setenv("hmc_profile", "other")
+
+    assert build_config().host == "toml-hmc.example.com"
