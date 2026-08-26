@@ -210,7 +210,10 @@ def hmc_install_vios(
                 mac_address=mac_address,
             )
 
-    return _run(_go)
+    # `install_*` returns an `InstallHandle`, and a `TypedDict` is not assignable
+    # to `dict[str, Any]`. Widen here rather than narrowing this tool's return
+    # annotation, which would move the derived MCP output schema.
+    return dict(_run(_go))
 
 
 @tool(effect="destructive", operation="lpar.install_os", target_kind="lpar")
@@ -308,7 +311,10 @@ def hmc_install_lpar_os(
                 mac_address=mac_address,
             )
 
-    return _run(_go)
+    # `install_*` returns an `InstallHandle`, and a `TypedDict` is not assignable
+    # to `dict[str, Any]`. Widen here rather than narrowing this tool's return
+    # annotation, which would move the derived MCP output schema.
+    return dict(_run(_go))
 
 
 BackupType = Literal["vios", "viosioconfig", "ssp"]
