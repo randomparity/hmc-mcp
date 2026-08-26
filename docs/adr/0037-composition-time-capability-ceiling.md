@@ -184,6 +184,20 @@ and this intersection reads only the compiled result.
   > false for the same reason; see the amendment on the Decision above.** Any policy that
   > neither grants the `read` effect class nor names the tool in a grant's `tools`
   > withholds it.
+
+  > **Amended by #470** (2026-08-26). **"No value is read from `config.toml`, from the
+  > environment, or from the HMC" no longer holds.** `power_ownership_guards` reads the
+  > effective `authorize_power_operations` (ADR 0092 §4) per granted connection through
+  > `common.build_config`, so each entry carries one boolean from the resolved config and
+  > one provenance label decided by probing the environment for
+  > `HMC_AUTHORIZE_POWER_OPERATIONS`. That guard fails **open**, so its effective value
+  > has to be readable from the process that would act on it; nothing else answers for an
+  > env-var-only deployment. The bound the sentence was defending still holds and is now
+  > carried by the code instead: no `config.toml` *string* is echoed. Connection names come
+  > from the policy this tool already discloses, an entry that cannot resolve reports a
+  > closed classification rather than the `ConfigError` message — which would name the
+  > file's whole `profiles` and `nicknames` inventory, the disclosure ADR 0038 refuses —
+  > and the reason goes to the server's log instead. Nothing from the HMC is read.
 - **The registered tool count is 129, not 128**, in the unfiltered default composition, and
   `hmc_effective_permissions` joins the `read` effect class — the first instance of the
   index drift ADR 0036 recorded, so an existing `effects = ["read"]` grant gains it on

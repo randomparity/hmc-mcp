@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 import pytest
 from fastmcp import Client
@@ -181,10 +182,35 @@ def test_an_ambient_host_makes_a_profile_key_ineffective(monkeypatch, tmp_path):
     assert guards["guarded"].source == "default"
 
 
+def test_a_case_variant_environment_variable_is_still_the_environment(monkeypatch):
+    """`HMCConfig` leaves pydantic-settings' `case_sensitive` at `False`.
+
+    A lower-case spelling sets the field like the canonical one, and an
+    exact-key probe would fall through to the `model_fields_set` arm and report
+    `profile` — the label an operator reads as "my file took effect" — for a
+    value no file supplied, with no file in existence at all.
+    """
+    monkeypatch.setenv("hmc_authorize_power_operations", "true")
+
+    (guard,) = resolve_power_guards(None)
+
+    assert guard.authorized is True
+    assert guard.source == "environment"
+
+
 def test_a_connection_that_cannot_be_resolved_is_reported_not_raised(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, caplog
 ):
-    """A tool that describes the surface must not break first when it changes."""
+    """A tool that describes the surface must not break first when it changes.
+
+    And it must not answer with `config.toml`'s inventory while doing so:
+    `ConfigError`'s message names every profile and nickname key in the file
+    plus its absolute path, which is the connection inventory
+    `connection_scope`'s closed denial templates and ADR 0038 refuse to
+    disclose. Here the grant names a profile the file does not carry — ordinary
+    drift after a rename — and two of the three profiles it would list are
+    connections this policy does not even grant.
+    """
     _write_config(
         monkeypatch,
         tmp_path,
@@ -194,35 +220,65 @@ def test_a_connection_that_cannot_be_resolved_is_reported_not_raised(
         [profiles.present]
         host = "hmc-a.example.com"
         user = "admin"
+
+        [profiles.prod-secret-hmc]
+        host = "hmc-b.example.com"
+        user = "admin"
+
+        [nicknames]
+        p = "present"
         """,
     )
     policy = _policy([
         {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
     ])
 
-    guards = _by_connection(resolve_power_guards(policy))
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_permissions"):
+        guards = _by_connection(resolve_power_guards(policy))
 
     assert guards["absent"].authorized is None
     assert guards["absent"].source == "unresolved"
-    assert "absent" in guards["absent"].detail
+    assert guards["absent"].detail == "ConfigError"
+    rendered = repr(guards)
+    for withheld in ("present", "prod-secret-hmc", "nickname", str(tmp_path)):
+        assert withheld not in rendered
+    # The operator's own channel still carries the reason the caller is not told.
+    assert "prod-secret-hmc" in caplog.text
 
 
-def test_an_invalid_setting_is_reported_without_echoing_the_value(monkeypatch):
-    """`detail` carries a cause, never a rejected input.
+def test_an_invalid_setting_names_its_field_without_echoing_the_value(monkeypatch):
+    """`detail` carries a cause and a field name, never a rejected input.
 
-    Pydantic quotes the offending value in a `ValidationError`, and the fields it
-    validates include `password`. Only `ConfigError` — whose messages name paths,
-    profile names and environment-variable names, never their values — is
-    forwarded verbatim.
+    Pydantic quotes the offending value in `input` and `msg`, and the fields it
+    validates include `password`; `loc` carries only the `HMCConfig` field name,
+    which is a compiled-in identifier. Without it the report an operator is now
+    told to trust for this variable answers a malformed
+    `HMC_AUTHORIZE_POWER_OPERATIONS` with a word naming no setting.
     """
     monkeypatch.setenv("HMC_PASSWORD", "hunter2")
-    monkeypatch.setenv("HMC_AGENT_ID", "has,a,comma")
+    monkeypatch.setenv("HMC_AUTHORIZE_POWER_OPERATIONS", "")
 
     (guard,) = resolve_power_guards(None)
 
     assert guard.authorized is None
     assert guard.source == "unresolved"
-    assert guard.detail == "ValidationError"
+    assert guard.detail == "ValidationError: authorize_power_operations"
+
+
+def test_a_connection_no_grant_names_is_not_reported():
+    """The set is the policy's connection dimension, not that plus the default.
+
+    A call resolving to a connection no grant names is denied at dispatch
+    (ADR 0038), so an entry for it would describe a call this server refuses —
+    and would resolve a profile the policy withholds in order to say so.
+    """
+    policy = _policy([
+        {"effects": ["read"], "connections": ["lab"], "targets": "all-targets"}
+    ])
+
+    guards = resolve_power_guards(policy)
+
+    assert [guard.connection for guard in guards] == ["lab"]
 
 
 def test_describe_carries_the_guards_it_is_given():

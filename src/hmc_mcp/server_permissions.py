@@ -15,11 +15,13 @@ authoritative tool index arrives as a parameter for that reason.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from fastmcp import FastMCP
+from pydantic import ValidationError
 
 from .access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy, AllTargets, Grant
 from .common import build_config
@@ -95,6 +97,16 @@ class DeclaredGrant:
 #: from. Spelled out rather than derived from ``env_prefix`` so the report names
 #: the variable an operator actually exports.
 POWER_GUARD_ENV_VAR = "HMC_AUTHORIZE_POWER_OPERATIONS"
+
+_logger = logging.getLogger(__name__)
+
+#: What a caller is not told, said once to the operator's own channel. The
+#: report's ``detail`` is closed by design (see :func:`_power_guard`), so without
+#: this line the reason a connection failed to resolve exists nowhere.
+_UNRESOLVED_LOG = (
+    "hmc_effective_permissions: the configuration for connection %r could not be "
+    "built, so its authorize_power_operations is reported as unresolved: %s"
+)
 
 
 @dataclass(frozen=True)
@@ -230,6 +242,39 @@ def _targets_enforced(
     return True
 
 
+def _power_guard_env_var_set() -> bool:
+    """True when the environment carries the guard variable under any casing.
+
+    ``HMCConfig`` leaves pydantic-settings' ``case_sensitive`` at its ``False``
+    default, so a lower- or mixed-case spelling sets the field like the canonical
+    one. An exact-key probe would miss it, land on the ``model_fields_set`` arm
+    below — env-sourced values arrive as init data, so the field is set either
+    way — and report ``profile``: the one label an operator reads as "my file
+    took effect", for a value no file supplied.
+    """
+    return any(name.upper() == POWER_GUARD_ENV_VAR for name in os.environ)
+
+
+def _unresolved_detail(exc: Exception) -> str:
+    """A closed description of *exc* for a caller: no message, no input.
+
+    A ``ValidationError`` also names the fields it rejected. Those are
+    ``HMCConfig`` field names — compiled-in identifiers, not configuration — and
+    without them the report reached for as the last word on this variable answers
+    a malformed ``HMC_AUTHORIZE_POWER_OPERATIONS`` with a bare word naming no
+    setting. ``loc`` and ``type`` are read; ``input`` and ``msg``, which quote the
+    rejected value, are not.
+    """
+    if not isinstance(exc, ValidationError):
+        return type(exc).__name__
+    fields = sorted(
+        {str(error["loc"][0]) for error in exc.errors() if error.get("loc")}
+    )
+    if not fields:
+        return "ValidationError"
+    return "ValidationError: " + ", ".join(fields)
+
+
 def _power_guard(profile: str | None) -> PowerOwnershipGuard:
     """Resolve the guard for one connection the way a tool call would.
 
@@ -245,20 +290,30 @@ def _power_guard(profile: str | None) -> PowerOwnershipGuard:
     changes, which is the same contract :func:`_permission` keeps for a name
     outside the index.
 
-    Only :class:`~hmc_mcp.config.ConfigError` is forwarded verbatim. Its messages
-    name paths, profile names, and environment-variable names, never their
-    values. Pydantic quotes the rejected input in a ``ValidationError`` and the
-    fields it validates include ``password``, so those carry the exception type
-    alone — this report states that it contains no credentials.
+    No exception message reaches the caller. ``ConfigError`` names the whole
+    ``profiles`` and ``nicknames`` inventory of ``config.toml`` and its absolute
+    path — a connection inventory this tool would hand out in one call, over a
+    channel no access policy can withhold once the tool is granted, which is
+    exactly what ``connection_scope``'s closed denial templates and ADR 0038
+    refuse. Pydantic quotes the rejected input in a ``ValidationError`` and the
+    fields it validates include ``password``. So ``detail`` is closed:
+    :func:`_unresolved_detail` builds it from the exception's own class name and,
+    for a ``ValidationError``, the compiled-in field names it rejected. The real
+    message goes to the server's log, which is the operator's channel rather than
+    the caller's — and only for a ``ConfigError``, whose text names paths and keys
+    but never their values.
     """
     connection = DEFAULT_CONNECTION_TOKEN if profile is None else profile
     try:
         config = build_config(profile=profile)
     except ConfigError as exc:
-        return PowerOwnershipGuard(connection, None, "unresolved", str(exc))
+        _logger.warning(_UNRESOLVED_LOG, connection, exc)
+        return PowerOwnershipGuard(connection, None, "unresolved", "ConfigError")
     except (ValueError, OSError, RuntimeError) as exc:
-        return PowerOwnershipGuard(connection, None, "unresolved", type(exc).__name__)
-    if POWER_GUARD_ENV_VAR in os.environ:
+        detail = _unresolved_detail(exc)
+        _logger.warning(_UNRESOLVED_LOG, connection, detail)
+        return PowerOwnershipGuard(connection, None, "unresolved", detail)
+    if _power_guard_env_var_set():
         source = "environment"
     elif "authorize_power_operations" in config.model_fields_set:
         source = "profile"
@@ -277,16 +332,23 @@ def resolve_power_guards(
     One value would be false whenever profiles disagree, and they can: the guard
     is read from the resolved config, so a TOML ``authorize_power_operations``
     binds only the profile that carries it, and both the MCP tools and the CLI
-    take a caller-supplied profile selector. The set is the policy's connection
-    dimension (ADR 0038) — what a call may actually select — plus the default
-    resolution, which is the whole set when no ``config.toml`` exists.
+    take a caller-supplied profile selector.
+
+    The set is exactly the policy's connection dimension (ADR 0038), including
+    the default resolution only when a grant names it: a connection no grant
+    names is denied at dispatch, so reporting its guard state would describe a
+    call this server refuses. With no policy — a state ``create_mcp`` cannot
+    produce since ADR 0041, so this binds a direct caller — the default
+    resolution is the only connection there is.
 
     Reads the environment and the filesystem, so it is called per request rather
     than folded into the registration: an edited ``config.toml`` changes what the
     *next* tool call resolves, and this reports that call, not the startup.
     """
-    connections: set[str | None] = {None}
-    if policy is not None:
+    connections: set[str | None] = set()
+    if policy is None:
+        connections.add(None)
+    else:
         for grant in policy.grants:
             connections.update(grant.connections)
     ordered = sorted(connections, key=lambda name: (name is not None, name or ""))

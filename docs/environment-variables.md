@@ -113,13 +113,17 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   fails **open**, and a mistyped profile key or environment variable is dropped
   silently — indistinguishable from a correct `false`. Call
   `hmc_effective_permissions` against the running server and read
-  `power_ownership_guards`: one entry per connection a call may select, each
-  carrying the effective post-precedence `authorized` value and the `source` that
-  supplied it — `environment`, `profile`, or `default`. `default` is the answer
-  that means *nothing you wrote arrived*, which is the case a bare `false` cannot
-  distinguish. A connection whose config cannot be built reports
-  `authorized: null` with `source: unresolved` and a `detail` naming the cause.
-  The entries carry no host, user, or credential.
+  `power_ownership_guards`: one entry per connection the access policy's grants
+  name, each carrying the effective post-precedence `authorized` value and the
+  `source` that supplied it — `environment`, `profile`, or `default`. `default` is
+  the answer that means *nothing you wrote arrived*, which is the case a bare
+  `false` cannot distinguish. A connection whose config cannot be built reports
+  `authorized: null` with `source: unresolved` and a `detail` classifying the
+  failure — `ConfigError`, or `ValidationError` with the field names it rejected.
+  The `detail` is deliberately closed: the underlying message names every profile
+  and nickname key in your `config.toml`, so it goes to the server's log instead,
+  where you can read the whole reason. Beyond the connection names your policy
+  already declares, the entries carry no host, user, or credential.
 
   Because the report is resolved inside the process being asked, it answers where
   `hmc-mcp config show` cannot. `config show` requires a `config.toml` and exits 1
@@ -134,9 +138,12 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   and it is another reason to set `HMC_AUTHORIZE_POWER_OPERATIONS` rather than the
   TOML key.
 
-  One limit remains: an access policy that does not grant `hmc_effective_permissions`
-  withholds the tool, and then neither route answers for the running process. A
-  deployment that relies on this guard should grant the inspection tool.
+  One limit remains, and it is a tradeoff rather than advice: an access policy that
+  does not grant `hmc_effective_permissions` withholds the tool, and then neither
+  route answers for the running process — but the tool also discloses the whole
+  policy to the MCP client (ADR 0037). Weigh those against each other for your
+  deployment. There is no second in-process channel for the value today: with the
+  tool withheld, `config show` and its three limits above are all that is left.
 
   When the setting is off, `power_lpar` reads no ownership token and opens no SSH
   connection — the call path is exactly what it was before this setting existed.
