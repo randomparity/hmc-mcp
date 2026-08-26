@@ -476,6 +476,18 @@ def resolve_power_guards(
     themselves are not on the event loop; the tool handler awaits this in a
     thread.
 
+    That cost is unbounded and driven by the caller, which is a denial-of-service
+    consequence and is accepted here rather than only noted. A client holding the
+    ``read`` effect class — the minimum that can reach this tool at all, and a
+    grant that cannot withhold it — can loop the call and drive one whole-file
+    read, one TOML parse, and one full validator run per granted connection per
+    iteration; under a generated ``legacy-equivalent`` policy that count is every
+    profile key in the file. The saturation is self-directed: nothing else in
+    ``src/`` uses the default thread executor. Reading the document once and
+    resolving each connection from it would remove the amplification and the torn
+    window together, but only by leaving ``build_config`` — the property the
+    report rests on. #536 owns that trade.
+
     **Constructing a config re-runs ``HMCConfig``'s model validators.** The
     ``audit_memento`` collision warning among them is undeduplicated, so a
     profile pairing ``agent_id`` with a customised ``audit_memento`` emits one
