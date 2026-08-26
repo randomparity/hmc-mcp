@@ -19,10 +19,7 @@ from fastmcp import Client
 from hmc_mcp import server_permissions
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.server_permissions import (
-    describe,
-    resolve_power_guards,
-)
+from hmc_mcp.server_permissions import describe, resolve_power_guards
 
 ALL_TOOLS_GRANT = [
     {"effects": ["read"], "connections": ["<default>"], "targets": "all-targets"}
@@ -53,11 +50,11 @@ def no_native_config(monkeypatch, tmp_path):
     server_permissions._reported_unresolved.clear()
 
 
-def _write_config(monkeypatch, tmp_path, body: str) -> None:
+def _write_config(tmp_path, body: str) -> None:
+    """Write the config file under the directory `no_native_config` points at."""
     directory = tmp_path / "xdg" / "hmc-mcp"
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "config.toml").write_text(body, encoding="utf-8")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
 
 def _by_connection(guards):
@@ -80,7 +77,7 @@ def test_the_value_is_readable_with_no_config_file_present():
 
 
 def test_an_unreadable_config_file_reads_as_default_on_the_default_connection(
-    monkeypatch, tmp_path, caplog
+    tmp_path, caplog
 ):
     """Characterization: `build_config` swallows this, so the report cannot see it.
 
@@ -92,7 +89,7 @@ def test_an_unreadable_config_file_reads_as_default_on_the_default_connection(
     rests entirely on this behaviour. Pinned here so a change to
     `common.build_config`'s swallow reddens a test rather than rotting a doc.
     """
-    _write_config(monkeypatch, tmp_path, "[profiles.a\nhost = 'h'\n")
+    _write_config(tmp_path, "[profiles.a\nhost = 'h'\n")
     policy = _policy(ALL_TOOLS_GRANT)
 
     with caplog.at_level(logging.DEBUG, logger="hmc_mcp.server_permissions"):
@@ -114,9 +111,7 @@ def test_an_environment_variable_is_reported_as_such(monkeypatch):
     assert guard.source == "environment"
 
 
-def test_a_profile_key_is_reported_against_only_the_profile_that_carries_it(
-    monkeypatch, tmp_path
-):
+def test_a_profile_key_is_reported_against_only_the_profile_that_carries_it(tmp_path):
     """The footgun `docs/environment-variables.md` names, made visible.
 
     A TOML `authorize_power_operations = true` "applies only to the profile that
@@ -125,7 +120,6 @@ def test_a_profile_key_is_reported_against_only_the_profile_that_carries_it(
     would be false for one of these two connections whichever value it chose.
     """
     _write_config(
-        monkeypatch,
         tmp_path,
         """
         default_profile = "guarded"
@@ -159,7 +153,6 @@ def test_a_profile_key_is_reported_against_only_the_profile_that_carries_it(
 def test_the_environment_variable_overrides_every_profile(monkeypatch, tmp_path):
     """Env-over-TOML on the profile path, reported for every connection."""
     _write_config(
-        monkeypatch,
         tmp_path,
         """
         default_profile = "guarded"
@@ -189,7 +182,6 @@ def test_an_ambient_host_makes_a_profile_key_ineffective(monkeypatch, tmp_path):
     reports it as enabled anyway; this report does not.
     """
     _write_config(
-        monkeypatch,
         tmp_path,
         """
         default_profile = "guarded"
@@ -246,7 +238,6 @@ def test_a_case_variant_does_not_claim_a_value_the_environment_lost(
     report that the environment won.
     """
     _write_config(
-        monkeypatch,
         tmp_path,
         """
         default_profile = "guarded"
@@ -268,9 +259,7 @@ def test_a_case_variant_does_not_claim_a_value_the_environment_lost(
     assert guards["guarded"].source == "ambiguous"
 
 
-def test_a_connection_that_cannot_be_resolved_is_reported_not_raised(
-    monkeypatch, tmp_path, caplog
-):
+def test_a_connection_that_cannot_be_resolved_is_reported_not_raised(tmp_path, caplog):
     """A tool that describes the surface must not break first when it changes.
 
     And it must not answer with `config.toml`'s inventory while doing so:
@@ -282,7 +271,6 @@ def test_a_connection_that_cannot_be_resolved_is_reported_not_raised(
     connections this policy does not even grant.
     """
     _write_config(
-        monkeypatch,
         tmp_path,
         """
         default_profile = "present"
@@ -335,9 +323,7 @@ def test_an_invalid_setting_names_its_field_without_echoing_the_value(monkeypatc
     assert guard.detail == "ValidationError: authorize_power_operations"
 
 
-def test_the_unresolved_warning_is_said_once_not_once_per_call(
-    monkeypatch, tmp_path, caplog
-):
+def test_the_unresolved_warning_is_said_once_not_once_per_call(tmp_path, caplog):
     """The MCP client owns the call rate; the operator's log must not.
 
     `hmc_effective_permissions` is in the `read` effect class, so a policy
@@ -346,7 +332,6 @@ def test_the_unresolved_warning_is_said_once_not_once_per_call(
     design routes the withheld reason to.
     """
     _write_config(
-        monkeypatch,
         tmp_path,
         """
         default_profile = "present"
@@ -367,9 +352,7 @@ def test_the_unresolved_warning_is_said_once_not_once_per_call(
     assert len(caplog.records) == 1
 
 
-def test_one_malformed_profile_does_not_take_down_the_whole_report(
-    monkeypatch, tmp_path
-):
+def test_one_malformed_profile_does_not_take_down_the_whole_report(tmp_path):
     """`build_config` can raise outside any list this module could enumerate.
 
     A profile key spelled `_env_file` collides with the keyword
@@ -380,7 +363,6 @@ def test_one_malformed_profile_does_not_take_down_the_whole_report(
     to diagnose.
     """
     _write_config(
-        monkeypatch,
         tmp_path,
         """
         default_profile = "sound"
@@ -424,7 +406,6 @@ def test_an_ambient_host_collapses_the_reported_set_to_the_default(
     permitted call resolves to.
     """
     _write_config(
-        monkeypatch,
         tmp_path,
         """
         default_profile = "guarded"

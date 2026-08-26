@@ -75,11 +75,8 @@ def default_power_ownership_guard_off(monkeypatch):
     itself to decide the reported `source`. Clearing only the exact name leaves
     both observable in the tests that pin them.
     """
-    for name in [
-        name
-        for name in os.environ
-        if name.upper() == "HMC_AUTHORIZE_POWER_OPERATIONS"
-    ]:
+    spellings = [n for n in os.environ if n.upper() == "HMC_AUTHORIZE_POWER_OPERATIONS"]
+    for name in spellings:
         monkeypatch.delenv(name, raising=False)
 
 

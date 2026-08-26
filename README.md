@@ -624,8 +624,8 @@ exported in the served process's environment and whether that spelling is exact
 or a case variant; whether each granted connection resolves in `config.toml`, as
 `source: unresolved`; and, inferably, whether `HMC_HOST` is set, because the guard
 rows then collapse to `<default>` while `declared_grants` still names the profiles.
-It carries no credential. One caveat since the generator exists: a
-generated `legacy-equivalent` policy has `config.toml`'s profile **keys** as its
+It carries no credential. One caveat since the generator exists: a generated
+`legacy-equivalent` policy has `config.toml`'s profile **keys** as its
 `connections`, so those names reach the client through this tool — names only, and
 strictly less than `hmc_list_configured_hosts` discloses to the same caller. If your
 profile keys are themselves sensitive, withhold both tools by name. The policy

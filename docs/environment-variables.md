@@ -119,8 +119,8 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   `power_ownership_guards`: one entry per connection the access policy's grants
   name, each carrying the effective post-precedence `authorize_power_operations`
   value — `true` means the ownership guard is **enforced** — and the `source` that
-  supplied it: `environment`, `profile`, or `default`. `default` is
-  the answer that means *nothing you wrote arrived*, which is the case a bare
+  supplied it: `environment`, `profile`, or `default`. `default` is the answer
+  that means *nothing you wrote arrived*, which is the case a bare
   `false` cannot distinguish. It also covers one case that is not your memory's
   fault: a `config.toml` that exists but cannot be read, parsed, or resolved to a
   profile is discarded on the default connection with no error and no log line
@@ -132,8 +132,9 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   report reaches that tool. Only a file that parses but resolves to no profile —
   a missing `default_profile`, an `HMC_PROFILE` naming nothing — is silent on
   every channel.
-  A fourth value, `ambiguous`, means a **case variant**
-  of `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: only the exact upper-case
+
+  A fourth value, `ambiguous`, means a **case variant** of
+  `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: only the exact upper-case
   spelling is dropped from a profile's keys before the config is built, so a
   variant loses to a profile there and wins where no profile is read — and nothing
   in the server can tell which happened. Fix the spelling.
@@ -145,8 +146,8 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   reach, not that the report found nothing to say.
 
   A connection whose config cannot be built reports
-  `authorize_power_operations: null` with
-  `source: unresolved` and a `detail` classifying the failure — `ConfigError`, or
+  `authorize_power_operations: null` with `source: unresolved` and a `detail`
+  classifying the failure — `ConfigError`, or
   `ValidationError` with the field names it rejected. The `detail` is deliberately
   closed. For a `ConfigError` the full message goes to the server's log instead,
   because it names every profile and nickname key in your `config.toml` — **once
