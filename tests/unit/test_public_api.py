@@ -1697,19 +1697,31 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     )
 
     signatures = {}
+    unrenderable = set()
     for name in api.__all__:
         try:
             signatures[name] = _signature_text(getattr(api, name))
         except (TypeError, ValueError):
-            continue
+            unrenderable.add(name)
+    # Falling out of this loop is how an export leaves the freeze in silence, and it
+    # is how `InstallHandle` would have left it (#468). Name the ones that do rather
+    # than passing over them: each of these four subclasses `ValueError` or
+    # `RuntimeError` and inherits a constructor `inspect.signature` cannot read, which
+    # is the same absence the Decision's own constructor clause records. The set adds
+    # no digest entry, so it costs no recomputation — it fails the next time an export
+    # falls into the hole instead of letting it vanish.
+    assert unrenderable == {
+        "ConfigError",
+        "PcieAssignmentUnavailableError",
+        "SriovLogicalPortCapabilityError",
+        "VnicCapabilityError",
+    }
     # At least one manifest entry must carry an `Annotated` field, or the CI matrix
     # stops exercising the interpreter divergence `_signature_text` normalises away.
     assert "Annotated[str, MinLen" in signatures["HmcIdentity"]
-    # The same guard for the `TypedDict` branch, and it needs one more: the loop above
-    # swallows the `ValueError` `inspect.signature` raises on a `TypedDict`, which is
-    # exactly how an exported one contributed no entry at all before #468. A digest is
-    # an opaque hash, so a `_typed_dict_text` degraded to empty or partial text would
-    # move it once and read as an ordinary manifest move to whoever recomputed it.
+    # The same guard for the `TypedDict` branch. A digest is an opaque hash, so a
+    # `_typed_dict_text` degraded to empty or partial text would move it once and
+    # read as an ordinary manifest move to whoever recomputed it.
     assert signatures["InstallHandle"] == (
         "(system: str, partition: str, pid: int, log_path: str, message: str)"
     )
