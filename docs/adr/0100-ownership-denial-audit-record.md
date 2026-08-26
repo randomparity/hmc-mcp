@@ -37,13 +37,16 @@ the fix belongs to the shared guard.
 Two things about the surrounding contract bound what this change may do. The rest of the
 grounds are in `Considered & rejected`, where the alternatives they sank are.
 
-- `audit.py`'s stability rule: a field may be added, never renamed, removed, or
-  retyped; a code may be added, never repurposed; a consumer ignores what it does not
-  know.
+- `audit.py`'s stability rule, as written: a field may be added, never renamed,
+  removed, or retyped; a *reason* code may be added, never repurposed; a consumer
+  ignores what it does not know. It says nothing about `Event`, so §1 grounds the
+  addition on the last clause and on the filter argument, not on this one.
 - `tests/test_authorization_audit_doc.py` holds `docs/authorization-audit.md` to the
   module's vocabularies. Every member of `audit.EVENTS` needs one `### event:` section
-  and at least one fenced sample, and every closed vocabulary a record carries is
-  compared against the module's set in both directions.
+  and at least one fenced sample. A vocabulary sampled in a record is held only to
+  naming nothing undefined; the coverage direction exists solely where the document
+  restates the vocabulary in a passage the guard reads — which is what §5's field rows
+  are for.
 
 ## Decision
 
@@ -60,8 +63,10 @@ event whose *name* asserts the opposite, and it silently changes what an existin
 `event == "ownership-override"` filter counts: a query that today counts approved
 bypasses would start counting refusals.
 
-Adding a member to `Event` is the additive direction the module's stability rule permits,
-and `EVENTS` is derived from the `Literal` — but the suite does not follow for free:
+A new member is additive in the sense the stability rule's last clause covers — a
+consumer ignores what it does not know — and it is why folding the denial onto the
+existing event is the shape that breaks a filter and this one is not. `EVENTS` is
+derived from the `Literal`, but the suite does not follow for free:
 `test_events_matches_the_literal_and_every_emitter_uses_it` restates the set and
 enumerates its emitters by hand, so it is edited here too.
 
@@ -112,9 +117,14 @@ setting that drops permits, keeps denials.
 ### 4. Emitted from the shared guard, once
 
 `_authorize_lpar_ownership_description` emits immediately before each `raise
-PermissionError`, and takes the `operation` value from its two callers. Every guarded
-operation is covered by that one edit, and a guarded operation added later inherits the
-record instead of shipping without one.
+PermissionError`, and takes `operation` as a **required** keyword-only parameter from its
+two callers. Required rather than defaulted: a third entry point that forgot the argument
+would otherwise be recorded under an existing operation's name, and a stream that asserts
+something false is worse than one that is silent.
+
+So a new *call site* of an existing entry point inherits the record for free — all
+fourteen do — while a new *entry point* is a type error until its author adds an
+`audit.OwnershipOperation` member and the matching row in `docs/authorization-audit.md`.
 
 `operations_lpar` still never resolves the reserved logger — it calls the `audit`
 builder, exactly as the override path does, which is what
@@ -148,8 +158,12 @@ without joining that guard is the drift #486 exists to stop.
   correlation identifier, so pairing them means matching those three fields within a time
   window — and the overrides that were never refused (the bullet below, and any caller
   who passes `ownership_override` on the first attempt) will pair against an unrelated
-  earlier denial if one is in the window. A field to make the pairing explicit would cost
-  more than it removes, and is not added here.
+  earlier denial if one is in the window. A refused `--dry-run` decommission preflight —
+  the sequence `README.md` prescribes — emits the same record as a refused destructive
+  one, because `_inventory` authorizes ahead of the dry-run return. A field to make
+  either distinction explicit would cost more than it removes, and is not added here;
+  this is the caveat `docs/authorization-audit.md` already carries for the override
+  record's two sources.
 - The two ownership events are now asymmetric: the denial names its `operation` and the
   override does not. Closing it is an *addition* rather than the rejected `decision` arm,
   so no `event ==` filter would notice — but reshaping that record is this issue's stated
@@ -217,6 +231,8 @@ without joining that guard is the drift #486 exists to stop.
   verified: the fourteen enumerated in the bullet above. judgment: fourteen edit sites
   for one rule, and the next guarded operation ships without a record unless its author
   remembers.
-- **Documenting the gap and doing nothing.** verified: it is already documented —
-  `docs/authorization-audit.md`'s "Denials emit nothing" paragraph, written by #371 —
-  and #467 exists because the document did not close it.
+- **Documenting the gap and doing nothing.** verified: it is already documented, by
+  `docs/authorization-audit.md`'s "Denials emit nothing" paragraph, written by #371.
+  judgment: what documenting leaves standing is the Context's own finding — a CLI or
+  `hmc_mcp.api` caller has no other authorization boundary, so a refusal there is
+  observable to nobody but the caller who was refused.
