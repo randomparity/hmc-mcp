@@ -117,8 +117,9 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   silently — indistinguishable from a correct `false`. Call
   `hmc_effective_permissions` against the running server and read
   `power_ownership_guards`: one entry per connection the access policy's grants
-  name, each carrying the effective post-precedence `authorized` value and the
-  `source` that supplied it — `environment`, `profile`, or `default`. `default` is
+  name, each carrying the effective post-precedence `authorize_power_operations`
+  value — `true` means the ownership guard is **enforced** — and the `source` that
+  supplied it: `environment`, `profile`, or `default`. `default` is
   the answer that means *nothing you wrote arrived*, which is the case a bare
   `false` cannot distinguish. It also covers one case that is not your memory's
   fault: a `config.toml` that exists but cannot be read, parsed, or resolved to a
@@ -132,7 +133,14 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   variant loses to a profile there and wins where no profile is read — and nothing
   in the server can tell which happened. Fix the spelling.
 
-  A connection whose config cannot be built reports `authorized: null` with
+  **With `HMC_HOST` set, expect fewer rows than your policy has connections.** Every
+  connection token collapses to the default one at dispatch, so the report carries at
+  most the `<default>` row — the named ones vanish because nothing can reach them. An
+  empty `power_ownership_guards` means the policy grants no connection any call can
+  reach, not that the report found nothing to say.
+
+  A connection whose config cannot be built reports
+  `authorize_power_operations: null` with
   `source: unresolved` and a `detail` classifying the failure — `ConfigError`, or
   `ValidationError` with the field names it rejected. The `detail` is deliberately
   closed. For a `ConfigError` the full message is in the server's log instead,
@@ -162,6 +170,8 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   policy to the MCP client (ADR 0037). Weigh those against each other for your
   deployment. There is no second in-process channel for the value today: with the
   tool withheld, `config show` and its three limits above are all that is left.
+  #533 tracks announcing the effective value at `serve` startup, which would not
+  depend on the tool being granted.
 
   When the setting is off, `power_lpar` reads no ownership token and opens no SSH
   connection — the call path is exactly what it was before this setting existed.

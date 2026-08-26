@@ -67,8 +67,20 @@ def default_power_ownership_guard_off(monkeypatch):
     test means to exercise. A test that wants the guard on sets the variable
     in its own body, which runs after this fixture, or builds the config with
     `HMCConfig.from_mapping` and bypasses the environment entirely (ADR 0096).
+
+    Every casing, not just the canonical one: `HMCConfig` leaves
+    pydantic-settings' `case_sensitive` at its `False` default, so a developer or
+    CI runner exporting `hmc_authorize_power_operations` sets the field exactly
+    as the upper-case spelling does — and `server_permissions` reads the casing
+    itself to decide the reported `source`. Clearing only the exact name leaves
+    both observable in the tests that pin them.
     """
-    monkeypatch.delenv("HMC_AUTHORIZE_POWER_OPERATIONS", raising=False)
+    for name in [
+        name
+        for name in os.environ
+        if name.upper() == "HMC_AUTHORIZE_POWER_OPERATIONS"
+    ]:
+        monkeypatch.delenv(name, raising=False)
 
 
 def _restore_fastmcp_logger() -> None:

@@ -190,9 +190,14 @@ and this intersection reads only the compiled result.
   > effective `authorize_power_operations` (ADR 0092 §4) per granted connection through
   > `common.build_config`, so each entry carries one boolean from the resolved config and
   > one provenance label decided by probing the environment for
-  > `HMC_AUTHORIZE_POWER_OPERATIONS`. That guard fails **open**, so its effective value
-  > has to be readable from the process that would act on it; nothing else answers for an
-  > env-var-only deployment. The bound the sentence was defending still holds and is now
+  > `HMC_AUTHORIZE_POWER_OPERATIONS`. Three further facts about the served process become
+  > readable with it: whether that variable is exported and whether its spelling is exact
+  > or a case variant, from `source`; whether each granted connection resolves in
+  > `config.toml`, from `source: unresolved`; and whether `HMC_HOST` is set, inferable
+  > because the guard rows then collapse to the default connection while `declared_grants`
+  > in the same response still names the profiles. That guard fails **open**, so its
+  > effective value has to be readable from the process that would act on it; nothing else
+  > answers for an env-var-only deployment. The bound the sentence was defending is now
   > carried by the code instead: no `config.toml` *string* is echoed. Connection names come
   > from the policy this tool already discloses, an entry that cannot resolve reports a
   > closed classification rather than the `ConfigError` message — which would name the

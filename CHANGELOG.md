@@ -165,8 +165,14 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   nothing in the server can tell which happened. `hmc-mcp config show` could not answer
   either deployment the documentation
   recommends: it exits 1 with no `config.toml`, and it reads the invoking shell's environment
-  rather than the served process's. A connection whose config cannot be built reports
-  `authorized: null` with `source: unresolved` and a closed `detail` — the exception class,
+  rather than the served process's. The entry keeps the setting's own name and polarity —
+  `authorize_power_operations: true` means the ownership guard is enforced — because
+  `authorized: false` would read as "not authorized" for the permissive state, which is the
+  misreading this change exists to end. With `HMC_HOST` set the report carries at most the
+  `<default>` row, because every connection token collapses there at dispatch. A connection
+  whose config cannot be built reports
+  `authorize_power_operations: null` with `source: unresolved` and a closed `detail` — the
+  exception class,
   plus the rejected field names for a `ValidationError`. The underlying message is withheld
   from the caller and logged instead: `ConfigError` names every `profiles` and `nicknames`
   key in `config.toml`, which is the connection inventory ADR 0038 refuses to disclose, and

@@ -16,6 +16,7 @@ import logging
 import pytest
 from fastmcp import Client
 
+from hmc_mcp import server_permissions
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.server_permissions import (
@@ -47,6 +48,9 @@ def no_native_config(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     monkeypatch.delenv("HMC_HOST", raising=False)
+    # The unresolved-connection log deduplicates process-wide, so a pair another
+    # test already reported would arrive here at DEBUG and vanish from caplog.
+    server_permissions._reported_unresolved.clear()
 
 
 def _write_config(monkeypatch, tmp_path, body: str) -> None:
@@ -70,7 +74,7 @@ def test_the_value_is_readable_with_no_config_file_present():
     guards = resolve_power_guards(None)
 
     assert [guard.connection for guard in guards] == [DEFAULT_CONNECTION_TOKEN]
-    assert guards[0].authorized is False
+    assert guards[0].authorize_power_operations is False
     assert guards[0].source == "default"
     assert guards[0].detail is None
 
@@ -81,7 +85,7 @@ def test_an_environment_variable_is_reported_as_such(monkeypatch):
 
     (guard,) = resolve_power_guards(None)
 
-    assert guard.authorized is True
+    assert guard.authorize_power_operations is True
     assert guard.source == "environment"
 
 
@@ -121,9 +125,9 @@ def test_a_profile_key_is_reported_against_only_the_profile_that_carries_it(
 
     guards = _by_connection(resolve_power_guards(policy))
 
-    assert guards["guarded"].authorized is True
+    assert guards["guarded"].authorize_power_operations is True
     assert guards["guarded"].source == "profile"
-    assert guards["open"].authorized is False
+    assert guards["open"].authorize_power_operations is False
     assert guards["open"].source == "default"
 
 
@@ -148,7 +152,7 @@ def test_the_environment_variable_overrides_every_profile(monkeypatch, tmp_path)
 
     guards = _by_connection(resolve_power_guards(policy))
 
-    assert guards["guarded"].authorized is False
+    assert guards["guarded"].authorize_power_operations is False
     assert guards["guarded"].source == "environment"
 
 
@@ -182,7 +186,7 @@ def test_an_ambient_host_makes_a_profile_key_ineffective(monkeypatch, tmp_path):
 
     guards = _by_connection(resolve_power_guards(policy))
 
-    assert guards[DEFAULT_CONNECTION_TOKEN].authorized is False
+    assert guards[DEFAULT_CONNECTION_TOKEN].authorize_power_operations is False
     assert guards[DEFAULT_CONNECTION_TOKEN].source == "default"
 
 
@@ -199,7 +203,7 @@ def test_a_case_variant_environment_variable_asserts_no_origin(monkeypatch):
 
     (guard,) = resolve_power_guards(None)
 
-    assert guard.authorized is True
+    assert guard.authorize_power_operations is True
     assert guard.source == "ambiguous"
     assert "case variant" in guard.detail
 
@@ -235,7 +239,7 @@ def test_a_case_variant_does_not_claim_a_value_the_environment_lost(
 
     guards = _by_connection(resolve_power_guards(policy))
 
-    assert guards["guarded"].authorized is True
+    assert guards["guarded"].authorize_power_operations is True
     assert guards["guarded"].source == "ambiguous"
 
 
@@ -277,7 +281,7 @@ def test_a_connection_that_cannot_be_resolved_is_reported_not_raised(
     with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_permissions"):
         guards = _by_connection(resolve_power_guards(policy))
 
-    assert guards["absent"].authorized is None
+    assert guards["absent"].authorize_power_operations is None
     assert guards["absent"].source == "unresolved"
     assert guards["absent"].detail == "ConfigError"
     rendered = repr(guards)
@@ -301,9 +305,41 @@ def test_an_invalid_setting_names_its_field_without_echoing_the_value(monkeypatc
 
     (guard,) = resolve_power_guards(None)
 
-    assert guard.authorized is None
+    assert guard.authorize_power_operations is None
     assert guard.source == "unresolved"
     assert guard.detail == "ValidationError: authorize_power_operations"
+
+
+def test_the_unresolved_warning_is_said_once_not_once_per_call(
+    monkeypatch, tmp_path, caplog
+):
+    """The MCP client owns the call rate; the operator's log must not.
+
+    `hmc_effective_permissions` is in the `read` effect class, so a policy
+    granting `effects = ["read"]` cannot withhold it, and a stale profile fails
+    on every call. Undeduplicated, the channel that floods is the one this
+    design routes the withheld reason to.
+    """
+    _write_config(
+        monkeypatch,
+        tmp_path,
+        """
+        default_profile = "present"
+
+        [profiles.present]
+        host = "hmc-a.example.com"
+        user = "admin"
+        """,
+    )
+    policy = _policy([
+        {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
+    ])
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_permissions"):
+        for _ in range(3):
+            resolve_power_guards(policy)
+
+    assert len(caplog.records) == 1
 
 
 def test_one_malformed_profile_does_not_take_down_the_whole_report(
@@ -345,10 +381,10 @@ def test_one_malformed_profile_does_not_take_down_the_whole_report(
 
     guards = _by_connection(resolve_power_guards(policy))
 
-    assert guards["broken"].authorized is None
+    assert guards["broken"].authorize_power_operations is None
     assert guards["broken"].source == "unresolved"
     assert guards["broken"].detail == "TypeError"
-    assert guards["sound"].authorized is True
+    assert guards["sound"].authorize_power_operations is True
     assert guards["sound"].source == "profile"
 
 
@@ -450,7 +486,7 @@ def test_the_running_server_answers_for_itself(monkeypatch):
     assert reported["power_ownership_guards"] == [
         {
             "connection": DEFAULT_CONNECTION_TOKEN,
-            "authorized": True,
+            "authorize_power_operations": True,
             "source": "environment",
             "detail": None,
         }

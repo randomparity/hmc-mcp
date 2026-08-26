@@ -108,6 +108,14 @@ _UNRESOLVED_LOG = (
     "built, so its authorize_power_operations is reported as unresolved: %s"
 )
 
+#: The ``(connection, reason)`` pairs already reported at WARNING. The tool's
+#: call rate belongs to the MCP client and a stale profile fails on every call,
+#: so an undeduplicated line would flood the one channel this design routes the
+#: withheld reason to — degrading the diagnosis the report exists to enable, and
+#: burying every unrelated warning with it. Bounded by the number of distinct
+#: failures, not by call rate. A racing duplicate costs one extra WARNING.
+_reported_unresolved: set[tuple[str, str]] = set()
+
 #: Said whole rather than interpolated, so ``detail`` stays closed. Only the
 #: exact upper-case spelling is dropped from a profile's TOML keys before
 #: construction (``config._load_profile_from_document``), so a case variant is
@@ -131,12 +139,20 @@ class PowerOwnershipGuard:
     origin only where one path can supply it — ``ambiguous`` covers the case
     neither can be ruled out, and ``detail`` says why.
 
-    ``authorized`` is ``None`` only when the connection's configuration could not
-    be built at all, which ``source: unresolved`` names and ``detail`` classifies.
+    The field keeps the setting's own name, and its polarity: ``true`` means the
+    ADR 0011 ownership guard is **enforced** on power operations, ``false`` that
+    `power_lpar` reads no ownership token and opens no SSH connection. Naming it
+    ``authorized`` would have read as "this connection is not authorized" for the
+    permissive value — the reassuring misreading of the fail-open state, which is
+    the misreading #470 exists to end. `hmc-mcp config show` emits the same key
+    for the same boolean.
+
+    It is ``None`` only when the connection's configuration could not be built at
+    all, which ``source: unresolved`` names and ``detail`` classifies.
     """
 
     connection: str
-    authorized: bool | None
+    authorize_power_operations: bool | None
     source: str
     detail: str | None
 
@@ -299,6 +315,22 @@ def _unresolved_detail(exc: Exception) -> str:
     return "ValidationError: " + ", ".join(fields)
 
 
+def _log_unresolved(connection: str, reason: str) -> None:
+    """Say why *connection* failed, at WARNING the first time and DEBUG after.
+
+    The reason exists nowhere else — the caller's ``detail`` is closed — so it
+    has to be said. It must not be said on every call: the MCP client owns the
+    call rate, a stale profile fails on all of them, and the channel that would
+    flood is the one an operator reads to diagnose exactly this.
+    """
+    seen = (connection, reason)
+    if seen in _reported_unresolved:
+        _logger.debug(_UNRESOLVED_LOG, connection, reason)
+        return
+    _reported_unresolved.add(seen)
+    _logger.warning(_UNRESOLVED_LOG, connection, reason)
+
+
 def _guard_source(config: HMCConfig) -> tuple[str, str | None]:
     """Name what supplied *config*'s guard value, and never assert more.
 
@@ -371,11 +403,11 @@ def _power_guard(profile: str | None) -> PowerOwnershipGuard:
     try:
         config = build_config(profile=profile)
     except ConfigError as exc:
-        _logger.warning(_UNRESOLVED_LOG, connection, exc)
+        _log_unresolved(connection, str(exc))
         return PowerOwnershipGuard(connection, None, "unresolved", "ConfigError")
     except Exception as exc:  # noqa: BLE001 — reported, not raised; see above
         detail = _unresolved_detail(exc)
-        _logger.warning(_UNRESOLVED_LOG, connection, detail)
+        _log_unresolved(connection, detail)
         return PowerOwnershipGuard(connection, None, "unresolved", detail)
     source, detail = _guard_source(config)
     return PowerOwnershipGuard(
