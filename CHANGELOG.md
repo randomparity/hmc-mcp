@@ -148,14 +148,18 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   amendment). **Tool behaviour changes:** a job the HMC no longer has returns `found: false`
   (`hmc_wait_for_job`) or null (`hmc_get_job`) instead of raising `HMCError`, and polling stops on
   it rather than running to the deadline — read `found` first, and note that a caller which only
-  caught `HMCError` for a vanished job now gets a successful result. The output schema is
+  caught `HMCError` for a vanished job now gets a successful result. A 404 on the *first* read is
+  reported straight through, so a momentary one now reads as `found: false` where it previously
+  raised; only a disappearance after the job has been seen alive gets the confirming re-read. The
+  output schema is
   unchanged: `found` was already a required property of the shared wait shape. Two smaller
   changes come with the shared operation. `timeout_seconds` is now a soft bound: a job that
   disappears after being seen alive is re-read once before being reported gone, and that read is
   owed past the deadline, so `hmc_wait_for_job` can return a whole `poll_interval` late —
   more than the deadline itself if `poll_interval` exceeds `timeout_seconds`. And a `job_uuid`
   that is empty, is a bare dot, or carries a path, query, fragment, percent, or interior
-  whitespace character now raises `ValueError` at the boundary rather than reaching the HMC;
+  whitespace character now raises `ValueError` before any request for the job is made — though
+  after the session is opened, so a malformed handle still costs a logon and logoff;
   surrounding whitespace is still trimmed. That check applies **even when `job_href` is
   supplied**, where the client previously ignored `job_uuid` altogether — so an issue #95 caller
   that persisted only the submission link must now pass the identifier too. Every non-404 HMC

@@ -44,9 +44,12 @@ def hmc_get_job(
 ) -> dict[str, Any] | None:
     """Get one HMC job by UUID, optionally using its submission SELF link.
 
-    Returns null when the HMC has no job for this identifier — reaped, deleted,
-    or never present. Any other HMC failure still raises, so null means "gone",
-    not "the read failed" (ADR 0093).
+    Returns null when the HMC produced no entry for this identifier — reaped,
+    deleted, or never present. Any other HMC failure still raises. Null is what
+    one read saw, not a confirmed disappearance: this tool makes a single read,
+    so a momentary 404 from a proxy reload or a failover reads as null too, and a
+    null that repeats for every identifier is a deployment whose jobs path is
+    absent rather than a fleet of vanished jobs (ADR 0093).
 
     An empty identifier, a bare dot, or one carrying a path, query, fragment,
     percent, or interior whitespace character addresses something other than one
@@ -57,7 +60,10 @@ def hmc_get_job(
 
     A ``job_href`` that stops resolving is re-read against the global jobs path
     before the job is called gone, so the ``link`` in the returned mapping can be
-    the link that failed. Poll by ``job_uuid`` alone once that happens (#529).
+    the link that failed. That retirement is visible only in the server log, so a
+    caller that passed a ``job_href`` and got a job back cannot tell from the
+    result whether its link is still good; poll by ``job_uuid`` alone on any
+    stale-link suspicion (#529).
 
     Args:
         job_uuid: UUID or JobID returned when the job was submitted.
@@ -138,9 +144,16 @@ def hmc_wait_for_job(
     Read ``found`` first. A job the HMC no longer has — reaped, deleted, or never
     present — returns ``found`` false with a null ``status``, rather than raising;
     ``found`` true with ``timed_out`` true means the HMC still has the job and it
-    is running. Polling stops as soon as the job is gone instead of burning the
-    remaining ``timeout_seconds``. Every other HMC failure still raises
-    ``HMCError``, so ``found`` false means "gone", never "the read failed".
+    has not reached a terminal status, and a null ``status`` there means the entry
+    carried no readable Status rather than that the job is running. Polling stops
+    as soon as the job is gone instead of burning the remaining
+    ``timeout_seconds``. Every other HMC failure still raises ``HMCError``.
+
+    ``found`` false is what the read that was made saw. It is a *confirmed*
+    disappearance only once this wait has already seen the job alive, in which
+    case a second read one ``poll_interval`` later has to agree; a 404 on the
+    very first poll is reported straight through, so a momentary one — a proxy
+    reload, a failover — reads as ``found`` false with no re-read.
     ``found`` false does not say *why*, and is not proof the work did or did not
     happen: confirm that against the affected resource, not the job record. A
     ``found`` false that repeats for every identifier is a deployment whose jobs
@@ -158,8 +171,11 @@ def hmc_wait_for_job(
     successful read's own link, and null when nothing resolved. A link that stopped
     resolving is dropped only when the HMC's own SELF link is spelled the same way,
     so one you stored in another spelling — a relative path against an absolute
-    href — can come back unchanged after it has already failed (#529). After a
-    stale-link warning, poll by ``job_uuid`` alone; that is the reliable recovery.
+    href — can come back unchanged after it has already failed (#529). The in-band
+    signal is narrow but real: a link you passed that still resolves is always
+    echoed back, so if you passed one and get a ``found`` true outcome whose
+    ``job_href`` is null, that link was retired. Drop it and poll by ``job_uuid``
+    alone, which is also the reliable recovery whenever a stored link is suspect.
 
     An empty identifier, a bare dot, or one carrying a path, query, fragment,
     percent, or interior whitespace character addresses something other than one

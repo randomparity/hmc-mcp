@@ -1271,6 +1271,9 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     assert not global_route.called
     assert result.status == "COMPLETED"
     assert result.timed_out is False
+    # A supplied link that resolved is echoed back, which is what makes a null
+    # job_href on a found outcome mean "your link was retired" (#474).
+    assert result.job_href == _JOB_OP_HREF
 
 
 def test_recent_jobs_unsupported_endpoint_raises_actionable_error(
