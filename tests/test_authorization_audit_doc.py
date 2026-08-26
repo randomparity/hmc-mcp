@@ -34,9 +34,12 @@ the reason-code table, the `effect` row and the state sentence, which are checke
 `kind` and `decision` restate no such passage, so they are held in the orphan direction
 alone and the ledger records it.
 Coverage reads `event` at the top level and the orphan half reads it at any depth, so a
-nested value cannot stand in for a missing record. The price is an editing constraint:
-every `json` fence in that document must open one of these records, written at the start
-of its line, and a fence that does not fails quoting the block and stating the rule.
+nested value cannot stand in for a missing record. Coverage is checked twice: over the
+document, and over the `## The records` section alone, so an event sampled in two places
+cannot lose the copy under its own heading. The price is an editing constraint: every
+`json` fence in that document must open one of these records, written at the start of its
+line. A fence that opens something else fails quoting the block and stating the rule; one
+the reader cannot take fails naming every opener it found, by line.
 `docs/environment-variables.md` carries no JSON block and so has no arm of this check.
 
 The counts stay out of the assertions on purpose: pinning one here would recreate the
@@ -76,12 +79,17 @@ What this does not reach, so a green run is not read as more coverage than it is
   `REQUIRED_TARGET_ARGUMENTS`'s keys *and* from whatever a tool's own `extra_targets`
   declares, so that mapping is a subset of the field's range rather than its vocabulary and
   is not read here at all. `kind` is the closed half of that pair, held to `TARGET_KINDS`;
-- whether `SAMPLE_VOCABULARIES` is *complete*. It lists the six keys a sample record
-  carries a `Literal`-derived value under as of this commit, and nothing enforces that a
-  seventh gets added: a new closed vocabulary on a record, or a `Literal` swapped in for
-  one of the plain `str` fields above, joins the samples unread. Enforcing it means
-  scanning `audit` and `tool_registry` for `Literal`s and holding the leftovers against a
-  named exclusion list, which is a second unenforced list in place of this sentence;
+- whether the sample keys held are *all* of them. `SAMPLE_VOCABULARIES` lists six, and
+  `source` is a seventh held by hand below — that is the set as of this commit, and nothing
+  enforces that an eighth gets added: a new closed vocabulary on a record, or a `Literal`
+  swapped in for one of the plain `str` fields above, joins the samples unread. Enforcing
+  it means scanning `audit`, `client` and `tool_registry` for `Literal`s and holding the
+  leftovers against a named exclusion list, which is a second unenforced list in place of
+  this sentence;
+- a record written outside a `json` fence — fenced as ```text, or in prose. The fence rule
+  reaches what claims to be JSON; nothing makes a record claim it. One fence carries one
+  object, which is every sample the document has, so a fence holding several records on
+  several lines would fail as malformed rather than being read line by line;
 - the dangling direction for the samples' `kind` and `decision`. The document restates no
   `kind` vocabulary anywhere, and restates `decision` only in a field-table cell that
   nothing reads (#518) — neither has the second passage that lets `effect` and the
@@ -737,9 +745,20 @@ def test_the_tls_event_name_is_one_the_audit_module_defines() -> None:
 def test_every_event_has_a_sample_record_and_the_samples_name_no_other() -> None:
     """Equality, unlike the vocabularies below: one section per event and at least one
     sample apiece, which is what makes coverage checkable. More than one is fine — the
-    `records-dropped` record is sampled twice — because this compares sets.
+    `records-dropped` record is sampled again later in the document — because this
+    compares sets.
     """
     assert _sampled_events(_document()) == audit.EVENTS
+
+
+def test_every_event_section_carries_a_sample_of_its_own() -> None:
+    """Scoped to the section the intro calls the full set, as the heading check is.
+
+    Document-wide coverage alone would let an event sampled twice lose the sample in its
+    own section and stay covered by the other copy — which is the sample a reader of that
+    section actually meets.
+    """
+    assert _sampled_events(_section(_document(), "## The records")) == audit.EVENTS
 
 
 @pytest.mark.parametrize(("key", "vocabulary"), SAMPLE_VOCABULARIES, ids=SAMPLE_KEYS)
@@ -945,7 +964,12 @@ def test_the_fence_report_locates_every_fence_it_found() -> None:
     assert len(fences) == len(JSON_SAMPLE.findall(document))
     for fence in fences:
         number = int(fence.removeprefix("line ").split(":", 1)[0])
-        assert document.splitlines()[number - 1] in fence
+        line = document.splitlines()[number - 1]
+        #: That the reported line is itself an opener is what bites. Equality alone passes
+        #: under an off-by-one that points at a blank line, the empty string being a
+        #: substring of everything and `f"line 59: "` matching a report of exactly that.
+        assert JSON_FENCE.match(line), fence
+        assert fence == f"line {number}: {line}"
 
 
 def test_the_sampled_attribution_source_is_the_exported_environment_variable() -> None:
