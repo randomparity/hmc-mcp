@@ -618,8 +618,14 @@ inputs such as LPAR resources, firmware update parameters, and VIOS update repos
 
 `hmc_effective_permissions` discloses the selected policy's name, its absolute
 path, every connection token, and every target selector to any MCP client that
-can call it. It carries no credential. One caveat since the generator exists: a
-generated `legacy-equivalent` policy has `config.toml`'s profile **keys** as its
+can call it. Since #470 it also discloses, per granted connection, the effective
+`authorize_power_operations` value; whether `HMC_AUTHORIZE_POWER_OPERATIONS` is
+exported in the served process's environment and whether that spelling is exact
+or a case variant; whether each granted connection resolves in `config.toml`, as
+`source: unresolved`; and, inferably, whether `HMC_HOST` is set, because the guard
+rows then collapse to `<default>` while `declared_grants` still names the profiles.
+It carries no credential. One caveat since the generator exists: a generated
+`legacy-equivalent` policy has `config.toml`'s profile **keys** as its
 `connections`, so those names reach the client through this tool — names only, and
 strictly less than `hmc_list_configured_hosts` discloses to the same caller. If your
 profile keys are themselves sensitive, withhold both tools by name. The policy

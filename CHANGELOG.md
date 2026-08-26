@@ -151,6 +151,36 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `event == "ownership-override"` filter keeps counting approved bypasses and nothing else.
   `docs/authorization-audit.md` documents the record and the caveats on alerting from it.
   No exported signature changes.
+- `hmc_effective_permissions` reports `power_ownership_guards` (#470): the effective,
+  post-precedence `authorize_power_operations` (ADR 0092 §4) for every connection the access
+  policy's grants name, resolved inside the running server rather than in the shell that
+  asks. The guard fails **open** and `HMCConfig` sets `extra="ignore"`, so a mistyped profile
+  key or environment variable is dropped silently and is otherwise indistinguishable from a
+  correct `false`; each entry carries the `source` that supplied the value — `environment`,
+  `profile`, or `default`, where `default` is the answer that means nothing the operator
+  wrote arrived. A fourth value, `ambiguous`, reports that a **case variant** of
+  `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: pydantic-settings matches a variant
+  case-insensitively while the profile loader drops only the exact upper-case spelling
+  (#531), so a variant loses to a profile on one resolution path and wins on the other, and
+  nothing in the server can tell which happened. `hmc-mcp config show` could not answer
+  either deployment the documentation
+  recommends: it exits 1 with no `config.toml`, and it reads the invoking shell's environment
+  rather than the served process's. The entry keeps the setting's own name and polarity —
+  `authorize_power_operations: true` means the ownership guard is enforced — because
+  `authorized: false` would read as "not authorized" for the permissive state, which is the
+  misreading this change exists to end. With `HMC_HOST` set the report carries at most the
+  `<default>` row, because every connection token collapses there at dispatch. A connection
+  whose config cannot be built reports
+  `authorize_power_operations: null` with `source: unresolved` and a closed `detail` — the
+  exception class,
+  plus the rejected field names for a `ValidationError`. The underlying message is withheld
+  from the caller and logged instead: `ConfigError` names every `profiles` and `nicknames`
+  key in `config.toml`, which is the connection inventory ADR 0038 refuses to disclose, and
+  a `ValidationError` quotes the value it rejected. Beyond the connection names the policy
+  already declares, the entries carry no host, user, or credential; ADR 0037's disclosure
+  bullet is amended to record the narrowed claim. `describe()` takes the resolved guards as
+  a fourth argument and stays a pure function of its arguments; `EffectivePermissions` is not
+  a `hmc_mcp.api` export, so the facade manifest is unaffected.
 
 ### Changed
 
