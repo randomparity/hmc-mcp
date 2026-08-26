@@ -65,7 +65,7 @@ name, because `installios` requires its `-p` partition to be of type Virtual I/O
 Server. #366 moved that determination's subject out of the tool body into
 `operations_install.py`, where §3.4a now classifies both install operations; the
 premise is stated there at `:232` and still in the tool docstring at
-`server_vios.py:241`.
+`server_vios.py:240`.
 
 Also out of scope: read operations; managed-system-, user- and cluster-scoped
 mutations that name no partition (`create_volume_group`, `create_media_repository`,

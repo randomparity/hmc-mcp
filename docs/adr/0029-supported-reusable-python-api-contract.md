@@ -168,9 +168,11 @@ names are internal everywhere and are never inventoried.
     all five keys itself and no firmware level can vary them, so `system`, `partition`, `pid`,
     `log_path` and `message` are a package-owned contract, and changing one needs the same minor
     release an `__all__` change does (#468). Nothing on this path is pollable, so no wait
-    parameters are offered and none may be added without a superseding decision. Both are
-    classified for ownership authorization in ADR 0092 §3.4a, which is the authoritative record;
-    §6's recording obligation for a new facade export is discharged there, not here.
+    parameters are offered and none may be added without a superseding decision. Both operations
+    are classified for ownership authorization in ADR 0092 §3.4a, which is the authoritative
+    record; §6's recording obligation for them is discharged there, not here. It does not reach
+    `InstallHandle`: §6 places a new facade export in one of §5's three sets, and §5 enumerates
+    Domain A over exported *functions*, which a type is not.
 - `operations_jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
   none.
 - `operations_lpar` — operations: `assess_post_activation_affinity`,
