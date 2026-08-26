@@ -52,6 +52,20 @@ ACTION_PINS = {
         "v4.2.0",
     ),
 }
+# The gates this repository must not lose. Not derived on purpose: `static` and
+# .pre-commit-config.yaml agreeing with each other is silent when a gate is deleted
+# from both, and which gates must exist is a judgement no file states (ADR 0098 §1b).
+STATIC_GATES = {
+    "lint",
+    "typecheck",
+    "secrets",
+    "workflow-security",
+    "env-vars",
+    "nicknames",
+    "tool-docs-check",
+    "adr-numbering",
+    "doc-freshness",
+}
 SUPPORTED_PYTHONS = ["3.11", "3.12", "3.13", "3.14"]
 NATIVE_MATRIX = [
     ("amd64", "ubuntu-24.04", version) for version in SUPPORTED_PYTHONS
@@ -241,37 +255,69 @@ def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> Non
     assert all("uv run --no-sync" in line for line in run_lines)
 
 
-def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
-    """One hook per `static` member, derived from both files rather than restated.
-
-    The recipe list and the hook list both live in the tree, so a test that writes
-    either one down again is a hand-maintained mirror and a literal hook count is
-    a number kept in step by memory -- exactly what ADR 0098 §1c calls a defect.
-    Deriving both sides and comparing them is the property anyone wanted: every
-    gate `just verify` reaches is also a commit-time hook, and no hook runs
-    something `just verify` does not.
-    """
-    justfile = (ROOT / "justfile").read_text()
-    config = (ROOT / ".pre-commit-config.yaml").read_text()
-
-    # `static`'s dependency list wraps, and `just` joins it with a backslash.
+def _static_members(justfile: str) -> list[str]:
+    """`static`'s dependency list, with `just`'s backslash continuation joined."""
     static = re.search(
         r"^static:(?P<dependencies>[^\n]*)$",
         justfile.replace("\\\n", ""),
         re.MULTILINE,
     )
     assert static
-    members = static["dependencies"].split()
-    assert members
+    return static["dependencies"].split()
 
-    hooks = re.findall(r"^\s*- id: (\S+)$", config, re.MULTILINE)
-    entries = re.findall(r"^\s*entry: just (\S+)$", config, re.MULTILINE)
+
+def _prek_hook_blocks(config: str) -> list[str]:
+    """Each hook's own slice of the config, split at the `- id:` that opens it.
+
+    Per-hook, not per-file: a whole-file `count(...)` cannot tell one hook carrying
+    a setting twice from two hooks carrying it once, which is the shape of mistake
+    a config edit actually makes.
+    """
+    _, _, body = config.partition("hooks:\n")
+    blocks = [
+        block
+        for block in re.split(r"\n(?=\s*- id: )", body)
+        if re.match(r"^\s*- id: ", block)
+    ]
+    # One indentation for all of them. A block at another level is a different node
+    # in the document, and prek would not run it as a hook.
+    indents = {len(block) - len(block.lstrip(" ")) for block in blocks}
+    assert len(indents) == 1, f"hook blocks sit at {len(indents)} indentation levels"
+    return blocks
+
+
+def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
+    """One hook per `static` member, derived from both files rather than restated.
+
+    The recipe list and the hook list both live in the tree, so a test that writes
+    either one down again is a hand-maintained mirror and a literal hook count is a
+    number kept in step by memory -- exactly what ADR 0098 §1c calls a defect. What
+    is derived is the *correspondence*: every gate `just verify` reaches is a
+    commit-time hook, and no hook runs something `just verify` does not.
+
+    STATIC_GATES is deliberately not derived. Two files agreeing with each other
+    says nothing when a gate is deleted from both, and which gates this repository
+    must not lose is a judgement, not a fact any file states.
+    """
+    justfile = (ROOT / "justfile").read_text()
+    config = (ROOT / ".pre-commit-config.yaml").read_text()
+
+    members = _static_members(justfile)
+    assert STATIC_GATES <= set(members), "a static gate was deleted"
+    for member in members:
+        assert f"\n{member}:" in justfile, f"static depends on undefined {member!r}"
+
+    blocks = _prek_hook_blocks(config)
+    entries = []
+    for block in blocks:
+        entry = re.search(r"^ +entry: just (\S+)$", block, re.MULTILINE)
+        assert entry, f"hook does not delegate to a just recipe: {block!r}"
+        # The setting as its own key, not the string anywhere in the block.
+        assert len(re.findall(r"^ +pass_filenames: false$", block, re.MULTILINE)) == 1
+        entries.append(entry[1])
 
     assert config.count("repo: local") == 1
-    # Every hook delegates to a recipe, and the delegated set is `static` exactly.
-    assert len(entries) == len(hooks)
     assert sorted(entries) == sorted(members)
-    assert config.count("pass_filenames: false") == len(hooks)
     assert "entry: uv run" not in config
 
 
