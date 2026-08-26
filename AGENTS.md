@@ -25,54 +25,40 @@ pager, or a prompt will stall the agent with no recovery path.
   - **Documentation-only** means **no changed file's content is asserted by a
     test or a `static` gate.** *Content*, specifically: repo-wide scans like
     `just secrets` read every tracked file, and counting those would make the
-    exception dead. Matching `*.md` is necessary and nowhere near sufficient —
-    most of this repo's Markdown is gate-load-bearing. `CHANGELOG.md`'s
-    `### Facade manifest` is asserted against `hmc_mcp.api.__all__`;
-    `README.md`, `CONTRIBUTING.md`, `SECURITY.md` and
-    `docs/hmc-cli-cheatsheet.md` are asserted by `tests/`; generated
-    `docs/tools/` is diffed by `just tool-docs-check`;
-    `docs/environment-variables.md` is checked field by field by
-    `just env-vars`; and eight ADRs plus the `docs/workflow/specs/` pages are
-    read by contract tests. A PR touching any of those is changing a contract,
-    and its per-commit history has to survive.
-  - **Establish it by search, not by a path pattern.** A pattern was tried and
-    it drifts, and it cannot be repaired by adding entries:
-    `tests/test_project_metadata.py` reaches the cheatsheet as
-    `ROOT / "docs" / "hmc-cli-cheatsheet.md"`, which no grep for that path
-    finds. Search for the basename too. Run this from the repository root, as a
-    saved script — it takes the PR number as an argument, and its guards call
-    `exit`, so it is not an interactive paste:
-    ```sh
-    pr=${1:?usage: check-doc-only <PR>}
-    files=$(gh pr diff "$pr" --name-only) || { echo 'diff query failed' >&2; exit 1; }
-    [ -n "$files" ] || { echo 'no files reported' >&2; exit 1; }
-    disqualifying=$(
-      printf '%s\n' "$files" | grep -Ev '\.md$'
-      printf '%s\n' "$files" | grep -E '\.md$' | while IFS= read -r f; do
-        grep -rqF -e "$f" -e "${f##*/}" \
-          tests/ scripts/ justfile .pre-commit-config.yaml && printf '%s\n' "$f"
-      done
-    ) || true
-    if [ -z "$disqualifying" ]; then
-      echo 'documentation-only: --squash permitted'
-    else
-      echo 'not documentation-only, use --merge:'; printf '%s\n' "$disqualifying"
-    fi
-    ```
-    **The `|| true` is load-bearing.** `var=$(…)` takes the exit status of the
-    command substitution, which is the status of its *last* command — here a
-    search that found nothing, which is exactly the documentation-only case.
-    Without it the script dies at the assignment under `set -e` and prints
-    nothing. And printing nothing is also what a failed `gh pr diff` looks like
-    — wrong PR number, expired auth — which is why the two guards check its
-    exit status first. Treat an unanswered query as "not documentation-only".
+    exception dead.
+  - **Decide it by reading, not by a pattern or a grep.** Both have been tried
+    here and both are unsound, because the guards reach their files three
+    different ways: by literal path, by basename
+    (`tests/test_project_metadata.py` opens
+    `ROOT / "docs" / "hmc-cli-cheatsheet.md"`), and by directory —
+    `scripts/gen_tool_reference.py` writes `_REPO_ROOT / "docs" / "tools"` and
+    `scripts/check_adr_numbering.py` globs `docs/adr/*.md`, so no search for a
+    path or a filename can see those at all. Work from this floor instead:
+    - **Everything under `docs/` is asserted by something.** `just adr-numbering`
+      globs every `docs/adr/*.md` and checks its filename shape and H1;
+      `just doc-freshness` walks `docs/` and regenerates every page carrying a
+      generation banner; `just tool-docs-check` diffs `docs/tools/`;
+      `just env-vars` checks `docs/environment-variables.md` field by field;
+      and contract tests open individual ADRs and spec pages — ADR 0029's
+      inventory block, for one.
+    - `CHANGELOG.md`, `CONTRIBUTING.md`, `README.md`, and `SECURITY.md` are all
+      asserted by tests. `CHANGELOG.md`'s `### Facade manifest` is checked
+      against `hmc_mcp.api.__all__`.
+    - In practice that leaves `AGENTS.md` and not much else. A genuinely
+      documentation-only PR here is rare.
   - **When the answer is not obvious, use `--merge`.** It costs one merge
     commit. A wrong `--squash` is not reversible once it is on `main`.
+  - Two shell mechanics, for whatever check you do write over
+    `gh pr diff <PR> --name-only`: `grep -Ev` **exits 1 when it filters every
+    line out**, so a naive `… | grep -Ev '…'` reports failure on exactly the
+    empty-result case and is fatal under `set -e` or inside an `&&` chain; and a
+    failed `gh pr diff` — wrong number, expired auth — prints nothing, which
+    looks identical to a clean pass. Check its exit status before reading its
+    output, and treat an unanswered query as "not documentation-only".
   - The policy is prose, not a gate: **nothing in the repo enforces it** —
     `rg -ni squash` over `.github/`, `tests/`, `scripts/`, `justfile`, and
-    `.pre-commit-config.yaml` returns nothing. The check above is the only
-    control, so run it before every merge rather than trusting that a mistake
-    would be caught.
+    `.pre-commit-config.yaml` returns nothing. Your own reading before the merge
+    is the only control.
   - **A single-parent commit on `main` is not evidence of a squash.** This repo
     has also landed PRs with `--rebase`, which replays each commit onto `main`
     and preserves the per-commit history the policy protects — PR #455's seven
@@ -140,12 +126,20 @@ refuses because `uv.lock` has fallen behind `pyproject.toml`, refresh the lock
 with `uv lock` — that is the one sync-adjacent command the rule above does not
 cover, because it resolves without touching the environment.
 
-**A runtime dependency needs both a floor and a cap.** CI's
-`library-range-floors` job parses every `[project] dependencies` entry as
-`name>=floor,<cap` and fails with "runtime dependency has no testable floor" on
-anything else — and it runs after `ci`, far from the command that caused it.
-`uv add`'s default bound is a floor only, so write the specifier out. A
-development tool belongs in the `dev` group: `uv add --dev --no-sync <pkg>`.
+**Where a new dependency goes decides how it must be written**, and
+`uv add`'s default `>=` floor is wrong for both cases. `tests/test_supply_chain.py`
+enforces this in `just test`, before any CI job runs:
+
+- A **runtime** dependency goes in `[project] dependencies` and needs both a
+  floor and a cap, `name>=x,<y`. It must also join `LIBRARY_DEPENDENCIES` in
+  `tests/test_supply_chain.py` and ADR 0068's policy notes — the exhaustiveness
+  test compares the two sets and says so in its own failure message. CI's
+  `library-range-floors` job re-checks the range shape, long after and far from
+  the `uv add` that caused it.
+- A **development tool** goes in the `dev` group and must be **exactly pinned**:
+  `uv add --dev --no-sync "<pkg>==<version>"`. The `app` extra and
+  `[build-system] requires` are pinned the same way, and a pin that does not
+  equal the locked version fails too.
 
 **Never run a bare `uv run` either.** Every `uv run` in the `justfile` passes
 `--no-sync`, and `tests/test_ci_pipeline.py` asserts that as an invariant. A
