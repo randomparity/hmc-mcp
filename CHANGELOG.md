@@ -204,6 +204,15 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `InstallHandle` (#468), the `TypedDict` `install_lpar_os` and `install_vios` now return
+  in place of `dict[str, Any]`. Runtime behaviour and both MCP tool responses are unchanged — a
+  `TypedDict` is a plain `dict` — but the five keys `system`, `partition`, `pid`, `log_path`, and
+  `message` are now part of the frozen public signature digest, so renaming one is a manifest
+  change rather than a silent break, and a downstream type checker resolves each value instead of
+  `Any`. **Statically this narrows the return type, so a consumer that type-checks may go red on
+  an upgrade**: holding the handle in a `dict[str, Any]`, passing it where `dict[str, Any]` is
+  expected, or adding or deleting a key are all errors against a `TypedDict`. Annotate with
+  `InstallHandle`, or with `Mapping[str, object]` where the consumer only reads.
 - Added: the exports below landed between the `[0.1.0]` entry's enumerated manifest and this
   cycle with no manifest bullet of their own (#479). Each is an entry in `hmc_mcp.api.__all__`,
   so each contributes to the frozen public signature digest. This records the manifest catching

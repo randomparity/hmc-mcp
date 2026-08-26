@@ -157,23 +157,22 @@ names are internal everywhere and are never inventoried.
   excluded synchronous: none.
 - `operations_health` — operations: `fleet_health`; types: `FleetHealthResult`; excluded
   synchronous: none.
-- `operations_install` — operations: `install_lpar_os`, `install_vios`; types: none; excluded
-  synchronous: `validate_install_request`.
+- `operations_install` — operations: `install_lpar_os`, `install_vios`; types: `InstallHandle`;
+  excluded synchronous: `validate_install_request`.
   - Note: the MCP tools call `validate_install_request` to reject a malformed argument before a
     client is opened, which the operations cannot do. Both operations submit the detached
     `installios` CLI bridge ADR 0070 selected after ADR 0069 found no `InstallLPAR` or
-    `InstallVIOS` REST job on any surveyed HMC, so each returns the bridge's detach handle — a
-    `dict[str, Any]` carrying the resolved system and partition names, the remote PID, the
-    install log path, and a restating message — rather than an HMC job identifier. That mapping
-    is **not** one of the opaque HMC resource payloads the Consequences section below describes:
-    this package composes all five keys itself and no firmware level can vary them, so `system`,
-    `partition`, `pid`, `log_path` and `message` are a package-owned contract, frozen by a test
-    rather than by the signature digest, and changing one needs the same minor release an
-    `__all__` change does. Recording that shape in the annotation so the digest can see it is
-    tracked by #468. Nothing on this path is pollable, so no wait parameters are offered and none
-    may be added without a superseding decision. Both are classified for ownership authorization
-    in ADR 0092 §3.4a, which is the authoritative record; §6's recording obligation for a new
-    facade export is discharged there, not here.
+    `InstallVIOS` REST job on any surveyed HMC, so each returns the bridge's detach handle,
+    `InstallHandle`, rather than an HMC job identifier. That `TypedDict` is **not** one of the
+    opaque HMC resource payloads the Consequences section below describes: this package composes
+    all five keys itself and no firmware level can vary them, so `system`, `partition`, `pid`,
+    `log_path` and `message` are a package-owned contract, and changing one needs the same minor
+    release an `__all__` change does (#468). Nothing on this path is pollable, so no wait
+    parameters are offered and none may be added without a superseding decision. Both operations
+    are classified for ownership authorization in ADR 0092 §3.4a, which is the authoritative
+    record; §6's recording obligation for them is discharged there, not here. It does not reach
+    `InstallHandle`: §6 places a new facade export in one of §5's three sets, and §5 enumerates
+    Domain A over exported *functions*, which a type is not.
 - `operations_jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
   none.
 - `operations_lpar` — operations: `assess_post_activation_affinity`,
@@ -302,6 +301,15 @@ further omissions (#482): twelve `snapshot` models behind `LparSnapshot`, and se
 aliases — `AffinityClassification`, `CapabilityState`, `Keylock`, `OsType`,
 `ResourceKind`, `SharingMode`, and `StopReason` — that no selected signature named. One limit
 remains deliberate: an underscore name is internal here as everywhere.
+
+An exported `TypedDict` needs two adjustments the other two shapes do not. Its annotations arrive
+as `ForwardRef` wrappers rather than plain strings even under `from __future__ import annotations`,
+because the class checks its keys at creation, so the alias half reads the source text off the
+wrapper. And at runtime it is a plain `dict`, so it reports no call signature: where a dataclass or
+Pydantic model reaches the frozen digest through the constructor its shape generates, a
+`TypedDict`'s keys are read into the digest directly. Without that an exported one would contribute
+no digest entry at all and renaming a key would move nothing (#468), which is the hole its five-key
+`operations_install` handle was filed against.
 
 Both halves run a third time over the constructors of the exported classes the field walk reads no
 field off — the pair the Decision names above. `typing.get_type_hints(cls.__init__)` feeds the type

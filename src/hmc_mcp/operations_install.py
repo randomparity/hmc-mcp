@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
+
+# Not `typing.TypedDict`: pydantic refuses one on Python < 3.12, which is inside
+# this package's supported range, and `InstallHandle` is a facade export a
+# consumer may put in a `TypeAdapter` or a response model. Same reason `jobs.py`
+# imports it here.
+from typing_extensions import TypedDict
 
 from .client import HMCClient
 from .common import (
@@ -29,6 +34,36 @@ from .ssh_commands import (
 _logger = logging.getLogger(__name__)
 
 _TargetResolver = Callable[..., Awaitable[str]]
+
+
+class InstallHandle(TypedDict):
+    """What a detached ``installios`` submission leaves the caller to work with.
+
+    Every key is composed by this package and none is read back from the HMC, so
+    no firmware level can vary the shape — this is a package-owned contract, not
+    one of ADR 0029's opaque HMC resource payloads. Naming it here is what puts
+    the five keys inside the frozen signature digest.
+
+    There is no HMC job on this path (ADR 0069/0070), so ``pid`` and
+    ``log_path`` are the only handles on an install in flight.
+    """
+
+    system: str
+    """Resolved managed-system name the install was submitted against."""
+
+    partition: str
+    """Resolved partition name ``installios -p`` received."""
+
+    pid: int
+    """PID of the detached ``installios`` process on the HMC."""
+
+    log_path: str
+    """HMC-side path the install writes to. Keyed on the partition name alone,
+    so it is not unique per managed system — see :func:`install_lpar_os`."""
+
+    message: str
+    """Operator-facing restatement of ``pid`` and ``log_path`` with the cleanup
+    command a failed install needs."""
 
 
 def validate_install_request(
@@ -74,7 +109,7 @@ async def _submit_install(
     profile_name: str,
     vlan_id: str,
     mac_address: str | None,
-) -> dict[str, Any]:
+) -> InstallHandle:
     """Resolve one install target's CLI names and detach ``installios`` on it."""
     validate_install_request(
         install_source=install_source,
@@ -161,7 +196,7 @@ async def install_lpar_os(
     profile_name: str = "default",
     vlan_id: str = "0",
     mac_address: str | None = None,
-) -> dict[str, Any]:
+) -> InstallHandle:
     """Detach an ``installios`` OS install onto an existing partition.
 
     Drives the HMC command line over SSH, not the REST API: the ``InstallLPAR``
@@ -174,8 +209,8 @@ async def install_lpar_os(
     installation that outlives one SSH session, so the operation launches
     ``installios`` under ``nohup`` with stdin closed and returns as soon as the
     HMC reports the backgrounded PID. There is no HMC job on this path and
-    nothing to poll: the returned mapping is the detach handle, carrying the
-    resolved ``system`` and ``partition`` names, the remote ``pid``, the
+    nothing to poll: the returned mapping is an :class:`InstallHandle`, carrying
+    the resolved ``system`` and ``partition`` names, the remote ``pid``, the
     ``log_path`` the install writes to, and a ``message`` restating both. Track
     progress through that log or the partition console, then confirm the
     outcome with the partition state operations. Clean up a failed install with
@@ -277,7 +312,7 @@ async def install_vios(
     profile_name: str = "default",
     vlan_id: str = "0",
     mac_address: str | None = None,
-) -> dict[str, Any]:
+) -> InstallHandle:
     """Detach an ``installios`` VIOS install onto an existing VIOS partition.
 
     Identical mechanism, contract, and return value to
