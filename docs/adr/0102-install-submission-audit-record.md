@@ -22,11 +22,13 @@ record is dropped before formatting, and `logging.lastResort` is `WARNING` too �
 
 What that leaves depends on the caller. A bare `hmc_mcp.api` consumer gets no local trace
 at all. A served deployment gets one: `dispatch_scope.authorize` emits an `authorization`
-permit for the tool call, unconditionally since ADR 0041 made a policy mandatory. But that
-record names the tool and never the resolved system, partition, or `log_path` — the three
-things an operator chasing an install in flight needs — and it is a permit at
-`_ALLOW_LEVEL`, so `--audit-level WARNING` drops it. Neither caller can answer "which
-partition, and where is its log".
+permit for the tool call, unconditionally since ADR 0041 made a policy mandatory, and both
+install tools declare a partition and a managed-system selector, so the permit's `targets`
+carry the caller's values for them. Three gaps remain even there. The permit records the
+selector, not the resolved name, so a UUID selector names no partition; it has no
+`log_path`; and it is a permit at `_ALLOW_LEVEL`, so `--audit-level WARNING` drops it. No
+caller can answer "where is its log", and a bare `hmc_mcp.api` consumer cannot answer
+"which partition" either.
 
 ## Decision
 

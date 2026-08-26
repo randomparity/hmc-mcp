@@ -240,6 +240,13 @@ and the slug collapses distinct names, so `vios 01` and `vios_01` do too. The re
 truncates, so each colliding install destroys the other's only diagnostic record — and the
 directory is `/tmp`, which a reboot or a tmpfiles sweep may clear.
 
+`log_path` takes the shared 128-character bound like every other value, with no marker.
+The template's fixed part is 28 characters and nothing bounds a partition name, so a long
+enough one yields a path the bound then cuts — leaving a value that does not exist and
+looks well-formed. `partition` is truncated at the same bound beside it, so the real path
+cannot be recomposed from the record either. Such a name is one `installios` would refuse anyway, but the
+record is written before the submit, so it exists.
+
 **This record names an attempt, never an outcome.** The submission is detached, so
 there is no HMC job to poll and nothing observes whether `installios` accepted the
 target. A record means the process reached the point of submitting against that
@@ -248,13 +255,17 @@ ahead of the submit deliberately, because a submission that raises cannot tell a
 resolution failure from a failed submit — the case where an operator most needs the
 partition and the path.
 
-**It is the only record naming the partition.** There is no HMC job
-([ADR 0069](adr/0069-installlpar-and-installvios-absent-from-hmc-rest.md)), and no
+**It is the only record naming the resolved partition and its log path.** There is no HMC
+job ([ADR 0069](adr/0069-installlpar-and-installvios-absent-from-hmc-rest.md)), and no
 [ADR 0011](adr/0011-multi-agent-lpar-ownership.md) ownership check and so no
-`ownership-denied` or `ownership-override`. A served deployment also writes an
-`authorization` permit for the tool call, but that record names the tool and never the
-resolved system, partition, or `log_path`, and being a permit it is dropped by
-`--audit-level WARNING`. An `hmc_mcp.api` consumer gets no `authorization` record at all.
+`ownership-denied` or `ownership-override`. A served deployment does write an
+`authorization` permit for the tool call, and `hmc_install_lpar_os` and `hmc_install_vios`
+each declare a partition and a managed-system selector — so that permit's `targets` already
+carry both, and at the default audit level the streams can be joined on them. What the
+permit cannot give you: it records the selector the caller passed, not the resolved name, so
+a UUID selector never names the partition; it has no `log_path`; and `--audit-level WARNING`
+drops it, because it is a permit. An `hmc_mcp.api` consumer gets no `authorization` record
+at all.
 
 **Absence of this record is not proof that no install was submitted**, for the reasons the
 lead section gives generally and three that apply here specifically: under `hmc-mcp serve`

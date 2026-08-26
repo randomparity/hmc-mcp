@@ -65,6 +65,7 @@ Not spec-numbered, each pinning something a review round found:
   test_the_install_record_names_the_target_and_the_log_path (#469, ADR 0102)
   test_the_install_record_is_emitted_at_warning        (#469)
   test_the_install_record_is_bounded_and_escaped       (#469)
+  test_a_long_partition_records_a_log_path_that_does_not_exist (#469)
   test_the_tls_record_carries_host_and_source          (#379)
   test_an_empty_tls_host_renders_empty_and_is_bounded  (#379)
   test_a_long_tls_source_stays_bounded                 (#379)
@@ -641,6 +642,26 @@ def test_the_install_record_is_bounded_and_escaped():
     for field in ("system", "log_path", "host"):
         assert len(record[field]) == audit.MAX_VALUE_LENGTH, field
     assert len(record["attribution"]["claim"]) == audit.MAX_VALUE_LENGTH
+
+
+def test_a_long_partition_records_a_log_path_that_does_not_exist():
+    """The bound applies to `log_path` too, and the document says so.
+
+    A partition name long enough to push `/tmp/hmc-mcp-installios-<slug>.log`
+    past the bound records a shortened path with no marker, and `partition` is cut
+    at the same bound — so the real path cannot be recomposed from the record. It
+    is a name `installios` would refuse, but the record precedes the submit.
+    """
+    real = f"/tmp/hmc-mcp-installios-{'p' * 200}.log"
+    lines = _capture()
+    audit.record_install_attempted(
+        system="s", partition="p" * 200, log_path=real, host="h", agent_id="a"
+    )
+    record = _one(lines)
+    assert len(real) > audit.MAX_VALUE_LENGTH
+    assert record["log_path"] == real[: audit.MAX_VALUE_LENGTH]
+    assert not record["log_path"].endswith(".log"), "a truncated path still looks whole"
+    assert record["log_path"] != f"/tmp/hmc-mcp-installios-{record['partition']}.log"
 
 
 def test_an_empty_install_host_renders_empty():
