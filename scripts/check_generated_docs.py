@@ -90,8 +90,6 @@ _TIMEOUT_SECONDS = 600
 # Neither `git ls-files` nor `just --summary` does real work; a minute is already
 # far past "something is wrong".
 _QUERY_TIMEOUT_SECONDS = 60
-# How long to wait for a killed process group to release the output pipe.
-_DRAIN_SECONDS = 10
 # How many differing files get a full diff before the rest are only named. A change
 # to a generator's output format makes every page differ at once, and 35 whole-file
 # diffs on each of eight CI legs buries the one line saying what to do about it.
@@ -284,13 +282,23 @@ def regenerate(command: str, workspace: Path) -> None:
 
 
 def _kill_group(process: subprocess.Popen[str]) -> None:
-    """Kill everything *process* started, then stop waiting on the pipe either way."""
+    """Kill the timed-out command and everything it started.
+
+    Nothing is read off the pipe afterwards. Measured against a descendant that
+    escaped the group by calling ``setsid`` itself and kept the pipe open: draining
+    cost the whole drain budget (6.01s for a 1s timeout and a 5s drain) to collect
+    output this path discards, while skipping it cost 1.00s, and an in-group
+    descendant was 1.00s either way. So the drain could only ever make the timeout
+    less of a ceiling. ``Popen.__exit__`` closes this end of the pipe -- which does
+    not block -- and waits on the direct child, which the group kill has ended.
+    """
     with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(process.pid, signal.SIGKILL)
-    with contextlib.suppress(subprocess.TimeoutExpired):
-        # A descendant that escaped the group by calling setsid itself can still hold
-        # the pipe. Give up on the output rather than outliving the caller's budget.
-        process.communicate(timeout=_DRAIN_SECONDS)
+    # The group kill covers the direct child, so this is the fallback for the one
+    # case that misses it: signalling the group was refused. `__exit__` waits on
+    # that child without a bound, so it must not still be running.
+    with contextlib.suppress(ProcessLookupError):
+        process.kill()
 
 
 def compare(
@@ -351,8 +359,13 @@ def _stale(
 
 
 def _banner_check(path: Path, command: str, generated: bytes) -> list[str]:
-    """A generated Markdown file must stamp the command that regenerates it."""
-    if path.suffix != ".md":
+    """A generated Markdown file must stamp the command that regenerates it.
+
+    Case-folded to match the walk. Testing the suffix exactly here while the walk
+    folds it left `QUIET.MD` produced with no banner accepted in silence -- the
+    unbannered-output clause skipped it, and the walk had nothing to register.
+    """
+    if path.suffix.lower() != ".md":
         return []
     first = generated.decode("utf-8", errors="replace").split("\n", 1)[0].strip()
     match = _BANNER.match(first)

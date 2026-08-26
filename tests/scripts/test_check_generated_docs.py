@@ -19,6 +19,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 MODULE_PATH = Path(__file__).parents[2] / "scripts" / "check_generated_docs.py"
 MODULE_SPEC = importlib.util.spec_from_file_location(
     "check_generated_docs", MODULE_PATH
@@ -325,6 +327,35 @@ def test_generated_output_without_a_banner_reddens(tmp_path, capsys) -> None:
     )
 
 
+def test_an_uppercase_suffix_page_is_still_registered(tmp_path) -> None:
+    """The walk folds the suffix too, so `PAGE.MD` is a document its banner registers.
+
+    The pair to the test below. Folding in only one of the two places is what left a
+    hole; unfold the walk and this tree reports a vacuous arrangement instead.
+    """
+    pages = {"PAGE.MD": _page("# demo")}
+
+    assert _run(_tree(tmp_path, produced=pages, committed=pages)) == 0
+
+
+def test_generated_output_without_a_banner_reddens_whatever_the_suffix_case(
+    tmp_path, capsys
+) -> None:
+    """`.MD` is a Markdown page too, and was an unbannered document in silence.
+
+    The walk case-folds, so an uppercase page is registered; the unbannered-output
+    clause did not, so the same page skipped the one check that would have named
+    it. Folding in one place and not the other is a hole shaped like a fix.
+    """
+    pages = {"page.md": _page("# demo"), "QUIET.MD": "# no banner\n"}
+    root = _tree(tmp_path, produced=pages, committed=pages)
+
+    assert _run(root) == 1
+    assert "docs/generated/QUIET.MD: produced by `just demo-docs` but its first" in (
+        capsys.readouterr().err
+    )
+
+
 def test_failing_regeneration_command_is_reported(tmp_path, capsys) -> None:
     """A command that exits non-zero is a failure with its status, not a diff."""
     assert _run(_tree(tmp_path, justfile="demo-docs:\n    exit 3\n")) == 1
@@ -365,12 +396,11 @@ def test_hung_regeneration_command_is_killed_with_its_children(
     leak: the backgrounded subshell writes it three seconds in, so it appears
     unless the whole process group died at one second -- which is what
     `subprocess.run`'s own timeout handling does *not* do, and what `process.kill()`
-    on its own does not do either. The wall clock is the other: that same subshell
-    holds the output pipe, so a surviving descendant makes the drain -- widened here
-    so the difference is unmistakable -- wait out its full budget.
+    on its own does not do either. The wall clock is the ceiling: with nothing
+    killed at all, `Popen.__exit__` waits on a live child for the command's full
+    sixty seconds.
     """
     monkeypatch.setattr(check_generated_docs, "_TIMEOUT_SECONDS", 1)
-    monkeypatch.setattr(check_generated_docs, "_DRAIN_SECONDS", 30)
     marker = tmp_path / "descendant-survived"
     monkeypatch.setenv("DOC_FRESHNESS_MARKER", str(marker))
     root = _tree(
@@ -387,6 +417,49 @@ def test_hung_regeneration_command_is_killed_with_its_children(
     time.sleep(5)
     assert not marker.exists(), "a descendant of the timed-out command outlived it"
 
+
+
+def test_a_refused_group_kill_still_bounds_the_timeout(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    """`killpg` can be refused, and then nothing has killed the direct child.
+
+    `Popen.__exit__` waits on that child without a bound, so the timeout would stop
+    being a ceiling and the guard would sit out the command's full thirty seconds.
+    The direct-child kill is the fallback that keeps the promise.
+    """
+
+    def refused(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("operation not permitted")
+
+    monkeypatch.setattr(check_generated_docs, "_TIMEOUT_SECONDS", 1)
+    monkeypatch.setattr(check_generated_docs.os, "killpg", refused)
+    root = _tree(tmp_path, justfile="demo-docs:\n    sleep 30\n")
+
+    started = time.monotonic()
+    assert _run(root) == 1
+    assert time.monotonic() - started < 10
+    assert "`just demo-docs` did not finish within 1s" in capsys.readouterr().err
+
+
+def test_a_descendant_outside_the_process_group_does_not_extend_the_timeout(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    """`setsid` puts a descendant beyond `killpg`, and it keeps the pipe open.
+
+    Reading that pipe out after the kill waits for a process the guard cannot kill,
+    to collect output this path throws away -- measured at the full drain budget
+    before the drain was removed. The timeout is a ceiling, so nothing waits.
+    """
+    if shutil.which("setsid") is None:  # pragma: no cover - present on Linux
+        pytest.skip("setsid is needed to put a descendant outside the process group")
+    monkeypatch.setattr(check_generated_docs, "_TIMEOUT_SECONDS", 1)
+    root = _tree(tmp_path, justfile="demo-docs:\n    setsid sleep 30 &\n    sleep 30\n")
+
+    started = time.monotonic()
+    assert _run(root) == 1
+    assert time.monotonic() - started < 10
+    assert "`just demo-docs` did not finish within 1s" in capsys.readouterr().err
 
 # --- negative controls: the arrangement (ADR 0098 §3, reverse) ---------------
 
