@@ -8,6 +8,17 @@ authorization field table, as the sentence enumerating the `connection.state` ar
 as the clause naming the TLS record's `source` values — and nothing read it, so the two
 sides could drift apart silently. They had.
 
+`audit.DECISIONS` is the sixth, restated as the `decision` row of the same field table
+and as the reason-code table's middle column (#518). It was the one vocabulary with no
+alias to derive from — its `Literal` was written inline in `record_authorization`'s own
+signature — so it has been lifted to `audit.Decision` beside its siblings rather than
+read back off the signature here. Every `Literal`-annotated parameter of that builder, and
+the same two on the `dispatch_scope` closure that calls it, are now held to naming their
+alias — read from source, because a resolved hint cannot tell an alias from an inline
+`Literal` — and each alias is held to the frozenset the checks below compare against. So
+re-inlining one reddens instead of leaving those checks describing a vocabulary the
+builder has stopped accepting.
+
 `docs/environment-variables.md`'s `HMC_VERIFY_SSL` note describes the same TLS record, so
 its restatement of the `source` values is held to the same set and neither document can
 drift alone (#497). Two further restatements were in code — `audit`'s record builder and
@@ -29,10 +40,10 @@ the TLS record's top-level `source` from the `attribution.source` beside it — 
 naming a different vocabulary. Only `event` is held in both directions there, because one
 section and at least one sample apiece makes coverage checkable; one sample record shows
 one `reason`, one `effect`, one `state`, one `kind` and one `decision`, so those are held
-to naming nothing undefined. For `reason`, `effect` and `state` the other half is kept by
-the reason-code table, the `effect` row and the state sentence, which are checked above;
-`kind` and `decision` restate no such passage, so they are held in the orphan direction
-alone and the ledger records it.
+to naming nothing undefined. For `reason`, `effect`, `state` and `decision` the other half
+is kept by the reason-code table, the `effect` and `decision` rows and the state sentence,
+which are checked above; `kind` restates no such passage, so it is held in the orphan
+direction alone and the ledger records it.
 Coverage reads `event` at the top level and the orphan half reads it at any depth, so a
 nested value cannot stand in for a missing record. Coverage is checked twice: over the
 document, and over the `## The records` section alone, so an event sampled in two places
@@ -67,11 +78,44 @@ What this does not reach, so a green run is not read as more coverage than it is
   document about twenty settings would read its ordinary prose ("one SSH login plus two
   REST GETs") the same wrong way. Only the `HMC_VERIFY_SSL` note's membership is guarded;
 - a member appended to a run-based list with "and" rather than a comma or "or".
-  `EFFECT_LIST` and `SOURCE_LIST` end the run at the first separator they do not
+  `FIELD_VALUE_LIST` and `SOURCE_LIST` end the run at the first separator they do not
   recognise, which is what lets the negative controls treat a trailing clarification as
   prose — and the same tradeoff means `..., or `field-default`, and `config-file`` reads as
   three values plus prose. The dangling direction is unaffected; only the orphan half has
   the hole, and only for those two extractors;
+- the *mapping* the reason-code table's middle column states — which decision each reason
+  code is emitted with. Every cell there is held to naming a defined decision, and the
+  `decision` field row above holds the other half of that vocabulary, so neither side of
+  the set can drift. The pairing is not held. It is fixed in code, at
+  `dispatch_scope.dispatch_authorizer`'s four `record(...)` call sites — `permitted` with
+  `allow`, every other reason with `deny` — and nothing compares the column to them, so a
+  row whose decision stops matching its emitter goes stale silently. Reading those call
+  sites with `ast`, as `_annotation_source` reads a signature, would reach three of the
+  four; the fourth passes `denial_reason(...)` rather than a literal. So a scrape returns
+  a subset of the mapping that shrinks silently as call sites are refactored, and holding
+  it to a size means pinning a count of them — the stale literal this module refuses to
+  write anywhere else, and the reason this was weighed and declined rather than costed.
+  The column is held in the orphan direction instead, which is a claim about the
+  vocabulary rather than the mapping; equality there would be wrong on its own terms,
+  because a decision arm that no reason code yields belongs in the field row and
+  legitimately not in this table.
+  What the column does carry is an editing constraint, and that one fails loud:
+  `REASON_ROW` reads both cells at once, so a decision cell widened into prose takes its
+  whole row out of the reason vocabulary and reddens the equality check above, rather than
+  quietly ceasing to be read;
+- a `Literal` re-inlined in any signature but the two held below. `record_authorization`
+  and `dispatch_scope.record` are read from source and must name their aliases, and the
+  first is held to covering every `Literal` parameter it has — but a fourth restatement
+  written somewhere else entirely is reached by nothing here;
+- a closed vocabulary the builder carries as a plain `str`. `effect` is one today: the
+  values are `tool_registry.EFFECTS`, but `audit` imports nothing from `hmc_mcp` — the
+  module docstring's own rule, since `target_scope` imports back — so there is no alias
+  for its signature to name and no `Literal` for the parameter check above to see. The
+  next closed vocabulary reaching this builder from another module will look the same.
+  Reaching it means scanning the signature's `str` parameters and holding the leftovers
+  against a named exclusion list, which is the second unenforced list the sample-keys
+  bullet below already declines. What holds `effect` instead is the field row: the
+  document is compared to `EFFECTS` even though the builder is not;
 - the sample records' `policy`, `tool` and `targets[].argument` values, none of which is a
   closed vocabulary. `policy` is an example name; `tool` names a registry entry rather
   than a `Literal`, and deriving that set means importing the server, which this module
@@ -90,11 +134,11 @@ What this does not reach, so a green run is not read as more coverage than it is
   reaches what claims to be JSON; nothing makes a record claim it. One fence carries one
   object, which is every sample the document has, so a fence holding several records on
   several lines would fail as malformed rather than being read line by line;
-- the dangling direction for the samples' `kind` and `decision`. The document restates no
-  `kind` vocabulary anywhere, and restates `decision` only in a field-table cell that
-  nothing reads (#518) — neither has the second passage that lets `effect` and the
-  connection states be checked for coverage. Add an arm to either vocabulary and the
-  samples stay silently right, showing one of however many there now are;
+- the dangling direction for the samples' `kind`. The document restates no `kind`
+  vocabulary anywhere, so it has no second passage of the kind that lets `effect`,
+  `decision` and the connection states be checked for coverage. Add an arm to
+  `TARGET_KINDS` and the samples stay silently right, showing one of however many there
+  now are;
 - the sample's `attribution.source` value on the `ownership-override` record,
   `config:agent_id`, which restates no exported constant. Its counterpart on the
   `authorization` record is held to `audit.ATTRIBUTION_ENV` in the sample itself, because
@@ -154,6 +198,7 @@ import re
 from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
+from types import ModuleType
 from typing import Literal, get_args, get_origin, get_type_hints
 
 import pytest
@@ -166,13 +211,40 @@ DOCUMENT = ROOT / "docs" / "authorization-audit.md"
 ENVIRONMENT_DOCUMENT = ROOT / "docs" / "environment-variables.md"
 AUDIT_MODULE = ROOT / "src" / "hmc_mcp" / "audit.py"
 AUDIT_TEST = ROOT / "tests" / "unit" / "test_audit.py"
+DISPATCH_MODULE = ROOT / "src" / "hmc_mcp" / "dispatch_scope.py"
 
-TABLE_ROW_CODE = re.compile(r"^\|\s*`([^`]+)`\s*\|", re.MULTILINE)
+#: One reason-code table row: the code it names and the decision that code yields. Both
+#: cells are read by one pattern, so a row whose decision cell stops being a bare token
+#: drops out of the reason vocabulary too and fails loud rather than going unread (#518).
+REASON_ROW = re.compile(r"^\|\s*`([^`]+)`\s*\|\s*([a-z][a-z-]*)\s*\|", re.MULTILINE)
 EVENT_HEADING = re.compile(r'^### `event: "([^"]+)"`\s*$', re.MULTILINE)
-EFFECT_ROW = re.compile(r"^\|\s*`effect`\s*\|([^|]*)\|", re.MULTILINE)
-#: The comma-and-`or` run at the head of that cell, so a clarification appended after
-#: it is prose rather than a fifth effect. Same reason as STATE_ARM below.
-EFFECT_LIST = re.compile(r"`[a-z-]+`(?:,\s*(?:or\s+)?`[a-z-]+`)*")
+
+#: The authorization field table's rows that restate a closed vocabulary, keyed by the
+#: field each names. Both cells list their members individually backticked, so one
+#: extractor serves both rather than a copy per field, and a third vocabulary joining the
+#: table needs no third regex (#518).
+FIELD_ROW_VOCABULARIES: tuple[tuple[str, frozenset[str]], ...] = (
+    ("effect", tool_registry.EFFECTS),
+    ("decision", audit.DECISIONS),
+)
+FIELD_ROW_FIELDS = [field for field, _ in FIELD_ROW_VOCABULARIES]
+FIELD_ROW = {
+    field: re.compile(rf"^\|\s*`{re.escape(field)}`\s*\|([^|]*)\|", re.MULTILINE)
+    for field, _ in FIELD_ROW_VOCABULARIES
+}
+#: One member of such a cell. Quoted or bare, because the `decision` row writes its
+#: members as the JSON literals `"allow"` and `"deny"` while the `effect` row writes bare
+#: names; holding both spellings is what lets one extractor read either row unedited. The
+#: quotes must balance — an optional one on each end would read `"allow` as a member and
+#: leave a cell with a dropped quote green.
+FIELD_VALUE = r'`(?:"[a-z][a-z-]*"|[a-z][a-z-]*)`'
+#: The comma-and-`or` run at the head of that cell, so a clarification appended after it
+#: is prose rather than another member. Same reason as STATE_ARM below. A bare `or` with
+#: no comma is a separator too — a two-member run is written "`x` or `y`" — while bare
+#: whitespace is not, which is what keeps a backticked term following the run outside it.
+FIELD_VALUE_LIST = re.compile(
+    rf"{FIELD_VALUE}(?:(?:,\s*(?:or\s+)?|\s+or\s+){FIELD_VALUE})*"
+)
 STATE_SENTENCE = re.compile(r"`connection\.state` is ([^.]*)\.")
 #: One arm of that sentence. Anchored on the `x` when … shape rather than taking every
 #: backticked token, so an unrelated term added to the sentence is not read as a state.
@@ -207,9 +279,15 @@ JSON_FENCE = re.compile(
     re.MULTILINE | re.IGNORECASE,
 )
 
-#: `decision`'s vocabulary, which has no module-level alias: its `Literal` is written
-#: inline in the record builder's own signature, still the source of truth for the field.
-DECISIONS = frozenset(get_args(get_type_hints(audit.record_authorization)["decision"]))
+#: The record builder's `Literal`-annotated parameters, and the frozenset each of those
+#: vocabularies is derived from. Re-inlining a `Literal` in either signature — which is
+#: how `decision` was written before #518 — would leave the frozenset, and every check
+#: that reads it, describing a vocabulary the builder no longer accepts.
+BUILDER_VOCABULARIES: tuple[tuple[str, frozenset[str]], ...] = (
+    ("decision", audit.DECISIONS),
+    ("reason", audit.REASONS),
+)
+BUILDER_PARAMETERS = [parameter for parameter, _ in BUILDER_VOCABULARIES]
 
 #: The `Literal`-derived vocabularies a sample record draws its own values from, keyed by
 #: the JSON key each sits at. Read by key at any depth, because `state` is nested twice —
@@ -222,7 +300,7 @@ SAMPLE_VOCABULARIES: tuple[tuple[str, frozenset[str]], ...] = (
     ("effect", tool_registry.EFFECTS),
     ("state", frozenset(get_args(audit.State))),
     ("kind", tool_registry.TARGET_KINDS),
-    ("decision", DECISIONS),
+    ("decision", audit.DECISIONS),
 )
 SAMPLE_KEYS = [key for key, _ in SAMPLE_VOCABULARIES]
 
@@ -260,8 +338,10 @@ SOURCE_CLAUSE = re.compile(r"where the (?:effective )?setting came from\b")
 #: One `source` value: a lowercase hyphenated name, optionally suffixed with the
 #: environment variable it names, as `environment:HMC_VERIFY_SSL` is.
 SOURCE_VALUE = r"[a-z][a-z-]*(?::[A-Z][A-Z0-9_]*)?"
-#: The comma-and-`or` run of them, as EFFECT_LIST is for effects — so a clarification
-#: appended after the run is prose rather than a fourth source.
+#: The comma-and-`or` run of them, as FIELD_VALUE_LIST is for a field row's cell — so a
+#: clarification appended after the run is prose rather than a fourth source. The two
+#: differ in one place: this one takes `or` only after a comma, because the clause it
+#: reads always lists more than two.
 SOURCE_LIST = re.compile(rf"`{SOURCE_VALUE}`(?:,\s*(?:or\s+)?`{SOURCE_VALUE}`)*")
 
 #: A count — spelled or numeric, bold or plain — pinned to the reason-code
@@ -306,10 +386,19 @@ def _section(document: str, heading: str) -> str:
     return document.split(marker, 1)[1].split("\n## ", 1)[0]
 
 
+def _reason_rows(document: str) -> list[tuple[str, str]]:
+    """Every reason-code table row as `(code, decision)`, minus its separator row."""
+    return REASON_ROW.findall(_section(document, "## Reason codes"))
+
+
 def _documented_reasons(document: str) -> frozenset[str]:
-    """The first column of the reason-code table, minus its separator row."""
-    section = _section(document, "## Reason codes")
-    return frozenset(TABLE_ROW_CODE.findall(section))
+    """The first column of the reason-code table."""
+    return frozenset(code for code, _ in _reason_rows(document))
+
+
+def _documented_reason_decisions(document: str) -> frozenset[str]:
+    """The decision each documented reason code is written as yielding."""
+    return frozenset(decision for _, decision in _reason_rows(document))
 
 
 def _documented_events(document: str) -> frozenset[str]:
@@ -317,13 +406,25 @@ def _documented_events(document: str) -> frozenset[str]:
     return frozenset(EVENT_HEADING.findall(_section(document, "## The records")))
 
 
-def _documented_effects(document: str) -> frozenset[str]:
-    """The `effect` row's value cell, whose members are backticked individually."""
-    rows = EFFECT_ROW.findall(document)
-    assert len(rows) == 1, f"expected one `effect` field row, found {len(rows)}"
-    listing = EFFECT_LIST.search(rows[0])
-    assert listing is not None, f"no effect list in cell: {rows[0]!r}"
-    return frozenset(BACKTICKED.findall(listing.group(0)))
+def _field_row_cell(document: str, field: str) -> str:
+    """The value cell of the authorization field table's *field* row."""
+    rows = FIELD_ROW[field].findall(document)
+    assert len(rows) == 1, f"expected one `{field}` field row, found {len(rows)}"
+    return rows[0]
+
+
+def _documented_field_values(document: str, field: str) -> frozenset[str]:
+    """That cell's members, which are backticked individually.
+
+    Quotes come off, so the `decision` row's JSON spelling `"allow"` compares against the
+    vocabulary member `allow` — the members themselves never contain one.
+    """
+    cell = _field_row_cell(document, field)
+    listing = FIELD_VALUE_LIST.search(cell)
+    assert listing is not None, f"no `{field}` list in cell: {cell!r}"
+    return frozenset(
+        value.strip('"') for value in BACKTICKED.findall(listing.group(0))
+    )
 
 
 def _records_lead(document: str) -> str:
@@ -494,7 +595,13 @@ def _sampled_tls_sources(document: str) -> frozenset[str]:
 
 
 def test_documented_reason_codes_are_exactly_the_audit_vocabulary() -> None:
-    assert _documented_reasons(_document()) == audit.REASONS
+    #: The message names the second way this fails, which the comparison cannot show: a
+    #: row is read only when its code is backticked *and* its decision cell is a bare
+    #: lowercase token, so a cosmetic edit to that cell arrives here as a missing code.
+    assert _documented_reasons(_document()) == audit.REASONS, (
+        "reason-code table drift, or a row `REASON_ROW` could not read — a decision "
+        "cell widened into prose takes its whole row out of this comparison"
+    )
 
 
 def test_reason_code_drift_is_caught_in_both_directions() -> None:
@@ -569,40 +676,136 @@ def test_event_names_are_read_from_headings_only() -> None:
     assert "not-a-row" not in _documented_events(in_table)
 
 
-def test_documented_effects_are_exactly_the_registry_vocabulary() -> None:
-    assert _documented_effects(_document()) == tool_registry.EFFECTS
+@pytest.mark.parametrize(
+    ("field", "vocabulary"), FIELD_ROW_VOCABULARIES, ids=FIELD_ROW_FIELDS
+)
+def test_documented_field_row_values_are_exactly_their_vocabulary(
+    field: str, vocabulary: frozenset[str]
+) -> None:
+    assert _documented_field_values(_document(), field) == vocabulary
 
 
-def test_effect_drift_is_caught_in_both_directions() -> None:
+@pytest.mark.parametrize(
+    ("field", "vocabulary"), FIELD_ROW_VOCABULARIES, ids=FIELD_ROW_FIELDS
+)
+def test_field_row_drift_is_caught_in_both_directions(
+    field: str, vocabulary: frozenset[str]
+) -> None:
     document = _document()
-    dangling = sorted(tool_registry.EFFECTS)[0]
-    row = EFFECT_ROW.search(document)
-    assert row is not None
+    cell = _field_row_cell(document, field)
+    dangling = sorted(vocabulary)[0]
 
-    undocumented = document.replace(
-        row.group(1), row.group(1).replace(f"`{dangling}`", dangling, 1), 1
+    #: Un-backticked in place, whichever spelling the cell uses — the run ends at the
+    #: first member it no longer recognises, so the rest of the cell still reads.
+    drifted, replaced = re.subn(
+        rf'`("?){re.escape(dangling)}\1`', dangling, cell, count=1
     )
+    assert replaced == 1
+    undocumented = document.replace(cell, drifted, 1)
     assert undocumented != document
-    assert tool_registry.EFFECTS - _documented_effects(undocumented) == {dangling}
+    assert vocabulary - _documented_field_values(undocumented, field) == {dangling}
 
-    orphaned = document.replace(
-        row.group(1), f"{row.group(1).rstrip()}, or `retired-effect` ", 1
+    #: Inserted after the first member rather than appended to the cell, so the mutation
+    #: lands inside the run wherever the run ends. Appending would be read as prose on a
+    #: cell that already carries a trailing clarification — which is a spelling the
+    #: extractor accepts, per the control below.
+    first = re.search(FIELD_VALUE, cell)
+    assert first is not None
+    orphaned_cell = cell.replace(
+        first.group(0), f"{first.group(0)}, `retired-{field}`", 1
     )
+    orphaned = document.replace(cell, orphaned_cell, 1)
     assert orphaned != document
-    assert _documented_effects(orphaned) - tool_registry.EFFECTS == {"retired-effect"}
+    expected = {f"retired-{field}"}
+    assert _documented_field_values(orphaned, field) - vocabulary == expected
 
 
-def test_effects_survive_an_unrelated_backticked_term() -> None:
-    """As for the state arms: a clarification in the cell is prose, not an effect."""
+@pytest.mark.parametrize(
+    ("field", "vocabulary"), FIELD_ROW_VOCABULARIES, ids=FIELD_ROW_FIELDS
+)
+def test_field_row_values_survive_an_unrelated_backticked_term(
+    field: str, vocabulary: frozenset[str]
+) -> None:
+    """As for the state arms: a clarification in the cell is prose, not a member."""
     document = _document()
-    row = EFFECT_ROW.search(document)
-    assert row is not None
+    cell = _field_row_cell(document, field)
 
-    reworded = document.replace(
-        row.group(1), f"{row.group(1).rstrip()} (see `effect` in the registry) ", 1
-    )
+    reworded = document.replace(cell, f"{cell.rstrip()} (`{field}` names it) ", 1)
     assert reworded != document
-    assert _documented_effects(reworded) == tool_registry.EFFECTS
+    assert _documented_field_values(reworded, field) == vocabulary
+
+
+@pytest.mark.parametrize(
+    ("field", "vocabulary"), FIELD_ROW_VOCABULARIES, ids=FIELD_ROW_FIELDS
+)
+def test_field_row_values_survive_an_unrelated_edit_elsewhere(
+    field: str, vocabulary: frozenset[str]
+) -> None:
+    """The control the two mutation rows above are measured against.
+
+    Without it they show only that *something* moves the extractor, not that the cell is
+    what moves it.
+    """
+    document = _document()
+
+    reworded = document.replace("\n\n", "\n\nAn unrelated new paragraph.\n\n", 1)
+    assert reworded != document
+    assert _documented_field_values(reworded, field) == vocabulary
+
+
+def test_the_reason_table_names_no_undefined_decision() -> None:
+    """The orphan direction for the reason table's middle column.
+
+    Only that direction — see the ledger. The field-table row above holds the other half,
+    and requiring every decision to appear in this column would pin a mapping the code
+    does not make.
+    """
+    decisions = _documented_reason_decisions(_document())
+
+    assert decisions, "the reason table names no decision, so this proves nothing"
+    assert decisions <= audit.DECISIONS
+
+
+def _reason_row_text(document: str, index: int = 0) -> tuple[str, str, str]:
+    """One reason-code row as written, with the code and decision it was read as.
+
+    Located with the extractor's own tolerance for padding rather than by reconstructing
+    the row, so the mutations below cannot silently edit nothing and do not pin the
+    table's alignment. The whole matched text comes back, because that is what they
+    rewrite.
+    """
+    code, decision = _reason_rows(document)[index]
+    written = re.search(
+        rf"^\|\s*`{re.escape(code)}`\s*\|\s*{re.escape(decision)}\s*\|",
+        document,
+        re.MULTILINE,
+    )
+    assert written is not None, f"reason row not found for `{code}`"
+    return code, decision, written.group(0)
+
+
+def test_a_drifted_reason_table_decision_is_caught() -> None:
+    document = _document()
+    code, decision, written = _reason_row_text(document)
+
+    drifted = document.replace(written, f"| `{code}` | retired-decision |", 1)
+    assert drifted != document
+    expected = {"retired-decision"}
+    assert _documented_reason_decisions(drifted) - audit.DECISIONS == expected
+
+
+def test_a_reason_row_whose_decision_cell_is_prose_fails_loud() -> None:
+    """Why one pattern reads both cells: the middle column carries no backticks of its
+    own to anchor on, so a cell widened into prose would simply stop being read. Reading
+    it alongside the code takes the whole row out of the reason vocabulary instead, which
+    the equality check above fails on.
+    """
+    document = _document()
+    code, decision, written = _reason_row_text(document)
+
+    reworded = document.replace(written, f"| `{code}` | {decision} (see below) |", 1)
+    assert reworded != document
+    assert audit.REASONS - _documented_reasons(reworded) == {code}
 
 
 def test_documented_connection_states_are_exactly_the_audit_vocabulary() -> None:
@@ -1096,20 +1299,50 @@ POINTER_DOCSTRINGS = (
 )
 
 
-def _alias_name() -> str:
-    """The name `client` exports the `source` vocabulary under, found rather than spelled.
+def _alias_name(module: ModuleType, vocabulary: frozenset[str]) -> str:
+    """The name *module* binds *vocabulary*'s `Literal` under, found rather than spelled.
 
-    Renaming the alias moves the name the two docstrings must quote, so the rename reddens
-    the check below instead of leaving them pointing at something that is gone.
+    Renaming an alias moves the name its dependents must quote or name, so the rename
+    reddens the checks that read it instead of leaving them pointing at something that is
+    gone.
     """
     names = [
         name
-        for name, value in vars(client).items()
-        if get_origin(value) is Literal
-        and frozenset(get_args(value)) == client.VERIFY_SSL_SOURCES
+        for name, value in vars(module).items()
+        if get_origin(value) is Literal and frozenset(get_args(value)) == vocabulary
     ]
-    assert len(names) == 1, f"expected one `source` alias in client, found {names}"
+    assert len(names) == 1, (
+        f"expected one alias for {sorted(vocabulary)} in {module.__name__}: {names}"
+    )
     return names[0]
+
+
+def _annotation_source(path: Path, function: str, parameter: str) -> str:
+    """How *function*'s signature writes *parameter*'s annotation, as source text.
+
+    Read from the file for the same reason `_docstring` is, and because that is the only
+    place the distinction lives: `audit` imports `annotations` from `__future__`, and a
+    resolved type hint is the same object whether the signature named an alias or spelled
+    a `Literal` out inline.
+
+    Ambiguity is an error rather than a first match: one of the two names read here is
+    `record`, a nested closure, and a second function so named would otherwise retarget
+    the check in silence.
+    """
+    defined = [
+        node
+        for node in ast.walk(ast.parse(path.read_text()))
+        if isinstance(node, ast.FunctionDef) and node.name == function
+    ]
+    assert len(defined) == 1, f"expected one {function} in {path.name}, found {len(defined)}"
+
+    for argument in defined[0].args.args + defined[0].args.kwonlyargs:
+        if argument.arg == parameter:
+            assert argument.annotation is not None, (
+                f"{parameter} on {function} is unannotated"
+            )
+            return ast.unparse(argument.annotation)
+    raise AssertionError(f"no {parameter} parameter on {function} in {path.name}")
 
 
 def _docstring(path: Path, function: str) -> str:
@@ -1124,6 +1357,68 @@ def _docstring(path: Path, function: str) -> str:
             assert documentation, f"{function} in {path.name} has no docstring"
             return documentation
     raise AssertionError(f"no {function} in {path.name}")
+
+
+@pytest.mark.parametrize(
+    ("parameter", "vocabulary"), BUILDER_VOCABULARIES, ids=BUILDER_PARAMETERS
+)
+def test_the_record_builder_binds_the_derived_alias(
+    parameter: str, vocabulary: frozenset[str]
+) -> None:
+    """The code end of every check that reads one of these frozensets.
+
+    Two halves, and neither holds alone. The signature must *name* the alias — read from
+    the source, because a resolved hint cannot tell an alias from an inline `Literal` —
+    and the alias must resolve to the frozenset every check above compares against. Inline
+    a `Literal` in the signature instead, which is how `decision` was written until #518,
+    and the frozenset goes on describing a vocabulary the builder may no longer accept,
+    behind a green run of every document check in this module.
+
+    The alias name is found rather than spelled, as `client`'s is, so renaming it reddens
+    only where the rename is wrong.
+    """
+    annotation = _annotation_source(AUDIT_MODULE, "record_authorization", parameter)
+
+    assert annotation == _alias_name(audit, vocabulary)
+    resolved = get_type_hints(audit.record_authorization)[parameter]
+    assert frozenset(get_args(resolved)) == vocabulary
+
+
+def test_every_literal_parameter_of_the_builder_is_held() -> None:
+    """`BUILDER_VOCABULARIES` is a list, and this is what stops it going stale.
+
+    A `Literal` parameter added to the builder would otherwise join the signature unread,
+    exactly as `decision` sat unread until #518. What it holds is that list against the
+    `Literal`s, which needs no exclusion list — not against every closed vocabulary the
+    record carries, which is a larger set: see the ledger on `effect`.
+    """
+    annotated = get_type_hints(audit.record_authorization)
+    literals = {
+        parameter
+        for parameter, hint in annotated.items()
+        if get_origin(hint) is Literal
+    }
+
+    assert literals == set(BUILDER_PARAMETERS)
+
+
+@pytest.mark.parametrize(
+    ("parameter", "vocabulary"), BUILDER_VOCABULARIES, ids=BUILDER_PARAMETERS
+)
+def test_the_dispatch_closure_names_the_alias_too(
+    parameter: str, vocabulary: frozenset[str]
+) -> None:
+    """The third restatement #518 removed, and what keeps it removed.
+
+    `dispatch_scope.record` is where these two vocabularies are enforced on the way in,
+    and `decision` was spelled out inline there on the line above `reason: audit.Reason`
+    — for the same reason it was inline in the builder, there being no alias to name.
+    Held from source like the builder's own signature, and dotted because that module
+    imports `audit` rather than the aliases.
+    """
+    annotation = _annotation_source(DISPATCH_MODULE, "record", parameter)
+
+    assert annotation == f"audit.{_alias_name(audit, vocabulary)}"
 
 
 @pytest.mark.parametrize(
@@ -1142,7 +1437,8 @@ def test_the_code_restatements_name_the_alias_instead_of_the_values(
     """
     documentation = _docstring(path, function)
 
-    assert _alias_name() in documentation, f"{function} names no `source` alias"
+    alias = _alias_name(client, client.VERIFY_SSL_SOURCES)
+    assert alias in documentation, f"{function} names no `source` alias"
 
     spelled = sorted(v for v in client.VERIFY_SSL_SOURCES if v in documentation)
     assert not spelled, f"{function} spells the `source` values out: {spelled}"

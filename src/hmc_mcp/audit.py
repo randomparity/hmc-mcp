@@ -76,6 +76,14 @@ DEFAULT_RENDERING: Final = "<default>"
 #: from the sentinel in this field. Narrow enough to document rather than escape.
 UNRESOLVED_RENDERING: Final = "<unresolved>"
 
+Decision = Literal["allow", "deny"]
+
+#: Derived, as ``REASONS`` and ``EVENTS`` are. Lifted out of
+#: :func:`record_authorization`'s own signature so this vocabulary is something a
+#: checker and a test can consult, rather than one that has to be read back off the
+#: signature to be compared with anything (#518).
+DECISIONS: frozenset[str] = frozenset(get_args(Decision))
+
 Reason = Literal[
     "permitted",
     "configuration-unreadable",
@@ -208,7 +216,7 @@ def record_authorization(
     policy: str,
     tool: str,
     effect: str,
-    decision: Literal["allow", "deny"],
+    decision: Decision,
     reason: Reason,
     token: Any,
     resolved: str | None,

@@ -17,7 +17,7 @@ is the only place in the package that iterates ``AccessPolicy.grants_for``.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any
 
 from . import audit
 from .access_policy import AccessPolicy
@@ -98,7 +98,7 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
         token = None if argument is None else arguments[argument]
 
         def record(
-            decision: Literal["allow", "deny"],
+            decision: audit.Decision,
             reason: audit.Reason,
             resolved: str | None,
             targets: tuple[audit.AuditTarget, ...] | None,
