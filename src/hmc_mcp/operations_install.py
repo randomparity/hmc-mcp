@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import TypedDict
+
+# Not `typing.TypedDict`: pydantic refuses one on Python < 3.12, which is inside
+# this package's supported range, and `InstallHandle` is a facade export a
+# consumer may put in a `TypeAdapter` or a response model. Same reason `jobs.py`
+# imports it here.
+from typing_extensions import TypedDict
 
 from .client import HMCClient
 from .common import (

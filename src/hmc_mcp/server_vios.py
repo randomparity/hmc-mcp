@@ -212,7 +212,8 @@ def hmc_install_vios(
 
     # `install_*` returns an `InstallHandle`, and a `TypedDict` is not assignable
     # to `dict[str, Any]`. Widen here rather than narrowing this tool's return
-    # annotation, which would move the derived MCP output schema.
+    # annotation: that would move the derived MCP output schema, and on the
+    # supported Python floor FastMCP cannot build one from a `TypedDict` at all.
     return dict(_run(_go))
 
 
@@ -313,7 +314,8 @@ def hmc_install_lpar_os(
 
     # `install_*` returns an `InstallHandle`, and a `TypedDict` is not assignable
     # to `dict[str, Any]`. Widen here rather than narrowing this tool's return
-    # annotation, which would move the derived MCP output schema.
+    # annotation: that would move the derived MCP output schema, and on the
+    # supported Python floor FastMCP cannot build one from a `TypedDict` at all.
     return dict(_run(_go))
 
 
