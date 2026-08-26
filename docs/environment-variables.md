@@ -123,10 +123,15 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   the answer that means *nothing you wrote arrived*, which is the case a bare
   `false` cannot distinguish. It also covers one case that is not your memory's
   fault: a `config.toml` that exists but cannot be read, parsed, or resolved to a
-  profile is discarded silently on the default connection — no error, no log line,
-  from this report or from any tool call — and every setting in it reverts to its
-  built-in default. **If you have a `config.toml` and the default connection reads
-  `default`, check the file itself** before you go looking for a typo in the key.
+  profile is discarded on the default connection with no error and no log line
+  from this report, and every setting in it reverts to its built-in default. **If
+  you have a `config.toml` and the default connection reads `default`, suspect the
+  file itself** before you go looking for a typo in the key. A read or parse
+  failure is not silent everywhere: `hmc_list_configured_hosts` surfaces it by
+  name, with the line and column, and the same `read` grant that reaches this
+  report reaches that tool. Only a file that parses but resolves to no profile —
+  a missing `default_profile`, an `HMC_PROFILE` naming nothing — is silent on
+  every channel.
   A fourth value, `ambiguous`, means a **case variant**
   of `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: only the exact upper-case
   spelling is dropped from a profile's keys before the config is built, so a
@@ -143,8 +148,11 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   `authorize_power_operations: null` with
   `source: unresolved` and a `detail` classifying the failure — `ConfigError`, or
   `ValidationError` with the field names it rejected. The `detail` is deliberately
-  closed. For a `ConfigError` the full message is in the server's log instead,
-  because it names every profile and nickname key in your `config.toml`. For a
+  closed. For a `ConfigError` the full message goes to the server's log instead,
+  because it names every profile and nickname key in your `config.toml` — **once
+  per process**, on the first call that hits that failure, since the tool's call
+  rate belongs to the MCP client; restart the server to see it again. That line is
+  written outside the bounded stderr sink of ADR 0043 (#534). For a
   `ValidationError` there is no fuller message anywhere, in the report or the log:
   pydantic quotes the value it rejected, and a bad `password` would then be in
   your log, so you get the field name and read the value from the config source

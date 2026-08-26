@@ -15,6 +15,7 @@ authoritative tool index arrives as a parameter for that reason.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import Callable, Mapping
@@ -108,12 +109,20 @@ _UNRESOLVED_LOG = (
     "built, so its authorize_power_operations is reported as unresolved: %s"
 )
 
-#: The ``(connection, reason)`` pairs already reported at WARNING. The tool's
+#: The ``(connection, detail)`` pairs already reported at WARNING. The tool's
 #: call rate belongs to the MCP client and a stale profile fails on every call,
 #: so an undeduplicated line would flood the one channel this design routes the
 #: withheld reason to — degrading the diagnosis the report exists to enable, and
-#: burying every unrelated warning with it. Bounded by the number of distinct
-#: failures, not by call rate. A racing duplicate costs one extra WARNING.
+#: burying every unrelated warning with it. A racing duplicate costs one extra
+#: WARNING.
+#:
+#: Keyed on the caller-visible ``detail``, not the message: a ``ConfigError``
+#: message embeds the file's whole profile and nickname inventory, so keying on
+#: it would mint a fresh entry for every edit to that inventory and retain each
+#: one for the life of the process. Bounded now by connections times exception
+#: classes. The cost of the coarser key is that a connection whose failure
+#: *changes* class-identically — absent profile, then absent again after a fix —
+#: is logged once; a restart clears the set and re-arms it.
 _reported_unresolved: set[tuple[str, str]] = set()
 
 #: Said whole rather than interpolated, so ``detail`` stays closed. Only the
@@ -315,15 +324,28 @@ def _unresolved_detail(exc: Exception) -> str:
     return "ValidationError: " + ", ".join(fields)
 
 
-def _log_unresolved(connection: str, reason: str) -> None:
+def _log_unresolved(connection: str, detail: str, reason: str) -> None:
     """Say why *connection* failed, at WARNING the first time and DEBUG after.
 
     The reason exists nowhere else — the caller's ``detail`` is closed — so it
     has to be said. It must not be said on every call: the MCP client owns the
     call rate, a stale profile fails on all of them, and the channel that would
-    flood is the one an operator reads to diagnose exactly this.
+    flood is the one an operator reads to diagnose exactly this. *detail* is the
+    dedup key rather than *reason*; see :data:`_reported_unresolved`.
+
+    **This line is written outside ADR 0043's bounded stderr sink.** Nothing
+    binds the ``hmc_mcp`` logger namespace to it — ``install_audit_sink`` binds
+    only the reserved audit logger, and ``install_third_party_stderr_sinks``
+    names ``fastmcp``, ``uvicorn`` and ``mcp`` — so in a served process this record
+    reaches fd 2 through ``logging.lastResort``: unbounded, synchronous, and
+    without ADR 0051's ``StreamSafeFormatter`` prefix and control-character
+    escaping. The dedup above is what keeps that route to one line per distinct
+    failure; the sink-coverage gap itself is #534, and it predates this module —
+    ``hmc_mcp.config`` already writes there. This is the first design that
+    *depends* on the channel, which is why it is written down here rather than
+    assumed.
     """
-    seen = (connection, reason)
+    seen = (connection, detail)
     if seen in _reported_unresolved:
         _logger.debug(_UNRESOLVED_LOG, connection, reason)
         return
@@ -403,11 +425,11 @@ def _power_guard(profile: str | None) -> PowerOwnershipGuard:
     try:
         config = build_config(profile=profile)
     except ConfigError as exc:
-        _log_unresolved(connection, str(exc))
+        _log_unresolved(connection, "ConfigError", str(exc))
         return PowerOwnershipGuard(connection, None, "unresolved", "ConfigError")
     except Exception as exc:  # noqa: BLE001 — reported, not raised; see above
         detail = _unresolved_detail(exc)
-        _log_unresolved(connection, detail)
+        _log_unresolved(connection, detail, detail)
         return PowerOwnershipGuard(connection, None, "unresolved", detail)
     source, detail = _guard_source(config)
     return PowerOwnershipGuard(
@@ -445,16 +467,25 @@ def resolve_power_guards(
     than folded into the registration: an edited ``config.toml`` changes what the
     *next* tool call resolves, and this reports that call, not the startup.
 
-    Two costs of resolving through ``build_config`` per connection, recorded
+    One cost of resolving through ``build_config`` per connection is recorded
     rather than designed around — routing the reads through the resolution every
     tool entry point runs is the property the whole report rests on, and a
     private faster path would forfeit it. **The report is not a snapshot:** each
     connection re-reads and re-parses ``config.toml``, so a file edited mid-call
-    can yield rows read from different versions of it, and those blocking reads
-    happen on the event loop. **Constructing a config re-runs ``HMCConfig``'s
-    model validators**, so a profile that pairs ``agent_id`` with a customised
-    ``audit_memento`` re-emits that warning to the operator's log once per
-    connection per call.
+    can yield rows read from different versions of it. The blocking reads
+    themselves are not on the event loop; the tool handler awaits this in a
+    thread.
+
+    **Constructing a config re-runs ``HMCConfig``'s model validators.** The
+    ``audit_memento`` collision warning among them is undeduplicated, so a
+    profile pairing ``agent_id`` with a customised ``audit_memento`` emits one
+    line per connection per call — a client-rate stream on the same descriptor
+    this module deduplicates its own unresolved warning to protect, defeating
+    that dedup from two functions away. It is recorded rather than filtered:
+    silencing ``hmc_mcp.config`` around this loop means adding a filter to a
+    process-global logger, and with the resolution now running in a worker
+    thread that filter would also swallow a concurrent warning from a real
+    client construction on another task — a worse failure than the noise.
     """
     connections: set[str | None] = set()
     if policy is None:
@@ -593,7 +624,14 @@ def register_permissions_tool(
             tool.name: getattr(tool, "fn", None)
             for tool in await mcp.local_provider.list_tools()
         }
-        return describe(handlers, policy, tool_security, resolve_power_guards(policy))
+        # Off the loop: `resolve_power_guards` re-reads and re-parses
+        # `config.toml` once per granted connection, and the call rate belongs to
+        # the MCP client, not the operator. Left inline, a generated
+        # `legacy-equivalent` policy — whose connections are every profile key in
+        # the file — stalls every other in-flight dispatch, the audit path
+        # included, for the duration of that I/O.
+        power_guards = await asyncio.to_thread(resolve_power_guards, policy)
+        return describe(handlers, policy, tool_security, power_guards)
 
     validate_security(EFFECTIVE_PERMISSIONS_SECURITY, hmc_effective_permissions)
     # Wrapped like every other tool since #297, and it is this site that made the
