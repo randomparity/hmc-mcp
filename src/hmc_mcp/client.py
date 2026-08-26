@@ -9,7 +9,6 @@ into :class:`HMCClient` by inheritance.
 
 from __future__ import annotations
 
-import os
 import warnings
 from collections.abc import AsyncIterator
 from collections.abc import Mapping
@@ -20,7 +19,7 @@ from urllib.parse import quote, unquote, urlparse
 from . import audit
 from .client_contracts import httpx
 from .client_parse import _find_text, _parse_feed
-from .config import HMCConfig
+from .config import HMCConfig, env_var_value
 from .documents import (
     build_brokered_file_document,
     build_linked_optical_media_document,
@@ -170,10 +169,16 @@ def _verify_ssl_source(config: HMCConfig) -> VerifySSLSource:
     ``HMCConfig.from_mapping`` produces (ADR 0096), where the environment cannot
     reach the config at all and naming it would send the operator to a variable
     that has no effect on this connection.
+
+    The variable is read through :func:`config.env_var_value` because
+    pydantic-settings folded it in case-insensitively; an exact-case read would
+    report ``explicit-argument`` for a value nothing in the call supplied
+    (#531). The vocabulary keeps the canonical spelling either way — it names
+    the knob, not the operator's spelling of it.
     """
     if "verify_ssl" not in config.model_fields_set:
         return "field-default"
-    raw = os.environ.get("HMC_VERIFY_SSL")
+    raw = env_var_value("HMC_VERIFY_SSL")
     if raw is None or _env_flag(raw) != config.verify_ssl:
         return "explicit-argument"
     return "environment:HMC_VERIFY_SSL"

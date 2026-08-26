@@ -559,6 +559,31 @@ def list_profiles_and_nicknames(
     )
 
 
+def env_var_value(name: str) -> str | None:
+    """*name*'s value from the environment, matched the way ``HMCConfig`` matches it.
+
+    ``HMCConfig`` leaves pydantic-settings' ``case_sensitive`` at its ``False``
+    default, so ``hmc_host=...`` populates ``host`` exactly as ``HMC_HOST=...``
+    does. Every hand-rolled read of an ``HMC_*`` variable that predicts, mirrors,
+    or reports on that resolution has to match the same way, or it disagrees with
+    the loader it is describing — which is how a profile's TOML key came to beat a
+    lower-case export (#531).
+
+    Returns ``None`` only when no casing of *name* is set. An exact match wins;
+    otherwise the first variant in ``os.environ`` order is returned. Which
+    variant pydantic-settings itself would fold into the field is unspecified
+    when several are set, so callers must read the result as "the environment
+    supplies this" and not as "this exact value reached the field".
+    """
+    if name in os.environ:
+        return os.environ[name]
+    wanted = name.upper()
+    for key, value in os.environ.items():
+        if key.upper() == wanted:
+            return value
+    return None
+
+
 def _load_profile_from_document(
     doc: dict[str, Any],
     path: Path | None,
@@ -651,11 +676,16 @@ def _load_profile_from_document(
     # and _env_file=None below does not change that — it suppresses a dotenv
     # source (which HMCConfig does not configure at all) and never the
     # environment. HMCConfig.from_mapping is the isolated path; see ADR 0096.
+    #
+    # The membership test matches the loader's own casing rule via
+    # env_var_value: an exact-case test would leave the TOML value in the init
+    # kwargs for a lower- or mixed-case export that pydantic-settings does read,
+    # and init kwargs outrank every environment source (#531).
     env_prefix = "HMC_"
     filtered_entry = {
         k: v
         for k, v in entry.items()
-        if (env_prefix + k.upper()) not in os.environ
+        if env_var_value(env_prefix + k.upper()) is None
     }
     return HMCConfig(_env_file=None, **filtered_entry)  # ty: ignore[unknown-argument]
 

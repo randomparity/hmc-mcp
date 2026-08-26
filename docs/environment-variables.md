@@ -107,10 +107,9 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   every other profile stays unguarded, including a second profile pointing at the
   same HMC, and both the MCP tools and the CLI take a caller-supplied profile
   selector. `HMC_AUTHORIZE_POWER_OPERATIONS` overrides every profile's TOML value,
-  so it is the setting that cannot be selected around — **spelled exactly**. The
-  profile loader drops a TOML key only when the variable's exact upper-case name
-  is in the environment, so a lower- or mixed-case export does not override a
-  profile that carries the key (#531).
+  so it is the setting that cannot be selected around — in any casing, see
+  [Variable names are matched without regard to
+  case](#variable-names-are-matched-without-regard-to-case).
 
   **Check that it actually took — ask the server, not the shell.** This setting
   fails **open**, and a mistyped profile key or environment variable is dropped
@@ -251,6 +250,25 @@ environment's `agent_id`.
 (constructor args > `HMC_*` > TOML profile > field default). That ordering is
 deliberate — it is how an operator overrides a committed profile for one
 invocation — and it applies to every field the profile omits as well.
+
+### Variable names are matched without regard to case
+
+`HMCConfig` leaves pydantic-settings' `case_sensitive` at its `False` default, so
+`hmc_host=…` and `Hmc_Host=…` reach the `host` field exactly as `HMC_HOST=…`
+does. Every precedence statement on this page holds for any casing, including
+the `HMC_AUTHORIZE_POWER_OPERATIONS` claim in the [Notes](#notes): a case variant
+beats the profile's TOML key for every field in the [Reference](#reference)
+table, and a case variant of `HMC_HOST` skips the TOML profile in the same way
+the canonical spelling does. The names are written in upper case throughout
+because that is the convention, not because the loader requires it. Setting two
+casings of the same variable is unsupported — which one reaches the field is
+undefined.
+
+The one exception is `HMC_PROFILE`, which is **matched exactly**. It is not an
+`HMCConfig` field; `load_profile()` reads it directly to pick a profile, so no
+case-insensitive settings loader is involved. A lower-case `hmc_profile` export
+selects no profile; selection falls back to `default_profile`, or to environment
+variables alone when the file names none.
 
 ### Isolated construction
 
