@@ -30,10 +30,11 @@ pager, or a prompt will stall the agent with no recovery path.
     generated and diffed by `just tool-docs-check`;
     `docs/environment-variables.md` is checked field by field by
     `just env-vars`; ADR 0029's inventory block is parsed by
-    `tests/unit/test_public_api.py`; and `README.md` is asserted by
-    `tests/test_readme_tool_names.py` and `tests/test_readme_layout.py`. A PR
-    touching any of those is changing a contract, and its per-commit history
-    has to survive.
+    `tests/unit/test_public_api.py`; `README.md` is asserted by
+    `tests/test_readme_tool_names.py` and `tests/test_readme_layout.py`; and
+    `CONTRIBUTING.md` and `SECURITY.md` are asserted by
+    `tests/test_project_metadata.py`. A PR touching any of those is changing a
+    contract, and its per-commit history has to survive.
   - The check below encodes that criterion as a **floor, not a closed set**:
     its second half lists the asserted surfaces known today, and the set grows.
     Save it as a script and run it — the guards call `exit`, so it is not an
@@ -43,7 +44,7 @@ pager, or a prompt will stall the agent with no recovery path.
     [ -n "$files" ] || { echo 'no files reported' >&2; exit 1; }
     disqualifying=$(
       printf '%s\n' "$files" | grep -Ev '\.md$|^docs/'
-      printf '%s\n' "$files" | grep -E '^(CHANGELOG|README)\.md$'
+      printf '%s\n' "$files" | grep -E '^(CHANGELOG|CONTRIBUTING|README|SECURITY)\.md$'
       printf '%s\n' "$files" | grep -E '^docs/(tools|adr|workflow/specs)/'
       printf '%s\n' "$files" | grep -E '^docs/(environment-variables|authorization-audit)\.md$'
     ) || true
@@ -61,11 +62,17 @@ pager, or a prompt will stall the agent with no recovery path.
     number, expired auth — which is why the two guards check its exit status
     first. Treat an unanswered query as "not documentation-only", never as a
     pass.
-  - The policy is prose, not a gate: **nothing in the repo enforces it.** PR
-    #455 landed as a single-parent merge (`f528e94`) while changing
-    `src/hmc_mcp/py.typed`, `.github/workflows/ci.yml`, and five test files.
-    Run the check above before every merge rather than trusting that a mistake
+  - The policy is prose, not a gate: **nothing in the repo enforces it** —
+    `rg -ni squash` over `.github/`, `tests/`, `scripts/`, `justfile`, and
+    `.pre-commit-config.yaml` returns nothing. The check above is the only
+    control, so run it before every merge rather than trusting that a mistake
     would be caught.
+  - **A single-parent commit on `main` is not evidence of a squash.** This repo
+    has also landed PRs with `--rebase`, which replays each commit onto `main`
+    and preserves the per-commit history the policy protects — PR #455's seven
+    commits landed that way as `aec6125..f528e94`. To tell a squash from a
+    rebase, compare the commit's own diff with the PR's: on a squash they are
+    equal, on a rebase the commit carries only its own slice.
 
 **Other common interactive traps**
 
@@ -116,7 +123,7 @@ fastmcp's server-extra transitive dependencies (`cyclopts`, `openapi-pydantic`,
 `websockets`, `watchfiles`, `shellingham`, and more). `uv sync --dry-run` prints
 the exact list for the current lock and writes nothing, so check there rather
 than trusting a list in this file. Losing `typer` alone breaks `just typecheck`,
-which covers the twelve `src/hmc_mcp/cli_*.py` modules, in a way whose cause is
+which covers every `src/hmc_mcp/cli_*.py` module, in a way whose cause is
 nowhere near the error. A bare `uv sync` also drops `--locked` and can silently
 rewrite `uv.lock`.
 
@@ -236,9 +243,8 @@ during collection, run `just smoke`; it imports `hmc_mcp.server` directly and
 can expose an import-time syntax error that collection obscures.
 
 `just verify` is `static test smoke build verify-artifacts` plus a CLI-group
-load check. `static` is nine sub-recipes, and running one by name is how you
-narrow a `static` failure to its cause instead of re-reading the umbrella
-output:
+load check. Running a `static` sub-recipe by name is how you narrow a `static`
+failure to its cause instead of re-reading the umbrella output:
 
 ```sh
 just lint              # ruff check .
@@ -267,9 +273,9 @@ what is already there without rebuilding.
 **A green local run does not predict a green CI run.** Locally `just verify`
 uses the worktree's one `.venv`, built on the `3.11` that `.python-version`
 pins. CI's `ci` job is **eight legs** — {amd64 `ubuntu-24.04`, arm64
-`ubuntu-24.04-arm`} × {3.11, 3.12, 3.13, 3.14} — and three further jobs depend
-on it: `library-wheel-smoke`, `library-range-floors`, and a `wheel-smoke`
-matrix of the same eight legs. This has bitten a change that was locally green
+`ubuntu-24.04-arm`} × {3.11, 3.12, 3.13, 3.14} — and `library-wheel-smoke`,
+`library-range-floors`, and a `wheel-smoke` matrix of the same eight legs all
+depend on it. This has bitten a change that was locally green
 and red on 3.12+, because `inspect` renders `Annotated` differently across
 versions. When a change touches signature introspection, generated
 documentation, or anything whose output is a rendered type, expect the version
