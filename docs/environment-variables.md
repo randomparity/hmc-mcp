@@ -261,14 +261,19 @@ beats the profile's TOML key for every field in the [Reference](#reference)
 table, and a case variant of `HMC_HOST` skips the TOML profile in the same way
 the canonical spelling does. The names are written in upper case throughout
 because that is the convention, not because the loader requires it. Setting two
-casings of the same variable is unsupported — which one reaches the field is
-undefined.
+casings of the same variable at once resolves to the **last** of them in the
+process environment's own order — pydantic-settings folds the environment into
+one case-blind mapping, so the later entry overwrites the earlier — and every
+reader in `hmc-mcp` resolves it the same way. Do not rely on that ordering:
+export one spelling.
 
-The one exception is `HMC_PROFILE`, which is **matched exactly**. It is not an
-`HMCConfig` field; `load_profile()` reads it directly to pick a profile, so no
-case-insensitive settings loader is involved. A lower-case `hmc_profile` export
-selects no profile; selection falls back to `default_profile`, or to environment
-variables alone when the file names none.
+The one exception is `HMC_PROFILE`, which on POSIX is **matched exactly**. It is
+not an `HMCConfig` field; `load_profile()` reads it directly to pick a profile,
+so no case-insensitive settings loader is involved. A lower-case `hmc_profile`
+export selects no profile; selection falls back to `default_profile`, or to
+environment variables alone when the file names none. On Windows the exception
+does not apply: the OS folds every environment variable name to upper case, so
+`hmc_profile` *is* `HMC_PROFILE` there and selects the profile it names.
 
 ### Isolated construction
 

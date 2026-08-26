@@ -5,6 +5,7 @@ All tests use tmp_path and monkeypatch — no test touches the real user home.
 
 from __future__ import annotations
 
+import os
 import sys
 import warnings
 from pathlib import Path
@@ -18,6 +19,7 @@ from hmc_mcp.config import (
     ConfigError,
     HMCConfig,
     config_dir,
+    env_var_value,
     list_nicknames,
     list_profiles,
     list_profiles_and_nicknames,
@@ -1147,15 +1149,21 @@ def profile_home(tmp_path, monkeypatch):
     the point: these tests drive the whole ``build_config`` branch, not
     ``load_profile`` alone.
 
-    Every canonical ``HMC_*`` name is cleared, including the ``HMC_VERIFY_SSL``
-    the autouse TLS fixture sets, so a variant a test exports is the only
-    environment value in play.
+    Every ``HMC_*`` name is cleared *in every casing* — including the
+    ``HMC_VERIFY_SSL`` the autouse TLS fixture sets — so a variant a test
+    exports is the only environment value in play. Clearing a fixed list of
+    canonical spellings would carry the exact-case assumption this whole
+    section exists to remove: a stray ``hmc_host`` in the developer's or
+    runner's environment reaches ``build_config`` through the code path under
+    test, and a stray variant of any other field silently supplies a value the
+    test believes came from the profile.
     """
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.delenv("APPDATA", raising=False)
-    monkeypatch.delenv("HMC_PROFILE", raising=False)
-    for env_name in _hmc_env_names().values():
-        monkeypatch.delenv(env_name, raising=False)
+    prefix = HMCConfig.model_config["env_prefix"].upper()
+    for key in list(os.environ):
+        if key.upper().startswith(prefix):
+            monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     return _write_toml(config_dir() / "config.toml", CASE_VARIANT_TOML)
@@ -1274,6 +1282,14 @@ def test_a_host_export_skips_the_profile_whatever_its_case(
     assert config.authorize_power_operations is False
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "Windows folds every environment variable name to upper case, so "
+        "hmc_profile IS HMC_PROFILE there and does select a profile — the "
+        "qualification docs/environment-variables.md carries."
+    ),
+)
 def test_hmc_profile_is_matched_exactly(profile_home, monkeypatch):
     """The one documented exception, pinned so the doc cannot drift away from it.
 
@@ -1289,3 +1305,68 @@ def test_hmc_profile_is_matched_exactly(profile_home, monkeypatch):
     monkeypatch.setenv("hmc_profile", "other")
 
     assert build_config().host == "toml-hmc.example.com"
+
+
+def test_env_var_value_resolves_multiple_casings_the_way_hmcconfig_does(monkeypatch):
+    """The helper's whole purpose is agreement, so agreement is what gets pinned.
+
+    Asserted against ``HMCConfig`` itself rather than against a reading of
+    pydantic-settings' source: if a future release changes how it folds the
+    environment, this reddens instead of the two silently drifting apart again.
+    Both orderings are driven, because the rule is positional — the last
+    matching key in ``os.environ`` order wins, and the exact spelling gets no
+    precedence.
+    """
+    for key in list(os.environ):
+        if key.upper().startswith("HMC_"):
+            monkeypatch.delenv(key, raising=False)
+
+    monkeypatch.setenv("HMC_HOST", "exact-first.example.com")
+    monkeypatch.setenv("hmc_host", "variant-last.example.com")
+    assert env_var_value("HMC_HOST") == HMCConfig(_env_file=None).host
+
+    monkeypatch.delenv("HMC_HOST")
+    monkeypatch.setenv("HMC_HOST", "exact-last.example.com")
+    assert env_var_value("HMC_HOST") == HMCConfig(_env_file=None).host
+
+
+def test_an_empty_exact_case_host_does_not_hide_a_non_empty_variant(
+    profile_home, monkeypatch
+):
+    """The fail-open a tie-break preferring the exact spelling would have left open.
+
+    ``HMC_HOST=""`` beside a non-empty ``hmc_host`` — a Kubernetes ``value: ""``
+    or a bare ``export HMC_HOST=`` next to a variant — resolves to the variant in
+    ``HMCConfig``. If the gates read the empty exact spelling instead, they would
+    treat the host as unset, ``selected_connection`` would resolve the caller's
+    token to a profile key, and a grant naming that profile would authorize a
+    call issued against the exported host (ADR 0038 rule 1).
+    """
+    monkeypatch.setenv("HMC_HOST", "")
+    monkeypatch.setenv("hmc_host", "env-hmc.example.com")
+
+    config = build_config(profile="guarded")
+
+    assert config.host == "env-hmc.example.com"
+    assert config.user == ""  # the profile was skipped, as an HMC_HOST export does
+
+
+def test_an_empty_case_variant_blanks_the_profiles_value(profile_home, monkeypatch):
+    """Presence, not truthiness: pydantic-settings supplies "" for an empty export.
+
+    The profile's key must not be handed to the constructor when the environment
+    supplies the field at all, whatever the value — an init kwarg would outrank
+    the (empty) environment and reinstate the TOML value. Chosen, not inherited:
+    the canonical ``HMC_HOST=""`` already blanked the field, and the resolution
+    fails closed, with ``validate_credentials`` naming the missing host.
+
+    ``build_config``'s branch gate deliberately reads the same variable for
+    *truthiness* — an empty host is not a connection to collapse to — so an empty
+    export loads the profile and then blanks the one field it named.
+    """
+    monkeypatch.setenv("hmc_user", "")
+
+    config = build_config(profile="guarded")
+
+    assert config.user == ""
+    assert config.host == "toml-hmc.example.com"
