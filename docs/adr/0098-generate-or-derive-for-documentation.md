@@ -110,8 +110,10 @@ closed and the message says which name it could not find.
 
 ### 2a. What the banner can register
 
-A **tracked** `*.md` file under `docs/`. That is the walk, and it bounds every claim
-below.
+A **tracked** `*.md` file under `docs/`. That is what a banner can register, and it
+bounds every claim below. The walk itself is every tracked `*.md` file, because the
+near-miss clause has to reach a broken banner wherever someone wrote it; registration
+is the narrower thing.
 
 *Tracked* means `git ls-files`, not a directory listing, and the difference runs both
 ways. A page the generator wrote at a path nobody staged is absent from what CI will
@@ -132,9 +134,6 @@ bytes would report every in-progress edit as stale. The consequence is that
 checkout. `git add` is what closes that, and CI is what catches it not having
 happened; §4 says so rather than claiming otherwise.
 
-The near-miss clause below is the one check that ranges over every tracked `.md`
-rather than over `docs/`, because a banner that fails the grammar has to be reported
-wherever it is written.
 
 A banner on a Markdown file **outside** `docs/` is reported as an error rather than
 ignored, so the boundary announces itself instead of swallowing a document. A
