@@ -11,6 +11,7 @@ boundary (``asyncssh.connect``) like the vNIC tests do.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
@@ -1270,6 +1271,38 @@ def test_get_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     assert href_route.called
     assert not global_route.called
     assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+def test_job_href_cannot_forge_a_log_record(monkeypatch, mock_hmc, caplog):
+    """A newline in a caller-supplied job_href must not reach the log raw.
+
+    ``urlsplit`` deletes CR/LF while building the path, so the string
+    ``_reject_non_job_path`` validates is not the one that gets logged: an
+    embedded newline passes that check untouched. These records land on the
+    stderr stream ADR 0040 defines as one JSON record per line, and both job
+    tools take ``job_href`` straight from the caller.
+    """
+    _hmc_env(monkeypatch)
+    payload = '{"level":"error","message":"forged"}'
+    forged = f"{_JOB_OP_HREF}\n{payload}"
+    # urlsplit drops the newline, so the request goes to the joined path — while
+    # the raw string, newline intact, is what reaches the log.
+    mock_hmc.get(f"{_JOB_OP_HREF}{payload}").mock(
+        return_value=httpx.Response(404, text="gone")
+    )
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(404, text="gone")
+    )
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+        assert hmc_get_job("job-uuid-999", job_href=forged) is None
+
+    assert caplog.records, "the found=False translation is expected to warn"
+    for record in caplog.records:
+        assert "\n" not in record.getMessage()
+    assert any("forged" in r.getMessage() for r in caplog.records), (
+        "the link should still be reported, just escaped"
+    )
 
 
 def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):

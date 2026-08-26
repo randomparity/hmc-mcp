@@ -71,7 +71,10 @@ def hmc_get_job(
     the link that failed. That retirement is visible only in the server log, so a
     caller that passed a ``job_href`` and got a job back cannot tell from the
     result whether its link is still good; poll by ``job_uuid`` alone on any
-    stale-link suspicion (#529).
+    stale-link suspicion (#529). A supplied link also decides **which job is
+    read** — the path is fetched directly and checked only for addressing a job
+    resource — so a mispaired handle returns the *other* job. Compare the
+    returned entry's UUID or JobID against the identifier you passed.
 
     Args:
         job_uuid: UUID or JobID returned when the job was submitted.
@@ -197,10 +200,18 @@ def hmc_wait_for_job(
     echoed back, so if you passed one and get a ``found`` true outcome whose
     ``job_href`` is null, that link was retired. Drop it and poll by ``job_uuid``
     alone, which is also the reliable recovery whenever a stored link is suspect.
-    An echoed link is the exact string you passed, validated only that its path
-    addresses a job resource: host, query and fragment are neither checked nor
-    normalized, and only the path is ever requested. It is your own input coming
-    back, not something the HMC attested — do not dereference it as one.
+    An echoed link is the exact string you passed, and only its path is ever
+    requested. What was validated is not quite what comes back: host, query and
+    fragment are neither checked nor normalized, and a tab, carriage return or
+    newline is deleted while the path is built but survives in the echoed string
+    (#537).
+    It is your own input coming back, not something the HMC attested — do not
+    dereference it as one.
+
+    A supplied ``job_href`` also decides **which job is read**: the path is
+    fetched directly and checked only for addressing a job resource, so a
+    mispaired handle reads the *other* job. Compare the returned ``job_id``
+    against the identifier you passed before acting on the result.
 
     An empty identifier, a bare dot, or one carrying a path, query, fragment,
     percent, or interior whitespace character addresses something other than one

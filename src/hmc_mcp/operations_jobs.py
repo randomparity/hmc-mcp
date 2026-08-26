@@ -67,6 +67,16 @@ def _clean_job_href(job_href: str | None) -> str | None:
 
     ``HMCClient.get_job`` already falls back to the global jobs path for a blank
     href, so echoing one back as if it were a usable link would be a lie.
+
+    The link is not otherwise sanitized, which is why every warning below
+    interpolates it with ``%r`` rather than ``%s``. ``urlsplit`` *deletes* tab,
+    carriage return and newline while building the path, so the string
+    ``client._reject_non_job_path`` validates is not this one: an embedded
+    newline survives here having passed that check. These records reach the
+    stderr stream ADR 0040 defines as one JSON record per line, and this value is
+    caller-supplied on the ``hmc_get_job`` and ``hmc_wait_for_job`` tools, so a
+    bare ``%s`` would let a caller write a forged record at column 0. ``%r``
+    escapes it.
     """
     return job_href.strip() if job_href and job_href.strip() else None
 
@@ -111,14 +121,14 @@ async def _confirm_missing(
         job = None
     if job is not None:
         _logger.warning(
-            "job_href %s no longer resolves for HMC job %s, but the global jobs "
+            "job_href %r no longer resolves for HMC job %s, but the global jobs "
             "path still has it. Re-store the handle without the stale link.",
             link,
             identifier,
         )
         return job
     _logger.warning(
-        "HMC job %s not found via job_href %s, and the global jobs path did not "
+        "HMC job %s not found via job_href %r, and the global jobs path did not "
         "have it either: reporting found=False. An HMC that does not serve the "
         "global jobs path produces the same answer. Detail: %s",
         identifier,
@@ -168,7 +178,7 @@ async def _read_job(
             "answering the jobs path with no content gives the same answer for "
             "every identifier.",
             identifier,
-            f"via job_href {link}" if link else "via the global jobs path",
+            f"via job_href {link!r}" if link else "via the global jobs path",
         )
     outcome = job_outcome(identifier, job)
     # A link this read just retired is no longer supplied; it is dead.
@@ -213,7 +223,7 @@ def _warn_if_another_job_answered(
     if link is None or not outcome.found or outcome.job_id == identifier:
         return False
     _logger.warning(
-        "HMC job_href %s returned job %s for requested identifier %s. The "
+        "HMC job_href %r returned job %s for requested identifier %s. The "
         "outcome describes the job that was read. This is expected when the "
         "stored handle is a JobID and the response carries a UUID; it is a "
         "mispaired handle otherwise.",
