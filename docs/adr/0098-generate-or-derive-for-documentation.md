@@ -158,8 +158,8 @@ which reddens rather than passing. The word *last* is load-bearing and §4 says 
 
 ### 4. What this does not catch, stated plainly
 
-This ADR does not claim that documentation cannot drift. It claims three specific
-things, and the rest is a reviewer's job.
+This ADR does not claim that documentation cannot drift. It claims the four things
+below, and the rest is a reviewer's job.
 
 **Mechanically enforced:**
 
@@ -260,14 +260,12 @@ one hand-written-mirror hole is actually closed for the one surface that has one
   `test_passes_on_the_committed_repository` runs the whole thing end to end. Call it
   seven seconds added to each of eight legs. It is the price of executing rather
   than inspecting, and inspecting is what #480 rejected.
-- **The unit suite now depends on `just` and a populated `.venv`.** The end-to-end
-  test runs the real regeneration command, which is what makes it end-to-end; it is
-  not a test that can be run from a bare checkout. `just setup` is the prerequisite
-  it shares with every other recipe in the repository.
-- The check needs `just`, `uv` and a populated `.venv` at the point it runs. It runs
-  after `just setup` in CI and inside a prek hook locally, so all three are present;
-  a bare `python scripts/check_generated_docs.py` in an unprepared checkout will
-  fail on the subprocess rather than pass vacuously.
+- **The check, and now part of the unit suite, need a prepared checkout.** The guard
+  itself needs `just`; the recipe it runs needs `uv` and a populated `.venv`, and
+  `test_passes_on_the_committed_repository` runs the real command, which is what
+  makes it end-to-end. All of that is present after `just setup`, in CI and in a prek
+  hook alike. A bare `python scripts/check_generated_docs.py` in an unprepared
+  checkout fails on the subprocess rather than passing vacuously.
 - **This ADR does not subsume #510.** Decision records are class 1b — they are
   judgement, not generated — so they carry no banner and the walker does not reach
   them. #510's property (a record's H1 number must match its filename number) is a
