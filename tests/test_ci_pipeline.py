@@ -168,10 +168,9 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "smoke-verbose",
     ):
         assert f"\n{recipe}:" in justfile
-    assert (
-        "\nstatic: lint typecheck secrets workflow-security env-vars nicknames \\\n"
-        "        tool-docs-check adr-numbering doc-freshness\n" in justfile
-    )
+    # `static`'s membership is not restated here. It is derived and compared against
+    # the prek hook set by test_prek_hooks_delegate_to_focused_just_recipes, and a
+    # literal copy of it would only pin how the line happens to wrap today.
     assert (
         "\nadr-numbering:\n"
         "    uv run --no-sync python scripts/check_adr_numbering.py\n"
