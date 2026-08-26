@@ -33,23 +33,16 @@ exactly where repeated denials against one agent are the signal worth alerting o
 wrote the asymmetry into `docs/authorization-audit.md` rather than closing it, because
 the fix belongs to the shared guard.
 
-Four things about the surrounding contract bound what this change may do:
+Two things about the surrounding contract bound what this change may do. The rest of the
+grounds are in `Considered & rejected`, where the alternatives they sank are.
 
 - `audit.py`'s stability rule: a field may be added, never renamed, removed, or
   retyped; a code may be added, never repurposed; a consumer ignores what it does not
   know.
-- `docs/authorization-audit.md` documents the `ownership-override` record field for
-  field, and `tests/unit/test_ownership.py:227` asserts it equals an exact dict.
-- `tests/test_authorization_audit_doc.py` holds the document to the module's
-  vocabularies. Every member of `audit.EVENTS` needs one `### event:` section and at
-  least one fenced sample; every sample value under `reason` — **at any depth** — must
-  be a member of `audit.REASONS`, and the `## Reason codes` table must equal that set
-  exactly.
-- `authorize_lpar_mutation` and `authorize_decommission_lpar_ownership_snapshot` are
-  both exported in `hmc_mcp.api.__all__` (`src/hmc_mcp/api.py:250-251`), and between
-  them are reached from fourteen call sites — eleven and three — across
-  `operations_lpar`, `operations_pcie`, `operations_ssh_network`, and
-  `operations_decommission`.
+- `tests/test_authorization_audit_doc.py` holds `docs/authorization-audit.md` to the
+  module's vocabularies. Every member of `audit.EVENTS` needs one `### event:` section
+  and at least one fenced sample, and every closed vocabulary a record carries is
+  compared against the module's set in both directions.
 
 ## Decision
 
@@ -66,9 +59,11 @@ event whose *name* asserts the opposite, and it silently changes what an existin
 `event == "ownership-override"` filter counts: a query that today counts approved
 bypasses would start counting refusals.
 
-Adding a member to `Event` is the additive direction the module's stability rule
-permits. `EVENTS` is derived from the `Literal`, so the checker and the tests see the new
-member without restating it.
+Adding a member to `Event` is the additive direction the module's stability rule permits,
+and `EVENTS` is derived from the `Literal` — but the suite does not follow for free.
+`tests/unit/test_audit.py:361` restates the set as a spelled-out literal and `:376`
+requires every declared event to be reachable from a hand-enumerated emitter call, so
+both, and that test's "four values" docstring, are edited in this change.
 
 ### 2. Fields
 
@@ -79,18 +74,11 @@ member without restating it.
 - **`operation`** — which ADR 0011 guard entry point refused, from a closed vocabulary
   `audit.OwnershipOperation`: `lpar-mutation` (`authorize_lpar_mutation`, every guarded
   mutation) or `lpar-decommission-snapshot`
-  (`authorize_decommission_lpar_ownership_snapshot`). It is deliberately **not** the MCP
-  tool or API function name: the guard is shared by fourteen call sites and reached from
-  three transports, and threading a per-call name through them means a required new
-  parameter on a supported export. For an MCP caller the tool name is already on the
-  `authorization` record for the same call; for a CLI or API caller there is no tool
-  name to record.
+  (`authorize_decommission_lpar_ownership_snapshot`). A two-member vocabulary, not the
+  MCP tool or API function name — see `Considered & rejected`.
 - **`denial`** — which rule refused, from a closed vocabulary `audit.OwnershipDenial`:
-  `malformed-token` or `foreign-owner`. The field is named `denial` and not `reason`
-  because `reason` already names ADR 0040's access-policy vocabulary; the audit
-  document's drift guard reads a sample's `reason` at any depth against `audit.REASONS`,
-  so a second vocabulary under that key either reddens that guard or forces it into a
-  union that stops distinguishing the two.
+  `malformed-token` or `foreign-owner`. Named `denial` and not `reason`, which already
+  names ADR 0040's access-policy vocabulary — see `Considered & rejected`.
 - **`owner`** — the owner token parsed out of the LPAR description: the claimed owner on
   `foreign-owner`, and `null` on `malformed-token`, where nothing parsed. It is an
   HMC-supplied value, so it passes through `_value` like every other: truncated to
@@ -131,9 +119,13 @@ builder, exactly as the override path does, which is what
 ### 5. The document and its guard
 
 `docs/authorization-audit.md` gains an `### event: "ownership-denied"` section with a
-field table and a sample, and its "Denials emit nothing" paragraph — which #371 wrote
-and which cites this issue — is replaced by what the stream now carries and what it
-still does not.
+field table and a sample; its "Denials emit nothing" paragraph — which #371 wrote and
+which cites this issue — is replaced by what the stream now carries and what it still
+does not; and its lead section's claim that an unpolicied server produces
+`ownership-override` records "and only those" stops being true, so that passage names
+both. `README.md`'s one-line version of the same claim is corrected with it. That line
+sits outside the change surface this issue was dispatched with, and is edited anyway
+because leaving it is shipping a document that contradicts the record this ADR adds.
 
 Both new vocabularies join the document's drift guard on the same terms as their
 siblings: `denial` as a field row held to `audit.OWNERSHIP_DENIALS` in both directions,
@@ -159,6 +151,11 @@ without joining that guard is the drift #486 exists to stop.
   power path never runs the guard, so no denial is possible there and none is recorded.
 - `provision_lpar`'s activation leg passes the override unconditionally (ADR 0092
   Consequences), so it produces an override record and can never produce a denial one.
+- A `malformed-token` record identifies the partition but not the malformation, so
+  triage means reading the description off the HMC out of band, and two alerts on one
+  permanently-broken token are indistinguishable from an ongoing incident. Accepted
+  rather than closed: the token is HMC-supplied text, which ADR 0042 does not trust and
+  this stream declines to echo, and `denial` plus `lpar` is enough to find it.
 - No change to `hmc_mcp.api.__all__` and no movement of the frozen public signature
   digest: the new builder lives in `audit`, which the facade does not export, and no
   exported signature changes.
@@ -166,7 +163,7 @@ without joining that guard is the drift #486 exists to stop.
 ## Considered & rejected
 
 - **A `decision` field on the existing `ownership-override` record.** verified:
-  `tests/unit/test_ownership.py:229-238` asserts that record equals an exact dict and
+  `tests/unit/test_ownership.py:227-238` asserts that record equals an exact dict and
   `docs/authorization-audit.md` enumerates its fields, so the field lands in a shape two
   places pin; and an `event == "ownership-override"` filter, which is how the document
   tells an operator to find approved bypasses, would begin matching refusals.
@@ -181,12 +178,16 @@ without joining that guard is the drift #486 exists to stop.
   dispatch-boundary decision vocabulary with an `allow`/`deny` column; the two ownership
   codes belong to neither. judgment: one vocabulary serving two boundaries is a
   vocabulary that describes neither.
-- **Threading the MCP tool or API function name through as `operation`.** verified:
-  `authorize_lpar_mutation` is exported at `src/hmc_mcp/api.py:251` and called from
-  eleven sites across three modules, with three more on the decommission entry point
-  exported beside it, so a required parameter is a breaking change to a supported export
-  under ADR 0029. judgment: the transport that has a tool name already
-  records it on the `authorization` record for the same call.
+- **Threading the MCP tool or API function name through as `operation`.** verified: its
+  strongest form breaks no caller — an optional keyword-only parameter on
+  `authorize_lpar_mutation` (`src/hmc_mcp/api.py:251`, eleven call sites) and
+  `authorize_decommission_lpar_ownership_snapshot` (`:250`, three) — but it moves the
+  frozen public signature digest at `tests/unit/test_public_api.py:1658`, so it is an
+  additive change to the supported surface — a minor release under ADR 0029:27-30 —
+  across two exports and fourteen call sites. judgment: the transport that has a tool
+  name already records it on the
+  `authorization` record for the same call, and per-tool granularity is a future issue's
+  under this issue's charter.
 - **No `denial` field, distinguishing the branches by `owner: null` alone.** judgment:
   `null` means "nothing to render" everywhere else in this stream, so an alert on the
   malformed-token case would rest on an absence rather than on a value.
