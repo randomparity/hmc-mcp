@@ -107,6 +107,15 @@ What this does not reach, so a green run is not read as more coverage than it is
   and `dispatch_scope.record` are read from source and must name their aliases, and the
   first is held to covering every `Literal` parameter it has — but a fourth restatement
   written somewhere else entirely is reached by nothing here;
+- a closed vocabulary the builder carries as a plain `str`. `effect` is one today: the
+  values are `tool_registry.EFFECTS`, but `audit` imports nothing from `hmc_mcp` — the
+  module docstring's own rule, since `target_scope` imports back — so there is no alias
+  for its signature to name and no `Literal` for the parameter check above to see. The
+  next closed vocabulary reaching this builder from another module will look the same.
+  Reaching it means scanning the signature's `str` parameters and holding the leftovers
+  against a named exclusion list, which is the second unenforced list the sample-keys
+  bullet below already declines. What holds `effect` instead is the field row: the
+  document is compared to `EFFECTS` even though the builder is not;
 - the sample records' `policy`, `tool` and `targets[].argument` values, none of which is a
   closed vocabulary. `policy` is an example name; `tool` names a registry entry rather
   than a `Literal`, and deriving that set means importing the server, which this module
@@ -1309,17 +1318,25 @@ def _annotation_source(path: Path, function: str, parameter: str) -> str:
     place the distinction lives: `audit` imports `annotations` from `__future__`, and a
     resolved type hint is the same object whether the signature named an alias or spelled
     a `Literal` out inline.
+
+    Ambiguity is an error rather than a first match: one of the two names read here is
+    `record`, a nested closure, and a second function so named would otherwise retarget
+    the check in silence.
     """
-    for node in ast.walk(ast.parse(path.read_text())):
-        if isinstance(node, ast.FunctionDef) and node.name == function:
-            for argument in node.args.args + node.args.kwonlyargs:
-                if argument.arg == parameter:
-                    assert argument.annotation is not None, (
-                        f"{parameter} on {function} is unannotated"
-                    )
-                    return ast.unparse(argument.annotation)
-            raise AssertionError(f"no {parameter} parameter on {function}")
-    raise AssertionError(f"no {function} in {path.name}")
+    defined = [
+        node
+        for node in ast.walk(ast.parse(path.read_text()))
+        if isinstance(node, ast.FunctionDef) and node.name == function
+    ]
+    assert len(defined) == 1, f"expected one {function} in {path.name}, found {len(defined)}"
+
+    for argument in defined[0].args.args + defined[0].args.kwonlyargs:
+        if argument.arg == parameter:
+            assert argument.annotation is not None, (
+                f"{parameter} on {function} is unannotated"
+            )
+            return ast.unparse(argument.annotation)
+    raise AssertionError(f"no {parameter} parameter on {function} in {path.name}")
 
 
 def _docstring(path: Path, function: str) -> str:
@@ -1364,10 +1381,10 @@ def test_the_record_builder_binds_the_derived_alias(
 def test_every_literal_parameter_of_the_builder_is_held() -> None:
     """`BUILDER_VOCABULARIES` is a list, and this is what stops it going stale.
 
-    A third closed vocabulary added to the record would otherwise join the signature
-    unread, exactly as `decision` sat unread until #518. Unlike the sample keys in the
-    ledger, this needs no exclusion list: the signature's own `Literal` parameters are
-    the whole population.
+    A `Literal` parameter added to the builder would otherwise join the signature unread,
+    exactly as `decision` sat unread until #518. What it holds is that list against the
+    `Literal`s, which needs no exclusion list — not against every closed vocabulary the
+    record carries, which is a larger set: see the ledger on `effect`.
     """
     annotated = get_type_hints(audit.record_authorization)
     literals = {
