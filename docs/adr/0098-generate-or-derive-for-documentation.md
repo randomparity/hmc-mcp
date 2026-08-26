@@ -144,22 +144,31 @@ the change to make when one arrives, and until then §4 lists this among what is
 covered rather than leaving it implied.
 
 **The `*-docs` suffix is a safety boundary, not only a name.** §2 requires the suffix so
-the grammar cannot admit `Regenerate: just setup`. That requirement is also the whole of
-what stands between a tracked Markdown file and the command it causes to run: the guard
-executes what a banner names, a banner is a file's first line, and nothing downstream
-narrows the choice — the grammar admits any recipe carrying the suffix, and `just
---summary` admits any recipe the justfile defines. Naming a recipe `*-docs` is therefore
-what makes it executable by anyone who can land a Markdown file here, and the name is
-the moment that decision is made. Two obligations follow, and they bind whoever names a
-recipe rather than whoever writes a banner.
+the grammar cannot admit `Regenerate: just setup`. The guard executes what a banner names
+and a banner is a file's first line, so that requirement is what stands between a tracked
+Markdown file and the command it causes to run — but read exactly what it bounds, which is
+the recipe a banner may *name*, and nothing past it. `just` runs a recipe's dependencies,
+so `api-docs: setup` puts `setup` one banner away again, and every clause here is blind to
+it: the grammar and the orphan clause test names, and §3 tests produced bytes. The
+obligations below therefore bind everything a `*-docs` recipe reaches — its dependency
+list and its body, transitively — and not merely the recipe carrying the name.
+
+The one narrowing runs the other way and fails closed. Recipe names come from `just
+--summary`, which does not list `[private]` recipes, so a private `*-docs` recipe is not
+admitted at all and a banner naming it is reported as dangling (§2).
+
+Naming a recipe `*-docs` is what first makes something executable by anyone who can land a
+Markdown file here, so the name is where the decision is most visible. It is not where the
+decision is closed: adding a dependency to an existing `*-docs` recipe widens what its
+banner reaches, with no rename and no new banner. Two obligations follow.
 
 **A recipe matching `*-docs` must be side-effect-free and deterministic.** Its whole
 effect must be the generated documents under its working directory's `docs/`: no publish,
 no upload, no deploy, no push, no external service, no credentialed call, no write that
 outlives the run. And its output must be a function of the tracked source alone — the same
 tree must produce the same bytes every time — because §3 compares what the command
-produces against what is committed, and a page stamped with a time, a hostname, or an
-unordered mapping reddens all eight legs against a tree nobody edited.
+produces against the tracked page in the working tree, and a page stamped with a time, a
+hostname, or an unordered mapping reddens all eight legs against a tree nobody edited.
 
 Determinism is the word §3 earns, and idempotence falls out of the first obligation rather
 than standing beside it: a recipe that produces nothing but its own `docs/` leaves no
@@ -175,8 +184,10 @@ the real checkout — the asymmetry §5 records for reading, in the writing dire
 recipe writing through either one writes into the developer's own tree, on every prek
 hook and every `just static`, and nothing stops it. So *writes only inside the tree it
 runs in* is the wrong test to hand a reviewer; *produces nothing but its own `docs/`* is
-the right one. A recipe that acts outside that is not a documentation generator; name it
-`publish-documentation` rather than `publish-docs`, and the grammar keeps it unreachable.
+the right one. A recipe that acts outside that is not a documentation generator and does
+not belong under this suffix — but renaming it `publish-documentation` removes it from the
+banner grammar only, not from a `*-docs` recipe's dependency list, so the rename is
+bookkeeping and the obligation is what does the work.
 
 **A recipe matching `*-docs` must not read a secret.** Every gate that compares generated
 bytes quotes them into CI logs, and the likelier path does not involve failing. On a
@@ -294,19 +305,23 @@ below, and the rest is a reviewer's job.
   clause makes a new one *visible* — add `publish-docs` and `just doc-freshness` reddens
   until a banner names it — but visibility is not safety, and the banner that clears the
   orphan clause is the same act that makes the recipe reachable from any Markdown file.
-  What would have to be checked is that a recipe produces nothing but its own `docs/`,
-  re-runs to the same bytes, and reads no credential. The first and third are properties
-  of arbitrary shell and of every program it invokes, and §5's scratch tree isolates the
-  working directory rather than the process — and not even that, since it symlinks
-  `.venv` — so the guard has no sandbox to measure them against. Idempotence alone could
-  be had by running each command twice and diffing, at the cost of doubling §3's runtime
-  for the weakest of the three. So the suffix's safety half is a reviewer's, and the
-  review to do falls when a recipe is named, not when a banner is written.
+  What would have to be checked is that a recipe — and everything its dependency list and
+  body reach — produces nothing but its own `docs/` and reads no credential. Both are
+  properties of arbitrary shell and of every program it invokes, and §5's scratch tree
+  isolates the working directory rather than the process — and not even that, since it
+  symlinks `.venv` — so the guard has no sandbox to measure them against. The third
+  property §2a asks for, that the output be a function of the tracked source alone, is the
+  one §3 does enforce and enforces for free: a page whose bytes vary between runs cannot
+  match its tracked copy, so it reddens on the first run rather than needing a doubled one.
+  So the suffix's safety half is a reviewer's, and the review to do falls when a recipe is
+  named — and again on any edit to a `*-docs` recipe's dependency list or body, which
+  widens what an existing banner reaches while every clause here stays green.
   That review is detective rather than preventive, and §4 should not imply otherwise: one
   change can add the recipe and the banner together, CI runs the walker on
   `pull_request`, and a contributor's prek hook runs it locally, so the recipe's first
-  execution precedes anyone reading its name. What the review buys is stopping the
-  second one. Nor is the obligation written where the recipe is named: it is recorded in
+  execution precedes anyone reading its name. What the review buys is stopping the second
+  one — and only where recipe edits are being read as security-relevant at all, which a
+  one-word dependency added to an existing `*-docs` recipe does not look like. Nor is the obligation written where the recipe is named: it is recorded in
   §2a and at `_RECIPE`, which is where #524 judged an author most likely to meet it, while
   `justfile` — the file that author actually edits — carries no note. That omission is
   deliberate, and it is §1's own argument turned on this record: a third hand-maintained
