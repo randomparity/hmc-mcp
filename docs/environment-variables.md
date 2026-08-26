@@ -107,7 +107,10 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   every other profile stays unguarded, including a second profile pointing at the
   same HMC, and both the MCP tools and the CLI take a caller-supplied profile
   selector. `HMC_AUTHORIZE_POWER_OPERATIONS` overrides every profile's TOML value,
-  so it is the setting that cannot be selected around.
+  so it is the setting that cannot be selected around — **spelled exactly**. The
+  profile loader drops a TOML key only when the variable's exact upper-case name
+  is in the environment, so a lower- or mixed-case export does not override a
+  profile that carries the key (#531).
 
   **Check that it actually took — ask the server, not the shell.** This setting
   fails **open**, and a mistyped profile key or environment variable is dropped
@@ -117,13 +120,22 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   name, each carrying the effective post-precedence `authorized` value and the
   `source` that supplied it — `environment`, `profile`, or `default`. `default` is
   the answer that means *nothing you wrote arrived*, which is the case a bare
-  `false` cannot distinguish. A connection whose config cannot be built reports
-  `authorized: null` with `source: unresolved` and a `detail` classifying the
-  failure — `ConfigError`, or `ValidationError` with the field names it rejected.
-  The `detail` is deliberately closed: the underlying message names every profile
-  and nickname key in your `config.toml`, so it goes to the server's log instead,
-  where you can read the whole reason. Beyond the connection names your policy
-  already declares, the entries carry no host, user, or credential.
+  `false` cannot distinguish. A fourth value, `ambiguous`, means a **case variant**
+  of `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: only the exact upper-case
+  spelling is dropped from a profile's keys before the config is built, so a
+  variant loses to a profile there and wins where no profile is read — and nothing
+  in the server can tell which happened. Fix the spelling.
+
+  A connection whose config cannot be built reports `authorized: null` with
+  `source: unresolved` and a `detail` classifying the failure — `ConfigError`, or
+  `ValidationError` with the field names it rejected. The `detail` is deliberately
+  closed. For a `ConfigError` the full message is in the server's log instead,
+  because it names every profile and nickname key in your `config.toml`. For a
+  `ValidationError` there is no fuller message anywhere, in the report or the log:
+  pydantic quotes the value it rejected, and a bad `password` would then be in
+  your log, so you get the field name and read the value from the config source
+  yourself. Beyond the connection names your policy already declares, the entries
+  carry no host, user, or credential.
 
   Because the report is resolved inside the process being asked, it answers where
   `hmc-mcp config show` cannot. `config show` requires a `config.toml` and exits 1

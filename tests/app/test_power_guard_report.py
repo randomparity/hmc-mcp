@@ -182,20 +182,57 @@ def test_an_ambient_host_makes_a_profile_key_ineffective(monkeypatch, tmp_path):
     assert guards["guarded"].source == "default"
 
 
-def test_a_case_variant_environment_variable_is_still_the_environment(monkeypatch):
-    """`HMCConfig` leaves pydantic-settings' `case_sensitive` at `False`.
+def test_a_case_variant_environment_variable_asserts_no_origin(monkeypatch):
+    """Neither probe is honest for both paths, so `source` claims neither.
 
-    A lower-case spelling sets the field like the canonical one, and an
-    exact-key probe would fall through to the `model_fields_set` arm and report
-    `profile` — the label an operator reads as "my file took effect" — for a
-    value no file supplied, with no file in existence at all.
+    `HMCConfig` leaves pydantic-settings' `case_sensitive` at `False`, so on the
+    env-only path a lower-case spelling sets the field and an exact-key probe
+    would fall through to the `model_fields_set` arm and report `profile` — the
+    label an operator reads as "my file took effect" — with no file in existence
+    at all.
     """
     monkeypatch.setenv("hmc_authorize_power_operations", "true")
 
     (guard,) = resolve_power_guards(None)
 
     assert guard.authorized is True
-    assert guard.source == "environment"
+    assert guard.source == "ambiguous"
+    assert "case variant" in guard.detail
+
+
+def test_a_case_variant_does_not_claim_a_value_the_environment_lost(
+    monkeypatch, tmp_path
+):
+    """The mirror case, and the reason `environment` needs the exact spelling.
+
+    `_load_profile_from_document` drops a TOML key only when its exact
+    upper-case spelling is a key of `os.environ`, so a case variant leaves the
+    profile's value in the init kwargs, where pydantic-settings ranks it above
+    the environment. The environment loses here — `authorized` is the profile's
+    `true`, not the variable's `false` — and a case-insensitive probe would
+    report that the environment won.
+    """
+    _write_config(
+        monkeypatch,
+        tmp_path,
+        """
+        default_profile = "guarded"
+
+        [profiles.guarded]
+        host = "hmc-a.example.com"
+        user = "admin"
+        authorize_power_operations = true
+        """,
+    )
+    monkeypatch.setenv("hmc_authorize_power_operations", "false")
+    policy = _policy([
+        {"effects": ["read"], "connections": ["guarded"], "targets": "all-targets"}
+    ])
+
+    guards = _by_connection(resolve_power_guards(policy))
+
+    assert guards["guarded"].authorized is True
+    assert guards["guarded"].source == "ambiguous"
 
 
 def test_a_connection_that_cannot_be_resolved_is_reported_not_raised(

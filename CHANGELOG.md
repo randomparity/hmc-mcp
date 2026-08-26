@@ -158,7 +158,12 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   key or environment variable is dropped silently and is otherwise indistinguishable from a
   correct `false`; each entry carries the `source` that supplied the value — `environment`,
   `profile`, or `default`, where `default` is the answer that means nothing the operator
-  wrote arrived. `hmc-mcp config show` could not answer either deployment the documentation
+  wrote arrived. A fourth value, `ambiguous`, reports that a **case variant** of
+  `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: pydantic-settings matches a variant
+  case-insensitively while the profile loader drops only the exact upper-case spelling
+  (#531), so a variant loses to a profile on one resolution path and wins on the other, and
+  nothing in the server can tell which happened. `hmc-mcp config show` could not answer
+  either deployment the documentation
   recommends: it exits 1 with no `config.toml`, and it reads the invoking shell's environment
   rather than the served process's. A connection whose config cannot be built reports
   `authorized: null` with `source: unresolved` and a closed `detail` — the exception class,

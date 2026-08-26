@@ -25,7 +25,7 @@ from pydantic import ValidationError
 
 from .access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy, AllTargets, Grant
 from .common import build_config
-from .config import ConfigError
+from .config import ConfigError, HMCConfig
 from .tool_registry import (
     Authorize,
     ToolSecurity,
@@ -108,6 +108,16 @@ _UNRESOLVED_LOG = (
     "built, so its authorize_power_operations is reported as unresolved: %s"
 )
 
+#: Said whole rather than interpolated, so ``detail`` stays closed. Only the
+#: exact upper-case spelling is dropped from a profile's TOML keys before
+#: construction (``config._load_profile_from_document``), so a case variant is
+#: outranked by the profile on that path and wins on the env-only path.
+_CASE_VARIANT_DETAIL = (
+    "a case variant of HMC_AUTHORIZE_POWER_OPERATIONS is set; only the exact "
+    "upper-case spelling overrides a profile's value, so this value may have "
+    "come from either"
+)
+
 
 @dataclass(frozen=True)
 class PowerOwnershipGuard:
@@ -117,10 +127,12 @@ class PowerOwnershipGuard:
     so a mistyped profile key or environment variable is dropped with no error
     and is observably identical to a correct ``false`` (#470). ``source`` is what
     separates them: a value an operator meant to set reports ``environment`` or
-    ``profile``, and one that never arrived reports ``default``.
+    ``profile``, and one that never arrived reports ``default``. It asserts an
+    origin only where one path can supply it — ``ambiguous`` covers the case
+    neither can be ruled out, and ``detail`` says why.
 
     ``authorized`` is ``None`` only when the connection's configuration could not
-    be built at all, which ``source: unresolved`` names and ``detail`` explains.
+    be built at all, which ``source: unresolved`` names and ``detail`` classifies.
     """
 
     connection: str
@@ -242,17 +254,29 @@ def _targets_enforced(
     return True
 
 
-def _power_guard_env_var_set() -> bool:
-    """True when the environment carries the guard variable under any casing.
+def _guard_env_spelling() -> str:
+    """How the environment spells the guard variable: exactly, near, or not.
 
-    ``HMCConfig`` leaves pydantic-settings' ``case_sensitive`` at its ``False``
-    default, so a lower- or mixed-case spelling sets the field like the canonical
-    one. An exact-key probe would miss it, land on the ``model_fields_set`` arm
-    below — env-sourced values arrive as init data, so the field is set either
-    way — and report ``profile``: the one label an operator reads as "my file
-    took effect", for a value no file supplied.
+    The two resolution paths disagree about casing, so neither probe alone is
+    honest. On the env-only path ``HMCConfig`` leaves pydantic-settings'
+    ``case_sensitive`` at its ``False`` default, so a lower- or mixed-case
+    spelling sets the field; an exact-key probe would miss it and land on the
+    ``model_fields_set`` arm, reporting ``profile`` for a value no file supplied.
+    On the profile path ``_load_profile_from_document`` drops a TOML key only
+    when its exact upper-case spelling is a key of ``os.environ``, so a case
+    variant leaves the TOML value in the init kwargs, where pydantic-settings
+    ranks it above the environment — and a case-insensitive probe would report
+    ``environment`` for a value the environment lost.
+
+    A probe of ``os.environ`` cannot see which path ran, so ``variant`` is
+    reported as its own state rather than resolved into a guess. That the
+    variable is misspelled at all is the more useful answer either way.
     """
-    return any(name.upper() == POWER_GUARD_ENV_VAR for name in os.environ)
+    if POWER_GUARD_ENV_VAR in os.environ:
+        return "exact"
+    if any(name.upper() == POWER_GUARD_ENV_VAR for name in os.environ):
+        return "variant"
+    return "absent"
 
 
 def _unresolved_detail(exc: Exception) -> str:
@@ -273,6 +297,29 @@ def _unresolved_detail(exc: Exception) -> str:
     if not fields:
         return "ValidationError"
     return "ValidationError: " + ", ".join(fields)
+
+
+def _guard_source(config: HMCConfig) -> tuple[str, str | None]:
+    """Name what supplied *config*'s guard value, and never assert more.
+
+    ``environment`` needs the exact spelling, which wins on both resolution
+    paths. ``default`` needs the field to be unset, which no path can fake.
+    Between them sits the case-variant state :func:`_guard_env_spelling`
+    isolates: the value came from a profile or from a misspelled variable and
+    nothing here can tell which, so it is reported as ``ambiguous`` rather than
+    as the reassuring ``profile``. An operator who misspelled the variable, saw
+    the guard ignore them, and called this tool to find out why is exactly the
+    reader `source` exists for; ``environment`` would end their search on the
+    wrong answer.
+    """
+    spelling = _guard_env_spelling()
+    if spelling == "exact":
+        return "environment", None
+    if "authorize_power_operations" not in config.model_fields_set:
+        return "default", None
+    if spelling == "variant":
+        return "ambiguous", _CASE_VARIANT_DETAIL
+    return "profile", None
 
 
 def _power_guard(profile: str | None) -> PowerOwnershipGuard:
@@ -313,14 +360,9 @@ def _power_guard(profile: str | None) -> PowerOwnershipGuard:
         detail = _unresolved_detail(exc)
         _logger.warning(_UNRESOLVED_LOG, connection, detail)
         return PowerOwnershipGuard(connection, None, "unresolved", detail)
-    if _power_guard_env_var_set():
-        source = "environment"
-    elif "authorize_power_operations" in config.model_fields_set:
-        source = "profile"
-    else:
-        source = "default"
+    source, detail = _guard_source(config)
     return PowerOwnershipGuard(
-        connection, config.authorize_power_operations, source, None
+        connection, config.authorize_power_operations, source, detail
     )
 
 
