@@ -353,9 +353,19 @@ the case clause 5 names when it justifies owing the read at all. The docstring s
 Clause 2's echo rule now reaches a presentation surface, where "the link the caller passed" means
 the caller's exact string. The client validates only that its path addresses a job resource and
 requests only that path, so host, query and fragment round-trip unchecked into a field this record
-tells consumers to re-persist. Normalizing the echo to the requested path would change the
-persisted-handle shape clause 2 fixes, so the `hmc_wait_for_job` docstring says instead that an
-echoed link is the caller's own input rather than something the HMC attested.
+tells consumers to re-persist. `urlsplit` also *deletes* tab, carriage return and newline while
+building the path, so the string `_reject_non_job_path` validates is not the one echoed back — a
+mismatch #537 owns. Normalizing the echo to the requested path would change the persisted-handle
+shape clause 2 fixes, so the `hmc_wait_for_job` docstring says instead that an echoed link is the
+caller's own input rather than something the HMC attested.
+
+The same unsanitized value reaches `operations_jobs`' own warning records, and nothing binds a
+handler to the `hmc_mcp` logger, so they fall to `logging.lastResort` and land raw on the stderr
+stream ADR 0040 defines as one JSON record per line. Serving these tools from `operations_jobs` is
+what first makes those sites reachable with caller-controlled input, so this change closes it:
+every warning that interpolates the link uses `%r`. ADR 0051's Context weighed only HMC-returned
+text at that boundary; binding `hmc_mcp` to a `StreamSafeFormatter` sink is the general fix and is
+not made here.
 
 `_confirm_missing` treats the HTTP 400 REST000E of issue #95 firmware as absence, so on exactly the
 firmware `job_href` exists to serve, a link whose parent resource was removed makes one live job

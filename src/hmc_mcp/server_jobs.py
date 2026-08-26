@@ -45,36 +45,25 @@ def hmc_get_job(
     """Get one HMC job by UUID, optionally using its submission SELF link.
 
     Returns null when the HMC produced no entry for this identifier — reaped,
-    deleted, or never present. Any other HMC failure still raises. Null is what
-    one poll saw, not a confirmed disappearance: this tool polls once and never
-    re-reads to confirm (a 404 against a supplied ``job_href`` is second-sourced
-    against the global jobs path, but that is one poll, not a confirmation over
-    time), so a momentary 404 from a proxy reload or a failover reads as null
-    too, and a null that repeats for every identifier is a deployment whose jobs
-    path is
-    absent rather than a fleet of vanished jobs (ADR 0093). Absence can also be
-    confined to one job: on firmware that does not serve the global jobs path, a
-    ``job_href`` that has stopped resolving reads as null for that identifier
-    while the job is alive and still pollable at the right link. Whenever you
-    supplied a ``job_href``, re-read by ``job_uuid`` alone before acting on a
-    null.
+    deleted, or never present. Any other HMC failure still raises. Null is one
+    poll's answer, never a confirmed disappearance: this tool does not re-read to
+    confirm, so a momentary 404 reads as null too. Null for *every* identifier is
+    a deployment whose jobs path is absent, and null for one job polled with a
+    ``job_href`` can be a link that stopped resolving while the job runs. Re-read
+    by ``job_uuid`` alone before acting on a null (ADR 0093).
 
     An empty identifier, a bare dot, or one carrying a path, query, fragment,
-    percent, or interior whitespace character addresses something other than one
-    job and is rejected outright rather than reported as a missing job;
-    surrounding whitespace is trimmed. That check runs even when ``job_href`` is
-    supplied, so an empty ``job_uuid`` no longer passes through on the strength of
-    the link alone.
+    percent, or interior whitespace character is rejected outright rather than
+    reported as a missing job; surrounding whitespace is trimmed. That check runs
+    even when ``job_href`` is supplied.
 
     A ``job_href`` that stops resolving is re-read against the global jobs path
     before the job is called gone, so the ``link`` in the returned mapping can be
-    the link that failed. That retirement is visible only in the server log, so a
-    caller that passed a ``job_href`` and got a job back cannot tell from the
-    result whether its link is still good; poll by ``job_uuid`` alone on any
-    stale-link suspicion (#529). A supplied link also decides **which job is
-    read** — the path is fetched directly and checked only for addressing a job
-    resource — so a mispaired handle returns the *other* job. Compare the
-    returned entry's UUID or JobID against the identifier you passed.
+    the one that failed, and nothing in the result says which happened. A supplied
+    link also decides **which job is read** — its path is fetched directly and
+    checked only for addressing a job resource — so a mispaired handle returns the
+    *other* job. Compare the returned entry's UUID or JobID against the identifier
+    you passed.
 
     Args:
         job_uuid: UUID or JobID returned when the job was submitted.
@@ -84,9 +73,7 @@ def hmc_get_job(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            outcome = await operations_jobs.get_job(
-                hmc, job_uuid, job_href=job_href
-            )
+            outcome = await operations_jobs.get_job(hmc, job_uuid, job_href=job_href)
             return outcome.job
 
     return _run(operation)
@@ -152,72 +139,47 @@ def hmc_wait_for_job(
     FAILED_TO_START. If the timeout expires first, the last observed job is
     returned with ``timed_out`` set to true.
 
-    Read ``found`` first, before ``timed_out``. A job the HMC no longer has —
-    reaped, deleted, or never present — returns ``found`` false with a null
-    ``status``, rather than raising. It also returns ``timed_out`` true, because
-    no terminal status was observed, and it does so immediately rather than after
-    ``timeout_seconds``: on a ``found`` false outcome ``timed_out`` carries no
-    information and must not be read as "still running". Only
-    ``found`` true with ``timed_out`` true means the HMC still has the job and it
-    has not reached a terminal status, and a null ``status`` there means the entry
-    carried no readable Status rather than that the job is running. Polling stops
-    as soon as the job is gone instead of burning the remaining
-    ``timeout_seconds``. Every other HMC failure still raises ``HMCError``.
+    **Read ``found`` before ``timed_out``.** A job the HMC no longer has — reaped,
+    deleted, or never present — returns ``found`` false immediately rather than
+    raising, with a null ``status`` and ``timed_out`` true. On a ``found`` false
+    outcome ``timed_out`` carries no information and never means "still running";
+    only ``found`` true with ``timed_out`` true does, and a null ``status`` there
+    means the entry carried no readable Status. Every HMC failure other than a
+    missing job still raises ``HMCError``.
 
-    ``found`` false is what the read that was made saw. It is a *confirmed*
-    disappearance only once this wait has already seen the job alive, in which
-    case a second read has to agree. A first poll that produces no entry — a 404,
-    or a response the HMC answers with no job entry at all — is reported straight
-    through with no re-read, so one momentary or degraded response at the start of
-    a wait ends it immediately.
-    ``found`` false does not say *why*, and is not proof the work did or did not
-    happen: confirm that against the affected resource, not the job record. A
-    ``found`` false that repeats for every identifier is a deployment whose jobs
-    path is absent, not a fleet of vanished jobs (ADR 0093). Absence can also be
-    confined to one job: on firmware that does not serve the global jobs path, a
-    ``job_href`` that has stopped resolving reads as ``found`` false for that
-    identifier while the job is alive and still pollable at the right link.
-    Whenever you supplied a ``job_href``, re-read by ``job_uuid`` alone before
-    acting on absence.
+    ``found`` false is unconfirmed on the first poll: only a job that vanishes
+    after this wait has seen it alive is re-read before being reported gone, so
+    one momentary or empty response at the start ends the wait immediately. It is
+    also not proof the work did or did not happen — confirm that against the
+    affected resource, not the job record. Two shapes are not a reaped job at all:
+    ``found`` false for *every* identifier is a deployment whose jobs path is
+    absent, and ``found`` false for one job polled with a ``job_href`` can be a
+    link that stopped resolving while the job runs. Re-read by ``job_uuid`` alone
+    before acting on absence (ADR 0093).
 
-    ``timeout_seconds`` is a soft bound. A job that disappears after this wait has
-    already seen it alive is re-read once, up to one ``poll_interval`` later,
-    before being reported gone, and that confirming read is owed even past the
-    deadline. The overshoot is a whole ``poll_interval``, unrelated to the
-    deadline, so a ``poll_interval`` larger than ``timeout_seconds`` overshoots by
-    more than the deadline itself. Keep ``poll_interval`` well under
-    ``timeout_seconds``. The gap shrinks the other way near the deadline: a
-    disappearance seen with less than an interval left is confirmed after only the
-    time that remains, which weakens the confirmation there (#532).
+    ``timeout_seconds`` is a soft bound: the confirming re-read is owed past the
+    deadline, so the call can return a whole ``poll_interval`` late. Keep
+    ``poll_interval`` well under ``timeout_seconds``.
 
-    ``job_href`` on the result is usually the link worth persisting for the next
-    call: the link you passed when the read through it worked, otherwise the
-    successful read's own link, and null when nothing resolved. A link that stopped
-    resolving is dropped only when the HMC's own SELF link is spelled the same way,
-    so one you stored in another spelling — a relative path against an absolute
-    href — can come back unchanged after it has already failed (#529). The in-band
-    signal is narrow but real: a link you passed that still resolves is always
-    echoed back, so if you passed one and get a ``found`` true outcome whose
-    ``job_href`` is null, that link was retired. Drop it and poll by ``job_uuid``
-    alone, which is also the reliable recovery whenever a stored link is suspect.
-    An echoed link is the exact string you passed, and only its path is ever
-    requested. What was validated is not quite what comes back: host, query and
-    fragment are neither checked nor normalized, and a tab, carriage return or
-    newline is deleted while the path is built but survives in the echoed string
-    (#537).
-    It is your own input coming back, not something the HMC attested — do not
-    dereference it as one.
+    ``job_href`` on the result is the link to persist for the next call — the one
+    you passed when it resolved, otherwise the successful read's own link, null
+    when nothing resolved. If you passed a link and get ``found`` true with a null
+    ``job_href``, that link was retired; drop it. A retired link spelled
+    differently from the HMC's own SELF link can survive there anyway, so poll by
+    ``job_uuid`` alone whenever a stored link is suspect. An echoed link is your
+    own input returned verbatim — only its path is ever requested, and host,
+    query, fragment and control characters are unchecked — so do not dereference
+    it as something the HMC attested.
 
-    A supplied ``job_href`` also decides **which job is read**: the path is
-    fetched directly and checked only for addressing a job resource, so a
-    mispaired handle reads the *other* job. Compare the returned ``job_id``
-    against the identifier you passed before acting on the result.
+    A supplied ``job_href`` decides **which job is read**: its path is fetched
+    directly and checked only for addressing a job resource, so a mispaired handle
+    returns the *other* job. Compare the returned ``job_id`` against the
+    identifier you passed.
 
     An empty identifier, a bare dot, or one carrying a path, query, fragment,
-    percent, or interior whitespace character addresses something other than one
-    job and is rejected outright rather than reported as ``found`` false;
-    surrounding whitespace is trimmed. That check runs even when ``job_href`` is
-    supplied.
+    percent, or interior whitespace character is rejected outright rather than
+    reported as ``found`` false; surrounding whitespace is trimmed. That check
+    runs even when ``job_href`` is supplied.
 
     The same two fields appear on the outcomes returned by the submit-and-wait
     tools (the migrate, remote-restart and power tools), where they describe a
