@@ -8,6 +8,7 @@ detach handle rather than an HMC job identifier (there is no job on this path).
 from __future__ import annotations
 
 import asyncio
+from typing import get_type_hints
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -15,7 +16,7 @@ import pytest
 from conftest import make_config
 
 from hmc_mcp import api
-from hmc_mcp.operations_install import install_lpar_os, install_vios
+from hmc_mcp.operations_install import InstallHandle, install_lpar_os, install_vios
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_commands import INSTALLIOS_PID_PREFIX, build_installios_command
 
@@ -82,7 +83,7 @@ async def test_operation_submits_the_composed_installios_command(operation, find
         **_REQUEST,
     )
     assert ssh.commands == [expected]
-    assert set(result) == {"system", "partition", "pid", "log_path", "message"}
+    assert set(result) == set(get_type_hints(InstallHandle))
     assert (result["system"], result["partition"], result["pid"]) == (
         "sys1",
         "target1",
@@ -208,3 +209,26 @@ def test_operations_are_exported_from_the_facade(name):
     """ADR 0029: every selected operation is part of the supported manifest."""
     assert name in api.__all__
     assert getattr(api, name) is globals()[name]
+
+
+def test_detach_handle_is_the_declared_return_type():
+    """#468: the handle is a named owned type, so its keys reach the digest.
+
+    ``dict[str, Any]`` renders identically however the five keys are spelled, so
+    the ADR 0029 signature digest could not see a rename and ``py.typed``
+    resolved every value to ``Any``. Naming the type in the annotation fixes
+    both: the digest text now carries ``InstallHandle``, and the key set below
+    is the same object the runtime assertion above compares the payload against.
+    """
+    assert "InstallHandle" in api.__all__
+    assert api.InstallHandle is InstallHandle
+    assert get_type_hints(InstallHandle) == {
+        "system": str,
+        "partition": str,
+        "pid": int,
+        "log_path": str,
+        "message": str,
+    }
+    assert InstallHandle.__optional_keys__ == frozenset()
+    for operation in (install_lpar_os, install_vios):
+        assert get_type_hints(operation)["return"] is InstallHandle

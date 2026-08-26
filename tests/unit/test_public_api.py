@@ -16,7 +16,15 @@ import sys
 from collections.abc import Callable, Iterable
 from dataclasses import InitVar, dataclass, fields, is_dataclass
 from types import ModuleType
-from typing import Annotated, Literal, TypeVar, get_args, get_origin, get_type_hints
+from typing import (
+    Annotated,
+    ForwardRef,
+    Literal,
+    TypeVar,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import pytest
 
@@ -104,6 +112,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "FleetHealthResult",
         "install_lpar_os",
         "install_vios",
+        "InstallHandle",
         "assess_post_activation_affinity",
         "authorize_decommission_lpar_ownership_snapshot",
         "authorize_lpar_mutation",
@@ -536,6 +545,25 @@ def _owned_literal_aliases(
     return aliases
 
 
+def _annotation_source(declared: object, *, origin: str) -> str:
+    """The raw source text of one declared annotation.
+
+    ``from __future__ import annotations`` leaves a parameter or a dataclass field
+    as a plain string, but a ``TypedDict`` runs ``_type_check`` over its keys at
+    class creation on every supported interpreter, so its annotations arrive as
+    ``ForwardRef`` wrappers holding that same text (#468). Both are source text.
+    Anything else is an evaluated annotation, which would leave this clause reading
+    nothing at all rather than failing.
+    """
+    if isinstance(declared, ForwardRef):
+        return declared.__forward_arg__
+    assert isinstance(declared, str), (
+        f"{origin} has an evaluated annotation; ADR 0029's literal-alias "
+        "clause needs `from __future__ import annotations`"
+    )
+    return declared
+
+
 def _aliases_in_annotations(
     module: ModuleType, annotations: Iterable[object], *, origin: str
 ) -> dict[tuple[str, str], object]:
@@ -545,11 +573,8 @@ def _aliases_in_annotations(
     text off different holders and must attribute an alias the same way.
     """
     aliases: dict[tuple[str, str], object] = {}
-    for annotation in annotations:
-        assert isinstance(annotation, str), (
-            f"{origin} has an evaluated annotation; ADR 0029's literal-alias "
-            "clause needs `from __future__ import annotations`"
-        )
+    for declared in annotations:
+        annotation = _annotation_source(declared, origin=origin)
         for path in _annotation_paths(annotation, origin=origin):
             value = _literal_alias(vars(module), path)
             owner = _alias_owner(module, path) if value is not None else None
@@ -1553,6 +1578,28 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
     assert get_type_hints(TemplatesMixin)["_http"].__module__ == "httpx"
 
 
+def _typed_dict_text(exported: type) -> str:
+    """An exported ``TypedDict``'s keys, rendered as if they were a call signature.
+
+    At runtime a ``TypedDict`` is a plain ``dict``, so `inspect.signature` raises
+    `ValueError` on one and the digest below would carry no entry for it at all —
+    a renamed key would move nothing, which is the gap #468 exists to close. A
+    model's fields reach the digest through the `__init__` its shape generates;
+    a ``TypedDict`` generates none, so its keys are read directly here. Required-ness
+    moves the digest too: a `total=False` key is marked `?`, and a `NotRequired[...]`
+    one carries it in its own annotation text, which is where it stays under
+    `from __future__ import annotations` — the class cannot resolve the wrapper at
+    creation, so such a key is not in `__optional_keys__`.
+    """
+    optional = exported.__optional_keys__
+    keys = ", ".join(
+        f"{name}{'?' if name in optional else ''}: "
+        f"{_annotation_source(declared, origin=exported.__qualname__)}"
+        for name, declared in inspect.get_annotations(exported).items()
+    )
+    return f"({keys})"
+
+
 def _signature_text(exported: object) -> str:
     """One exported name's signature, rendered the same on every supported interpreter.
 
@@ -1564,13 +1611,21 @@ def _signature_text(exported: object) -> str:
     qualifier everywhere it appears leaves the annotation's content intact and the
     text identical across all four.
     """
+    if hasattr(exported, "__required_keys__"):  # A ``TypedDict``: see above.
+        return _typed_dict_text(exported)
     return re.sub(r"\btyping\.", "", str(inspect.signature(exported)))
 
 
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #446, which exported the two types ADR 0029's
+        Last moved by issue #468, which named the `installios` detach handle
+        `InstallHandle` and annotated `install_lpar_os` and `install_vios` with
+        it. Both return annotations move from `dict[str, Any]` to that name, and
+        `_typed_dict_text` adds an entry carrying the five keys themselves
+        — the point of the change, since `inspect.signature` reports nothing for
+        a `TypedDict` and a renamed key would otherwise move no digest at all.
+        Before that, issue #446 exported the two types ADR 0029's
         newly mechanised type clause found missing from the manifest:
         `PcmResource`, the frozen dataclass `resolve_pcm_resource` returns, and
         `RemoteRestartOperation`, the literal alias `remote_restart_lpar` takes.
@@ -1651,11 +1706,13 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # stops exercising the interpreter divergence `_signature_text` normalises away.
     assert "Annotated[str, MinLen" in signatures["HmcIdentity"]
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #482: the transitive type clause adds twelve `snapshot` models with
-    # their Pydantic constructors and seven literal aliases with the
-    # `(*args, **kwargs)` every alias reports. Recomputed over #446's 960b0376
-    # under the normalisation `_signature_text` now applies.
-    expected_digest = "717825fbc7db94ee250515d56ab86a768d9d241f789def7a70bb2a1ad6a0cb39"  # pragma: allowlist secret
+    # Moved by #468: `InstallHandle` replaces `dict[str, Any]` on both install
+    # return annotations and contributes its own five-key entry. Recomputed over
+    # #482's 717825fb, which added twelve `snapshot` models with their Pydantic
+    # constructors and seven literal aliases with the `(*args, **kwargs)` every
+    # alias reports, itself recomputed over #446's 960b0376 under the
+    # normalisation `_signature_text` applies.
+    expected_digest = "270f9389f83fd828848b636f85ccdc98e9525a3f8efe01e81db6eb4be9cee786"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
