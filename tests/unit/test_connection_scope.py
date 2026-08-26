@@ -155,6 +155,21 @@ def test_an_empty_case_variant_hmc_host_does_not_collapse(config, monkeypatch):
     assert selected_connection("lab", tool="hmc_delete_lpar") == "lab"
 
 
+def test_an_empty_exact_case_hmc_host_does_not_hide_a_non_empty_variant(
+    config, monkeypatch
+):
+    """The fail-open a tie-break preferring the exact spelling would leave open (#531).
+
+    ``HMC_HOST=""`` beside a non-empty ``hmc_host`` resolves to the variant in
+    ``HMCConfig``, so ``build_config`` reaches the exported host. Reading the
+    empty exact spelling here instead would resolve the token to ``lab``, and a
+    grant naming ``lab`` would authorize a call issued somewhere else entirely.
+    """
+    monkeypatch.setenv("HMC_HOST", "")
+    monkeypatch.setenv("hmc_host", "env-hmc.example.com")
+    assert selected_connection("lab", tool="hmc_delete_lpar") is None
+
+
 # ---------------------------------------------------------------------------
 # R8 — rule 2: a falsy token is the default connection
 # ---------------------------------------------------------------------------

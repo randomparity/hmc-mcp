@@ -569,19 +569,26 @@ def env_var_value(name: str) -> str | None:
     the loader it is describing — which is how a profile's TOML key came to beat a
     lower-case export (#531).
 
-    Returns ``None`` only when no casing of *name* is set. An exact match wins;
-    otherwise the first variant in ``os.environ`` order is returned. Which
-    variant pydantic-settings itself would fold into the field is unspecified
-    when several are set, so callers must read the result as "the environment
-    supplies this" and not as "this exact value reached the field".
+    Returns ``None`` only when no casing of *name* is set. When several casings
+    are set, the **last** one in ``os.environ`` order wins — the exact spelling
+    gets no precedence. That is not a tie-break chosen here: pydantic-settings'
+    ``parse_env_vars`` folds the whole environment into ``{key.lower(): value}``
+    in ``os.environ`` order, so the last match is the one that reaches the field.
+    Preferring the exact spelling instead would leave ``HMC_HOST=""`` beside a
+    non-empty ``hmc_host`` reading as an unset host to the ADR 0038 gates below
+    while the config resolved to the exported one — the fail-open this function
+    exists to close.
+
+    ``tests/unit/test_config.py`` pins the agreement against ``HMCConfig``
+    itself rather than against that reading of the library, so a change to
+    pydantic-settings' folding shows up as a failing test.
     """
-    if name in os.environ:
-        return os.environ[name]
     wanted = name.upper()
+    found: str | None = None
     for key, value in os.environ.items():
         if key.upper() == wanted:
-            return value
-    return None
+            found = value
+    return found
 
 
 def _load_profile_from_document(

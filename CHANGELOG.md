@@ -172,14 +172,20 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   every `HMCConfig` field (#531). `HMCConfig` leaves pydantic-settings' `case_sensitive`
   at its `False` default, so `hmc_host=…` always reached the `host` field; the profile
   loader's exact-case membership test did not agree, and handed the profile's value to the
-  constructor as an init kwarg, which outranks every environment source. The three other
+  constructor as an init kwarg, which outranks every environment source. Three further
   hand-rolled `HMC_*` reads that mirror or report on that resolution move to the same
   case-insensitive rule: `build_config`'s `HMC_HOST` branch gate, the ADR 0038
   `connection_scope` mirror of that gate — where the disagreement was fail-open, resolving
   a token to a profile key while the call reached the exported host — and the #379 TLS
   audit record's `source` field, which named `explicit-argument` for a value only the
-  environment had supplied. `HMC_PROFILE` is unchanged and still matched exactly; it names
-  no `HMCConfig` field and no settings loader reads it.
+  environment had supplied. One known reader is deliberately left behind: `audit.py`
+  imports nothing from the package by design, so its exact-case `HMC_AGENT_ID`
+  attribution read needs its own case-fold and is tracked as #543. Several casings of one
+  variable fold to a single field, and the last one in the process environment wins —
+  `env_var_value` resolves the tie the way pydantic-settings does, pinned by a test
+  against `HMCConfig` rather than against a reading of the library. `HMC_PROFILE` is
+  unchanged and still matched exactly on POSIX; it names no `HMCConfig` field and no
+  settings loader reads it.
 
 ### Removed
 
