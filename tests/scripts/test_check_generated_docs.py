@@ -262,6 +262,24 @@ def test_generated_output_left_untracked_reddens(tmp_path, capsys) -> None:
     )
 
 
+def test_a_tracked_page_deleted_from_the_working_tree_reddens(tmp_path, capsys) -> None:
+    """`rm` without `git rm` is its own state, and gets its own message.
+
+    Reporting it as untracked would name the wrong remedy for a file git is still
+    carrying.
+    """
+    pages = {"page.md": _page("# demo"), "extra.md": _page("# extra")}
+    root = _tree(tmp_path, produced=pages, committed=pages)
+    _stage(root)
+    (root / "docs" / "generated" / "extra.md").unlink()
+
+    assert check_generated_docs.main(["--repo-root", str(root)]) == 1
+    assert (
+        "docs/generated/extra.md: produced by `just demo-docs` and tracked by git, "
+        "but missing from the working tree" in capsys.readouterr().err
+    )
+
+
 def test_untracked_documents_are_not_walked(tmp_path) -> None:
     """Vendored and ignored documentation is not the repository's to answer for.
 

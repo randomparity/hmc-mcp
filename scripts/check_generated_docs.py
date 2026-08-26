@@ -300,10 +300,17 @@ def compare(
         source = root / path
         # Membership in the tracked set, not mere presence on disk: a page the
         # generator wrote and nobody staged is absent from what CI will check out.
-        if path not in tracked or not source.is_file():
+        if path not in tracked:
             errors.append(
                 f"{path}: produced by `{command}` but not tracked by git. Run "
                 f"`{command}`, then `git add` the result."
+            )
+            continue
+        if not source.is_file():
+            errors.append(
+                f"{path}: produced by `{command}` and tracked by git, but missing "
+                f"from the working tree. Run `{command}` to restore it, or `git rm` "
+                f"it and take its generator with it."
             )
             continue
         current = source.read_bytes()

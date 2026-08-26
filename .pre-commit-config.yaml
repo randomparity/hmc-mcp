@@ -1,17 +1,19 @@
 repos:
   - repo: local
+    # One hook per `static` member, and each hook's id is the recipe it runs, so
+    # `SKIP=<id>` and `prek run <id>` name the same gate `just <id>` does.
     hooks:
-      - id: ruff
+      - id: lint
         name: Ruff lint
         entry: just lint
         language: system
         pass_filenames: false
-      - id: ty
+      - id: typecheck
         name: ty type check
         entry: just typecheck
         language: system
         pass_filenames: false
-      - id: detect-secrets
+      - id: secrets
         name: Detect secrets
         entry: just secrets
         language: system
@@ -31,7 +33,7 @@ repos:
         entry: just nicknames
         language: system
         pass_filenames: false
-      - id: tool-docs
+      - id: tool-docs-check
         name: Generated tool reference guard
         entry: just tool-docs-check
         language: system

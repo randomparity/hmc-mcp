@@ -310,10 +310,22 @@ def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
     blocks = _prek_hook_blocks(config)
     entries = []
     for block in blocks:
+        identifier = re.search(r"^ *- id: (\S+)$", block, re.MULTILINE)
         entry = re.search(r"^ +entry: just (\S+)$", block, re.MULTILINE)
         assert entry, f"hook does not delegate to a just recipe: {block!r}"
-        # The setting as its own key, not the string anywhere in the block.
+        # The id is the recipe, so `SKIP=<id>` and `prek run <id>` name the gate
+        # the reader thinks they name. Swap the two and the wrong gate is skipped.
+        assert identifier and identifier[1] == entry[1]
+        # Each setting as its own key, not the string anywhere in the block.
         assert len(re.findall(r"^ +pass_filenames: false$", block, re.MULTILINE)) == 1
+        # `entry` is only executed when the hook is a system hook that always has
+        # files to run on. `language: pygrep`, `stages: [manual]` and `exclude: .*`
+        # each leave the recipe unrun while the entry line still reads correctly.
+        assert len(re.findall(r"^ +language: system$", block, re.MULTILINE)) == 1
+        narrowing = re.search(
+            r"^ +(stages|exclude|files|types|types_or|always_run):", block, re.MULTILINE
+        )
+        assert narrowing is None, f"hook narrows when it must always run: {narrowing}"
         entries.append(entry[1])
 
     assert config.count("repo: local") == 1
