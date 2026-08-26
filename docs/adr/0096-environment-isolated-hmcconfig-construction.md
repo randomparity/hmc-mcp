@@ -155,9 +155,9 @@ remove.
 - Two construction paths exist with different semantics. That is the point — the
   operator path *should* read the environment — but the difference has to be
   documented rather than discovered, which §4 covers.
-- `from_mapping` iterates `model_fields` per call. `HMCConfig` has thirteen
-  fields and construction already runs full pydantic validation; the enumeration
-  is not measurable next to it.
+- `from_mapping` iterates `model_fields` per call. `HMCConfig` has twelve fields
+  and construction already runs full pydantic validation; the enumeration is not
+  measurable next to it.
 - `0.2.0` carries one more supported member. No existing call changes.
 
 ## Alternatives considered

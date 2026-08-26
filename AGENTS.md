@@ -45,10 +45,13 @@ pager, or a prompt will stall the agent with no recovery path.
       and H1, never its body — so editing an ADR's prose is not caught by that
       gate. Most ADRs are in this class, which is why a prose-only ADR edit is
       one of the few real documentation-only changes here.
-    - **Asserted by nothing** today: the `docs/plan-*`, `docs/spec-*`,
+    - **Content-unasserted** today: the `docs/plan-*`, `docs/spec-*`,
       `docs/scorecard-*`, `docs/workflow/` and `docs/superpowers/` pages. Test
       modules cite some of those specs in module docstrings, which asserts
-      nothing about the file.
+      nothing about the file. `just doc-freshness` does read every tracked
+      Markdown file's *first line*, looking for a generation banner — so a page
+      here can still redden it by opening with something banner-shaped, but its
+      body is unchecked.
   - **When the answer is not obvious, use `--merge`.** It costs one merge
     commit. A wrong `--squash` is not reversible once it is on `main`.
   - Two shell mechanics, for whatever check you do write over
@@ -67,7 +70,10 @@ pager, or a prompt will stall the agent with no recovery path.
     and preserves the per-commit history the policy protects — PR #455's seven
     commits landed that way as `aec6125^..f528e94`. To tell a squash from a
     rebase, compare the commit's own diff with the PR's: on a squash they are
-    equal, on a rebase the commit carries only its own slice.
+    equal, on a rebase the commit carries only its own slice. This paragraph is
+    forensic — how to read history after the fact. It is **not** a second
+    blessed strategy: the rule above still says `--merge`, and whether
+    `--rebase` should join it is open in #530.
 
 **Other common interactive traps**
 
@@ -122,19 +128,22 @@ which covers every `src/hmc_mcp/cli_*.py` module, in a way whose cause is
 nowhere near the error. A bare `uv sync` also drops `--locked` and can silently
 rewrite `uv.lock`.
 
-**`uv add` syncs by default and prunes the same way.** Use
-`uv add --no-sync <pkg>` and then `just setup`. `pip install` into this venv is
-worse: the next `uv sync --locked` reverts it silently. When `uv sync --locked`
-refuses because `uv.lock` has fallen behind `pyproject.toml`, refresh the lock
-with `uv lock` — that is the one sync-adjacent command the rule above does not
-cover, because it resolves without touching the environment.
+**`uv add` syncs by default and prunes the same way.** Always pass `--no-sync`,
+and then `just setup` — the exact form depends on where the dependency goes,
+below. `pip install` into this venv is worse: the next `uv sync --locked`
+reverts it silently. When `uv sync --locked` refuses because `uv.lock` has
+fallen behind `pyproject.toml`, refresh the lock with `uv lock` — that is the
+one sync-adjacent command the rule above does not cover, because it resolves
+without touching the environment.
 
 **Where a new dependency goes decides how it must be written**, and
 `uv add`'s default `>=` floor is wrong for both cases. `tests/test_supply_chain.py`
 enforces this in `just test`, before any CI job runs:
 
 - A **runtime** dependency goes in `[project] dependencies` and needs both a
-  floor and a cap, `name>=x,<y`. It must also join `LIBRARY_DEPENDENCIES` in
+  floor and a cap: `uv add --no-sync "<pkg>>=x,<y"`, writing the range out
+  rather than letting `uv add` pick a bare floor. It must also join
+  `LIBRARY_DEPENDENCIES` in
   `tests/test_supply_chain.py` and ADR 0068's policy notes — the exhaustiveness
   test compares the two sets and says so in its own failure message. CI's
   `library-range-floors` job re-checks the range shape, long after and far from
@@ -215,6 +224,15 @@ Common causes worth checking first:
   `HMC_PORT`, `HMC_TIMEOUT` and `HMC_SSH_TIMEOUT` default to 443, 60 and 300; a
   probe set to the default is invisible to a test that asserts the default, so
   it would prove nothing. A leak has to surface as a wrong-value assertion.
+
+  **The failures this probe produces are its output, not pre-existing failures
+  to fix under the rule at the top of this section.** It is a diagnostic, and it
+  reddens tests on purpose — `tests/conftest.py`'s `make_config()` pins only
+  host, user, password and `verify_ssl`, so `HMC_PORT=12443` alone re-points
+  every config it builds away from the `https://hmc.test:443` the respx routes
+  expect. Read the failures as a list of tests that are not isolated, fix the
+  isolation, and re-run. A green `just verify` — with no `HMC_*` exported — is
+  what says the branch is shippable.
 
   `HMC_VERIFY_SSL` and `HMC_AUTHORIZE_POWER_OPERATIONS` are deliberately absent:
   autouse fixtures in `tests/conftest.py` already pin both for every test, so
