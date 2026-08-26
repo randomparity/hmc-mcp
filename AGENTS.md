@@ -22,46 +22,52 @@ pager, or a prompt will stall the agent with no recovery path.
   the PR is documentation-only. Squash merges collapse commit history and break
   `git bisect`. Use `--merge` (merge commit) for all code, test, config, and
   script changes.
-  - **Documentation-only** means **no changed file is asserted by a test or by
-    a `static` gate.** Matching `*.md` or `docs/**` is necessary and not
-    sufficient — plenty of Markdown here is gate-load-bearing:
-    `CHANGELOG.md`'s `### Facade manifest` is asserted against
-    `hmc_mcp.api.__all__` by `tests/unit/test_changelog.py`; `docs/tools/` is
-    generated and diffed by `just tool-docs-check`;
+  - **Documentation-only** means **no changed file's content is asserted by a
+    test or a `static` gate.** *Content*, specifically: repo-wide scans like
+    `just secrets` read every tracked file, and counting those would make the
+    exception dead. Matching `*.md` is necessary and nowhere near sufficient —
+    most of this repo's Markdown is gate-load-bearing. `CHANGELOG.md`'s
+    `### Facade manifest` is asserted against `hmc_mcp.api.__all__`;
+    `README.md`, `CONTRIBUTING.md`, `SECURITY.md` and
+    `docs/hmc-cli-cheatsheet.md` are asserted by `tests/`; generated
+    `docs/tools/` is diffed by `just tool-docs-check`;
     `docs/environment-variables.md` is checked field by field by
-    `just env-vars`; ADR 0029's inventory block is parsed by
-    `tests/unit/test_public_api.py`; `README.md` is asserted by
-    `tests/test_readme_tool_names.py` and `tests/test_readme_layout.py`; and
-    `CONTRIBUTING.md` and `SECURITY.md` are asserted by
-    `tests/test_project_metadata.py`. A PR touching any of those is changing a
-    contract, and its per-commit history has to survive.
-  - The check below encodes that criterion as a **floor, not a closed set**:
-    its second half lists the asserted surfaces known today, and the set grows.
-    Save it as a script and run it — the guards call `exit`, so it is not an
-    interactive paste.
+    `just env-vars`; and eight ADRs plus the `docs/workflow/specs/` pages are
+    read by contract tests. A PR touching any of those is changing a contract,
+    and its per-commit history has to survive.
+  - **Establish it by search, not by a path pattern.** A pattern was tried and
+    it drifts, and it cannot be repaired by adding entries:
+    `tests/test_project_metadata.py` reaches the cheatsheet as
+    `ROOT / "docs" / "hmc-cli-cheatsheet.md"`, which no grep for that path
+    finds. Search for the basename too. Run this from the repository root, as a
+    saved script — it takes the PR number as an argument, and its guards call
+    `exit`, so it is not an interactive paste:
     ```sh
-    files=$(gh pr diff <PR> --name-only) || { echo 'diff query failed' >&2; exit 1; }
+    pr=${1:?usage: check-doc-only <PR>}
+    files=$(gh pr diff "$pr" --name-only) || { echo 'diff query failed' >&2; exit 1; }
     [ -n "$files" ] || { echo 'no files reported' >&2; exit 1; }
     disqualifying=$(
-      printf '%s\n' "$files" | grep -Ev '\.md$|^docs/'
-      printf '%s\n' "$files" | grep -E '^(CHANGELOG|CONTRIBUTING|README|SECURITY)\.md$'
-      printf '%s\n' "$files" | grep -E '^docs/(tools|adr|workflow/specs)/'
-      printf '%s\n' "$files" | grep -E '^docs/(environment-variables|authorization-audit)\.md$'
+      printf '%s\n' "$files" | grep -Ev '\.md$'
+      printf '%s\n' "$files" | grep -E '\.md$' | while IFS= read -r f; do
+        grep -rqF -e "$f" -e "${f##*/}" \
+          tests/ scripts/ justfile .pre-commit-config.yaml && printf '%s\n' "$f"
+      done
     ) || true
     if [ -z "$disqualifying" ]; then
       echo 'documentation-only: --squash permitted'
     else
-      echo 'not documentation-only, use --merge:'; echo "$disqualifying"
+      echo 'not documentation-only, use --merge:'; printf '%s\n' "$disqualifying"
     fi
     ```
     **The `|| true` is load-bearing.** `var=$(…)` takes the exit status of the
-    command substitution, which is the status of its *last* command — a `grep`
-    that matched nothing, which is exactly the documentation-only case. Without
-    it the script dies at the assignment under `set -e` and prints nothing. And
-    printing nothing is also what a failed `gh pr diff` looks like — wrong PR
-    number, expired auth — which is why the two guards check its exit status
-    first. Treat an unanswered query as "not documentation-only", never as a
-    pass.
+    command substitution, which is the status of its *last* command — here a
+    search that found nothing, which is exactly the documentation-only case.
+    Without it the script dies at the assignment under `set -e` and prints
+    nothing. And printing nothing is also what a failed `gh pr diff` looks like
+    — wrong PR number, expired auth — which is why the two guards check its
+    exit status first. Treat an unanswered query as "not documentation-only".
+  - **When the answer is not obvious, use `--merge`.** It costs one merge
+    commit. A wrong `--squash` is not reversible once it is on `main`.
   - The policy is prose, not a gate: **nothing in the repo enforces it** —
     `rg -ni squash` over `.github/`, `tests/`, `scripts/`, `justfile`, and
     `.pre-commit-config.yaml` returns nothing. The check above is the only
@@ -70,7 +76,7 @@ pager, or a prompt will stall the agent with no recovery path.
   - **A single-parent commit on `main` is not evidence of a squash.** This repo
     has also landed PRs with `--rebase`, which replays each commit onto `main`
     and preserves the per-commit history the policy protects — PR #455's seven
-    commits landed that way as `aec6125..f528e94`. To tell a squash from a
+    commits landed that way as `aec6125^..f528e94`. To tell a squash from a
     rebase, compare the commit's own diff with the PR's: on a squash they are
     equal, on a rebase the commit carries only its own slice.
 
@@ -82,7 +88,7 @@ pager, or a prompt will stall the agent with no recovery path.
 | `git diff` | `git --no-pager diff` |
 | `gh pr create` | always supply `--title` and `--body` (or `--body-file`) |
 | `gh issue create` | always supply `--title` and `--body` |
-| `uv add` / `pip install` | non-interactive by default; fine as-is |
+| `uv add` / `pip install` | non-interactive, but never bare — see *Worktree venv hygiene* |
 
 ## Merge-conflict resolution
 
@@ -133,6 +139,13 @@ worse: the next `uv sync --locked` reverts it silently. When `uv sync --locked`
 refuses because `uv.lock` has fallen behind `pyproject.toml`, refresh the lock
 with `uv lock` — that is the one sync-adjacent command the rule above does not
 cover, because it resolves without touching the environment.
+
+**A runtime dependency needs both a floor and a cap.** CI's
+`library-range-floors` job parses every `[project] dependencies` entry as
+`name>=floor,<cap` and fails with "runtime dependency has no testable floor" on
+anything else — and it runs after `ci`, far from the command that caused it.
+`uv add`'s default bound is a floor only, so write the specifier out. A
+development tool belongs in the `dev` group: `uv add --dev --no-sync <pkg>`.
 
 **Never run a bare `uv run` either.** Every `uv run` in the `justfile` passes
 `--no-sync`, and `tests/test_ci_pipeline.py` asserts that as an invariant. A
@@ -195,11 +208,16 @@ Common causes worth checking first:
 
   ```sh
   HMC_AGENT_ID=a HMC_AUDIT_MEMENTO=m HMC_HOST=h \
-  HMC_ISO_URL_ALLOWLIST=iso.example.test HMC_PASSWORD=p HMC_PORT=443 \
-  HMC_SCHEMA_VERSION=V1_0 HMC_SSH_KEY_FILE=/k HMC_SSH_TIMEOUT=300 \
-  HMC_TIMEOUT=60 HMC_USER=u \
+  HMC_ISO_URL_ALLOWLIST=iso.example.test HMC_PASSWORD=p HMC_PORT=12443 \
+  HMC_SCHEMA_VERSION=V1_0 HMC_SSH_KEY_FILE=/k HMC_SSH_TIMEOUT=111 \
+  HMC_TIMEOUT=17 HMC_USER=u \
     uv run --no-sync pytest tests/ -q
   ```
+
+  Every value differs from the field's declared default, deliberately.
+  `HMC_PORT`, `HMC_TIMEOUT` and `HMC_SSH_TIMEOUT` default to 443, 60 and 300; a
+  probe set to the default is invisible to a test that asserts the default, so
+  it would prove nothing. A leak has to surface as a wrong-value assertion.
 
   `HMC_VERIFY_SSL` and `HMC_AUTHORIZE_POWER_OPERATIONS` are deliberately absent:
   autouse fixtures in `tests/conftest.py` already pin both for every test, so
