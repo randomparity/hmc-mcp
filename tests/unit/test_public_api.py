@@ -14,7 +14,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import InitVar, dataclass, fields, is_dataclass
 from types import ModuleType
 from typing import Annotated, Literal, TypeVar, get_args, get_origin, get_type_hints
 
@@ -48,6 +48,7 @@ class FacadeContractError(AssertionError):
     annotation keeps that distinguishable from a bare ``SyntaxError`` surfacing from
     inside ``ast``.
     """
+
 
 _ADR_CITATION = re.compile(r"ADR 0029|docs/adr/0029")
 
@@ -665,6 +666,108 @@ def _field_literal_aliases(models: list[type]) -> dict[tuple[str, str], object]:
     return aliases
 
 
+def _fieldless_exported_classes() -> list[type]:
+    """The exported owned classes whose supported surface is their constructor.
+
+    ADR 0029 pins that set to ``HMCClient`` and the exported error types, and the test
+    above fails when a class in a fourth shape joins it. For a model the constructor
+    parameters *are* the fields, so the field walk already reaches them; for these the
+    field walk reads nothing at all, which is why the type clause reads ``__init__``
+    directly (#502).
+    """
+    return [
+        exported
+        for name in api.__all__
+        if inspect.isclass(exported := getattr(api, name))
+        and _is_owned(exported.__module__)
+        and _model_field_hints(exported) is None
+    ]
+
+
+def _constructor_owned_types(owners: list[type]) -> dict[tuple[str, str], object]:
+    """Every package-owned type the constructors of *owners* name.
+
+    A constructor inherited from a builtin exception carries no annotation, so
+    ``get_type_hints`` reports an empty mapping and that class contributes nothing.
+    """
+    owned: dict[tuple[str, str], object] = {}
+    for owner in owners:
+        for hint in get_type_hints(owner.__init__).values():
+            _collect_owned_types(hint, owned)
+    return owned
+
+
+def _constructor_literal_aliases(owners: list[type]) -> dict[tuple[str, str], object]:
+    """The literal-alias clause read off those same constructor annotations.
+
+    ``get_type_hints`` erases an alias on a constructor parameter exactly as it does on
+    an operation's parameter, so this half reads source text too — resolved in the
+    module that *defines* the constructor, which is a base's module when ``__init__`` is
+    inherited. A constructor inherited from outside the package can define no owned
+    alias, and is skipped rather than read: its module need not carry ``from __future__
+    import annotations``, which this half requires of the source text it parses.
+    """
+    aliases: dict[tuple[str, str], object] = {}
+    for owner in owners:
+        initialiser = owner.__init__
+        module_name = getattr(initialiser, "__module__", None)
+        if not isinstance(module_name, str) or not _is_owned(module_name):
+            continue
+        aliases.update(
+            _aliases_in_annotations(
+                sys.modules[module_name],
+                inspect.get_annotations(initialiser).values(),
+                origin=f"{module_name}.{initialiser.__qualname__}",
+            )
+        )
+    return aliases
+
+
+def _init_parameters_outside_fields(owner: type) -> list[str]:
+    """A dataclass's ``__init__`` parameters that are not among its declared fields.
+
+    ADR 0029 reads a model's constructor through its fields on the grounds that the two
+    agree. ``dataclasses.InitVar`` is the case where they do not: it is a constructor
+    parameter and ``dataclasses.fields`` omits it, so its type would be selected under
+    the Decision's call-signature clause while both halves of the mechanism read
+    nothing of it — the same silent drop-out the constructor clause above closes.
+    """
+    parameters = set(inspect.signature(owner.__init__).parameters) - {"self"}
+    return sorted(parameters - {field.name for field in fields(owner)})
+
+
+def test_an_exported_dataclass_constructor_names_only_its_own_fields() -> None:
+    """The equivalence that lets the constructor clause skip a model must hold.
+
+    Driven with a synthetic ``InitVar`` as well as against the facade, because every
+    exported dataclass satisfies this today and the check would otherwise never be
+    seen to fail.
+    """
+
+    @dataclass(frozen=True)
+    class InitVarModel:
+        kept: str
+        seed: InitVar[SyntheticResult]
+
+        def __post_init__(self, seed: SyntheticResult) -> None: ...
+
+    assert _init_parameters_outside_fields(InitVarModel) == ["seed"]
+
+    offenders = {
+        name: outside
+        for name in api.__all__
+        if inspect.isclass(exported := getattr(api, name))
+        and _is_owned(exported.__module__)
+        and is_dataclass(exported)
+        and (outside := _init_parameters_outside_fields(exported))
+    }
+    assert offenders == {}, (
+        f"{offenders} are constructor parameters of an exported dataclass that are not "
+        "declared fields, so ADR 0029's type clause reads neither their types nor the "
+        "literal aliases they name"
+    )
+
+
 def _unexported_owned_types(
     selected: set[tuple[str, str]], modules: dict[str, ModuleType]
 ) -> dict[str, list[str]]:
@@ -673,14 +776,20 @@ def _unexported_owned_types(
     Opaque HMC payloads (``dict[str, Any]`` and friends) own no ``hmc_mcp`` type and
     so fall out by construction, which is exactly the distinction ADR 0029's
     Consequences section draws. The walk then closes over the fields of every owned
-    model it reached, because the Decision's type clause is transitive through them.
+    model it reached, because the Decision's type clause is transitive through them,
+    and over the constructor of every exported class that has no such fields to read.
+    Constructor types are collected before that closure runs, so an owned model a
+    constructor names is itself walked for fields.
     """
     owned: dict[tuple[str, str], object] = {}
     for module_name, name in selected:
         for hint in get_type_hints(getattr(modules[module_name], name)).values():
             _collect_owned_types(hint, owned)
     owned.update(_owned_literal_aliases(selected, modules))
+    constructors = _fieldless_exported_classes()
+    owned.update(_constructor_owned_types(constructors))
     owned.update(_field_literal_aliases(_supported_models(owned)))
+    owned.update(_constructor_literal_aliases(constructors))
 
     manifest = set(api.__all__)
     exported = {
@@ -816,6 +925,27 @@ SyntheticNested.__module__ = "hmc_mcp.operations_typed"
 SyntheticSnapshot.__module__ = "hmc_mcp.operations_typed"
 
 
+class SyntheticPartialError(Exception):
+    """An exported error whose constructor names a type and an alias no facade exports.
+
+    None of the three model shapes, so ``_model_field_hints`` reads no field off it and
+    the transitive field walk reaches neither parameter. ``__init__`` carries its own
+    ``__module__``, reassigned alongside the class's, because the alias half resolves a
+    constructor's annotation source in the module that *defines* the constructor.
+    """
+
+    def __init__(
+        self, message: str, result: SyntheticResult, flavour: SyntheticFlavour
+    ) -> None:
+        super().__init__(message)
+        self.result = result
+        self.flavour = flavour
+
+
+SyntheticPartialError.__module__ = "hmc_mcp.operations_typed"
+SyntheticPartialError.__init__.__module__ = "hmc_mcp.operations_typed"
+
+
 def test_adr_0029_type_rule_reddens_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -876,6 +1006,32 @@ def test_adr_0029_type_rule_descends_into_owned_model_fields(
         "hmc_mcp.operations_typed:SyntheticFlavour",
         "hmc_mcp.operations_typed:SyntheticNested",
         "hmc_mcp.operations_typed:SyntheticSnapshot",
+    ]
+
+
+def test_adr_0029_type_rule_reaches_an_exported_errors_constructor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The constructor half must redden on its own, with no operation involved.
+
+    ``SriovLogicalPortPartialError`` and ``VnicPartialError`` each name a package-owned
+    result in their constructor and both results are exported today, so the live check
+    exercises the clean path only: the clause would stay green if it read nothing at
+    all (#502). Driving it with an empty operation set isolates this half, so every
+    fault below arrives through ``__init__`` and through nothing else.
+    """
+    module = ModuleType("hmc_mcp.operations_typed")
+    module.SyntheticFlavour = SyntheticFlavour  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setattr(
+        api, "SyntheticPartialError", SyntheticPartialError, raising=False
+    )
+    monkeypatch.setattr(api, "__all__", [*api.__all__, "SyntheticPartialError"])
+
+    faults = _unexported_owned_types(set(), {})
+    assert faults["selected but not exported or excluded"] == [
+        "hmc_mcp.operations_typed:SyntheticFlavour",
+        "hmc_mcp.operations_typed:SyntheticResult",
     ]
 
 
@@ -992,7 +1148,9 @@ def test_annotation_walk_still_resolves_a_quoted_forward_reference() -> None:
     )
 
 
-def test_annotation_walk_names_the_operation_when_an_annotation_will_not_parse() -> None:
+def test_annotation_walk_names_the_operation_when_an_annotation_will_not_parse() -> (
+    None
+):
     """An unreadable signature is a guard failure, and must report as one."""
     with pytest.raises(FacadeContractError) as error:
         _annotation_paths("not a valid annotation", origin="operations_x.do_thing")

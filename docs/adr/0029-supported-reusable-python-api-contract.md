@@ -75,6 +75,25 @@ types, whose supported surface is their constructor. A contract test holds the f
 that pair, so a result type introduced in a fourth shape — a `NamedTuple`, an `attrs` class, a
 hand-written one — fails the suite instead of dropping out of this clause unnoticed.
 
+For those two kinds the type half reads `__init__` in place of the fields. Their constructor
+parameter types *are* selected: this Decision's first paragraph already calls an exported name's
+call signature supported, and a class's call signature is its constructor, so a consumer who
+catches an exported error or constructs an exported client must be able to name what the
+constructor takes and what it exposes. Every package-owned type or literal alias a selected
+constructor's parameters name is therefore selected too, on the same terms as an operation's
+parameters and by the same transitive closure — a model reached through a constructor is walked
+for its own fields in turn.
+
+A model's constructor is not read a second time, because its parameters are the fields the clause
+above already selects. That equivalence is asserted rather than assumed: a `dataclasses.InitVar` is
+a constructor parameter that `dataclasses.fields` omits, so a contract test fails when an exported
+dataclass takes a parameter that is not one of its own fields, rather than letting that parameter's
+type drop out of both halves the way these twelve constructors did. A constructor inherited from
+outside the package names nothing owned — `RuntimeError.__init__` and `ValueError.__init__` carry
+no annotation at all — and the alias half, which reads annotation source text and so requires the
+defining module to carry `from __future__ import annotations`, is not run over a constructor a
+foreign module defines: an alias arriving from outside the package is no facade export in any case.
+
 The rule reads a module attribute exactly as `inspect.iscoroutinefunction` and `__module__`
 ownership report it, so three operation shapes fall outside it by decision rather than by
 oversight: an asynchronous generator, which satisfies `inspect.isasyncgenfunction` and not
@@ -283,6 +302,21 @@ further omissions (#482): twelve `snapshot` models behind `LparSnapshot`, and se
 aliases — `AffinityClassification`, `CapabilityState`, `Keylock`, `OsType`,
 `ResourceKind`, `SharingMode`, and `StopReason` — that no selected signature named. One limit
 remains deliberate: an underscore name is internal here as everywhere.
+
+Both halves run a third time over the constructors of the exported classes the field walk reads no
+field off — the pair the Decision names above. `typing.get_type_hints(cls.__init__)` feeds the type
+half and the raw `__init__` annotations feed the alias half, resolved in the module that defines
+the constructor rather than the module of the class that inherits it. Constructor types are
+collected before the field closure runs, so a model a constructor names is walked for its own
+fields too. This one found no omission (#502): `HMCClient` takes `HMCConfig`, and
+`SriovLogicalPortPartialError` and `VnicPartialError` take `SriovLogicalPortChangeResult` and
+`VnicChangeResult`, all four already exported. It is a guard against a future error type carrying
+an unexported result, which a consumer would meet through a supported `except` clause with no
+supported import path to name it — so a synthetic exported error whose constructor names an
+unexported type and an unexported alias drives the clause, because the live facade exercises only
+its clean path. A companion test holds the equivalence that lets a model's constructor go unread,
+comparing each exported dataclass's `__init__` parameters with its declared fields; a synthetic
+`InitVar` drives that one too, since every exported dataclass satisfies it today.
 
 A third test parses the inventory above and asserts each clause against the facade's own import
 statements and the modules' contents, rejecting every line inside the fence that is neither an
