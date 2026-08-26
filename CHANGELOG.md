@@ -163,8 +163,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   surrounding whitespace is still trimmed. That check applies **even when `job_href` is
   supplied**, where the client previously ignored `job_uuid` altogether — so an issue #95 caller
   that persisted only the submission link must now pass the identifier too. Every non-404 HMC
-  failure still raises. The `hmc jobs` CLI commands keep the previous behaviour; #526 owns that
-  pass.
+  failure still raises. Two consequences specific to `hmc_get_job`: null no longer separates a
+  reaped job from an HMC that produced no entry, where the `HMCError` used to, and because that
+  tool returns the HMC entry rather than the outcome, the `link` it carries can be one a read just
+  proved dead — ADR 0093 clause 2's never-store-a-dead-link guarantee does not reach it. The
+  `hmc jobs` CLI commands keep the previous behaviour; #526 owns that pass.
 - `HMC_AGENT_ID` values containing double quotes or backslashes are rejected at config load
   instead of being passed through into SSH command construction (#386).
 - `hmc_install_lpar_os` and `hmc_install_vios` now drive the HMC CLI

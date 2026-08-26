@@ -315,7 +315,12 @@ ordinary for a worker polling hours after submission.
 `hmc_get_job` keeps its `dict | null` shape rather than becoming a `JobOutcome`: it returns the
 outcome's `job`, so a reaped job reads as null — the same answer the tool already gave for a
 response carrying no job entry, and clause 4 already treats those two as one observation. Widening
-it to the full outcome would be a second, larger shape change that nothing here needs.
+it to the full outcome would be a second, larger shape change that nothing here needs. The price is
+a carve-out from clause 2: because `hmc_get_job` hands back the HMC entry rather than the outcome,
+the `job_href` `_handle` computed is discarded, so the guarantee that a consumer re-persisting from
+every outcome never stores a link known not to work does **not** reach that tool. Its `link` can be
+one a read just proved dead. Nothing else on this branch relies on that guarantee, and buying it
+back means the shape change this clause declines.
 
 What changes for a caller: a reaped job that used to raise `HMCError` now returns successfully, so
 a caller that only caught the exception must read `found` (or the null) instead; `timeout_seconds`
@@ -333,12 +338,26 @@ re-read applies only to a disappearance seen *after* the job was alive, so a 404
 becomes `found=False` unconfirmed, where the client path used to raise. Confirming the first read
 would change clause 5's stop condition and belongs in its own decision.
 
-Two further residuals stay open, both named in the tool docstrings rather than fixed here. Clause 2's
-promise that a re-persisted `job_href` is never a link known not to resolve does not hold when the
-caller's spelling of the link differs from the HMC's own — `operations_jobs._handle` compares them
-as raw strings — so the `hmc_wait_for_job` docstring states the weaker guarantee until #529 closes
-it. And the CLI (`cli_jobs`) still calls `HMCClient` directly and still has the older contract;
-#526 owns that pass, because the CLI's output contract is its own decision.
+Further residuals stay open, each named in the tool docstrings rather than fixed here.
+
+Clause 2's promise that a re-persisted `job_href` is never a link known not to resolve also fails
+on `wait_for_job` when the caller's spelling of the link differs from the HMC's own —
+`operations_jobs._handle` compares them as raw strings — so the `hmc_wait_for_job` docstring states
+the weaker guarantee until #529 closes it.
+
+Clause 5's confirming re-read is owed a full poll interval past the deadline, but the loop shortens
+it to whatever remains when the disappearance is seen with less than an interval left — which is
+the case clause 5 names when it justifies owing the read at all. The docstring says "up to one
+`poll_interval`" until #532 closes it.
+
+`_confirm_missing` treats the HTTP 400 REST000E of issue #95 firmware as absence, so on exactly the
+firmware `job_href` exists to serve, a link whose parent resource was removed makes one live job
+read as absent. ADR clause 2 settled that trade at the operations layer on the strength of a
+warning log; an MCP caller cannot read that log, so both tool docstrings now tell a caller who
+supplied a `job_href` to re-read by identifier alone before acting on absence.
+
+And the CLI (`cli_jobs`) still calls `HMCClient` directly and still has the older contract; #526
+owns that pass, because the CLI's output contract is its own decision.
 
 ## Considered & rejected
 

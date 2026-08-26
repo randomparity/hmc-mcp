@@ -49,7 +49,12 @@ def hmc_get_job(
     one read saw, not a confirmed disappearance: this tool makes a single read,
     so a momentary 404 from a proxy reload or a failover reads as null too, and a
     null that repeats for every identifier is a deployment whose jobs path is
-    absent rather than a fleet of vanished jobs (ADR 0093).
+    absent rather than a fleet of vanished jobs (ADR 0093). Absence can also be
+    confined to one job: on firmware that does not serve the global jobs path, a
+    ``job_href`` that has stopped resolving reads as null for that identifier
+    while the job is alive and still pollable at the right link. Whenever you
+    supplied a ``job_href``, re-read by ``job_uuid`` alone before acting on a
+    null.
 
     An empty identifier, a bare dot, or one carrying a path, query, fragment,
     percent, or interior whitespace character addresses something other than one
@@ -151,20 +156,28 @@ def hmc_wait_for_job(
 
     ``found`` false is what the read that was made saw. It is a *confirmed*
     disappearance only once this wait has already seen the job alive, in which
-    case a second read one ``poll_interval`` later has to agree; a 404 on the
-    very first poll is reported straight through, so a momentary one — a proxy
-    reload, a failover — reads as ``found`` false with no re-read.
+    case a second read has to agree; a 404 on the very first poll is reported
+    straight through, so a momentary one — a proxy reload, a failover — reads as
+    ``found`` false with no re-read.
     ``found`` false does not say *why*, and is not proof the work did or did not
     happen: confirm that against the affected resource, not the job record. A
     ``found`` false that repeats for every identifier is a deployment whose jobs
-    path is absent, not a fleet of vanished jobs (ADR 0093).
+    path is absent, not a fleet of vanished jobs (ADR 0093). Absence can also be
+    confined to one job: on firmware that does not serve the global jobs path, a
+    ``job_href`` that has stopped resolving reads as ``found`` false for that
+    identifier while the job is alive and still pollable at the right link.
+    Whenever you supplied a ``job_href``, re-read by ``job_uuid`` alone before
+    acting on absence.
 
     ``timeout_seconds`` is a soft bound. A job that disappears after this wait has
-    already seen it alive is re-read once, one ``poll_interval`` later, before
-    being reported gone, and that confirming read is owed even past the deadline.
-    The overshoot is a whole ``poll_interval``, unrelated to the deadline, so a
-    ``poll_interval`` larger than ``timeout_seconds`` overshoots by more than the
-    deadline itself. Keep ``poll_interval`` well under ``timeout_seconds``.
+    already seen it alive is re-read once, up to one ``poll_interval`` later,
+    before being reported gone, and that confirming read is owed even past the
+    deadline. The overshoot is a whole ``poll_interval``, unrelated to the
+    deadline, so a ``poll_interval`` larger than ``timeout_seconds`` overshoots by
+    more than the deadline itself. Keep ``poll_interval`` well under
+    ``timeout_seconds``. The gap shrinks the other way near the deadline: a
+    disappearance seen with less than an interval left is confirmed after only the
+    time that remains, which weakens the confirmation there (#532).
 
     ``job_href`` on the result is usually the link worth persisting for the next
     call: the link you passed when the read through it worked, otherwise the
