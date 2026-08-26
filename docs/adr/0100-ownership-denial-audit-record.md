@@ -87,9 +87,13 @@ both, and that test's "four values" docstring, are edited in this change.
   reasons: names that repeat across a fleet, plus the `HMCConfig.host` that says which
   HMC they are names on. An unset host renders as the empty string it is.
 - **`attribution`** — the acting agent, through the existing `_attribution` builder with
-  `source: "config:agent_id"` and `verified: false`. This is `HMCConfig.agent_id`, the
-  effective value the guard compared `owner` against, so the record carries both halves
-  of the comparison that failed.
+  `source: "config:agent_id"` and `verified: false`. The claim is
+  `hmc.config.agent_id or "hmc-mcp"`, not the bare field: `HMCConfig.agent_id` defaults
+  to `None`, and the fallback literal is what the guard actually compares against and
+  what the override record already carries, so an unconfigured deployment's two
+  ownership events name the same actor and can be joined. On `foreign-owner` the record
+  therefore carries both halves of the comparison that failed; on `malformed-token` it
+  carries the actor alone, because that branch refuses before the comparison is reached.
 
 It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as
 nulls — an ownership check on a token parsed from an LPAR description is not an
@@ -123,9 +127,10 @@ field table and a sample; its "Denials emit nothing" paragraph — which #371 wr
 which cites this issue — is replaced by what the stream now carries and what it still
 does not; and its lead section's claim that an unpolicied server produces
 `ownership-override` records "and only those" stops being true, so that passage names
-both. `README.md`'s one-line version of the same claim is corrected with it. That line
-sits outside the change surface this issue was dispatched with, and is edited anyway
-because leaving it is shipping a document that contradicts the record this ADR adds.
+both. `README.md:662` says only that ADR 0011 ownership-override records are not
+policy-gated: still true after this change, but now incomplete, since it names one of
+the two events an unpolicied server produces. It is completed in the same change. That
+line sits outside the change surface this issue was dispatched with.
 
 Both new vocabularies join the document's drift guard on the same terms as their
 siblings: `denial` as a field row held to `audit.OWNERSHIP_DENIALS` in both directions,
@@ -154,8 +159,10 @@ without joining that guard is the drift #486 exists to stop.
 - A `malformed-token` record identifies the partition but not the malformation, so
   triage means reading the description off the HMC out of band, and two alerts on one
   permanently-broken token are indistinguishable from an ongoing incident. Accepted
-  rather than closed: the token is HMC-supplied text, which ADR 0042 does not trust and
-  this stream declines to echo, and `denial` plus `lpar` is enough to find it.
+  rather than closed: the description is unbounded operator-authored text that `_value`
+  would cut at 128 characters — often before the malformation — and it can carry an
+  ADR 0064 caller token beside the ownership one, so a field for it discloses more than
+  it triages. `denial` plus `lpar` locates the partition to read.
 - No change to `hmc_mcp.api.__all__` and no movement of the frozen public signature
   digest: the new builder lives in `audit`, which the facade does not export, and no
   exported signature changes.
@@ -182,10 +189,9 @@ without joining that guard is the drift #486 exists to stop.
   strongest form breaks no caller — an optional keyword-only parameter on
   `authorize_lpar_mutation` (`src/hmc_mcp/api.py:251`, eleven call sites) and
   `authorize_decommission_lpar_ownership_snapshot` (`:250`, three) — but it moves the
-  frozen public signature digest at `tests/unit/test_public_api.py:1658`, so it is an
-  additive change to the supported surface — a minor release under ADR 0029:27-30 —
-  across two exports and fourteen call sites. judgment: the transport that has a tool
-  name already records it on the
+  frozen public signature digest at `tests/unit/test_public_api.py:1658`, which is
+  computed over every `api.__all__` signature, across two exports and fourteen call
+  sites. judgment: the transport that has a tool name already records it on the
   `authorization` record for the same call, and per-tool granularity is a future issue's
   under this issue's charter.
 - **No `denial` field, distinguishing the branches by `owner: null` alone.** judgment:
