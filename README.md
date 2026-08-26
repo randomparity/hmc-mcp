@@ -659,8 +659,8 @@ by `{"event": "records-dropped", "count": N}`. See
 [ADR 0043](docs/adr/0043-non-blocking-stderr-diagnostics.md); a full trail still wants
 something reading the server's stderr (under stdio that is the MCP client, not you; under
 `--http` it is whatever supervisor or journal collects the unit's stderr). ADR 0011
-ownership-override records are not policy-gated and are emitted on the CLI and Python API
-paths too.
+ownership-override and ownership-denied records are not policy-gated and are emitted on
+the CLI and Python API paths too.
 
 See [docs/authorization-audit.md](docs/authorization-audit.md) for the field set, the
 reason codes, and how to route or silence them.

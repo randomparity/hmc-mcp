@@ -139,6 +139,18 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   accepted the target — a refused non-VIOS target surfaces only in the HMC-side log (#460). Adding
   a target-type check raises a new `ValueError` but adds no parameter, so it will not move the
   frozen signature digest.
+- `ownership-denied` audit record for a refused ADR 0011 ownership check (#467, ADR 0100).
+  The guard recorded approved overrides and nothing else, so an operator reading the stream
+  could not tell "nobody tried to mutate a partition they do not own" from "many attempts were
+  refused" — and on the CLI and Python API paths, which no access policy reaches, a refusal
+  left no trace at all. Both denial branches now emit one `WARNING` record naming the guard
+  entry point (`operation`: `lpar-mutation` or `lpar-decommission-snapshot`), the rule that
+  refused (`denial`: `foreign-owner` or `malformed-token`), the system, the partition, the
+  owner the LPAR's token claims (`null` on `malformed-token`), the HMC, and the acting agent.
+  `ownership-override` is untouched — same name, same fields, same level — so an
+  `event == "ownership-override"` filter keeps counting approved bypasses and nothing else.
+  `docs/authorization-audit.md` documents the record and the caveats on alerting from it.
+  No exported signature changes.
 
 ### Changed
 

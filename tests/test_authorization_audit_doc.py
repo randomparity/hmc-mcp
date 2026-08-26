@@ -219,13 +219,18 @@ DISPATCH_MODULE = ROOT / "src" / "hmc_mcp" / "dispatch_scope.py"
 REASON_ROW = re.compile(r"^\|\s*`([^`]+)`\s*\|\s*([a-z][a-z-]*)\s*\|", re.MULTILINE)
 EVENT_HEADING = re.compile(r'^### `event: "([^"]+)"`\s*$', re.MULTILINE)
 
-#: The authorization field table's rows that restate a closed vocabulary, keyed by the
-#: field each names. Both cells list their members individually backticked, so one
-#: extractor serves both rather than a copy per field, and a third vocabulary joining the
-#: table needs no third regex (#518).
+#: The field-table rows that restate a closed vocabulary, keyed by the field each names.
+#: Every such cell lists its members individually backticked, so one extractor serves them
+#: all rather than a copy per field, and a vocabulary joining a table needs no new regex
+#: (#518). `effect` and `decision` sit in the `authorization` table; `operation` and
+#: `denial` are the `ownership-denied` record's own (#467, ADR 0100 §5). `FIELD_ROW`
+#: scans the whole document and `_field_row_cell` requires exactly one match, so a field
+#: name reused as a row in a second table would fail loud rather than pick one.
 FIELD_ROW_VOCABULARIES: tuple[tuple[str, frozenset[str]], ...] = (
     ("effect", tool_registry.EFFECTS),
     ("decision", audit.DECISIONS),
+    ("operation", audit.OWNERSHIP_OPERATIONS),
+    ("denial", audit.OWNERSHIP_DENIALS),
 )
 FIELD_ROW_FIELDS = [field for field, _ in FIELD_ROW_VOCABULARIES]
 FIELD_ROW = {
