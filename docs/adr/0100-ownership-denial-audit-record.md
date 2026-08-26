@@ -6,13 +6,14 @@ Accepted (2026-08-26)
 
 ## Context
 
-The ADR 0011 ownership guard records the exception and not the rule it enforces.
-`_audit_lpar_ownership_override` (`src/hmc_mcp/operations_lpar.py:434`) is reached from
-the two override paths — `authorize_lpar_mutation` and
-`_authorize_lpar_ownership_description` — and emits one `ownership-override` record at
-`WARNING`. The two denial branches beside it raise `PermissionError` with no audit call:
-a malformed `[hmc-mcp …]` token (`operations_lpar.py:470`) and a token naming another
-agent (`operations_lpar.py:477`). `audit.Event` has no denial member.
+The ADR 0011 ownership guard records the exception and not the rule it enforces. In
+`src/hmc_mcp/operations_lpar.py`, `_audit_lpar_ownership_override` is called from the two
+override paths — `authorize_lpar_mutation` and `_authorize_lpar_ownership_description` —
+and emits one `ownership-override` record at `WARNING`. The two denial branches in
+`_authorize_lpar_ownership_description` raise `PermissionError` with no audit call: a
+malformed `[hmc-mcp …]` token, and a token naming another agent. `audit.Event` has no
+denial member. (Names, not line numbers: this change edits that file, and ADR 0092
+needed a repair commit after the #371 guard shifted seven of its citations.)
 
 So the stream carries every approved bypass and no refused attempt, and an operator
 reading it cannot tell "nobody tried to mutate a partition they do not own" from "many
@@ -60,10 +61,9 @@ event whose *name* asserts the opposite, and it silently changes what an existin
 bypasses would start counting refusals.
 
 Adding a member to `Event` is the additive direction the module's stability rule permits,
-and `EVENTS` is derived from the `Literal` — but the suite does not follow for free.
-`tests/unit/test_audit.py:361` restates the set as a spelled-out literal and `:376`
-requires every declared event to be reachable from a hand-enumerated emitter call, so
-both, and that test's "four values" docstring, are edited in this change.
+and `EVENTS` is derived from the `Literal` — but the suite does not follow for free:
+`test_events_matches_the_literal_and_every_emitter_uses_it` restates the set and
+enumerates its emitters by hand, so it is edited here too.
 
 ### 2. Fields
 
@@ -127,10 +127,8 @@ field table and a sample; its "Denials emit nothing" paragraph — which #371 wr
 which cites this issue — is replaced by what the stream now carries and what it still
 does not; and its lead section's claim that an unpolicied server produces
 `ownership-override` records "and only those" stops being true, so that passage names
-both. `README.md:662` says only that ADR 0011 ownership-override records are not
-policy-gated: still true after this change, but now incomplete, since it names one of
-the two events an unpolicied server produces. It is completed in the same change. That
-line sits outside the change surface this issue was dispatched with.
+both. `README.md`'s one-line version of that claim names only the override record; it
+stays true and becomes incomplete, and is completed in the same change.
 
 Both new vocabularies join the document's drift guard on the same terms as their
 siblings: `denial` as a field row held to `audit.OWNERSHIP_DENIALS` in both directions,
@@ -144,28 +142,25 @@ without joining that guard is the drift #486 exists to stop.
   policy does not reach.
 - A raw denial count is not a count of hostile attempts, and this is the first thing to
   know before alerting on it. `docs/environment-variables.md` prescribes
-  retry-after-refusal as the sanctioned override procedure, so every approved override
-  is now *preceded* by a denial record carrying the same `system`, `lpar`, and
-  `attribution.claim` as the `ownership-override` record that follows it. The two carry
-  no correlation identifier — separating them means matching those three fields within a
-  time window. A field to make the pairing explicit would cost more than it removes, and
-  is not added here.
+  retry-after-refusal as the sanctioned override procedure, so an override taken after a
+  refusal is now *preceded* by a denial record carrying the same `system`, `lpar`, and
+  `attribution.claim` as the `ownership-override` record seconds later. The two carry no
+  correlation identifier, so pairing them means matching those three fields within a time
+  window — and the overrides that were never refused (the bullet below, and any caller
+  who passes `ownership_override` on the first attempt) will pair against an unrelated
+  earlier denial if one is in the window. A field to make the pairing explicit would cost
+  more than it removes, and is not added here.
 - The two ownership events are now asymmetric: the denial names its `operation` and the
-  override does not. Closing it is an *addition*, which the stability rule permits and
-  which no `event ==` filter would notice — the objection to the rejected `decision` arm
-  does not apply. It costs the exact-dict assertion at `tests/unit/test_ownership.py:227`,
-  a field row and a sample in `docs/authorization-audit.md`, and the override builder's
-  signature. Not spent here because reshaping that record is this issue's stated
+  override does not. Closing it is an *addition* rather than the rejected `decision` arm,
+  so no `event ==` filter would notice — but reshaping that record is this issue's stated
   exclusion, and the denial stream is complete without it.
 - A denied caller can drive these records at attempt rate. Under `hmc-mcp serve` they
   land on the bounded sink ADR 0043 defines, which drops and says so with a
   `records-dropped` count; on the CLI and Python API paths nothing calls
   `install_audit_sink`, so the record goes synchronously to stderr through
   `logging.lastResort` with no bound and no drop count — exactly as the existing
-  `ownership-override` record already does there. The property is not new on the served
-  path either: an ungranted caller can already drive `authorization` denials from the
-  dispatch boundary. This path is the slower of the two, because reaching a denial
-  requires the `get_lpar_description` round trip to the HMC first.
+  `ownership-override` record already does there. Reaching a denial costs a
+  `get_lpar_description` round trip to the HMC first, which is the practical bound.
 - Silence in this stream still is not proof of no refusal, and for one specific reason
   worth writing down: with `HMC_AUTHORIZE_POWER_OPERATIONS` off — the default — the
   power path never runs the guard, so no denial is possible there and none is recorded.
@@ -185,14 +180,15 @@ without joining that guard is the drift #486 exists to stop.
 ## Considered & rejected
 
 - **A `decision` field on the existing `ownership-override` record.** verified:
-  `tests/unit/test_ownership.py:227-238` asserts that record equals an exact dict and
+  `test_authorize_lpar_mutation_override_is_audited` asserts that record equals an exact
+  dict and
   `docs/authorization-audit.md` enumerates its fields, so the field lands in a shape two
   places pin; and an `event == "ownership-override"` filter, which is how the document
   tells an operator to find approved bypasses, would begin matching refusals.
   judgment: an event named for the bypass is the wrong carrier for the refusal.
 - **Reusing the `reason` key for the denial vocabulary.** verified:
-  `tests/test_authorization_audit_doc.py:297-304` holds every sample `reason`, at any
-  depth, to `audit.REASONS` — checked at `:967` — so a sample carrying
+  `tests/test_authorization_audit_doc.py`'s `SAMPLE_VOCABULARIES` holds every sample
+  `reason`, at any depth, to `audit.REASONS`, so a sample carrying
   `"reason": "foreign-owner"` reddens unless that guard is widened into a union, which
   stops it distinguishing an access-policy reason from an ownership one. judgment: one
   key cannot name two boundaries' vocabularies and still tell a reader which it is
@@ -208,15 +204,19 @@ without joining that guard is the drift #486 exists to stop.
   `authorize_decommission_lpar_ownership_snapshot` (`:250`, three) — but it moves the
   frozen public signature digest at `tests/unit/test_public_api.py:1658`, which is
   computed over every `api.__all__` signature, across two exports and fourteen call
-  sites. judgment: the transport that has a tool name already records it on the
-  `authorization` record for the same call, and per-tool granularity is a future issue's
-  under this issue's charter.
-- **No `denial` field, distinguishing the branches by `owner: null` alone.** judgment:
-  `null` means "nothing to render" everywhere else in this stream, so an alert on the
-  malformed-token case would rest on an absence rather than on a value.
+  sites. judgment: per-tool granularity is a future issue's under this issue's charter.
+  Deliberately *not* argued on the grounds that the tool name is recoverable from the
+  `authorization` record: that record is a permit, so §3's own `--audit-level WARNING`
+  recommendation discards it, and on the CLI and Python API paths it never existed.
+- **No `denial` field, distinguishing the branches by `owner: null` alone.** verified:
+  `null` is "nothing to render" everywhere else in this stream — `_value` returns it for
+  a non-`str`, and `_connection` renders `selector: null` in both of its non-present
+  states — so an alert on the malformed-token case would rest on
+  an absence rather than on a value.
 - **Emitting from each of the fourteen call sites instead of the shared guard.**
-  judgment: fourteen edit sites for one rule, and the next guarded operation ships
-  without a record unless its author remembers.
+  verified: the fourteen enumerated in the bullet above. judgment: fourteen edit sites
+  for one rule, and the next guarded operation ships without a record unless its author
+  remembers.
 - **Documenting the gap and doing nothing.** verified: it is already documented —
   `docs/authorization-audit.md`'s "Denials emit nothing" paragraph, written by #371 —
   and #467 exists because the document did not close it.
