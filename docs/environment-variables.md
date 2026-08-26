@@ -207,17 +207,25 @@ the canonical spelling does. The names are written in upper case throughout
 because that is the convention, not because the loader requires it. Setting two
 casings of the same variable at once resolves to the **last** of them in the
 process environment's own order — pydantic-settings folds the environment into
-one case-blind mapping, so the later entry overwrites the earlier — and every
-reader in `hmc-mcp` resolves it the same way. Do not rely on that ordering:
-export one spelling.
+one case-blind mapping, so the later entry overwrites the earlier. Do not rely
+on that ordering: export one spelling.
 
-The one exception is `HMC_PROFILE`, which on POSIX is **matched exactly**. It is
-not an `HMCConfig` field; `load_profile()` reads it directly to pick a profile,
-so no case-insensitive settings loader is involved. A lower-case `hmc_profile`
-export selects no profile; selection falls back to `default_profile`, or to
-environment variables alone when the file names none. On Windows the exception
-does not apply: the OS folds every environment variable name to upper case, so
-`hmc_profile` *is* `HMC_PROFILE` there and selects the profile it names.
+Two readers do **not** fold case, and both are worth knowing:
+
+- **`HMC_PROFILE` is matched exactly** on POSIX. It is not an `HMCConfig` field;
+  `load_profile()` reads it directly to pick a profile, so no case-insensitive
+  settings loader is involved. A lower-case `hmc_profile` export selects no
+  profile; selection falls back to `default_profile`, or to environment
+  variables alone when the file names none. On Windows this does not apply: the
+  OS folds every environment variable name to upper case, so `hmc_profile` *is*
+  `HMC_PROFILE` there and selects the profile it names.
+- **The authorization audit record's `attribution` reads `HMC_AGENT_ID`
+  exact-case** ([#543](https://github.com/randomparity/hmc-mcp/issues/543)).
+  `audit.py` imports nothing from the package by design, so it carries its own
+  read and has not been folded yet. Under a case-variant export the two halves
+  of the trail disagree: the ownership stamp and the `X-Audit-Memento` header
+  carry the variant's value, while the access-policy decision record shows no
+  claimant.
 
 ### Isolated construction
 

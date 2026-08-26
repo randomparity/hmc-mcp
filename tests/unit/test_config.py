@@ -1330,6 +1330,38 @@ def test_env_var_value_resolves_multiple_casings_the_way_hmcconfig_does(monkeypa
     assert env_var_value("HMC_HOST") == HMCConfig(_env_file=None).host
 
 
+@pytest.mark.parametrize(
+    ("env_name", "field_name"),
+    [
+        # U+017F LATIN SMALL LETTER LONG S: .upper() is exactly "HMC_HOST", so
+        # an upper-folding helper would claim the environment supplies a host
+        # the loader never sees — and build_config's gate would skip the profile
+        # for it while the config resolved to nothing.
+        ("hmc_hoſt", "host"),
+        # U+212A KELVIN SIGN: .lower() is exactly "hmc_ssh_key_file", so the
+        # loader reads it while an upper-folding helper would not — the profile's
+        # key would stay an init kwarg and outrank it.
+        ("hmc_ssh_Key_file", "ssh_key_file"),
+    ],
+)
+def test_env_var_value_folds_the_way_the_loader_folds(monkeypatch, env_name, field_name):
+    """``str.upper()`` and ``str.lower()`` are different relations over Unicode.
+
+    pydantic-settings folds down (``_get_env_var_key`` is ``key.lower()``), so
+    the helper does too. Either direction of divergence breaks the agreement
+    this function exists to provide, and neither is visible in ASCII.
+    """
+    for key in list(os.environ):
+        if key.lower().startswith("hmc_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv(env_name, "/folded/value")
+
+    supplied = env_var_value(f"HMC_{field_name.upper()}") is not None
+    reached = getattr(HMCConfig(_env_file=None), field_name)
+
+    assert supplied == bool(reached)
+
+
 def test_an_empty_exact_case_host_does_not_hide_a_non_empty_variant(
     profile_home, monkeypatch
 ):

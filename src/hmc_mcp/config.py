@@ -579,14 +579,21 @@ def env_var_value(name: str) -> str | None:
     while the config resolved to the exported one — the fail-open this function
     exists to close.
 
+    The fold is ``str.lower()`` for the same reason, and not because it reads
+    the same as ``str.upper()``: over Unicode the two are different relations,
+    and ``_get_env_var_key`` folds down. Folding up would both match names the
+    loader ignores and miss names it reads — ``hmc_ho\u017ft`` upper-folds to
+    ``HMC_HOST`` while the loader never sees it, and ``hmc_ssh_\u212aey_file``
+    reaches ``ssh_key_file`` while an upper-fold never matches it.
+
     ``tests/unit/test_config.py`` pins the agreement against ``HMCConfig``
     itself rather than against that reading of the library, so a change to
     pydantic-settings' folding shows up as a failing test.
     """
-    wanted = name.upper()
+    wanted = name.lower()
     found: str | None = None
     for key, value in os.environ.items():
-        if key.upper() == wanted:
+        if key.lower() == wanted:
             found = value
     return found
 

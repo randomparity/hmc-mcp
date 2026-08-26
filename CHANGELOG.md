@@ -185,7 +185,15 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `env_var_value` resolves the tie the way pydantic-settings does, pinned by a test
   against `HMCConfig` rather than against a reading of the library. `HMC_PROFILE` is
   unchanged and still matched exactly on POSIX; it names no `HMCConfig` field and no
-  settings loader reads it.
+  settings loader reads it. **Upgrade note:** a deployment whose environment already
+  carries a case-variant `HMC_*` name gets a different resolution after this change —
+  the export now beats the profile's TOML key where it previously lost. Audit for them
+  before upgrading (`env | grep -iE '^hmc_'`). Two settings flip in the fail-open
+  direction: a stale `hmc_verify_ssl=false` over a profile's `verify_ssl = true` is at
+  least visible, as `client.py` emits `tls-verification-disabled` naming the environment,
+  but a stale `hmc_authorize_power_operations=false` over a profile's `true` leaves no
+  runtime record at all — a guard that is off simply does not run. `hmc-mcp config show`
+  is the check for that one.
 
 ### Removed
 
