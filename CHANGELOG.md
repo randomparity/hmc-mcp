@@ -143,6 +143,18 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 ### Changed
 
 
+- `hmc_wait_for_job` and `hmc_get_job` now read through `operations_jobs` instead of calling
+  `HMCClient` directly, so an MCP caller can tell a reaped job from a running one (#474, ADR 0093
+  amendment). **Tool behaviour changes:** a job the HMC no longer has returns `found: false`
+  (`hmc_wait_for_job`) or null (`hmc_get_job`) instead of raising `HMCError`, and polling stops on
+  it rather than running to the deadline — read `found` first, and note that a caller which only
+  caught `HMCError` for a vanished job now gets a successful result. The output schema is
+  unchanged: `found` was already a required property of the shared wait shape. Two smaller
+  changes come with the shared operation: `timeout_seconds` is now a soft bound, because a job
+  that disappears after being seen alive is re-read once before being reported gone, and a
+  `job_uuid` that carries a path, query, or whitespace character now raises `ValueError` at the
+  boundary rather than reaching the HMC. Every non-404 HMC failure still raises. The `hmc jobs`
+  CLI commands keep the previous behaviour; #526 owns that pass.
 - `HMC_AGENT_ID` values containing double quotes or backslashes are rejected at config load
   instead of being passed through into SSH command construction (#386).
 - `hmc_install_lpar_os` and `hmc_install_vios` now drive the HMC CLI

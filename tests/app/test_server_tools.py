@@ -166,6 +166,33 @@ def test_get_job_empty_returns_none(monkeypatch, mock_hmc):
     assert hmc_get_job("job-uuid-999") is None
 
 
+def test_get_job_reaped_returns_none(monkeypatch, mock_hmc):
+    """A job the HMC no longer has reads as no job, not as an HMCError (#474)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(404, text="not found")
+    )
+    assert hmc_get_job("job-uuid-999") is None
+
+
+def test_get_job_degraded_hmc_still_raises(monkeypatch, mock_hmc):
+    """Only "no job there" reads as no job; a failing HMC still raises (#474)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(503, text="service unavailable")
+    )
+    with pytest.raises(HMCError) as exc_info:
+        hmc_get_job("job-uuid-999")
+    assert exc_info.value.status_code == 503
+
+
+def test_get_job_rejects_identifier_addressing_something_else(monkeypatch, mock_hmc):
+    """An identifier carrying a path is rejected, not reported as a missing job."""
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="not an HMC job identifier"):
+        hmc_get_job("jobs/job-uuid-999")
+
+
 def test_lpars_by_name(monkeypatch, mock_hmc):
     """hmc_list_lpars resolves a non-UUID selector as a PartitionName."""
     _hmc_env(monkeypatch)
@@ -1130,6 +1157,60 @@ def test_wait_for_job_empty_resource_returns_timed_out_shape(monkeypatch, mock_h
     assert result.timed_out is True
     assert result.error is None
     assert result.job["Resource"] == ""
+
+
+def test_wait_for_job_reaped_returns_found_false(monkeypatch, mock_hmc):
+    """A reaped job comes back as found=False, not as an HMCError (#474)."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(404, text="not found")
+    )
+
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=300, poll_interval=5)
+
+    assert set(asdict(result)) == JOB_OUTCOME_KEYS
+    assert result.found is False
+    assert result.job_id == "job-uuid-999"
+    assert result.status is None
+    assert result.error is None
+    assert result.job is None
+    assert result.job_href is None
+    # The whole point: gone is answered on the first poll, not after the timeout.
+    assert route.call_count == 1
+
+
+def test_wait_for_job_running_is_found_true(monkeypatch, mock_hmc):
+    """The other side of the distinction: still running is found=True (#474)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)  # Status=RUNNING
+    )
+
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=1)
+
+    assert result.found is True
+    assert result.timed_out is True
+    assert result.status == "RUNNING"
+
+
+def test_wait_for_job_degraded_hmc_still_raises(monkeypatch, mock_hmc):
+    """A failing HMC is not a vanished job: it still aborts the wait (#474)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(503, text="service unavailable")
+    )
+    with pytest.raises(HMCError) as exc_info:
+        hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=1)
+    assert exc_info.value.status_code == 503
+
+
+def test_wait_for_job_rejects_identifier_addressing_something_else(
+    monkeypatch, mock_hmc
+):
+    """An identifier carrying a path is rejected, not reported as found=False."""
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="not an HMC job identifier"):
+        hmc_wait_for_job("jobs/job-uuid-999")
 
 
 # ---------------------------------------------------------------------- #

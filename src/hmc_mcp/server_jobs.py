@@ -6,10 +6,11 @@ from .tool_registry import tool_module
 
 from typing import Any
 
+from . import operations_jobs
 from ._app import _run, _run_limited_collection
 from .common import client_from_env
 from .errors import HMCError
-from .jobs import JobOutcome, job_outcome
+from .jobs import JobOutcome
 
 
 def _is_unsupported_job_listing(exc: HMCError) -> bool:
@@ -43,6 +44,12 @@ def hmc_get_job(
 ) -> dict[str, Any] | None:
     """Get one HMC job by UUID, optionally using its submission SELF link.
 
+    Returns null when the HMC has no job for this identifier — reaped, deleted,
+    or never present. Any other HMC failure still raises, so null means "gone",
+    not "the read failed" (ADR 0093). An identifier that carries a path, query,
+    or whitespace character addresses something other than one job and is
+    rejected outright rather than reported as a missing job.
+
     Args:
         job_uuid: UUID or JobID returned when the job was submitted.
         job_href: Optional submission SELF link for firmware that cannot resolve the UUID.
@@ -51,7 +58,10 @@ def hmc_get_job(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            return await hmc.get_job(job_uuid, job_href=job_href)
+            outcome = await operations_jobs.get_job(
+                hmc, job_uuid, job_href=job_href
+            )
+            return outcome.job
 
     return _run(operation)
 
@@ -116,15 +126,26 @@ def hmc_wait_for_job(
     FAILED_TO_START. If the timeout expires first, the last observed job is
     returned with ``timed_out`` set to true.
 
-    ``found`` reports whether the HMC produced an entry for this identifier and
-    ``job_href`` is the polled job's SELF link, but read both narrowly on this
-    tool. A job the HMC no longer has — reaped, deleted, or never present — comes
-    back here as an ``HMCError``, not as ``found`` false, because this tool polls
-    through the client's own wait method, which raises on the HMC's 404. ``found``
-    false is reachable only when the HMC answers with no job entry at all, and
-    only after the full ``timeout_seconds`` has elapsed. Use
-    ``hmc_mcp.api.get_job`` / ``hmc_mcp.api.wait_for_job`` for the
-    reaped-versus-running distinction (ADR 0093).
+    Read ``found`` first. A job the HMC no longer has — reaped, deleted, or never
+    present — returns ``found`` false with a null ``status``, rather than raising;
+    ``found`` true with ``timed_out`` true means the HMC still has the job and it
+    is running. Polling stops as soon as the job is gone instead of burning the
+    remaining ``timeout_seconds``. Every other HMC failure still raises
+    ``HMCError``, so ``found`` false means "gone", never "the read failed".
+    ``found`` false does not say *why*, and is not proof the work did or did not
+    happen: confirm that against the affected resource, not the job record. A
+    ``found`` false that repeats for every identifier is a deployment whose jobs
+    path is absent, not a fleet of vanished jobs (ADR 0093).
+
+    ``timeout_seconds`` is a soft bound. A job that disappears after this wait has
+    already seen it alive is re-read once, one ``poll_interval`` later, before
+    being reported gone, and that confirming read is owed even past the deadline.
+
+    ``job_href`` on the result is the link worth persisting for the next call: the
+    link you passed when the read through it worked, otherwise the successful
+    read's own link, and null when nothing resolved. An identifier that carries a
+    path, query, or whitespace character addresses something other than one job
+    and is rejected outright rather than reported as ``found`` false.
 
     The same two fields appear on the outcomes returned by the submit-and-wait
     tools (the migrate, remote-restart and power tools), where they describe a
@@ -141,12 +162,12 @@ def hmc_wait_for_job(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            job = await hmc.wait_for_job(
+            return await operations_jobs.wait_for_job(
+                hmc,
                 job_uuid,
-                timeout_seconds,
-                poll_interval,
                 job_href=job_href,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
-            return job_outcome(job_uuid, job)
 
     return _run(operation)

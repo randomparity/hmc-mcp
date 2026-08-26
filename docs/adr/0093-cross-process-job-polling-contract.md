@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (2026-08-25)
+Accepted (2026-08-25). Amended 2026-08-26 by issue #474 — see *Amendment (#474)* below: the two
+job tools now read through `operations_jobs`, so the MCP surface gains the distinction this
+record's Consequences section said it did not.
 
 ## Context
 
@@ -282,10 +284,48 @@ submit-and-wait tool, because `jobs.job_outcome` is the one normalizer behind al
 `hmc_wait_for_job`'s tool docstring describes both fields — including that on *that* tool a reaped
 job still surfaces as an `HMCError`, because it polls through `HMCClient.wait_for_job`, which
 raises on the 404 these operations translate. The MCP surface does not gain the reaped-versus-
-running distinction here; only `hmc_mcp.api` does. The submitting tools' own docstrings describe
+running distinction here; only `hmc_mcp.api` does.
+
+> **Amended by #474** (2026-08-26). **The two sentences above no longer hold.** `hmc_wait_for_job`
+> polls through `operations_jobs.wait_for_job` and `hmc_get_job` reads through
+> `operations_jobs.get_job`, so the MCP surface has the reaped-versus-running distinction too. See
+> *Amendment (#474)* below; the rest of this Consequences section stands.
+
+The submitting tools' own docstrings describe
 neither field: five presentation docstrings are outside this decision's surface, so issue #456 owns
 that pass. Until it lands, an agent reading `found` off a submission report has the tool docstring
 of `hmc_wait_for_job` and this ADR, and nothing on the tool it actually called.
+
+## Amendment (#474): the MCP job tools read through `operations_jobs`
+
+`hmc_wait_for_job` polls `operations_jobs.wait_for_job` and `hmc_get_job` reads
+`operations_jobs.get_job`; neither calls `HMCClient` any more. Clause 3's "polling reading" of
+`JobOutcome` therefore covers what `hmc_wait_for_job` returns, because it now *is* an outcome one
+of clause 4's two operations produced.
+
+**A vanished job surfaces in the payload as `found=False`, not as a new exception.** `found` is
+already a `required` property of the output schema `hmc_wait_for_job` shares with every
+submit-and-wait tool, and the repository already tests that `required` equals the full property
+set, so nothing about the tool's shape changes — a value that was unreachable becomes reachable.
+The alternative the issue weighed, raising a distinct "job absent" error, is the
+`JobNotFoundError` this ADR already rejected one layer down; taking it here would give one
+question two answers inside one package, and would put an error channel on an observation that is
+ordinary for a worker polling hours after submission.
+
+`hmc_get_job` keeps its `dict | null` shape rather than becoming a `JobOutcome`: it returns the
+outcome's `job`, so a reaped job reads as null — the same answer the tool already gave for a
+response carrying no job entry, and clause 4 already treats those two as one observation. Widening
+it to the full outcome would be a second, larger shape change that nothing here needs.
+
+What changes for a caller: a reaped job that used to raise `HMCError` now returns successfully, so
+a caller that only caught the exception must read `found` (or the null) instead; `timeout_seconds`
+becomes the soft bound clause 5 describes, because the owed confirming read can outlive the
+deadline by one poll interval; and an identifier that addresses something other than one job now
+raises `ValueError` at the boundary rather than reaching the HMC. Every non-404 HMC failure still
+raises, which is what keeps `found=False` meaning "gone" rather than "the read failed".
+
+The CLI (`cli_jobs`) still calls `HMCClient` directly and still has the older contract; #526 owns
+that pass, because the CLI's output contract is its own decision.
 
 ## Considered & rejected
 
