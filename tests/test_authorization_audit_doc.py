@@ -74,16 +74,19 @@ What this does not reach, so a green run is not read as more coverage than it is
   than a `Literal`, and deriving that set means importing the server, which this module
   does not do; and `argument` is a plain `str` on `TargetSelector`, drawn from
   `REQUIRED_TARGET_ARGUMENTS`'s keys *and* from whatever a tool's own `extra_targets`
-  declares, so that mapping — which is imported here, for `kind` — is a subset of the
-  field's range rather than its vocabulary. `kind` is the closed half of that pair and is
-  read. Every `Literal`-derived vocabulary a record carries is read, `decision` included:
-  it has no module-level alias, so it comes from the record builder's own signature;
-- the dangling direction for the samples' `kind` and `decision`. The document restates
-  neither vocabulary in a table row or a sentence the way it does `effect` and the
-  connection states, so there is no second passage to compare against and no coverage to
-  check — `decision` does have a field-table cell spelling both values, and nothing reads
-  it; #518 owns that. Add an arm to either vocabulary and the samples stay silently
-  right, showing one of however many there now are;
+  declares, so that mapping is a subset of the field's range rather than its vocabulary and
+  is not read here at all. `kind` is the closed half of that pair, held to `TARGET_KINDS`;
+- whether `SAMPLE_VOCABULARIES` is *complete*. It lists the six keys a sample record
+  carries a `Literal`-derived value under as of this commit, and nothing enforces that a
+  seventh gets added: a new closed vocabulary on a record, or a `Literal` swapped in for
+  one of the plain `str` fields above, joins the samples unread. Enforcing it means
+  scanning `audit` and `tool_registry` for `Literal`s and holding the leftovers against a
+  named exclusion list, which is a second unenforced list in place of this sentence;
+- the dangling direction for the samples' `kind` and `decision`. The document restates no
+  `kind` vocabulary anywhere, and restates `decision` only in a field-table cell that
+  nothing reads (#518) — neither has the second passage that lets `effect` and the
+  connection states be checked for coverage. Add an arm to either vocabulary and the
+  samples stay silently right, showing one of however many there now are;
 - the sample's `attribution.source` value on the `ownership-override` record,
   `config:agent_id`, which restates no exported constant. Its counterpart on the
   `authorization` record is held to `audit.ATTRIBUTION_ENV` in the sample itself, because
@@ -186,11 +189,14 @@ TLS_EVENT = EVENT_HEADING.findall(TLS_HEADING)[0]
 #: document whose fences are all renamed out of reach fails rather than reading nothing.
 JSON_SAMPLE = re.compile(r"^```json\b[^\n]*\n(.*?)^```$", re.MULTILINE | re.DOTALL)
 #: Anything that opens a JSON block, wherever and however it is written — indented, inside
-#: a blockquote, tilde-fenced, or capitalised. `JSON_SAMPLE` reads only the column-0
-#: backtick form the document uses; counting both is what stops a sample written any other
-#: way from being skipped in silence instead of held to the checks below.
+#: a blockquote, tilde-fenced, over-long, capitalised, or retagged to a `json` dialect.
+#: `JSON_SAMPLE` reads only the plain column-0 triple-backtick form the document uses;
+#: counting both is what stops a sample written any other way from being skipped in silence
+#: instead of held to the checks below. Horizontal whitespace only: `\s` would match the
+#: newline before the fence and put the reported line number one line early.
 JSON_FENCE = re.compile(
-    r"^\s*(?:>\s*)*(?:```|~~~)\s*json\b", re.MULTILINE | re.IGNORECASE
+    r"^[ \t]*(?:>[ \t]*)*(?:`{3,}|~{3,})[ \t]*json[a-z0-9]*\b",
+    re.MULTILINE | re.IGNORECASE,
 )
 
 #: `decision`'s vocabulary, which has no module-level alias: its `Literal` is written
@@ -379,6 +385,21 @@ def _documented_states(document: str) -> frozenset[str]:
     return frozenset(STATE_ARM.findall(sentences[0]))
 
 
+def _json_fences(document: str) -> list[str]:
+    """Every JSON-block opener in *document*, as `line N: <the whole line>`.
+
+    The whole line rather than the matched prefix, because what makes a fence unreadable —
+    a capital, a tilde, a fourth backtick, a `json5` tag — is the part an editor has to
+    see. This is the only report the fence rule gives, there being no editor marker.
+    """
+    fences = []
+    for match in JSON_FENCE.finditer(document):
+        number = document.count("\n", 0, match.start()) + 1
+        line = document[match.start() :].split("\n", 1)[0]
+        fences.append(f"line {number}: {line}")
+    return fences
+
+
 def _sample_records(document: str) -> tuple[dict[str, object], ...]:
     """Every fenced JSON sample in *document*, parsed.
 
@@ -394,10 +415,7 @@ def _sample_records(document: str) -> tuple[dict[str, object], ...]:
     )
     blocks = JSON_SAMPLE.findall(document)
     assert blocks, f"no fenced JSON sample records in the document — {rule}"
-    opened = [
-        f"line {document.count(chr(10), 0, match.start()) + 1}: {match.group(0).strip()}"
-        for match in JSON_FENCE.finditer(document)
-    ]
+    opened = _json_fences(document)
     assert len(opened) == len(blocks), (
         f"{len(opened)} JSON fences open but {len(blocks)} were read — {rule}. "
         f"Fences found: {opened}"
@@ -899,6 +917,35 @@ def test_a_fence_carrying_an_info_string_is_still_read() -> None:
     annotated = document.replace("```json\n", '```json title="sample"\n', 1)
     assert annotated != document
     assert _sampled_events(annotated) == _sampled_events(document)
+
+
+@pytest.mark.parametrize(
+    "fence", ["````json", "~~~json", "  ```json", "> ```json", "```JSON", "```json5"]
+)
+def test_a_sample_written_behind_an_unreadable_fence_is_caught(fence: str) -> None:
+    """A sample the extractor cannot read must fail, not vanish from the count.
+
+    Every one of these is a legal way to open a JSON block that `JSON_SAMPLE` does not
+    take, and `records-dropped` is sampled twice — so retagging one of its blocks would
+    otherwise leave the vocabulary checks green with a sample nothing had looked at.
+    """
+    document = _document()
+
+    hidden = document.replace("```json", fence, 1)
+    assert hidden != document
+    with pytest.raises(AssertionError, match="JSON fences open"):
+        _sample_records(hidden)
+
+
+def test_the_fence_report_locates_every_fence_it_found() -> None:
+    """The rule ships with no editor marker because the failure says where to look."""
+    document = _document()
+    fences = _json_fences(document)
+
+    assert len(fences) == len(JSON_SAMPLE.findall(document))
+    for fence in fences:
+        number = int(fence.removeprefix("line ").split(":", 1)[0])
+        assert document.splitlines()[number - 1] in fence
 
 
 def test_the_sampled_attribution_source_is_the_exported_environment_variable() -> None:
