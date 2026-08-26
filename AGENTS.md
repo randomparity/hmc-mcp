@@ -22,35 +22,45 @@ pager, or a prompt will stall the agent with no recovery path.
   the PR is documentation-only. Squash merges collapse commit history and break
   `git bisect`. Use `--merge` (merge commit) for all code, test, config, and
   script changes.
-  - **Documentation-only** means *both* halves hold. Every changed file matches
-    `*.md` or `docs/**`; **and** no changed file is `CHANGELOG.md` or lives
-    under `docs/tools/`. Those two are Markdown but they are gate-load-bearing:
-    `CHANGELOG.md`'s `### Facade manifest` section is asserted against
-    `hmc_mcp.api.__all__` by `tests/unit/test_changelog.py`, and `docs/tools/`
-    is generated and diffed by `just tool-docs-check`. A PR that changes either
-    is changing a contract, and its per-commit history has to survive.
-  - To check before merging:
+  - **Documentation-only** means **no changed file is asserted by a test or by
+    a `static` gate.** Matching `*.md` or `docs/**` is necessary and not
+    sufficient — plenty of Markdown here is gate-load-bearing:
+    `CHANGELOG.md`'s `### Facade manifest` is asserted against
+    `hmc_mcp.api.__all__` by `tests/unit/test_changelog.py`; `docs/tools/` is
+    generated and diffed by `just tool-docs-check`;
+    `docs/environment-variables.md` is checked field by field by
+    `just env-vars`; ADR 0029's inventory block is parsed by
+    `tests/unit/test_public_api.py`; and `README.md` is asserted by
+    `tests/test_readme_tool_names.py` and `tests/test_readme_layout.py`. A PR
+    touching any of those is changing a contract, and its per-commit history
+    has to survive.
+  - The check below encodes that criterion as a **floor, not a closed set**:
+    its second half lists the asserted surfaces known today, and the set grows.
+    Save it as a script and run it — the guards call `exit`, so it is not an
+    interactive paste.
     ```sh
     files=$(gh pr diff <PR> --name-only) || { echo 'diff query failed' >&2; exit 1; }
     [ -n "$files" ] || { echo 'no files reported' >&2; exit 1; }
     disqualifying=$(
       printf '%s\n' "$files" | grep -Ev '\.md$|^docs/'
-      printf '%s\n' "$files" | grep -E '^CHANGELOG\.md$|^docs/tools/'
-    )
+      printf '%s\n' "$files" | grep -E '^(CHANGELOG|README)\.md$'
+      printf '%s\n' "$files" | grep -E '^docs/(tools|adr|workflow/specs)/'
+      printf '%s\n' "$files" | grep -E '^docs/(environment-variables|authorization-audit)\.md$'
+    ) || true
     if [ -z "$disqualifying" ]; then
       echo 'documentation-only: --squash permitted'
     else
       echo 'not documentation-only, use --merge:'; echo "$disqualifying"
     fi
     ```
-    The two guard lines are the point. `grep -Ev` **exits 1 when it filters
-    every line out**, so the naive one-liner reports failure on exactly the
-    documentation-only case and is fatal under `set -e` or inside an `&&`
-    chain; capturing into `$disqualifying` discards those exit codes
-    deliberately. And a `gh pr diff` that fails — wrong PR number, expired
-    auth — prints nothing, which is indistinguishable from a clean pass unless
-    its exit status is checked first. Treat an unanswered query as "not
-    documentation-only", never as a pass.
+    **The `|| true` is load-bearing.** `var=$(…)` takes the exit status of the
+    command substitution, which is the status of its *last* command — a `grep`
+    that matched nothing, which is exactly the documentation-only case. Without
+    it the script dies at the assignment under `set -e` and prints nothing. And
+    printing nothing is also what a failed `gh pr diff` looks like — wrong PR
+    number, expired auth — which is why the two guards check its exit status
+    first. Treat an unanswered query as "not documentation-only", never as a
+    pass.
   - The policy is prose, not a gate: **nothing in the repo enforces it.** PR
     #455 landed as a single-parent merge (`f528e94`) while changing
     `src/hmc_mcp/py.typed`, `.github/workflows/ci.yml`, and five test files.
@@ -101,11 +111,21 @@ just setup   # uv sync --locked --extra app --link-mode copy; then prek install
 
 **Never run a bare `uv sync`.** `pyproject.toml` declares no `[tool.uv]` table
 and no `default-extras`, so a bare `uv sync` installs `[project] dependencies`
-plus the default `dev` group and then **prunes the `app` extra** — `typer`,
-`mcp`, `rich`, `uvicorn`, `fastmcp-slim[server]`. That leaves `just typecheck`,
-`just tool-docs-check` and `just smoke`, and therefore `just verify`, broken in
-a way whose cause is nowhere near the error. A bare `uv sync` also drops
-`--locked` and can silently rewrite `uv.lock`.
+plus the default `dev` group and then **prunes the `app` extra** — `typer` and
+fastmcp's server-extra transitive dependencies (`cyclopts`, `openapi-pydantic`,
+`websockets`, `watchfiles`, `shellingham`, and more). `uv sync --dry-run` prints
+the exact list for the current lock and writes nothing, so check there rather
+than trusting a list in this file. Losing `typer` alone breaks `just typecheck`,
+which covers the twelve `src/hmc_mcp/cli_*.py` modules, in a way whose cause is
+nowhere near the error. A bare `uv sync` also drops `--locked` and can silently
+rewrite `uv.lock`.
+
+**`uv add` syncs by default and prunes the same way.** Use
+`uv add --no-sync <pkg>` and then `just setup`. `pip install` into this venv is
+worse: the next `uv sync --locked` reverts it silently. When `uv sync --locked`
+refuses because `uv.lock` has fallen behind `pyproject.toml`, refresh the lock
+with `uv lock` — that is the one sync-adjacent command the rule above does not
+cover, because it resolves without touching the environment.
 
 **Never run a bare `uv run` either.** Every `uv run` in the `justfile` passes
 `--no-sync`, and `tests/test_ci_pipeline.py` asserts that as an invariant. A
@@ -261,8 +281,11 @@ step of every `ci` leg is `UV_NO_SYNC=1 uv run prek run --all-files`. CI also
 invokes `just tool-docs-check` and `just doc-freshness` as named steps ahead of
 `just verify`, so a stale generated document is reported as its own failed check
 rather than as a line inside the umbrella. To cover the hook step before
-pushing, run `prek run --all-files` yourself; `just setup` has already installed
-the hooks.
+pushing, run `uv run --no-sync prek run --all-files` yourself. Run it that way
+and not as a bare `prek`: the dev group pins a `prek` version, and a globally
+installed one on `PATH` is a different binary — which is the same
+green-here-red-there hazard this section is about. `just setup` has installed
+the git hook script, not a `prek` on `PATH`.
 
 ## Repository conventions
 
@@ -279,8 +302,11 @@ looks unrelated.
 automatic:
 
 1. the export itself in `__all__`;
-2. the module inventory in `docs/adr/0029-…md`, whose every clause a contract
-   test parses and compares against the facade's own imports;
+2. the module inventory in
+   `docs/adr/0029-supported-reusable-python-api-contract.md`, between its
+   `<!-- ADR-0029-INVENTORY:BEGIN -->` and `<!-- ADR-0029-INVENTORY:END -->`
+   markers — `tests/unit/test_public_api.py` parses that block and compares
+   every clause against the facade's own imports;
 3. the contract tests, including the transitive type-export closure — an
    exported model's fields, a `TypedDict`'s keys, and an exported error's or
    `HMCClient`'s constructor parameters all pull further package-owned types into
@@ -301,10 +327,11 @@ not renumber to close one. There is **no ADR index**: navigation is by filename,
 so give a new record a slug that reads as its subject.
 
 **One test module per `scripts/` file**, named `tests/scripts/test_<name>.py`.
-Seven of the nine follow it. Two predate the convention and are exceptions to
-know about rather than a pattern to copy: `scripts/check_env_vars.py` is tested
-by `tests/test_env_var_guard.py`, and `scripts/live_test_runner.py` by
-`tests/test_live_runner.py`. A new script gets the convention.
+Two predate the convention and are exceptions to know about rather than a
+pattern to copy: `scripts/check_env_vars.py` is tested by
+`tests/test_env_var_guard.py`, and `scripts/live_test_runner.py` by
+`tests/test_live_runner.py`. Every other script follows it, and a new script
+gets the convention.
 
 **Diff a worktree against the merge base, not against `main`.** Local `main`
 advances under merges while a branch is open, so `git diff main` shows other
