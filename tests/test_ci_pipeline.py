@@ -487,11 +487,12 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     assert '"${wheels[0]}[app]"' in body
     assert "import hmc_mcp" in body
     assert "is_relative_to(environment)" in body
-    for group in ("", "lpars", "storage", "network", "templates", "metrics"):
-        command = ".wheel-venv/bin/hmc-mcp"
-        if group:
-            command += f" {group}"
-        assert f"{command} --help" in body
+    assert ".wheel-venv/bin/hmc-mcp --help" in body
+    # Group help pages are rendered off the tree the installed wheel builds, so
+    # the job may name no group: any `hmc-mcp <group> --help` here is the
+    # hand-maintained mirror growing back.
+    assert ".wheel-venv/bin/python scripts/smoke_cli_groups.py" in body
+    assert not re.search(r"\.wheel-venv/bin/hmc-mcp (?!--help)", body)
     assert ".wheel-venv/bin/python scripts/smoke_mcp.py" in body
     assert "just setup" not in body
     assert "uv sync" not in body

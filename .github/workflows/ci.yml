@@ -405,11 +405,12 @@ jobs:
           uv pip install --no-deps --python .wheel-venv/bin/python \
             "${wheels[0]}[app]"
           .wheel-venv/bin/hmc-mcp --help >/dev/null
-          .wheel-venv/bin/hmc-mcp lpars --help >/dev/null
-          .wheel-venv/bin/hmc-mcp storage --help >/dev/null
-          .wheel-venv/bin/hmc-mcp network --help >/dev/null
-          .wheel-venv/bin/hmc-mcp templates --help >/dev/null
-          .wheel-venv/bin/hmc-mcp metrics --help >/dev/null
+          # Renders every group's help page off the command tree the installed
+          # wheel builds, so a new group needs no edit here. The script is
+          # harness code, not package code: run this way sys.path[0] is
+          # scripts/, never the checkout's src/, so hmc_mcp still resolves
+          # inside .wheel-venv -- the same arrangement as smoke_mcp.py below.
+          .wheel-venv/bin/python scripts/smoke_cli_groups.py
           .wheel-venv/bin/python scripts/smoke_mcp.py
 
   # ppc64le-release-artifact-template: begin
