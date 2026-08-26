@@ -142,15 +142,30 @@ without joining that guard is the drift #486 exists to stop.
 - An operator alerting on the ADR 0011 guard can count refusals per agent, per
   partition, and per HMC, on every transport — including the two the dispatch-boundary
   policy does not reach.
+- A raw denial count is not a count of hostile attempts, and this is the first thing to
+  know before alerting on it. `docs/environment-variables.md` prescribes
+  retry-after-refusal as the sanctioned override procedure, so every approved override
+  is now *preceded* by a denial record carrying the same `system`, `lpar`, and
+  `attribution.claim` as the `ownership-override` record that follows it. The two carry
+  no correlation identifier — separating them means matching those three fields within a
+  time window. A field to make the pairing explicit would cost more than it removes, and
+  is not added here.
 - The two ownership events are now asymmetric: the denial names its `operation` and the
-  override does not. That is deliberate — this ADR does not reshape a merged record —
-  and it is a gap a later change may close by *adding* the field there.
-- A denied caller can drive these records at attempt rate, onto the bounded sink
-  ADR 0043 defines. The property is not new (an ungranted caller can already drive
-  `authorization` denials from the dispatch boundary) and the mitigation is the same:
-  the queue drops and says so with a `records-dropped` count. This path is the slower of
-  the two, because reaching a denial requires the `get_lpar_description` round trip to
-  the HMC first.
+  override does not. Closing it is an *addition*, which the stability rule permits and
+  which no `event ==` filter would notice — the objection to the rejected `decision` arm
+  does not apply. It costs the exact-dict assertion at `tests/unit/test_ownership.py:227`,
+  a field row and a sample in `docs/authorization-audit.md`, and the override builder's
+  signature. Not spent here because reshaping that record is this issue's stated
+  exclusion, and the denial stream is complete without it.
+- A denied caller can drive these records at attempt rate. Under `hmc-mcp serve` they
+  land on the bounded sink ADR 0043 defines, which drops and says so with a
+  `records-dropped` count; on the CLI and Python API paths nothing calls
+  `install_audit_sink`, so the record goes synchronously to stderr through
+  `logging.lastResort` with no bound and no drop count — exactly as the existing
+  `ownership-override` record already does there. The property is not new on the served
+  path either: an ungranted caller can already drive `authorization` denials from the
+  dispatch boundary. This path is the slower of the two, because reaching a denial
+  requires the `get_lpar_description` round trip to the HMC first.
 - Silence in this stream still is not proof of no refusal, and for one specific reason
   worth writing down: with `HMC_AUTHORIZE_POWER_OPERATIONS` off — the default — the
   power path never runs the guard, so no denial is possible there and none is recorded.
@@ -177,9 +192,11 @@ without joining that guard is the drift #486 exists to stop.
   judgment: an event named for the bypass is the wrong carrier for the refusal.
 - **Reusing the `reason` key for the denial vocabulary.** verified:
   `tests/test_authorization_audit_doc.py:297-304` holds every sample `reason`, at any
-  depth, to `audit.REASONS`, and `:597` holds the `## Reason codes` table to that same
-  set; a second vocabulary under that key reddens both unless the guard is widened into
-  a union, which stops it distinguishing an access-policy reason from an ownership one.
+  depth, to `audit.REASONS` — checked at `:967` — so a sample carrying
+  `"reason": "foreign-owner"` reddens unless that guard is widened into a union, which
+  stops it distinguishing an access-policy reason from an ownership one. judgment: one
+  key cannot name two boundaries' vocabularies and still tell a reader which it is
+  reading.
 - **Adding the two ownership codes to `audit.Reason` itself.** verified: `Reason` is
   imported by `target_scope` and the `## Reason codes` table is documented as the
   dispatch-boundary decision vocabulary with an `allow`/`deny` column; the two ownership
