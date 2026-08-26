@@ -21,6 +21,19 @@ exception in the ledger, for a member appended to a run-based list with "and". E
 paired with a mutation test that feeds the extractor a deliberately drifted copy of the
 real document and asserts it notices, so the check cannot pass by extracting nothing.
 
+The audit document's sample records are read by parsing the fenced JSON rather than by
+backticking the literals inside them, which would stop them being JSON at all: a sample is
+the one place a consumer copies a log query or an alert rule from, so it has to stay valid
+and copy-pasteable (#506). Parsing reads them structurally, which is also what separates
+the TLS record's top-level `source` from the `attribution.source` beside it — the same key
+naming a different vocabulary. Only `event` is held in both directions there, because one
+section and one sample apiece makes coverage checkable; one sample record shows one
+`reason`, one `effect` and one `state`, so those are held to naming nothing undefined and
+the table, the row and the sentence keep the other half. The price is an editing
+constraint: every fenced `json` block in that document must be one of these records, and a
+fence added for anything else fails naming the block. `docs/environment-variables.md`
+carries no JSON block and so has no arm of this check.
+
 The counts stay out of the assertions on purpose: pinning one here would recreate the
 stale literal this guard exists to remove, the same anti-pattern
 `test_project_metadata.test_generated_policy_guidance_does_not_pin_a_stale_tool_count`
@@ -51,12 +64,19 @@ What this does not reach, so a green run is not read as more coverage than it is
   prose — and the same tradeoff means `..., or `field-default`, and `config-file`` reads as
   three values plus prose. The dangling direction is unaffected; only the orphan half has
   the hole, and only for those two extractors;
-- the literal values inside the documents' JSON sample records. `"event"` and `"source"`
-  are written unbackticked there, so no extractor reads them: rename a vocabulary member
-  and every list restatement reddens while the samples — the one place a consumer copies a
-  log query from — keep the old value behind a green run. Document-wide and pre-existing,
-  not specific to the TLS record; guarding it means a sample extractor across every event
-  section, which is more machinery than the residual is worth here. Issue #506 owns it;
+- the sample records' `decision` value, which restates no exported vocabulary — `audit`
+  declares no `Decision` alias to compare it against, only the two strings the document
+  spells. The other closed vocabularies a record carries are read;
+- a `source` written anywhere in a sample but the top level of the TLS record. The
+  extractor is scoped there because `attribution.source` under the same key names where an
+  identity claim came from instead: `environment:HMC_AGENT_ID` is held by the constant
+  check below, `config:agent_id` by nothing, and holding either to the TLS vocabulary would
+  redden on a document that is right. A future event carrying a top-level `source` from
+  some third vocabulary would go unread for the same reason;
+- the sample records' editing constraint, which unlike the TLS passage's carries no editor
+  marker in the document. It needs none in the same way: the failure names the offending
+  block and quotes it, so an editor who adds a non-record `json` fence is told what is
+  wrong rather than pointed at a regex whose name means nothing to them;
 - the editing constraint this guard puts on the two documents. Both TLS passages must keep
   the `SOURCE_CLAUSE` wording in order, with or without `effective` — the
   environment-variable note writes no `source` identifier to anchor on, so ordinary prose
@@ -97,7 +117,10 @@ discoverability cost is what that document's editor marker pays down.
 """
 
 import ast
+import json
 import re
+from collections import Counter
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal, get_args, get_origin
 
@@ -129,6 +152,29 @@ BACKTICKED = re.compile(r"`([^`]+)`")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 TLS_HEADING = '### `event: "tls-verification-disabled"`'
 TLS_BULLET = "- **TLS verification** (`HMC_VERIFY_SSL`):"
+#: The TLS record's own event name, taken from the heading above rather than spelled a
+#: second time — the same reason `_alias_name` finds its name instead of writing it. A
+#: heading reworded until `EVENT_HEADING` no longer reads it fails at import, and
+#: `test_the_tls_event_name_is_one_the_audit_module_defines` holds the other end.
+TLS_EVENT = EVENT_HEADING.findall(TLS_HEADING)[0]
+
+#: One fenced JSON sample record, as the audit document writes them: a ```json fence
+#: around a single object. The block's own text is what gets parsed, so the check reads
+#: exactly the characters a consumer copies.
+JSON_SAMPLE = re.compile(r"^```json$\n(.*?)^```$", re.MULTILINE | re.DOTALL)
+
+#: The closed vocabularies a sample record draws its own values from, keyed by the JSON
+#: key each sits at. Read by key at any depth, because `state` is nested twice — under
+#: `connection` and under every `targets` entry — and both are the same vocabulary.
+#: `source` is deliberately absent: the key names one vocabulary at the top level of the
+#: TLS record and another inside `attribution`, so it is scoped by hand below.
+SAMPLE_VOCABULARIES: tuple[tuple[str, frozenset[str]], ...] = (
+    ("event", audit.EVENTS),
+    ("reason", audit.REASONS),
+    ("effect", tool_registry.EFFECTS),
+    ("state", frozenset(get_args(audit.State))),
+)
+SAMPLE_KEYS = [key for key, _ in SAMPLE_VOCABULARIES]
 
 #: The passage describing the TLS record in each document that restates its `source`
 #: values: the event's own section in the audit document, the `HMC_VERIFY_SSL` note in the
@@ -295,6 +341,69 @@ def _documented_states(document: str) -> frozenset[str]:
     sentences = STATE_SENTENCE.findall(document)
     assert len(sentences) == 1, f"expected one state sentence, found {len(sentences)}"
     return frozenset(STATE_ARM.findall(sentences[0]))
+
+
+def _sample_records(document: str) -> tuple[dict[str, object], ...]:
+    """Every fenced JSON sample in *document*, parsed.
+
+    Each block must parse and must carry an `event`. Both are the point rather than
+    incidental strictness: a sample that stopped being valid JSON has stopped being
+    copy-pasteable, and a block with no `event` is a sample every check below would
+    silently skip. A `json` fence added for something other than a record fails here,
+    quoting the block, which is the editing constraint the ledger records.
+    """
+    blocks = JSON_SAMPLE.findall(document)
+    assert blocks, "no fenced JSON sample records in the document"
+
+    records = []
+    for block in blocks:
+        try:
+            record = json.loads(block)
+        except json.JSONDecodeError as error:
+            raise AssertionError(f"sample is not valid JSON: {block!r}") from error
+        assert isinstance(record, dict), f"sample is not a JSON object: {block!r}"
+        assert "event" in record, f"sample carries no `event`: {block!r}"
+        records.append(record)
+    return tuple(records)
+
+
+def _values_at(node: object, key: str) -> Iterator[str]:
+    """Every string *node* carries under *key*, at any depth."""
+    if isinstance(node, dict):
+        for name, value in node.items():
+            if name == key and isinstance(value, str):
+                yield value
+            yield from _values_at(value, key)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _values_at(item, key)
+
+
+def _sampled_values(document: str, key: str) -> frozenset[str]:
+    """What the sample records name under *key*, across every block."""
+    return frozenset(
+        value
+        for record in _sample_records(document)
+        for value in _values_at(record, key)
+    )
+
+
+def _sampled_tls_sources(document: str) -> frozenset[str]:
+    """The top-level `source` of every TLS sample record.
+
+    Top-level and scoped to that event on purpose — see the ledger: `attribution.source`
+    is the same key naming a different vocabulary, so reading `source` wherever it appears
+    would fail on a document that is correct.
+    """
+    records = [r for r in _sample_records(document) if r.get("event") == TLS_EVENT]
+    assert records, f"no sample record for `{TLS_EVENT}`"
+
+    sources = []
+    for record in records:
+        source = record.get("source")
+        assert isinstance(source, str), f"sample carries no `source`: {record}"
+        sources.append(source)
+    return frozenset(sources)
 
 
 def test_documented_reason_codes_are_exactly_the_audit_vocabulary() -> None:
@@ -539,6 +648,164 @@ def test_an_unrelated_comment_does_not_stand_in_for_the_marker(path: Path) -> No
     assert removed != document
     with pytest.raises(AssertionError, match="no editor marker"):
         _tls_marker(f"<!-- an unrelated note -->\n{removed}", path.name)
+
+
+def test_the_tls_event_name_is_one_the_audit_module_defines() -> None:
+    """`TLS_EVENT` is derived from the heading constant; this holds its other end."""
+    assert TLS_EVENT in audit.EVENTS
+
+
+def test_every_event_has_a_sample_record_and_the_samples_name_no_other() -> None:
+    """Equality, unlike the vocabularies below: one section and one sample per event."""
+    assert _sampled_values(_document(), "event") == audit.EVENTS
+
+
+@pytest.mark.parametrize(("key", "vocabulary"), SAMPLE_VOCABULARIES, ids=SAMPLE_KEYS)
+def test_sample_record_values_are_drawn_from_their_vocabulary(
+    key: str, vocabulary: frozenset[str]
+) -> None:
+    """The orphan direction. One record shows one `reason`, one `effect`, one `state`, so
+    coverage is not checkable here and is what the table, the row and the sentence above
+    are for. `event` is the exception and is held both ways just above.
+    """
+    assert _sampled_values(_document(), key) <= vocabulary
+
+
+@pytest.mark.parametrize(("key", "vocabulary"), SAMPLE_VOCABULARIES, ids=SAMPLE_KEYS)
+def test_a_drifted_sample_value_is_caught(key: str, vocabulary: frozenset[str]) -> None:
+    """Rename a vocabulary member without touching the sample and this is what happens."""
+    document = _document()
+    real = sorted(_sampled_values(document, key))[0]
+
+    drifted, replaced = re.subn(
+        rf'"{key}"\s*:\s*"{re.escape(real)}"', f'"{key}": "not-a-{key}"', document, count=1
+    )
+    assert replaced == 1
+    assert _sampled_values(drifted, key) - vocabulary == {f"not-a-{key}"}
+
+
+def test_an_event_with_no_sample_record_is_caught() -> None:
+    """The dangling direction: add an event and its section, forget its sample.
+
+    Retargeted at an event that already has one rather than deleted, so the document under
+    test still parses and still names nothing undefined — the coverage half fails alone.
+    """
+    document = _document()
+    sampled = Counter(record["event"] for record in _sample_records(document))
+    dangling = sorted(name for name, count in sampled.items() if count == 1)[0]
+    covered = sorted(name for name in sampled if name != dangling)[0]
+
+    uncovered, replaced = re.subn(
+        rf'"event"\s*:\s*"{re.escape(str(dangling))}"',
+        f'"event": "{covered}"',
+        document,
+        count=1,
+    )
+    assert replaced == 1
+    assert audit.EVENTS - _sampled_values(uncovered, "event") == {dangling}
+
+
+def test_documented_sample_tls_sources_are_drawn_from_the_client_vocabulary() -> None:
+    """Membership, not equality: one record carries one `source`. The clause above holds
+    the other direction, so between them the vocabulary is covered and the sample cannot
+    drift from it.
+    """
+    assert _sampled_tls_sources(_document()) <= client.VERIFY_SSL_SOURCES
+
+
+def test_a_drifted_sample_tls_source_is_caught() -> None:
+    document = _document()
+    real = sorted(_sampled_tls_sources(document))[0]
+
+    drifted, replaced = re.subn(
+        rf'"source"\s*:\s*"{re.escape(real)}"', '"source": "retired-source"', document, 1
+    )
+    assert replaced == 1
+    expected = {"retired-source"}
+    assert _sampled_tls_sources(drifted) - client.VERIFY_SSL_SOURCES == expected
+
+
+def test_a_tls_sample_that_lost_its_source_is_caught() -> None:
+    document = _document()
+    real = sorted(_sampled_tls_sources(document))[0]
+
+    stripped, replaced = re.subn(
+        rf',\s*"source"\s*:\s*"{re.escape(real)}"', "", document, count=1
+    )
+    assert replaced == 1
+    with pytest.raises(AssertionError, match="carries no `source`"):
+        _sampled_tls_sources(stripped)
+
+
+def test_an_attribution_source_is_not_read_as_a_tls_source() -> None:
+    """The control that lets the rows above mean anything.
+
+    `attribution.source` sits under the same key and names a different vocabulary, so an
+    extractor reading `source` at any depth would fail on the real document. That it does
+    not is asserted against values checked to be outside the TLS vocabulary, so the
+    control cannot pass by comparing two empty sets.
+    """
+    document = _document()
+    nested = frozenset(
+        source
+        for record in _sample_records(document)
+        for source in _values_at(record.get("attribution"), "source")
+    )
+
+    assert nested, "no attribution sources in the samples to control against"
+    assert not nested & client.VERIFY_SSL_SOURCES, nested
+
+    victim = sorted(nested)[0]
+    reworded, replaced = re.subn(
+        rf'"source"\s*:\s*"{re.escape(victim)}"', '"source": "retired-source"', document, 1
+    )
+    assert replaced == 1
+    assert _sampled_tls_sources(reworded) == _sampled_tls_sources(document)
+
+
+def test_a_sample_that_stopped_being_valid_json_is_caught() -> None:
+    """A sample is copied into a log query or an alert rule, so it has to parse."""
+    document = _document()
+    block = JSON_SAMPLE.findall(document)[0]
+
+    broken = document.replace(block, f"{block.rstrip()[:-1]}\n", 1)
+    assert broken != document
+    with pytest.raises(AssertionError, match="not valid JSON"):
+        _sample_records(broken)
+
+
+def test_a_sample_that_lost_its_event_is_caught() -> None:
+    """Otherwise dropping the key would exempt a record from every check above."""
+    document = _document()
+
+    dropped, replaced = re.subn(r'"event"\s*:\s*"[a-z-]+"\s*,\s*', "", document, count=1)
+    assert replaced == 1
+    with pytest.raises(AssertionError, match="carries no `event`"):
+        _sample_records(dropped)
+
+
+def test_sample_values_are_read_from_json_fences_only() -> None:
+    """The counterpart to the heading rule: a record-shaped string in prose is prose."""
+    document = _document()
+    stray = (
+        f'{document}\n{{"event":"in-prose","source":"in-prose"}}\n\n'
+        '```text\n{"event":"wrong-fence","source":"wrong-fence"}\n```\n'
+    )
+
+    assert stray != document
+    assert _sampled_values(stray, "event") == _sampled_values(document, "event")
+    assert _sampled_tls_sources(stray) == _sampled_tls_sources(document)
+
+
+def test_the_samples_survive_an_unrelated_edit_to_the_document() -> None:
+    """The control the mutation rows above are measured against."""
+    document = _document()
+
+    reworded = document.replace("\n\n", "\n\nAn unrelated new paragraph.\n\n", 1)
+    assert reworded != document
+    for key in SAMPLE_KEYS:
+        assert _sampled_values(reworded, key) == _sampled_values(document, key)
+    assert _sampled_tls_sources(reworded) == _sampled_tls_sources(document)
 
 
 def test_the_prose_pins_no_literal_vocabulary_count() -> None:
