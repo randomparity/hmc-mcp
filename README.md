@@ -69,8 +69,8 @@ The distribution ships a PEP 561 `py.typed` marker, so a type-checker reads the 
 annotations instead of treating every value as `Any`. That covers exactly the surface `__all__`
 declares: each export's call signature, the fields and constructor of each exported package-owned
 model, the keys of each exported `TypedDict`, each exported exception type, and the members and
-values of each exported enum and literal alias. Modules outside `hmc_mcp.api` carry annotations too, but they are implementation details and
-their types are not part of the contract.
+values of each exported enum and literal alias. Modules outside `hmc_mcp.api` carry annotations
+too, but they are implementation details and their types are not part of the contract.
 
 What the marker does not do is make the open-ended HMC payloads specific. Operations that return a
 raw resource mapping are annotated `dict[str, Any]`, and ADR 0029 keeps them that way deliberately
