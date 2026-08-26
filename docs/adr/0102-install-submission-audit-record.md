@@ -46,7 +46,7 @@ its emitters by hand, so it is edited here too.
 ### 2. Fields, and why it is emitted *before* the submit
 
 ```json
-{"time":"2026-08-26T18:00:00+00:00","event":"install-attempted","system":"sys-a","partition":"vios-01","log_path":"/var/hmc/log/installios.vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+{"time":"2026-08-26T18:00:00+00:00","event":"install-attempted","system":"sys-a","partition":"vios-01","log_path":"/tmp/hmc-mcp-installios-vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
 ```
 
 The record names the attempt, not the outcome, and is emitted immediately before
@@ -56,8 +56,10 @@ submission — so a record written afterwards would be missing exactly where an 
 needs to know a partition may have an install in flight and where its log is.
 
 `log_path` is what a raised submission leaves the operator to read, and the reason
-`system` and `host` sit beside it: the path is keyed on the partition name alone, so
-same-named partitions on one HMC share one log file. `host` and `attribution` follow
+`system` and `host` sit beside it: ADR 0070 composes it as
+`/tmp/hmc-mcp-installios-<slug>.log` from the partition name alone, and the slug replaces
+every character outside `[A-Za-z0-9._-]` — so the file collides across managed systems and
+across names that differ only outside that set. `host` and `attribution` follow
 ADR 0100 §2 — `hmc.config.agent_id or "hmc-mcp"`, the same claim the ownership records
 carry, so an unconfigured deployment's records name one actor and can be joined. Every
 value passes through `_value`, so each is truncated and JSON-escaped by the shared
@@ -76,10 +78,17 @@ that drops the `authorization` permit named in the Context.
 
 ### 4. The post-submit line stays on the module logger
 
-It carries the PID, which the returned `InstallHandle` already carries, so it is a
-convenience for an embedder that configures the `hmc_mcp` namespace rather than part of the
-audit trail. Routing it too would put a second record per install on a bounded sink for a
-value the caller already holds.
+The PID it carries is already in the returned `InstallHandle`, so routing it too would put
+a second record per install on the bounded sink for a value the caller already holds. It
+stays a convenience for an embedder that configures the `hmc_mcp` namespace.
+
+Say plainly what that costs, because the caller and the operator are not the same principal
+under `hmc-mcp serve`: there the handle is the tool result and goes to the MCP client — the
+agent that asked for the install — while the operator reads the audit stream. So the PID
+does not reach the operator's trace. With no HMC job on this path, `installios -u` and the
+`log_path` this record does carry are what an operator has; recovering the PID means `ps` on
+the HMC or the log itself. Closing that would mean either a second record or a shape the
+frozen `InstallHandle` does not have, and both are more than this issue authorizes.
 
 ## Consequences
 
@@ -89,6 +98,10 @@ value the caller already holds.
 - A record is not evidence that an install started; it is evidence that one was attempted.
   Pairing it with an outcome means reading the HMC-side log the record names, which the next
   submission against that partition name truncates.
+- The operator's trace does not carry the in-flight PID, for the reason §4 gives. On a path
+  with no HMC job that PID is the only handle on an install already running, so aborting one
+  after a mistaken or unauthorized submission means reading it off the HMC. Named as a
+  residual rather than closed here; #544 owns it.
 - A caller can drive these records at attempt rate. Under `hmc-mcp serve` they land on the
   bounded ADR 0043 sink, which drops and says so with a `records-dropped` count; on the
   Python API path the record goes synchronously to stderr through `logging.lastResort` with

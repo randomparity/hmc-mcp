@@ -583,7 +583,7 @@ def test_the_install_record_names_the_target_and_the_log_path():
     audit.record_install_attempted(
         system="sys-a",
         partition="vios-01",
-        log_path="/var/hmc/log/installios.vios-01.log",
+        log_path="/tmp/hmc-mcp-installios-vios-01.log",
         host="hmc.test",
         agent_id="agent-7",
     )
@@ -594,7 +594,7 @@ def test_the_install_record_names_the_target_and_the_log_path():
     assert record["event"] == "install-attempted"
     assert record["system"] == "sys-a"
     assert record["partition"] == "vios-01"
-    assert record["log_path"] == "/var/hmc/log/installios.vios-01.log"
+    assert record["log_path"] == "/tmp/hmc-mcp-installios-vios-01.log"
     assert record["host"] == "hmc.test"
     assert record["attribution"] == {
         "claim": "agent-7", "source": "config:agent_id", "verified": False

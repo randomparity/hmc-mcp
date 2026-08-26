@@ -221,7 +221,7 @@ Emitted immediately **before** `install_lpar_os` or `install_vios` submits a det
 decision is [ADR 0102](adr/0102-install-submission-audit-record.md).
 
 ```json
-{"time":"2026-08-26T18:00:00+00:00","event":"install-attempted","system":"sys-a","partition":"vios-01","log_path":"/var/hmc/log/installios.vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+{"time":"2026-08-26T18:00:00+00:00","event":"install-attempted","system":"sys-a","partition":"vios-01","log_path":"/tmp/hmc-mcp-installios-vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
 ```
 
 `system` and `partition` are the resolved HMC CLI names the submission was composed
@@ -231,10 +231,14 @@ with; `host` is the `HMCConfig.host` of the client that submitted, and an unset
 so an unconfigured deployment's records name one actor and can be joined.
 
 `log_path` is the HMC-side path the install writes to, and the field to read when a
-submission raises. It is keyed on the **partition name alone**: the managed system is
-not part of it, and the redirect truncates, so same-named partitions on different
-managed systems behind one HMC share one file and each destroys the other's only
-diagnostic record. That is why `system` and `host` sit beside it here.
+submission raises. It is `/tmp/hmc-mcp-installios-<slug>.log`, where `<slug>` is the
+partition name with every character outside `[A-Za-z0-9._-]` replaced by `_`
+([ADR 0070](adr/0070-installios-cli-bridge-for-install-tools.md)). Two things follow, and
+both are why `system` and `host` sit beside it here. The managed system is not part of the
+path, so same-named partitions on different managed systems behind one HMC share one file;
+and the slug collapses distinct names, so `vios 01` and `vios_01` do too. The redirect
+truncates, so each colliding install destroys the other's only diagnostic record — and the
+directory is `/tmp`, which a reboot or a tmpfiles sweep may clear.
 
 **This record names an attempt, never an outcome.** The submission is detached, so
 there is no HMC job to poll and nothing observes whether `installios` accepted the

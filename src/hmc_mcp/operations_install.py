@@ -148,10 +148,9 @@ async def _submit_install(
         vlan_id=vlan_id,
         mac_address=mac_address,
     )
-    # The only record this process leaves before an irreversible submission, and
-    # it goes on the reserved audit logger rather than this module's (ADR 0102):
-    # nothing configures the hmc_mcp namespace, so the line below survives only in
-    # an embedding process that does, which the served MCP path is not.
+    # The record precedes the irreversible submit, because a submit that raises
+    # cannot say whether anything was submitted. It goes on the reserved audit
+    # logger rather than this module's, which nothing configures (ADR 0102).
     audit.record_install_attempted(
         system=system_name,
         partition=partition_name,
