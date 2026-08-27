@@ -21,7 +21,6 @@ from .errors import HMCError
 from .config import build_config
 from .client_factory import client_from_env
 from .resource_identity import is_uuid, resolve_system_uuid, resolve_vios_uuid
-from .jobs import validate_wait_timing
 from .operations_install import (
     install_lpar_os,
     install_vios,
@@ -622,8 +621,6 @@ def hmc_power_on_vios(
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
 
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-
     async def _go():
         from .operations_vios import power_vios
 
@@ -661,8 +658,6 @@ def hmc_power_off_vios(
         profile: Optional TOML profile name; uses environment defaults when omitted.
         system_name_or_uuid: Optional managed system used to disambiguate a VIOS name.
     """
-
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         from .operations_vios import power_vios

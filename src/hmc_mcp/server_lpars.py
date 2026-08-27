@@ -20,7 +20,6 @@ from .documents import (
     PartitionType,
     build_lpar_document,
 )
-from .jobs import validate_wait_timing
 from .operations_decommission import DecommissionResult, decommission_lpar
 from .operations_lpar import (
     LparCreation,
@@ -545,7 +544,6 @@ def hmc_power_on_lpar(
             approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
     """
 
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
     if affinity_assessment is not None:
         if system_name_or_uuid is None:
             raise ValueError(
@@ -654,8 +652,6 @@ def hmc_power_off_lpar(
         ownership_override: Bypass ADR 0011 ownership rejection only after operator
             approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
     """
-
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:

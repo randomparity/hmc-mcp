@@ -16,6 +16,7 @@ import pytest
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.documents import LparResources
+from hmc_mcp.operations_systems import power_system
 from hmc_mcp.server import (
     hmc_dlpar_mem,
     hmc_dlpar_proc,
@@ -28,18 +29,14 @@ from hmc_mcp.server import (
 from conftest import JOB_ENTRY, SYSTEM_ENTRY
 
 
-def test_power_off_rejects_invalid_wait_timing_before_client_creation(monkeypatch):
-    called = False
-
-    def unexpected_client(*_args, **_kwargs):
-        nonlocal called
-        called = True
-        raise AssertionError("client must not be created")
-
-    monkeypatch.setattr("hmc_mcp.server_systems.client_from_env", unexpected_client)
+@pytest.mark.asyncio
+async def test_power_system_operation_rejects_invalid_wait_timing():
+    hmc = AsyncMock()
     with pytest.raises(ValueError, match="timeout_seconds"):
-        hmc_power_off_system(SYSTEM_UUID, wait=True, timeout_seconds=-1)
-    assert called is False
+        await power_system(
+            hmc, SYSTEM_UUID, on=False, wait=True, timeout_seconds=-1
+        )
+    hmc.power_off_system.assert_not_awaited()
 
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"

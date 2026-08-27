@@ -25,7 +25,6 @@ from .documents import (
     PowerOnLparStartPolicy,
     build_managed_system_document,
 )
-from .jobs import validate_wait_timing
 from .operations_lpar import PartitionState
 from .operations_systems import ManagedSystemState
 
@@ -420,8 +419,6 @@ def hmc_power_on_system(
         poll_interval: Seconds between job polls when waiting; must be positive.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-
     async def _go():
         from .operations_systems import power_system
 
@@ -460,8 +457,6 @@ def hmc_power_off_system(
         poll_interval: Seconds between job polls when waiting; must be positive.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-
     async def _go():
         from .operations_systems import power_system
 
