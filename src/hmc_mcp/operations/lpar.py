@@ -19,10 +19,13 @@ from ..client.client_resolution import (
 )
 from ..resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
 from ..documents import (
+    BOOT_DEVICE_SELECTORS,
     Keylock,
     LparResources,
     OsType,
     PartitionType,
+    build_boot_order_document,
+    build_clear_boot_order_document,
     build_dlpar_mem_document,
     build_dlpar_proc_document,
     build_lpar_document,
@@ -976,9 +979,6 @@ async def set_lpar_boot_order(
     Raises:
         ValueError: If device selectors are invalid or LPAR cannot be resolved.
     """
-    # Import here to avoid circular imports
-    from ..documents import BOOT_DEVICE_SELECTORS, build_boot_order_document
-
     # Validate device selectors
     for device in devices:
         if device not in BOOT_DEVICE_SELECTORS:
@@ -1039,9 +1039,6 @@ async def clear_lpar_boot_order(
     Raises:
         ValueError: If LPAR cannot be resolved.
     """
-    # Import here to avoid circular imports
-    from ..documents import build_clear_boot_order_document
-
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     system_name, lpar_name = await resolve_lpar_ownership_names(
         hmc, system_uuid, system_name_or_uuid, lpar_uuid
