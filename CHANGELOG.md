@@ -203,6 +203,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 ### Changed
 
 
+- The logon-time TLS verification warning now uses a dedicated
+  `TLSVerificationDisabledWarning` category and emits at most once per process for each
+  HMC host and `verify_ssl` source (#551).
 - `hmc_wait_for_job` and `hmc_get_job` now read through `operations_jobs` instead of calling
   `HMCClient` directly, so an MCP caller can tell a reaped job from a running one (#474, ADR 0093
   amendment). **Tool behaviour changes:** a job the HMC no longer has returns `found: false`
@@ -322,6 +325,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `TLSVerificationDisabledWarning` (#551), the filterable warning category emitted when
+  `HMCClient.logon` sends credentials while TLS certificate verification is disabled.
 - Added: `InstallHandle` (#468), the `TypedDict` `install_lpar_os` and `install_vios` now return
   in place of `dict[str, Any]`. Runtime behaviour and both MCP tool responses are unchanged — a
   `TypedDict` is a plain `dict` — but the five keys `system`, `partition`, `pid`, `log_path`, and

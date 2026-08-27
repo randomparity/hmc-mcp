@@ -126,7 +126,7 @@ names are internal everywhere and are never inventoried.
 
 - `affinity_assessment` — exports: `AffinityAssessmentInput`, `AffinityAssessmentResult`,
   `AffinityClassification`, `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`.
-- `client` — exports: `HMCClient`.
+- `client` — exports: `HMCClient`, `TLSVerificationDisabledWarning`.
 - `client_adapters` — exports: `AdapterType`.
 - `config` — exports: `ConfigError`, `HMCConfig`, `load_profile`.
   - Note: `load_profile` is synchronous and exported all the same. It is a configuration

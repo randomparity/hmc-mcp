@@ -13,6 +13,7 @@ import pytest
 import respx
 
 from hmc_mcp import audit
+from hmc_mcp import client as hmc_client
 from hmc_mcp.audit import AUDIT_LOGGER_NAME
 from hmc_mcp.config import HMCConfig
 
@@ -78,6 +79,14 @@ def default_power_ownership_guard_off(monkeypatch):
     spellings = [n for n in os.environ if n.upper() == "HMC_AUTHORIZE_POWER_OPERATIONS"]
     for name in spellings:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def isolate_tls_warning_dedup_state():
+    """Keep the process-global TLS warning throttle from leaking across tests."""
+    hmc_client._reported_tls_verification_disabled.clear()
+    yield
+    hmc_client._reported_tls_verification_disabled.clear()
 
 
 def _restore_fastmcp_logger() -> None:

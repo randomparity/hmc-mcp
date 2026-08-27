@@ -135,6 +135,10 @@ VerifySSLSource = Literal[
     "field-default",
 ]
 
+
+class TLSVerificationDisabledWarning(UserWarning):
+    """Warning emitted when credentials are sent over unverified TLS."""
+
 #: The closed vocabulary, derived rather than restated — as ``audit.REASONS`` is from
 #: ``audit.Reason``. ``audit`` imports nothing from ``hmc_mcp``, so its TLS record
 #: builder still takes a plain ``str``; the narrowing lives here, at the only place
@@ -145,6 +149,7 @@ VerifySSLSource = Literal[
 #: vocabulary that is the literals in the documents' JSON sample records, unbackticked so
 #: no extractor reads them, which #506 owns.
 VERIFY_SSL_SOURCES: frozenset[str] = frozenset(get_args(VerifySSLSource))
+_reported_tls_verification_disabled: set[tuple[str, VerifySSLSource]] = set()
 
 
 def _verify_ssl_source(config: HMCConfig) -> VerifySSLSource:
@@ -350,18 +355,23 @@ class HMCClient(
     async def logon(self) -> str:
         """Authenticate and store the X-API-Session token.
 
-        Emits a one-time warning when TLS certificate verification is disabled
-        so the MITM exposure of the credentials in flight is never silent.
+        Emits a process-throttled warning when TLS certificate verification is
+        disabled so the MITM exposure of the credentials in flight is never
+        silent.
         """
         if not self.config.verify_ssl:
-            warnings.warn(
-                "TLS certificate verification is disabled (verify_ssl=False). "
-                "HMC credentials travel over an unverified TLS connection and "
-                "can be intercepted by a man-in-the-middle. Install the HMC's "
-                "CA locally and set HMC_VERIFY_SSL=true (or --verify-ssl) to "
-                "enable verification.",
-                stacklevel=2,
-            )
+            key = (self.config.host, _verify_ssl_source(self.config))
+            if key not in _reported_tls_verification_disabled:
+                warnings.warn(
+                    "TLS certificate verification is disabled (verify_ssl=False). "
+                    "HMC credentials travel over an unverified TLS connection and "
+                    "can be intercepted by a man-in-the-middle. Install the HMC's "
+                    "CA locally and set HMC_VERIFY_SSL=true (or --verify-ssl) to "
+                    "enable verification.",
+                    TLSVerificationDisabledWarning,
+                    stacklevel=2,
+                )
+                _reported_tls_verification_disabled.add(key)
         body = build_logon_request_document(
             user=self.config.user, password=self.config.password
         )

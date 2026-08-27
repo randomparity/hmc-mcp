@@ -84,6 +84,7 @@ SUPPORTED_CLIENT_LIFECYCLE = frozenset(
 def test_public_api_exports_the_adr_inventory() -> None:
     assert api.__all__ == [
         "HMCClient",
+        "TLSVerificationDisabledWarning",
         "AffinityAssessmentInput",
         "AffinityAssessmentResult",
         "AffinityClassification",
@@ -1714,6 +1715,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         "ConfigError",
         "PcieAssignmentUnavailableError",
         "SriovLogicalPortCapabilityError",
+        "TLSVerificationDisabledWarning",
         "VnicCapabilityError",
     }
     # At least one manifest entry must carry an `Annotated` field, or the CI matrix
@@ -1815,6 +1817,7 @@ def test_public_error_hierarchy_is_frozen() -> None:
     assert issubclass(api.HMCTransportError, api.HMCError)
     assert issubclass(api.HMCCLIError, api.HMCError)
     assert issubclass(api.ConfigError, ValueError)
+    assert issubclass(api.TLSVerificationDisabledWarning, UserWarning)
 
 
 def test_hmc_config_isolated_construction_member_is_supported() -> None:

@@ -181,8 +181,9 @@ See [`docs/environment-variables.md`](docs/environment-variables.md) for the
 full reference, including descriptions and usage notes.
 
 HMCs ship self-signed certificates, so TLS verification is off by default and
-`hmc-mcp` warns on every logon while it stays off. To verify the HMC
-certificate, install its CA locally and set `HMC_VERIFY_SSL=true`
+`hmc-mcp` warns once per process for each HMC host and setting source while it
+stays off. To verify the HMC certificate, install its CA locally and set
+`HMC_VERIFY_SSL=true`
 (`--verify-ssl`) — otherwise the HMC credentials are at risk of
 man-in-the-middle interception.
 

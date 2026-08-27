@@ -13,7 +13,7 @@ import respx
 from defusedxml import ElementTree as DET
 
 from hmc_mcp import audit
-from hmc_mcp.client import HMCClient, HMCError
+from hmc_mcp.client import HMCClient, HMCError, TLSVerificationDisabledWarning
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCTransportError
 from hmc_mcp.jobs import build_job_request
@@ -340,9 +340,65 @@ async def test_logon_with_test_config_is_silent_by_default(mock_hmc):
 @pytest.mark.asyncio
 async def test_logon_warns_when_verify_ssl_disabled(mock_hmc):
     """Logon with verify_ssl=False emits an explicit MITM warning."""
-    with pytest.warns(UserWarning, match="certificate verification is disabled"):
+    with pytest.warns(
+        TLSVerificationDisabledWarning,
+        match="certificate verification is disabled",
+    ):
         async with HMCClient(make_config(verify_ssl=False)):
             pass
+
+
+async def _logon_with_stubbed_transport(config: HMCConfig) -> None:
+    client = HMCClient(config)
+    client._logon_once = AsyncMock(return_value="test-session-token-123")
+    try:
+        await client.logon()
+    finally:
+        await client._http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_tls_disabled_warning_is_throttled_by_host_and_source():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", TLSVerificationDisabledWarning)
+        await _logon_with_stubbed_transport(make_config(verify_ssl=False))
+        await _logon_with_stubbed_transport(make_config(verify_ssl=False))
+        await _logon_with_stubbed_transport(
+            make_config(host="other-hmc.test", verify_ssl=False)
+        )
+        await _logon_with_stubbed_transport(
+            HMCConfig.from_mapping(
+                {
+                    "host": "hmc.test",
+                    "user": "hscroot",
+                    "password": "abc123",  # pragma: allowlist secret
+                }
+            )
+        )
+
+    tls_warnings = [
+        warning
+        for warning in caught
+        if issubclass(warning.category, TLSVerificationDisabledWarning)
+    ]
+    assert [warning.category for warning in tls_warnings] == [
+        TLSVerificationDisabledWarning,
+        TLSVerificationDisabledWarning,
+        TLSVerificationDisabledWarning,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_tls_warning_filter_error_does_not_mark_state_reported():
+    client = HMCClient(make_config(verify_ssl=False))
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", TLSVerificationDisabledWarning)
+            for _ in range(2):
+                with pytest.raises(TLSVerificationDisabledWarning):
+                    await client.logon()
+    finally:
+        await client._http.aclose()
 
 
 @pytest.mark.asyncio
@@ -399,10 +455,12 @@ async def test_tls_disabled_audit_event_is_once_per_construction_not_per_request
     )
     caught = _capture_audit()
 
-    for _ in range(3):
-        async with HMCClient(make_config(verify_ssl=False)) as client:
-            for _ in range(5):
-                await client._get("/rest/api/hmc")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", TLSVerificationDisabledWarning)
+        for _ in range(3):
+            async with HMCClient(make_config(verify_ssl=False)) as client:
+                for _ in range(5):
+                    await client._get("/rest/api/hmc")
 
     assert len(caught) == 3
     assert {record["event"] for record in caught} == {"tls-verification-disabled"}

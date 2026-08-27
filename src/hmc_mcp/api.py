@@ -1,6 +1,6 @@
 """Supported reusable-library facade for hmc-mcp."""
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client import HMCClient, TLSVerificationDisabledWarning
 from hmc_mcp.client_adapters import AdapterType
 from hmc_mcp.config import ConfigError, HMCConfig, load_profile
 from hmc_mcp.affinity_assessment import (
@@ -218,6 +218,7 @@ from hmc_mcp.snapshot import (
 
 __all__ = [
     "HMCClient",
+    "TLSVerificationDisabledWarning",
     "AffinityAssessmentInput",
     "AffinityAssessmentResult",
     "AffinityClassification",
