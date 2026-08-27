@@ -15,15 +15,20 @@ force, but those paths no longer describe where the behavior is owned.
 
 Presentation adapters are grouped by resource domain:
 
-- `server_*.py` modules own MCP tool definitions and `cli_*.py` modules own
-  Typer commands.
+- `server_tools/` modules own MCP tool definitions and `cli_commands/` modules
+  own Typer commands. `cli_commands/app.py` owns the shared Typer application
+  and presentation helpers; resource modules register commands on that application.
 - `server.py` and `cli.py` are composition entry points, not domain owners.
-- `client_*.py` modules own REST transport operations, while `ssh_commands.py`
-  owns operations implemented through the HMC CLI.
+- `client/` owns REST transport operations, while the `ssh_*.py` modules own
+  operations implemented through the HMC CLI.
 - Shared workflows and policies used by both presentations belong in
-  presentation-neutral `operations_*.py` modules.
+  presentation-neutral `operations/` modules.
+- `resource_identity.py` owns REST-facing name/UUID resolution.
+  `lpar_ownership.py` owns the LPAR ownership protocol and authorization-name
+  resolution; neither concern belongs to a presentation adapter.
 - Cross-domain request construction remains in `documents.py`, `jobs.py`, and
-  `pcm.py`; shared selector and configuration helpers remain in `common.py`.
+  `pcm.py`; configuration remains in `config.py`, and selector helpers live
+  beside their transport boundary (`ssh_selectors.py` for HMC CLI selectors).
 
 This ADR supersedes only the module-path and ownership statements in ADRs
 0005, 0008, 0009, 0010, and 0011. Their public contracts, profile-routing

@@ -953,12 +953,7 @@ src/hmc_mcp/
   tool_registry.py           # local MCP tool collection, each tool carrying ToolSecurity
   _app.py        # shared FastMCP instance, sync-run and SSH helpers, entry points
   server.py      # MCP composition, startup validation, logging, and serving bootstrap
-  server_*.py    # resource-domain @mcp.tool definitions (systems, lpars, VIOS, ...)
-  server_tools/lpar_config.py      # SSH-only LPAR configuration handlers
-  server_tools/system_resources.py # SSH-only managed-system resource handlers
-  cli.py         # thin aggregator importing every cli_*.py command module
-  cli_commands/app.py     # root Typer app, GlobalOpts/GLOBALS, shared CLI helpers
-  cli_*.py       # per-domain CLI commands (systems, lpars, storage, ...)
+  cli.py         # thin aggregator importing every cli_commands/ registration module
 tests/           # pytest + respx, no real HMC needed
 scripts/         # smoke/manual harnesses
 ```
