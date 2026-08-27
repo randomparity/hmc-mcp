@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Literal, cast
+from typing import Any, Literal, cast, overload
 from urllib.parse import quote
 
 from ..client import HMCClient
@@ -124,8 +124,7 @@ async def update_console_software(
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     console_path_id = quote(console_uuid, safe="")
     job = await hmc.submit_job(
-        f"/rest/api/uom/ManagementConsole/{console_path_id}"
-        "/do/UpdateManagementConsole",
+        f"/rest/api/uom/ManagementConsole/{console_path_id}/do/UpdateManagementConsole",
         update_hmc_job(repository),
     )
     return await _submit_update(hmc, job, wait, timeout_seconds, poll_interval)
@@ -148,6 +147,32 @@ async def list_available_hmc_ptfs(
         list_management_console_updates_job(),
     )
     return await _submit_update(hmc, job, wait, timeout_seconds, poll_interval)
+
+
+@overload
+async def update_vios(
+    hmc: HMCClient,
+    vios_name_or_uuid: str,
+    repository: VIOSUpdateSource,
+    kind: Literal["update"] = "update",
+    *,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None: ...
+
+
+@overload
+async def update_vios(
+    hmc: HMCClient,
+    vios_name_or_uuid: str,
+    repository: VIOSUpgradeSource,
+    kind: Literal["upgrade"],
+    *,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None: ...
 
 
 async def update_vios(
@@ -195,6 +220,4 @@ async def update_firmware(
     job = await hmc.submit_platform_update(
         system_uuid, platform_update_job(platform_update)
     )
-    return await _submit_platform_update(
-        hmc, job, wait, timeout_seconds, poll_interval
-    )
+    return await _submit_platform_update(hmc, job, wait, timeout_seconds, poll_interval)

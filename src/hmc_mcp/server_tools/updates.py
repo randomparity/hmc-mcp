@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..tool_registry import tool_module
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from .._app import (
     run_sync,
@@ -21,6 +21,8 @@ from ..update_jobs import (
     ConsoleUpdateSource,
     PlatformUpdateParameter,
     VIOSSource,
+    VIOSUpdateSource,
+    VIOSUpgradeSource,
 )
 
 
@@ -61,6 +63,7 @@ def hmc_update_console_software(
         poll_interval: Seconds between job-status requests while waiting.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await update_console_software(
@@ -99,6 +102,7 @@ def hmc_get_available_hmc_ptfs(
         poll_interval: Seconds between job-status requests while waiting.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await list_available_hmc_ptfs(
@@ -140,12 +144,23 @@ def hmc_vios_update(
         poll_interval: Seconds between job-status requests while waiting.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
+            if kind == "update":
+                return await update_vios(
+                    hmc,
+                    vios_name_or_uuid,
+                    cast(VIOSUpdateSource, repository),
+                    kind,
+                    wait=wait,
+                    timeout_seconds=timeout_seconds,
+                    poll_interval=poll_interval,
+                )
             return await update_vios(
                 hmc,
                 vios_name_or_uuid,
-                repository,
+                cast(VIOSUpgradeSource, repository),
                 kind,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
