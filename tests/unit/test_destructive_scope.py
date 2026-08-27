@@ -6,6 +6,7 @@ import pytest
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.lpar import delete_lpar, power_lpar, rename_lpar
 from hmc_mcp.operations.vios import power_vios
+from hmc_mcp.operations import vios as operations_vios
 from hmc_mcp.server_tools import lpars as server_lpars
 from hmc_mcp.server_tools import vios as server_vios
 
@@ -141,8 +142,8 @@ def test_restore_vios_tool_forwards_system_scope(monkeypatch):
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     hmc.find_vios_by_name.return_value = {"UUID": "vios-uuid"}
     command = AsyncMock(return_value="restored")
-    monkeypatch.setattr(server_vios, "HMCClient", _client_factory(hmc))
-    monkeypatch.setattr(server_vios, "run_hmc_cli", command)
+    monkeypatch.setattr(operations_vios, "HMCClient", _client_factory(hmc))
+    monkeypatch.setattr(operations_vios, "run_hmc_cli", command)
 
     assert server_vios.hmc_restore_vios(
         "system-name",

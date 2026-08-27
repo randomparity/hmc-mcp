@@ -63,6 +63,13 @@ from ..ssh_lpar import (
     validate_lpar_description,
 )
 from ..ssh_profiles import set_lpar_description
+from .assignments import (
+    AssignmentStep,
+    LparPcieAssignments,
+    LparPcieWorkflowResult,
+    _apply_validated_lpar_pcie_assignments,
+    prevalidate_lpar_pcie_assignments,
+)
 _logger = logging.getLogger(__name__)
 
 PartitionState = Literal[
@@ -133,6 +140,52 @@ def _check_lpar_write_error(exc: HMCError) -> None:
             exc.status_code,
             body=exc.body,
         ) from exc
+
+
+async def _modify_lpar(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    resources: LparResources,
+    system_name_or_uuid: str | None,
+    assignments: LparPcieAssignments,
+    *,
+    ownership_override: bool = False,
+) -> LparPcieWorkflowResult:
+    """Apply resource and PCIe changes as one ordered LPAR workflow."""
+    if assignments != LparPcieAssignments() and system_name_or_uuid is None:
+        raise ValueError("system_name_or_uuid is required for PCIe assignments")
+    if system_name_or_uuid is not None:
+        await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
+
+    modified = None
+    steps: list[AssignmentStep] = []
+    if resources != LparResources():
+        lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+        try:
+            modified = await hmc.modify_logical_partition(
+                lpar_uuid, build_lpar_document(name=None, resources=resources)
+            )
+        except HMCError as exc:
+            _check_lpar_write_error(exc)
+            raise
+        steps.append(AssignmentStep("resources", "ok", modified))
+
+    assignment_result = await _apply_validated_lpar_pcie_assignments(
+        hmc,
+        system_name_or_uuid or "",
+        lpar_name_or_uuid,
+        assignments,
+        ownership_override=ownership_override,
+    )
+    steps.extend(assignment_result.steps)
+    return LparPcieWorkflowResult(
+        False,
+        assignment_result.workflow_completed,
+        modified,
+        None,
+        tuple(steps),
+        (),
+    )
 
 
 _CALLER_TOKEN = re.compile(

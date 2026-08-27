@@ -148,7 +148,8 @@ names are internal everywhere and are never inventoried.
 - `operations.assignments` — operations: `apply_lpar_pcie_assignments`,
   `prevalidate_lpar_pcie_assignments`; types: `AssignmentResult`, `AssignmentStep`,
   `DedicatedPcieAssignment`, `LparPcieAssignments`, `LparPcieWorkflowResult`,
-  `SriovLogicalPortAssignment`, `VnicAssignment`; excluded synchronous: none.
+  `SriovLogicalPortAssignment`, `VnicAssignment`; excluded synchronous:
+  `assignment_step_names`.
 - `operations.capacity` — operations: `capacity_report`, `find_placement`; types: none; excluded
   synchronous: `lpar_processing_units`, `system_capacity`.
 - `operations.composite` — operations: `lpar_summary`, `system_summary`; types: none; excluded
@@ -238,6 +239,7 @@ names are internal everywhere and are never inventoried.
 - `operations.systems` — operations: `power_system`; types: none; excluded synchronous: none.
 - `operations.templates` — operations: `deploy_partition_template`, `get_partition_template`,
   `list_partition_templates`; types: none; excluded synchronous: none.
+- `operations.updates` — operations: none; types: none; excluded synchronous: none.
 - `operations.users` — operations: none; types: none; excluded synchronous: none.
 - `operations.vios` — operations: `power_vios`; types: none; excluded synchronous: none.
 - `snapshot` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,

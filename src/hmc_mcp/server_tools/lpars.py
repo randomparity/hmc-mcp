@@ -12,13 +12,11 @@ from .._app import (
 from ..errors import HMCError
 from ..ssh import HMCCLIError
 from ..client.client_factory import client_from_env
-from ..resource_identity import resolve_lpar_uuid
 from ..documents import (
     Keylock,
     LparResources,
     OsType,
     PartitionType,
-    build_lpar_document,
 )
 from ..operations.decommission import DecommissionResult, decommission_lpar
 from ..operations.lpar import (
@@ -34,6 +32,7 @@ from ..operations.lpar import (
     clear_lpar_boot_order,
     delete_lpar,
     list_lpar_ownership,
+    _modify_lpar,
     power_lpar,
     power_on_outcome,
     read_lpar_boot_order,
@@ -226,41 +225,15 @@ def hmc_modify_lpar(
         ownership_override: Bypass assignment ownership rejection after operator approval.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
-    xml = build_lpar_document(name=None, resources=resources)
-
     async def _go():
         async with client_from_env(profile) as hmc:
-            if assignments != LparPcieAssignments() and system_name_or_uuid is None:
-                raise ValueError("system_name_or_uuid is required for PCIe assignments")
-            if system_name_or_uuid is not None:
-                await prevalidate_lpar_pcie_assignments(
-                    hmc, system_name_or_uuid, assignments
-                )
-            modified = None
-            steps: list[AssignmentStep] = []
-            if resources != LparResources():
-                lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-                try:
-                    modified = await hmc.modify_logical_partition(lpar_uuid, xml)
-                except HMCError as exc:
-                    _check_lpar_write_error(exc)
-                    raise
-                steps.append(AssignmentStep("resources", "ok", modified))
-            assignment_result = await _apply_validated_lpar_pcie_assignments(
+            return await _modify_lpar(
                 hmc,
-                system_name_or_uuid or "",
                 lpar_name_or_uuid,
+                resources,
+                system_name_or_uuid,
                 assignments,
                 ownership_override=ownership_override,
-            )
-            steps.extend(assignment_result.steps)
-            return LparPcieWorkflowResult(
-                False,
-                assignment_result.workflow_completed,
-                modified,
-                None,
-                tuple(steps),
-                (),
             )
 
     return run_sync(_go)

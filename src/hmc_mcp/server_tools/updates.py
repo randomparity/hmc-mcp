@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from ..tool_registry import tool_module
 
-import re
 from typing import Any, Literal, cast
 from urllib.parse import quote
 
@@ -14,12 +13,12 @@ from .._app import (
 
 from ..client.client_factory import client_from_env
 from ..resource_identity import resolve_system_uuid, resolve_vios_uuid
-from ..errors import HMCError
-from ..jobs import (
-    TERMINAL_JOB_STATUSES,
-    validate_wait_timing,
-    vios_stdout,
-    wait_for_submitted_job,
+from ..jobs import validate_wait_timing
+from ..operations.updates import (
+    _require_platform_update_version,
+    _submit_platform_update,
+    _submit_update,
+    _with_vios_stdout,
 )
 from ..update_jobs import (
     ConsoleUpdateSource,
@@ -33,76 +32,6 @@ from ..update_jobs import (
     update_vios_job,
     upgrade_vios_job,
 )
-
-
-def _with_vios_stdout(
-    result: dict[str, Any] | None, wait: bool
-) -> dict[str, Any] | None:
-    """Project completed VIOS job output without altering the raw job payload."""
-    if not wait or not isinstance(result, dict) or "stdOut" in result:
-        return result
-    resource = result.get("Resource")
-    if (
-        not isinstance(resource, dict)
-        or resource.get("Status") not in TERMINAL_JOB_STATUSES
-    ):
-        return result
-    output = vios_stdout(result)
-    if output is None:
-        return result
-    return {**result, "stdOut": output}
-
-
-async def _update_op(
-    hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int
-) -> dict[str, Any] | None:
-    """Submit an update/upgrade job on an already-open *hmc* client; optionally wait for terminal state."""
-    job = await submit_fn(hmc)
-    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
-
-
-async def _platform_update_op(
-    hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int
-) -> dict[str, Any] | None:
-    """Submit PlatformUpdate without inventing an id-only polling endpoint."""
-    job = await submit_fn(hmc)
-    if not wait:
-        return job
-    if job is not None:
-        resource = job.get("Resource")
-        status = resource.get("Status") if isinstance(resource, dict) else None
-        if isinstance(status, str) and status in TERMINAL_JOB_STATUSES:
-            return job
-        link = job.get("link")
-        if not isinstance(link, str) or not link.strip():
-            raise HMCError(
-                "PlatformUpdate was accepted but cannot be polled because the HMC "
-                "returned a nonterminal response without a selfLink"
-            )
-    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
-
-
-_PLATFORM_UPDATE_VERSION = re.compile(r"V([0-9]{1,4})R([0-9]{1,4})M([0-9]{1,4})")
-_MINIMUM_PLATFORM_UPDATE_VERSION = (11, 1, 1111)
-
-
-def _require_platform_update_version(console: dict[str, Any] | None) -> None:
-    """Require documented PlatformUpdate support before resolving a target."""
-    resource = console.get("Resource") if isinstance(console, dict) else None
-    version = resource.get("VersionInfo") if isinstance(resource, dict) else None
-    match = (
-        _PLATFORM_UPDATE_VERSION.fullmatch(version)
-        if isinstance(version, str)
-        else None
-    )
-    parsed = tuple(int(part) for part in match.groups()) if match else None
-    if parsed is None or parsed < _MINIMUM_PLATFORM_UPDATE_VERSION:
-        classification = "below the minimum" if parsed is not None else "unavailable"
-        raise ValueError(
-            "PlatformUpdate requires HMC 11.1.1111 or later; "
-            f"the connected HMC version is {classification}. "
-            "Upgrade the HMC before retrying."
-        )
 
 
 tool, register_tools, tool_security = tool_module()
@@ -156,7 +85,7 @@ def hmc_update_console_software(
     async def _go():
         async with client_from_env(profile) as hmc:
             console_path_id = quote(console_uuid, safe="")
-            return await _update_op(
+            return await _submit_update(
                 hmc,
                 lambda hmc2: hmc2.submit_job(
                     f"/rest/api/uom/ManagementConsole/{console_path_id}"
@@ -200,7 +129,7 @@ def hmc_get_available_hmc_ptfs(
     async def _go():
         async with client_from_env(profile) as hmc:
             console_path_id = quote(console_uuid, safe="")
-            return await _update_op(
+            return await _submit_update(
                 hmc,
                 lambda hmc2: hmc2.submit_job(
                     f"/rest/api/uom/ManagementConsole/{console_path_id}"
@@ -257,7 +186,7 @@ def hmc_vios_update(
         async with client_from_env(profile) as hmc:
             vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
             vios_path_id = quote(vios_uuid, safe="")
-            result = await _update_op(
+            result = await _submit_update(
                 hmc,
                 lambda hmc2: hmc2.submit_job(
                     f"/rest/api/uom/VirtualIOServer/{vios_path_id}/do/{operation}",
@@ -304,7 +233,7 @@ def hmc_update_firmware(
         async with client_from_env(profile) as hmc:
             _require_platform_update_version(await hmc.get_console_info())
             system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            return await _platform_update_op(
+            return await _submit_platform_update(
                 hmc,
                 lambda hmc2: hmc2.submit_platform_update(
                     system_uuid,

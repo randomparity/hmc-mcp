@@ -61,7 +61,7 @@ def _fake_vios_client(monkeypatch):
     hmc = AsyncMock()
     hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", _client_factory(hmc))
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", _client_factory(hmc))
 
 
 # ---------------------------------------------------------------------- #
@@ -143,7 +143,7 @@ def test_list_vios_backups_resolves_vios_name(monkeypatch):
     _hmc_env(monkeypatch)
     hmc = AsyncMock()
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", _client_factory(hmc))
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", _client_factory(hmc))
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
@@ -164,10 +164,10 @@ def test_list_vios_backups_with_uuid_uses_one_config_without_rest(monkeypatch):
     run_hmc_cli = AsyncMock(return_value="")
     monkeypatch.setattr("hmc_mcp.server_tools.vios.build_config", build_config)
     monkeypatch.setattr(
-        "hmc_mcp.server_tools.vios.HMCClient",
+        "hmc_mcp.operations.vios.HMCClient",
         MagicMock(side_effect=AssertionError("opened a REST client")),
     )
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.run_hmc_cli", run_hmc_cli)
+    monkeypatch.setattr("hmc_mcp.operations.vios.run_hmc_cli", run_hmc_cli)
 
     assert hmc_list_vios_backups(VIOS_UUID, profile="dev") == []
 
@@ -184,8 +184,8 @@ def test_list_vios_backups_reuses_config_for_rest_and_ssh(monkeypatch):
     client_type = MagicMock(side_effect=_client_factory(hmc))
     run_hmc_cli = AsyncMock(return_value="")
     monkeypatch.setattr("hmc_mcp.server_tools.vios.build_config", build_config)
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", client_type)
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.run_hmc_cli", run_hmc_cli)
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", client_type)
+    monkeypatch.setattr("hmc_mcp.operations.vios.run_hmc_cli", run_hmc_cli)
 
     assert hmc_list_vios_backups("vios-prod", profile="dev") == []
 
@@ -241,10 +241,10 @@ def test_backup_vios_with_cli_ready_selectors_uses_one_config_without_rest(
     run_hmc_cli = AsyncMock(return_value="completed\n")
     monkeypatch.setattr("hmc_mcp.server_tools.vios.build_config", build_config)
     monkeypatch.setattr(
-        "hmc_mcp.server_tools.vios.HMCClient",
+        "hmc_mcp.operations.vios.HMCClient",
         MagicMock(side_effect=AssertionError("opened a REST client")),
     )
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.run_hmc_cli", run_hmc_cli)
+    monkeypatch.setattr("hmc_mcp.operations.vios.run_hmc_cli", run_hmc_cli)
 
     assert (
         hmc_backup_vios(SYSTEM_NAME, VIOS_UUID, backup_name=BACKUP_NAME, profile="dev")
@@ -259,8 +259,8 @@ def test_backup_vios_invalid_type_raises_before_external_calls(monkeypatch):
     """Unknown types fail before REST-needing selectors or SSH are touched."""
     client_type = MagicMock(side_effect=AssertionError("opened a REST client"))
     run_hmc_cli = AsyncMock(side_effect=AssertionError("reached the SSH layer"))
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", client_type)
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.run_hmc_cli", run_hmc_cli)
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", client_type)
+    monkeypatch.setattr("hmc_mcp.operations.vios.run_hmc_cli", run_hmc_cli)
 
     with pytest.raises(ValueError, match="Invalid backup_type"):
         hmc_backup_vios(
@@ -291,8 +291,8 @@ def test_vios_backup_tools_reject_legacy_positional_calls_before_io(
     """Legacy maximum-arity calls cannot bind as replacement arguments."""
     rest_client = MagicMock(side_effect=AssertionError("opened a REST client"))
     run_hmc_cli = AsyncMock(side_effect=AssertionError("reached the SSH layer"))
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", rest_client)
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.run_hmc_cli", run_hmc_cli)
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", rest_client)
+    monkeypatch.setattr("hmc_mcp.operations.vios.run_hmc_cli", run_hmc_cli)
 
     with pytest.raises(TypeError):
         tool(*legacy_arguments)
@@ -338,8 +338,8 @@ def test_restore_vios_rejects_full_vios_type_before_external_calls(monkeypatch):
     """Unsupported restore types fail before REST-needing selectors or SSH."""
     client_type = MagicMock(side_effect=AssertionError("opened a REST client"))
     run_hmc_cli = AsyncMock(side_effect=AssertionError("reached the SSH layer"))
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", client_type)
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.run_hmc_cli", run_hmc_cli)
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", client_type)
+    monkeypatch.setattr("hmc_mcp.operations.vios.run_hmc_cli", run_hmc_cli)
 
     with pytest.raises(ValueError, match="backup_type"):
         hmc_restore_vios(SYSTEM_UUID, "vios-prod", BACKUP_NAME, backup_type="vios")
@@ -355,8 +355,8 @@ def test_backup_vios_refuses_a_name_that_could_leave_the_catalog(
     """Invalid creation names fail before REST-needing selectors or SSH."""
     client_type = MagicMock(side_effect=AssertionError("opened a REST client"))
     run_hmc_cli = AsyncMock(side_effect=AssertionError("reached the SSH layer"))
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", client_type)
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.run_hmc_cli", run_hmc_cli)
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", client_type)
+    monkeypatch.setattr("hmc_mcp.operations.vios.run_hmc_cli", run_hmc_cli)
 
     with pytest.raises(ValueError, match="backup_name"):
         hmc_backup_vios(SYSTEM_UUID, "vios-prod", backup_name=backup_name)
@@ -384,8 +384,8 @@ def test_restore_vios_refuses_a_name_that_could_leave_the_catalog(
     """Invalid restore names fail before REST-needing selectors or SSH."""
     client_type = MagicMock(side_effect=AssertionError("opened a REST client"))
     run_hmc_cli = AsyncMock(side_effect=AssertionError("reached the SSH layer"))
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", client_type)
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.run_hmc_cli", run_hmc_cli)
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", client_type)
+    monkeypatch.setattr("hmc_mcp.operations.vios.run_hmc_cli", run_hmc_cli)
 
     with pytest.raises(ValueError, match="backup_name"):
         hmc_restore_vios(
@@ -457,7 +457,7 @@ def test_backup_vios_preserves_a_direct_system_name_and_scopes_vios_name(monkeyp
     hmc = AsyncMock()
     hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", _client_factory(hmc))
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", _client_factory(hmc))
     conn_mock = _make_ssh_mock("completed\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
@@ -491,7 +491,7 @@ def test_backup_vios_uses_mtms_for_a_system_uuid_even_when_names_collide(
         }
     }
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", _client_factory(hmc))
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", _client_factory(hmc))
     conn_mock = _make_ssh_mock("completed\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
@@ -520,7 +520,7 @@ def test_backup_vios_refuses_uuid_without_complete_mtms_before_ssh(
     _hmc_env(monkeypatch)
     hmc = AsyncMock()
     hmc.get_managed_system.return_value = managed_system
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", _client_factory(hmc))
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", _client_factory(hmc))
 
     with patch(
         "hmc_mcp.ssh.asyncssh.connect",
@@ -567,7 +567,7 @@ def test_backup_vios_refuses_missing_or_blank_nested_mtms_component_before_ssh(
     hmc.get_managed_system.return_value = {
         "Resource": {"MachineTypeModelSerialNumber": mtms}
     }
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", _client_factory(hmc))
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", _client_factory(hmc))
 
     with patch(
         "hmc_mcp.ssh.asyncssh.connect",
@@ -588,8 +588,8 @@ def test_backup_vios_reuses_config_for_rest_and_ssh(monkeypatch):
     client_type = MagicMock(side_effect=_client_factory(hmc))
     run_hmc_cli = AsyncMock(return_value="completed\n")
     monkeypatch.setattr("hmc_mcp.server_tools.vios.build_config", build_config)
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.HMCClient", client_type)
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.run_hmc_cli", run_hmc_cli)
+    monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", client_type)
+    monkeypatch.setattr("hmc_mcp.operations.vios.run_hmc_cli", run_hmc_cli)
 
     assert (
         hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME, profile="dev")

@@ -609,7 +609,7 @@ def test_vios_waited_terminal_result_projects_stdout(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     raw = _vios_job_with_stdout()
     monkeypatch.setattr(
-        "hmc_mcp.server_tools.updates._update_op", AsyncMock(return_value=raw)
+        "hmc_mcp.server_tools.updates._submit_update", AsyncMock(return_value=raw)
     )
 
     result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=True)
@@ -632,7 +632,7 @@ def test_vios_stdout_is_not_projected_without_terminal_wait(
 ):
     _hmc_env(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.server_tools.updates._update_op", AsyncMock(return_value=job)
+        "hmc_mcp.server_tools.updates._submit_update", AsyncMock(return_value=job)
     )
 
     result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=wait)
@@ -645,7 +645,7 @@ def test_vios_stdout_does_not_overwrite_raw_top_level_value(monkeypatch, mock_hm
     _hmc_env(monkeypatch)
     raw = _vios_job_with_stdout(top_level="raw value")
     monkeypatch.setattr(
-        "hmc_mcp.server_tools.updates._update_op", AsyncMock(return_value=raw)
+        "hmc_mcp.server_tools.updates._submit_update", AsyncMock(return_value=raw)
     )
 
     result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=True)

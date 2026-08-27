@@ -9,25 +9,27 @@ from ..ssh_commands import build_filter
 import csv
 import io
 import shlex
-from collections.abc import Callable, Mapping
 from typing import Any, Literal
 
 from .._app import (
     run_sync,
 )
 
-from ..client import HMCClient
 from ..config import build_config
 from ..client.client_factory import client_from_env
-from ..resource_identity import is_uuid, resolve_vios_uuid
 from ..operations.install import (
     install_lpar_os,
     install_vios,
     validate_install_request,
 )
-from ..ssh import run_hmc_cli
 from ..documents import LparResources, VIOS_DEFAULT_RESOURCES
-from ..operations.vios import _create_vios, _delete_vios, power_vios
+from ..operations.vios import (
+    _create_vios,
+    _delete_vios,
+    power_vios,
+    _run_vios_backup_listing,
+    _run_vios_backup_mutation,
+)
 
 
 tool, register_tools, tool_security = tool_module()
@@ -327,85 +329,6 @@ def _parse_lsviosbk_output(text: str) -> list[dict[str, str]]:
     return results
 
 
-async def _resolve_vios_backup_system_name(hmc: Any, system_name_or_uuid: str) -> str:
-    """Resolve a system UUID to its unique CLI MTMS identity."""
-    if not is_uuid(system_name_or_uuid):
-        return system_name_or_uuid
-
-    entry = await hmc.get_managed_system(system_name_or_uuid)
-    resource = (entry or {}).get("Resource") or {}
-    mtms = resource.get("MachineTypeModelSerialNumber")
-    if isinstance(mtms, str):
-        machine_type, dash, model_and_serial = mtms.partition("-")
-        model, star, serial = model_and_serial.partition("*")
-        components = (machine_type, model, serial)
-        if (
-            dash
-            and star
-            and all(
-                component and component == component.strip() for component in components
-            )
-        ):
-            rendered = f"{machine_type}-{model}*{serial}"
-            if rendered == mtms:
-                return rendered
-    elif isinstance(mtms, Mapping):
-        components = (
-            mtms.get("MachineType"),
-            mtms.get("Model"),
-            mtms.get("SerialNumber"),
-        )
-        if all(
-            isinstance(component, str) and component.strip() for component in components
-        ):
-            machine_type, model, serial = components
-            return f"{machine_type}-{model}*{serial}"
-
-    raise ValueError(
-        f"Managed system {system_name_or_uuid!r} has no complete, valid "
-        "MachineTypeModelSerialNumber (MTMS). Use hmc_list_systems to inspect "
-        "the managed system before retrying."
-    )
-
-
-async def _run_vios_backup_mutation_command(
-    system_name_or_uuid: str,
-    vios_name_or_uuid: str,
-    build_command: Callable[[str, str], str],
-    profile: str | None,
-) -> str:
-    config = build_config(profile=profile)
-    system_name = system_name_or_uuid
-    vios_uuid = vios_name_or_uuid
-    if is_uuid(system_name_or_uuid) or not is_uuid(vios_name_or_uuid):
-        async with HMCClient(config) as hmc:
-            if is_uuid(system_name_or_uuid):
-                system_name = await _resolve_vios_backup_system_name(
-                    hmc, system_name_or_uuid
-                )
-            if not is_uuid(vios_name_or_uuid):
-                vios_uuid = await resolve_vios_uuid(
-                    hmc,
-                    vios_name_or_uuid,
-                    system_name_or_uuid=system_name_or_uuid,
-                )
-    command = build_command(system_name, vios_uuid)
-    return await run_hmc_cli(command, config)
-
-
-async def _run_vios_backup_list_command(
-    vios_name_or_uuid: str,
-    build_command: Callable[[str], str],
-    profile: str | None,
-) -> str:
-    config = build_config(profile=profile)
-    vios_uuid = vios_name_or_uuid
-    if not is_uuid(vios_name_or_uuid):
-        async with HMCClient(config) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-    return await run_hmc_cli(build_command(vios_uuid), config)
-
-
 @tool(effect="read", operation="vios.list_backups", target_kind="vios")
 def hmc_list_vios_backups(
     vios_name_or_uuid: str, profile: str | None = None
@@ -424,13 +347,13 @@ def hmc_list_vios_backups(
         ValueError: If the ``lsviosbk`` CSV is malformed.
     """
     output = run_sync(
-        lambda: _run_vios_backup_list_command(
+        lambda: _run_vios_backup_listing(
+            build_config(profile=profile),
             vios_name_or_uuid,
             lambda uuid: (
                 f"lsviosbk --filter {shlex.quote(build_filter([('vios_uuids', uuid)]))} "
                 "-F name,type --header"
             ),
-            profile,
         )
     )
     return _parse_lsviosbk_output(output)
@@ -478,7 +401,8 @@ def hmc_backup_vios(
         )
     _validate_backup_name(backup_name)
     return run_sync(
-        lambda: _run_vios_backup_mutation_command(
+        lambda: _run_vios_backup_mutation(
+            build_config(profile=profile),
             system_name_or_uuid,
             vios_name_or_uuid,
             lambda system_name, vios_uuid: (
@@ -486,7 +410,6 @@ def hmc_backup_vios(
                 f"-m {shlex.quote(system_name)} --uuid {shlex.quote(vios_uuid)} "
                 f"-f {shlex.quote(backup_name)}"
             ),
-            profile,
         )
     )
 
@@ -570,7 +493,8 @@ def hmc_restore_vios(
         )
     _validate_backup_name(backup_name)
     return run_sync(
-        lambda: _run_vios_backup_mutation_command(
+        lambda: _run_vios_backup_mutation(
+            build_config(profile=profile),
             system_name_or_uuid,
             vios_name_or_uuid,
             lambda system_name, vios_uuid: (
@@ -579,7 +503,6 @@ def hmc_restore_vios(
                 f"-f {shlex.quote(backup_name)}"
                 f"{' -r' if restart_if_required else ''}"
             ),
-            profile,
         )
     )
 
