@@ -54,7 +54,12 @@ from hmc_mcp.operations.composite import (
 )
 from hmc_mcp.operations.decommission import DecommissionResult, decommission_lpar
 from hmc_mcp.operations.health import FleetHealthResult, fleet_health
-from hmc_mcp.operations.install import InstallHandle, install_lpar_os, install_vios
+from hmc_mcp.operations.install import (
+    InstallHandle,
+    InstallRequest,
+    install_lpar_os,
+    install_vios,
+)
 from hmc_mcp.operations.lpar import (
     LparCreation,
     LparCreationResult,
@@ -310,6 +315,7 @@ __all__ = [
     "install_lpar_os",
     "install_vios",
     "InstallHandle",
+    "InstallRequest",
     "assess_post_activation_affinity",
     "authorize_decommission_lpar_ownership_snapshot",
     "authorize_lpar_mutation",

@@ -12,6 +12,7 @@ from .._app import (
 
 from ..client.client_factory import client_from_env
 from ..operations.install import (
+    InstallRequest,
     install_lpar_os,
     install_vios,
     validate_install_request,
@@ -161,7 +162,7 @@ def hmc_install_vios(
     """
     # install_vios validates too, but only once its client exists. Calling the
     # same list here rejects a malformed argument before an HMC session opens.
-    validate_install_request(
+    request = InstallRequest(
         install_source=install_source,
         client_ip=vios_ip,
         subnet_mask=nim_subnetmask,
@@ -170,6 +171,7 @@ def hmc_install_vios(
         vlan_id=vlan_id,
         mac_address=mac_address,
     )
+    validate_install_request(request)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -177,13 +179,7 @@ def hmc_install_vios(
                 hmc,
                 system_name_or_uuid,
                 vios_name_or_uuid,
-                install_source=install_source,
-                client_ip=vios_ip,
-                subnet_mask=nim_subnetmask,
-                gateway=nim_gateway,
-                profile_name=profile_name,
-                vlan_id=vlan_id,
-                mac_address=mac_address,
+                request,
             )
 
     # `install_*` returns an `InstallHandle`, and a `TypedDict` is not assignable
@@ -262,7 +258,7 @@ def hmc_install_lpar_os(
     """
     # install_lpar_os validates too, but only once its client exists. Calling
     # the same list here rejects a malformed argument before a session opens.
-    validate_install_request(
+    request = InstallRequest(
         install_source=install_source,
         client_ip=lpar_ip,
         subnet_mask=nim_subnetmask,
@@ -271,6 +267,7 @@ def hmc_install_lpar_os(
         vlan_id=vlan_id,
         mac_address=mac_address,
     )
+    validate_install_request(request)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -278,13 +275,7 @@ def hmc_install_lpar_os(
                 hmc,
                 system_name_or_uuid,
                 lpar_name_or_uuid,
-                install_source=install_source,
-                client_ip=lpar_ip,
-                subnet_mask=nim_subnetmask,
-                gateway=nim_gateway,
-                profile_name=profile_name,
-                vlan_id=vlan_id,
-                mac_address=mac_address,
+                request,
             )
 
     # `install_*` returns an `InstallHandle`, and a `TypedDict` is not assignable

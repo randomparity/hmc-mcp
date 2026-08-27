@@ -419,6 +419,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   an upgrade**: holding the handle in a `dict[str, Any]`, passing it where `dict[str, Any]` is
   expected, or adding or deleting a key are all errors against a `TypedDict`. Annotate with
   `InstallHandle`, or with `Mapping[str, object]` where the consumer only reads.
+- Added: `InstallRequest`, the shared source, network, and profile value object accepted by
+  `install_lpar_os` and `install_vios`.
 - Added: the exports below landed between the `[0.1.0]` entry's enumerated manifest and this
   cycle with no manifest bullet of their own (#479). Each is an entry in `hmc_mcp.api.__all__`,
   so each contributes to the frozen public signature digest. This records the manifest catching

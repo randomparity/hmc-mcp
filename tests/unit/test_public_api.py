@@ -116,6 +116,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "install_lpar_os",
         "install_vios",
         "InstallHandle",
+        "InstallRequest",
         "assess_post_activation_affinity",
         "authorize_decommission_lpar_ownership_snapshot",
         "authorize_lpar_mutation",
@@ -1834,7 +1835,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "ca2a55d4a0bb133e18db792ebc17dfe97d06bae229e99057a2241e7aeb035c2a"  # pragma: allowlist secret
+    expected_digest = "33f560ab817548b5bf045edfdbd25481d2bece5d981653a69f2eeafd7382b151"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

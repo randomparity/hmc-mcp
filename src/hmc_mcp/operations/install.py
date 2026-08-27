@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 # Not `typing.TypedDict`: pydantic refuses one on Python < 3.12, which is inside
 # this package's supported range, and `InstallHandle` is a facade export a
@@ -13,7 +14,13 @@ from typing_extensions import TypedDict
 
 from .. import audit
 from ..client import HMCClient
-from ..resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name, resolve_system_uuid, resolve_vios_uuid
+from ..resource_identity import (
+    is_uuid,
+    resolve_lpar_uuid,
+    resolve_system_name,
+    resolve_system_uuid,
+    resolve_vios_uuid,
+)
 from ..ssh.lpar import _ssh_lpar_name
 from ..ssh.install import (
     build_installios_command,
@@ -61,16 +68,20 @@ class InstallHandle(TypedDict):
     command a failed install needs."""
 
 
-def validate_install_request(
-    *,
-    install_source: str,
-    client_ip: str,
-    subnet_mask: str,
-    gateway: str,
-    profile_name: str,
-    vlan_id: str,
-    mac_address: str | None,
-) -> None:
+@dataclass(frozen=True)
+class InstallRequest:
+    """Shared install source, network, and partition-profile settings."""
+
+    install_source: str
+    client_ip: str
+    subnet_mask: str
+    gateway: str
+    profile_name: str = "default"
+    vlan_id: str = "0"
+    mac_address: str | None = None
+
+
+def validate_install_request(request: InstallRequest) -> None:
     """Reject an install request that cannot become an ``installios`` command.
 
     One list, two call sites. :func:`_submit_install` calls it so a facade
@@ -81,14 +92,14 @@ def validate_install_request(
 
     Synchronous, so ADR 0029's selection rule leaves it outside the facade.
     """
-    validate_install_source(install_source)
-    validate_ipv4_address(client_ip)
-    validate_ipv4_subnet_mask(subnet_mask)
-    validate_ipv4_address(gateway)
-    validate_vlan_id(vlan_id)
-    validate_hmc_name(profile_name, "profile_name")
-    if mac_address is not None:
-        validate_mac_address(mac_address)
+    validate_install_source(request.install_source)
+    validate_ipv4_address(request.client_ip)
+    validate_ipv4_subnet_mask(request.subnet_mask)
+    validate_ipv4_address(request.gateway)
+    validate_vlan_id(request.vlan_id)
+    validate_hmc_name(request.profile_name, "profile_name")
+    if request.mac_address is not None:
+        validate_mac_address(request.mac_address)
 
 
 async def _submit_install(
@@ -96,25 +107,10 @@ async def _submit_install(
     target_name_or_uuid: str,
     system_name_or_uuid: str,
     resolve_target_uuid: _TargetResolver,
-    *,
-    install_source: str,
-    client_ip: str,
-    subnet_mask: str,
-    gateway: str,
-    profile_name: str,
-    vlan_id: str,
-    mac_address: str | None,
+    request: InstallRequest,
 ) -> InstallHandle:
     """Resolve one install target's CLI names and detach ``installios`` on it."""
-    validate_install_request(
-        install_source=install_source,
-        client_ip=client_ip,
-        subnet_mask=subnet_mask,
-        gateway=gateway,
-        profile_name=profile_name,
-        vlan_id=vlan_id,
-        mac_address=mac_address,
-    )
+    validate_install_request(request)
 
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     target_uuid = await resolve_target_uuid(
@@ -132,15 +128,15 @@ async def _submit_install(
     )
 
     command, log_path = build_installios_command(
-        install_source=install_source,
-        client_ip=client_ip,
-        subnet_mask=subnet_mask,
-        gateway=gateway,
+        install_source=request.install_source,
+        client_ip=request.client_ip,
+        subnet_mask=request.subnet_mask,
+        gateway=request.gateway,
         system_name=system_name,
         partition_name=partition_name,
-        profile_name=profile_name,
-        vlan_id=vlan_id,
-        mac_address=mac_address,
+        profile_name=request.profile_name,
+        vlan_id=request.vlan_id,
+        mac_address=request.mac_address,
     )
     # The record precedes the irreversible submit, because a submit that raises
     # cannot say whether anything was submitted. It goes on the reserved audit
@@ -181,14 +177,7 @@ async def install_lpar_os(
     hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    *,
-    install_source: str,
-    client_ip: str,
-    subnet_mask: str,
-    gateway: str,
-    profile_name: str = "default",
-    vlan_id: str = "0",
-    mac_address: str | None = None,
+    request: InstallRequest,
 ) -> InstallHandle:
     """Detach an ``installios`` OS install onto an existing partition.
 
@@ -283,13 +272,7 @@ async def install_lpar_os(
         lpar_name_or_uuid,
         system_name_or_uuid,
         resolve_lpar_uuid,
-        install_source=install_source,
-        client_ip=client_ip,
-        subnet_mask=subnet_mask,
-        gateway=gateway,
-        profile_name=profile_name,
-        vlan_id=vlan_id,
-        mac_address=mac_address,
+        request,
     )
 
 
@@ -297,14 +280,7 @@ async def install_vios(
     hmc: HMCClient,
     system_name_or_uuid: str,
     vios_name_or_uuid: str,
-    *,
-    install_source: str,
-    client_ip: str,
-    subnet_mask: str,
-    gateway: str,
-    profile_name: str = "default",
-    vlan_id: str = "0",
-    mac_address: str | None = None,
+    request: InstallRequest,
 ) -> InstallHandle:
     """Detach an ``installios`` VIOS install onto an existing VIOS partition.
 
@@ -350,11 +326,5 @@ async def install_vios(
         vios_name_or_uuid,
         system_name_or_uuid,
         resolve_vios_uuid,
-        install_source=install_source,
-        client_ip=client_ip,
-        subnet_mask=subnet_mask,
-        gateway=gateway,
-        profile_name=profile_name,
-        vlan_id=vlan_id,
-        mac_address=mac_address,
+        request,
     )

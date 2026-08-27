@@ -154,7 +154,7 @@ names are internal everywhere and are never inventoried.
   excluded synchronous: none.
 - `operations.health` — operations: `fleet_health`; types: `FleetHealthResult`; excluded
   synchronous: none.
-- `operations.install` — operations: `install_lpar_os`, `install_vios`; types: `InstallHandle`;
+- `operations.install` — operations: `install_lpar_os`, `install_vios`; types: `InstallHandle`, `InstallRequest`;
   excluded synchronous: `validate_install_request`.
   - Note: the MCP tools call `validate_install_request` to reject a malformed argument before a
     client is opened, which the operations cannot do. Both operations submit the detached
