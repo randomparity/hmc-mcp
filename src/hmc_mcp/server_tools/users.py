@@ -9,10 +9,10 @@ from ..client.client_users import AuthenticationFilter
 from ..client.client_factory import client_from_env
 from ..documents import AuthenticationType
 from ..operations.users import (
-    _configure_remote_access,
-    _create_user,
-    _delete_user,
-    _modify_user,
+    configure_remote_access,
+    create_user,
+    delete_user,
+    modify_user,
 )
 from ..tool_registry import tool_module
 
@@ -122,7 +122,7 @@ def hmc_create_user(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await _create_user(
+            return await create_user(
                 hmc,
                 console_uuid,
                 user_id,
@@ -198,7 +198,7 @@ def hmc_modify_user(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await _modify_user(
+            return await modify_user(
                 hmc,
                 console_uuid,
                 user_profile_uuid,
@@ -240,7 +240,7 @@ def hmc_delete_user(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            await _delete_user(hmc, console_uuid, user_profile_uuid)
+            await delete_user(hmc, console_uuid, user_profile_uuid)
             return f"Deleted HMC user profile {user_profile_uuid}"
 
     return run_sync(_go)
@@ -322,7 +322,7 @@ def hmc_configure_remote_access(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await _configure_remote_access(
+            return await configure_remote_access(
                 hmc, console_uuid, values, clear_fields
             )
 

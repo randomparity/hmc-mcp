@@ -8,7 +8,7 @@ from ..client import HMCClient
 from ..documents import AuthenticationType, build_hmc_user_document, build_remote_access_document
 
 
-async def _create_user(
+async def create_user(
     hmc: HMCClient,
     console_uuid: str,
     user_id: str,
@@ -25,7 +25,7 @@ async def _create_user(
     return await hmc.create_hmc_user(console_uuid, document)
 
 
-async def _modify_user(
+async def modify_user(
     hmc: HMCClient,
     console_uuid: str,
     user_profile_uuid: str,
@@ -35,13 +35,13 @@ async def _modify_user(
     return await hmc.modify_hmc_user(console_uuid, user_profile_uuid, document)
 
 
-async def _delete_user(
+async def delete_user(
     hmc: HMCClient, console_uuid: str, user_profile_uuid: str
 ) -> None:
     await hmc.delete_hmc_user(console_uuid, user_profile_uuid)
 
 
-async def _configure_remote_access(
+async def configure_remote_access(
     hmc: HMCClient,
     console_uuid: str,
     values: dict[str, str | int | bool] | None,
