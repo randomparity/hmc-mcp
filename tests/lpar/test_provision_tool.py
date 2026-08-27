@@ -17,13 +17,12 @@ import pytest
 
 from hmc_mcp.documents import LparResources
 from hmc_mcp.jobs import JobOutcome
-from hmc_mcp.operations.lpar import LparPowerResult
+from hmc_mcp.operations.lpar import LparPowerResult, validate_affinity_request
 from hmc_mcp.operations.provision import (
     ProvisionAffinityAssessment,
     ProvisionNetwork,
     ProvisionStorage,
     _power_on,
-    _validate_affinity_request,
 )
 from hmc_mcp.server import hmc_provision_lpar
 from hmc_mcp.ssh import HMCCLIError
@@ -368,7 +367,7 @@ def test_provision_affinity_applied_policy_validates_against_captured_state(
         regression_threshold=None,
         optimization_threshold=None,
     )
-    _validate_affinity_request(request, MinimumAffinityPolicy(70, "warn"))
+    validate_affinity_request(request, 70)
 
 
 def _assessment_result(classification="none"):

@@ -39,6 +39,7 @@ from ..ssh_lpar import validate_caller_token
 from .assignments import (
     LparPcieAssignments,
     _apply_validated_lpar_pcie_assignments,
+    assignment_step_names,
     prevalidate_lpar_pcie_assignments,
 )
 
@@ -397,17 +398,6 @@ def _provision_result(
     )
 
 
-def _validate_affinity_request(
-    request: ProvisionAffinityAssessment,
-    applied_policy: MinimumAffinityPolicy | None,
-) -> None:
-    """Validate every caller-controlled assessment value without HMC traffic."""
-    configured_minimum = (
-        applied_policy.min_affinity_score if applied_policy is not None else None
-    )
-    validate_affinity_request(request, configured_minimum)
-
-
 async def _run_policy_leg(
     steps: list[dict[str, Any]],
     hmc: HMCClient,
@@ -600,7 +590,12 @@ async def provision_lpar(
     if minimum_affinity_policy is not None:
         validate_minimum_affinity_policy(minimum_affinity_policy)
     if affinity_assessment is not None:
-        _validate_affinity_request(affinity_assessment, minimum_affinity_policy)
+        configured_minimum = (
+            minimum_affinity_policy.min_affinity_score
+            if minimum_affinity_policy is not None
+            else None
+        )
+        validate_affinity_request(affinity_assessment, configured_minimum)
     if caller_token is not None:
         # First statement, before any HMC round trip: the public operation is
         # reachable directly (api.__all__) without the MCP tool's entry check,
@@ -628,15 +623,12 @@ async def provision_lpar(
     # ----------------------------------------------------------------
     # 3. Dry-run exit
     # ----------------------------------------------------------------
-    assignment_names = [
-        *(f"dedicated[{index}]" for index, _ in enumerate(assignments.dedicated)),
-        *(f"sriov[{index}]" for index, _ in enumerate(assignments.sriov)),
-        *(f"vnic[{index}]" for index, _ in enumerate(assignments.vnics)),
-    ]
     step_names = ["create"]
     if minimum_affinity_policy is not None:
         step_names.append("minimum_affinity_policy")
-    step_names.extend(["network", "vscsi", "storage", *assignment_names])
+    step_names.extend(
+        ["network", "vscsi", "storage", *assignment_step_names(assignments)]
+    )
     if power_on:
         step_names.append("power_on")
     if affinity_assessment is not None:

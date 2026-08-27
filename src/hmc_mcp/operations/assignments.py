@@ -113,7 +113,8 @@ class LparPcieWorkflowResult:
         return self.lpar[key]
 
 
-def _request_names(assignments: LparPcieAssignments) -> list[str]:
+def assignment_step_names(assignments: LparPcieAssignments) -> list[str]:
+    """Return stable workflow step names for an assignment collection."""
     return [
         *(f"dedicated[{index}]" for index, _ in enumerate(assignments.dedicated)),
         *(f"sriov[{index}]" for index, _ in enumerate(assignments.sriov)),
@@ -302,7 +303,7 @@ async def _apply_validated_lpar_pcie_assignments(
     ownership_override: bool = False,
 ) -> AssignmentResult:
     """Execute a collection validated by the enclosing atomic workflow."""
-    names = _request_names(assignments)
+    names = assignment_step_names(assignments)
     if dry_run:
         return AssignmentResult(
             False, True, tuple(AssignmentStep(n, "dry_run") for n in names)
