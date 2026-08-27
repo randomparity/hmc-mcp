@@ -1,3 +1,4 @@
+import ast
 import re
 import tomllib
 from pathlib import Path
@@ -84,6 +85,23 @@ def _project_metadata() -> dict[str, object]:
     with (ROOT / "pyproject.toml").open("rb") as file:
         document = tomllib.load(file)
     return document["project"]
+
+
+def test_architecture_documents_name_current_adapter_and_selector_modules() -> None:
+    adr = (ROOT / "docs/adr/0013-resource-domain-module-ownership.md").read_text()
+    server_doc = ast.get_docstring(
+        ast.parse((ROOT / "src/hmc_mcp/server.py").read_text())
+    )
+    app_doc = ast.get_docstring(ast.parse((ROOT / "src/hmc_mcp/_app.py").read_text()))
+
+    assert "`ssh/selectors.py` for HMC CLI selectors" in adr
+    assert "`ssh_selectors.py`" not in adr
+    assert server_doc is not None
+    assert "domain adapters under ``server_tools/``" in server_doc
+    assert "``server_lpars``" not in server_doc
+    assert app_doc is not None
+    assert "every ``server_tools/`` domain adapter" in app_doc
+    assert "every ``server_*`` domain module" not in app_doc
 
 
 def test_project_declares_mit_license_and_policy_urls() -> None:

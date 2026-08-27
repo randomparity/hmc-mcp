@@ -5,9 +5,9 @@ the small sync-run / SSH-passthrough helpers used by tool bodies. Tool
 capability classification lives on each tool's ``ToolSecurity`` record in
 ``tool_registry.py``; see docs/adr/0035-enforceable-tool-security-metadata.md.
 
-``server.py`` imports this module and every ``server_*`` domain module; the
-domain modules import ``mcp`` back from here (one-way dependency, no
-cycles). The client-visible instructions live here too, and ``server.py``
+``server.py`` imports this module and every ``server_tools/`` domain adapter;
+those adapters use the helpers defined here, while this module never imports
+them (one-way dependency, no cycles). The client-visible instructions live here too, and ``server.py``
 qualifies them against its access policy before composing
 (docs/adr/0048-ceiling-aware-server-instructions.md).
 """

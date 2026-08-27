@@ -35,7 +35,7 @@ Addressing:
     its unique MTMS identity rather than its CLI name.
 
 This module is the MCP composition and serving bootstrap boundary. Tool handlers
-live in domain submodules (``server_lpars``, ``server_storage``, ...), and
+live in domain adapters under ``server_tools/``, and
 ``create_mcp`` explicitly registers each domain on a fresh application instance.
 The serving entry points also validate startup policy, emit startup diagnostics,
 and configure the logging boundaries for stdio and HTTP transports.

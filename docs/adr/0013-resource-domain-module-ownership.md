@@ -28,7 +28,7 @@ Presentation adapters are grouped by resource domain:
   resolution; neither concern belongs to a presentation adapter.
 - Cross-domain request construction remains in `documents.py`, `jobs.py`, and
   `pcm.py`; configuration remains in `config.py`, and selector helpers live
-  beside their transport boundary (`ssh_selectors.py` for HMC CLI selectors).
+  beside their transport boundary (`ssh/selectors.py` for HMC CLI selectors).
 
 This ADR supersedes only the module-path and ownership statements in ADRs
 0005, 0008, 0009, 0010, and 0011. Their public contracts, profile-routing
