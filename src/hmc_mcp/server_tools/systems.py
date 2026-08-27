@@ -8,7 +8,7 @@ from typing import Any
 
 from .._app import (
     run_sync,
-    _run_limited_collection,
+    run_limited_collection,
 )
 from ..client.client_factory import client_from_env
 from ..resource_identity import (
@@ -29,7 +29,7 @@ from ..documents import (
     PowerOffPolicy,
     PowerOnLparStartPolicy,
 )
-from ..operations.systems import ManagedSystemState, _modify_system, power_system
+from ..operations.systems import ManagedSystemState, modify_system, power_system
 from ..operations.lpar import PartitionState
 
 
@@ -164,7 +164,7 @@ def hmc_list_systems(
                 return await hmc.search_uom("ManagedSystem", "State", state)
             return await hmc.list_managed_systems()
 
-    return _run_limited_collection(_go, limit)
+    return run_limited_collection(_go, limit)
 
 
 @tool(effect="read", operation="lpar.list", target_kind="managed_system")
@@ -199,7 +199,7 @@ def hmc_list_lpars(
                 return await hmc.search_uom("LogicalPartition", "PartitionState", state)
             return await hmc.list_logical_partitions(None)
 
-    return _run_limited_collection(_go, limit)
+    return run_limited_collection(_go, limit)
 
 
 @tool(effect="read", operation="lpar.get", target_kind="lpar")
@@ -297,7 +297,7 @@ def hmc_list_vios(
                 return await hmc.search_uom("VirtualIOServer", "PartitionState", state)
             return await hmc.list_vios(None)
 
-    return _run_limited_collection(_go, limit)
+    return run_limited_collection(_go, limit)
 
 
 @tool(effect="read", operation="vios.get", target_kind="vios")
@@ -343,7 +343,7 @@ def hmc_list_resources(
         async with client_from_env(profile) as hmc:
             return await hmc.list_uom(resource_type)
 
-    return _run_limited_collection(_go, limit)
+    return run_limited_collection(_go, limit)
 
 
 @tool(effect="read", operation="system.get", target_kind="managed_system")
@@ -395,7 +395,7 @@ def hmc_modify_system(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await _modify_system(
+            return await modify_system(
                 hmc,
                 system_name_or_uuid,
                 new_name=new_name,

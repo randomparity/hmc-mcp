@@ -6,7 +6,7 @@ from ..tool_registry import tool_module
 
 from typing import Any
 
-from .._app import run_sync, _run_limited_collection
+from .._app import run_sync, run_limited_collection
 from ..client.client_adapters import AdapterType, validate_adapter_type
 from ..client.client_factory import client_from_env
 from ..operations.adapters import (
@@ -49,7 +49,7 @@ def hmc_list_adapters(
                 hmc, system_name_or_uuid, lpar_name_or_uuid, adapter_type
             )
 
-    return _run_limited_collection(operation, limit)
+    return run_limited_collection(operation, limit)
 
 
 @tool(effect="mutate", operation="adapter.add_network", target_kind="lpar")

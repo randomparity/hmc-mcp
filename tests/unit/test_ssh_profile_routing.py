@@ -1,7 +1,7 @@
 """Tests for per-call profile routing in SSH-backed MCP tools (issue #127).
 
 These tests verify that:
-1. `_ssh_with_client` threads a caller-supplied profile to the SSH config and
+1. `ssh_with_client` threads a caller-supplied profile to the SSH config and
    both name resolvers.
 2. SSH selector resolution builds its REST client from the same profile-selected
    config used for SSH.
@@ -63,6 +63,7 @@ def _set_env(monkeypatch, host: str, user: str, password: str) -> None:
 
 def _vios_client_factory():
     hmc = AsyncMock()
+    hmc.config = DEV_CONFIG
     hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
     hmc.find_vios_by_name.return_value = {"UUID": SYSTEM_UUID}
 
@@ -104,12 +105,12 @@ async def test_run_hmc_cli_no_config_uses_hmcconfig(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Task 1.1 — _ssh_with_client profile threading
+# Task 1.1 — ssh_with_client profile threading
 # ---------------------------------------------------------------------------
 
 
 def test_ssh_with_client_profile_reaches_ssh(monkeypatch, mock_hmc):
-    """_ssh_with_client with profile routes SSH to the profile's HMC host."""
+    """ssh_with_client with profile routes SSH to the profile's HMC host."""
     # mock_hmc router handles REST resolution for system UUID
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
@@ -117,10 +118,10 @@ def test_ssh_with_client_profile_reaches_ssh(monkeypatch, mock_hmc):
     with patch("hmc_mcp._app.build_config", return_value=DEV_CONFIG) as mock_config:
         conn = _make_ssh_mock("")
         with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
-            from hmc_mcp._app import _ssh_with_client
+            from hmc_mcp._app import ssh_with_client
             from hmc_mcp.ssh.memory import list_memory_pools
 
-            _ssh_with_client(
+            ssh_with_client(
                 lambda config, system_name, _: list_memory_pools(config, system_name),
                 system_name_or_uuid=SYSTEM_NAME,  # plain name → no UUID resolution
                 profile="dev",
@@ -132,16 +133,16 @@ def test_ssh_with_client_profile_reaches_ssh(monkeypatch, mock_hmc):
 
 
 def test_ssh_with_client_profile_none_uses_env(monkeypatch, mock_hmc):
-    """_ssh_with_client with profile=None uses env-default credentials."""
+    """ssh_with_client with profile=None uses env-default credentials."""
     _set_env(monkeypatch, PROD_HOST, PROD_USER, PROD_PASSWORD)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
     conn = _make_ssh_mock("")
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
-        from hmc_mcp._app import _ssh_with_client
+        from hmc_mcp._app import ssh_with_client
         from hmc_mcp.ssh.memory import list_memory_pools
 
-        _ssh_with_client(
+        ssh_with_client(
             lambda config, system_name, _: list_memory_pools(config, system_name),
             system_name_or_uuid=SYSTEM_NAME,
             # no profile argument — should default to None → env fallback
@@ -274,26 +275,24 @@ def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
     """hmc_restore_vios with profile routes SSH to the profile's HMC host."""
     from hmc_mcp.server import hmc_restore_vios
 
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.client_from_env", _vios_client_factory())
-    with patch(
-        "hmc_mcp.server_tools.vios.build_config", return_value=DEV_CONFIG
-    ) as mock_config:
-        conn = _make_ssh_mock("")
-        with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
-            hmc_restore_vios(
-                SYSTEM_NAME,
-                SYSTEM_UUID,
-                "backup.tar.gz",
-                backup_type="ssp",
-                profile="dev",
-            )
+    client_factory = MagicMock(side_effect=_vios_client_factory())
+    monkeypatch.setattr("hmc_mcp.server_tools.vios.client_from_env", client_factory)
+    conn = _make_ssh_mock("")
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
+        hmc_restore_vios(
+            SYSTEM_NAME,
+            SYSTEM_UUID,
+            "backup.tar.gz",
+            backup_type="ssp",
+            profile="dev",
+        )
 
-    mock_config.assert_called_once_with(profile="dev")
+    client_factory.assert_called_once_with("dev")
     assert mock_connect.call_args.kwargs["host"] == DEV_HOST
 
 
 def test_hmc_list_memory_pools_profile_reaches_ssh(monkeypatch, mock_hmc):
-    """hmc_list_memory_pools with profile threads profile through _ssh_with_client."""
+    """hmc_list_memory_pools with profile threads profile through ssh_with_client."""
     from hmc_mcp.server import hmc_list_memory_pools
 
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
@@ -323,10 +322,10 @@ def test_different_profiles_produce_independent_configs():
         mock_config.return_value = DEV_CONFIG
         with patch("hmc_mcp.ssh.transport.asyncssh.connect", side_effect=capture_connect):
             try:
-                from hmc_mcp._app import _ssh_with_client
+                from hmc_mcp._app import ssh_with_client
                 from hmc_mcp.ssh.memory import list_memory_pools
 
-                _ssh_with_client(
+                ssh_with_client(
                     lambda config, system_name, _: list_memory_pools(
                         config, system_name
                     ),
@@ -340,7 +339,7 @@ def test_different_profiles_produce_independent_configs():
         mock_config.return_value = PROD_CONFIG
         with patch("hmc_mcp.ssh.transport.asyncssh.connect", side_effect=capture_connect):
             try:
-                _ssh_with_client(
+                ssh_with_client(
                     lambda config, system_name, _: list_memory_pools(
                         config, system_name
                     ),

@@ -18,7 +18,7 @@ registry, sequential, and concurrent routing tests.
 ### Core helpers (`_app.py`)
 
 - Remove `with_client` (and its import in server files that use it)
-- No changes to `_run`, `_resolve_*_uuid`, or `_ssh_with_client`
+- No changes to `_run`, `_resolve_*_uuid`, or `ssh_with_client`
 
 ### Server modules (add `profile` param + thread to `client_from_env`)
 

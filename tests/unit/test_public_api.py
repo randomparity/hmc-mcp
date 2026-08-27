@@ -122,6 +122,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "create_and_stamp_lpar",
         "set_lpar_ownership_description",
         "delete_lpar",
+        "modify_lpar",
         "power_lpar",
         "rename_lpar",
         "set_lpar_processors",
@@ -188,9 +189,12 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "ProvisionResult",
         "AttachDiskResult",
         "LparResources",
+        "MemoryMirroringMode",
         "PartitionType",
         "OsType",
         "Keylock",
+        "PowerOffPolicy",
+        "PowerOnLparStartPolicy",
         "SharingMode",
         "list_fc_ports",
         "get_lpar_memopt_score",
@@ -226,6 +230,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "SriovLogicalPortAssignment",
         "VnicAssignment",
         "apply_lpar_pcie_assignments",
+        "apply_validated_lpar_pcie_assignments",
         "prevalidate_lpar_pcie_assignments",
         "list_volume_groups",
         "create_volume_group",
@@ -254,12 +259,15 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "create_user",
         "delete_user",
         "modify_user",
+        "modify_system",
         "power_system",
         "list_partition_templates",
         "get_partition_template",
         "deploy_partition_template",
         "list_vios_backups",
         "backup_vios",
+        "create_vios",
+        "delete_vios",
         "restore_vios",
         "power_vios",
         "BackupType",
@@ -1822,7 +1830,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "a731f1e9fb20c57e3b453ae8ecdd24d5fec1eba7f56e5bf8b59f9f5c8cd1ad0f"  # pragma: allowlist secret
+    expected_digest = "59defba75ff16d51e4ff1d72d8d183b46f08a6f07d03c26d3a7e9aeececfdd62"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -1934,7 +1942,7 @@ def test_hmc_client_supported_lifecycle_members_are_present() -> None:
     } == SUPPORTED_CLIENT_LIFECYCLE
 
 
-_FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[str, ...]] = {
+_FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[object, ...]] = {
     "AdapterType": (
         "ClientNetworkAdapter",
         "VirtualSCSIClientAdapter",
@@ -1967,10 +1975,13 @@ _FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[str, ...]] = {
     "Keylock": ("normal", "manual", "auto"),
     "LuType": ("THIN", "THICK"),
     "MetricKind": ("processed", "aggregated"),
+    "MemoryMirroringMode": ("none", "sys_firmware_only"),
     "OsType": ("aix", "linux", "ibmi"),
     "PartitionType": ("AIX/Linux", "OS400", "Virtual IO Server"),
     "PcmCategory": ("ManagedSystem", "LogicalPartition"),
     "PolicyState": ("configured", "absent", "unsupported"),
+    "PowerOffPolicy": (0, 1),
+    "PowerOnLparStartPolicy": ("autostart", "userinit", "autorecovery"),
     "RemoteRestartOperation": (
         "validate",
         "recover",

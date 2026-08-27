@@ -6,7 +6,7 @@ from ..tool_registry import tool_module
 
 from .._app import (
     run_sync,
-    _ssh_with_client,
+    ssh_with_client,
 )
 from ..client.client_factory import client_from_env
 from ..operations.pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
@@ -65,7 +65,7 @@ def hmc_backup_lpar_profiles(
     """
     if not file_path or not file_path.strip():
         raise ValueError("file_path must not be empty")
-    return _ssh_with_client(
+    return ssh_with_client(
         lambda config, system_name, _: backup_lpar_profiles(
             config, system_name, file_path, force=force
         ),
@@ -108,7 +108,7 @@ def hmc_restore_lpar_profiles(
 
     Returns:
         The raw HMC CLI output."""
-    return _ssh_with_client(
+    return ssh_with_client(
         lambda config, system_name, _: restore_lpar_profiles(
             config, system_name, file_path
         ),
@@ -144,7 +144,7 @@ def hmc_sync_lpar_profile(
 
     Returns:
         The raw HMC CLI output."""
-    return _ssh_with_client(
+    return ssh_with_client(
         lambda config, system_name, lpar_name: sync_lpar_profile(
             config, system_name, lpar_name
         ),

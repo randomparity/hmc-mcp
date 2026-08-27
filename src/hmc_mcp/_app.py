@@ -189,7 +189,7 @@ def run_sync(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     return asyncio.run(fn())
 
 
-def _run_limited_collection(
+def run_limited_collection(
     fn: Callable[[], Coroutine[Any, Any, list[_T]]],
     limit: int | None,
 ) -> list[_T]:
@@ -201,7 +201,7 @@ def _run_limited_collection(
 
 
 @overload
-def _ssh_with_client(
+def ssh_with_client(
     fn: Callable[[HMCConfig, str, str], Awaitable[_T]],
     *,
     system_name_or_uuid: str,
@@ -211,7 +211,7 @@ def _ssh_with_client(
 
 
 @overload
-def _ssh_with_client(
+def ssh_with_client(
     fn: Callable[[HMCConfig, str, Literal[None]], Awaitable[_T]],
     *,
     system_name_or_uuid: str,
@@ -221,7 +221,7 @@ def _ssh_with_client(
 
 
 @overload
-def _ssh_with_client(
+def ssh_with_client(
     fn: Callable[[HMCConfig, Literal[None], str], Awaitable[_T]],
     *,
     system_name_or_uuid: None = None,
@@ -231,7 +231,7 @@ def _ssh_with_client(
 
 
 @overload
-def _ssh_with_client(
+def ssh_with_client(
     fn: Callable[[HMCConfig, Literal[None], Literal[None]], Awaitable[_T]],
     *,
     system_name_or_uuid: None = None,
@@ -240,7 +240,7 @@ def _ssh_with_client(
 ) -> _T: ...
 
 
-def _ssh_with_client(
+def ssh_with_client(
     fn: Callable[[HMCConfig, str | None, str | None], Awaitable[_T]],
     *,
     system_name_or_uuid: str | None = None,

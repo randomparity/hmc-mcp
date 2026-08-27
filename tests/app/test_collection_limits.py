@@ -15,7 +15,7 @@ from hmc_mcp.server_tools import (
     storage as server_storage,
     systems as server_systems,
 )
-from hmc_mcp._app import _run_limited_collection
+from hmc_mcp._app import run_limited_collection
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
@@ -104,7 +104,7 @@ def test_run_limited_collection_caps_after_operation(limit, expected):
     entries = [{"id": 1}, {"id": 2}, {"id": 3}]
     operation = AsyncMock(return_value=entries)
 
-    result = _run_limited_collection(operation, limit)
+    result = run_limited_collection(operation, limit)
 
     assert result == expected
     operation.assert_awaited_once_with()
@@ -114,7 +114,7 @@ def test_run_limited_collection_rejects_negative_limit_before_operation():
     operation = AsyncMock(return_value=[])
 
     with pytest.raises(ValueError, match="^limit must be greater than or equal to 0$"):
-        _run_limited_collection(operation, -1)
+        run_limited_collection(operation, -1)
 
     operation.assert_not_called()
 
@@ -144,7 +144,7 @@ def test_collection_tools_delegate_limit_to_shared_helper(tool_name, entry, limi
     module, args, _expected_parameters = entry
     function = getattr(module, tool_name)
 
-    with patch.object(module, "_run_limited_collection", return_value=[{"id": 1}]) as run:
+    with patch.object(module, "run_limited_collection", return_value=[{"id": 1}]) as run:
         result = function(*args, limit=limit)
 
     assert result == [{"id": 1}]

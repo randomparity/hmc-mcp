@@ -20,8 +20,8 @@ from ..documents import LparResources, VIOS_DEFAULT_RESOURCES
 from ..operations.vios import (
     BackupType,
     RestoreBackupType,
-    _create_vios,
-    _delete_vios,
+    create_vios,
+    delete_vios,
     backup_vios,
     list_vios_backups,
     power_vios,
@@ -56,7 +56,7 @@ def hmc_create_vios(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await _create_vios(hmc, system_name_or_uuid, name, resources)
+            return await create_vios(hmc, system_name_or_uuid, name, resources)
 
     return run_sync(_go)
 
@@ -91,7 +91,7 @@ def hmc_delete_vios(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await _delete_vios(hmc, vios_name_or_uuid, system_name_or_uuid)
+            return await delete_vios(hmc, vios_name_or_uuid, system_name_or_uuid)
 
     return run_sync(_go)
 

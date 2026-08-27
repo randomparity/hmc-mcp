@@ -151,7 +151,7 @@ three keyword arguments.
 and `hmc_clear_lpar_boot_order` pass their `profile` argument to `client_from_env`, as
 every other connection-bearing handler already does. A static guardrail over the parsed
 source of the `server_*` modules asserts, for every handler whose `ToolSecurity` declares
-a connection argument, that every `build_config` / `client_from_env` / `_ssh_with_client`
+a connection argument, that every `build_config` / `client_from_env` / `ssh_with_client`
 call in its body receives that argument, and that none of them receives a `host` keyword —
 which would make `build_config` skip profile resolution exactly as `HMC_HOST` does.
 

@@ -7,7 +7,7 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from ..operations import jobs as operations_jobs
-from .._app import run_sync, _run_limited_collection
+from .._app import run_sync, run_limited_collection
 from ..client.client_factory import client_from_env
 from ..errors import HMCError
 from ..jobs import JobOutcome
@@ -101,7 +101,7 @@ def hmc_list_recent_jobs(
             return await hmc.list_uom("Job")
 
     try:
-        return _run_limited_collection(operation, limit)
+        return run_limited_collection(operation, limit)
     except HMCError as exc:
         if not _is_unsupported_job_listing(exc):
             raise

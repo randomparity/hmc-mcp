@@ -11,7 +11,7 @@ from hmc_mcp.operations.assignments import (
     SriovLogicalPortAssignment,
     VnicAssignment,
     _analyze_assignment_requests,
-    _apply_validated_lpar_pcie_assignments,
+    apply_validated_lpar_pcie_assignments,
     apply_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
@@ -91,7 +91,7 @@ async def test_dry_run_preserves_stable_assignment_order() -> None:
         "hmc_mcp.operations.assignments.prevalidate_lpar_pcie_assignments",
         AsyncMock(),
     ):
-        result = await _apply_validated_lpar_pcie_assignments(
+        result = await apply_validated_lpar_pcie_assignments(
             AsyncMock(), "sys", "lpar", assignments, dry_run=True
         )
     assert [step.step for step in result.steps] == ["sriov[0]", "vnic[0]"]
@@ -104,7 +104,7 @@ async def test_prevalidated_post_create_path_does_not_repeat_inventory() -> None
     with patch(
         "hmc_mcp.operations.assignments.prevalidate_lpar_pcie_assignments", validation
     ):
-        result = await _apply_validated_lpar_pcie_assignments(
+        result = await apply_validated_lpar_pcie_assignments(
             AsyncMock(),
             "sys",
             "created-lpar",

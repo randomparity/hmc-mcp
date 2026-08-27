@@ -6,7 +6,7 @@ from ..tool_registry import tool_module
 
 from .._app import (
     run_sync,
-    _ssh_with_client,
+    ssh_with_client,
 )
 from ..client.client_factory import client_from_env
 from ..operations.ssh_network import (
@@ -271,7 +271,7 @@ def hmc_get_lpar_description(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _ssh_with_client(
+    return ssh_with_client(
         lambda config, system_name, lpar_name: get_lpar_description(
             config, system_name, lpar_name
         ),
@@ -337,7 +337,7 @@ def hmc_get_lpar_msp(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _ssh_with_client(
+    return ssh_with_client(
         lambda config, system_name, lpar_name: get_lpar_msp(
             config, system_name, lpar_name
         ),
@@ -365,7 +365,7 @@ def hmc_set_lpar_msp(
         enabled: Whether to enable the Migratable Service Partition flag.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _ssh_with_client(
+    return ssh_with_client(
         lambda config, system_name, lpar_name: set_lpar_msp(
             config, system_name, lpar_name, enabled
         ),
@@ -386,7 +386,7 @@ def hmc_get_lpar_proc_compat(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _ssh_with_client(
+    return ssh_with_client(
         lambda config, system_name, lpar_name: get_lpar_proc_compat(
             config, system_name, lpar_name
         ),
@@ -414,7 +414,7 @@ def hmc_set_lpar_proc_compat(
             ``hmc_get_proc_compat_modes``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _ssh_with_client(
+    return ssh_with_client(
         lambda config, system_name, lpar_name: set_lpar_proc_compat(
             config, system_name, lpar_name, mode
         ),

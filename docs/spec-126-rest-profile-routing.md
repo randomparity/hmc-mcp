@@ -66,7 +66,7 @@ Two focused tests:
 
 ## Scope boundary
 
-- SSH tools (`_ssh_with_client` path, `run_hmc_cli`) → #127
+- SSH tools (`ssh_with_client` path, `run_hmc_cli`) → #127
 - `hmc_list_configured_hosts` → #128
 - CLI `--profile` → done in #125
 - TOML loader → done in #124

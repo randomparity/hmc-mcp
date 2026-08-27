@@ -210,7 +210,7 @@ dimension as enforced while it is being bypassed. Both are corrected here.
 Correcting two handlers does not stop the third from being written, so the rule becomes a
 guardrail beside ADR 0035's G-rules: every handler whose `ToolSecurity` declares a
 connection argument passes that argument to every `build_config` / `client_from_env` /
-`_ssh_with_client` call in its body, and passes no other connection-selecting keyword —
+`ssh_with_client` call in its body, and passes no other connection-selecting keyword —
 notably not `host`, whose presence would make `build_config` skip profile resolution
 exactly as `HMC_HOST` does. The check is static, over the parsed source of the
 `server_*` modules, so it costs nothing at runtime and fails the suite rather than a call.

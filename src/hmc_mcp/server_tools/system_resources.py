@@ -8,7 +8,7 @@ from ..tool_registry import tool_module
 
 from typing import Any
 
-from .._app import run_sync, _ssh_with_client
+from .._app import run_sync, ssh_with_client
 from ..client.client_factory import client_from_env
 from ..operations.pcie import (
     list_dedicated_slots,
@@ -142,7 +142,7 @@ def hmc_get_proc_compat_modes(
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _ssh_with_client(
+    return ssh_with_client(
         lambda config, system_name, _: get_proc_compat_modes(config, system_name),
         system_name_or_uuid=system_name_or_uuid,
         profile=profile,
@@ -162,7 +162,7 @@ def hmc_list_io_slots(
         pci_class: ``all``, ``network``, ``storage``, or ``other`` slot class.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _ssh_with_client(
+    return ssh_with_client(
         lambda config, system_name, _: list_io_slots(config, system_name, pci_class),
         system_name_or_uuid=system_name_or_uuid,
         profile=profile,
@@ -179,7 +179,7 @@ def hmc_list_memory_pools(
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _ssh_with_client(
+    return ssh_with_client(
         lambda config, system_name, _: list_memory_pools(config, system_name),
         system_name_or_uuid=system_name_or_uuid,
         profile=profile,
@@ -202,7 +202,7 @@ def hmc_remove_memory_pool(
         pool_name: Exact empty shared-memory-pool name to remove.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _ssh_with_client(
+    return ssh_with_client(
         lambda config, system_name, _: remove_memory_pool(
             config, system_name, pool_name
         ),

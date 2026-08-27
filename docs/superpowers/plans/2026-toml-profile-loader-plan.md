@@ -251,7 +251,7 @@ the profile loader is an additive path. See Phase 3 note in full plan below.
 
 ## Phase 5 — Update _app.py
 
-**Task:** `_ssh_with_client` calls `HMCConfig()` directly (line 308). Pass
+**Task:** `ssh_with_client` calls `HMCConfig()` directly (line 308). Pass
 `_env_file=None` to prevent any `.env` loading (belt-and-suspenders — env_file
 is already removed in Phase 2, but the explicit `None` is a no-op and clarifies
 intent).

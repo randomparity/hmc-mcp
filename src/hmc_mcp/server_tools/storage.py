@@ -8,7 +8,7 @@ from typing import Any
 
 from .._app import (
     run_sync,
-    _run_limited_collection,
+    run_limited_collection,
 )
 
 from ..client.client_factory import client_from_env
@@ -73,7 +73,7 @@ def hmc_list_volume_groups(
         async with client_from_env(profile) as hmc:
             return await list_volume_groups(hmc, vios_name_or_uuid)
 
-    return _run_limited_collection(_go, limit)
+    return run_limited_collection(_go, limit)
 
 
 @tool(effect="mutate", operation="storage.create_volume_group", target_kind="vios")
@@ -489,7 +489,7 @@ def hmc_list_clusters(
         async with client_from_env(profile) as hmc:
             return await hmc.list_clusters()
 
-    return _run_limited_collection(_go, limit)
+    return run_limited_collection(_go, limit)
 
 
 @tool(effect="read", operation="cluster.list_pools", target_kind="console")
@@ -510,7 +510,7 @@ def hmc_list_shared_storage_pools(
         async with client_from_env(profile) as hmc:
             return await hmc.list_shared_storage_pools()
 
-    return _run_limited_collection(_go, limit)
+    return run_limited_collection(_go, limit)
 
 
 @tool(effect="read", operation="cluster.get_pool", target_kind="shared_storage_pool")

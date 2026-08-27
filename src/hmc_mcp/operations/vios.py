@@ -22,7 +22,7 @@ from ..jobs import (
 )
 
 
-async def _create_vios(
+async def create_vios(
     hmc: HMCClient,
     system_name_or_uuid: str,
     name: str,
@@ -34,7 +34,7 @@ async def _create_vios(
     )
 
 
-async def _delete_vios(
+async def delete_vios(
     hmc: HMCClient,
     vios_name_or_uuid: str,
     system_name_or_uuid: str | None = None,

@@ -11,7 +11,7 @@ from typing import Any
 
 from .._app import (
     run_sync,
-    _run_limited_collection,
+    run_limited_collection,
 )
 
 from ..client.client_factory import client_from_env
@@ -65,7 +65,7 @@ def hmc_list_virtual_switches(
         async with client_from_env(profile) as hmc:
             return await list_virtual_switches(hmc, system_name_or_uuid)
 
-    return _run_limited_collection(_go, limit)
+    return run_limited_collection(_go, limit)
 
 
 @tool(effect="read", operation="network.list_networks", target_kind="managed_system")
@@ -88,7 +88,7 @@ def hmc_list_virtual_networks(
         async with client_from_env(profile) as hmc:
             return await list_virtual_networks(hmc, system_name_or_uuid)
 
-    return _run_limited_collection(_go, limit)
+    return run_limited_collection(_go, limit)
 
 
 @tool(effect="mutate", operation="network.create_network", target_kind="managed_system")
@@ -173,7 +173,7 @@ def hmc_list_network_bridges(
         async with client_from_env(profile) as hmc:
             return await list_network_bridges(hmc, system_name_or_uuid)
 
-    return _run_limited_collection(_go, limit)
+    return run_limited_collection(_go, limit)
 
 
 @tool(effect="read", operation="network.list_fc_ports", target_kind="managed_system")

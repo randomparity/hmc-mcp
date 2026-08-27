@@ -53,7 +53,7 @@ MANAGED_SYSTEM_STATES: frozenset[ManagedSystemState] = frozenset(
 )
 
 
-async def _modify_system(
+async def modify_system(
     hmc: HMCClient,
     system_name_or_uuid: str,
     *,

@@ -38,7 +38,7 @@ from ..operations.lpar import (
 )
 from ..operations.assignments import (
     LparPcieAssignments,
-    _apply_validated_lpar_pcie_assignments,
+    apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
 from ..operations.decommission import decommission_lpar
@@ -580,7 +580,7 @@ def lpars_create(
             )
             if creation.lpar is None:
                 return creation, None
-            outcome = await _apply_validated_lpar_pcie_assignments(
+            outcome = await apply_validated_lpar_pcie_assignments(
                 hmc, system, name, assignments
             )
             return creation, outcome
@@ -728,7 +728,7 @@ def lpars_modify(
                 if has_resource_changes
                 else None
             )
-            assignment_result = await _apply_validated_lpar_pcie_assignments(
+            assignment_result = await apply_validated_lpar_pcie_assignments(
                 hmc,
                 cast(str, system),
                 selector,

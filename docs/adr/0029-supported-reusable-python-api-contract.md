@@ -134,7 +134,8 @@ names are internal everywhere and are never inventoried.
     constructor, not a domain operation, and the synchronous-exclusion reason above does not
     reach it.
 - `documents` — exports: `AuthenticationType`, `BootDeviceSelector`, `Keylock`, `LparResources`,
-  `OsType`, `PartitionType`, `SharingMode`, `StorageKind`.
+  `MemoryMirroringMode`, `OsType`, `PartitionType`, `PowerOffPolicy`,
+  `PowerOnLparStartPolicy`, `SharingMode`, `StorageKind`.
 - `errors` — exports: `HMCError`, `HMCTransportError`.
 - `jobs` — exports: `DeviceType`, `JobOutcome`, `LuType`, `RemoteRestartOperation`.
   - Note: `JobOutcome`'s fields are a package-owned model contract except the opaque `job`
@@ -143,7 +144,8 @@ names are internal everywhere and are never inventoried.
 - `operations.adapters` — operations: `add_network_adapter`, `add_vios_adapter`, `delete_adapter`,
   `list_adapters`; types: `AdapterResult`; excluded synchronous: none.
 - `operations.assignments` — operations: `apply_lpar_pcie_assignments`,
-  `prevalidate_lpar_pcie_assignments`; types: `AssignmentResult`, `AssignmentStep`,
+  `apply_validated_lpar_pcie_assignments`, `prevalidate_lpar_pcie_assignments`; types:
+  `AssignmentResult`, `AssignmentStep`,
   `DedicatedPcieAssignment`, `LparPcieAssignments`, `LparPcieWorkflowResult`,
   `SriovLogicalPortAssignment`, `VnicAssignment`; excluded synchronous:
   `assignment_step_names`.
@@ -174,7 +176,8 @@ names are internal everywhere and are never inventoried.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
   none.
 - `operations.lpar` — operations: `clear_lpar_boot_order`, `create_and_stamp_lpar`,
-  `delete_lpar`, `power_lpar`, `read_lpar_boot_order`, `rename_lpar`, `set_lpar_boot_order`,
+  `delete_lpar`, `modify_lpar`, `power_lpar`, `read_lpar_boot_order`, `rename_lpar`,
+  `set_lpar_boot_order`,
   `set_lpar_memory`, `set_lpar_processors`; types: `LparCreation`, `LparCreationResult`,
   `LparPowerResult`; excluded synchronous: `activation_allows_assessment`,
   `power_on_outcome`, `translate_lpar_write_error`.
@@ -227,15 +230,17 @@ names are internal everywhere and are never inventoried.
   `list_storage_mappings`, `list_volume_groups`, `map_storage`, `mount_optical_media`,
   `unmount_optical_media`, `upload_iso`; types: none; excluded synchronous:
   `validate_logical_unit_create`, `validate_logical_unit_wait`.
-- `operations.systems` — operations: `power_system`; types: none; excluded synchronous: none.
+- `operations.systems` — operations: `modify_system`, `power_system`; types: none; excluded
+  synchronous: none.
 - `operations.templates` — operations: `deploy_partition_template`, `get_partition_template`,
   `list_partition_templates`; types: none; excluded synchronous: none.
 - `operations.updates` — operations: `list_available_hmc_ptfs`, `update_console_software`,
   `update_firmware`, `update_vios`; types: none; excluded synchronous: none.
 - `operations.users` — operations: `configure_remote_access`, `create_user`, `delete_user`,
   `modify_user`; types: none; excluded synchronous: none.
-- `operations.vios` — operations: `backup_vios`, `list_vios_backups`, `power_vios`,
-  `restore_vios`; types: `BackupType`, `RestoreBackupType`; excluded synchronous: none.
+- `operations.vios` — operations: `backup_vios`, `create_vios`, `delete_vios`,
+  `list_vios_backups`, `power_vios`, `restore_vios`; types: `BackupType`, `RestoreBackupType`;
+  excluded synchronous: none.
 - `snapshot` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
   `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,
   `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotInspection`, `SnapshotObservations`,

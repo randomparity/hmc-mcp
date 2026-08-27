@@ -35,7 +35,7 @@ from ..operations.lpar import (
     create_and_stamp_lpar,
     clear_lpar_boot_order,
     delete_lpar,
-    _modify_lpar,
+    modify_lpar,
     power_lpar,
     power_on_outcome,
     read_lpar_boot_order,
@@ -48,7 +48,7 @@ from ..operations.assignments import (
     AssignmentStep,
     LparPcieAssignments,
     LparPcieWorkflowResult,
-    _apply_validated_lpar_pcie_assignments,
+    apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
 from ..ssh.lpar import validate_caller_token
@@ -168,7 +168,7 @@ def hmc_create_lpar(
                         tuple(steps),
                         creation.warnings,
                     )
-                assignment_result = await _apply_validated_lpar_pcie_assignments(
+                assignment_result = await apply_validated_lpar_pcie_assignments(
                     hmc, system_name_or_uuid, name, assignments
                 )
                 steps.extend(assignment_result.steps)
@@ -230,7 +230,7 @@ def hmc_modify_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await _modify_lpar(
+            return await modify_lpar(
                 hmc,
                 lpar_name_or_uuid,
                 resources,

@@ -570,7 +570,7 @@ def test_legacy_classification_sets_are_gone():
 # the handler's declared connection argument reaches the deployment default
 # whatever the caller — and the access policy — named.
 _CONNECTION_BUILDERS = frozenset(
-    {"build_config", "client_from_env", "_ssh_with_client"}
+    {"build_config", "client_from_env", "ssh_with_client"}
 )
 
 # `host` is deliberately singled out: `build_config` skips the whole profile
@@ -707,7 +707,7 @@ def _assert_builder_call(call: ast.Call, argument: str | None, where: str) -> No
     # `client_from_env(profile='some-other-profile')` routes somewhere the
     # authorization never decided about, and the keyword arm is the only one
     # available to the SSH family, whose `profile` is keyword-only on
-    # `_app._ssh_with_client`. The keyword's own name is not constrained: a tool
+    # `_app.ssh_with_client`. The keyword's own name is not constrained: a tool
     # declaring `connection_argument="connection"` writes `profile=connection`.
     supplied = [*call.args, *(keyword.value for keyword in call.keywords)]
     assert argument is not None and any(

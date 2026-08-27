@@ -89,7 +89,7 @@ security metadata targeting `managed_system`.
    forwarding, and serialized available/unavailable shapes.
 2. Run `uv run pytest -q tests/unit/test_pcie_inventory_contract.py`; expect failures because the
    exports/tools are absent.
-3. Implement the API exports and thin MCP adapters using `_ssh_with_client` and `asdict`.
+3. Implement the API exports and thin MCP adapters using `ssh_with_client` and `asdict`.
 4. Run the unit contract tests and `uv run python scripts/smoke_mcp.py`; expect all tests and the
    handshake to pass. Commit as `feat: expose normalized PCIe inventory tools`.
 

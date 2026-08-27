@@ -52,9 +52,9 @@ by direct inline patterns in the tool body, or the helpers are extended to accep
   they already accept `hmc` as a client parameter, so no signature change is
   needed there — callers simply pass the profile-aware client.
 
-### `_ssh_with_client` exclusion
+### `ssh_with_client` exclusion
 
-`_ssh_with_client` in `_app.py` is excluded from this change; SSH routing
+`ssh_with_client` in `_app.py` is excluded from this change; SSH routing
 is scoped to #127.
 
 ### Direct `HMCConfig()` fallback paths

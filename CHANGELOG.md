@@ -357,6 +357,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `apply_validated_lpar_pcie_assignments`, `modify_lpar`, `modify_system`, `create_vios`,
+  and `delete_vios`. These established cross-module operation seams are now named public
+  package entry points instead of being imported as private helpers. Their transitive input
+  types `MemoryMirroringMode`, `PowerOffPolicy`, and `PowerOnLparStartPolicy` are exported too;
+  all eight names join the frozen public signature digest.
 - Added: `backup_vios`, `list_vios_backups`, and `restore_vios`, together with their
   `BackupType` and `RestoreBackupType` input types. The reusable operations now own VIOS backup
   validation, catalog parsing, selector resolution, and concrete HMC CLI command construction.
