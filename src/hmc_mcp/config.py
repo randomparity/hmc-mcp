@@ -713,6 +713,95 @@ def _load_profile_from_document(
     return HMCConfig(_env_file=None, **filtered_entry)  # ty: ignore[unknown-argument]
 
 
+def config_inventory(
+    config_path: Path | None = None,
+    *,
+    selected_profile: str | None = None,
+    include_selected: bool = False,
+) -> dict[str, Any]:
+    """Read validated, secret-free profile metadata from one TOML snapshot.
+
+    ``include_selected`` adds the effective non-secret configuration for
+    ``selected_profile`` (or the normal environment/default selection). Raw
+    passwords, password environment-variable names, and SSH key paths are
+    never returned.
+    """
+    path = _selected_config_path(config_path)
+    if path is None:
+        return {"profiles": [], "config_file": None}
+    doc = _read_config_document(path)
+    profiles = _coerce_profiles(doc.get("profiles"), path)
+    nicknames = _coerce_nicknames(doc.get("nicknames"), path)
+    default_profile = doc.get("default_profile")
+    if default_profile is not None and not isinstance(default_profile, str):
+        raise ConfigError(f"{path}: 'default_profile' must be a profile-name string")
+
+    fields = HMCConfig.model_fields
+    default_port = int(fields["port"].default)
+    default_verify_ssl = bool(fields["verify_ssl"].default)
+    profile_entries: list[dict[str, Any]] = []
+    for name, entry in profiles.items():
+        if not isinstance(entry, dict):
+            raise ConfigError(
+                f"{path}: profile {name!r} must be a TOML table, "
+                f"got {type(entry).__name__}"
+            )
+        profile_entries.append(
+            {
+                "name": name,
+                "host": entry.get("host", ""),
+                "user": entry.get("user", ""),
+                "port": int(entry.get("port", default_port)),
+                "verify_ssl": bool(entry.get("verify_ssl", default_verify_ssl)),
+                "is_default": name == default_profile,
+                "has_password": "password" in entry  # pragma: allowlist secret
+                or "password_env" in entry,  # pragma: allowlist secret
+                "has_ssh_key": "ssh_key_file" in entry,
+            }
+        )
+    profile_names = set(profiles)
+    result: dict[str, Any] = {
+        "profiles": profile_entries,
+        "nicknames": [
+            {"name": name, "target": target, "target_exists": target in profile_names}
+            for name, target in nicknames.items()
+        ],
+        "config_file": str(path),
+    }
+    if not include_selected:
+        return result
+
+    requested = selected_profile or env_var_value("HMC_PROFILE") or default_profile
+    resolved_name = requested
+    resolved_from = None
+    if requested is not None and requested not in profiles and requested in nicknames:
+        resolved_name = nicknames[requested]
+        if resolved_name in profiles:
+            resolved_from = requested
+    raw_profile = profiles.get(resolved_name or "", {})
+    cfg = _load_profile_from_document(doc, path, selected_profile)
+    result["selected"] = {
+        "profile": resolved_name or "(default)",
+        "resolved_from": resolved_from,
+        "host": cfg.host,
+        "port": cfg.port,
+        "user": cfg.user,
+        "verify_ssl": cfg.verify_ssl,
+        "timeout": cfg.timeout,
+        "audit_memento": cfg.audit_memento,
+        "schema_version": cfg.schema_version or "(not set)",
+        "authorize_power_operations": cfg.authorize_power_operations,
+        "password_configured": bool(
+            isinstance(raw_profile, dict)
+            and (raw_profile.get("password") or raw_profile.get("password_env"))
+        ),
+        "ssh_key_configured": bool(
+            isinstance(raw_profile, dict) and raw_profile.get("ssh_key_file")
+        ),
+    }
+    return result
+
+
 def load_profile(
     profile: str | None = None,
     config_path: Path | None = None,

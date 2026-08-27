@@ -496,7 +496,6 @@ def test_show_reads_config_document_exactly_once(tmp_path, monkeypatch):
     """
     from unittest.mock import MagicMock
 
-    import hmc_mcp.cli_commands.config as cli_config_mod
     import hmc_mcp.config as config_mod
 
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
@@ -506,8 +505,7 @@ def test_show_reads_config_document_exactly_once(tmp_path, monkeypatch):
     counter = MagicMock(wraps=config_mod._read_config_document)
     with (
         patch.object(config_mod, "_read_config_document", counter),
-        patch.object(cli_config_mod, "_read_config_document", counter),
-        patch.object(sys, "platform", "linux"),
+            patch.object(sys, "platform", "linux"),
     ):
         result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show"])
 
@@ -528,7 +526,6 @@ def test_list_reads_config_document_exactly_once(tmp_path, monkeypatch):
     """
     from unittest.mock import MagicMock
 
-    import hmc_mcp.cli_commands.config as cli_config_mod
     import hmc_mcp.config as config_mod
 
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
@@ -538,8 +535,7 @@ def test_list_reads_config_document_exactly_once(tmp_path, monkeypatch):
     counter = MagicMock(wraps=config_mod._read_config_document)
     with (
         patch.object(config_mod, "_read_config_document", counter),
-        patch.object(cli_config_mod, "_read_config_document", counter),
-        patch.object(sys, "platform", "linux"),
+            patch.object(sys, "platform", "linux"),
     ):
         result = RUNNER.invoke(cli.app, ["config", "list"])
 

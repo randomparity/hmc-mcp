@@ -20,6 +20,7 @@ from hmc_mcp.config import (
     ConfigError,
     HMCConfig,
     config_dir,
+    config_inventory,
     env_var_value,
     list_nicknames,
     list_profiles,
@@ -707,7 +708,7 @@ def test_list_profiles_and_nicknames_rejects_malformed_nicknames(tmp_path):
 #
 # Each reader documents ConfigError as its failure type, so a
 # ``try/except ConfigError`` around any of them must actually catch. These cases
-# are parametrized over all five rather than written per reader: before #257
+# are parametrized over every reader rather than written per reader: before #257
 # only list_profiles_and_nicknames converted them, and the other four leaked a
 # PermissionError, an IsADirectoryError, a UnicodeDecodeError, a RecursionError,
 # or an AttributeError naming the absolute config path.
@@ -718,6 +719,7 @@ _READERS = {
     "list_profiles": lambda p: list_profiles(config_path=p),
     "list_nicknames": lambda p: list_nicknames(config_path=p),
     "list_profiles_and_nicknames": lambda p: list_profiles_and_nicknames(config_path=p),
+    "config_inventory": lambda p: config_inventory(config_path=p),
     "load_profile": lambda p: load_profile("prod", config_path=p),
 }
 
@@ -820,6 +822,7 @@ def test_reader_reports_an_unresolvable_home(reader, monkeypatch):
         ("list_profiles", []),
         ("list_nicknames", {}),
         ("list_profiles_and_nicknames", ([], {})),
+        ("config_inventory", {"profiles": [], "config_file": None}),
     ],
 )
 def test_listing_reader_with_no_platform_config_file(name, empty, tmp_path, monkeypatch):

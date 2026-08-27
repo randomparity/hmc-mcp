@@ -30,10 +30,7 @@ from ..access_policy import AccessPolicyError
 from .app import _fail, _policy_file, config_app, console, err_console
 from ..config import (
     ConfigError,
-    _coerce_nicknames,
-    _coerce_profiles,
-    _load_profile_from_document,
-    _read_config_document,
+    config_inventory,
     config_dir,
     resolve_config_path,
 )
@@ -115,27 +112,24 @@ def config_list() -> None:
     # set than the names printed above it. Same approach issue #295 used for
     # config_show and hmc_list_configured_hosts.
     try:
-        raw = _read_config_document(config_path)
-        names = list(_coerce_profiles(raw.get("profiles"), config_path))
-        nicknames = _coerce_nicknames(raw.get("nicknames"), config_path)
+        inventory = config_inventory(config_path)
     except ConfigError as exc:
         _fail(exc)
+    profiles = inventory["profiles"]
 
-    default = raw.get("default_profile")
-
-    if not names:
+    if not profiles:
         console.print("No profiles defined in config file.")
         return
 
-    for name in names:
-        marker = "  (default)" if name == default else ""
-        console.print(f"{name}{marker}")
+    for entry in profiles:
+        marker = "  (default)" if entry["is_default"] else ""
+        console.print(f"{entry['name']}{marker}")
 
     # Surface nicknames (secret-free): each maps to a profile key, flagged if
     # its target does not exist.
-    for nick, target in nicknames.items():
-        status = "" if target in names else "  (no such profile)"
-        console.print(f"{nick} -> {target}{status}")
+    for entry in inventory["nicknames"]:
+        status = "" if entry["target_exists"] else "  (no such profile)"
+        console.print(f"{entry['name']} -> {entry['target']}{status}")
 
 
 @config_app.command("show")
@@ -160,79 +154,16 @@ def config_show(
     if config_path is None:
         _fail(ConfigError(f"No config file found at {config_dir() / 'config.toml'}"))
 
-    # Read and parse config.toml exactly once for this command (issue #295): the
-    # raw document backs credential-presence booleans and nickname resolution
-    # below, and is handed to _load_profile_from_document() rather than letting
-    # load_profile() parse the same file over again. An unreadable, non-UTF-8,
-    # or malformed file reaches _fail as a ConfigError rather than a traceback.
+    # config_inventory owns the single read, nickname resolution, and safe
+    # credential-presence metadata. An unreadable, non-UTF-8, or malformed file
+    # reaches _fail as a ConfigError rather than a traceback.
     try:
-        raw = _read_config_document(config_path)
-        profiles_raw = _coerce_profiles(raw.get("profiles"), config_path)
-        nicknames = _coerce_nicknames(raw.get("nicknames"), config_path)
+        inventory = config_inventory(
+            config_path, selected_profile=effective_profile, include_selected=True
+        )
     except ConfigError as exc:
         _fail(exc)
-
-    # When effective_profile is None, load_profile() uses default_profile.
-    # Resolve the same name here so the raw dict lookup and the display agree
-    # with load_profile(), and surface a nickname resolution transparently.
-    requested = effective_profile or raw.get("default_profile")
-
-    # One level deep, case-sensitive; a profile key always wins because this
-    # branch only runs when the requested name is not already a profile key.
-    resolved_name = requested
-    resolved_from: str | None = None
-    if requested is not None and requested not in profiles_raw and requested in nicknames:
-        target = nicknames[requested]
-        if target in profiles_raw:
-            resolved_name = target
-            resolved_from = requested
-
-    profile_dict = profiles_raw.get(resolved_name or "", {})
-
-    # Gather credential presence booleans from raw dict — safe because we
-    # never look at the password value, just whether the key is present.
-    password_configured = bool(
-        profile_dict.get("password") or profile_dict.get("password_env")
-    )
-    ssh_key_configured = bool(profile_dict.get("ssh_key_file"))
-
-    # Build the full HMCConfig for non-secret fields from the document already
-    # read above, not a re-parse of config.toml. This call may raise ConfigError
-    # (unknown profile, no default, etc.) — that is the intended error path for
-    # those conditions.
-    try:
-        cfg = _load_profile_from_document(raw, config_path, effective_profile)
-    except ConfigError as exc:
-        _fail(exc)
-
-    # Gather all output fields before emitting anything (no partial output).
-    data: dict[str, Any] = {
-        "profile": resolved_name or "(default)",
-        "resolved_from": resolved_from,
-        "host": cfg.host,
-        "port": cfg.port,
-        "user": cfg.user,
-        "verify_ssl": cfg.verify_ssl,
-        "timeout": cfg.timeout,
-        "audit_memento": cfg.audit_memento,
-        "schema_version": cfg.schema_version or "(not set)",
-        # Reported because this setting fails open: a mistyped profile key or
-        # environment variable is dropped silently (the model ignores extras),
-        # and the result is indistinguishable from a correct `false` — an
-        # authorization check absent without saying so.
-        #
-        # This is the profile's resolved value, which is not always the value a
-        # tool run resolves. `build_config` skips the profile loader entirely
-        # when HMC_HOST or an explicit host override is set, so a TOML-only
-        # `authorize_power_operations = true` shows as enabled here while the
-        # runtime resolves it to the field default. That is the fail-open
-        # direction, so it is documented beside the setting rather than left to
-        # be discovered; #470 covers reporting the value a running server
-        # actually resolved.
-        "authorize_power_operations": cfg.authorize_power_operations,
-        "password_configured": password_configured,
-        "ssh_key_configured": ssh_key_configured,
-    }
+    data: dict[str, Any] = inventory["selected"]
 
     if as_json:
         console.print_json(json.dumps(data))

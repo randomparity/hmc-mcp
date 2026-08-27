@@ -18,11 +18,7 @@ from ..resource_identity import (
     resolve_vios_uuid,
 )
 from ..config import (
-    HMCConfig,
-    _coerce_nicknames,
-    _coerce_profiles,
-    _read_config_document,
-    resolve_config_path,
+    config_inventory,
 )
 from ..documents import (
     MemoryMirroringMode,
@@ -70,68 +66,7 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
     No network calls are made. When no config file exists, returns an empty
     profile list.
     """
-    config_path = resolve_config_path()
-    if config_path is None:
-        return {"profiles": [], "config_file": None}
-
-    # config's one read-and-parse: every read, decode, parse, and structure
-    # failure arrives as a ConfigError, which is a ValueError the MCP boundary
-    # surfaces as an error result naming the file.
-    doc = _read_config_document(config_path)
-
-    default_profile = doc.get("default_profile")
-    profiles_raw: dict[str, Any] = _coerce_profiles(doc.get("profiles"), config_path)
-
-    # Read the HMCConfig field defaults once — port and verify_ssl come from
-    # the model, not hardcoded constants, so they stay in sync if the model changes.
-    _fields = HMCConfig.model_fields
-    _default_port = int(_fields["port"].default)
-    _default_verify_ssl = bool(_fields["verify_ssl"].default)
-
-    profiles = []
-    for name, entry in profiles_raw.items():
-        if not isinstance(entry, dict):
-            raise ValueError(
-                f"{config_path}: profile {name!r} must be a TOML table, "
-                f"got {type(entry).__name__}"
-            )
-        # Build each profile dict from named fields only.
-        # NEVER spread entry directly — it may contain a literal "password" key.
-        # Use key-presence ('in') for credential booleans — truthiness would give
-        # False for password = "" which is present-but-empty, diverging from
-        # load_profile()'s "key" in entry check.
-        profiles.append(
-            {
-                "name": name,
-                "host": entry.get("host", ""),
-                "user": entry.get("user", ""),
-                "port": int(entry.get("port", _default_port)),
-                "verify_ssl": bool(entry.get("verify_ssl", _default_verify_ssl)),
-                "is_default": (name == default_profile),
-                "has_password": ("password" in entry or "password_env" in entry),
-                "has_ssh_key": ("ssh_key_file" in entry),
-            }
-        )
-
-    # Surface nicknames (secret-free): each maps to a profile key, flagging a
-    # dangling target without resolving any credential. A malformed table raises
-    # a ConfigError (a ValueError the MCP boundary surfaces as an error result);
-    # it must NOT be swallowed into an empty inventory, which would hide a broken
-    # config while nickname-based connections silently fail. Read from the
-    # document already parsed above (issue #295) rather than re-reading
-    # config.toml — the two halves of this inventory must come from one read.
-    nicknames = _coerce_nicknames(doc.get("nicknames"), config_path)
-    profile_keys = set(profiles_raw)
-    nickname_entries = [
-        {"name": nick, "target": target, "target_exists": target in profile_keys}
-        for nick, target in nicknames.items()
-    ]
-
-    return {
-        "profiles": profiles,
-        "nicknames": nickname_entries,
-        "config_file": str(config_path),
-    }
+    return config_inventory()
 
 
 @tool(effect="read", operation="system.list", target_kind="console")
