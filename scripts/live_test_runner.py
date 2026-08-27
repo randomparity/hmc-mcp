@@ -2164,9 +2164,8 @@ def _allow_iso_host() -> None:
     # carrying its own host while ADR 0050 refused every one of its uploads.
     # Removing the variants makes the canonical spelling the only spelling, which
     # is also what lets the guard above short-circuit a second call.
-    for variant in [k for k in list(os.environ) if k.lower() == name.lower()]:
-        if variant != name:
-            del os.environ[variant]
+    for variant in [k for k in os.environ if k.lower() == name.lower() and k != name]:
+        del os.environ[variant]
     os.environ[name] = ",".join(entries)
     print(f"  ℹ  {name}={os.environ[name]}")
 
@@ -3001,8 +3000,8 @@ async def main(
         f"Starting live integration tests at "
         f"{datetime.now(timezone.utc).isoformat()}"
     )
-    schema_version = env_var_value("HMC_SCHEMA_VERSION")
-    print(f"HMC_SCHEMA_VERSION={schema_version if schema_version else '(not set)'}")
+    schema_version = env_var_value("HMC_SCHEMA_VERSION") or "(not set)"
+    print(f"HMC_SCHEMA_VERSION={schema_version}")
 
     # Determine which sub-tasks to run
     if subtask_filter is not None:
