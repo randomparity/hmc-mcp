@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import warnings
 from pathlib import Path
 from types import MappingProxyType
@@ -1402,3 +1403,36 @@ def test_an_empty_case_variant_blanks_the_profiles_value(profile_home, monkeypat
 
     assert config.user == ""
     assert config.host == "toml-hmc.example.com"
+
+
+def test_env_var_value_survives_a_concurrent_environment_mutation():
+    """It replaced atomic ``os.environ.get`` calls, so it must not raise either.
+
+    ``os.environ.items()`` re-indexes every key after ``__iter__`` snapshotted
+    them, so a key deleted in between raises ``KeyError`` — out of
+    ``selected_connection`` and ``connection_denial``, which sit on the ADR 0038
+    dispatch-time authorization path and would surface it as a bare ``KeyError``
+    past the machinery that exists to explain a refused call. ``hmc_mcp`` is a
+    supported reusable API (ADR 0029), so an embedding host mutating the
+    environment from another thread is reachable.
+    """
+    stop = threading.Event()
+
+    def churn() -> None:
+        index = 0
+        while not stop.is_set():
+            os.environ[f"HMCTEST_CHURN_{index % 32}"] = "x"
+            os.environ.pop(f"HMCTEST_CHURN_{(index + 7) % 32}", None)
+            index += 1
+
+    worker = threading.Thread(target=churn, daemon=True)
+    worker.start()
+    try:
+        for _ in range(20_000):
+            env_var_value("HMC_HOST")
+    finally:
+        stop.set()
+        worker.join(timeout=5)
+        for key in list(os.environ):
+            if key.startswith("HMCTEST_CHURN_"):
+                del os.environ[key]
