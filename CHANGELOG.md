@@ -267,7 +267,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `logging.lastResort`: synchronous, unbounded, and unescaped. Those *log records* now carry
   the `hmc_mcp:` producer prefix and are drop-counted like every other line on the queue.
   `warnings.warn` is a separate mechanism and is not covered — the audit-memento override
-  emits one of each, and its warning still goes straight to `sys.stderr` (#546).
+  emits one of each, and its warning still goes straight to `sys.stderr` unmarked (#546, which
+  also owns throttling that site's log record).
   **What an operator sees change:** the prefix, and — if you route `hmc_mcp.*` into your own
   logging — a second rendering, because `propagate` is deliberately left alone here, unlike on
   `hmc_mcp.audit`. Your handlers keep receiving these records exactly as before; the sink is an
