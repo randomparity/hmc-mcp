@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
-from typing import Literal, cast
+from typing import Literal
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.resource_identity import resolve_lpar_uuid, resolve_system_uuid
@@ -162,7 +162,7 @@ async def list_fc_ports(
 ) -> list[dict[str, str]]:
     config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
-    return await _list_fc_ports(config, cast(str, system_name), lpar_name)
+    return await _list_fc_ports(config, system_name, lpar_name)
 
 
 async def list_sea_adapters(
@@ -170,15 +170,13 @@ async def list_sea_adapters(
 ) -> list[dict[str, str]]:
     config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
-    return await _list_sea_adapters(config, cast(str, system_name), lpar_name)
+    return await _list_sea_adapters(config, system_name, lpar_name)
 
 
-async def list_vnics(
-    hmc: HMCClient, system: str, lpar: str
-) -> list[dict[str, object]]:
+async def list_vnics(hmc: HMCClient, system: str, lpar: str) -> list[dict[str, object]]:
     config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
-    return await _list_vnics(config, cast(str, system_name), cast(str, lpar_name))
+    return await _list_vnics(config, system_name, lpar_name)
 
 
 async def get_lpar_memopt_score(
@@ -187,9 +185,7 @@ async def get_lpar_memopt_score(
     """Return one LPAR's current memory-optimization score."""
     config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
-    return await _get_lpar_memopt_score(
-        config, cast(str, system_name), cast(str, lpar_name)
-    )
+    return await _get_lpar_memopt_score(config, system_name, lpar_name)
 
 
 async def list_lpar_memopt_scores(
@@ -198,14 +194,14 @@ async def list_lpar_memopt_scores(
     """Return current memory-optimization scores for selected system LPARs."""
     config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
-    return await _list_lpar_memopt_scores(config, cast(str, system_name), lpar_name)
+    return await _list_lpar_memopt_scores(config, system_name, lpar_name)
 
 
 async def get_system_memopt_score(hmc: HMCClient, system: str) -> dict[str, object]:
     """Return a managed system's current memory-optimization score."""
     config = hmc.config
     system_name, _ = await resolve_ssh_names(config, system, None)
-    return await _get_system_memopt_score(config, cast(str, system_name))
+    return await _get_system_memopt_score(config, system_name)
 
 
 async def plan_lpar_memopt_scores(
@@ -218,9 +214,7 @@ async def plan_lpar_memopt_scores(
     config = hmc.config
     validate_memopt_scenario(prioritized, excluded)
     system_name, _ = await resolve_ssh_names(config, system, None)
-    return await _plan_lpar_memopt_scores(
-        config, cast(str, system_name), prioritized, excluded
-    )
+    return await _plan_lpar_memopt_scores(config, system_name, prioritized, excluded)
 
 
 async def plan_system_memopt_score(
@@ -233,9 +227,7 @@ async def plan_system_memopt_score(
     config = hmc.config
     validate_memopt_scenario(prioritized, excluded)
     system_name, _ = await resolve_ssh_names(config, system, None)
-    return await _plan_system_memopt_score(
-        config, cast(str, system_name), prioritized, excluded
-    )
+    return await _plan_system_memopt_score(config, system_name, prioritized, excluded)
 
 
 async def _resource_group_memopt_scores(
@@ -247,7 +239,7 @@ async def _resource_group_memopt_scores(
 ) -> ResourceGroupAffinityResult:
     selected = selector or MemoptResourceGroupSelector(all=True)
     system_name, _ = await resolve_ssh_names(config, system, None)
-    resolved = cast(str, system_name)
+    resolved = system_name
     query = await query_resource_group_memopt_scores(
         config, resolved, selected, calculated=calculated
     )
@@ -293,8 +285,8 @@ async def get_minimum_affinity_policy(
     """Return an LPAR's minimum-affinity policy when supported."""
     config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
-    resolved_system = cast(str, system_name)
-    resolved_lpar = cast(str, lpar_name)
+    resolved_system = system_name
+    resolved_lpar = lpar_name
     query: MinimumAffinityPolicyQuery = await query_minimum_affinity_policy(
         config, resolved_system, resolved_lpar
     )
@@ -598,9 +590,7 @@ async def _preflight_add(
     )
 
 
-async def _after(
-    config: HMCConfig, system: str, lpar: str
-) -> _VnicReadback:
+async def _after(config: HMCConfig, system: str, lpar: str) -> _VnicReadback:
     vnics: tuple[VnicSnapshot, ...] = ()
     backings: tuple[VnicBackingSnapshot, ...] = ()
     v_ok = b_ok = False
@@ -717,9 +707,7 @@ def _reconcile_remove(
     )
     backing_after = (
         tuple(
-            item
-            for item in readback.backings
-            if _same_backing_identity(item, captured)
+            item for item in readback.backings if _same_backing_identity(item, captured)
         )
         if readback.backing_succeeded
         else ()
@@ -802,9 +790,7 @@ async def add_vnic(
             "existing matching vNIC inventory is ambiguous or degraded"
         )
     if context.used_capacity + selector.capacity_percent > 100:
-        raise ValueError(
-            f"capacity exhausted: {context.used_capacity}% used of 100%"
-        )
+        raise ValueError(f"capacity exhausted: {context.used_capacity}% used of 100%")
     payload = _add_payload(selector)
     output = ""
     errors: list[str] = []
@@ -818,12 +804,8 @@ async def add_vnic(
         )
     except Exception as error:
         errors.append(f"mutation failed: {error}")
-    readback = await _after(
-        hmc.config, context.system_name, context.lpar_name
-    )
-    result = _reconcile_add(
-        context, readback, selector, port_vlan_id, output, errors
-    )
+    readback = await _after(hmc.config, context.system_name, context.lpar_name)
+    result = _reconcile_add(context, readback, selector, port_vlan_id, output, errors)
     if result.errors:
         raise VnicPartialError("vNIC add could not be fully verified", result)
     return result
@@ -878,9 +860,7 @@ async def remove_vnic(
         output = await remove_vnic_slot(hmc.config, system_name, lpar_name, slot_num)
     except Exception as error:
         errors.append(f"mutation failed: {error}")
-    readback = await _after(
-        hmc.config, system_name, lpar_name
-    )
+    readback = await _after(hmc.config, system_name, lpar_name)
     result = _reconcile_remove(
         selected, correlated, selector, slot_num, readback, output, errors
     )

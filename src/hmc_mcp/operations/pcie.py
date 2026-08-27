@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Generic, Literal, TypeVar, cast
+from typing import Generic, Literal, TypeVar
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.client import HMCClient
@@ -250,7 +250,7 @@ async def _authorize_pcie_profile_request(
 
 async def _system_name(config: HMCConfig, system: str) -> str:
     system_name, _ = await resolve_ssh_names(config, system, None)
-    return cast(str, system_name)
+    return system_name
 
 
 async def list_dedicated_slots(
@@ -350,9 +350,7 @@ async def _read_assignment_state(
         error = caught
     try:
         profile = (
-            await read_sriov_profile_ports(
-                config, system_name, lpar_name, profile_name
-            )
+            await read_sriov_profile_ports(config, system_name, lpar_name, profile_name)
         )["sriov_eth_logical_ports"]
     except Exception as caught:
         error = error or caught
@@ -422,8 +420,15 @@ async def _preflight_sriov_assignment(
                 "logical port is already assigned with a different capacity"
             )
         return SriovLogicalPortChangeResult(
-            "assign", "dynamic", False, selector, before, before,
-            profile_before, profile_before, ""
+            "assign",
+            "dynamic",
+            False,
+            selector,
+            before,
+            before,
+            profile_before,
+            profile_before,
+            "",
         )
     candidates = await list_sriov_unconfigured_logical_port_rows(config, system_name)
     port_location = physical[0]["phys_port_loc"] + "-S"

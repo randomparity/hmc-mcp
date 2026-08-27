@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import overload
+
 from ..client import HMCClient
 from ..resource_identity import is_uuid
 from ..config import HMCConfig
@@ -56,6 +58,38 @@ async def resolve_lpar_name(
             return await _lpar_name_from_rest(hmc, lpar_name_or_uuid)
     except HMCTransportError:
         return await _ssh_lpar_name(config, lpar_name_or_uuid, system_name)
+
+
+@overload
+async def resolve_ssh_names(
+    config: HMCConfig,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+) -> tuple[str, str]: ...
+
+
+@overload
+async def resolve_ssh_names(
+    config: HMCConfig,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str | None,
+) -> tuple[str, str | None]: ...
+
+
+@overload
+async def resolve_ssh_names(
+    config: HMCConfig,
+    system_name_or_uuid: str | None,
+    lpar_name_or_uuid: str,
+) -> tuple[str | None, str]: ...
+
+
+@overload
+async def resolve_ssh_names(
+    config: HMCConfig,
+    system_name_or_uuid: str | None,
+    lpar_name_or_uuid: str | None,
+) -> tuple[str | None, str | None]: ...
 
 
 async def resolve_ssh_names(
