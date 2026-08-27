@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import shlex
 
-from .config import HMCConfig
-from .documents import LparResources
-from .ssh import HMCCLIError, run_hmc_command
-from .ssh_commands import _RECORD_DELIMITERS, build_attribute_record
+from ..config import HMCConfig
+from ..documents import LparResources
+from .transport import HMCCLIError, run_hmc_command
+from .commands import _RECORD_DELIMITERS, build_attribute_record
 
 _DESCRIPTION_TARGET_UNSAFE: dict[str, tuple[str, str]] = {
     " ": (
@@ -124,7 +124,7 @@ async def stamp_lpar_ownership(
     """
     import datetime
 
-    from .ssh_profiles import set_lpar_description
+    from .profiles import set_lpar_description
 
     if caller_token is not None:
         validate_caller_token(caller_token)

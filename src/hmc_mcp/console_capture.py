@@ -3,9 +3,9 @@
 The HMC exposes exactly one virtual terminal (vterm) per partition through the
 ``mkvterm``/``rmvterm`` CLI pair over SSH. ``mkvterm`` never exits on its own:
 it streams the partition console until torn down, so it structurally cannot
-run through :func:`hmc_mcp.ssh.run_hmc_command` (a one-shot exec that collects
+run through :func:`hmc_mcp.ssh.transport.run_hmc_command` (a one-shot exec that collects
 output until the remote command exits). This module adds a bounded capture on
-top of :func:`hmc_mcp.ssh.open_hmc_connection` and enforces issue #385's
+top of :func:`hmc_mcp.ssh.transport.open_hmc_connection` and enforces issue #385's
 design contract. Every invariant below traces to a recorded observation from
 the P1-P8 live-hardware prototype on that issue (HMC V10R3 M1060); ADR 0072
 records the design decision per prototype fact.
@@ -45,7 +45,7 @@ from typing import Any, Literal
 from .config import HMCConfig
 from .client import HMCClient
 from .errors import HMCError
-from .ssh import HMCCLIError, open_hmc_connection, run_hmc_command
+from .ssh.transport import HMCCLIError, open_hmc_connection, run_hmc_command
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class ConsoleHeldError(HMCError):
 
     The HMC allows exactly one open vterm per partition (P1: signalled on
     stdout, always with exit code 0). This error is deliberately distinct
-    from :class:`hmc_mcp.ssh.HMCCLIError`: a capture never force-closes
+    from :class:`hmc_mcp.ssh.transport.HMCCLIError`: a capture never force-closes
     another holder's session, and no ``rmvterm`` is issued on this path.
     """
 

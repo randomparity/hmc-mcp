@@ -54,15 +54,15 @@ from .ssh_network import (
     get_minimum_affinity_policy,
     plan_lpar_memopt_scores,
 )
-from ..ssh import HMCCLIError
-from ..ssh_lpar import (
+from ..ssh.transport import HMCCLIError
+from ..ssh.lpar import (
     _ssh_system_name,
     create_lpar_via_cli,
     stamp_lpar_ownership,
     validate_caller_token,
     validate_lpar_description,
 )
-from ..ssh_profiles import set_lpar_description
+from ..ssh.profiles import set_lpar_description
 from .assignments import (
     AssignmentStep,
     LparPcieAssignments,

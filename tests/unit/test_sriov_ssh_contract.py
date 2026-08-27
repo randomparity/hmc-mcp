@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.ssh_network import (
+from hmc_mcp.ssh.network import (
     assign_sriov_logical_port_dynamic,
     list_sriov_adapter_rows,
     list_sriov_physical_port_rows,
@@ -25,7 +25,7 @@ async def test_exact_sriov_read_and_mutation_commands(monkeypatch):
             "",
         ]
     )
-    monkeypatch.setattr("hmc_mcp.ssh_network.run_hmc_command", run)
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
     assert (await list_sriov_adapter_rows(_config(), "sys"))[0][
         "config_state"
     ] == "sriov"

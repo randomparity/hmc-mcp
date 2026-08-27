@@ -9,7 +9,7 @@ import pytest
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.server import hmc_get_lpar_description, hmc_set_lpar_description
-from hmc_mcp.ssh_profiles import set_lpar_description
+from hmc_mcp.ssh.profiles import set_lpar_description
 
 from conftest import mock_uuid_resolution
 
@@ -49,7 +49,7 @@ def test_get_lpar_description_runs_correct_command(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("production database server\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_get_lpar_description(SYSTEM_UUID, LPAR_UUID)
 
     expected_cmd = (
@@ -66,7 +66,7 @@ def test_get_lpar_description_returns_empty_when_none_set(monkeypatch, mock_hmc)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_get_lpar_description(SYSTEM_UUID, LPAR_UUID)
 
     assert result == "\n"
@@ -80,7 +80,7 @@ def test_get_lpar_description_resolves_uuids_to_names(monkeypatch, mock_hmc):
     )
     conn_mock = _make_ssh_mock("owner: ops-team\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         hmc_get_lpar_description("22222222-2222-4222-8222-222222222222", "11111111-1111-4111-8111-111111111111")
 
     called_cmd = conn_mock.run.call_args[0][0]
@@ -99,7 +99,7 @@ def test_set_lpar_description_runs_correct_command(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_set_lpar_description(
             SYSTEM_UUID, LPAR_UUID, "new description", ownership_override=True
         )
@@ -119,7 +119,7 @@ def test_set_lpar_description_returns_cli_output(monkeypatch, mock_hmc):
     RAW_OUTPUT = "0 objects successfully changed.\n"
     conn_mock = _make_ssh_mock(RAW_OUTPUT)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_set_lpar_description(
             SYSTEM_UUID, LPAR_UUID, "some desc", ownership_override=True
         )
@@ -135,7 +135,7 @@ def test_set_lpar_description_embeds_description(monkeypatch, mock_hmc):
     )
     conn_mock = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         hmc_set_lpar_description(
             "22222222-2222-4222-8222-222222222222", "11111111-1111-4111-8111-111111111111", "owner alice - prod", ownership_override=True
         )
@@ -205,7 +205,7 @@ def test_set_lpar_description_accepts_empty_string(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_set_lpar_description(
             SYSTEM_UUID, LPAR_UUID, "", ownership_override=True
         )
@@ -267,7 +267,7 @@ def test_set_lpar_description_ssh_layer_rejects_control_characters():
 
 def test_set_lpar_description_rejects_lpar_name_with_comma():
     """set_lpar_description raises HMCCLIError when lpar_name contains a comma."""
-    from hmc_mcp.ssh_profiles import HMCCLIError
+    from hmc_mcp.ssh.profiles import HMCCLIError
     cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
     with pytest.raises(HMCCLIError, match="comma"):
         asyncio.run(set_lpar_description(cfg, "sys", "bad,name", "some description"))
@@ -275,7 +275,7 @@ def test_set_lpar_description_rejects_lpar_name_with_comma():
 
 def test_set_lpar_description_rejects_lpar_name_with_equals():
     """set_lpar_description raises HMCCLIError when lpar_name contains '='."""
-    from hmc_mcp.ssh_profiles import HMCCLIError
+    from hmc_mcp.ssh.profiles import HMCCLIError
     cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
     with pytest.raises(HMCCLIError, match="="):
         asyncio.run(set_lpar_description(cfg, "sys", "key=val", "some description"))
@@ -283,7 +283,7 @@ def test_set_lpar_description_rejects_lpar_name_with_equals():
 
 def test_set_lpar_description_rejects_lpar_name_with_space():
     """set_lpar_description raises HMCCLIError when lpar_name contains a space."""
-    from hmc_mcp.ssh_profiles import HMCCLIError
+    from hmc_mcp.ssh.profiles import HMCCLIError
     cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
     with pytest.raises(HMCCLIError, match="space"):
         asyncio.run(set_lpar_description(cfg, "sys", "my lpar", "some description"))
@@ -291,7 +291,7 @@ def test_set_lpar_description_rejects_lpar_name_with_space():
 
 def test_set_lpar_description_rejects_lpar_name_with_semicolon():
     """set_lpar_description raises HMCCLIError when lpar_name contains a semicolon."""
-    from hmc_mcp.ssh_profiles import HMCCLIError
+    from hmc_mcp.ssh.profiles import HMCCLIError
     cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
     with pytest.raises(HMCCLIError, match="semicolon"):
         asyncio.run(set_lpar_description(cfg, "sys", "lpar;name", "some description"))

@@ -13,7 +13,7 @@ from hmc_mcp.lpar_ownership import (
     authorize_lpar_mutation,
     resolve_lpar_ownership_names,
 )
-from hmc_mcp.ssh_network import (
+from hmc_mcp.ssh.network import (
     SriovMode,
     assign_sriov_logical_port_dynamic,
     list_dedicated_pcie_slot_rows,
@@ -31,7 +31,7 @@ from hmc_mcp.operations.pcie_validation import (
     require_command_safe_text,
     validate_capacity_percent,
 )
-from hmc_mcp.ssh_selectors import resolve_ssh_names
+from hmc_mcp.ssh.selectors import resolve_ssh_names
 
 
 CapabilityState = Literal["available", "capability-unavailable"]

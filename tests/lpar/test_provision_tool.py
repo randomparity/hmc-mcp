@@ -25,8 +25,8 @@ from hmc_mcp.operations.provision import (
     _power_on,
 )
 from hmc_mcp.server import hmc_provision_lpar
-from hmc_mcp.ssh import HMCCLIError
-from hmc_mcp.ssh_affinity import MinimumAffinityPolicy
+from hmc_mcp.ssh.transport import HMCCLIError
+from hmc_mcp.ssh.affinity import MinimumAffinityPolicy
 from conftest import JOB_ENTRY, assert_no_mutating_requests
 
 

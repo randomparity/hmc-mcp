@@ -14,7 +14,7 @@ from ..resource_identity import (
     resolve_system_uuid,
 )
 from ..console_capture import capture_lpar_console
-from ..ssh_lpar import _ssh_lpar_name
+from ..ssh.lpar import _ssh_lpar_name
 from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()

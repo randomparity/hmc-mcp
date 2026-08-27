@@ -151,11 +151,12 @@ def _seal_every_outbound_path(monkeypatch, opened: list[str]):
     monkeypatch.setattr("httpx.AsyncClient.__init__", _forbidden("httpx.AsyncClient"))
 
     sealed = 0
-    for info in pkgutil.iter_modules(hmc_mcp.__path__):
-        module = importlib.import_module(f"hmc_mcp.{info.name}")
+    for info in pkgutil.walk_packages(hmc_mcp.__path__, prefix="hmc_mcp."):
+        module = importlib.import_module(info.name)
+        label = info.name.removeprefix("hmc_mcp.")
         for name in _OUTBOUND_NAMES:
             if callable(getattr(module, name, None)):
-                monkeypatch.setattr(module, name, _forbidden(f"{info.name}.{name}"))
+                monkeypatch.setattr(module, name, _forbidden(f"{label}.{name}"))
                 sealed += 1
     assert sealed > 10, f"only {sealed} outbound bindings sealed; the sweep missed"
 

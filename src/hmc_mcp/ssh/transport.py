@@ -7,8 +7,8 @@ from typing import Any
 
 import asyncssh
 
-from .config import HMCConfig
-from .errors import HMCError
+from ..config import HMCConfig
+from ..errors import HMCError
 
 
 class HMCCLIError(HMCError):

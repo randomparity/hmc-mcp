@@ -16,7 +16,7 @@ from .app import (
     memory_pools_app,
 )
 
-from ..ssh_memory import list_memory_pools, remove_memory_pool
+from ..ssh.memory import list_memory_pools, remove_memory_pool
 
 
 @memory_pools_app.command("list")

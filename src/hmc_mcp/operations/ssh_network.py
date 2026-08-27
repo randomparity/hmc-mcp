@@ -18,7 +18,7 @@ from hmc_mcp.operations.pcie_validation import (
     require_command_safe_text,
     validate_capacity_percent,
 )
-from hmc_mcp.ssh_affinity import (
+from hmc_mcp.ssh.affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
     MinimumAffinityPolicy,
@@ -34,7 +34,7 @@ from hmc_mcp.ssh_affinity import (
     validate_minimum_affinity_policy,
     validate_memopt_scenario,
 )
-from hmc_mcp.ssh_network import (
+from hmc_mcp.ssh.network import (
     add_vnic_backing,
     list_fc_ports as _list_fc_ports,
     list_sea_adapters as _list_sea_adapters,
@@ -47,7 +47,7 @@ from hmc_mcp.ssh_network import (
     read_vios_identity,
     remove_vnic_slot,
 )
-from hmc_mcp.ssh_selectors import resolve_ssh_names
+from hmc_mcp.ssh.selectors import resolve_ssh_names
 
 
 @dataclass(frozen=True)

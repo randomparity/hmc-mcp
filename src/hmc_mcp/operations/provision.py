@@ -27,15 +27,15 @@ from .lpar import (
     validate_affinity_request,
 )
 from .ssh_network import set_minimum_affinity_policy
-from ..ssh import HMCCLIError
-from ..ssh_selectors import resolve_ssh_names
+from ..ssh.transport import HMCCLIError
+from ..ssh.selectors import resolve_ssh_names
 from .storage import create_virtual_disk, map_storage
-from ..ssh_affinity import (
+from ..ssh.affinity import (
     MinimumAffinityPolicy,
     require_minimum_affinity_policy_capability,
     validate_minimum_affinity_policy,
 )
-from ..ssh_lpar import validate_caller_token
+from ..ssh.lpar import validate_caller_token
 from .assignments import (
     LparPcieAssignments,
     _apply_validated_lpar_pcie_assignments,

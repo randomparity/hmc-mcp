@@ -134,7 +134,7 @@ def test_run_command_passes_cmd_through(monkeypatch):
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock("lpar1  running\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_run_command("lssyscfg -r lpar -m server1")
 
     called_cmd = conn_mock.run.call_args[0][0]

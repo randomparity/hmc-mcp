@@ -7,9 +7,9 @@ import io
 import shlex
 from typing import Any, Literal, get_args
 
-from .config import HMCConfig
-from .ssh import HMCCLIError, run_hmc_command
-from .ssh_commands import (
+from ..config import HMCConfig
+from .transport import HMCCLIError, run_hmc_command
+from .commands import (
     _parse_lshwres_output,
     build_attribute_record,
     build_filter,

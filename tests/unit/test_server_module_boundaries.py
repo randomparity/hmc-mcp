@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hmc_mcp.server as server
-import hmc_mcp.ssh as ssh
+import hmc_mcp.ssh.transport as ssh
 
 
 def test_domain_handlers_live_in_focused_modules() -> None:

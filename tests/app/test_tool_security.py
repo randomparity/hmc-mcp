@@ -1717,7 +1717,7 @@ def test_restore_vios_scope_and_backup_name_containment_are_independent(monkeypa
     escapes = ["../other/x.tar", "..", "-operation"]
 
     with patch(
-        "hmc_mcp.ssh.asyncssh.connect",
+        "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=AssertionError("reached the SSH layer"),
     ):
         for escape in escapes:

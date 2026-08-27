@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from .client import HMCClient
-from .resource_identity import is_uuid
-from .config import HMCConfig
-from .errors import HMCTransportError
-from .ssh_lpar import _ssh_lpar_name, _ssh_system_name
+from ..client import HMCClient
+from ..resource_identity import is_uuid
+from ..config import HMCConfig
+from ..errors import HMCTransportError
+from .lpar import _ssh_lpar_name, _ssh_system_name
 
 
 async def _system_name_from_rest(hmc: HMCClient, system_uuid: str) -> str:

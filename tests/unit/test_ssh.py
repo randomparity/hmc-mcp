@@ -9,7 +9,7 @@ import pytest
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
-from hmc_mcp.ssh import HMCCLIError, run_hmc_command
+from hmc_mcp.ssh.transport import HMCCLIError, run_hmc_command
 
 from conftest import make_config
 
@@ -40,7 +40,7 @@ async def test_run_hmc_command_password_auth():
     """Password auth path: asyncssh.connect called with password, no client_keys."""
     conn_mock = _make_ssh_mock("lssyscfg output\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock) as mock_connect:
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock) as mock_connect:
         result = await run_hmc_command(make_config(), "lssyscfg -r sys")
 
     mock_connect.assert_called_once()
@@ -57,7 +57,7 @@ async def test_run_hmc_command_key_auth():
     """Key auth path: asyncssh.connect called with client_keys, password=None."""
     conn_mock = _make_ssh_mock("lssyscfg key output\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock) as mock_connect:
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock) as mock_connect:
         result = await run_hmc_command(
             make_config(ssh_key_file="/home/user/.ssh/hmc_key"),
             "lssyscfg -r sys",
@@ -74,7 +74,7 @@ async def test_run_hmc_command_passes_cmd():
     """The exact command string is forwarded to conn.run() with the SSH timeout."""
     conn_mock = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         await run_hmc_command(make_config(), "lshmc -v")
 
     conn_mock.run.assert_called_once_with("lshmc -v", check=True, timeout=300.0)
@@ -86,7 +86,7 @@ async def test_run_hmc_command_command_timeout_raises_hmcclierror():
     conn_mock = _make_ssh_mock()
     conn_mock.run = AsyncMock(side_effect=TimeoutError("timed out"))
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         with pytest.raises(HMCCLIError, match="timed out after 300s") as exc_info:
             await run_hmc_command(make_config(), "lssyscfg -r sys")
 
@@ -97,7 +97,7 @@ async def test_run_hmc_command_command_timeout_raises_hmcclierror():
 async def test_run_hmc_command_connect_timeout_raises_hmcclierror():
     """A connect that never completes surfaces as HMCCLIError, not a hang."""
     with patch(
-        "hmc_mcp.ssh.asyncssh.connect",
+        "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=TimeoutError("timed out"),
     ):
         with pytest.raises(HMCCLIError, match="timed out after 300s"):
@@ -109,7 +109,7 @@ async def test_run_hmc_command_honours_custom_ssh_timeout():
     """conn.run receives the configured ssh_timeout, not the hardcoded default."""
     conn_mock = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         await run_hmc_command(make_config(ssh_timeout=45.0), "lssyscfg -r sys")
 
     conn_mock.run.assert_called_once_with("lssyscfg -r sys", check=True, timeout=45.0)
@@ -136,7 +136,7 @@ async def test_run_hmc_command_nonzero_exit_raises_hmcclierror():
         )
     )
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         with pytest.raises(HMCCLIError, match="HSCL0001 bad config") as exc_info:
             await run_hmc_command(make_config(), "lssyscfg -r sys")
 
@@ -162,7 +162,7 @@ async def test_run_hmc_command_signal_failure_names_signal_and_command():
         )
     )
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         with pytest.raises(HMCCLIError) as exc_info:
             await run_hmc_command(make_config(), "lssyscfg -r sys")
 
@@ -177,7 +177,7 @@ async def test_run_hmc_command_connect_error_raises_hmcclierror():
     """An SSH connection/auth failure surfaces as HMCCLIError, not a raw
     asyncssh error."""
     with patch(
-        "hmc_mcp.ssh.asyncssh.connect",
+        "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=asyncssh.Error("connect", "connection refused"),
     ):
         with pytest.raises(HMCCLIError, match="connection refused"):
@@ -214,7 +214,7 @@ async def test_run_hmc_command_missing_config_fails_actionably():
     Uses _env_file=None so the local .env file (if present) does not supply
     credentials and mask the missing-config condition under test.
     """
-    with patch("hmc_mcp.ssh.asyncssh.connect") as mock_connect:
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect") as mock_connect:
         with pytest.raises(ValueError, match="Missing HMC configuration"):
             await run_hmc_command(HMCConfig(_env_file=None), "lssyscfg -r sys")
     mock_connect.assert_not_called()
@@ -226,7 +226,7 @@ async def test_run_hmc_command_key_auth_skips_password_requirement():
     credential check and the command reaches asyncssh."""
     conn_mock = _make_ssh_mock("lssyscfg key output\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock) as mock_connect:
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock) as mock_connect:
         result = await run_hmc_command(
             HMCConfig(host="hmc.test", user="hscroot", ssh_key_file="/home/user/.ssh/hmc_key"),
             "lssyscfg -r sys",

@@ -8,15 +8,15 @@ from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from .config import HMCConfig
-from .ssh import HMCCLIError, run_hmc_command
-from .ssh_commands import (
+from ..config import HMCConfig
+from .transport import HMCCLIError, run_hmc_command
+from .commands import (
     _parse_lshwres_output,
     build_attribute_record,
     build_filter,
     parse_hmc_delimited_rows,
 )
-from .ssh_profiles import get_proc_compat_modes
+from .profiles import get_proc_compat_modes
 
 _MEMOPT_SELECTOR_SAFETY_CEILING_BYTES = 4096
 _RESOURCE_GROUP_MEMOPT_MINIMUM_HMC = (11, 1, 1110)

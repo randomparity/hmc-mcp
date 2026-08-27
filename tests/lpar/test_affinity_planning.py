@@ -22,8 +22,8 @@ from hmc_mcp.operations.ssh_network import (
     plan_lpar_memopt_scores as plan_lpar_memopt_scores_operation,
     plan_system_memopt_score as plan_system_memopt_score_operation,
 )
-from hmc_mcp.ssh import HMCCLIError
-from hmc_mcp.ssh_affinity import (
+from hmc_mcp.ssh.transport import HMCCLIError
+from hmc_mcp.ssh.affinity import (
     MemoptLparSelector,
     get_system_memopt_score,
     plan_lpar_memopt_scores,
@@ -342,7 +342,7 @@ def test_score_operations_use_exact_unselected_commands(
 ):
     connection = _connection(stdout)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
         asyncio.run(operation(_config(), SYSTEM))
 
     connection.run.assert_called_once_with(expected_command, check=True, timeout=300.0)
@@ -373,7 +373,7 @@ def test_planning_selectors_use_exact_flags(
 ):
     connection = _connection(stdout)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
         asyncio.run(
             operation(_config(), SYSTEM, prioritized=prioritized, excluded=excluded)
         )
@@ -388,7 +388,7 @@ def test_planning_selectors_use_exact_flags(
 def test_planning_combines_disjoint_selectors_in_stable_order():
     connection = _connection(LPAR_ROWS)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
         asyncio.run(
             plan_lpar_memopt_scores(
                 _config(),
@@ -430,7 +430,7 @@ def test_planning_rejects_incompatible_selectors_before_transport(
 ):
     connection = _connection(LPAR_ROWS)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
         with pytest.raises(ValueError, match=diagnostic):
             asyncio.run(
                 plan_lpar_memopt_scores(
@@ -446,11 +446,11 @@ def test_planning_rejects_incompatible_selectors_before_transport(
 
 def test_current_and_predicted_results_have_distinct_shapes():
     current_connection = _connection(SYSTEM_CURRENT)
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=current_connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=current_connection):
         current = asyncio.run(get_system_memopt_score(_config(), SYSTEM))
 
     predicted_connection = _connection(SYSTEM_PREDICTED)
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=predicted_connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=predicted_connection):
         predicted = asyncio.run(plan_system_memopt_score(_config(), SYSTEM))
 
     assert current == {"curr_sys_score": "84", "firmware_extension": "kept"}
@@ -468,7 +468,7 @@ def test_lpar_prediction_preserves_extensions_and_marks_each_row():
         "predicted_lpar_score=95,firmware_extension=kept"
     )
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
         rows = asyncio.run(plan_lpar_memopt_scores(_config(), SYSTEM))
 
     assert rows == [
@@ -485,7 +485,7 @@ def test_lpar_prediction_preserves_extensions_and_marks_each_row():
 
 def test_empty_lpar_prediction_is_an_empty_list():
     connection = _connection("")
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
         assert asyncio.run(plan_lpar_memopt_scores(_config(), SYSTEM)) == []
 
 
@@ -508,7 +508,7 @@ def test_empty_lpar_prediction_is_an_empty_list():
 def test_score_operations_reject_missing_required_fields(operation, stdout, missing):
     connection = _connection(stdout)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
         with pytest.raises(
             HMCCLIError, match=rf"row 1 is missing required fields: {missing}"
         ):
@@ -547,7 +547,7 @@ def test_score_operations_reject_missing_required_fields(operation, stdout, miss
 def test_score_operations_reject_empty_required_fields(operation, stdout, field):
     connection = _connection(stdout)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
         with pytest.raises(
             HMCCLIError, match=rf"row 1 has empty required fields: {field}"
         ):
@@ -557,7 +557,7 @@ def test_score_operations_reject_empty_required_fields(operation, stdout, field)
 def test_score_operations_preserve_empty_extension_fields():
     connection = _connection("curr_sys_score=84,firmware_extension=")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
         result = asyncio.run(get_system_memopt_score(_config(), SYSTEM))
 
     assert result == {"curr_sys_score": "84", "firmware_extension": ""}
@@ -570,7 +570,7 @@ def test_score_operations_preserve_empty_extension_fields():
 def test_system_score_operations_require_exactly_one_row(operation, stdout, count):
     connection = _connection(stdout)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
         with pytest.raises(
             HMCCLIError, match=rf"returned {count} rows; expected exactly 1"
         ):
@@ -590,7 +590,7 @@ def test_prediction_failures_retain_command_and_diagnostic_without_fallback(diag
     connection = _connection()
     connection.run = AsyncMock(side_effect=_process_error(diagnostic))
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
         with pytest.raises(HMCCLIError) as captured:
             asyncio.run(plan_system_memopt_score(_config(), SYSTEM))
 

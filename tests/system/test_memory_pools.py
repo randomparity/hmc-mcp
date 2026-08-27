@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from hmc_mcp.server import hmc_list_memory_pools, hmc_remove_memory_pool
-from hmc_mcp.ssh import HMCCLIError
+from hmc_mcp.ssh.transport import HMCCLIError
 
 from conftest import mock_uuid_resolution
 
@@ -55,7 +55,7 @@ def test_list_memory_pools_runs_correct_command(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock(_POOL_OUTPUT_WITH_LPARS)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_memory_pools(SYSTEM_UUID)
 
     conn_mock.run.assert_called_once_with(
@@ -71,7 +71,7 @@ def test_list_memory_pools_returns_parsed_dicts(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("pool_name=Pool1,size=8192,curr_lpar_names=\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_memory_pools(SYSTEM_UUID)
 
     assert result[0]["pool_name"] == "Pool1"
@@ -84,7 +84,7 @@ def test_list_memory_pools_empty_output(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_memory_pools(SYSTEM_UUID)
 
     assert result == []
@@ -112,7 +112,7 @@ def test_remove_memory_pool_blocks_when_lpars_assigned(monkeypatch, mock_hmc):
     conn_mock.__aenter__ = AsyncMock(return_value=conn_mock)
     conn_mock.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         with pytest.raises(HMCCLIError) as exc_info:
             hmc_remove_memory_pool(SYSTEM_UUID, "SharedMemPool1")
 
@@ -142,7 +142,7 @@ def test_remove_memory_pool_proceeds_when_no_lpars(monkeypatch, mock_hmc):
     conn_mock.__aenter__ = AsyncMock(return_value=conn_mock)
     conn_mock.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_remove_memory_pool(SYSTEM_UUID, "SharedMemPool1")
 
     assert conn_mock.run.call_count == 2
@@ -167,7 +167,7 @@ def test_remove_memory_pool_unknown_pool_raises(monkeypatch, mock_hmc):
     conn_mock.__aenter__ = AsyncMock(return_value=conn_mock)
     conn_mock.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         with pytest.raises(HMCCLIError) as exc_info:
             hmc_remove_memory_pool(SYSTEM_UUID, "MissingPool")
 

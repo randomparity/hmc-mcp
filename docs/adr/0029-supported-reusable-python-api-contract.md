@@ -191,7 +191,7 @@ names are internal everywhere and are never inventoried.
     The inventory keys on the module `api.py` imports a name from, not on the module that
     defines it; those two agree here because the facade was changed to import it from this
     module. They do not always agree — `MemoptLparSelector` and `MemoptResourceGroupSelector`
-    are defined in `ssh_affinity` and inventoried under `operations.ssh_network`, which is where
+    are defined in `ssh/affinity.py` and inventoried under `operations.ssh_network`, which is where
     the facade takes them from.
 - `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
@@ -250,9 +250,9 @@ names are internal everywhere and are never inventoried.
     `LparSnapshot`, selected by the Decision's transitive type clause rather than by appearing
     in an operation's signature. `SnapshotInspection` reaches none of them: its own fields are
     strings, booleans, and opaque mappings.
-- `ssh` — exports: `HMCCLIError`.
-- `ssh_affinity` — exports: `MinimumAffinityPolicy`.
-- `ssh_network` — exports: `SriovMode`.
+- `ssh.affinity` — exports: `MinimumAffinityPolicy`.
+- `ssh.network` — exports: `SriovMode`.
+- `ssh.transport` — exports: `HMCCLIError`.
 
 <!-- ADR-0029-INVENTORY:END -->
 

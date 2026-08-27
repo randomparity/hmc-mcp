@@ -5,9 +5,9 @@ from __future__ import annotations
 import shlex
 from typing import Any
 
-from .config import HMCConfig
-from .ssh import HMCCLIError, run_hmc_command
-from .ssh_commands import _parse_lshwres_output, _validated_value
+from ..config import HMCConfig
+from .transport import HMCCLIError, run_hmc_command
+from .commands import _parse_lshwres_output, _validated_value
 
 async def list_memory_pools(
     config: HMCConfig,

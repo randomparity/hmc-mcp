@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 import shlex
 
-from .config import HMCConfig
-from .ssh import HMCCLIError, run_hmc_command
+from ..config import HMCConfig
+from .transport import HMCCLIError, run_hmc_command
 
 _IPV4_OCTET = r"(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])"
 _IPV4_PATTERN = re.compile(rf"^{_IPV4_OCTET}(\.{_IPV4_OCTET}){{3}}$")

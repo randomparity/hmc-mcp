@@ -21,7 +21,7 @@ from hmc_mcp.operations import provision as operations_provision
 from hmc_mcp.server_tools import lpars as server_lpars
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.lpar import power_lpar
-from hmc_mcp.ssh import HMCCLIError
+from hmc_mcp.ssh.transport import HMCCLIError
 
 LPAR_UUID = "11111111-1111-1111-1111-111111111111"
 SYSTEM_UUID = "22222222-2222-2222-2222-222222222222"
@@ -101,7 +101,7 @@ async def test_disabled_guard_opens_no_ssh_connection_and_reads_no_ownership() -
     hmc = _hmc(authorize=False)
     connect = AsyncMock(side_effect=AssertionError("opened an SSH connection"))
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", new=connect):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", new=connect):
         result = await power_lpar(
             hmc,
             SYSTEM_UUID,

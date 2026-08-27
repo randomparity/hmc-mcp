@@ -6,10 +6,10 @@ import csv
 import re
 import shlex
 
-from .config import HMCConfig
-from .ssh import HMCCLIError, run_hmc_command
-from .ssh_commands import build_attribute_record, build_filter
-from .ssh_lpar import _DESCRIPTION_TARGET_UNSAFE, validate_lpar_description
+from ..config import HMCConfig
+from .transport import HMCCLIError, run_hmc_command
+from .commands import build_attribute_record, build_filter
+from .lpar import _DESCRIPTION_TARGET_UNSAFE, validate_lpar_description
 
 async def get_lpar_description(
     config: HMCConfig,

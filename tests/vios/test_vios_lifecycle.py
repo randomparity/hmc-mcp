@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import patch
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.ssh_install import (
+from hmc_mcp.ssh.install import (
     INSTALLIOS_PID_PREFIX,
     build_installios_command,
 )
@@ -148,7 +148,7 @@ def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
         submitted["cmd"] = cmd
         return f"{INSTALLIOS_PID_PREFIX}4242\n"
 
-    with patch("hmc_mcp.ssh_install.run_hmc_command", new=fake_run_hmc_command):
+    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fake_run_hmc_command):
         result = hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)
 
     assert result["partition"] == "vios1"
@@ -220,6 +220,6 @@ def test_install_vios_ssh_failure_surfaces_as_cli_error(monkeypatch, mock_hmc):
     async def fail(config, cmd):
         raise HMCError("SSH command timed out after 30s")
 
-    with patch("hmc_mcp.ssh_install.run_hmc_command", new=fail):
+    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fail):
         with pytest.raises(HMCError, match="timed out"):
             hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)

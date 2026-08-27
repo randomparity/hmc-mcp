@@ -49,7 +49,7 @@ def test_get_proc_compat_modes_runs_correct_command(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("default,POWER8,POWER9,POWER10\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_get_proc_compat_modes(SYSTEM_UUID)
 
     expected_cmd = f"lssyscfg -r sys -m {SYSTEM_NAME} -F lpar_proc_compat_modes"
@@ -63,7 +63,7 @@ def test_get_proc_compat_modes_returns_empty_when_none(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_get_proc_compat_modes(SYSTEM_UUID)
 
     assert result == []
@@ -80,7 +80,7 @@ def test_get_lpar_proc_compat_runs_correct_command(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("POWER9,POWER8\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_get_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID)
 
     expected_cmd = (
@@ -97,7 +97,7 @@ def test_get_lpar_proc_compat_handles_empty_output(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_get_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID)
 
     assert result == {"desired": "", "curr": ""}
@@ -114,7 +114,7 @@ def test_set_lpar_proc_compat_runs_correct_command(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_set_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID, "POWER9")
 
     expected_cmd = (

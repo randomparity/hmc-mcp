@@ -59,13 +59,13 @@ from ..documents import (
     StorageKind,
     build_lpar_document,
 )
-from ..ssh_affinity import (
+from ..ssh.affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
     validate_memopt_scenario,
 )
-from ..ssh_lpar import validate_caller_token
-from ..ssh_profiles import (
+from ..ssh.lpar import validate_caller_token
+from ..ssh.profiles import (
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,

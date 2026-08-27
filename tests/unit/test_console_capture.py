@@ -269,7 +269,7 @@ async def test_rmvterm_exit_zero_alone_is_not_proof():
 async def test_failed_rmvterm_still_probes_and_reports_honestly():
     # rmvterm fails (HMCCLIError, as run_hmc_command raises); the probe then
     # finds the sentinel — released stays False instead of being asserted.
-    from hmc_mcp.ssh import HMCCLIError
+    from hmc_mcp.ssh.transport import HMCCLIError
 
     connection = FakeConnection([FakeProcess(BANNER), FakeProcess(CONTENTION)])
     with (

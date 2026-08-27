@@ -11,7 +11,7 @@ from hmc_mcp.operations.pcie import (
     assign_dedicated_pcie_slot,
     unassign_dedicated_pcie_slot,
 )
-from hmc_mcp.ssh_profiles import assign_profile_io_slot, unassign_profile_io_slot
+from hmc_mcp.ssh.profiles import assign_profile_io_slot, unassign_profile_io_slot
 from hmc_mcp.server_tools.profiles import tool_security
 
 
@@ -25,7 +25,7 @@ def _config() -> HMCConfig:
 )
 def test_profile_commands_are_symmetric_and_never_force(monkeypatch, operation, token):
     command = AsyncMock(return_value="ok")
-    monkeypatch.setattr("hmc_mcp.ssh_profiles.run_hmc_command", command)
+    monkeypatch.setattr("hmc_mcp.ssh.profiles.run_hmc_command", command)
 
     assert asyncio.run(operation(_config(), "sys", "lpar", "profile", "123")) == "ok"
     built = command.await_args.args[1]

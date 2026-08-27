@@ -22,8 +22,8 @@ from hmc_mcp.operations.ssh_network import (
     set_minimum_affinity_policy,
 )
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.ssh import HMCCLIError
-from hmc_mcp.ssh_affinity import (
+from hmc_mcp.ssh.transport import HMCCLIError
+from hmc_mcp.ssh.affinity import (
     MinimumAffinityPolicy,
     query_minimum_affinity_policy,
     set_minimum_affinity_policy_cli,
@@ -46,7 +46,7 @@ async def test_policy_query_uses_compatibility_gate_and_exact_projection():
             "min_affinity_score,min_affinity_score_action\n0,none\n",
         ]
     )
-    with patch("hmc_mcp.ssh_affinity.run_hmc_command", runner), patch("hmc_mcp.ssh_profiles.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner), patch("hmc_mcp.ssh.profiles.run_hmc_command", runner):
         result = await query_minimum_affinity_policy(_config(), "system", "lpar one")
 
     assert result.min_affinity_score == 0
@@ -69,7 +69,7 @@ async def test_policy_query_accepts_quoted_compatibility_modes():
             "min_affinity_score,min_affinity_score_action\n0,none\n",
         ]
     )
-    with patch("hmc_mcp.ssh_affinity.run_hmc_command", runner), patch("hmc_mcp.ssh_profiles.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner), patch("hmc_mcp.ssh.profiles.run_hmc_command", runner):
         result = await query_minimum_affinity_policy(_config(), "system", "lpar")
 
     assert result.min_affinity_score == 0
@@ -80,7 +80,7 @@ async def test_policy_query_accepts_quoted_compatibility_modes():
 @pytest.mark.asyncio
 async def test_policy_query_returns_capability_absence_without_policy_command():
     runner = AsyncMock(return_value="default,POWER9,POWER10\n")
-    with patch("hmc_mcp.ssh_affinity.run_hmc_command", runner), patch("hmc_mcp.ssh_profiles.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner), patch("hmc_mcp.ssh.profiles.run_hmc_command", runner):
         result = await query_minimum_affinity_policy(_config(), "system", "lpar")
 
     assert result.min_affinity_score is None
@@ -105,7 +105,7 @@ async def test_policy_query_returns_capability_absence_without_policy_command():
 @pytest.mark.asyncio
 async def test_policy_query_rejects_malformed_output(output):
     runner = AsyncMock(side_effect=["POWER11\n", output])
-    with patch("hmc_mcp.ssh_affinity.run_hmc_command", runner), patch("hmc_mcp.ssh_profiles.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner), patch("hmc_mcp.ssh.profiles.run_hmc_command", runner):
         with pytest.raises(HMCCLIError, match="malformed lssyscfg minimum-affinity"):
             await query_minimum_affinity_policy(_config(), "system", "lpar")
 
@@ -115,7 +115,7 @@ async def test_policy_query_rejects_malformed_output(output):
 async def test_policy_setter_rejects_invalid_score_before_hmc_call(score):
     runner = AsyncMock()
     policy = MinimumAffinityPolicy(score, "warn")
-    with patch("hmc_mcp.ssh_affinity.run_hmc_command", runner), patch("hmc_mcp.ssh_profiles.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner), patch("hmc_mcp.ssh.profiles.run_hmc_command", runner):
         with pytest.raises(ValueError, match="integer from 0 through 100"):
             await set_minimum_affinity_policy_cli(_config(), "system", "lpar", policy)
     runner.assert_not_awaited()
@@ -124,7 +124,7 @@ async def test_policy_setter_rejects_invalid_score_before_hmc_call(score):
 @pytest.mark.asyncio
 async def test_policy_setter_rejects_unsupported_system_before_mutation():
     runner = AsyncMock(return_value="default,POWER10\n")
-    with patch("hmc_mcp.ssh_affinity.run_hmc_command", runner), patch("hmc_mcp.ssh_profiles.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner), patch("hmc_mcp.ssh.profiles.run_hmc_command", runner):
         with pytest.raises(HMCCLIError, match="advertises POWER11"):
             await set_minimum_affinity_policy_cli(
                 _config(), "system", "lpar", MinimumAffinityPolicy(80, "warn")
@@ -136,7 +136,7 @@ async def test_policy_setter_rejects_unsupported_system_before_mutation():
 @pytest.mark.asyncio
 async def test_policy_setter_requires_deliberate_fail_and_quotes_command():
     runner = AsyncMock(side_effect=["POWER11\n", "changed\n"])
-    with patch("hmc_mcp.ssh_affinity.run_hmc_command", runner), patch("hmc_mcp.ssh_profiles.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner), patch("hmc_mcp.ssh.profiles.run_hmc_command", runner):
         result = await set_minimum_affinity_policy_cli(
             _config(), "system one", "lpar one", MinimumAffinityPolicy(90, "fail")
         )

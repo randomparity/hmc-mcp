@@ -934,10 +934,8 @@ src/hmc_mcp/
   cli_commands/  # Typer command groups and shared CLI application state
   affinity_assessment.py     # evidence-first, read-only LPAR NUMA-affinity assessment
   snapshot.py    # version-1 portable LPAR snapshot values and local I/O
-  ssh.py         # transport-only asyncssh session and command execution
-  ssh_*.py       # HMC CLI operations grouped by resource family
-  ssh_commands.py# resource operations implemented with the HMC CLI
-  ssh_selectors.py           # public resource selectors for the HMC SSH commands
+  ssh/            # asyncssh transport plus HMC CLI operations by resource family
+    ssh/*.py       # transport, shared parsing, and resource-specific commands
   console_capture.py         # bounded, non-interactive LPAR console capture (mkvterm)
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)

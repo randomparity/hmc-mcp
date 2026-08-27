@@ -10,7 +10,7 @@ from .._app import (
     run_sync,
 )
 from ..errors import HMCError
-from ..ssh import HMCCLIError
+from ..ssh.transport import HMCCLIError
 from ..client.client_factory import client_from_env
 from ..documents import (
     Keylock,
@@ -49,7 +49,7 @@ from ..operations.assignments import (
     _apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
-from ..ssh_lpar import validate_caller_token
+from ..ssh.lpar import validate_caller_token
 
 tool, register_tools, tool_security = tool_module()
 

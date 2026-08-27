@@ -11,7 +11,7 @@ import re
 from collections.abc import Collection, Sequence
 from typing import Any
 
-from .ssh import HMCCLIError
+from .transport import HMCCLIError
 
 _RECORD_DELIMITERS: dict[str, tuple[str, str]] = {
     ",": ("a comma", "a comma separates one attribute from the next"),

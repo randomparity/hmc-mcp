@@ -8,7 +8,7 @@ from fastmcp import FastMCP
 
 from .._app import run_sync
 from ..config import build_config
-from ..ssh import run_hmc_cli
+from ..ssh.transport import run_hmc_cli
 from ..tool_registry import (
     Authorize,
     ToolSecurity,

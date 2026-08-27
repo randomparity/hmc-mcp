@@ -49,7 +49,7 @@ from ..operations.ssh_network import (
     list_vnics,
     remove_vnic,
 )
-from ..ssh_network import PciClass, SriovMode, list_io_slots
+from ..ssh.network import PciClass, SriovMode, list_io_slots
 
 
 def _confirm_on_stderr(prompt: str) -> bool:

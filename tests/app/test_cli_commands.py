@@ -23,7 +23,12 @@ from unittest.mock import AsyncMock
 from typer.main import get_command
 from typer.testing import CliRunner
 
-from hmc_mcp import cli, ssh_affinity, ssh_commands, ssh_lpar, ssh_network, ssh_profiles
+from hmc_mcp import cli
+from hmc_mcp.ssh import affinity as ssh_affinity
+from hmc_mcp.ssh import commands as ssh_commands
+from hmc_mcp.ssh import lpar as ssh_lpar
+from hmc_mcp.ssh import network as ssh_network
+from hmc_mcp.ssh import profiles as ssh_profiles
 from hmc_mcp.cli_commands import app as cli_app
 from hmc_mcp.cli_commands import lpars as cli_lpars
 from hmc_mcp.cli_commands import network as cli_network

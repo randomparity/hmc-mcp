@@ -24,14 +24,14 @@ from ..operations.ssh_network import (
     list_resource_group_memopt_scores,
     plan_resource_group_memopt_scores,
 )
-from ..ssh_affinity import (
+from ..ssh.affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
     MinimumAffinityPolicy,
     validate_memopt_scenario,
 )
-from ..ssh_lpar import validate_lpar_description
-from ..ssh_profiles import (
+from ..ssh.lpar import validate_lpar_description
+from ..ssh.profiles import (
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,

@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Client
 
-from hmc_mcp.ssh_commands import build_filter
-from hmc_mcp.ssh_lpar import validate_lpar_description
+from hmc_mcp.ssh.commands import build_filter
+from hmc_mcp.ssh.lpar import validate_lpar_description
 
 from .results import entries, resource as get_resource
 

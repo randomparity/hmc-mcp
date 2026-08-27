@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp import ssh_affinity
+from hmc_mcp.ssh import affinity as ssh_affinity
 from hmc_mcp.server import TOOL_SECURITY
 
 

@@ -15,7 +15,7 @@ import pytest
 from hmc_mcp.client import HMCError
 from hmc_mcp.documents import LparResources
 from hmc_mcp.operations.lpar import _system_name
-from hmc_mcp.ssh import HMCCLIError
+from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.server import (
     hmc_create_lpar,
     hmc_dlpar_mem,

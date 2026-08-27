@@ -15,8 +15,8 @@ from ..operations.provision import (
     provision_lpar,
 )
 from ..operations.assignments import LparPcieAssignments
-from ..ssh_affinity import MinimumAffinityPolicy
-from ..ssh_lpar import validate_caller_token
+from ..ssh.affinity import MinimumAffinityPolicy
+from ..ssh.lpar import validate_caller_token
 
 tool, register_tools, tool_security = tool_module()
 

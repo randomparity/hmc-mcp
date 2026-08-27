@@ -20,8 +20,8 @@ from conftest import make_config
 
 from hmc_mcp import api, audit_sink
 from hmc_mcp.operations.install import InstallHandle, install_lpar_os, install_vios
-from hmc_mcp.ssh import HMCCLIError
-from hmc_mcp.ssh_install import INSTALLIOS_PID_PREFIX, build_installios_command
+from hmc_mcp.ssh.transport import HMCCLIError
+from hmc_mcp.ssh.install import INSTALLIOS_PID_PREFIX, build_installios_command
 
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
@@ -70,8 +70,8 @@ class _Ssh:
 @contextmanager
 def _patch_ssh(ssh: _Ssh):
     with (
-        patch("hmc_mcp.ssh_lpar.run_hmc_command", new=ssh),
-        patch("hmc_mcp.ssh_install.run_hmc_command", new=ssh),
+        patch("hmc_mcp.ssh.lpar.run_hmc_command", new=ssh),
+        patch("hmc_mcp.ssh.install.run_hmc_command", new=ssh),
     ):
         yield
 
@@ -211,7 +211,7 @@ async def test_operation_surfaces_a_failed_submission(operation):
     async def fail(config, command):
         raise HMCCLIError(f"SSH command {command!r} failed with exit status 127")
 
-    with patch("hmc_mcp.ssh_install.run_hmc_command", new=fail):
+    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fail):
         with pytest.raises(HMCCLIError, match="exit status 127"):
             await operation(
                 hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST
@@ -333,7 +333,7 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
     async def fail(config, command):
         raise HMCCLIError("SSH command failed with exit status 127")
 
-    with patch("hmc_mcp.ssh_install.run_hmc_command", new=fail):
+    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fail):
         with pytest.raises(HMCCLIError):
             await operation(
                 hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST

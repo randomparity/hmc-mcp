@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..tool_registry import tool_module
 
-from ..ssh_commands import build_filter
+from ..ssh.commands import build_filter
 
 import csv
 import io

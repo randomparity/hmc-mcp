@@ -23,7 +23,7 @@ from fastmcp import FastMCP
 
 from .config import build_config
 from .config import HMCConfig
-from .ssh_selectors import resolve_ssh_names
+from .ssh.selectors import resolve_ssh_names
 
 _T = TypeVar("_T")
 

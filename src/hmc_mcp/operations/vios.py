@@ -10,7 +10,7 @@ from ..config import HMCConfig
 from ..documents import LparResources, build_vios_document
 from ..errors import HMCError
 from ..resource_identity import is_uuid, resolve_system_uuid, resolve_vios_uuid
-from ..ssh import run_hmc_cli
+from ..ssh.transport import run_hmc_cli
 from ..jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
     DEFAULT_JOB_TIMEOUT_SECONDS,

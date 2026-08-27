@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from hmc_mcp.ssh_commands import parse_hmc_delimited_rows
+from hmc_mcp.ssh.commands import parse_hmc_delimited_rows
 
 ROOT = Path(__file__).parents[2]
 FIXTURES = ROOT / "tests" / "fixtures" / "pcie"
@@ -304,7 +304,7 @@ def _canonical_ast(value: object) -> object:
 
 
 def test_sriov_mutation_surface_replaces_legacy_mode_and_never_forces() -> None:
-    source = (ROOT / "src" / "hmc_mcp" / "ssh_network.py").read_text()
+    source = (ROOT / "src" / "hmc_mcp" / "ssh" / "network.py").read_text()
     current = ast.parse(source)
     functions = {
         node.name: node

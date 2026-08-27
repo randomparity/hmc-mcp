@@ -75,7 +75,7 @@ def test_list_vios_backups_runs_supported_command_and_parses_csv(monkeypatch):
     output = 'name,type\r\n"nightly, ""quoted""",viosioconfig\r\nbase,ssp\r\n'
     conn_mock = _make_ssh_mock(output)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_vios_backups(VIOS_UUID)
 
     conn_mock.run.assert_called_once_with(
@@ -94,7 +94,7 @@ def test_list_vios_backups_preserves_embedded_newline_in_quoted_name(monkeypatch
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock('name,type\r\n"night\nly",ssp\r\n')
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_vios_backups(VIOS_UUID)
 
     assert result == [{"name": "night\nly", "type": "ssp"}]
@@ -105,7 +105,7 @@ def test_list_vios_backups_returns_empty_list(monkeypatch):
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_vios_backups(VIOS_UUID)
 
     assert result == []
@@ -133,7 +133,7 @@ def test_list_vios_backups_refuses_malformed_csv(monkeypatch, output):
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock(output)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         with pytest.raises(ValueError):
             hmc_list_vios_backups(VIOS_UUID)
 
@@ -146,7 +146,7 @@ def test_list_vios_backups_resolves_vios_name(monkeypatch):
     monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", _client_factory(hmc))
     conn_mock = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         hmc_list_vios_backups("vios-prod")
 
     hmc.find_vios_by_name.assert_awaited_once_with("vios-prod")
@@ -205,7 +205,7 @@ def test_backup_vios_runs_supported_command(monkeypatch, backup_type):
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock("Backup completed successfully.\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_backup_vios(
             SYSTEM_NAME,
             VIOS_UUID,
@@ -226,7 +226,7 @@ def test_backup_vios_defaults_to_full_vios_type(monkeypatch):
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock("Done.\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         hmc_backup_vios(SYSTEM_NAME, VIOS_UUID, backup_name=BACKUP_NAME)
 
     assert "mkviosbk -t vios" in conn_mock.run.call_args.args[0]
@@ -315,7 +315,7 @@ def test_restore_vios_runs_supported_command(
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock("Restore completed successfully.\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_restore_vios(
             SYSTEM_NAME,
             VIOS_UUID,
@@ -422,7 +422,7 @@ def test_vios_backup_tools_admit_ordinary_catalog_names(
     """Validation is narrow enough to retain ordinary catalog names for both tools."""
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock("completed\n")
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         tool(*arguments, backup_name=backup_name, **keywords)
 
     assert f"-f {backup_name}" in conn_mock.run.call_args.args[0]
@@ -434,7 +434,7 @@ def test_restore_vios_returns_cli_output(monkeypatch):
     raw_output = "Operation: restore\nStatus: OK\nFile: mybackup\n"
     conn_mock = _make_ssh_mock(raw_output)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_restore_vios(
             SYSTEM_NAME,
             VIOS_UUID,
@@ -460,7 +460,7 @@ def test_backup_vios_preserves_a_direct_system_name_and_scopes_vios_name(monkeyp
     monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", _client_factory(hmc))
     conn_mock = _make_ssh_mock("completed\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         hmc_backup_vios(SYSTEM_NAME, "vios-prod", backup_name=BACKUP_NAME)
 
     hmc.find_vios_by_name.assert_awaited_once_with("vios-prod", system_uuid=SYSTEM_UUID)
@@ -494,7 +494,7 @@ def test_backup_vios_uses_mtms_for_a_system_uuid_even_when_names_collide(
     monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", _client_factory(hmc))
     conn_mock = _make_ssh_mock("completed\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         hmc_backup_vios(SYSTEM_UUID, "vios-prod", backup_name=BACKUP_NAME)
 
     hmc.find_vios_by_name.assert_awaited_once_with("vios-prod", system_uuid=SYSTEM_UUID)
@@ -523,7 +523,7 @@ def test_backup_vios_refuses_uuid_without_complete_mtms_before_ssh(
     monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", _client_factory(hmc))
 
     with patch(
-        "hmc_mcp.ssh.asyncssh.connect",
+        "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=AssertionError("reached the SSH layer"),
     ):
         with pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
@@ -570,7 +570,7 @@ def test_backup_vios_refuses_missing_or_blank_nested_mtms_component_before_ssh(
     monkeypatch.setattr("hmc_mcp.operations.vios.HMCClient", _client_factory(hmc))
 
     with patch(
-        "hmc_mcp.ssh.asyncssh.connect",
+        "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=AssertionError("reached the SSH layer"),
     ):
         with pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):

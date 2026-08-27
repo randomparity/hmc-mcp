@@ -17,9 +17,9 @@ from ..operations.pcie import (
     list_sriov_logical_ports,
     list_sriov_physical_ports,
 )
-from ..ssh_memory import list_memory_pools, remove_memory_pool
-from ..ssh_network import PciClass, list_io_slots
-from ..ssh_profiles import get_proc_compat_modes
+from ..ssh.memory import list_memory_pools, remove_memory_pool
+from ..ssh.network import PciClass, list_io_slots
+from ..ssh.profiles import get_proc_compat_modes
 
 
 tool, register_tools, tool_security = tool_module()
