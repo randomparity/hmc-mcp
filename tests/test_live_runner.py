@@ -474,6 +474,267 @@ def test_dispatch_guard_refuses_a_tool_name_it_cannot_read():
         _dispatched_tool_names(source)
 
 
+def test_every_live_workflow_dispatch_has_exactly_client_and_tool_arguments():
+    """A duplicated client argument turns a live stage into an immediate TypeError."""
+    invalid: list[str] = []
+    for module in (inventory, lifecycle, vmedia):
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "call":
+                if len(node.args) != 2:
+                    invalid.append(f"{Path(module.__file__).name}:{node.lineno}")
+
+    assert invalid == []
+
+
+def _configure_vmedia_context(state, values):
+    for name, value in values.items():
+        setattr(state.context, name, value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("workflow", "context", "expected_tools"),
+    [
+        (
+            runner.vmedia_bootstrap_and_create_repo,
+            {},
+            [
+                "hmc_list_vios",
+                "hmc_get_lpar",
+                "hmc_list_volume_groups",
+                "hmc_create_media_repository",
+                "hmc_get_media_repository",
+            ],
+        ),
+        (
+            runner.vmedia_short_repo_lifecycle,
+            {"vmedia_repo_created": True, "vios_uuid": "vios", "vg_uuid": "vg"},
+            [
+                "hmc_delete_media_repository",
+                "hmc_create_media_repository",
+                "hmc_get_media_repository",
+                "hmc_list_optical_media",
+                "hmc_delete_media_repository",
+                "hmc_get_media_repository",
+                "hmc_create_media_repository",
+            ],
+        ),
+        (
+            runner.vmedia_upload_iso,
+            {"vmedia_repo_created": True, "vios_uuid": "vios", "vg_uuid": "vg"},
+            [
+                "hmc_upload_iso",
+                "hmc_list_optical_media",
+                "hmc_upload_iso",
+                "hmc_list_optical_media",
+                "hmc_delete_optical_media",
+                "hmc_list_optical_media",
+                "hmc_upload_iso",
+            ],
+        ),
+        (
+            runner.vmedia_mount_unmount,
+            {
+                "vmedia_iso_name": "test.iso",
+                "vios_uuid": "vios",
+                "vg_uuid": "vg",
+            },
+            [
+                "hmc_mount_optical_media",
+                "hmc_list_optical_mappings",
+                "hmc_delete_optical_media",
+                "hmc_unmount_optical_media",
+                "hmc_list_optical_mappings",
+                "hmc_delete_optical_media",
+                "hmc_list_optical_media",
+            ],
+        ),
+        (
+            runner.vmedia_boot_verification,
+            {
+                "vmedia_repo_created": True,
+                "vios_uuid": "vios",
+                "vg_uuid": "vg",
+                "lp3_uuid": "lp3",
+            },
+            [
+                "hmc_upload_iso",
+                "hmc_power_off_lpar",
+                "hmc_mount_optical_media",
+                "hmc_read_lpar_boot_order",
+                "hmc_set_lpar_boot_order",
+                "hmc_power_on_lpar",
+                "hmc_lpar_summary",
+                "hmc_power_off_lpar",
+                "hmc_unmount_optical_media",
+                "hmc_set_lpar_boot_order",
+                "hmc_read_lpar_boot_order",
+            ],
+        ),
+        (
+            runner.vmedia_mapping_crossvalidation,
+            {"vios_uuid": "vios"},
+            [
+                "hmc_list_storage_mappings",
+                "hmc_list_optical_mappings",
+                "hmc_list_storage_mappings",
+                "hmc_list_optical_mappings",
+            ],
+        ),
+        (
+            runner.vmedia_teardown,
+            {
+                "vmedia_repo_created": True,
+                "vios_uuid": "vios",
+                "vg_uuid": "vg",
+                "lp3_uuid": "lp3",
+                "vmedia_orig_boot_order": ["disk"],
+            },
+            [
+                "hmc_set_lpar_boot_order",
+                "hmc_list_optical_mappings",
+                "hmc_unmount_optical_media",
+                "hmc_list_optical_media",
+                "hmc_delete_optical_media",
+                "hmc_delete_media_repository",
+                "hmc_get_media_repository",
+                "hmc_list_volume_groups",
+            ],
+        ),
+    ],
+)
+async def test_vmedia_workflows_execute_their_behavioral_contracts(
+    monkeypatch, workflow, context, expected_tools
+):
+    calls = []
+    counts = {}
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        counts[tool] = counts.get(tool, 0) + 1
+        if tool == "hmc_list_vios":
+            return "PASS", [{"UUID": "vios", "Resource": {"PartitionID": "2"}}]
+        if tool == "hmc_get_lpar":
+            return "PASS", {"uuid": "lp3"}
+        if tool == "hmc_list_volume_groups":
+            return "PASS", [{"UUID": "vg", "Resource": {"FreeSpace": "8000"}}]
+        if tool == "hmc_get_media_repository":
+            return "PASS", {"UUID": "repo"}
+        if tool == "hmc_list_optical_media":
+            return "PASS", [{"MediaName": "test.iso"}]
+        if tool == "hmc_upload_iso":
+            status = "existing" if counts[tool] == 2 else "created"
+            return "PASS", {"status": status, "media_name": "test.iso"}
+        if tool == "hmc_mount_optical_media":
+            return "PASS", {"mapping_uuid": "mapping"}
+        if (
+            tool == "hmc_delete_optical_media"
+            and workflow is runner.vmedia_mount_unmount
+            and counts[tool] == 1
+        ):
+            return "FAIL", "media is mapped"
+        if tool == "hmc_read_lpar_boot_order":
+            return "PASS", {"pending_boot_string": "disk,network"}
+        if tool == "hmc_list_optical_mappings" and workflow is runner.vmedia_teardown:
+            return "PASS", [{"UUID": "mapping"}]
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    monkeypatch.setattr(vmedia.Path, "is_file", lambda _path: True)
+    monkeypatch.setattr(vmedia, "_serve_iso_over_http", lambda: None)
+    state = runner.RunState()
+    _configure_vmedia_context(state, context)
+
+    await workflow(None, state)
+
+    assert [tool for tool, _ in calls] == expected_tools
+    assert not [result for result in state.results if result["status"] == "FAIL"]
+
+
+def test_vmedia_behavioral_inventory_covers_every_registered_stage():
+    covered = {
+        runner.vmedia_bootstrap_and_create_repo,
+        runner.vmedia_short_repo_lifecycle,
+        runner.vmedia_upload_iso,
+        runner.vmedia_mount_unmount,
+        runner.vmedia_boot_verification,
+        runner.vmedia_mapping_crossvalidation,
+        runner.vmedia_teardown,
+    }
+
+    assert {runner.SUBTASKS[number] for number in runner.SUBTASK_GROUPS["vmedia"]} == covered
+
+
+@pytest.mark.asyncio
+async def test_vmedia_boot_failure_still_restores_boot_order_and_unmounts(monkeypatch):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_upload_iso":
+            return "PASS", {"media_name": "test.iso"}
+        if tool == "hmc_mount_optical_media":
+            return "PASS", {"mapping_uuid": "mapping"}
+        if tool == "hmc_read_lpar_boot_order":
+            return "PASS", {"pending_boot_string": "disk,network"}
+        if tool == "hmc_power_on_lpar":
+            return "FAIL", "boot job failed"
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    monkeypatch.setattr(vmedia, "_serve_iso_over_http", lambda: None)
+    state = runner.RunState()
+    _configure_vmedia_context(
+        state,
+        {
+            "vmedia_repo_created": True,
+            "vios_uuid": "vios",
+            "vg_uuid": "vg",
+            "lp3_uuid": "lp3",
+        },
+    )
+
+    await runner.vmedia_boot_verification(None, state)
+
+    tools = [tool for tool, _ in calls]
+    assert "hmc_unmount_optical_media" in tools
+    assert tools.count("hmc_set_lpar_boot_order") == 2
+    assert state.context.vmedia_mapping_uuid is None
+    assert state.context.vmedia_orig_boot_order == []
+
+
+@pytest.mark.asyncio
+async def test_vmedia_teardown_continues_after_orphan_unmount_failure(monkeypatch):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_list_optical_mappings":
+            return "PASS", [{"UUID": "mapping"}]
+        if tool == "hmc_unmount_optical_media":
+            return "FAIL", "unmount failed"
+        if tool == "hmc_list_optical_media":
+            return "PASS", [{"MediaName": "test.iso"}]
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    _configure_vmedia_context(
+        state,
+        {"vmedia_repo_created": True, "vios_uuid": "vios", "vg_uuid": "vg"},
+    )
+
+    await runner.vmedia_teardown(None, state)
+
+    tools = [tool for tool, _ in calls]
+    assert "hmc_delete_optical_media" in tools
+    assert "hmc_delete_media_repository" in tools
+    assert "hmc_list_volume_groups" in tools
+
+
 @pytest.mark.asyncio
 async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
     _isolate_runner(monkeypatch)
