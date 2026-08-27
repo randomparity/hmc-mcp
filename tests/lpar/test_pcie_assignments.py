@@ -10,6 +10,7 @@ from hmc_mcp.operations.assignments import (
     LparPcieAssignments,
     SriovLogicalPortAssignment,
     VnicAssignment,
+    _analyze_assignment_requests,
     _apply_validated_lpar_pcie_assignments,
     apply_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
@@ -28,6 +29,16 @@ def _vnic() -> VnicAssignment:
     return VnicAssignment(
         VnicBackingSelector("vios-a", "100", "1", "1", Decimal("3")), 42
     )
+
+
+def test_request_analysis_returns_capacity_and_unique_vios_requirements() -> None:
+    vnic = _vnic()
+    capacities, vios_identities = _analyze_assignment_requests(
+        LparPcieAssignments(sriov=(_sriov(),), vnics=(vnic,))
+    )
+
+    assert capacities == {("1", "1"): Decimal("5")}
+    assert vios_identities == {("vios-a", "100")}
 
 
 @pytest.mark.asyncio

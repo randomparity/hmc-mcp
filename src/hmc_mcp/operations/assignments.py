@@ -150,12 +150,10 @@ async def _existing_capacity(
     )
 
 
-async def prevalidate_lpar_pcie_assignments(
-    hmc: HMCClient,
-    system: str,
+def _analyze_assignment_requests(
     assignments: LparPcieAssignments,
-) -> None:
-    """Validate the complete collection without reserving or mutating resources."""
+) -> tuple[dict[tuple[str, str], Decimal], set[tuple[str, str]]]:
+    """Validate request structure and return its inventory requirements."""
     if assignments.dedicated:
         for item in assignments.dedicated:
             require_command_safe_text(item.profile_name, "profile_name")
@@ -181,7 +179,8 @@ async def prevalidate_lpar_pcie_assignments(
             requested_capacity.get((adapter, physical), Decimal()) + capacity
         )
 
-    vnic_identities: set[tuple[str, str, str, str, Decimal, int]] = set()
+    vnic_requests: set[tuple[str, str, str, str, Decimal, int]] = set()
+    vios_identities: set[tuple[str, str]] = set()
     for item in assignments.vnics:
         backing = item.backing
         adapter = require_command_safe_text(backing.adapter_id, "adapter_id")
@@ -199,12 +198,22 @@ async def prevalidate_lpar_pcie_assignments(
             capacity,
             item.port_vlan_id,
         )
-        if identity in vnic_identities:
+        if identity in vnic_requests:
             raise ValueError("duplicate vNIC assignment")
-        vnic_identities.add(identity)
+        vnic_requests.add(identity)
+        vios_identities.add((backing.vios_name, backing.vios_lpar_id))
         requested_capacity[adapter, physical] = (
             requested_capacity.get((adapter, physical), Decimal()) + capacity
         )
+    return requested_capacity, vios_identities
+
+
+async def _validate_sriov_inventory(
+    hmc: HMCClient,
+    system: str,
+    requested_capacity: dict[tuple[str, str], Decimal],
+) -> None:
+    """Validate adapter, port, logical-port, and capacity inventory."""
 
     for adapter, physical in requested_capacity:
         adapters = await list_sriov_adapters(hmc, system, adapter)
@@ -232,11 +241,13 @@ async def prevalidate_lpar_pcie_assignments(
                 f"capacity exhausted on {adapter}/{physical}: {used}% used and "
                 f"{requested_capacity[adapter, physical]}% requested"
             )
-    checked_vios: set[tuple[str, str]] = set()
-    for item in assignments.vnics:
-        identity = item.backing.vios_name, item.backing.vios_lpar_id
-        if identity in checked_vios:
-            continue
+
+
+async def _validate_vios_inventory(
+    hmc: HMCClient, system: str, identities: set[tuple[str, str]]
+) -> None:
+    """Validate each unique VIOS name and partition-ID pair."""
+    for identity in identities:
         system_name = (await list_sriov_adapters(hmc, system)).system
         observed = await read_vios_identity(hmc.config, system_name, identity[0])
         if observed != {
@@ -247,7 +258,17 @@ async def prevalidate_lpar_pcie_assignments(
             raise ValueError(
                 "selected VIOS name, ID, or partition type does not match inventory"
             )
-        checked_vios.add(identity)
+
+
+async def prevalidate_lpar_pcie_assignments(
+    hmc: HMCClient,
+    system: str,
+    assignments: LparPcieAssignments,
+) -> None:
+    """Validate the complete collection without reserving or mutating resources."""
+    requested_capacity, vios_identities = _analyze_assignment_requests(assignments)
+    await _validate_sriov_inventory(hmc, system, requested_capacity)
+    await _validate_vios_inventory(hmc, system, vios_identities)
 
 
 async def apply_lpar_pcie_assignments(
