@@ -295,8 +295,8 @@ async def install_lpar_os(
 
 async def install_vios(
     hmc: HMCClient,
-    vios_name_or_uuid: str,
     system_name_or_uuid: str,
+    vios_name_or_uuid: str,
     *,
     install_source: str,
     client_ip: str,
@@ -323,9 +323,9 @@ async def install_vios(
     Args:
         hmc: Connected client; its configuration also carries the SSH
             credentials the CLI bridge submits with.
-        vios_name_or_uuid: Powered-off VIOS partition name or UUID.
         system_name_or_uuid: Managed-system name or UUID hosting the VIOS;
             ``installios -s`` needs it explicitly.
+        vios_name_or_uuid: Powered-off VIOS partition name or UUID.
         install_source: Install-image source for ``installios -d``.
         client_ip: IPv4 address assigned to the VIOS during installation
             (``-i``).

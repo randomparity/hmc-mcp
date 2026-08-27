@@ -177,8 +177,8 @@ def hmc_install_vios(
         async with client_from_env(profile) as hmc:
             return await install_vios(
                 hmc,
-                vios_name_or_uuid,
                 system_name_or_uuid,
+                vios_name_or_uuid,
                 install_source=install_source,
                 client_ip=vios_ip,
                 subnet_mask=nim_subnetmask,

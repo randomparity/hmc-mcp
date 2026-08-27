@@ -1760,9 +1760,16 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             if name in {"system_name_or_uuid", "lpar_name_or_uuid"}
         ]
         assert selector_names == ["system_name_or_uuid", "lpar_name_or_uuid"]
+    vios_install_parameters = inspect.signature(api.install_vios).parameters
+    assert [
+        name
+        for name in vios_install_parameters
+        if name in {"system_name_or_uuid", "vios_name_or_uuid"}
+    ] == ["system_name_or_uuid", "vios_name_or_uuid"]
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved when capture_lpar_snapshot stopped accepting a config already owned by
-    # its HMCClient, recomputed over LPAR operations' standardized selector order,
+    # Moved when install_vios adopted system-before-partition selector order,
+    # recomputed over capture_lpar_snapshot dropping a config already owned by
+    # its HMCClient, LPAR operations' standardized selector order,
     # keyword-only job polling controls, and the SSH-backed operations'
     # #468: `InstallHandle` replaces `dict[str, Any]` on both install
     # return annotations and contributes its own five-key entry. Recomputed over
@@ -1770,7 +1777,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "1e69deebf0b87a87f139aa232acbb8309c2b524d87fb2c9dd81ef55934a3f31b"  # pragma: allowlist secret
+    expected_digest = "4d636f643b1566cbb1a0e408812f57c985486d028a9dcf36f428ed29fb530237"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

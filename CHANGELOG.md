@@ -354,6 +354,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: `install_vios` now places `system_name_or_uuid` before `vios_name_or_uuid`,
+  matching `install_lpar_os` and the other system-scoped partition operations. This moves the
+  frozen public signature digest.
 - Changed: `capture_lpar_snapshot` now reads the SSH configuration from its `HMCClient`
   instead of requiring callers to pass the same client's configuration separately. This removes
   the redundant `config` parameter and moves the frozen public signature digest.

@@ -37,7 +37,7 @@ _REQUEST = {
 
 def _operation_args(operation, target: str, system: str) -> tuple[str, str]:
     """Return each operation's public selector order."""
-    return (system, target) if operation is install_lpar_os else (target, system)
+    return system, target
 
 
 def _hmc(**resolutions) -> AsyncMock:
