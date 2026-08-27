@@ -22,7 +22,7 @@ from hmc_mcp.operations_ssh_network import (
     plan_system_memopt_score as plan_system_memopt_score_operation,
 )
 from hmc_mcp.ssh import HMCCLIError
-from hmc_mcp.ssh_commands import (
+from hmc_mcp.ssh_affinity import (
     MemoptLparSelector,
     get_system_memopt_score,
     plan_lpar_memopt_scores,

@@ -23,17 +23,19 @@ from .operations_ssh_network import (
     list_resource_group_memopt_scores,
     plan_resource_group_memopt_scores,
 )
-from .ssh_commands import (
+from .ssh_affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
     MinimumAffinityPolicy,
+    validate_memopt_scenario,
+)
+from .ssh_lpar import validate_lpar_description
+from .ssh_profiles import (
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,
     set_lpar_msp,
     set_lpar_proc_compat,
-    validate_lpar_description,
-    validate_memopt_scenario,
 )
 from .operations_lpar import set_lpar_ownership_description
 from typing import Literal

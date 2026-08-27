@@ -30,12 +30,12 @@ from .operations_ssh_network import set_minimum_affinity_policy
 from .ssh import HMCCLIError
 from .ssh_selectors import resolve_ssh_names
 from .operations_storage import create_virtual_disk, map_storage
-from .ssh_commands import (
+from .ssh_affinity import (
     MinimumAffinityPolicy,
     require_minimum_affinity_policy_capability,
-    validate_caller_token,
     validate_minimum_affinity_policy,
 )
+from .ssh_lpar import validate_caller_token
 from .operations_assignments import (
     LparPcieAssignments,
     _apply_validated_lpar_pcie_assignments,

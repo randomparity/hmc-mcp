@@ -155,7 +155,7 @@ from hmc_mcp.operations_ssh_network import (
     plan_resource_group_memopt_scores,
     remove_vnic,
 )
-from hmc_mcp.ssh_commands import MinimumAffinityPolicy
+from hmc_mcp.ssh_affinity import MinimumAffinityPolicy
 from .operations_storage import (
     create_logical_unit,
     create_media_repository,
@@ -185,7 +185,7 @@ from hmc_mcp.operations_templates import (
 )
 from hmc_mcp.operations_vios import power_vios
 from hmc_mcp.ssh import HMCCLIError
-from hmc_mcp.ssh_commands import SriovMode
+from hmc_mcp.ssh_network import SriovMode
 from hmc_mcp.console_capture import (
     ConsoleCapture,
     ConsoleHeldError,

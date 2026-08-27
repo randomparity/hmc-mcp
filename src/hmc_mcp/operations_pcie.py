@@ -13,7 +13,7 @@ from hmc_mcp.lpar_ownership import (
     authorize_lpar_mutation,
     resolve_lpar_ownership_names,
 )
-from hmc_mcp.ssh_commands import (
+from hmc_mcp.ssh_network import (
     SriovMode,
     assign_sriov_logical_port_dynamic,
     list_dedicated_pcie_slot_rows,

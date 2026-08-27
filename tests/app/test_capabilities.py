@@ -279,7 +279,7 @@ def test_closed_vocab_enum_matches_runtime_constant():
     )
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
     from hmc_mcp.server_vios import _VALID_BACKUP_TYPES
-    from hmc_mcp.ssh_commands import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
+    from hmc_mcp.ssh_network import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
 
     by_name = _tools_by_name()
 

@@ -6,7 +6,7 @@ from .client import HMCClient
 from .resource_identity import is_uuid
 from .config import HMCConfig
 from .errors import HMCTransportError
-from .ssh_commands import _ssh_lpar_name, _ssh_system_name
+from .ssh_lpar import _ssh_lpar_name, _ssh_system_name
 
 
 async def _system_name_from_rest(hmc: HMCClient, system_uuid: str) -> str:

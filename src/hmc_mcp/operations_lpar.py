@@ -53,14 +53,14 @@ from .operations_ssh_network import (
     plan_lpar_memopt_scores,
 )
 from .ssh import HMCCLIError
-from .ssh_commands import (
+from .ssh_lpar import (
     _ssh_system_name,
     create_lpar_via_cli,
-    set_lpar_description,
     stamp_lpar_ownership,
     validate_caller_token,
     validate_lpar_description,
 )
+from .ssh_profiles import set_lpar_description
 _logger = logging.getLogger(__name__)
 
 

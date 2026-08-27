@@ -10,7 +10,7 @@ from .config import build_config
 from .client_factory import client_from_env
 from .resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name, resolve_system_uuid
 from .console_capture import capture_lpar_console
-from .ssh_commands import _ssh_lpar_name
+from .ssh_lpar import _ssh_lpar_name
 from .tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()

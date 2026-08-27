@@ -9,7 +9,8 @@ from . import audit
 from .client import HMCClient
 from .errors import HMCError
 from .ssh import HMCCLIError
-from .ssh_commands import _ssh_system_name, get_lpar_description
+from .ssh_lpar import _ssh_system_name
+from .ssh_profiles import get_lpar_description
 
 _logger = logging.getLogger(__name__)
 

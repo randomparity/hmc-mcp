@@ -14,8 +14,8 @@ from typing_extensions import TypedDict
 from . import audit
 from .client import HMCClient
 from .resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name, resolve_system_uuid, resolve_vios_uuid
-from .ssh_commands import (
-    _ssh_lpar_name,
+from .ssh_lpar import _ssh_lpar_name
+from .ssh_install import (
     build_installios_command,
     run_installios,
     validate_hmc_name,

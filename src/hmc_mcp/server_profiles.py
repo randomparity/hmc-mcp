@@ -11,7 +11,7 @@ from ._app import (
 from .client_factory import client_from_env
 from .operations_pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
 
-from .ssh_commands import (
+from .ssh_profiles import (
     backup_lpar_profiles,
     restore_lpar_profiles,
     sync_lpar_profile,

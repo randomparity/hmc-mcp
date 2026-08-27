@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp import ssh_commands
+from hmc_mcp import ssh_affinity
 from hmc_mcp.server import TOOL_SECURITY
 
 
@@ -400,11 +400,11 @@ async def test_affinity_live_paths_use_only_current_and_calcscore_commands(monke
         commands.append(command)
         return next(outputs)
 
-    monkeypatch.setattr(ssh_commands, "run_hmc_command", capture)
+    monkeypatch.setattr(ssh_affinity, "run_hmc_command", capture)
     config = HMCConfig(host="h", user="u", _env_file=None)
-    await ssh_commands.get_system_memopt_score(config, "sys1")
-    await ssh_commands.plan_lpar_memopt_scores(config, "sys1")
-    await ssh_commands.plan_system_memopt_score(config, "sys1")
+    await ssh_affinity.get_system_memopt_score(config, "sys1")
+    await ssh_affinity.plan_lpar_memopt_scores(config, "sys1")
+    await ssh_affinity.plan_system_memopt_score(config, "sys1")
 
     assert commands == [
         "lsmemopt -m sys1 -r sys -o currscore",

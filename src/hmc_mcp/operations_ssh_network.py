@@ -14,16 +14,25 @@ from hmc_mcp.lpar_ownership import (
     resolve_lpar_ownership_names,
 )
 from hmc_mcp.operations_pcie import _require_admitted_environment
-from hmc_mcp.ssh_commands import (
+from hmc_mcp.ssh_affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
-    MinimumAffinityPolicyQuery,
     MinimumAffinityPolicy,
-    add_vnic_backing,
+    MinimumAffinityPolicyQuery,
     get_lpar_memopt_score as _get_lpar_memopt_score,
     get_system_memopt_score as _get_system_memopt_score,
-    list_fc_ports as _list_fc_ports,
     list_lpar_memopt_scores as _list_lpar_memopt_scores,
+    plan_lpar_memopt_scores as _plan_lpar_memopt_scores,
+    plan_system_memopt_score as _plan_system_memopt_score,
+    query_minimum_affinity_policy,
+    query_resource_group_memopt_scores,
+    set_minimum_affinity_policy_cli,
+    validate_minimum_affinity_policy,
+    validate_memopt_scenario,
+)
+from hmc_mcp.ssh_network import (
+    add_vnic_backing,
+    list_fc_ports as _list_fc_ports,
     list_sea_adapters as _list_sea_adapters,
     list_sriov_adapter_rows,
     list_sriov_configured_logical_port_rows,
@@ -31,13 +40,6 @@ from hmc_mcp.ssh_commands import (
     list_vnic_backing_rows,
     list_vnic_rows,
     list_vnics as _list_vnics,
-    plan_lpar_memopt_scores as _plan_lpar_memopt_scores,
-    plan_system_memopt_score as _plan_system_memopt_score,
-    query_resource_group_memopt_scores,
-    query_minimum_affinity_policy,
-    set_minimum_affinity_policy_cli,
-    validate_minimum_affinity_policy,
-    validate_memopt_scenario,
     read_vios_identity,
     remove_vnic_slot,
 )

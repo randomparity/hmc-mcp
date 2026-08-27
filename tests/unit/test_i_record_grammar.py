@@ -22,18 +22,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from hmc_mcp.config import HMCConfig
+from hmc_mcp import ssh_memory, ssh_network, ssh_profiles
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_commands import (
-    assign_profile_io_slot,
     build_attribute_record,
     build_filter,
-    list_fc_ports,
-    create_lpar_via_cli,
+)
+from hmc_mcp.ssh_lpar import create_lpar_via_cli, validate_lpar_description
+from hmc_mcp.ssh_network import list_fc_ports
+from hmc_mcp.ssh_profiles import (
+    assign_profile_io_slot,
     set_lpar_description,
     set_lpar_msp,
     set_lpar_proc_compat,
     sync_lpar_profile,
-    validate_lpar_description,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -289,9 +291,8 @@ HOSTILE_FILTER = "x,injected=1"
 )
 def test_filter_site_refuses_a_hostile_name(fn_name, extra_args):
     """A delimiter-carrying name is refused before any command is built."""
-    import hmc_mcp.ssh_commands as mod
-
-    fn = getattr(mod, fn_name)
+    modules = (ssh_network, ssh_profiles)
+    fn = next(getattr(module, fn_name) for module in modules if hasattr(module, fn_name))
     with pytest.raises(HMCCLIError, match="comma"):
         asyncio.run(fn(_config(), "sys-a", HOSTILE_FILTER, *extra_args))
 
@@ -304,17 +305,15 @@ def test_list_fc_ports_renders_the_whole_expression_quoted():
         sent.append(command)
         return ""
 
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", side_effect=fake_run):
+    with patch("hmc_mcp.ssh_network.run_hmc_command", side_effect=fake_run):
         asyncio.run(list_fc_ports(_config(), "system-a", "my name"))
     assert "--filter 'lpar_names=my name'" in sent[0]
 
 
 def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
     """The mempool bare-value form validates against the same table."""
-    from hmc_mcp.ssh_commands import remove_memory_pool
-
     with pytest.raises(HMCCLIError, match="comma"):
-        asyncio.run(remove_memory_pool(_config(), "sys-a", "pool,extra=1"))
+        asyncio.run(ssh_memory.remove_memory_pool(_config(), "sys-a", "pool,extra=1"))
 
 
 @pytest.mark.parametrize(("bad", "wording"), [(" ", "space"), (";", "semicolon")])

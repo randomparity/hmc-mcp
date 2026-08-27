@@ -118,7 +118,7 @@ def test_ssh_with_client_profile_reaches_ssh(monkeypatch, mock_hmc):
         conn = _make_ssh_mock("")
         with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
             from hmc_mcp._app import _ssh_with_client
-            from hmc_mcp.ssh_commands import list_memory_pools
+            from hmc_mcp.ssh_memory import list_memory_pools
 
             _ssh_with_client(
                 lambda config, system_name, _: list_memory_pools(config, system_name),
@@ -139,7 +139,7 @@ def test_ssh_with_client_profile_none_uses_env(monkeypatch, mock_hmc):
     conn = _make_ssh_mock("")
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
         from hmc_mcp._app import _ssh_with_client
-        from hmc_mcp.ssh_commands import list_memory_pools
+        from hmc_mcp.ssh_memory import list_memory_pools
 
         _ssh_with_client(
             lambda config, system_name, _: list_memory_pools(config, system_name),
@@ -324,7 +324,7 @@ def test_different_profiles_produce_independent_configs():
         with patch("hmc_mcp.ssh.asyncssh.connect", side_effect=capture_connect):
             try:
                 from hmc_mcp._app import _ssh_with_client
-                from hmc_mcp.ssh_commands import list_memory_pools
+                from hmc_mcp.ssh_memory import list_memory_pools
 
                 _ssh_with_client(
                     lambda config, system_name, _: list_memory_pools(

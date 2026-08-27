@@ -48,7 +48,7 @@ from .operations_assignments import (
     _apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
-from .ssh_commands import validate_caller_token
+from .ssh_lpar import validate_caller_token
 
 tool, register_tools, tool_security = tool_module()
 

@@ -13,7 +13,7 @@ from hmc_mcp.server import (
     hmc_get_lpar_memopt_score,
     hmc_list_lpar_memopt_scores,
 )
-from hmc_mcp.ssh_commands import (
+from hmc_mcp.ssh_affinity import (
     HMCCLIError,
     get_lpar_memopt_score,
     list_lpar_memopt_scores,

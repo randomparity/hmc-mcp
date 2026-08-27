@@ -28,7 +28,7 @@ from hmc_mcp.server import (
     hmc_restore_vios,
     hmc_set_lpar_description,
 )
-from hmc_mcp.ssh_commands import list_io_slots
+from hmc_mcp.ssh_network import list_io_slots
 from hmc_mcp.operations_ssh_network import VnicBackingSelector, _required, _validated
 from decimal import Decimal
 

@@ -73,17 +73,19 @@ from .documents import (
     StorageKind,
     build_lpar_document,
 )
-from .ssh_commands import (
+from .ssh_affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
+    validate_memopt_scenario,
+)
+from .ssh_lpar import validate_caller_token
+from .ssh_profiles import (
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,
     get_proc_compat_modes,
     set_lpar_msp,
     set_lpar_proc_compat,
-    validate_caller_token,
-    validate_memopt_scenario,
 )
 
 

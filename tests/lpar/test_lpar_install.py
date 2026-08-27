@@ -13,7 +13,7 @@ from unittest.mock import patch
 from conftest import make_config
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.ssh_commands import (
+from hmc_mcp.ssh_install import (
     INSTALLIOS_PID_PREFIX,
     build_installios_command,
     parse_installios_pid,
@@ -214,7 +214,7 @@ def test_parse_installios_pid_without_tag_raises_hmccli_error():
 
 @pytest.mark.asyncio
 async def test_run_installios_ssh_failure_surfaces_as_cli_error():
-    from hmc_mcp.ssh_commands import run_installios
+    from hmc_mcp.ssh_install import run_installios
     from hmc_mcp.ssh import HMCCLIError
 
     config = make_config()
@@ -222,7 +222,7 @@ async def test_run_installios_ssh_failure_surfaces_as_cli_error():
     async def fail(config, cmd):
         raise HMCCLIError(f"SSH command {cmd!r} failed with exit status 127")
 
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", new=fail):
+    with patch("hmc_mcp.ssh_install.run_hmc_command", new=fail):
         with pytest.raises(HMCCLIError, match="exit status 127"):
             await run_installios(config, "nohup installios ... & echo pid=$!")
 
@@ -269,7 +269,7 @@ def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc)
         submitted["cmd"] = cmd
         return f"{INSTALLIOS_PID_PREFIX}4242\n"
 
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", new=fake_run_hmc_command):
+    with patch("hmc_mcp.ssh_install.run_hmc_command", new=fake_run_hmc_command):
         result = hmc_install_lpar_os("aixprod", "sys1", **_INSTALL_KWARGS)
 
     assert result["pid"] == 4242

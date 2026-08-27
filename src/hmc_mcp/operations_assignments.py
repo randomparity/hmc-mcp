@@ -17,7 +17,7 @@ from hmc_mcp.operations_pcie import (
     list_sriov_physical_ports,
 )
 from hmc_mcp.operations_ssh_network import VnicBackingSelector, add_vnic
-from hmc_mcp.ssh_commands import (
+from hmc_mcp.ssh_network import (
     list_sriov_configured_logical_port_rows,
     list_vnic_backing_rows,
     read_vios_identity,

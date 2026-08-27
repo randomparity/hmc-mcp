@@ -9,7 +9,7 @@ import pytest
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.server import hmc_get_lpar_description, hmc_set_lpar_description
-from hmc_mcp.ssh_commands import set_lpar_description
+from hmc_mcp.ssh_profiles import set_lpar_description
 
 from conftest import mock_uuid_resolution
 
@@ -267,7 +267,7 @@ def test_set_lpar_description_ssh_layer_rejects_control_characters():
 
 def test_set_lpar_description_rejects_lpar_name_with_comma():
     """set_lpar_description raises HMCCLIError when lpar_name contains a comma."""
-    from hmc_mcp.ssh_commands import HMCCLIError
+    from hmc_mcp.ssh_profiles import HMCCLIError
     cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
     with pytest.raises(HMCCLIError, match="comma"):
         asyncio.run(set_lpar_description(cfg, "sys", "bad,name", "some description"))
@@ -275,7 +275,7 @@ def test_set_lpar_description_rejects_lpar_name_with_comma():
 
 def test_set_lpar_description_rejects_lpar_name_with_equals():
     """set_lpar_description raises HMCCLIError when lpar_name contains '='."""
-    from hmc_mcp.ssh_commands import HMCCLIError
+    from hmc_mcp.ssh_profiles import HMCCLIError
     cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
     with pytest.raises(HMCCLIError, match="="):
         asyncio.run(set_lpar_description(cfg, "sys", "key=val", "some description"))
@@ -283,7 +283,7 @@ def test_set_lpar_description_rejects_lpar_name_with_equals():
 
 def test_set_lpar_description_rejects_lpar_name_with_space():
     """set_lpar_description raises HMCCLIError when lpar_name contains a space."""
-    from hmc_mcp.ssh_commands import HMCCLIError
+    from hmc_mcp.ssh_profiles import HMCCLIError
     cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
     with pytest.raises(HMCCLIError, match="space"):
         asyncio.run(set_lpar_description(cfg, "sys", "my lpar", "some description"))
@@ -291,7 +291,7 @@ def test_set_lpar_description_rejects_lpar_name_with_space():
 
 def test_set_lpar_description_rejects_lpar_name_with_semicolon():
     """set_lpar_description raises HMCCLIError when lpar_name contains a semicolon."""
-    from hmc_mcp.ssh_commands import HMCCLIError
+    from hmc_mcp.ssh_profiles import HMCCLIError
     cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
     with pytest.raises(HMCCLIError, match="semicolon"):
         asyncio.run(set_lpar_description(cfg, "sys", "lpar;name", "some description"))

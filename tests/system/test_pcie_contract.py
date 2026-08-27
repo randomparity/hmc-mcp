@@ -304,7 +304,7 @@ def _canonical_ast(value: object) -> object:
 
 
 def test_sriov_mutation_surface_replaces_legacy_mode_and_never_forces() -> None:
-    source = (ROOT / "src" / "hmc_mcp" / "ssh_commands.py").read_text()
+    source = (ROOT / "src" / "hmc_mcp" / "ssh_network.py").read_text()
     current = ast.parse(source)
     functions = {
         node.name: node

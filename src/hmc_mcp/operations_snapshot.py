@@ -50,7 +50,7 @@ from hmc_mcp.snapshot import (
     _normalized_from_profile,
     _parse_profile,
 )
-from hmc_mcp.ssh_commands import read_lpar_profile_record
+from hmc_mcp.ssh_profiles import read_lpar_profile_record
 
 
 def _utcnow() -> datetime:
