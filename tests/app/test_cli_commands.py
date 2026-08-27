@@ -2089,16 +2089,15 @@ def test_with_client_propagates_a_typer_exit_code_unchanged(monkeypatch):
     assert excinfo.value.exit_code == 2
 
 
-def test_storage_upload_iso_reports_an_existing_duplicate(direct_client, monkeypatch):
+def test_storage_upload_iso_reports_uploaded_media(direct_client, monkeypatch):
     async def fake_upload(_hmc, vios, vg, media_name, iso_source):
         assert (vios, vg, media_name) == (VIOS_UUID, VG_UUID, "aix.iso")
         assert iso_source == "https://images.test/aix.iso"
         return {
-            "status": "existing",
+            "status": "uploaded",
             "media_name": "aix.iso",
             "media_size_bytes": 1048576,
             "sha256": "abc123",
-            "existing_name": "aix-old.iso",
             "media": {"MediaName": "aix.iso"},
         }
 
@@ -2117,8 +2116,8 @@ def test_storage_upload_iso_reports_an_existing_duplicate(direct_client, monkeyp
     )
 
     assert result.exit_code == 0
-    assert "Upload status: existing" in result.stdout
-    assert "aix-old.iso" in result.stdout
+    assert "Upload status: uploaded" in result.stdout
+    assert "Media entry: aix.iso" in result.stdout
     assert "1,048,576 bytes" in result.stdout
 
 

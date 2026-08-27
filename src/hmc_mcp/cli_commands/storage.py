@@ -489,14 +489,9 @@ def storage_upload_iso(
     if as_json:
         _print_json(result)
     else:
-        status = result.get("status", "unknown")
-        console.print(f"[green]Upload status: {status}[/green]")
+        console.print(f"[green]Upload status: {result.get('status', 'unknown')}[/green]")
         console.print(f"  Media name: {result.get('media_name', 'N/A')}")
         console.print(f"  Size: {result.get('media_size_bytes', 0):,} bytes")
         console.print(f"  SHA-256: {result.get('sha256', 'N/A')}")
-        if status == "existing" and result.get("existing_name"):
-            console.print(
-                f"  [yellow]Note: Same content already exists under name '{result['existing_name']}'[/yellow]"
-            )
         if result.get("media"):
             console.print(f"  Media entry: {result['media'].get('MediaName', 'N/A')}")

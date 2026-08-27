@@ -202,6 +202,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- `upload_iso` now documents and returns its sole successful status, `"uploaded"`;
+  removed the always-`None` `existing_name` result field and the CLI's unreachable
+  duplicate-content output branch. Name collisions continue to raise
+  `FileExistsError` before transfer.
+
 - Public VIOS and storage operations now use `*_name_or_uuid` selector names, place
   `system_name_or_uuid` before the resource selector, and require non-selector controls by
   keyword.

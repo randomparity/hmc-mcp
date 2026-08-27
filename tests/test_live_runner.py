@@ -639,8 +639,7 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
         if tool == "hmc_list_optical_media":
             return "PASS", [{"MediaName": "test.iso"}]
         if tool == "hmc_upload_iso":
-            status = "existing" if counts[tool] == 2 else "created"
-            return "PASS", {"status": status, "media_name": "test.iso"}
+            return "PASS", {"status": "uploaded", "media_name": "test.iso"}
         if tool == "hmc_mount_optical_media":
             return "PASS", {"mapping_uuid": "mapping"}
         if (

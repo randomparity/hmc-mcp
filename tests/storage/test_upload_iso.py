@@ -133,7 +133,13 @@ async def test_upload_iso_success(mock_hmc, stage_download):
     assert result["media_size_bytes"] == len(TEST_CONTENT)
     assert result["sha256"] == TEST_SHA256
     assert result["media"]["MediaName"] == MEDIA_NAME
-    assert result["existing_name"] is None
+    assert set(result) == {
+        "status",
+        "media_name",
+        "media_size_bytes",
+        "sha256",
+        "media",
+    }
     download.assert_awaited_once_with(ISO_URL)
     # The staged download is removed on the way out.
     staged, _, _ = download.return_value

@@ -514,12 +514,12 @@ async def upload_iso(
 
     Returns:
         Dict with:
-        - 'status': 'uploaded' | 'existing' | 'skipped'
+        - 'status': 'uploaded'
         - 'media_name': Name of the media in the repository.
         - 'media_size_bytes': Size of the uploaded ISO.
         - 'sha256': SHA-256 checksum of the uploaded ISO.
-        - 'media': Full media entry dict (if uploaded/existing), else None.
-        - 'existing_name': Name of existing media with same SHA-256 (if existing).
+        - 'media': Full uploaded media entry dict, or None when the HMC's
+          post-import inventory does not include it.
 
     Raises:
         HMCError: For HMC API errors during broker operations or import.
@@ -577,7 +577,6 @@ async def upload_iso(
             "media_size_bytes": file_size,
             "sha256": iso_sha256,
             "media": uploaded_media_entry,
-            "existing_name": None,
         }
     finally:
         primary_error = sys.exception()
