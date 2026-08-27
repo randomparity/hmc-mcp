@@ -230,11 +230,11 @@ async def _map_storage(
 ) -> dict[str, Any]:
     await map_storage(
         hmc,
-        storage.vios_uuid,
-        storage.kind,
-        storage.storage_name,
-        lpar_uuid,
         None,
+        storage.vios_uuid,
+        lpar_uuid,
+        kind=storage.kind,
+        storage_name=storage.storage_name,
     )
     return {
         "lpar_uuid": lpar_uuid,

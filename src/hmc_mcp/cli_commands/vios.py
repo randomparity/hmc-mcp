@@ -77,6 +77,7 @@ def vios_power_on(
         async with _client() as hmc:
             return await power_vios(
                 hmc,
+                None,
                 name_or_uuid,
                 on=True,
                 wait=wait,
@@ -113,6 +114,7 @@ def vios_power_off(
         async with _client() as hmc:
             return await power_vios(
                 hmc,
+                None,
                 name_or_uuid,
                 on=False,
                 immediate=immediate,

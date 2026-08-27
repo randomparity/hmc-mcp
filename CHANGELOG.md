@@ -202,6 +202,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- Public VIOS and storage operations now use `*_name_or_uuid` selector names, place
+  `system_name_or_uuid` before the resource selector, and require non-selector controls by
+  keyword.
 - LPAR ownership operations now live with the ownership policy in `lpar_ownership`, and
   post-activation affinity orchestration now lives with the shared affinity assessment models.
   The facade names and signatures are unchanged.

@@ -256,12 +256,12 @@ def hmc_map_storage_to_lpar(
         async with client_from_env(profile) as hmc:
             return await map_storage(
                 hmc,
-                vios_name_or_uuid,
-                storage_kind,
-                storage_name,
-                lpar_name_or_uuid,
-                target_device,
                 system_name_or_uuid,
+                vios_name_or_uuid,
+                lpar_name_or_uuid,
+                kind=storage_kind,
+                storage_name=storage_name,
+                target=target_device,
             )
 
     return run_sync(_go)
@@ -441,7 +441,7 @@ def hmc_list_storage_mappings(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await list_storage_mappings(
-                hmc, vios_name_or_uuid, lpar_name_or_uuid, system_name_or_uuid
+                hmc, system_name_or_uuid, vios_name_or_uuid, lpar_name_or_uuid
             )
 
     return run_sync(_go)
@@ -706,7 +706,7 @@ def hmc_list_optical_mappings(
     async def _go():
         async with client_from_env(profile) as hmc:
             mappings = await list_optical_mappings(
-                hmc, vios_name_or_uuid, lpar_name_or_uuid, system_name_or_uuid
+                hmc, system_name_or_uuid, vios_name_or_uuid, lpar_name_or_uuid
             )
             return mappings if limit is None else mappings[:limit]
 
@@ -741,11 +741,11 @@ def hmc_mount_optical_media(
         async with client_from_env(profile) as hmc:
             return await mount_optical_media(
                 hmc,
-                vios_name_or_uuid,
-                media_name,
-                lpar_name_or_uuid,
-                target_device,
                 system_name_or_uuid,
+                vios_name_or_uuid,
+                lpar_name_or_uuid,
+                media_name=media_name,
+                target_device=target_device,
             )
 
     return run_sync(_go)
@@ -807,10 +807,10 @@ def hmc_unmount_optical_media(
         async with client_from_env(profile) as hmc:
             await unmount_optical_media(
                 hmc,
+                system_name_or_uuid,
                 vios_name_or_uuid,
                 lpar_name_or_uuid,
-                media_name,
-                system_name_or_uuid,
+                media_name=media_name,
             )
             return f"Unmounted {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
 

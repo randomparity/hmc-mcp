@@ -197,7 +197,9 @@ async def test_unmount_optical_media_removes_the_named_mapping_for_that_lpar(moc
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        result = await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, "rhel9.iso")
+        result = await unmount_optical_media(
+            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+        )
 
     assert result is None
     body = _posted_document(post)
@@ -221,7 +223,9 @@ async def test_unmount_optical_media_preserves_the_backing_iso(mock_hmc):
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, "rhel9.iso")
+        await unmount_optical_media(
+            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+        )
 
     body = _posted_document(post)
     assert "VirtualOpticalMedia" in body
@@ -251,7 +255,9 @@ async def test_unmount_optical_media_currently_no_ops_when_no_mapping_matches(mo
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, "aix73.iso")
+        await unmount_optical_media(
+            hmc, None, VIOS_UUID, LPAR_UUID, media_name="aix73.iso"
+        )
 
     assert not post.called
 
@@ -280,7 +286,9 @@ async def test_unmount_optical_media_substring_selector_matches_a_sibling_prefix
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, "rhel9.iso")
+        await unmount_optical_media(
+            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+        )
 
     body = _posted_document(post)
     assert "mapping-optical-backup" not in body, (
@@ -320,7 +328,9 @@ async def test_unmount_optical_media_resolves_vios_and_lpar_names(mock_hmc):
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        await unmount_optical_media(hmc, "vios1", "lpar1", "rhel9.iso")
+        await unmount_optical_media(
+            hmc, None, "vios1", "lpar1", media_name="rhel9.iso"
+        )
 
     assert "mapping-optical-target" not in _posted_document(post)
 

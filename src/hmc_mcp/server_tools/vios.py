@@ -304,7 +304,7 @@ def hmc_list_vios_backups(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await list_vios_backups(hmc, vios_name_or_uuid)
+            return await list_vios_backups(hmc, None, vios_name_or_uuid)
 
     return run_sync(_go)
 
@@ -433,6 +433,7 @@ def hmc_power_on_vios(
         async with client_from_env(profile) as hmc:
             return await power_vios(
                 hmc,
+                None,
                 vios_name_or_uuid,
                 on=True,
                 wait=wait,
@@ -469,9 +470,9 @@ def hmc_power_off_vios(
         async with client_from_env(profile) as hmc:
             return await power_vios(
                 hmc,
+                system_name_or_uuid,
                 vios_name_or_uuid,
                 on=False,
-                system_name_or_uuid=system_name_or_uuid,
                 immediate=immediate,
                 wait=wait,
                 timeout_seconds=timeout_seconds,

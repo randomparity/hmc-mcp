@@ -124,14 +124,10 @@ def storage_delete_disk(
 
     Validates that the disk is not mapped to any LPAR before deletion.
     """
-    if not yes and not typer.confirm(
-        f"Delete virtual disk '{name}' from VG {vg}?"
-    ):
+    if not yes and not typer.confirm(f"Delete virtual disk '{name}' from VG {vg}?"):
         raise typer.Abort()
 
-    disk = _with_client(
-        lambda hmc: delete_virtual_disk(hmc, vios, vg, name)
-    )
+    disk = _with_client(lambda hmc: delete_virtual_disk(hmc, vios, vg, name))
 
     console.print(f"[green]Deleted virtual disk '{name}'[/green]")
     _print_json(disk)
@@ -222,7 +218,15 @@ def storage_map(
     async def _go():
         async with _client() as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
-            result = await map_storage(hmc, vios, kind, disk, lpar_uuid, target)
+            result = await map_storage(
+                hmc,
+                None,
+                vios,
+                lpar_uuid,
+                kind=kind,
+                storage_name=disk,
+                target=target,
+            )
             return lpar_uuid, result
 
     lpar_uuid, result = _run(_go)
@@ -288,6 +292,7 @@ def storage_delete_media_repo(
 
     _with_client(lambda hmc: delete_media_repository(hmc, vios, vg))
     console.print(f"[green]Deleted media repository on {vg}[/green]")
+
 
 @storage_app.command("delete-media")
 def storage_delete_media(
@@ -356,18 +361,25 @@ def storage_list_optical_media(
         console.print(table)
     else:
         console.print("[yellow]No optical media found[/yellow]")
+
+
 @storage_app.command("list-mappings")
 def storage_list_mappings(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    lpar: str | None = typer.Option(None, "--lpar", help="Scope to single LPAR by name or UUID"),
+    lpar: str | None = typer.Option(
+        None, "--lpar", help="Scope to single LPAR by name or UUID"
+    ),
     as_json: bool = typer.Option(False, "--json", "-j", help="Output as raw JSON"),
 ) -> None:
     """List VirtualSCSIMappings on a VIOS (optionally scoped to an LPAR)."""
+
     async def _go() -> list[dict[str, Any]]:
         config = load_profile()
         async with HMCClient(config) as hmc:
             from hmc_mcp.operations.storage import list_storage_mappings
-            return await list_storage_mappings(hmc, vios, lpar)
+
+            return await list_storage_mappings(hmc, None, vios, lpar)
+
     mappings = _run(_go)
     if as_json:
         _print_json(mappings)
@@ -382,7 +394,7 @@ def storage_list_mappings(
             storage = m.get("Storage", {})
             client = m.get("AssociatedLogicalPartition", {})
             client_name = client.get("PartitionName", "")
-            
+
             backing = ""
             stype = ""
             if storage:
@@ -392,7 +404,7 @@ def storage_list_mappings(
                 elif "VirtualDisk" in storage:
                     backing = storage["VirtualDisk"].get("DiskName", "")
                     stype = "VirtualDisk"
-            
+
             table.add_row(mapping_uuid, client_name, backing, stype)
         console.print(table)
 
@@ -400,8 +412,12 @@ def storage_list_mappings(
 @storage_app.command("detach-mapping")
 def storage_detach_mapping(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    mapping_uuid: str = typer.Argument(..., help="Exact UUID shown by storage list-mappings"),
-    confirm: bool = typer.Option(False, "--confirm", "-y", help="Skip confirmation prompt"),
+    mapping_uuid: str = typer.Argument(
+        ..., help="Exact UUID shown by storage list-mappings"
+    ),
+    confirm: bool = typer.Option(
+        False, "--confirm", "-y", help="Skip confirmation prompt"
+    ),
 ) -> None:
     """Detach a VirtualSCSIMapping while preserving its backing storage."""
     if not confirm:
@@ -410,11 +426,14 @@ def storage_detach_mapping(
             "The backing storage (PhysicalVolume or VirtualDisk) will be preserved.",
             abort=True,
         )
+
     async def _go() -> None:
         config = load_profile()
         async with HMCClient(config) as hmc:
             from hmc_mcp.operations.storage import detach_storage_mapping
+
             await detach_storage_mapping(hmc, vios, mapping_uuid)
+
     _run(_go)
     console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")
 
@@ -423,7 +442,9 @@ def storage_detach_mapping(
 def storage_upload_iso(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
-    media_name: str = typer.Argument(..., help="Target name for the ISO in the repository"),
+    media_name: str = typer.Argument(
+        ..., help="Target name for the ISO in the repository"
+    ),
     iso_source: str = typer.Argument(
         ...,
         help="http(s) URL to download the ISO from; its host must be on "
@@ -439,6 +460,7 @@ def storage_upload_iso(
     Computes SHA-256 and size before upload, refuses name collisions, and cleans
     up broker resources on every outcome.
     """
+
     async def _go() -> dict[str, Any]:
         config = load_profile()
         async with HMCClient(config) as hmc:

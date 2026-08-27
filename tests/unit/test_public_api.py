@@ -1835,7 +1835,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "33f560ab817548b5bf045edfdbd25481d2bece5d981653a69f2eeafd7382b151"  # pragma: allowlist secret
+    expected_digest = "03160419347e1c3e467ad81e113a1d3bd6042ab82f518746aa2bda4a3299ad93"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

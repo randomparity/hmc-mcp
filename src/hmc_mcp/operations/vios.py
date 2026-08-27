@@ -58,10 +58,10 @@ async def delete_vios(
 
 async def power_vios(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     *,
     on: bool,
-    system_name_or_uuid: str | None = None,
     immediate: bool = False,
     wait: bool = False,
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
@@ -140,12 +140,16 @@ async def _resolve_vios_backup_selectors(
 
 
 async def list_vios_backups(
-    hmc: HMCClient, vios_name_or_uuid: str
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    vios_name_or_uuid: str,
 ) -> list[dict[str, str]]:
     """Return the validated backup catalog for one VIOS."""
     vios_uuid = vios_name_or_uuid
     if not is_uuid(vios_name_or_uuid):
-        vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+        vios_uuid = await resolve_vios_uuid(
+            hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        )
     command = (
         f"lsviosbk --filter {shlex.quote(build_filter([('vios_uuids', vios_uuid)]))} "
         "-F name,type --header"
