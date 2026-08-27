@@ -408,7 +408,13 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   inside a pydantic validator puts the `__warningregistry__` in pydantic's frame and every
   call site shares it. Both halves are now throttled together on the `(agent_id,
   audit_memento)` pair, so an operator who changes either value still gets a line for the new
-  state and the two channels cannot disagree about how often it was reported.
+  state and the two channels cannot disagree about how often it was reported. The set of
+  reported states is capped at 1024 and stops growing rather than resetting at the cap, so a
+  library host varying `agent_id` per agent cannot retain memory without bound and an overflow
+  costs the throttle only for the states that overflowed. The cap is sized against the served
+  path, not the library one: one `hmc_effective_permissions` call resolves a guard per granted
+  connection and a connection is a profile key, so a single call can build one config per
+  profile in the operator's `config.toml`, each with its own `audit_memento`.
   **Operator-visible change:** in a long-lived server the message now appears once rather
   than per call. The new category subclasses `UserWarning`, so a consumer catching or
   filtering the broad category is unaffected; one that wants to silence only this line can

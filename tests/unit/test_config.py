@@ -603,24 +603,22 @@ def test_audit_memento_override_warns_once_across_concurrent_threads(
     assert len(records) == 1
 
 
-def test_audit_memento_override_dedup_set_is_capped():
+def test_audit_memento_override_dedup_set_is_capped(monkeypatch):
     """The retained state cannot grow without bound on the library path.
 
     ``HMCConfig`` is an `hmc_mcp.api` export and both fields are ordinary
     constructor arguments, so a multi-agent host varying ``agent_id`` per agent
     mints a fresh override state on every construction — and the set is what keeps
-    each ``audit_memento`` string alive after its config is collected. On reaching
-    the cap it starts over, which re-reports states already reported: the
-    pre-throttle behaviour, bounded, and never silence.
+    each ``audit_memento`` string alive after its config is collected.
     """
-    cap = config_module._MAX_REPORTED_MEMENTO_OVERRIDES
+    monkeypatch.setattr(config_module, "_MAX_REPORTED_MEMENTO_OVERRIDES", 8)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", AuditMementoOverrideWarning)
-        for index in range(cap * 3):
+        for index in range(32):
             HMCConfig.from_mapping(
                 {"agent_id": f"agent-{index}", "audit_memento": "mine"}
             )
-            assert len(config_module._reported_memento_overrides) <= cap
+            assert len(config_module._reported_memento_overrides) <= 8
 
 
 def test_audit_memento_override_warning_reaches_the_supported_facade():
@@ -669,30 +667,78 @@ def test_audit_memento_override_under_an_error_filter_raises_once_then_throttles
     assert len(records) == 1
 
 
-def test_audit_memento_override_cap_overflow_degrades_to_the_prior_rate(caplog):
-    """Overflow costs the throttle, and the comment must not claim otherwise.
+def test_audit_memento_override_overflow_costs_only_the_overflowing_states(
+    caplog, monkeypatch
+):
+    """Overflow must degrade in proportion, not collapse the whole throttle.
 
-    A working set one larger than the cap misses on every construction, so the
-    emission rate returns to where it was before this function was throttled at
-    all. That floor is documented rather than engineered around — no eviction
-    policy improves on it for a round-robin workload — and the served path cannot
-    reach it. Pinned so a future maintainer meets the floor here rather than in
-    production.
+    Clearing the set wholesale at the cap would make *every* state miss on the
+    next round, returning the emission rate to exactly where it was before this
+    function was throttled — the failure this change removes, reintroduced by its
+    own overflow policy. Declining to grow keeps the states already recorded
+    suppressed and charges only the excess.
+
+    The cap is monkeypatched down rather than exercised at its real value: what
+    is under test is the overflow policy, and 1024 real constructions per round
+    would buy nothing but runtime.
     """
-    cap = config_module._MAX_REPORTED_MEMENTO_OVERRIDES
-    states = [(f"agent-{index}", "mine") for index in range(cap + 1)]
+    monkeypatch.setattr(config_module, "_MAX_REPORTED_MEMENTO_OVERRIDES", 8)
+    within = [(f"agent-{index}", "mine") for index in range(8)]
+    excess = [("agent-overflow-a", "mine"), ("agent-overflow-b", "mine")]
+
+    def build_all() -> int:
+        before = len(caplog.records)
+        for agent_id, memento in within + excess:
+            HMCConfig.from_mapping({"agent_id": agent_id, "audit_memento": memento})
+        return len(caplog.records) - before
 
     with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", AuditMementoOverrideWarning)
-            for _ in range(2):
-                for agent_id, memento in states:
-                    HMCConfig.from_mapping(
-                        {"agent_id": agent_id, "audit_memento": memento}
-                    )
+            first = build_all()
+            second = build_all()
+            third = build_all()
+
+    # Round one reports all ten; the eight that fit are then suppressed forever
+    # and only the two that overflowed keep reporting.
+    assert first == 10
+    assert second == len(excess)
+    assert third == len(excess)
+
+
+def test_audit_memento_override_throttles_across_every_profile_in_the_file(
+    profile_home, monkeypatch, caplog
+):
+    """The throttle must survive the served path, not just direct construction.
+
+    One ``hmc_effective_permissions`` call resolves a guard per granted
+    connection, and a connection is a profile key, so a single call can build one
+    config per profile in the operator's ``config.toml`` — each carrying that
+    profile's own ``audit_memento``. That is the path #546 names, and it is the
+    one where the number of distinct override states is a property of the file
+    rather than of a caller's kwargs. A cap below the profile count would return
+    the flood here while every ``from_mapping`` test still passed, so the record
+    count is what this asserts — not that the cap happens to be large enough,
+    which would fail on the precondition and never measure the behaviour.
+    """
+    profiles = 96
+    body = "".join(
+        f'\n[profiles.p{index}]\nhost = "hmc{index}.example.com"\n'
+        f'audit_memento = "memento-{index}"\n'
+        for index in range(profiles)
+    )
+    _write_toml(config_dir() / "config.toml", f'default_profile = "p0"\n{body}')
+    monkeypatch.setenv("HMC_AGENT_ID", "fleet-agent")
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", AuditMementoOverrideWarning)
+            for _ in range(3):
+                for index in range(profiles):
+                    build_config(profile=f"p{index}")
 
     records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
-    assert len(records) == 2 * len(states)
+    assert len(records) == profiles
 
 
 # ---------------------------------------------------------------------------
