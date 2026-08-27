@@ -2,64 +2,51 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from pathlib import Path
-import json
+from typing import cast
 
 import typer
 from pydantic import TypeAdapter, ValidationError
 from rich.table import Table
-from typing import cast
 
-from .app import (
-    _client,
-    _partition_not_found,
-    _print_json,
-    _run,
-    _ssh_client,
-    _ssh_config,
-    _with_client,
-    _usage_error,
-    console,
-    err_console,
-    lpars_app,
+from ..documents import (
+    BOOT_DEVICE_SELECTORS,
+    PARTITION_TYPES,
+    STORAGE_KINDS,
+    LparResources,
+    StorageKind,
 )
-
 from ..jobs import validate_wait_timing
-from ..operations.lpar_ownership import set_lpar_ownership_description
-from ..operations.lpar import ProcessorCompatibilityMode
+from ..operations.assignments import (
+    LparPcieAssignments,
+)
+from ..operations.decommission import decommission_lpar
 from ..operations.lpar import (
     LparCreation,
+    ProcessorCompatibilityMode,
     delete_lpar,
     power_lpar,
 )
-from ..operations.lpar_dlpar import modify_lpar
-from ..operations.lpar_workflows import create_lpar
 from ..operations.lpar_boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,
     set_lpar_boot_order,
 )
-from ..operations.assignments import (
-    LparPcieAssignments,
-)
-from ..operations.decommission import decommission_lpar
+from ..operations.lpar_dlpar import modify_lpar
+from ..operations.lpar_ownership import set_lpar_ownership_description
+from ..operations.lpar_workflows import create_lpar
+from ..operations.provision import ProvisionNetwork, ProvisionStorage, provision_lpar
 from ..operations.ssh_network import (
     get_lpar_memopt_score,
     get_minimum_affinity_policy,
     get_system_memopt_score,
     list_lpar_memopt_scores,
-    plan_lpar_memopt_scores,
-    plan_system_memopt_score,
     list_resource_group_memopt_scores,
+    plan_lpar_memopt_scores,
     plan_resource_group_memopt_scores,
-)
-from ..documents import (
-    BOOT_DEVICE_SELECTORS,
-    LparResources,
-    PARTITION_TYPES,
-    STORAGE_KINDS,
-    StorageKind,
+    plan_system_memopt_score,
 )
 from ..ssh.affinity import (
     MemoptLparSelector,
@@ -74,6 +61,19 @@ from ..ssh.profiles import (
     get_proc_compat_modes,
     set_lpar_msp,
     set_lpar_proc_compat,
+)
+from .app import (
+    _client,
+    _partition_not_found,
+    _print_json,
+    _run,
+    _ssh_client,
+    _ssh_config,
+    _usage_error,
+    _with_client,
+    console,
+    err_console,
+    lpars_app,
 )
 
 
@@ -1022,12 +1022,6 @@ def lpars_provision(
     On partial failure the completed steps are reported as "ok", the failed step as "error",
     and remaining steps as "skipped". No automatic rollback is performed.
     """
-    from ..operations.provision import (
-        ProvisionNetwork,
-        ProvisionStorage,
-        provision_lpar,
-    )
-
     assignments = _load_pcie_assignments(pcie_assignments)
 
     if partition_type not in PARTITION_TYPES:
@@ -1075,8 +1069,6 @@ def lpars_provision(
     result = _run(_go)
 
     if as_json:
-        from dataclasses import asdict
-
         _print_json(asdict(result))
         return
 

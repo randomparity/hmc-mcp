@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 
 import typer
 from rich.table import Table
 
+from ..operations.composite import lpar_summary
+from ..operations.lpar import PartitionState
 from ..resource_identity import is_uuid
 from .app import (
     _client,
@@ -20,8 +23,6 @@ from .app import (
     lpars_app,
 )
 
-from ..operations.lpar import PartitionState
-
 
 @lpars_app.command("summary")
 def lpars_summary(
@@ -29,10 +30,6 @@ def lpars_summary(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """One-call summary: state, RMC, memory/CPU, OS details, adapter count, description."""
-    from dataclasses import asdict
-
-    from ..operations.composite import lpar_summary
-
     async def _go():
         async with _client() as hmc:
             return await lpar_summary(hmc, name_or_uuid)

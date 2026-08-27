@@ -1945,7 +1945,7 @@ def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
         ]
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.list_storage_mappings", fake_mappings
+        "hmc_mcp.cli_commands.storage.list_storage_mappings", fake_mappings
     )
 
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID])
@@ -1969,7 +1969,7 @@ def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatc
         ]
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.list_storage_mappings", fake_mappings
+        "hmc_mcp.cli_commands.storage.list_storage_mappings", fake_mappings
     )
 
     result = RUNNER.invoke(
@@ -1986,7 +1986,7 @@ def test_storage_list_mappings_json(direct_client, monkeypatch):
         return [{"UUID": "map-1"}]
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.list_storage_mappings", fake_mappings
+        "hmc_mcp.cli_commands.storage.list_storage_mappings", fake_mappings
     )
 
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID, "--json"])
@@ -2009,7 +2009,7 @@ def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatc
         )
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.detach_storage_mapping", fake_detach
+        "hmc_mcp.cli_commands.storage.detach_storage_mapping", fake_detach
     )
 
     result = RUNNER.invoke(
@@ -2044,7 +2044,7 @@ def test_storage_detach_mapping_reports_one_failure_and_exits_1(
         raise HMCError("mapping is in use")
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.detach_storage_mapping", fake_detach
+        "hmc_mcp.cli_commands.storage.detach_storage_mapping", fake_detach
     )
 
     result = RUNNER.invoke(

@@ -7,6 +7,12 @@ from dataclasses import asdict
 import typer
 from rich.table import Table
 
+from ..jobs import validate_wait_timing
+from ..operations.capacity import capacity_report, find_placement
+from ..operations.composite import system_summary
+from ..operations.health import fleet_health
+from ..operations.systems import ManagedSystemState, power_system
+from ..resource_identity import is_uuid
 from .app import (
     _client,
     _first_field,
@@ -18,10 +24,6 @@ from .app import (
     err_console,
     systems_app,
 )
-from ..operations.systems import power_system
-from ..operations.health import fleet_health
-from ..jobs import validate_wait_timing
-from ..operations.systems import ManagedSystemState
 
 
 @systems_app.command("health")
@@ -93,8 +95,6 @@ def systems_show(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Show full details of one managed system (accepts name or UUID)."""
-    from ..resource_identity import is_uuid
-
     system = _with_client(
         lambda hmc: (
             hmc.get_managed_system(name_or_uuid)
@@ -186,10 +186,6 @@ def systems_summary(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """One-call summary: state, MTMS, firmware, LPAR counts, free memory/CPU, VIOS count."""
-    from dataclasses import asdict
-
-    from ..operations.composite import system_summary
-
     async def _go():
         async with _client() as hmc:
             return await system_summary(hmc, name_or_uuid)
@@ -222,10 +218,6 @@ def systems_capacity(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Capacity report: memory/CPU totals and free resources per managed system."""
-    from dataclasses import asdict
-
-    from ..operations.capacity import capacity_report
-
     async def _go():
         async with _client() as hmc:
             return await capacity_report(hmc)
@@ -274,8 +266,6 @@ def systems_find_placement(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Find managed systems with enough free resources for a new LPAR."""
-    from ..operations.capacity import find_placement
-
     async def _go():
         async with _client() as hmc:
             return await find_placement(hmc, memory, procs)

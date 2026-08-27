@@ -2,27 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
 import typer
-from dataclasses import asdict
 from rich.table import Table
 
-from ..documents import StorageKind
-
-from .app import (
-    _client,
-    _first_field,
-    _output,
-    _print_json,
-    _run,
-    _with_client,
-    _usage_error,
-    console,
-    storage_app,
-)
-from ..config import load_profile
 from ..client import HMCClient
+from ..config import load_profile
+from ..documents import StorageKind
+from ..operations.provision import ProvisionStorage, attach_disk_to_lpar
 from ..operations.storage import (
     create_media_repository,
     create_optical_media,
@@ -31,14 +20,26 @@ from ..operations.storage import (
     delete_media_repository,
     delete_optical_media,
     delete_virtual_disk,
+    detach_storage_mapping,
     get_media_repository,
     list_optical_media,
+    list_storage_mappings,
     list_volume_groups,
     map_storage,
     upload_iso,
 )
 from ..resource_identity import resolve_lpar_uuid
-from ..operations.provision import ProvisionStorage, attach_disk_to_lpar
+from .app import (
+    _client,
+    _first_field,
+    _output,
+    _print_json,
+    _run,
+    _usage_error,
+    _with_client,
+    console,
+    storage_app,
+)
 
 
 @storage_app.command("list-vgs")
@@ -380,8 +381,6 @@ def storage_list_mappings(
     async def _go() -> list[dict[str, Any]]:
         config = load_profile()
         async with HMCClient(config) as hmc:
-            from hmc_mcp.operations.storage import list_storage_mappings
-
             return await list_storage_mappings(hmc, None, vios, lpar)
 
     mappings = _run(_go)
@@ -442,8 +441,6 @@ def storage_detach_mapping(
     async def _go() -> None:
         config = load_profile()
         async with HMCClient(config) as hmc:
-            from hmc_mcp.operations.storage import detach_storage_mapping
-
             await detach_storage_mapping(
                 hmc,
                 system,

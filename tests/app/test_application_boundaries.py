@@ -145,7 +145,7 @@ def test_lpar_summary_cli_delegates_to_neutral_operation():
         return_value=_lpar_summary({"Resource": {"PartitionName": "aix1"}}, [])
     )
     with (
-        patch("hmc_mcp.operations.composite.lpar_summary", summary),
+        patch("hmc_mcp.cli_commands.lpars_inventory.lpar_summary", summary),
         patch(
             "hmc_mcp.cli_commands.lpars_inventory._client",
             return_value=_ClientContext(client),
@@ -164,7 +164,7 @@ def test_system_summary_cli_delegates_to_neutral_operation():
         )
     )
     with (
-        patch("hmc_mcp.operations.composite.system_summary", summary),
+        patch("hmc_mcp.cli_commands.systems.system_summary", summary),
         patch("hmc_mcp.cli_commands.systems._client", return_value=_ClientContext(client)),
     ):
         result = CliRunner().invoke(app, ["systems", "summary", "system1", "--json"])
@@ -208,8 +208,8 @@ def test_capacity_clis_delegate_to_neutral_operations():
     report = AsyncMock(return_value=[])
     placement = AsyncMock(return_value=[])
     with (
-        patch("hmc_mcp.operations.capacity.capacity_report", report),
-        patch("hmc_mcp.operations.capacity.find_placement", placement),
+        patch("hmc_mcp.cli_commands.systems.capacity_report", report),
+        patch("hmc_mcp.cli_commands.systems.find_placement", placement),
         patch("hmc_mcp.cli_commands.systems._client", return_value=_ClientContext(client)),
     ):
         capacity_result = CliRunner().invoke(app, ["systems", "capacity", "--json"])
@@ -226,7 +226,7 @@ def test_capacity_cli_preserves_connection_overrides():
     client = object()
     report = AsyncMock(return_value=[])
     with (
-        patch("hmc_mcp.operations.capacity.capacity_report", report),
+        patch("hmc_mcp.cli_commands.systems.capacity_report", report),
         patch(
             "hmc_mcp.cli_commands.app.HMCClient",
             return_value=_ClientContext(client),
@@ -288,7 +288,7 @@ def test_provision_cli_delegates_to_neutral_operation():
         "--json",
     ]
     with (
-        patch("hmc_mcp.operations.provision.provision_lpar", provision),
+        patch("hmc_mcp.cli_commands.lpars.provision_lpar", provision),
         patch("hmc_mcp.cli_commands.lpars._client", return_value=_ClientContext(client)),
     ):
         result = CliRunner().invoke(app, args)
