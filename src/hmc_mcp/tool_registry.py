@@ -16,7 +16,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import MISSING, dataclass, fields as dataclass_fields, is_dataclass, replace
 from types import MappingProxyType
-from typing import Any, Literal, get_args, get_origin, get_type_hints
+from typing import Any, Literal, TypeVar, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel
 
@@ -194,6 +194,13 @@ class ToolDefinition:
 # authoritative classification, and the call's bound arguments; it returns None
 # to permit and raises to deny. See ADR 0038.
 Authorize = Callable[[str, ToolSecurity, Mapping[str, Any]], None]
+ToolHandler = Callable[..., Any]
+ToolHandlerT = TypeVar("ToolHandlerT", bound=ToolHandler)
+HandlerDecorator = Callable[[ToolHandlerT], ToolHandlerT]
+ToolDecoratorFactory = Callable[..., HandlerDecorator]
+RegisterTools = Callable[..., None]
+ToolSecurityProvider = Callable[[], Mapping[str, ToolSecurity]]
+ToolModule = tuple[ToolDecoratorFactory, RegisterTools, ToolSecurityProvider]
 
 # Set on the wrapper `authorized` builds, and read by `is_authorized_wrapper`.
 # An attribute rather than a signature or code-object shape: `functools.wraps`
@@ -471,7 +478,7 @@ def build_tool_security(
     return MappingProxyType(index)
 
 
-def tool_module():
+def tool_module() -> ToolModule:
     """Return a module-local decorator, registration function, and classifications."""
     definitions: list[ToolDefinition] = []
 
@@ -483,8 +490,8 @@ def tool_module():
         extra_targets: Iterable[tuple[TargetKind, str]] = (),
         connection_argument: str | None = "profile",
         exhaustive_targets: bool = True,
-    ):
-        def collect(fn: Callable[..., Any]):
+    ) -> HandlerDecorator:
+        def collect(fn: ToolHandlerT) -> ToolHandlerT:
             name = getattr(fn, "__name__", "<handler>")
             security = ToolSecurity(
                 effect=effect,
