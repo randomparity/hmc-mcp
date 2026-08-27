@@ -19,7 +19,7 @@ import httpx
 import pytest
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.update_jobs import PlatformUpdateParameter, SystemFirmwareUpdate
+from hmc_mcp.update_jobs import PlatformUpdateParameter, SystemFirmwareUpdateModel
 from hmc_mcp.documents import LparResources
 from hmc_mcp.server import (
     hmc_create_lpar,
@@ -63,7 +63,7 @@ VIOS_UPGRADE_SOURCE = {
     "Disks": "hdisk1",
 }
 PLATFORM_UPDATE = PlatformUpdateParameter(
-    SystemFirmwareUpdate=SystemFirmwareUpdate(UpdateType="Update", UpdateOrder=1)
+    SystemFirmwareUpdate=SystemFirmwareUpdateModel(UpdateType="Update", UpdateOrder=1)
 )
 
 

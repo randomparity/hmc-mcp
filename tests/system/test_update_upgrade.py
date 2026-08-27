@@ -10,10 +10,10 @@ from hmc_mcp.client import HMCClient
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import build_job_request, job_outcome
 from hmc_mcp.update_jobs import (
-    IOAdapterUpdate,
+    IOAdapterUpdateModel,
     PlatformUpdateParameter,
     SriovAdapterUpdate,
-    SystemFirmwareUpdate,
+    SystemFirmwareUpdateModel,
     VIOSPlatformUpdate,
     VIOSUpdateSource,
     VIOSUpgradeSource,
@@ -80,7 +80,7 @@ def test_upgrade_vios_job_xml():
 
 def test_platform_update_job_uses_nested_native_json() -> None:
     parameters = PlatformUpdateParameter(
-        SystemFirmwareUpdate=SystemFirmwareUpdate(
+        SystemFirmwareUpdate=SystemFirmwareUpdateModel(
             UpdateType="NoUpdate",
             UpdateOrder=3,
             SRIOVAdapterUpdate=[
@@ -95,7 +95,7 @@ def test_platform_update_job_uses_nested_native_json() -> None:
                 Name="install_img",
                 ResourceType="HMC",
                 IOAdapterUpdate=[
-                    IOAdapterUpdate(Id="009", Device="nvme0", Repository="DISK")
+                    IOAdapterUpdateModel(Id="009", Device="nvme0", Repository="DISK")
                 ],
             )
         ],
@@ -164,7 +164,7 @@ def test_platform_update_rejects_undocumented_sriov_subtypes(subtype: str) -> No
     "repository", ["MOUNTPOINT", "SFTP", "USB", "IBMWebsite", "DISK", "disk"]
 )
 def test_platform_update_accepts_documented_io_repositories(repository: str) -> None:
-    item = IOAdapterUpdate(Id="1", Device="nvme0", Repository=repository)  # type: ignore[arg-type]
+    item = IOAdapterUpdateModel(Id="1", Device="nvme0", Repository=repository)  # type: ignore[arg-type]
     assert item.Repository == repository
 
 
@@ -185,7 +185,7 @@ def test_platform_update_allows_documented_no_update_adapter_only_shape() -> Non
                 UpdateType="NoUpdate",
                 VIOSName="vios1",
                 IOAdapterUpdate=[
-                    IOAdapterUpdate(Id="1", Device="nvme0", Repository="disk")
+                    IOAdapterUpdateModel(Id="1", Device="nvme0", Repository="disk")
                 ],
             )
         ]
@@ -230,7 +230,7 @@ def test_platform_update_requires_resource_for_vios_update() -> None:
     [
         (PlatformUpdateParameter, {"unexpected": True}),
         (
-            SystemFirmwareUpdate,
+            SystemFirmwareUpdateModel,
             {"UpdateType": "Update", "UpdateOrder": 1, "unexpected": True},
         ),
         (SriovAdapterUpdate, {"AdapterID": "1", "SubType": "Adapter", "bad": 1}),
@@ -244,7 +244,7 @@ def test_platform_update_requires_resource_for_vios_update() -> None:
             },
         ),
         (
-            IOAdapterUpdate,
+            IOAdapterUpdateModel,
             {"Id": "1", "Device": "nvme0", "Repository": "DISK", "bad": 1},
         ),
     ],
@@ -259,10 +259,10 @@ def test_platform_update_models_reject_unknown_keys(model, value) -> None:
     [
         (SriovAdapterUpdate, {"AdapterID": "", "SubType": "Adapter"}),
         (SriovAdapterUpdate, {"AdapterID": "   ", "SubType": "Adapter"}),
-        (IOAdapterUpdate, {"Id": "", "Device": "nvme0", "Repository": "disk"}),
-        (IOAdapterUpdate, {"Id": "   ", "Device": "nvme0", "Repository": "disk"}),
-        (IOAdapterUpdate, {"Id": "1", "Device": "", "Repository": "disk"}),
-        (IOAdapterUpdate, {"Id": "1", "Device": "   ", "Repository": "disk"}),
+        (IOAdapterUpdateModel, {"Id": "", "Device": "nvme0", "Repository": "disk"}),
+        (IOAdapterUpdateModel, {"Id": "   ", "Device": "nvme0", "Repository": "disk"}),
+        (IOAdapterUpdateModel, {"Id": "1", "Device": "", "Repository": "disk"}),
+        (IOAdapterUpdateModel, {"Id": "1", "Device": "   ", "Repository": "disk"}),
         (
             VIOSPlatformUpdate,
             {"UpdateType": "Update", "VIOSName": "", "ResourceType": "HMC"},
@@ -298,7 +298,7 @@ def test_platform_update_models_reject_blank_identifiers(model, value) -> None:
 
 def test_platform_update_models_do_not_coerce_update_order() -> None:
     with pytest.raises(ValidationError, match="valid integer"):
-        SystemFirmwareUpdate.model_validate(
+        SystemFirmwareUpdateModel.model_validate(
             {"UpdateType": "Update", "UpdateOrder": "1"}
         )
 
@@ -486,7 +486,7 @@ async def test_submit_platform_update_normalizes_documented_response(mock_hmc):
             SYS_UUID,
             platform_update_job(
                 PlatformUpdateParameter(
-                    SystemFirmwareUpdate=SystemFirmwareUpdate(
+                    SystemFirmwareUpdate=SystemFirmwareUpdateModel(
                         UpdateType="Update", UpdateOrder=1
                     )
                 )

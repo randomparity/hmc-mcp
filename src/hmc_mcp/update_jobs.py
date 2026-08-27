@@ -323,10 +323,6 @@ class PlatformUpdateParameter(BaseModel):
         return self
 
 
-SystemFirmwareUpdate = SystemFirmwareUpdateModel
-IOAdapterUpdate = IOAdapterUpdateModel
-
-
 def platform_update_job(parameters: PlatformUpdateParameter) -> dict[str, Any]:
     """Build the documented native JSON PlatformUpdate JobRequest."""
     return {
