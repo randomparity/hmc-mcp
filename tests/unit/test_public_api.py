@@ -1728,16 +1728,32 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     assert signatures["InstallHandle"] == (
         "(system: str, partition: str, pid: int, log_path: str, message: str)"
     )
+    for operation_name in (
+        "create_logical_unit",
+        "delete_logical_unit",
+        "deploy_partition_template",
+    ):
+        parameters = inspect.signature(getattr(api, operation_name)).parameters
+        for control, default in (
+            ("wait", False),
+            ("timeout_seconds", 300),
+            ("poll_interval", 5),
+        ):
+            assert parameters[control].kind is inspect.Parameter.KEYWORD_ONLY
+            assert parameters[control].default == default
+    create_parameters = inspect.signature(api.create_logical_unit).parameters
+    assert create_parameters["cloned_from"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert create_parameters["cloned_from"].default is None
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved when SSH-backed operations standardized their first parameter on
-    # `HMCClient`, recomputed over the HMCIdentity capitalization correction and
+    # Moved when job-operation polling controls became keyword-only with shared
+    # defaults, recomputed over the SSH-backed operations' `HMCClient` parameter and
     # #468: `InstallHandle` replaces `dict[str, Any]` on both install
     # return annotations and contributes its own five-key entry. Recomputed over
     # #482's 717825fb, which added twelve `snapshot` models with their Pydantic
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "efde3c5f86ce56c4ce2fa62fa7d9f1f9a79723f98581a4b5c6513831ae9a61b3"  # pragma: allowlist secret
+    expected_digest = "eaf8f6b35371e0ecfc269b42fa182e9fba3d104792d3a470ffbc542e66f07cf5"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

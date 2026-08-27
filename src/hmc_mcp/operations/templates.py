@@ -9,7 +9,12 @@ from ..client import HMCClient
 from ..resource_identity import resolve_system_uuid
 from ..errors import HMCError
 from ..error_translation import translate_template_error
-from ..jobs import validate_wait_timing, wait_for_submitted_job
+from ..jobs import (
+    DEFAULT_JOB_POLL_INTERVAL,
+    DEFAULT_JOB_TIMEOUT_SECONDS,
+    validate_wait_timing,
+    wait_for_submitted_job,
+)
 from .lpar import stamp_created_lpar_ownership
 
 _logger = logging.getLogger(__name__)
@@ -90,9 +95,9 @@ async def deploy_partition_template(
     draft_template_uuid: str,
     target_system_name_or_uuid: str,
     *,
-    wait: bool,
-    timeout_seconds: int,
-    poll_interval: int,
+    wait: bool = False,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
 ) -> dict[str, Any]:
     """Submit a template deployment and optionally wait for its terminal job."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)

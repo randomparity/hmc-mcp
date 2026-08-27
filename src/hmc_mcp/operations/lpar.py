@@ -33,6 +33,8 @@ from ..documents import (
 )
 from ..errors import HMCError
 from ..jobs import (
+    DEFAULT_JOB_POLL_INTERVAL,
+    DEFAULT_JOB_TIMEOUT_SECONDS,
     SUCCESSFUL_JOB_STATUSES,
     job_outcome,
     power_off_lpar_job,
@@ -721,8 +723,8 @@ async def power_lpar(
     immediate: bool = False,
     force: bool = False,
     wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
     ownership_override: bool = False,
 ) -> LparPowerResult:
     """Apply shared LPAR power policy, submit the job, and optionally wait.

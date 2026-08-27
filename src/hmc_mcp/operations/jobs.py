@@ -17,6 +17,8 @@ from typing import Any
 from ..client import HMCClient
 from ..errors import HMCError
 from ..jobs import (
+    DEFAULT_JOB_POLL_INTERVAL,
+    DEFAULT_JOB_TIMEOUT_SECONDS,
     TERMINAL_JOB_STATUSES,
     JobOutcome,
     job_outcome,
@@ -295,8 +297,8 @@ async def wait_for_job(
     job_id: str,
     *,
     job_href: str | None = None,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
 ) -> JobOutcome:
     """Poll a persisted job identifier until it settles, vanishes, or times out.
 

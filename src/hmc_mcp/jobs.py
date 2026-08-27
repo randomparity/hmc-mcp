@@ -26,6 +26,8 @@ RemoteRestartOperation = Literal["validate", "recover", "restart", "cleanup", "c
 REMOTE_RESTART_OPERATIONS = frozenset(get_args(RemoteRestartOperation))
 LU_TYPES = frozenset(get_args(LuType))
 DEVICE_TYPES = frozenset(get_args(DeviceType))
+DEFAULT_JOB_TIMEOUT_SECONDS = 300
+DEFAULT_JOB_POLL_INTERVAL = 5
 
 TERMINAL_JOB_STATUSES = frozenset(
     {

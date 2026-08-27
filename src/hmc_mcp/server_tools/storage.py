@@ -581,10 +581,10 @@ def hmc_create_logical_unit(
                 lu_size_gib,
                 lu_type,
                 device_type,
-                cloned_from,
-                wait,
-                timeout_seconds,
-                poll_interval,
+                cloned_from=cloned_from,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
 
     return _run(_go)
@@ -622,9 +622,9 @@ def hmc_delete_logical_unit(
                 hmc,
                 cluster_uuid,
                 lu_udid,
-                wait,
-                timeout_seconds,
-                poll_interval,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
 
     return _run(_go)

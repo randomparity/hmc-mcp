@@ -10,6 +10,8 @@ from ..client import HMCClient
 from ..resource_identity import is_uuid, resolve_system_uuid
 from ..errors import HMCError
 from ..jobs import (
+    DEFAULT_JOB_POLL_INTERVAL,
+    DEFAULT_JOB_TIMEOUT_SECONDS,
     SUCCESSFUL_JOB_STATUSES,
     job_identifier,
     job_outcome,
@@ -615,8 +617,8 @@ async def decommission_lpar(
     dry_run: bool = False,
     ownership_override: bool = False,
     immediate: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
 ) -> DecommissionResult:
     """Inventory, authorize, and optionally decommission one LPAR."""
     validate_wait_timing(True, timeout_seconds, poll_interval)

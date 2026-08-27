@@ -351,6 +351,12 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: public job operations now expose `wait`, `timeout_seconds`, and `poll_interval` as
+  keyword-only controls with shared defaults of `false`, 300 seconds, and 5 seconds.
+  `create_logical_unit` also defaults its keyword-only `cloned_from` selector to `None`.
+  This aligns `create_logical_unit`, `delete_logical_unit`, and `deploy_partition_template`
+  with the existing LPAR, LPM, system, VIOS, and persisted-job operations and moves the frozen
+  signature digest.
 - Changed: the first parameter of all SSH-backed public operations now consistently accepts
   `HMCClient` instead of `HMCConfig`: `capture_lpar_console`, the normalized PCIe inventory and
   SR-IOV mode operations, the FC/SEA/vNIC inventory operations, and the LPAR, system, and

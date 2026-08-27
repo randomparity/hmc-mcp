@@ -8,7 +8,12 @@ from ..client import HMCClient
 from ..documents import LparResources, build_vios_document
 from ..errors import HMCError
 from ..resource_identity import resolve_system_uuid, resolve_vios_uuid
-from ..jobs import validate_wait_timing, wait_for_submitted_job
+from ..jobs import (
+    DEFAULT_JOB_POLL_INTERVAL,
+    DEFAULT_JOB_TIMEOUT_SECONDS,
+    validate_wait_timing,
+    wait_for_submitted_job,
+)
 
 
 async def _create_vios(
@@ -53,8 +58,8 @@ async def power_vios(
     system_name_or_uuid: str | None = None,
     immediate: bool = False,
     wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
 ) -> dict[str, Any] | None:
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     vios_uuid = await resolve_vios_uuid(

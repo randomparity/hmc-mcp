@@ -12,7 +12,12 @@ from ..documents import (
     build_managed_system_document,
 )
 from ..resource_identity import resolve_system_uuid
-from ..jobs import validate_wait_timing, wait_for_submitted_job
+from ..jobs import (
+    DEFAULT_JOB_POLL_INTERVAL,
+    DEFAULT_JOB_TIMEOUT_SECONDS,
+    validate_wait_timing,
+    wait_for_submitted_job,
+)
 
 ManagedSystemState = Literal[
     "operating",
@@ -78,8 +83,8 @@ async def power_system(
     on: bool,
     immediate: bool = False,
     wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
 ) -> dict[str, Any] | None:
     """Resolve a system selector, submit its power job, and optionally wait."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)

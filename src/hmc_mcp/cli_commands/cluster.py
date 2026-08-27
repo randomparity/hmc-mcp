@@ -104,10 +104,10 @@ def cluster_create_lu(
             lu_size_gib,
             lu_type,
             device_type,
-            cloned_from,
-            wait,
-            timeout_seconds,
-            poll_interval,
+            cloned_from=cloned_from,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
         )
     )
 
@@ -137,7 +137,12 @@ def cluster_delete_lu(
 
     job = _with_client(
         lambda hmc: delete_logical_unit(
-            hmc, cluster, udid, wait, timeout_seconds, poll_interval
+            hmc,
+            cluster,
+            udid,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
         )
     )
 

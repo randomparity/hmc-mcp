@@ -10,6 +10,8 @@ from typing import Any, Literal
 from ..client import HMCClient
 from ..resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name
 from ..jobs import (
+    DEFAULT_JOB_POLL_INTERVAL,
+    DEFAULT_JOB_TIMEOUT_SECONDS,
     JobOutcome,
     RemoteRestartOperation,
     SUCCESSFUL_JOB_STATUSES,
@@ -225,8 +227,8 @@ async def migrate_lpar_with_affinity_preflight(
     wait_time: int | None = None,
     *,
     wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
     system_name_or_uuid: str | None = None,
 ) -> LpmAffinityMigrationResult:
     """Run affinity preflight before canonical validation-first migration."""
@@ -288,8 +290,8 @@ async def validate_lpar_migration(
     wait_time: int | None = None,
     *,
     wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
     system_name_or_uuid: str | None = None,
 ) -> LpmResult:
     """Resolve selectors and submit standalone LPM validation."""
@@ -321,8 +323,8 @@ async def migrate_lpar(
     *,
     validate_first: bool = True,
     wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
     system_name_or_uuid: str | None = None,
 ) -> LpmResult:
     """Resolve selectors and submit a migration, optionally validating first."""
@@ -370,8 +372,8 @@ async def abort_lpar_migration(
     lpar_name_or_uuid: str,
     *,
     wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
     system_name_or_uuid: str | None = None,
 ) -> LpmResult:
     """Resolve and abort an in-progress migration."""
@@ -391,8 +393,8 @@ async def recover_lpar_migration(
     lpar_name_or_uuid: str,
     *,
     wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
     system_name_or_uuid: str | None = None,
 ) -> LpmResult:
     """Resolve and recover a failed migration."""
@@ -417,8 +419,8 @@ async def remote_restart_lpar(
     use_current_data: bool = False,
     retain_devices: bool = False,
     wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
 ) -> LpmResult:
     """Resolve selectors and submit an explicit RemoteRestart operation."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)

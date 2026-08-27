@@ -20,6 +20,8 @@ from ..client.client_contracts import httpx
 from ..resource_identity import resolve_lpar_uuid, resolve_vios_uuid
 from ..documents import StorageKind
 from ..jobs import (
+    DEFAULT_JOB_POLL_INTERVAL,
+    DEFAULT_JOB_TIMEOUT_SECONDS,
     DeviceType,
     LuType,
     validate_logical_unit_types,
@@ -577,10 +579,11 @@ async def create_logical_unit(
     lu_size_gib: int,
     lu_type: LuType,
     device_type: DeviceType,
-    cloned_from: str | None,
-    wait: bool,
-    timeout_seconds: int,
-    poll_interval: int,
+    *,
+    cloned_from: str | None = None,
+    wait: bool = False,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
 ) -> dict[str, Any] | None:
     validate_logical_unit_types(lu_type, device_type)
     validate_wait_timing(wait, timeout_seconds, poll_interval)
@@ -594,9 +597,10 @@ async def delete_logical_unit(
     hmc: HMCClient,
     cluster_uuid: str,
     lu_udid: str,
-    wait: bool,
-    timeout_seconds: int,
-    poll_interval: int,
+    *,
+    wait: bool = False,
+    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
 ) -> dict[str, Any] | None:
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     job = await hmc.delete_logical_unit(cluster_uuid, lu_udid)
