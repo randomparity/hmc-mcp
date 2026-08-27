@@ -153,7 +153,7 @@ class _SriovAssignmentReadback:
 
 
 @dataclass(frozen=True)
-class _SriovAssignmentContext:
+class _SriovAssignmentPreflight:
     config: HMCConfig
     system_name: str
     lpar_name: str
@@ -161,6 +161,7 @@ class _SriovAssignmentContext:
     capacity: Decimal
     effective_before: SriovLogicalPortSnapshot | None
     profile_before: str
+    idempotent_result: SriovLogicalPortChangeResult | None = None
 
 
 class SriovLogicalPortCapabilityError(RuntimeError):
@@ -357,29 +358,14 @@ async def _read_assignment_state(
     return _SriovAssignmentReadback(effective, profile, error)
 
 
-async def _preflight_sriov_assignment(
-    hmc: HMCClient,
-    system_name_or_uuid: str,
-    lpar_name_or_uuid: str,
+async def _read_sriov_assignment_inventory(
+    config: HMCConfig,
+    system_name: str,
     adapter_id: str,
     physical_port_id: str,
     logical_port_id: str,
-    capacity_percent: Decimal,
-    profile_name: str,
-    ownership_override: bool,
-) -> _SriovAssignmentContext | SriovLogicalPortChangeResult:
-    selector = InventorySelector(
-        require_command_safe_text(adapter_id, "adapter_id"),
-        require_command_safe_text(physical_port_id, "physical_port_id"),
-        require_command_safe_text(logical_port_id, "logical_port_id"),
-    )
-    capacity = validate_capacity_percent(capacity_percent)
-    system_name, lpar_name = await _resolve_lpar(
-        hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
-    )
-    config = hmc.config
-    require_command_safe_text(profile_name, "profile_name")
-    await _require_admitted_environment(config, system_name)
+) -> tuple[dict[str, str], list[dict[str, str]], SriovLogicalPortSnapshot | None]:
+    """Validate the selected adapter and physical port, then read assignment state."""
     adapters = [
         row
         for row in await list_sriov_adapter_rows(config, system_name)
@@ -405,33 +391,23 @@ async def _preflight_sriov_assignment(
     if len(matching) > 1:
         raise ValueError("duplicate logical-port inventory rows")
     before = _snapshot(matching[0]) if matching else None
-    profile_before = (
-        await read_sriov_profile_ports(config, system_name, lpar_name, profile_name)
-    )["sriov_eth_logical_ports"]
-    if before:
-        if before.physical_port_id != physical_port_id:
-            raise ValueError("logical port is assigned on a different physical port")
-        if before.owner_lpar != lpar_name:
-            raise PermissionError(
-                f"logical port {logical_port_id} is already assigned to {before.owner_lpar}"
-            )
-        if before.capacity_percent != capacity:
-            raise ValueError(
-                "logical port is already assigned with a different capacity"
-            )
-        return SriovLogicalPortChangeResult(
-            "assign",
-            "dynamic",
-            False,
-            selector,
-            before,
-            before,
-            profile_before,
-            profile_before,
-            "",
-        )
+    return physical[0], rows, before
+
+
+async def _require_sriov_assignment_capacity_and_state(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    adapter_id: str,
+    physical_port_id: str,
+    logical_port_id: str,
+    physical_port: dict[str, str],
+    configured_rows: list[dict[str, str]],
+    capacity: Decimal,
+) -> None:
+    """Require an available logical port, sufficient capacity, and mutable LPAR state."""
     candidates = await list_sriov_unconfigured_logical_port_rows(config, system_name)
-    port_location = physical[0]["phys_port_loc"] + "-S"
+    port_location = physical_port["phys_port_loc"] + "-S"
     if not any(
         row.get("adapter_id") == adapter_id
         and row.get("logical_port_id") == logical_port_id
@@ -443,7 +419,7 @@ async def _preflight_sriov_assignment(
         )
     total = Decimal()
     seen: set[str] = set()
-    for row in rows:
+    for row in configured_rows:
         if row["phys_port_id"] != physical_port_id:
             continue
         if row["logical_port_id"] in seen:
@@ -459,7 +435,84 @@ async def _preflight_sriov_assignment(
         raise SriovLogicalPortCapabilityError(
             f"unsupported LPAR state: {state['state']}"
         )
-    return _SriovAssignmentContext(
+
+
+async def _preflight_sriov_assignment(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    adapter_id: str,
+    physical_port_id: str,
+    logical_port_id: str,
+    capacity_percent: Decimal,
+    profile_name: str,
+    ownership_override: bool,
+) -> _SriovAssignmentPreflight:
+    selector = InventorySelector(
+        require_command_safe_text(adapter_id, "adapter_id"),
+        require_command_safe_text(physical_port_id, "physical_port_id"),
+        require_command_safe_text(logical_port_id, "logical_port_id"),
+    )
+    capacity = validate_capacity_percent(capacity_percent)
+    system_name, lpar_name = await _resolve_lpar(
+        hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
+    )
+    config = hmc.config
+    require_command_safe_text(profile_name, "profile_name")
+    await _require_admitted_environment(config, system_name)
+    physical, rows, before = await _read_sriov_assignment_inventory(
+        config,
+        system_name,
+        adapter_id,
+        physical_port_id,
+        logical_port_id,
+    )
+    profile_before = (
+        await read_sriov_profile_ports(config, system_name, lpar_name, profile_name)
+    )["sriov_eth_logical_ports"]
+    if before:
+        if before.physical_port_id != physical_port_id:
+            raise ValueError("logical port is assigned on a different physical port")
+        if before.owner_lpar != lpar_name:
+            raise PermissionError(
+                f"logical port {logical_port_id} is already assigned to {before.owner_lpar}"
+            )
+        if before.capacity_percent != capacity:
+            raise ValueError(
+                "logical port is already assigned with a different capacity"
+            )
+        return _SriovAssignmentPreflight(
+            config,
+            system_name,
+            lpar_name,
+            selector,
+            capacity,
+            before,
+            profile_before,
+            SriovLogicalPortChangeResult(
+                "assign",
+                "dynamic",
+                False,
+                selector,
+                before,
+                before,
+                profile_before,
+                profile_before,
+                "",
+            ),
+        )
+    await _require_sriov_assignment_capacity_and_state(
+        config,
+        system_name,
+        lpar_name,
+        adapter_id,
+        physical_port_id,
+        logical_port_id,
+        physical,
+        rows,
+        capacity,
+    )
+    return _SriovAssignmentPreflight(
         config, system_name, lpar_name, selector, capacity, before, profile_before
     )
 
@@ -487,8 +540,8 @@ async def assign_sriov_logical_port(
         profile_name,
         ownership_override,
     )
-    if isinstance(preflight, SriovLogicalPortChangeResult):
-        return preflight
+    if preflight.idempotent_result is not None:
+        return preflight.idempotent_result
     config = preflight.config
     system_name = preflight.system_name
     lpar_name = preflight.lpar_name
