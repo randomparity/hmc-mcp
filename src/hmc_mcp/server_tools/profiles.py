@@ -10,11 +10,11 @@ from .._app import (
 )
 from ..client.client_factory import client_from_env
 from ..operations.pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
+from ..operations.lpar_configuration import synchronize_lpar_profile
 
 from ..ssh.profiles import (
     backup_lpar_profiles,
     restore_lpar_profiles,
-    sync_lpar_profile,
 )
 
 
@@ -119,7 +119,10 @@ def hmc_restore_lpar_profiles(
 
 @tool(effect="destructive", operation="lpar_profile.sync", target_kind="lpar")
 def hmc_sync_lpar_profile(
-    system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    ownership_override: bool = False,
+    profile: str | None = None,
 ) -> str:
     """Sync an LPAR's running configuration back to its current profile.
 
@@ -140,18 +143,22 @@ def hmc_sync_lpar_profile(
     Args:
         system_name_or_uuid: The name or UUID of the managed system (Power server).
         lpar_name_or_uuid: The name or UUID of the logical partition to sync.
+        ownership_override: Bypass ownership rejection after operator approval.
         profile: optional TOML profile name; when omitted the env-default HMC is used.
 
     Returns:
         The raw HMC CLI output."""
-    return ssh_with_client(
-        lambda config, system_name, lpar_name: sync_lpar_profile(
-            config, system_name, lpar_name
-        ),
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
-    )
+
+    async def _go() -> str:
+        async with client_from_env(profile) as hmc:
+            return await synchronize_lpar_profile(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                ownership_override=ownership_override,
+            )
+
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="pcie.assign_dedicated_slot", target_kind="lpar")

@@ -123,7 +123,7 @@ against that commit rather than maintained forward.
 | `decommission_lpar` | `operations/decommission.py:612` | guarded (`:289`, `:643`, `:662`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
 | `rename_lpar` | `operations/lpar.py:410` | guarded (`:426`) | — |
 | `set_lpar_ownership_description` | `operations/lpar_ownership.py:264` | guarded (`:281`) | — |
-| `hmc_sync_lpar_profile` | `server_tools/profiles.py:121` | **unguarded** | #441 |
+| `synchronize_lpar_profile` | `operations/lpar_configuration.py:29` | guarded (`:25`) | — |
 
 `rename_lpar` is Destructive rather than Reconfiguring because the partition name
 is the identity every consumer addresses, and the ownership token itself is keyed
@@ -132,10 +132,8 @@ overwrites the token, so it is destructive of the protocol's one artifact.
 `hmc_sync_lpar_profile` overwrites a named profile with the running configuration;
 the previous profile definition is gone.
 
-`hmc_sync_lpar_profile` is a tool function whose work happens in
-`ssh_commands.sync_lpar_profile` (`ssh_commands.py:1868`) — HMC-CLI transport under
-ADR 0013, not an operation. Guarding it therefore means introducing an operation
-first, exactly as for the tool rows in §3.2.
+`hmc_sync_lpar_profile` delegates to the guarded operation above; the SSH helper is
+only the transport boundary.
 
 #### 3.2 Reconfiguring — guard unconditionally
 
@@ -156,10 +154,10 @@ first, exactly as for the tool rows in §3.2.
 | `add_network_adapter` | `operations/adapters.py:32` | **unguarded** | #372 |
 | `add_vios_adapter` | `operations/adapters.py:57` | **unguarded** | #372 |
 | `delete_adapter` | `operations/adapters.py:75` | **unguarded** | #372 |
-| `map_storage` | `operations/storage.py:109` | **unguarded** | #372 |
+| `map_storage` | `operations/storage.py:111` | **unguarded** | #372 |
 | `attach_disk_to_lpar` | `operations/provision.py:331` | **unguarded** | #372 |
-| `mount_optical_media` | `operations/storage.py:650` | **unguarded** | #440 |
-| `unmount_optical_media` | `operations/storage.py:670` | **unguarded** | #440 |
+| `mount_optical_media` | `operations/storage.py:654` | **unguarded** | #440 |
+| `unmount_optical_media` | `operations/storage.py:678` | **unguarded** | #440 |
 | `migrate_lpar` | `operations/lpm.py:317` | **unguarded**; the guard belongs on the `validate=False` branch (see below) | #373 |
 | `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:221` | **unguarded**; delegates to `migrate_lpar` unconditionally (`:238`), so #373's guard covers it | #373 |
 | `abort_lpar_migration` | `operations/lpm.py:370` | **unguarded** | #373 |
@@ -183,13 +181,12 @@ currently inert: `_authorize_pcie_profile_request` raises
 after the guard, so neither can mutate anything at this commit. They count as
 correctly-shaped coverage, not as protection of a live mutation.
 
-These entry points mutate a partition directly with no operations-layer function, so
-they are classified here and must gain both an operation and its guard (§6):
+The remaining direct entry points and their guard state are:
 
 | Entry point | Location | Status | Tracking |
 |---|---|---|---|
-| `hmc_set_lpar_msp` | `server_tools/lpar_config.py:351` | **unguarded** | #441 |
-| `hmc_set_lpar_proc_compat` | `server_tools/lpar_config.py:400` | **unguarded** | #441 |
+| `configure_lpar_msp` | `operations/lpar_configuration.py:43` | guarded (`:25`) | — |
+| `configure_lpar_processor_compatibility` | `operations/lpar_configuration.py:58` | guarded (`:25`) | — |
 | `hmc_modify_lpar` | `server_tools/lpars.py:166` | **partially guarded** — the `assignments` leg delegates to guarded operations, the `resources` leg calls `modify_logical_partition` with no ownership check | #442 |
 | `hmc lpar modify` (CLI) | `cli_commands/lpars.py:941` | **partially guarded** — same split, unguarded resource write at `cli_commands/lpars.py:1067` | #442 |
 
@@ -231,14 +228,14 @@ exempt anyway.
 | `deploy_partition_template` (`operations/templates.py:93`) | Creates the partition and stamps it per ADR 0014. |
 | `hmc_capture_lpar_console` (`server_tools/console.py:24`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_migrate_validate_lpar` (`server_tools/lpm.py:141`) | Calls `migrate_lpar(validate=True)`, which submits an LPM validation job and changes nothing. Once #373 guards the migrating branch, this tool reaches a guarded function on a branch that never mutates. |
-| `install_lpar_os` (`operations/install.py:180`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation *can be handed* a `LogicalPartition` selector and does not check the type locally; `installios` refuses a non-VIOS `-p` on the HMC, and because submission is detached that refusal reaches only the install log. That honesty gap is tracked by #460; it does not create an ownership decision, because a refused install mutates nothing. |
-| `install_vios` (`operations/install.py:296`) | Added by #366. Same reason. Resolves its target through the `VirtualIOServer` feed, so a name selector cannot name a `LogicalPartition` at all; a UUID selector is passed through unchecked, with the same #460 caveat. |
+| `install_lpar_os` (`operations/install.py:176`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation *can be handed* a `LogicalPartition` selector and does not check the type locally; `installios` refuses a non-VIOS `-p` on the HMC, and because submission is detached that refusal reaches only the install log. That honesty gap is tracked by #460; it does not create an ownership decision, because a refused install mutates nothing. |
+| `install_vios` (`operations/install.py:279`) | Added by #366. Same reason. Resolves its target through the `VirtualIOServer` feed, so a name selector cannot name a `LogicalPartition` at all; a UUID selector is passed through unchecked, with the same #460 caveat. |
 
 **3.4b — LPAR-mutating, exempt because the signature cannot express the check**
 
 | Operation | Reason | Tracking |
 |---|---|---|
-| `detach_storage_mapping` (`operations/storage.py:161`) | Keyed by VIOS plus mapping UUID; the owning partition is not a parameter. A guard would need an extra read to resolve the client partition. | #448 |
+| `detach_storage_mapping` (`operations/storage.py:166`) | Keyed by VIOS plus mapping UUID; the owning partition is not a parameter. A guard would need an extra read to resolve the client partition. | #448 |
 | `hmc_backup_lpar_profiles` / `hmc_restore_lpar_profiles` (`server_tools/profiles.py:35`, `:86`) | Managed-system-scoped; no partition named, so a per-partition decision is not expressible. Restore rewrites every profile on the system. | #449 |
 
 **3.4b rows are recorded gaps, not safe exemptions.** The mutation is real and the

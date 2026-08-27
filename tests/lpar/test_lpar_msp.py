@@ -124,18 +124,18 @@ def test_set_lpar_msp_enabled_runs_correct_command(monkeypatch, mock_hmc):
     """hmc_set_lpar_msp with enabled=True issues chsyscfg with msp=1 for VIOS."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn_mock = _make_ssh_mock_seq("vioserver\n", "")
+    conn_mock = _make_ssh_mock_seq("", "vioserver\n", "")
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, True)
 
-    assert conn_mock.run.call_count == 2
-    env_cmd = conn_mock.run.call_args_list[0][0][0]
+    assert conn_mock.run.call_count == 3
+    env_cmd = conn_mock.run.call_args_list[1][0][0]
     assert "lssyscfg" in env_cmd
     assert "lpar_env" in env_cmd
     assert LPAR_NAME in env_cmd
 
-    chsyscfg_cmd = conn_mock.run.call_args_list[1][0][0]
+    chsyscfg_cmd = conn_mock.run.call_args_list[2][0][0]
     assert chsyscfg_cmd == (
         f"chsyscfg -r lpar -m {SYSTEM_NAME} -i name={LPAR_NAME},msp=1"
     )
@@ -146,13 +146,13 @@ def test_set_lpar_msp_disabled_runs_correct_command(monkeypatch, mock_hmc):
     """hmc_set_lpar_msp with enabled=False issues chsyscfg with msp=0 for VIOS."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn_mock = _make_ssh_mock_seq("vioserver\n", "")
+    conn_mock = _make_ssh_mock_seq("", "vioserver\n", "")
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, False)
 
-    assert conn_mock.run.call_count == 2
-    chsyscfg_cmd = conn_mock.run.call_args_list[1][0][0]
+    assert conn_mock.run.call_count == 3
+    chsyscfg_cmd = conn_mock.run.call_args_list[2][0][0]
     assert chsyscfg_cmd == (
         f"chsyscfg -r lpar -m {SYSTEM_NAME} -i name={LPAR_NAME},msp=0"
     )
@@ -164,7 +164,7 @@ def test_set_lpar_msp_returns_cli_output(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     RAW_OUTPUT = "0 objects successfully changed.\n"
-    conn_mock = _make_ssh_mock_seq("vioserver\n", RAW_OUTPUT)
+    conn_mock = _make_ssh_mock_seq("", "vioserver\n", RAW_OUTPUT)
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, True)
@@ -176,14 +176,14 @@ def test_set_lpar_msp_rejects_aix_lpar(monkeypatch, mock_hmc):
     """hmc_set_lpar_msp raises HMCCLIError when the partition is AIX (not VIOS)."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn_mock = _make_ssh_mock_seq("aixlinux\n")
+    conn_mock = _make_ssh_mock_seq("", "aixlinux\n")
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         with pytest.raises(HMCCLIError, match="only valid for a VIOS"):
             hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, True)
 
     # chsyscfg must NOT have been called
-    assert conn_mock.run.call_count == 1
+    assert conn_mock.run.call_count == 2
 
 
 def test_set_lpar_msp_rejects_linux_lpar(monkeypatch, mock_hmc):
@@ -194,13 +194,13 @@ def test_set_lpar_msp_rejects_linux_lpar(monkeypatch, mock_hmc):
     """
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn_mock = _make_ssh_mock_seq("aixlinux\n")
+    conn_mock = _make_ssh_mock_seq("", "aixlinux\n")
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         with pytest.raises(HMCCLIError, match="only valid for a VIOS"):
             hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, False)
 
-    assert conn_mock.run.call_count == 1
+    assert conn_mock.run.call_count == 2
 
 
 # ---------------------------------------------------------------------- #
@@ -212,13 +212,13 @@ def test_set_lpar_msp_rejects_partition_not_found(monkeypatch, mock_hmc):
     """hmc_set_lpar_msp raises HMCCLIError when lssyscfg returns empty (LPAR not found)."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn_mock = _make_ssh_mock_seq("\n")
+    conn_mock = _make_ssh_mock_seq("", "\n")
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         with pytest.raises(HMCCLIError, match="not found"):
             hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, True)
 
-    assert conn_mock.run.call_count == 1
+    assert conn_mock.run.call_count == 2
 
 
 def test_set_lpar_msp_ssh_layer_rejects_non_vios():

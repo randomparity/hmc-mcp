@@ -33,10 +33,12 @@ from ..ssh.profiles import (
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,
-    set_lpar_msp,
-    set_lpar_proc_compat,
 )
 from ..operations.lpar_ownership import set_lpar_ownership_description
+from ..operations.lpar_configuration import (
+    configure_lpar_msp,
+    configure_lpar_processor_compatibility,
+)
 from ..operations.lpar import ProcessorCompatibilityMode
 
 
@@ -56,6 +58,7 @@ def hmc_get_minimum_affinity_policy(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await get_minimum_affinity_policy(
@@ -110,6 +113,7 @@ def hmc_get_lpar_memopt_score(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await get_lpar_memopt_score(
@@ -132,6 +136,7 @@ def hmc_list_lpar_memopt_scores(
         lpar_name_or_uuid: Optional partition name or UUID to filter to.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await list_lpar_memopt_scores(
@@ -151,6 +156,7 @@ def hmc_get_system_memopt_score(
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await get_system_memopt_score(hmc, system_name_or_uuid)
@@ -174,6 +180,7 @@ def hmc_plan_lpar_memopt_scores(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     validate_memopt_scenario(prioritized, excluded)
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await plan_lpar_memopt_scores(
@@ -199,6 +206,7 @@ def hmc_plan_system_memopt_score(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     validate_memopt_scenario(prioritized, excluded)
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await plan_system_memopt_score(
@@ -225,6 +233,7 @@ def hmc_list_resource_group_memopt_scores(
         selector: Resource-group names, IDs, or all groups; all when omitted.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await list_resource_group_memopt_scores(
@@ -251,6 +260,7 @@ def hmc_plan_resource_group_memopt_scores(
         selector: Resource-group names, IDs, or all groups; all when omitted.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await plan_resource_group_memopt_scores(
@@ -352,6 +362,7 @@ def hmc_set_lpar_msp(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
     enabled: bool,
+    ownership_override: bool = False,
     profile: str | None = None,
 ) -> str:
     """Set a VIOS partition's Migratable Service Partition flag.
@@ -363,16 +374,21 @@ def hmc_set_lpar_msp(
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         lpar_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
         enabled: Whether to enable the Migratable Service Partition flag.
+        ownership_override: Bypass ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return ssh_with_client(
-        lambda config, system_name, lpar_name: set_lpar_msp(
-            config, system_name, lpar_name, enabled
-        ),
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
-    )
+
+    async def _go() -> str:
+        async with client_from_env(profile) as hmc:
+            return await configure_lpar_msp(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                enabled,
+                ownership_override=ownership_override,
+            )
+
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="lpar.get_proc_compat", target_kind="lpar")
@@ -401,6 +417,7 @@ def hmc_set_lpar_proc_compat(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
     mode: ProcessorCompatibilityMode,
+    ownership_override: bool = False,
     profile: str | None = None,
 ) -> str:
     """Set an LPAR's processor compatibility mode.
@@ -412,13 +429,18 @@ def hmc_set_lpar_proc_compat(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         mode: Desired mode supported by the system; enumerate legal values with
             ``hmc_get_proc_compat_modes``.
+        ownership_override: Bypass ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return ssh_with_client(
-        lambda config, system_name, lpar_name: set_lpar_proc_compat(
-            config, system_name, lpar_name, mode
-        ),
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
-    )
+
+    async def _go() -> str:
+        async with client_from_env(profile) as hmc:
+            return await configure_lpar_processor_compatibility(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                mode,
+                ownership_override=ownership_override,
+            )
+
+    return run_sync(_go)

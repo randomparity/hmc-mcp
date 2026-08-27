@@ -53,7 +53,7 @@ def test_get_proc_compat_modes_runs_correct_command(monkeypatch, mock_hmc):
         result = hmc_get_proc_compat_modes(SYSTEM_UUID)
 
     expected_cmd = f"lssyscfg -r sys -m {SYSTEM_NAME} -F lpar_proc_compat_modes"
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
+    conn_mock.run.assert_awaited_with(expected_cmd, check=True, timeout=300.0)
     assert result == ["default", "POWER8", "POWER9", "POWER10"]
 
 
@@ -121,5 +121,5 @@ def test_set_lpar_proc_compat_runs_correct_command(monkeypatch, mock_hmc):
         f"chsyscfg -r lpar -m {SYSTEM_NAME} "
         f"-i name={LPAR_NAME},lpar_proc_compat_mode=POWER9"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
+    conn_mock.run.assert_awaited_with(expected_cmd, check=True, timeout=300.0)
     assert result == ""
