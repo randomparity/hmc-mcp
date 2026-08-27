@@ -69,6 +69,9 @@ pythonpath = ["tests"]
 # subset with `--no-cov` when package-wide coverage is not meaningful.
 addopts = "--cov=hmc_mcp --cov-report="
 
+[tool.coverage.run]
+branch = true
+
 [tool.coverage.report]
-fail_under = 90
+fail_under = 90.5
 precision = 2

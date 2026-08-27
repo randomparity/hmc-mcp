@@ -979,6 +979,9 @@ def _write_gate_project(root: Path, report: dict, covered: int) -> None:
         'pythonpath = ["."]\n'
         'addopts = "--cov=gatepkg --cov-report="\n'
         "\n"
+        "[tool.coverage.run]\n"
+        "branch = true\n"
+        "\n"
         "[tool.coverage.report]\n" + report_toml + "\n"
     )
 
@@ -1008,8 +1011,9 @@ def test_coverage_gate_declares_one_exact_floor() -> None:
     project = _project_toml()
     addopts = project["tool"]["pytest"]["ini_options"]["addopts"]
 
-    assert floor == 90
+    assert floor == 90.5
     assert report["precision"] >= 2
+    assert project["tool"]["coverage"]["run"] == {"branch": True}
     # Without a measured source nothing consults fail_under at all. Token, not
     # substring: "--cov=hmc_mcp/config.py" contains "--cov=hmc_mcp" and would
     # narrow the measured source to one file, giving a total near 100%.
@@ -1019,7 +1023,14 @@ def test_coverage_gate_declares_one_exact_floor() -> None:
     # Each of these silently disarms the gate: a command-line floor or precision
     # overrides the configured one, --no-cov switches measurement off, and
     # --cov-config sends coverage.py to a different file entirely.
-    for flag in ("--cov-fail-under", "--no-cov", "--cov-precision", "--cov-config"):
+    for flag in (
+        "--cov-fail-under",
+        "--no-cov",
+        "--cov-precision",
+        "--cov-config",
+        "--cov-branch",
+        "--cov-no-branch",
+    ):
         assert flag not in addopts, flag
     # A denominator key disarms the gate without touching the floor: it drops
     # statements from the total rather than covering them. Measured on the probe
@@ -1129,6 +1140,8 @@ def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
             "--cov-fail-under",
             "--cov-precision",
             "--cov-config",
+            "--cov-branch",
+            "--cov-no-branch",
             "COVERAGE_RCFILE",
         ):
             assert flag not in text, f"{name}: {flag}"
