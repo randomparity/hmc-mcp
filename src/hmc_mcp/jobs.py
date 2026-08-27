@@ -85,7 +85,7 @@ class JobWaitClient(Protocol):
 
     async def wait_for_job(
         self,
-        job_uuid: str,
+        job_id: str,
         timeout_seconds: int,
         poll_interval: int,
         *,

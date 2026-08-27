@@ -26,8 +26,8 @@ tool, register_tools, tool_security = tool_module()
 
 
 # Not exhaustive: `job_href` is a caller-supplied URI whose path replaces the
-# `job_uuid` selector outright — `client.get_job` fetches `urlparse(job_href).path`
-# and never looks at `job_uuid`. A `targets` table would therefore authorize one
+# `job_id` selector outright — `client.get_job` fetches `urlparse(job_href).path`
+# and never looks at `job_id`. A `targets` table would therefore authorize one
 # job identity while the server reads another, so ADR 0039 grants this tool only
 # under `targets = "all-targets"`. ADR 0036 already noted that a job UUID is
 # minted by the HMC at runtime and so cannot usefully appear in an allowlist.
@@ -38,7 +38,7 @@ tool, register_tools, tool_security = tool_module()
     exhaustive_targets=False,
 )
 def hmc_get_job(
-    job_uuid: str,
+    job_id: str,
     job_href: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
@@ -50,7 +50,7 @@ def hmc_get_job(
     confirm, so a momentary 404 reads as null too. Null for *every* identifier is
     a deployment whose jobs path is absent, and null for one job polled with a
     ``job_href`` can be a link that stopped resolving while the job runs. Re-read
-    by ``job_uuid`` alone before acting on a null (ADR 0093).
+    by ``job_id`` alone before acting on a null (ADR 0093).
 
     An empty identifier, a bare dot, or one carrying a path, query, fragment,
     percent, or interior whitespace character is rejected outright rather than
@@ -66,14 +66,14 @@ def hmc_get_job(
     you passed.
 
     Args:
-        job_uuid: UUID or JobID returned when the job was submitted.
+        job_id: UUID or JobID returned when the job was submitted.
         job_href: Optional submission SELF link for firmware that cannot resolve the UUID.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            outcome = await operations_jobs.get_job(hmc, job_uuid, job_href=job_href)
+            outcome = await operations_jobs.get_job(hmc, job_id, job_href=job_href)
             return outcome.job
 
     return run_sync(operation)
@@ -107,15 +107,15 @@ def hmc_list_recent_jobs(
             raise
         raise HMCError(
             "This HMC version does not support global Job listing. Use "
-            "hmc_get_job(job_uuid, job_href=<submission link>) instead.",
+            "hmc_get_job(job_id, job_href=<submission link>) instead.",
             status_code=400,
             body=exc.body,
         ) from exc
 
 
 # Not exhaustive: `job_href` is a caller-supplied URI whose path replaces the
-# `job_uuid` selector outright — `client.get_job` fetches `urlparse(job_href).path`
-# and never looks at `job_uuid`. A `targets` table would therefore authorize one
+# `job_id` selector outright — `client.get_job` fetches `urlparse(job_href).path`
+# and never looks at `job_id`. A `targets` table would therefore authorize one
 # job identity while the server reads another, so ADR 0039 grants this tool only
 # under `targets = "all-targets"`. ADR 0036 already noted that a job UUID is
 # minted by the HMC at runtime and so cannot usefully appear in an allowlist.
@@ -126,7 +126,7 @@ def hmc_list_recent_jobs(
     exhaustive_targets=False,
 )
 def hmc_wait_for_job(
-    job_uuid: str,
+    job_id: str,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     job_href: str | None = None,
@@ -155,7 +155,7 @@ def hmc_wait_for_job(
     affected resource, not the job record. Two shapes are not a reaped job at all:
     ``found`` false for *every* identifier is a deployment whose jobs path is
     absent, and ``found`` false for one job polled with a ``job_href`` can be a
-    link that stopped resolving while the job runs. Re-read by ``job_uuid`` alone
+    link that stopped resolving while the job runs. Re-read by ``job_id`` alone
     before acting on absence (ADR 0093).
 
     ``timeout_seconds`` is a soft bound: the confirming re-read is owed past the
@@ -167,7 +167,7 @@ def hmc_wait_for_job(
     when nothing resolved. If you passed a link and get ``found`` true with a null
     ``job_href``, that link was retired; drop it. A retired link spelled
     differently from the HMC's own SELF link can survive there anyway, so poll by
-    ``job_uuid`` alone whenever a stored link is suspect. An echoed link is your
+    ``job_id`` alone whenever a stored link is suspect. An echoed link is your
     own input returned verbatim — only its path is ever requested, and host,
     query, fragment and control characters are unchecked — so do not dereference
     it as something the HMC attested.
@@ -188,7 +188,7 @@ def hmc_wait_for_job(
     entry", not "the HMC no longer has this job".
 
     Args:
-        job_uuid: UUID or JobID returned when the job was submitted.
+        job_id: UUID or JobID returned when the job was submitted.
         timeout_seconds: Maximum polling duration in seconds; zero performs one poll.
         poll_interval: Seconds between polls; must be greater than zero.
         job_href: Optional submission SELF link for firmware that cannot resolve the UUID.
@@ -199,7 +199,7 @@ def hmc_wait_for_job(
         async with client_from_env(profile) as hmc:
             return await operations_jobs.wait_for_job(
                 hmc,
-                job_uuid,
+                job_id,
                 job_href=job_href,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,

@@ -321,7 +321,7 @@ class FakeHMC:
 
     async def wait_for_job(
         self,
-        job_uuid,
+        job_id,
         timeout_seconds=300,
         poll_interval=5,
         *,
@@ -329,7 +329,7 @@ class FakeHMC:
     ):
         self._record(
             "wait_for_job",
-            job_uuid,
+            job_id,
             timeout_seconds,
             poll_interval,
             job_href=job_href,
@@ -420,9 +420,9 @@ class FakeHMC:
         return self.job
 
     # -- jobs ------------------------------------------------------------ #
-    async def get_job(self, job_uuid, *, job_href=None):
-        self._record("get_job", job_uuid, job_href=job_href)
-        return self.job if job_uuid == JOB_UUID else None
+    async def get_job(self, job_id, *, job_href=None):
+        self._record("get_job", job_id, job_href=job_href)
+        return self.job if job_id == JOB_UUID else None
 
     # -- pcm metrics ----------------------------------------------------- #
     async def get_pcm_preferences(self, category, uuid):

@@ -61,7 +61,7 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
     "cluster_uuid": "cluster",
     "ssp_uuid": "shared_storage_pool",
     "console_uuid": "console",
-    "job_uuid": "job",
+    "job_id": "job",
     "template_uuid": "template",
     "draft_template_uuid": "template",
     "policy_name": "password_policy",
@@ -80,7 +80,7 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
 #   across every system in a fleet, so an allowlist entry of "2" names a
 #   different VIOS on each of them; unlike a partition name it has no UUID form
 #   to fall back on, so there is no way to write it precisely.
-# - `job_href` is a caller-supplied URI whose *path* replaces the `job_uuid`
+# - `job_href` is a caller-supplied URI whose *path* replaces the `job_id`
 #   selector entirely (`client.get_job`), so the value authorized and the value
 #   fetched are different values.
 #

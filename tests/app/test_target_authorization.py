@@ -628,10 +628,10 @@ def test_the_decision_modules_never_mention_dry_run():
 
 
 def test_a_second_argument_cannot_override_the_authorized_selector():
-    """`hmc_get_job` declares `job_uuid` and then lets `job_href` replace it.
+    """`hmc_get_job` declares `job_id` and then lets `job_href` replace it.
 
     `client.get_job` fetches `urlparse(job_href).path` and never reads
-    `job_uuid`, so a table grant would authorize one job identity while the
+    `job_id`, so a table grant would authorize one job identity while the
     server reads another — the exact escape `exhaustive_targets` exists to
     refuse, reached through an argument the *name* tables did not know about.
 
@@ -661,7 +661,7 @@ def test_a_second_argument_cannot_override_the_authorized_selector():
             _authorize(
                 effect_grant,
                 "hmc_get_job",
-                {"job_uuid": "job-1111", "job_href": href, "profile": "lab"},
+                {"job_id": "job-1111", "job_href": href, "profile": "lab"},
             )
 
     # `all-targets` still reaches it, so #225's legacy exposure is unaffected.
@@ -670,7 +670,7 @@ def test_a_second_argument_cannot_override_the_authorized_selector():
         _authorize(
             wide,
             "hmc_get_job",
-            {"job_uuid": "job-1111", "job_href": None, "profile": "lab"},
+            {"job_id": "job-1111", "job_href": None, "profile": "lab"},
         )
         is None
     )

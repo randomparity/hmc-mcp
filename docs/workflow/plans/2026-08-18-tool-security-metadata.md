@@ -412,7 +412,7 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = {
     "cluster_uuid": "cluster",
     "ssp_uuid": "shared_storage_pool",
     "console_uuid": "console",
-    "job_uuid": "job",
+    "job_id": "job",
     "template_uuid": "template",
     "draft_template_uuid": "template",
     "policy_name": "password_policy",

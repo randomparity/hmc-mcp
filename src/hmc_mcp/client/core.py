@@ -87,12 +87,12 @@ def _reject_non_job_path(path: str) -> None:
     """Refuse a ``job_href`` that does not address a job.
 
     ``get_job`` fetches the caller's ``job_href`` directly, so the path — not the
-    ``job_uuid`` argument — decides which resource is read. Without this, an
+    ``job_id`` argument — decides which resource is read. Without this, an
     unrelated web-resource href could be fetched through a tool classified
     ``read``/``job``.
 
     The check binds the *resource class*, not the identifier. Binding the last
-    segment to ``job_uuid`` would be tighter, and was rejected: ``jobs.job_identifier``
+    segment to ``job_id`` would be tighter, and was rejected: ``jobs.job_identifier``
     prefers the response's ``UUID``/``JobID`` over the link's last segment, so the
     two can legitimately differ — and issue #95 exists precisely because some
     firmware cannot resolve the UUID, which is the case this argument serves and
@@ -916,7 +916,7 @@ class HMCClient(
 
     async def get_job(
         self,
-        job_uuid: str,
+        job_id: str,
         *,
         job_href: str | None = None,
     ) -> dict[str, Any] | None:
@@ -934,7 +934,7 @@ class HMCClient(
             path = urlparse(job_href).path
             _reject_non_job_path(path)
         else:
-            path = f"/rest/api/uom/jobs/{job_uuid}"
+            path = f"/rest/api/uom/jobs/{job_id}"
         xml = await self._web_get(path)
         if not xml:
             return None
@@ -943,7 +943,7 @@ class HMCClient(
 
     async def wait_for_job(
         self,
-        job_uuid: str,
+        job_id: str,
         timeout_seconds: int = 300,
         poll_interval: int = 5,
         *,
@@ -967,7 +967,7 @@ class HMCClient(
 
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_seconds
-        entry = await self.get_job(job_uuid, job_href=job_href)
+        entry = await self.get_job(job_id, job_href=job_href)
         while True:
             resource = (entry or {}).get("Resource")
             status = resource.get("Status", "") if isinstance(resource, dict) else ""
@@ -979,16 +979,16 @@ class HMCClient(
             await asyncio.sleep(min(poll_interval, remaining))
             if loop.time() >= deadline:
                 return entry
-            entry = await self.get_job(job_uuid, job_href=job_href)
+            entry = await self.get_job(job_id, job_href=job_href)
 
     async def delete_job(
         self,
-        job_uuid: str,
+        job_id: str,
         *,
         job_href: str | None = None,
     ) -> None:
         """Delete a job, preferring its SELF link when available."""
-        path = urlparse(job_href).path if job_href else f"/rest/api/uom/jobs/{job_uuid}"
+        path = urlparse(job_href).path if job_href else f"/rest/api/uom/jobs/{job_id}"
         _reject_non_job_path(path)
         await self._delete(path)
 

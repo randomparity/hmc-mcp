@@ -365,7 +365,7 @@ EXPECTED_TARGET_ARGUMENTS = {
     "cluster_uuid": "cluster",
     "ssp_uuid": "shared_storage_pool",
     "console_uuid": "console",
-    "job_uuid": "job",
+    "job_id": "job",
     "template_uuid": "template",
     "draft_template_uuid": "template",
     "policy_name": "password_policy",
@@ -383,7 +383,7 @@ def test_the_argument_table_matches_its_independent_expectation():
     [
         ("hmc_get_available_hmc_ptfs", {("console", "console_uuid")}),
         ("hmc_update_console_software", {("console", "console_uuid")}),
-        ("hmc_get_job", {("job", "job_uuid")}),
+        ("hmc_get_job", {("job", "job_id")}),
         ("hmc_get_partition_template", {("template", "template_uuid")}),
         ("hmc_get_shared_storage_pool", {("shared_storage_pool", "ssp_uuid")}),
         ("hmc_processed_metrics", {("metric_resource", "resource_name_or_uuid")}),

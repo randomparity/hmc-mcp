@@ -197,7 +197,7 @@ def test_get_job_rejects_identifier_addressing_something_else(monkeypatch, mock_
 def test_get_job_requires_identifier_even_with_href(monkeypatch, mock_hmc):
     """The identifier is now checked even when job_href would decide the path.
 
-    The client ignored ``job_uuid`` entirely when a link was supplied, so this is
+    The client ignored ``job_id`` entirely when a link was supplied, so this is
     the one rejection that changes behaviour rather than moving an error (#474).
     """
     _hmc_env(monkeypatch)

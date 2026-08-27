@@ -899,8 +899,8 @@ Modify `hmc_deploy_partition_template` to wrap the return value and stamp when `
                     "warnings": ["ownership stamp not attempted: wait=False"],
                 }
 
-            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-            if not job_uuid:
+            job_id = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+            if not job_id:
                 return {
                     "job": job,
                     "ownership_stamped": None,
@@ -908,7 +908,7 @@ Modify `hmc_deploy_partition_template` to wrap the return value and stamp when `
                 }
 
             final_job = await hmc.wait_for_job(
-                job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+                job_id, timeout_seconds, poll_interval, job_href=job.get("link")
             )
 
             # Stamp: only when job completed successfully

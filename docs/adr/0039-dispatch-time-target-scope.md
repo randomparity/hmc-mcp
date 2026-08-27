@@ -377,8 +377,8 @@ Eight tools declare `exhaustive_targets=False`:
   These are the tools an earlier draft of this record silently authorized under a table; the
   guardrail below is what found them.
 - **`hmc_get_job`** and **`hmc_wait_for_job`** — both declare a required `job` selector on
-  `job_uuid` and then accept `job_href`, whose *path* replaces it outright: `client.get_job`
-  fetches `urlparse(job_href).path` and never reads `job_uuid`. A table would authorize one
+  `job_id` and then accept `job_href`, whose *path* replaces it outright: `client.get_job`
+  fetches `urlparse(job_href).path` and never reads `job_id`. A table would authorize one
   job identity while the server read another. These two were found by the threat scan rather
   than by the guardrail, for the reason the next paragraph gives, and they are the concrete
   instance of its stated limit.
