@@ -7,10 +7,12 @@ from typing import Any
 from ._app import _run
 from .client_users import AuthenticationFilter
 from .client_factory import client_from_env
-from .documents import (
-    AuthenticationType,
-    build_hmc_user_document,
-    build_remote_access_document,
+from .documents import AuthenticationType
+from .operations_users import (
+    _configure_remote_access,
+    _create_user,
+    _delete_user,
+    _modify_user,
 )
 from .tool_registry import tool_module
 
@@ -117,27 +119,27 @@ def hmc_create_user(
         remote_user_id: Directory-side user identifier.
         profile: TOML profile name, or the environment default when omitted.
     """
-    xml = build_hmc_user_document(
-        user_id=user_id,
-        authentication_type=authentication_type,
-        password=password,
-        description=description,
-        associated_task_role=associated_task_role,
-        associated_resource_roles=associated_resource_roles,
-        password_expiry=password_expiry,
-        session_timeout=session_timeout,
-        verify_session_timeout=verify_session_timeout,
-        idle_session_timeout=idle_session_timeout,
-        user_inactivity=user_inactivity,
-        minimum_password_age=minimum_password_age,
-        allow_web_remote_access=allow_web_remote_access,
-        allow_ssh_remote_access=allow_ssh_remote_access,
-        remote_user_id=remote_user_id,
-    )
-
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.create_hmc_user(console_uuid, xml)
+            return await _create_user(
+                hmc,
+                console_uuid,
+                user_id,
+                password,
+                authentication_type,
+                description=description,
+                associated_task_role=associated_task_role,
+                associated_resource_roles=associated_resource_roles,
+                password_expiry=password_expiry,
+                session_timeout=session_timeout,
+                verify_session_timeout=verify_session_timeout,
+                idle_session_timeout=idle_session_timeout,
+                user_inactivity=user_inactivity,
+                minimum_password_age=minimum_password_age,
+                allow_web_remote_access=allow_web_remote_access,
+                allow_ssh_remote_access=allow_ssh_remote_access,
+                remote_user_id=remote_user_id,
+            )
 
     return _run(_go)
 
@@ -192,26 +194,27 @@ def hmc_modify_user(
         remote_user_id: Replacement directory-side identifier.
         profile: TOML profile name, or the environment default when omitted.
     """
-    xml = build_hmc_user_document(
-        authentication_type=authentication_type,
-        password=password,
-        description=description,
-        associated_task_role=associated_task_role,
-        associated_resource_roles=associated_resource_roles,
-        password_expiry=password_expiry,
-        session_timeout=session_timeout,
-        verify_session_timeout=verify_session_timeout,
-        idle_session_timeout=idle_session_timeout,
-        user_inactivity=user_inactivity,
-        minimum_password_age=minimum_password_age,
-        allow_web_remote_access=allow_web_remote_access,
-        allow_ssh_remote_access=allow_ssh_remote_access,
-        remote_user_id=remote_user_id,
-    )
-
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.modify_hmc_user(console_uuid, user_profile_uuid, xml)
+            return await _modify_user(
+                hmc,
+                console_uuid,
+                user_profile_uuid,
+                authentication_type=authentication_type,
+                password=password,
+                description=description,
+                associated_task_role=associated_task_role,
+                associated_resource_roles=associated_resource_roles,
+                password_expiry=password_expiry,
+                session_timeout=session_timeout,
+                verify_session_timeout=verify_session_timeout,
+                idle_session_timeout=idle_session_timeout,
+                user_inactivity=user_inactivity,
+                minimum_password_age=minimum_password_age,
+                allow_web_remote_access=allow_web_remote_access,
+                allow_ssh_remote_access=allow_ssh_remote_access,
+                remote_user_id=remote_user_id,
+            )
 
     return _run(_go)
 
@@ -235,7 +238,7 @@ def hmc_delete_user(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            await hmc.delete_hmc_user(console_uuid, user_profile_uuid)
+            await _delete_user(hmc, console_uuid, user_profile_uuid)
             return f"Deleted HMC user profile {user_profile_uuid}"
 
     return _run(_go)
@@ -314,12 +317,10 @@ def hmc_configure_remote_access(
         clear_fields: Documented properties to clear with empty XML elements.
         profile: TOML profile name, or the environment default when omitted.
     """
-    # Validate before opening a network session; the client then merges these
-    # explicit changes into the current RemoteAccess group before posting.
-    build_remote_access_document(values, clear_fields)
-
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.configure_remote_access(console_uuid, values, clear_fields)
+            return await _configure_remote_access(
+                hmc, console_uuid, values, clear_fields
+            )
 
     return _run(_go)

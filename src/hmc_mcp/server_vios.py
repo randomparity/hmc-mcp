@@ -17,17 +17,17 @@ from ._app import (
 )
 
 from .client import HMCClient
-from .errors import HMCError
 from .config import build_config
 from .client_factory import client_from_env
-from .resource_identity import is_uuid, resolve_system_uuid, resolve_vios_uuid
+from .resource_identity import is_uuid, resolve_vios_uuid
 from .operations_install import (
     install_lpar_os,
     install_vios,
     validate_install_request,
 )
 from .ssh import run_hmc_cli
-from .documents import LparResources, VIOS_DEFAULT_RESOURCES, build_vios_document
+from .documents import LparResources, VIOS_DEFAULT_RESOURCES
+from .operations_vios import _create_vios, _delete_vios
 
 
 tool, register_tools, tool_security = tool_module()
@@ -54,12 +54,9 @@ def hmc_create_vios(
         resources: Memory and processor settings for the VIOS.
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
-    xml = build_vios_document(name=name, resources=resources)
-
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            return await hmc.create_logical_partition(system_uuid, xml)
+            return await _create_vios(hmc, system_name_or_uuid, name, resources)
 
     return _run(_go)
 
@@ -94,24 +91,9 @@ def hmc_delete_vios(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(
-                hmc,
-                vios_name_or_uuid,
-                system_name_or_uuid=system_name_or_uuid,
+            return await _delete_vios(
+                hmc, vios_name_or_uuid, system_name_or_uuid
             )
-            state = await hmc.get_quick_property(
-                "LogicalPartition", vios_uuid, "PartitionState"
-            )
-            if state != "not activated":
-                raise HMCError(
-                    f"Cannot delete VIOS {vios_uuid} — current state is "
-                    f"{state!r}; it must be 'not activated' to delete. Power it "
-                    "off (hmc_power_off_vios) and confirm with "
-                    "hmc_get_lpar_state before retrying.",
-                    status_code=409,
-                )
-            await hmc.delete_logical_partition(vios_uuid)
-            return f"Deleted VIOS {vios_uuid}"
 
     return _run(_go)
 

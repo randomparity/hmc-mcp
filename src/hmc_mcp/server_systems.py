@@ -23,8 +23,8 @@ from .documents import (
     MemoryMirroringMode,
     PowerOffPolicy,
     PowerOnLparStartPolicy,
-    build_managed_system_document,
 )
+from .operations_systems import _modify_system
 from .operations_lpar import PartitionState
 from .operations_systems import ManagedSystemState
 
@@ -382,19 +382,18 @@ def hmc_modify_system(
         mem_mirroring_mode: Memory-mirroring mode, or null to leave it unchanged.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
-    xml = build_managed_system_document(
-        new_name=new_name,
-        power_off_policy=power_off_policy,
-        power_on_lpar_start_policy=power_on_lpar_start_policy,
-        pend_mem_region_size=pend_mem_region_size,
-        requested_num_sys_huge_pages=requested_num_sys_huge_pages,
-        mem_mirroring_mode=mem_mirroring_mode,
-    )
-
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            return await hmc.modify_managed_system(system_uuid, xml)
+            return await _modify_system(
+                hmc,
+                system_name_or_uuid,
+                new_name=new_name,
+                power_off_policy=power_off_policy,
+                power_on_lpar_start_policy=power_on_lpar_start_policy,
+                pend_mem_region_size=pend_mem_region_size,
+                requested_num_sys_huge_pages=requested_num_sys_huge_pages,
+                mem_mirroring_mode=mem_mirroring_mode,
+            )
 
     return _run(_go)
 

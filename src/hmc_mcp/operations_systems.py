@@ -5,6 +5,12 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from .client import HMCClient
+from .documents import (
+    MemoryMirroringMode,
+    PowerOffPolicy,
+    PowerOnLparStartPolicy,
+    build_managed_system_document,
+)
 from .resource_identity import resolve_system_uuid
 from .jobs import validate_wait_timing, wait_for_submitted_job
 
@@ -40,6 +46,29 @@ MANAGED_SYSTEM_STATES: frozenset[ManagedSystemState] = frozenset(
         "on demand recovery",
     }
 )
+
+
+async def _modify_system(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    *,
+    new_name: str | None = None,
+    power_off_policy: PowerOffPolicy | None = None,
+    power_on_lpar_start_policy: PowerOnLparStartPolicy | None = None,
+    pend_mem_region_size: int | None = None,
+    requested_num_sys_huge_pages: int | None = None,
+    mem_mirroring_mode: MemoryMirroringMode | None = None,
+) -> dict[str, Any] | None:
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    document = build_managed_system_document(
+        new_name=new_name,
+        power_off_policy=power_off_policy,
+        power_on_lpar_start_policy=power_on_lpar_start_policy,
+        pend_mem_region_size=pend_mem_region_size,
+        requested_num_sys_huge_pages=requested_num_sys_huge_pages,
+        mem_mirroring_mode=mem_mirroring_mode,
+    )
+    return await hmc.modify_managed_system(system_uuid, document)
 
 
 async def power_system(
