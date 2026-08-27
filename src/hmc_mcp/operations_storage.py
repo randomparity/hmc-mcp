@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
+import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 from urllib.parse import urlparse
@@ -24,6 +26,8 @@ from .jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
+
+logger = logging.getLogger(__name__)
 
 # HTTP download configuration
 CONNECT_TIMEOUT = 30.0
@@ -401,7 +405,9 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
                 try:
                     temp_file.unlink(missing_ok=True)
                 except OSError:
-                    pass
+                    logger.exception(
+                        "failed to remove incomplete ISO download %s", temp_file
+                    )
                 raise
 
 
@@ -530,18 +536,38 @@ async def upload_iso(
             "existing_name": None,
         }
     finally:
+        primary_error = sys.exception()
+        cleanup_error: Exception | None = None
+
         # Always release the broker file slot (404 is tolerated)
         if broker_uri:
             try:
                 await hmc._broker_file_cleanup(broker_uri)
-            except Exception:
-                pass
+            except Exception as exc:
+                if primary_error is None:
+                    cleanup_error = exc
+                else:
+                    logger.exception(
+                        "broker cleanup failed for ISO upload %s", broker_uri
+                    )
 
         if iso_path.exists():
             try:
                 iso_path.unlink()
-            except OSError:
-                pass
+            except OSError as exc:
+                if primary_error is None and cleanup_error is None:
+                    exc.add_note(
+                        f"ISO upload completed, but temporary file cleanup failed: "
+                        f"{iso_path}"
+                    )
+                    cleanup_error = exc
+                else:
+                    logger.exception(
+                        "temporary ISO cleanup failed for %s", iso_path
+                    )
+
+        if cleanup_error is not None:
+            raise cleanup_error
 
 
 

@@ -408,6 +408,120 @@ async def test_upload_iso_broker_cleanup_on_error(mock_hmc, stage_download):
 
 
 @pytest.mark.asyncio
+async def test_upload_iso_raises_broker_cleanup_failure_after_success(stage_download):
+    """A successful import is not reported when its broker slot leaked."""
+    broker_uri = "https://hmc.test/rest/api/uom/BrokeredFile/leaked"
+    download = stage_download()
+    hmc = MagicMock()
+    hmc.config.iso_url_allowlist_entries = parse_iso_url_allowlist(ISO_HOST)
+    hmc.list_optical_media = AsyncMock(return_value=[])
+    hmc._broker_file_create = AsyncMock(return_value=broker_uri)
+    hmc._broker_file_upload = AsyncMock()
+    hmc._broker_iso_import = AsyncMock()
+    cleanup_error = HMCError("Brokered file cleanup failed", 500, "failed")
+    hmc._broker_file_cleanup = AsyncMock(side_effect=cleanup_error)
+
+    with pytest.raises(HMCError, match="Brokered file cleanup failed"):
+        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    staged, _, _ = download.return_value
+    assert not staged.exists()
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_logs_cleanup_failure_without_masking_primary_error(
+    stage_download, caplog
+):
+    """Import failure remains primary while broker cleanup is diagnosable."""
+    broker_uri = "https://hmc.test/rest/api/uom/BrokeredFile/leaked"
+    stage_download()
+    hmc = MagicMock()
+    hmc.config.iso_url_allowlist_entries = parse_iso_url_allowlist(ISO_HOST)
+    hmc.list_optical_media = AsyncMock(return_value=[])
+    hmc._broker_file_create = AsyncMock(return_value=broker_uri)
+    hmc._broker_file_upload = AsyncMock()
+    hmc._broker_iso_import = AsyncMock(side_effect=RuntimeError("import failed"))
+    hmc._broker_file_cleanup = AsyncMock(
+        side_effect=RuntimeError("cleanup failed")
+    )
+
+    with pytest.raises(RuntimeError, match="import failed"):
+        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    record = next(
+        record for record in caplog.records if "broker cleanup failed" in record.message
+    )
+    assert broker_uri in record.message
+    assert record.exc_info is not None
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_raises_local_cleanup_failure_after_success(
+    stage_download, monkeypatch
+):
+    """A completed import reports a temporary file that could not be removed."""
+    broker_uri = "https://hmc.test/rest/api/uom/BrokeredFile/cleaned"
+    download = stage_download()
+    staged, _, _ = download.return_value
+    original_unlink = Path.unlink
+
+    def fail_staged_unlink(path: Path, *args, **kwargs) -> None:
+        if path == staged:
+            raise PermissionError("file is busy")
+        original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_staged_unlink)
+    hmc = MagicMock()
+    hmc.config.iso_url_allowlist_entries = parse_iso_url_allowlist(ISO_HOST)
+    hmc.list_optical_media = AsyncMock(return_value=[])
+    hmc._broker_file_create = AsyncMock(return_value=broker_uri)
+    hmc._broker_file_upload = AsyncMock()
+    hmc._broker_iso_import = AsyncMock()
+    hmc._broker_file_cleanup = AsyncMock()
+
+    with pytest.raises(PermissionError, match="file is busy") as raised:
+        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    assert any(str(staged) in note for note in raised.value.__notes__)
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_logs_local_cleanup_failure_during_primary_error(
+    stage_download, monkeypatch, caplog
+):
+    """A leaked temporary file is visible without replacing an import error."""
+    broker_uri = "https://hmc.test/rest/api/uom/BrokeredFile/cleaned"
+    download = stage_download()
+    staged, _, _ = download.return_value
+    original_unlink = Path.unlink
+
+    def fail_staged_unlink(path: Path, *args, **kwargs) -> None:
+        if path == staged:
+            raise PermissionError("file is busy")
+        original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_staged_unlink)
+    hmc = MagicMock()
+    hmc.config.iso_url_allowlist_entries = parse_iso_url_allowlist(ISO_HOST)
+    hmc.list_optical_media = AsyncMock(return_value=[])
+    hmc._broker_file_create = AsyncMock(return_value=broker_uri)
+    hmc._broker_file_upload = AsyncMock()
+    hmc._broker_iso_import = AsyncMock(side_effect=RuntimeError("import failed"))
+    hmc._broker_file_cleanup = AsyncMock()
+
+    with pytest.raises(RuntimeError, match="import failed"):
+        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    record = next(
+        record
+        for record in caplog.records
+        if "temporary ISO cleanup failed" in record.message
+    )
+    assert str(staged) in record.message
+    assert record.exc_info is not None
+
+
+@pytest.mark.asyncio
 async def test_upload_iso_streams_the_staged_file_in_bounded_chunks(
     mock_hmc, stage_download
 ):
