@@ -213,7 +213,9 @@ def test_inspection_reports_no_policy_honestly():
 
     from hmc_mcp.server_permissions import describe
 
-    result = asdict(describe({"hmc_list_systems": _guarded_stub()}, None, TOOL_SECURITY))
+    result = asdict(
+        describe({"hmc_list_systems": _guarded_stub()}, None, TOOL_SECURITY, ())
+    )
 
     assert result["policy_name"] is None
     assert result["policy_source"] is None
@@ -295,12 +297,19 @@ def test_inspection_does_not_raise_on_a_tool_outside_the_index():
 
 
 def test_inspection_carries_only_allowlisted_value_sources(monkeypatch):
-    """R17: no config.toml value and no HMC_* environment value reaches the payload.
+    """R17: the payload's keys are an allowlist, and no connection value leaks.
 
     The sentinels must exist in the process for their absence to mean anything —
     an unset variable is absent from every payload, correct or leaking — and they
     are checked as *values*, since a leak of HMC_PASSWORD carries its value and
     not its name.
+
+    `power_ownership_guards` is the one key that reads configuration, and #470 is
+    why: the ADR 0092 §4 guard fails open, so its effective value has to be
+    readable from the process that would act on it. It carries that one boolean
+    and the connection names a grant already declares — never a host, user,
+    credential, or any other `HMC_*` value. The sentinel check below now covers
+    that key too.
     """
     monkeypatch.setenv("HMC_HOST", "sentinel-host-do-not-leak")
     monkeypatch.setenv("HMC_USER", "sentinel-user-do-not-leak")
@@ -318,6 +327,7 @@ def test_inspection_carries_only_allowlisted_value_sources(monkeypatch):
         "declared_grants",
         "enforced_dimensions",
         "declared_only_dimensions",
+        "power_ownership_guards",
     }
     rendered = repr(result)
     for sentinel in (
@@ -476,7 +486,9 @@ def test_an_unwrapped_connection_bearing_tool_withholds_the_dispatch_claim():
     def hmc_list_systems(profile: str | None = None) -> str:
         return "ok"
 
-    result = describe({"hmc_list_systems": hmc_list_systems}, _legacy(), TOOL_SECURITY)
+    result = describe(
+        {"hmc_list_systems": hmc_list_systems}, _legacy(), TOOL_SECURITY, ()
+    )
 
     assert result.ceiling_enforced is True
     assert result.enforced_dimensions == ("tools",)
@@ -494,7 +506,7 @@ def test_a_name_outside_the_index_withholds_every_enforcement_claim():
         return "ok"
 
     result = describe(
-        {"hmc_not_in_the_index": hmc_not_in_the_index}, _legacy(), TOOL_SECURITY
+        {"hmc_not_in_the_index": hmc_not_in_the_index}, _legacy(), TOOL_SECURITY, ()
     )
 
     assert result.ceiling_enforced is False
@@ -524,7 +536,7 @@ def test_an_unwrapped_tool_costs_only_the_target_label():
     assert security.targets, "the fixture needs a tool that declares selectors"
     index = {**TOOL_SECURITY, "hmc_list_lpars": replace(security, connection_argument=None)}
 
-    result = describe({"hmc_list_lpars": hmc_list_lpars}, _legacy(), index)
+    result = describe({"hmc_list_lpars": hmc_list_lpars}, _legacy(), index, ())
 
     assert result.ceiling_enforced is True
     assert result.enforced_dimensions == ("tools", "connections")
@@ -589,7 +601,7 @@ def test_a_table_grant_registry_reports_targets_enforced():
     }
     assert "hmc_effective_permissions" in handlers
 
-    result = describe(handlers, policy, TOOL_SECURITY)
+    result = describe(handlers, policy, TOOL_SECURITY, ())
 
     assert result.ceiling_enforced is True
     assert result.enforced_dimensions == ("tools", "connections", "targets")

@@ -151,6 +151,36 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `event == "ownership-override"` filter keeps counting approved bypasses and nothing else.
   `docs/authorization-audit.md` documents the record and the caveats on alerting from it.
   No exported signature changes.
+- `hmc_effective_permissions` reports `power_ownership_guards` (#470): the effective,
+  post-precedence `authorize_power_operations` (ADR 0092 §4) for every connection the access
+  policy's grants name, resolved inside the running server rather than in the shell that
+  asks. The guard fails **open** and `HMCConfig` sets `extra="ignore"`, so a mistyped profile
+  key or environment variable is dropped silently and is otherwise indistinguishable from a
+  correct `false`; each entry carries the `source` that supplied the value — `environment`,
+  `profile`, or `default`, where `default` is the answer that means nothing the operator
+  wrote arrived. A fourth value, `ambiguous`, reports that a **case variant** of
+  `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: pydantic-settings matches a variant
+  case-insensitively while the profile loader drops only the exact upper-case spelling
+  (#531), so a variant loses to a profile on one resolution path and wins on the other, and
+  nothing in the server can tell which happened. `hmc-mcp config show` could not answer
+  either deployment the documentation
+  recommends: it exits 1 with no `config.toml`, and it reads the invoking shell's environment
+  rather than the served process's. The entry keeps the setting's own name and polarity —
+  `authorize_power_operations: true` means the ownership guard is enforced — because
+  `authorized: false` would read as "not authorized" for the permissive state, which is the
+  misreading this change exists to end. With `HMC_HOST` set the report carries at most the
+  `<default>` row, because every connection token collapses there at dispatch. A connection
+  whose config cannot be built reports
+  `authorize_power_operations: null` with `source: unresolved` and a closed `detail` — the
+  exception class,
+  plus the rejected field names for a `ValidationError`. The underlying message is withheld
+  from the caller and logged instead: `ConfigError` names every `profiles` and `nicknames`
+  key in `config.toml`, which is the connection inventory ADR 0038 refuses to disclose, and
+  a `ValidationError` quotes the value it rejected. Beyond the connection names the policy
+  already declares, the entries carry no host, user, or credential; ADR 0037's disclosure
+  bullet is amended to record the narrowed claim. `describe()` takes the resolved guards as
+  a fourth argument and stays a pure function of its arguments; `EffectivePermissions` is not
+  a `hmc_mcp.api` export, so the facade manifest is unaffected.
 - `install-attempted` audit record for a detached `installios` submission (#469, ADR 0102).
   `install_lpar_os` and `install_vios` submit an irreversible install against a partition's
   disks and detach; the path has no HMC job, no ADR 0011 ownership guard, and — for an
@@ -170,6 +200,35 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 ### Changed
 
 
+- `hmc_wait_for_job` and `hmc_get_job` now read through `operations_jobs` instead of calling
+  `HMCClient` directly, so an MCP caller can tell a reaped job from a running one (#474, ADR 0093
+  amendment). **Tool behaviour changes:** a job the HMC no longer has returns `found: false`
+  (`hmc_wait_for_job`) or null (`hmc_get_job`) instead of raising `HMCError`, and polling stops on
+  it rather than running to the deadline — read `found` first, and note that a caller which only
+  caught `HMCError` for a vanished job now gets a successful result. `found: false` still carries
+  `timed_out: true`, now returned immediately rather than after the deadline, so `timed_out` must
+  not be read as "still running" without checking `found`. `hmc_wait_for_job`'s `job_href` also
+  changes: a `job_href` you passed that resolved is echoed back verbatim, where the value
+  previously came from the HMC's own SELF link. A 404 on the *first* read is
+  reported straight through, so a momentary one now reads as `found: false` where it previously
+  raised; only a disappearance after the job has been seen alive gets the confirming re-read. The
+  output schema is
+  unchanged: `found` was already a required property of the shared wait shape. Two smaller
+  changes come with the shared operation. `timeout_seconds` is now a soft bound: a job that
+  disappears after being seen alive is re-read once before being reported gone, and that read is
+  owed past the deadline, so `hmc_wait_for_job` can return a whole `poll_interval` late —
+  more than the deadline itself if `poll_interval` exceeds `timeout_seconds`. And a `job_uuid`
+  that is empty, is a bare dot, or carries a path, query, fragment, percent, or interior
+  whitespace character now raises `ValueError` before any request for the job is made — though
+  after the session is opened, so a malformed handle still costs a logon and logoff;
+  surrounding whitespace is still trimmed. That check applies **even when `job_href` is
+  supplied**, where the client previously ignored `job_uuid` altogether — so an issue #95 caller
+  that persisted only the submission link must now pass the identifier too. Every non-404 HMC
+  failure still raises. Two consequences specific to `hmc_get_job`: null no longer separates a
+  reaped job from an HMC that produced no entry, where the `HMCError` used to, and because that
+  tool returns the HMC entry rather than the outcome, the `link` it carries can be one a read just
+  proved dead — ADR 0093 clause 2's never-store-a-dead-link guarantee does not reach it. The
+  `hmc jobs` CLI commands keep the previous behaviour; #526 owns that pass.
 - `HMC_AGENT_ID` values containing double quotes or backslashes are rejected at config load
   instead of being passed through into SSH command construction (#386).
 - `hmc_install_lpar_os` and `hmc_install_vios` now drive the HMC CLI

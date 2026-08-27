@@ -107,21 +107,80 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   every other profile stays unguarded, including a second profile pointing at the
   same HMC, and both the MCP tools and the CLI take a caller-supplied profile
   selector. `HMC_AUTHORIZE_POWER_OPERATIONS` overrides every profile's TOML value,
-  so it is the setting that cannot be selected around.
+  so it is the setting that cannot be selected around — **spelled exactly**. The
+  profile loader drops a TOML key only when the variable's exact upper-case name
+  is in the environment, so a lower- or mixed-case export does not override a
+  profile that carries the key (#531).
 
-  **Check that it actually took.** This setting fails **open**, and a mistyped
-  profile key or environment variable is dropped silently — indistinguishable from
-  a correct `false`. `hmc-mcp config show` reports the profile's resolved value,
-  with three limits worth knowing before you trust it. It requires a `config.toml`
-  and exits 1 without one, so it cannot answer for an env-var-only setup. It reads
-  the environment of the shell that invoked it, not of the `hmc-mcp serve` process
-  an MCP host launched with its own environment block. And when `HMC_HOST` (or an
+  **Check that it actually took — ask the server, not the shell.** This setting
+  fails **open**, and a mistyped profile key or environment variable is dropped
+  silently — indistinguishable from a correct `false`. Call
+  `hmc_effective_permissions` against the running server and read
+  `power_ownership_guards`: one entry per connection the access policy's grants
+  name, each carrying the effective post-precedence `authorize_power_operations`
+  value — `true` means the ownership guard is **enforced** — and the `source` that
+  supplied it: `environment`, `profile`, or `default`. `default` is the answer
+  that means *nothing you wrote arrived*, which is the case a bare
+  `false` cannot distinguish. It also covers one case that is not your memory's
+  fault: a `config.toml` that exists but cannot be read, parsed, or resolved to a
+  profile is discarded on the default connection with no error and no log line
+  from this report, and every setting in it reverts to its built-in default. **If
+  you have a `config.toml` and the default connection reads `default`, suspect the
+  file itself** before you go looking for a typo in the key. A read or parse
+  failure is not silent everywhere: `hmc_list_configured_hosts` surfaces it by
+  name, with the line and column, and the same `read` grant that reaches this
+  report reaches that tool. Only a file that parses but resolves to no profile —
+  a missing `default_profile`, an `HMC_PROFILE` naming nothing — is silent on
+  every channel.
+
+  A fourth value, `ambiguous`, means a **case variant** of
+  `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: only the exact upper-case
+  spelling is dropped from a profile's keys before the config is built, so a
+  variant loses to a profile there and wins where no profile is read — and nothing
+  in the server can tell which happened. Fix the spelling.
+
+  **With `HMC_HOST` set, expect fewer rows than your policy has connections.** Every
+  connection token collapses to the default one at dispatch, so the report carries at
+  most the `<default>` row — the named ones vanish because nothing can reach them. An
+  empty `power_ownership_guards` means the policy grants no connection any call can
+  reach, not that the report found nothing to say.
+
+  A connection whose config cannot be built reports
+  `authorize_power_operations: null` with `source: unresolved` and a `detail`
+  classifying the failure — `ConfigError`, or
+  `ValidationError` with the field names it rejected. The `detail` is deliberately
+  closed. For a `ConfigError` the full message goes to the server's log instead,
+  because it names every profile and nickname key in your `config.toml` — **once
+  per process**, on the first call that hits that failure, since the tool's call
+  rate belongs to the MCP client; restart the server to see it again. That line is
+  written outside the bounded stderr sink of ADR 0043 (#534). For a
+  `ValidationError` there is no fuller message anywhere, in the report or the log:
+  pydantic quotes the value it rejected, and a bad `password` would then be in
+  your log, so you get the field name and read the value from the config source
+  yourself. Beyond the connection names your policy already declares, the entries
+  carry no host, user, or credential.
+
+  Because the report is resolved inside the process being asked, it answers where
+  `hmc-mcp config show` cannot. `config show` requires a `config.toml` and exits 1
+  without one, so it cannot answer for an env-var-only setup at all. It reads the
+  environment of the shell that invoked it, not of the `hmc-mcp serve` process an
+  MCP host launched with its own environment block. And when `HMC_HOST` (or an
   explicit `--host`) is set, a tool run skips the profile entirely and builds its
   config from environment variables alone — so a TOML-only
-  `authorize_power_operations = true` is shown as enabled while the runtime
-  resolves it to `false`. That last one is the fail-open direction, and it is
-  another reason to set `HMC_AUTHORIZE_POWER_OPERATIONS` rather than the TOML key.
-  #470 tracks reporting the value from the running server itself.
+  `authorize_power_operations = true` is shown by `config show` as enabled while
+  the runtime resolves it to `false`. That last one is the fail-open direction; the
+  server's own report resolves it the same way a tool call does and says `default`,
+  and it is another reason to set `HMC_AUTHORIZE_POWER_OPERATIONS` rather than the
+  TOML key.
+
+  One limit remains, and it is a tradeoff rather than advice: an access policy that
+  does not grant `hmc_effective_permissions` withholds the tool, and then neither
+  route answers for the running process — but the tool also discloses the whole
+  policy to the MCP client (ADR 0037). Weigh those against each other for your
+  deployment. There is no second in-process channel for the value today: with the
+  tool withheld, `config show` and its three limits above are all that is left.
+  #533 tracks announcing the effective value at `serve` startup, which would not
+  depend on the tool being granted.
 
   When the setting is off, `power_lpar` reads no ownership token and opens no SSH
   connection — the call path is exactly what it was before this setting existed.

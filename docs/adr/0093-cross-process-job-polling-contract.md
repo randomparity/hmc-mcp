@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (2026-08-25)
+Accepted (2026-08-25). Amended 2026-08-26 by issue #474 — see *Amendment (#474)* below: the two
+job tools now read through `operations_jobs`, so the MCP surface gains the distinction this
+record's Consequences section said it did not.
 
 ## Context
 
@@ -282,10 +284,97 @@ submit-and-wait tool, because `jobs.job_outcome` is the one normalizer behind al
 `hmc_wait_for_job`'s tool docstring describes both fields — including that on *that* tool a reaped
 job still surfaces as an `HMCError`, because it polls through `HMCClient.wait_for_job`, which
 raises on the 404 these operations translate. The MCP surface does not gain the reaped-versus-
-running distinction here; only `hmc_mcp.api` does. The submitting tools' own docstrings describe
+running distinction here; only `hmc_mcp.api` does.
+
+> **Amended by #474** (2026-08-26). **The two sentences above no longer hold.** `hmc_wait_for_job`
+> polls through `operations_jobs.wait_for_job` and `hmc_get_job` reads through
+> `operations_jobs.get_job`, so the MCP surface has the reaped-versus-running distinction too. See
+> *Amendment (#474)* below; the rest of this Consequences section stands.
+
+The submitting tools' own docstrings describe
 neither field: five presentation docstrings are outside this decision's surface, so issue #456 owns
 that pass. Until it lands, an agent reading `found` off a submission report has the tool docstring
 of `hmc_wait_for_job` and this ADR, and nothing on the tool it actually called.
+
+## Amendment (#474): the MCP job tools read through `operations_jobs`
+
+`hmc_wait_for_job` polls `operations_jobs.wait_for_job` and `hmc_get_job` reads
+`operations_jobs.get_job`; neither calls `HMCClient` any more. Clause 3's "polling reading" of
+`JobOutcome` therefore covers what `hmc_wait_for_job` returns, because it now *is* an outcome one
+of clause 4's two operations produced.
+
+**A vanished job surfaces in the payload as `found=False`, not as a new exception.** `found` is
+already a `required` property of the output schema `hmc_wait_for_job` shares with every
+submit-and-wait tool, and the repository already tests that `required` equals the full property
+set, so nothing about the tool's shape changes — a value that was unreachable becomes reachable.
+The alternative the issue weighed, raising a distinct "job absent" error, is the
+`JobNotFoundError` this ADR already rejected one layer down; taking it here would give one
+question two answers inside one package, and would put an error channel on an observation that is
+ordinary for a worker polling hours after submission.
+
+`hmc_get_job` keeps its `dict | null` shape rather than becoming a `JobOutcome`: it returns the
+outcome's `job`, so a reaped job reads as null — the same answer the tool already gave for a
+response carrying no job entry, and clause 4 already treats those two as one observation. Widening
+it to the full outcome would be a second, larger shape change that nothing here needs. The price is
+a carve-out from clause 2: because `hmc_get_job` hands back the HMC entry rather than the outcome,
+the `job_href` `_handle` computed is discarded, so the guarantee that a consumer re-persisting from
+every outcome never stores a link known not to work does **not** reach that tool. Its `link` can be
+one a read just proved dead. Nothing else on this branch relies on that guarantee, and buying it
+back means the shape change this clause declines.
+
+What changes for a caller: a reaped job that used to raise `HMCError` now returns successfully, so
+a caller that only caught the exception must read `found` (or the null) instead; `timeout_seconds`
+becomes the soft bound clause 5 describes, because the owed confirming read can outlive the
+deadline by a whole poll interval, which is not bounded by `timeout_seconds`; and an identifier
+that addresses something other than one job now raises `ValueError` before any request for the job
+is made — including an empty one, and including the case where a `job_href` was supplied, which is
+where the client previously ignored the identifier altogether. The check runs inside the operation,
+so it lands after the session is opened rather than at the tool's own edge, and a malformed handle
+still costs a logon and logoff. Every non-404 HMC failure still raises, which is what keeps
+`found=False` meaning the HMC produced no entry rather than that the read failed.
+
+That last reading is bounded by clause 5, and the tool docstrings now say so: the confirming
+re-read applies only to a disappearance seen *after* the job was alive, so a 404 on the first poll
+becomes `found=False` unconfirmed, where the client path used to raise. Confirming the first read
+would change clause 5's stop condition and belongs in its own decision.
+
+Further residuals stay open, each named in the tool docstrings rather than fixed here.
+
+Clause 2's promise that a re-persisted `job_href` is never a link known not to resolve also fails
+on `wait_for_job` when the caller's spelling of the link differs from the HMC's own —
+`operations_jobs._handle` compares them as raw strings — so the `hmc_wait_for_job` docstring states
+the weaker guarantee until #529 closes it.
+
+Clause 5's confirming re-read is owed a full poll interval past the deadline, but the loop shortens
+it to whatever remains when the disappearance is seen with less than an interval left — which is
+the case clause 5 names when it justifies owing the read at all. The docstring says "up to one
+`poll_interval`" until #532 closes it.
+
+Clause 2's echo rule now reaches a presentation surface, where "the link the caller passed" means
+the caller's exact string. The client validates only that its path addresses a job resource and
+requests only that path, so host, query and fragment round-trip unchecked into a field this record
+tells consumers to re-persist. `urlsplit` also *deletes* tab, carriage return and newline while
+building the path, so the string `_reject_non_job_path` validates is not the one echoed back — a
+mismatch #537 owns. Normalizing the echo to the requested path would change the persisted-handle
+shape clause 2 fixes, so the `hmc_wait_for_job` docstring says instead that an echoed link is the
+caller's own input rather than something the HMC attested.
+
+The same unsanitized value reaches `operations_jobs`' own warning records, and nothing binds a
+handler to the `hmc_mcp` logger, so they fall to `logging.lastResort` and land raw on the stderr
+stream ADR 0040 defines as one JSON record per line. Serving these tools from `operations_jobs` is
+what first makes those sites reachable with caller-controlled input, so this change closes it:
+every warning that interpolates the link uses `%r`. ADR 0051's Context weighed only HMC-returned
+text at that boundary; binding `hmc_mcp` to a `StreamSafeFormatter` sink is the general fix and is
+not made here.
+
+`_confirm_missing` treats the HTTP 400 REST000E of issue #95 firmware as absence, so on exactly the
+firmware `job_href` exists to serve, a link whose parent resource was removed makes one live job
+read as absent. ADR clause 2 settled that trade at the operations layer on the strength of a
+warning log; an MCP caller cannot read that log, so both tool docstrings now tell a caller who
+supplied a `job_href` to re-read by identifier alone before acting on absence.
+
+And the CLI (`cli_jobs`) still calls `HMCClient` directly and still has the older contract; #526
+owns that pass, because the CLI's output contract is its own decision.
 
 ## Considered & rejected
 

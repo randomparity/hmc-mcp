@@ -11,6 +11,7 @@ boundary (``asyncssh.connect``) like the vNIC tests do.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
@@ -164,6 +165,53 @@ def test_get_job_empty_returns_none(monkeypatch, mock_hmc):
         return_value=httpx.Response(204)
     )
     assert hmc_get_job("job-uuid-999") is None
+
+
+def test_get_job_reaped_returns_none(monkeypatch, mock_hmc):
+    """A job the HMC no longer has reads as no job, not as an HMCError (#474)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(404, text="not found")
+    )
+    assert hmc_get_job("job-uuid-999") is None
+
+
+def test_get_job_degraded_hmc_still_raises(monkeypatch, mock_hmc):
+    """Only "no job there" reads as no job; a failing HMC still raises (#474)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(503, text="service unavailable")
+    )
+    with pytest.raises(HMCError) as exc_info:
+        hmc_get_job("job-uuid-999")
+    assert exc_info.value.status_code == 503
+
+
+def test_get_job_rejects_identifier_addressing_something_else(monkeypatch, mock_hmc):
+    """An identifier carrying a path is rejected, not reported as a missing job."""
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="not an HMC job identifier"):
+        hmc_get_job("jobs/job-uuid-999")
+
+
+def test_get_job_requires_identifier_even_with_href(monkeypatch, mock_hmc):
+    """The identifier is now checked even when job_href would decide the path.
+
+    The client ignored ``job_uuid`` entirely when a link was supplied, so this is
+    the one rejection that changes behaviour rather than moving an error (#474).
+    """
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="must be a non-empty HMC job identifier"):
+        hmc_get_job("", job_href=_JOB_OP_HREF)
+
+
+def test_get_job_trims_surrounding_whitespace(monkeypatch, mock_hmc):
+    """Padding from a stored handle is trimmed, not rejected — as documented."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+    assert hmc_get_job("  job-uuid-999  ")["Resource"]["JobID"] == "job-uuid-999"
 
 
 def test_lpars_by_name(monkeypatch, mock_hmc):
@@ -1132,6 +1180,77 @@ def test_wait_for_job_empty_resource_returns_timed_out_shape(monkeypatch, mock_h
     assert result.job["Resource"] == ""
 
 
+def test_wait_for_job_reaped_returns_found_false(monkeypatch, mock_hmc):
+    """A reaped job comes back as found=False, not as an HMCError (#474)."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(404, text="not found")
+    )
+
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=300, poll_interval=5)
+
+    assert set(asdict(result)) == JOB_OUTCOME_KEYS
+    assert result.found is False
+    assert result.job_id == "job-uuid-999"
+    assert result.status is None
+    assert result.error is None
+    assert result.job is None
+    assert result.job_href is None
+    # timed_out rides along on a gone job because no terminal status was seen;
+    # it is not a "still running" signal, which is why found is read first.
+    assert result.timed_out is True
+    # The whole point: gone is answered on the first poll, not after the timeout.
+    assert route.call_count == 1
+
+
+def test_wait_for_job_empty_feed_is_also_reported_gone(monkeypatch, mock_hmc):
+    """The other way the HMC produces no entry ends the wait the same way (#474)."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(204)
+    )
+
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=300, poll_interval=5)
+
+    assert result.found is False
+    assert result.status is None
+    assert route.call_count == 1
+
+
+def test_wait_for_job_running_is_found_true(monkeypatch, mock_hmc):
+    """The other side of the distinction: still running is found=True (#474)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)  # Status=RUNNING
+    )
+
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=1)
+
+    assert result.found is True
+    assert result.timed_out is True
+    assert result.status == "RUNNING"
+
+
+def test_wait_for_job_degraded_hmc_still_raises(monkeypatch, mock_hmc):
+    """A failing HMC is not a vanished job: it still aborts the wait (#474)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(503, text="service unavailable")
+    )
+    with pytest.raises(HMCError) as exc_info:
+        hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=1)
+    assert exc_info.value.status_code == 503
+
+
+def test_wait_for_job_rejects_identifier_addressing_something_else(
+    monkeypatch, mock_hmc
+):
+    """An identifier carrying a path is rejected, not reported as found=False."""
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="not an HMC job identifier"):
+        hmc_wait_for_job("jobs/job-uuid-999")
+
+
 # ---------------------------------------------------------------------- #
 # hmc_get_job / hmc_wait_for_job — SELF-link-based polling (issue #95)
 # ---------------------------------------------------------------------- #
@@ -1154,6 +1273,38 @@ def test_get_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     assert result["Resource"]["JobID"] == "job-uuid-999"
 
 
+def test_job_href_cannot_forge_a_log_record(monkeypatch, mock_hmc, caplog):
+    """A newline in a caller-supplied job_href must not reach the log raw.
+
+    ``urlsplit`` deletes CR/LF while building the path, so the string
+    ``_reject_non_job_path`` validates is not the one that gets logged: an
+    embedded newline passes that check untouched. These records land on the
+    stderr stream ADR 0040 defines as one JSON record per line, and both job
+    tools take ``job_href`` straight from the caller.
+    """
+    _hmc_env(monkeypatch)
+    payload = '{"level":"error","message":"forged"}'
+    forged = f"{_JOB_OP_HREF}\n{payload}"
+    # urlsplit drops the newline, so the request goes to the joined path — while
+    # the raw string, newline intact, is what reaches the log.
+    mock_hmc.get(f"{_JOB_OP_HREF}{payload}").mock(
+        return_value=httpx.Response(404, text="gone")
+    )
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(404, text="gone")
+    )
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+        assert hmc_get_job("job-uuid-999", job_href=forged) is None
+
+    assert caplog.records, "the found=False translation is expected to warn"
+    for record in caplog.records:
+        assert "\n" not in record.getMessage()
+    assert any("forged" in r.getMessage() for r in caplog.records), (
+        "the link should still be reported, just escaped"
+    )
+
+
 def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     """hmc_wait_for_job(uuid, ..., job_href=...) polls the exact href path."""
     _hmc_env(monkeypatch)
@@ -1170,6 +1321,9 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     assert not global_route.called
     assert result.status == "COMPLETED"
     assert result.timed_out is False
+    # A supplied link that resolved is echoed back, which is what makes a null
+    # job_href on a found outcome mean "your link was retired" (#474).
+    assert result.job_href == _JOB_OP_HREF
 
 
 def test_recent_jobs_unsupported_endpoint_raises_actionable_error(
