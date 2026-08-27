@@ -46,9 +46,10 @@ _PRISTINE_THIRD_PARTY = tuple(
 )
 
 
-#: The package logger #534's install binds. Unlike ``fastmcp`` its pristine state
-#: is reconstructible — nothing configures it at import — so the fixture resets it
-#: to empty rather than applying a snapshot.
+#: The package logger #534's install binds. Unlike ``fastmcp`` its pristine state is
+#: reconstructible — nothing configures it at import — so the fixture resets it to
+#: empty rather than applying a snapshot. Only the handler list: the install leaves
+#: ``propagate`` and the level alone, so nothing else about it moves.
 _PACKAGE_LOGGER = logging.getLogger("hmc_mcp")
 
 
@@ -102,18 +103,6 @@ def _restore_third_party_loggers() -> None:
         logger.propagate = propagate
 
 
-def _reset_package_logger() -> None:
-    """Undo #534's install: no handler, propagating to root again.
-
-    The reset matters more here than the restore. ``install_package_stderr_sink``
-    sets ``propagate = False`` on ``hmc_mcp``, so one test that serves would
-    otherwise cut every later test's ``caplog`` — which attaches at root — off from
-    every ``hmc_mcp.*`` record, and those assertions would pass vacuously.
-    """
-    _PACKAGE_LOGGER.handlers[:] = []
-    _PACKAGE_LOGGER.propagate = True
-
-
 @pytest.fixture(autouse=True)
 def isolate_audit_logging():
     """Give every test a pristine ``hmc_mcp.audit`` logger, and restore it after.
@@ -148,6 +137,11 @@ def isolate_audit_logging():
     loggers need their pristine state captured at import rather than reset to empty,
     so the snapshots live at module level and this fixture only applies them — at
     setup as well as teardown, for the reason above.
+
+    Since #534 the ``hmc_mcp`` logger is reset the same way, for the same reason:
+    ``server.install_package_stderr_sink`` attaches a handler to it, and a handler
+    left behind by a serving test would take a later test's ``hmc_mcp.*`` records
+    onto the sink and out of whatever that test meant to read them from.
     """
     _restore_fastmcp_logger()
     _restore_third_party_loggers()
@@ -156,11 +150,11 @@ def isolate_audit_logging():
     saved_level = logger.level
     saved_propagate = logger.propagate
     saved_root = list(logging.root.handlers)
-    saved_package = (list(_PACKAGE_LOGGER.handlers), _PACKAGE_LOGGER.propagate)
+    saved_package = list(_PACKAGE_LOGGER.handlers)
     logger.handlers.clear()
     logger.setLevel(logging.NOTSET)
     logger.propagate = True
-    _reset_package_logger()
+    _PACKAGE_LOGGER.handlers[:] = []
     try:
         yield
     finally:
@@ -168,7 +162,7 @@ def isolate_audit_logging():
         logger.setLevel(saved_level)
         logger.propagate = saved_propagate
         logging.root.handlers[:] = saved_root
-        _PACKAGE_LOGGER.handlers[:], _PACKAGE_LOGGER.propagate = saved_package
+        _PACKAGE_LOGGER.handlers[:] = saved_package
         _restore_fastmcp_logger()
         _restore_third_party_loggers()
         # ADR 0043 made delivery asynchronous, so a record emitted here can still

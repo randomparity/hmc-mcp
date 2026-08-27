@@ -351,7 +351,12 @@ Three things to know if you consume this stream:
   [ADR 0051](adr/0051-fastmcp-logging-through-the-bounded-sink.md) FastMCP's own records
   arrive on the same queue as these — one concise line for a denial, a plain traceback for
   a genuine handler bug — and its startup banner is written straight to the stream by
-  `rich` before serving begins.
+  `rich` before serving begins. Since #534 this package's own non-audit diagnostics arrive
+  there too, each physical line prefixed `hmc_mcp: `, which is a marker chosen so it cannot
+  begin a JSON object. `hmc_mcp` is a second attachment point on the same terms as
+  `hmc_mcp.audit` above — attach a handler to it and the server leaves yours in place instead
+  of installing its own — with one difference: `propagate` is left alone there, so a handler
+  you already have above `hmc_mcp` keeps receiving these records after a serve.
 
 ## What this is not
 

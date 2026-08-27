@@ -166,9 +166,14 @@ pipe buffer it is standing in for.
 covered these writes; only the wiring was missing. `install_audit_sink` bound `hmc_mcp.audit`
 alone, ADR 0051 bound the third-party set, and a record on any other `hmc_mcp.*` logger found
 zero handlers in its `callHandlers` walk and went to `logging.lastResort` — a `StreamHandler` on
-fd 2, synchronous and unbounded, without ADR 0051's prefix or its escaping. Two producers were
-already on that route: `HMCConfig._warn_audit_memento_override`, and `_log_unresolved`, which
-#470 deduplicated to one line per distinct failure *because* the route was unbounded.
+fd 2, synchronous and unbounded, without ADR 0051's prefix or its escaping. Twenty-one
+`WARNING`-or-above call sites across six modules were on that route — `config`,
+`server_permissions`, `operations_jobs`, `operations_lpar`, `operations_templates` and
+`console_capture`. #534 names two of them, and they are the two that are rate-limited:
+`HMCConfig._warn_audit_memento_override` fires once per config construction, and
+`_log_unresolved` was deduplicated by #470 to one line per distinct failure *because* the route
+was unbounded. The other nineteen are not rate-limited, which is what the queue-pressure clause
+below is sized from.
 
 One binding on the namespace covers every producer in it, present and future, because
 `callHandlers` reaches a parent's handler. Three choices inside it:
@@ -180,43 +185,46 @@ One binding on the namespace covers every producer in it, present and future, be
 - **No handler is displaced, and no level is set.** ADR 0051's wholesale removal answers a
   problem that does not exist here — nothing but an operator attaches a handler to `hmc_mcp` —
   so the sink goes on only when the logger is bare, which also makes a second call add nothing.
-  Both the deferral and the `propagate = False` below are ADR 0040's treatment of
-  `hmc_mcp.audit` applied to the namespace around it, including its two unenforced constraints
-  on the attachment point: a handler an operator attaches here must not write to `sys.stdout`,
-  which under stdio is the JSON-RPC stream, and it is called on the dispatch path — the
-  `_log_unresolved` line runs inside a tool call — so a handler that blocks there blocks the
-  call, which is the failure this record exists to remove and which it cannot fix from here.
-- **The level is left at `NOTSET`, and that is not volume-neutral.** At the shipped default it
-  is: root sits at `WARNING`, so `WARNING` remains the floor — the level
-  `logging.lastResort` enforced. It diverges when an operator lowers root's level without
-  attaching a root handler, the one configuration in which `lastResort` was doing the
-  filtering: those sub-`WARNING` records were discarded before and are now rendered onto this
-  queue, and `_log_unresolved`'s repeat branch is `DEBUG` on every call. Accepted rather than
-  pinned at `WARNING`, because `propagate = False` has already closed the route by which such
-  an operator used to see these records at all, and a hard floor with no lever would make them
-  unreachable in a served process. An operator who lowers the level gets them, bounded.
-- **`propagate = False`, for ADR 0040's reason rather than a new one.** Under stdio a
-  `StreamHandler(sys.stdout)` above this namespace would put a package record into the JSON-RPC
-  stream. ADR 0040 set the flag on `hmc_mcp.audit` at import for exactly that; this extends the
-  same rule to the namespace around it. The cost is real and it is the one ADR 0040 already
-  accepted: an operator's root handler stops seeing these records, and they reach fd 2 anyway.
+  That makes `hmc_mcp` a second operator attachment point, carrying the two unenforced
+  constraints ADR 0040 wrote down for the audit one: a handler attached here must not write to
+  `sys.stdout`, which under stdio is the JSON-RPC stream, and it is called on the dispatch
+  path — the `_log_unresolved` line runs inside a tool call — so one that blocks there blocks
+  the call, which is the failure this record exists to remove and which it cannot fix from here.
+- **`propagate` is left alone**, which is where this parts company with
+  `install_audit_sink`. ADR 0040 clears the flag on the reserved logger because a record goes
+  out there on *every authorized call*, so one `StreamHandler(sys.stdout)` above it corrupts
+  the protocol stream on every call. Extending that to this namespace was considered and
+  rejected: it would take all twenty-one diagnostic sites out of an operator's own centralized
+  logging the moment they serve — silently, and under `--http` too, where stdout carries no
+  protocol at all. The defect #534 names needs a handler on the walk and nothing else, and a
+  duplicate rendering into a destination the operator chose is a far smaller cost than losing
+  the records there. The stdout hazard for these records is unchanged from before this
+  amendment, is the operator's own act, and is already documented in
+  `docs/authorization-audit.md`.
+- **The level is left at `NOTSET`, and this is not volume-neutral for the queue.** The floor is
+  unchanged at the shipped default — root at `WARNING`, the level `logging.lastResort`
+  enforced. What changes is how much reaches *this sink*: a record that previously found an
+  operator's root handler never consulted `lastResort` and never entered the queue at all, and
+  now enters it as well. With root below `WARNING` that additionally includes records
+  `lastResort` discarded outright, and `_log_unresolved`'s repeat branch is `DEBUG` on every
+  call. Accepted rather than pinned at `WARNING` on the handler: a hard floor with no lever
+  would put these records out of reach of an operator who deliberately lowered the level.
 
 `hmc_mcp.audit` is unaffected — its own `propagate = False` keeps it off the parent handler, so
 the audit stream stays bare one-line JSON with no prefix and no second rendering. The tests are
-in `tests/app/test_connection_authorization.py`; `tests/conftest.py` resets the binding between
-tests, without which one serving test would silence every later `caplog` assertion on an
-`hmc_mcp.*` record. Within a single test the flag is not reset, so a test that serves and then
-asserts on an `hmc_mcp.*` record through `caplog` — whose handler is on root — passes
-vacuously; nothing does today, and the negative `caplog` assertions in
-`tests/unit/test_ownership.py` are the shape that would.
+in `tests/app/test_connection_authorization.py`, and `tests/conftest.py` clears the handler
+between tests so a serving test cannot take a later test's `hmc_mcp.*` records onto the sink.
 
-**One more producer on a shared bound.** ADR 0051 recorded that its added producers reach the
+**More producers on a shared bound.** ADR 0051 recorded that its added producers reach the
 1024-slot capacity sooner and narrow the security-observability window; this adds the rest of
-the `hmc_mcp` namespace on the same terms. Against a destination that has stopped draining,
-package diagnostics can now displace audit records in the queue. Accepted on this record's own
-trade — a droppable trail that keeps serving over a complete one that stops — and bounded by
-the same precondition, a destination nobody is draining. The `records-dropped` marker already
-counts lines rather than records, so nothing about the accounting changes.
+the `hmc_mcp` namespace on the same terms, and it is the larger of the two additions —
+twenty-one call sites, nineteen of them unrated, against a queue whose other occupant is the
+authorization trail. Against a destination that has stopped draining, package diagnostics can
+displace audit records. Accepted on this record's own trade — a droppable trail that keeps
+serving over a complete one that stops — and bounded by the same precondition, a destination
+nobody is draining, which under stdio is the client harming itself. The `records-dropped`
+marker already counts lines rather than records, so the accounting is unchanged and a reader
+still learns how many lines are missing.
 
 **Which channel a non-audit `hmc_mcp.*` record uses.** This sink carries three grammars, not
 two, and the third is the one a caller is most likely to reach for by mistake:

@@ -1131,23 +1131,27 @@ def test_installing_the_package_sink_twice_leaves_one_handler():
     assert len(PACKAGE_LOGGER.handlers) == 1
 
 
-def test_the_package_binding_keeps_records_out_of_an_ancestor_handler(capsys):
-    """Why the binding sets ``propagate = False``, asserted on a hostile ancestor.
+def test_the_package_binding_leaves_an_ancestor_handler_receiving(capsys):
+    """The binding adds a destination; it does not take one away.
 
-    Under stdio a ``StreamHandler(sys.stdout)`` above this namespace puts a package
-    warning into the JSON-RPC stream — ADR 0040's reason for the same flag on
-    ``hmc_mcp.audit``, and identical here. The record must still reach fd 2.
+    Unlike ``install_audit_sink`` this leaves ``propagate`` alone, so an operator
+    who routes `hmc_mcp.*` into their own centralized logging still gets these
+    records after a serve — the alternative loses them silently, including under
+    `--http`, where the stdout hazard ADR 0040 names does not even exist. Pinned
+    against a root handler because that is the shape an operator's `basicConfig`
+    leaves, and it is what would have gone quiet.
     """
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    logging.root.handlers[:] = [stdout_handler]
+    received: list[str] = []
+    catcher = logging.Handler()
+    catcher.emit = lambda record: received.append(record.getMessage())  # type: ignore[method-assign]
+    logging.root.handlers[:] = [catcher]
 
     _serve(_policy(LAB_ONLY))
     logging.getLogger("hmc_mcp.config").warning("a package warning")
 
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
-    captured = capsys.readouterr()
-    assert "a package warning" not in captured.out
-    assert "a package warning" in captured.err
+    assert received == ["a package warning"]
+    assert "hmc_mcp: WARNING: a package warning" in _stderr(capsys)
+    assert logging.getLogger("hmc_mcp").propagate is True
 
 
 def test_an_unexpected_handler_error_still_renders_its_traceback(denial_filter, capsys):

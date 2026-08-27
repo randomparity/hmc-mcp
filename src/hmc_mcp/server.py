@@ -636,27 +636,27 @@ def install_package_stderr_sink() -> None:
     and it is called on the dispatch path — ``_log_unresolved`` emits inside a tool
     call — so one that blocks there blocks the call, which this cannot fix from here.
 
-    **``propagate = False`` unconditionally**, for ADR 0040's reason and not a new
-    one: under stdio a ``StreamHandler(sys.stdout)`` anywhere above this namespace
-    puts a package record into the JSON-RPC stream. The audit logger already sets
-    the flag at import; this extends the same rule to the namespace around it. An
-    operator loses a root handler's view of these records and keeps them on fd 2,
-    prefixed, which is the trade ADR 0040 already made for the audit stream. In a
-    test process it also means a ``caplog`` assertion made on an ``hmc_mcp.*``
-    record *after* a serve in the same test passes vacuously — ``caplog``'s handler
-    is on root. ``tests/conftest.py`` covers the between-test case; nothing today
-    needs the within-test one.
+    **``propagate`` is left alone**, unlike ``install_audit_sink``. ADR 0040 clears
+    the flag on the reserved logger because a record goes out there on every
+    authorized call, so a ``StreamHandler(sys.stdout)`` above it puts one into the
+    JSON-RPC stream on every call. This namespace carries ordinary library
+    diagnostics, and clearing the flag for them would take every ``hmc_mcp.*``
+    record out of an operator's own centralized logging the moment they serve —
+    silently, and on ``--http`` too, where stdout carries no protocol at all. The
+    defect this closes needs a handler on the walk, nothing more. So an operator's
+    root handler keeps receiving these records and renders them a second time,
+    which is the accepted cost; the stdout hazard is the one ADR 0040 already tells
+    them about, and it is neither created nor widened here.
 
     **No level is set**, so at the shipped default — root at ``WARNING`` — the floor
-    is the one ``logging.lastResort`` enforced. It is not volume-neutral in general:
-    an operator who lowers root's level without attaching a root handler now gets
-    sub-``WARNING`` records here that ``lastResort`` discarded, and
-    ``_log_unresolved``'s repeat branch is ``DEBUG`` on every call. Left that way
-    deliberately — a handler level would put them out of reach entirely, since
-    ``propagate = False`` has closed the route by which such an operator saw them.
+    is the one ``logging.lastResort`` enforced. It is not volume-neutral for this
+    sink: a record that previously reached an operator's root handler *instead* of
+    ``lastResort`` never entered the queue at all, and now enters it as well. With
+    root below ``WARNING`` that includes records ``lastResort`` used to discard
+    outright, and ``_log_unresolved``'s repeat branch is ``DEBUG`` on every call.
+    See the queue-pressure clause in ADR 0043's amendment.
     """
     logger = logging.getLogger(_PACKAGE_LOGGER_NAME)
-    logger.propagate = False
     if not logger.handlers:
         handler = sink_handler()
         handler.setFormatter(

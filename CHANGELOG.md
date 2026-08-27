@@ -266,17 +266,17 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `hmc_mcp.server_permissions`' unresolved-profile line — reached fd 2 through
   `logging.lastResort`: synchronous, unbounded, and unescaped. Those lines now carry the
   `hmc_mcp:` producer prefix and are drop-counted like every other line on the queue.
-  **Two visible changes for an operator:** the prefix, and `propagate = False` on the `hmc_mcp`
-  logger — a handler you attached to the root logger no longer sees these records in a served
-  process, for the reason ADR 0040 already applied to `hmc_mcp.audit` (under stdio, a root
-  handler on `sys.stdout` puts a package record into the JSON-RPC stream). A handler you attach
-  to `hmc_mcp` itself is left in place and takes the records instead — with the two constraints
-  `docs/authorization-audit.md` already states for a handler on `hmc_mcp.audit`: it must not
-  write to `sys.stdout` under stdio, and it is called on the dispatch path, so one that blocks
-  there blocks the call. Nothing changes for a library or CLI process, which installs no sink.
-  Record volume is unchanged at the shipped default, where root sits at `WARNING` — the level
-  `logging.lastResort` enforced. If you lower root's level *without* attaching a root handler,
-  sub-`WARNING` `hmc_mcp.*` records that used to be discarded now reach the sink.
+  **What an operator sees change:** the prefix, and — if you route `hmc_mcp.*` into your own
+  logging — a second rendering, because `propagate` is deliberately left alone here, unlike on
+  `hmc_mcp.audit`. Your handlers keep receiving these records exactly as before; the sink is an
+  added destination, not a replacement. A handler you attach to `hmc_mcp` itself is left in
+  place and takes the records instead of the sink, with the two constraints
+  `docs/authorization-audit.md` states for a handler on `hmc_mcp.audit`: it must not write to
+  `sys.stdout` under stdio, and it is called on the dispatch path, so one that blocks there
+  blocks the call. Nothing changes for a library or CLI process, which installs no sink. The
+  `WARNING` floor is unchanged at the shipped default; what grows is the sink's share of the
+  1024-slot queue it shares with the audit trail, since these records did not enter it at all
+  before.
 
 ### Facade manifest
 
