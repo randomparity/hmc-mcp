@@ -21,7 +21,7 @@ from .cli_app import (
 from .operations_systems import power_system
 from .operations_health import fleet_health
 from .jobs import validate_wait_timing
-from .server_systems import ManagedSystemState
+from .operations_systems import ManagedSystemState
 
 
 @systems_app.command("health")

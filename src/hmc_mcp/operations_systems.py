@@ -2,11 +2,44 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from .client import HMCClient
 from .resource_identity import resolve_system_uuid
 from .jobs import validate_wait_timing, wait_for_submitted_job
+
+ManagedSystemState = Literal[
+    "operating",
+    "power off",
+    "standby",
+    "initializing",
+    "error",
+    "error - dump in progress",
+    "error - terminated",
+    "incomplete",
+    "pending authentication - password updates required",
+    "failed authentication",
+    "recovery",
+    "no connection",
+    "on demand recovery",
+]
+MANAGED_SYSTEM_STATES: frozenset[ManagedSystemState] = frozenset(
+    {
+        "operating",
+        "power off",
+        "standby",
+        "initializing",
+        "error",
+        "error - dump in progress",
+        "error - terminated",
+        "incomplete",
+        "pending authentication - password updates required",
+        "failed authentication",
+        "recovery",
+        "no connection",
+        "on demand recovery",
+    }
+)
 
 
 async def power_system(

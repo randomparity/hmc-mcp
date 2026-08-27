@@ -30,8 +30,7 @@ from .cli_app import (
 )
 
 from .jobs import JobOutcome, validate_wait_timing
-from .server_lpar_config import ProcessorCompatibilityMode
-from .server_systems import PartitionState
+from .operations_lpar import PartitionState, ProcessorCompatibilityMode
 from .operations_lpar import (
     LparCreation,
     create_and_stamp_lpar,

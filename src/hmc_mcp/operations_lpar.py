@@ -63,6 +63,61 @@ from .ssh_lpar import (
 from .ssh_profiles import set_lpar_description
 _logger = logging.getLogger(__name__)
 
+PartitionState = Literal[
+    "running",
+    "not activated",
+    "starting",
+    "shutting down",
+    "stopping",
+    "open firmware",
+    "error",
+    "migrating",
+    "suspended",
+    "resuming",
+    "unknown",
+]
+PARTITION_STATES: frozenset[PartitionState] = frozenset(
+    {
+        "running",
+        "not activated",
+        "starting",
+        "shutting down",
+        "stopping",
+        "open firmware",
+        "error",
+        "migrating",
+        "suspended",
+        "resuming",
+        "unknown",
+    }
+)
+ProcessorCompatibilityMode = Literal[
+    "default",
+    "POWER5",
+    "POWER6",
+    "POWER6+",
+    "POWER7",
+    "POWER8",
+    "POWER9_Base",
+    "POWER9",
+    "POWER10",
+    "POWER11",
+]
+PROCESSOR_COMPATIBILITY_MODES: frozenset[ProcessorCompatibilityMode] = frozenset(
+    {
+        "default",
+        "POWER5",
+        "POWER6",
+        "POWER6+",
+        "POWER7",
+        "POWER8",
+        "POWER9_Base",
+        "POWER9",
+        "POWER10",
+        "POWER11",
+    }
+)
+
 
 def _check_lpar_write_error(exc: HMCError) -> None:
     """Translate an LPAR write rejection while preserving its response body."""

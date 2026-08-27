@@ -357,7 +357,7 @@ def test_vios_backup_and_restore_schemas_pin_the_supported_contracts():
 
 def test_parameter_normalization_contract_is_schema_pinned():
     from hmc_mcp.operations_pcm import PCM_CATEGORIES
-    from hmc_mcp.server_lpar_config import PROCESSOR_COMPATIBILITY_MODES
+    from hmc_mcp.operations_lpar import PROCESSOR_COMPATIBILITY_MODES
     from hmc_mcp.server_systems import MANAGED_SYSTEM_STATES, PARTITION_STATES
 
     by_name = _tools_by_name()

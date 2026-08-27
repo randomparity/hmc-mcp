@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .tool_registry import tool_module
 
-from typing import Any, Literal
+from typing import Any
 
 from ._app import (
     _run,
@@ -26,71 +26,11 @@ from .documents import (
     build_managed_system_document,
 )
 from .jobs import validate_wait_timing
+from .operations_lpar import PartitionState
+from .operations_systems import ManagedSystemState
 
 
 tool, register_tools, tool_security = tool_module()
-
-ManagedSystemState = Literal[
-    "operating",
-    "power off",
-    "standby",
-    "initializing",
-    "error",
-    "error - dump in progress",
-    "error - terminated",
-    "incomplete",
-    "pending authentication - password updates required",
-    "failed authentication",
-    "recovery",
-    "no connection",
-    "on demand recovery",
-]
-MANAGED_SYSTEM_STATES: frozenset[ManagedSystemState] = frozenset(
-    {
-        "operating",
-        "power off",
-        "standby",
-        "initializing",
-        "error",
-        "error - dump in progress",
-        "error - terminated",
-        "incomplete",
-        "pending authentication - password updates required",
-        "failed authentication",
-        "recovery",
-        "no connection",
-        "on demand recovery",
-    }
-)
-PartitionState = Literal[
-    "running",
-    "not activated",
-    "starting",
-    "shutting down",
-    "stopping",
-    "open firmware",
-    "error",
-    "migrating",
-    "suspended",
-    "resuming",
-    "unknown",
-]
-PARTITION_STATES: frozenset[PartitionState] = frozenset(
-    {
-        "running",
-        "not activated",
-        "starting",
-        "shutting down",
-        "stopping",
-        "open firmware",
-        "error",
-        "migrating",
-        "suspended",
-        "resuming",
-        "unknown",
-    }
-)
-
 
 @tool(effect="read", operation="console.info", target_kind="console")
 def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:

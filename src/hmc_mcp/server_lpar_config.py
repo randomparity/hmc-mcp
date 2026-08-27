@@ -37,39 +37,13 @@ from .ssh_profiles import (
     set_lpar_msp,
     set_lpar_proc_compat,
 )
-from .operations_lpar import set_lpar_ownership_description
-from typing import Literal
+from .operations_lpar import (
+    ProcessorCompatibilityMode,
+    set_lpar_ownership_description,
+)
 
 
 tool, register_tools, tool_security = tool_module()
-
-ProcessorCompatibilityMode = Literal[
-    "default",
-    "POWER5",
-    "POWER6",
-    "POWER6+",
-    "POWER7",
-    "POWER8",
-    "POWER9_Base",
-    "POWER9",
-    "POWER10",
-    "POWER11",
-]
-PROCESSOR_COMPATIBILITY_MODES: frozenset[ProcessorCompatibilityMode] = frozenset(
-    {
-        "default",
-        "POWER5",
-        "POWER6",
-        "POWER6+",
-        "POWER7",
-        "POWER8",
-        "POWER9_Base",
-        "POWER9",
-        "POWER10",
-        "POWER11",
-    }
-)
-
 
 @tool(effect="read", operation="lpar.get_minimum_affinity_policy", target_kind="lpar")
 def hmc_get_minimum_affinity_policy(
