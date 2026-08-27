@@ -18,9 +18,9 @@ class AdapterResult:
 
 async def list_adapters(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     adapter_type: AdapterType,
-    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     validate_adapter_type(adapter_type)
     lpar_uuid = await resolve_lpar_uuid(
@@ -31,6 +31,7 @@ async def list_adapters(
 
 async def add_network_adapter(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     port_vlan_id: int,
     *,
@@ -38,7 +39,6 @@ async def add_network_adapter(
     virtual_switch_id: int | None = None,
     tagged: bool = False,
     mac_address: str | None = None,
-    system_name_or_uuid: str | None = None,
 ) -> AdapterResult:
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
@@ -56,13 +56,13 @@ async def add_network_adapter(
 
 async def add_vios_adapter(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     vios_partition_id: int,
     vios_slot: int,
     slot: int | None,
     *,
     fibre_channel: bool,
-    system_name_or_uuid: str | None = None,
 ) -> AdapterResult:
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
@@ -74,10 +74,10 @@ async def add_vios_adapter(
 
 async def delete_adapter(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     adapter_type: AdapterType,
     adapter_uuid: str,
-    system_name_or_uuid: str | None = None,
 ) -> str:
     validate_adapter_type(adapter_type)
     lpar_uuid = await resolve_lpar_uuid(

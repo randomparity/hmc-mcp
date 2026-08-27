@@ -38,7 +38,7 @@ def adapters_list(
 
     async def _go():
         async with _client() as hmc:
-            return await list_adapters(hmc, lpar, adapter_type)
+            return await list_adapters(hmc, None, lpar, adapter_type)
 
     adapters = _run(_go)
 
@@ -70,6 +70,7 @@ def adapters_add_network(
         async with _client() as hmc:
             return await add_network_adapter(
                 hmc,
+                None,
                 lpar,
                 vlan,
                 slot_number=slot,
@@ -101,7 +102,7 @@ def adapters_add_vscsi(
     async def _go():
         async with _client() as hmc:
             return await add_vios_adapter(
-                hmc, lpar, vios_id, vios_slot, slot, fibre_channel=False
+                hmc, None, lpar, vios_id, vios_slot, slot, fibre_channel=False
             )
 
     _adapter_mutation(_go, lpar, "vSCSI")
@@ -127,7 +128,7 @@ def adapters_add_vfc(
     async def _go():
         async with _client() as hmc:
             return await add_vios_adapter(
-                hmc, lpar, vios_id, vios_slot, slot, fibre_channel=True
+                hmc, None, lpar, vios_id, vios_slot, slot, fibre_channel=True
             )
 
     _adapter_mutation(_go, lpar, "vFC")
@@ -151,7 +152,7 @@ def adapters_delete(
 
     async def _go():
         async with _client() as hmc:
-            return await delete_adapter(hmc, lpar, adapter_type, adapter_uuid)
+            return await delete_adapter(hmc, None, lpar, adapter_type, adapter_uuid)
 
     uuid = _run(_go)
 

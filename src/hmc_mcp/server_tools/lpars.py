@@ -338,9 +338,9 @@ def hmc_dlpar_proc(
         async with client_from_env(profile) as hmc:
             return await set_lpar_processors(
                 hmc,
+                system_name_or_uuid,
                 lpar_name_or_uuid,
                 resources,
-                system_name_or_uuid=system_name_or_uuid,
                 ownership_override=ownership_override,
             )
 
@@ -379,9 +379,9 @@ def hmc_dlpar_mem(
         async with client_from_env(profile) as hmc:
             return await set_lpar_memory(
                 hmc,
+                system_name_or_uuid,
                 lpar_name_or_uuid,
                 resources,
-                system_name_or_uuid=system_name_or_uuid,
                 ownership_override=ownership_override,
             )
 
@@ -561,9 +561,9 @@ def hmc_power_on_lpar(
         async with client_from_env(profile) as hmc:
             result = await power_lpar(
                 hmc,
+                system_name_or_uuid,
                 lpar_name_or_uuid,
                 power_on=True,
-                system_name_or_uuid=system_name_or_uuid,
                 force=force,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
@@ -657,9 +657,9 @@ def hmc_power_off_lpar(
         async with client_from_env(profile) as hmc:
             result = await power_lpar(
                 hmc,
+                system_name_or_uuid,
                 lpar_name_or_uuid,
                 power_on=False,
-                system_name_or_uuid=system_name_or_uuid,
                 immediate=immediate,
                 wait=wait,
                 timeout_seconds=timeout_seconds,

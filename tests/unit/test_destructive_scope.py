@@ -78,9 +78,10 @@ async def test_power_lpar_forwards_optional_system_scope():
 
     await power_lpar(
         hmc,
+        None,
+        "system-name",
         "aix1",
         power_on=False,
-        system_name_or_uuid="system-name",
     )
 
     hmc.find_partition_by_name.assert_awaited_once_with(

@@ -716,10 +716,10 @@ async def delete_lpar(
 
 async def power_lpar(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     *,
     power_on: bool,
-    system_name_or_uuid: str | None = None,
     immediate: bool = False,
     force: bool = False,
     wait: bool = False,
@@ -1151,10 +1151,10 @@ async def _apply_dlpar_document(
 
 async def set_lpar_processors(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     resources: LparResources,
     *,
-    system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Authorize and apply a DLPAR processor change to one partition.
@@ -1187,10 +1187,10 @@ async def set_lpar_processors(
 
 async def set_lpar_memory(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     resources: LparResources,
     *,
-    system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Authorize and apply a DLPAR memory change to one partition.

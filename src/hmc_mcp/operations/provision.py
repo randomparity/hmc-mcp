@@ -207,7 +207,7 @@ async def _add_network(
     hmc: HMCClient, lpar_uuid: str, port_vlan_id: int
 ) -> dict[str, Any] | None:
     result = await add_network_adapter(
-        hmc, lpar_uuid, port_vlan_id
+        hmc, None, lpar_uuid, port_vlan_id
     )
     return result.resource
 
@@ -220,6 +220,7 @@ async def _add_vscsi(
 ) -> dict[str, Any]:
     await add_vios_adapter(
         hmc,
+        None,
         lpar_uuid,
         vios_partition_id,
         vios_slot,
@@ -286,9 +287,9 @@ async def _power_on(
     """
     result = await power_lpar(
         hmc,
+        system_name_or_uuid,
         lpar_uuid,
         power_on=True,
-        system_name_or_uuid=system_name_or_uuid,
         force=True,
         wait=assessment is not None,
         timeout_seconds=assessment.timeout_seconds if assessment else 300,

@@ -46,7 +46,7 @@ def hmc_list_adapters(
     async def operation():
         async with client_from_env(profile) as hmc:
             return await list_adapters(
-                hmc, lpar_name_or_uuid, adapter_type, system_name_or_uuid
+                hmc, system_name_or_uuid, lpar_name_or_uuid, adapter_type
             )
 
     return _run_limited_collection(operation, limit)
@@ -84,13 +84,13 @@ def hmc_add_network_adapter(
             return (
                 await add_network_adapter(
                     hmc,
+                    system_name_or_uuid,
                     lpar_name_or_uuid,
                     port_vlan_id,
                     slot_number=slot_number,
                     virtual_switch_id=virtual_switch_id,
                     tagged=tagged,
                     mac_address=mac_address,
-                    system_name_or_uuid=system_name_or_uuid,
                 )
             ).resource
 
@@ -132,12 +132,12 @@ def hmc_add_vscsi_adapter(
             return (
                 await add_vios_adapter(
                     hmc,
+                    system_name_or_uuid,
                     lpar_name_or_uuid,
                     vios_partition_id,
                     vios_slot,
                     slot_number,
                     fibre_channel=False,
-                    system_name_or_uuid=system_name_or_uuid,
                 )
             ).resource
 
@@ -179,12 +179,12 @@ def hmc_add_vfc_adapter(
             return (
                 await add_vios_adapter(
                     hmc,
+                    system_name_or_uuid,
                     lpar_name_or_uuid,
                     vios_partition_id,
                     vios_slot,
                     slot_number,
                     fibre_channel=True,
-                    system_name_or_uuid=system_name_or_uuid,
                 )
             ).resource
 
@@ -216,7 +216,11 @@ def hmc_delete_adapter(
     async def operation():
         async with client_from_env(profile) as hmc:
             await delete_adapter(
-                hmc, lpar_name_or_uuid, adapter_type, adapter_uuid, system_name_or_uuid
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                adapter_type,
+                adapter_uuid,
             )
         return f"Deleted {adapter_type} {adapter_uuid} from {lpar_name_or_uuid}"
 

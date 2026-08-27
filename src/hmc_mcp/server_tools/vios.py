@@ -277,8 +277,8 @@ def hmc_install_lpar_os(
         async with client_from_env(profile) as hmc:
             return await install_lpar_os(
                 hmc,
-                lpar_name_or_uuid,
                 system_name_or_uuid,
+                lpar_name_or_uuid,
                 install_source=install_source,
                 client_ip=lpar_ip,
                 subnet_mask=nim_subnetmask,

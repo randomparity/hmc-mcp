@@ -1744,16 +1744,32 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     create_parameters = inspect.signature(api.create_logical_unit).parameters
     assert create_parameters["cloned_from"].kind is inspect.Parameter.KEYWORD_ONLY
     assert create_parameters["cloned_from"].default is None
+    for operation_name in (
+        "add_network_adapter",
+        "add_vios_adapter",
+        "delete_adapter",
+        "install_lpar_os",
+        "list_adapters",
+        "power_lpar",
+        "set_lpar_memory",
+        "set_lpar_processors",
+    ):
+        selector_names = [
+            name
+            for name in inspect.signature(getattr(api, operation_name)).parameters
+            if name in {"system_name_or_uuid", "lpar_name_or_uuid"}
+        ]
+        assert selector_names == ["system_name_or_uuid", "lpar_name_or_uuid"]
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved when job-operation polling controls became keyword-only with shared
-    # defaults, recomputed over the SSH-backed operations' `HMCClient` parameter and
+    # Moved when LPAR operations standardized system-before-partition selectors,
+    # recomputed over keyword-only job polling controls and the SSH-backed operations'
     # #468: `InstallHandle` replaces `dict[str, Any]` on both install
     # return annotations and contributes its own five-key entry. Recomputed over
     # #482's 717825fb, which added twelve `snapshot` models with their Pydantic
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "eaf8f6b35371e0ecfc269b42fa182e9fba3d104792d3a470ffbc542e66f07cf5"  # pragma: allowlist secret
+    expected_digest = "d7a091faafc2453d431434133a270ec1367e858fcc618b0bd13e90a2dbf70e98"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

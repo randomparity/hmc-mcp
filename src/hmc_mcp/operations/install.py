@@ -179,8 +179,8 @@ async def _submit_install(
 
 async def install_lpar_os(
     hmc: HMCClient,
-    lpar_name_or_uuid: str,
     system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
     *,
     install_source: str,
     client_ip: str,

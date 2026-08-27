@@ -832,9 +832,9 @@ def _power_lpar(
         async with _client() as hmc:
             return await power_lpar(
                 hmc,
+                system,
                 name_or_uuid,
                 power_on=on,
-                system_name_or_uuid=system,
                 immediate=immediate,
                 force=force,
                 wait=wait,

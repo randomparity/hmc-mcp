@@ -252,7 +252,7 @@ def test_adapter_type_selector_runs_before_results_are_capped():
 
     assert result == entries[:2]
     list_selected.assert_awaited_once_with(
-        client, "lpar-name", "VirtualSCSIClientAdapter", None
+        client, None, "lpar-name", "VirtualSCSIClientAdapter"
     )
 
 

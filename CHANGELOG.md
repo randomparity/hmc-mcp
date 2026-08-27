@@ -351,6 +351,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: LPAR-targeting facade operations now consistently place the managed-system selector
+  before the partition selector. This reorders `install_lpar_os`, `power_lpar`,
+  `set_lpar_processors`, `set_lpar_memory`, and all four virtual-adapter operations; callers
+  that want fleet discovery pass `None` explicitly for the system selector. Operation-specific
+  controls remain after the two selectors and the frozen signature digest moves.
 - Changed: public job operations now expose `wait`, `timeout_seconds`, and `poll_interval` as
   keyword-only controls with shared defaults of `false`, 300 seconds, and 5 seconds.
   `create_logical_unit` also defaults its keyword-only `cloned_from` selector to `None`.

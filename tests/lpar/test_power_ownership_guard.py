@@ -104,9 +104,9 @@ async def test_disabled_guard_opens_no_ssh_connection_and_reads_no_ownership() -
     with patch("hmc_mcp.ssh.asyncssh.connect", new=connect):
         result = await power_lpar(
             hmc,
+            SYSTEM_UUID,
             LPAR_UUID,
             power_on=False,
-            system_name_or_uuid=SYSTEM_UUID,
         )
 
     assert result.job == {"UUID": "job-uuid"}
@@ -125,7 +125,7 @@ async def test_disabled_guard_powers_a_partition_owned_by_another_agent() -> Non
         "hmc_mcp.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_BOB),
     ) as read:
-        await power_lpar(hmc, LPAR_UUID, power_on=False)
+        await power_lpar(hmc, None, LPAR_UUID, power_on=False)
 
     read.assert_not_awaited()
     hmc.submit_job.assert_awaited_once()
@@ -135,7 +135,7 @@ async def test_disabled_guard_powers_a_partition_owned_by_another_agent() -> Non
 async def test_disabled_guard_needs_no_managed_system_selector() -> None:
     hmc = _hmc(authorize=False)
 
-    await power_lpar(hmc, LPAR_UUID, power_on=False)
+    await power_lpar(hmc, None, LPAR_UUID, power_on=False)
 
     hmc.submit_job.assert_awaited_once()
 
@@ -156,9 +156,9 @@ async def test_enabled_guard_refuses_a_partition_another_agent_owns() -> None:
         with pytest.raises(PermissionError, match="ownership_override=true"):
             await power_lpar(
                 hmc,
+                SYSTEM_UUID,
                 LPAR_UUID,
                 power_on=False,
-                system_name_or_uuid=SYSTEM_UUID,
             )
 
     hmc.submit_job.assert_not_awaited()
@@ -174,9 +174,9 @@ async def test_enabled_guard_powers_a_partition_this_agent_owns() -> None:
     ) as read:
         result = await power_lpar(
             hmc,
+            SYSTEM_UUID,
             LPAR_UUID,
             power_on=False,
-            system_name_or_uuid=SYSTEM_UUID,
         )
 
     assert result.job == {"UUID": "job-uuid"}
@@ -197,9 +197,9 @@ async def test_enabled_guard_runs_before_the_already_running_short_circuit() -> 
         with pytest.raises(PermissionError):
             await power_lpar(
                 hmc,
+                SYSTEM_UUID,
                 LPAR_UUID,
                 power_on=True,
-                system_name_or_uuid=SYSTEM_UUID,
             )
 
     hmc.get_quick_property.assert_not_awaited()
@@ -218,9 +218,9 @@ async def test_ownership_override_submits_the_job_and_is_audited(caplog) -> None
     ):
         result = await power_lpar(
             hmc,
+            SYSTEM_UUID,
             LPAR_UUID,
             power_on=False,
-            system_name_or_uuid=SYSTEM_UUID,
             ownership_override=True,
         )
 
@@ -252,9 +252,9 @@ async def test_enabled_guard_fails_closed_when_the_ownership_read_fails() -> Non
         with pytest.raises(HMCCLIError, match="timed out"):
             await power_lpar(
                 hmc,
+                SYSTEM_UUID,
                 LPAR_UUID,
                 power_on=False,
-                system_name_or_uuid=SYSTEM_UUID,
             )
 
     hmc.submit_job.assert_not_awaited()
@@ -278,9 +278,9 @@ async def test_enabled_guard_resolves_the_managed_system_once() -> None:
     ):
         await power_lpar(
             hmc,
+            "sys1",
             "aix1",
             power_on=False,
-            system_name_or_uuid="sys1",
         )
 
     hmc.find_system_by_name.assert_awaited_once_with("sys1")
@@ -296,7 +296,7 @@ async def test_enabled_guard_discovers_the_owning_system_without_a_selector() ->
         "hmc_mcp.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_ALICE),
     ) as read:
-        result = await power_lpar(hmc, LPAR_UUID, power_on=False)
+        result = await power_lpar(hmc, None, LPAR_UUID, power_on=False)
 
     assert result.job == {"UUID": "job-uuid"}
     hmc.list_managed_systems.assert_awaited_once()
@@ -312,7 +312,7 @@ async def test_enabled_guard_refuses_a_partition_owned_by_a_discovered_system() 
         new=AsyncMock(return_value=OWNED_BY_BOB),
     ):
         with pytest.raises(PermissionError, match="ownership_override=true"):
-            await power_lpar(hmc, LPAR_UUID, power_on=False)
+            await power_lpar(hmc, None, LPAR_UUID, power_on=False)
 
     hmc.submit_job.assert_not_awaited()
 
@@ -328,6 +328,7 @@ async def test_override_without_a_selector_skips_the_fleet_walk() -> None:
     ) as read:
         result = await power_lpar(
             hmc,
+            None,
             LPAR_UUID,
             power_on=False,
             ownership_override=True,
@@ -351,9 +352,9 @@ async def test_enabled_guard_refuses_a_uuid_paired_with_a_foreign_system() -> No
         with pytest.raises(ValueError, match="does not belong to managed system"):
             await power_lpar(
                 hmc,
+                SYSTEM_UUID,
                 LPAR_UUID,
                 power_on=False,
-                system_name_or_uuid=SYSTEM_UUID,
             )
 
     read.assert_not_awaited()
@@ -375,7 +376,7 @@ async def test_provision_activation_leg_overrides_its_own_stamp() -> None:
         await operations_provision._power_on(hmc, "sys1", LPAR_UUID, None)
 
     assert operation.await_args.kwargs["ownership_override"] is True
-    assert operation.await_args.kwargs["system_name_or_uuid"] == "sys1"
+    assert operation.await_args.args[1] == "sys1"
 
 
 @pytest.mark.parametrize(
@@ -391,7 +392,7 @@ def test_power_tools_forward_the_ownership_override(monkeypatch, tool) -> None:
     tool("aix1", system_name_or_uuid="sys1", ownership_override=True)
 
     assert operation.await_args.kwargs["ownership_override"] is True
-    assert operation.await_args.kwargs["system_name_or_uuid"] == "sys1"
+    assert operation.await_args.args[1] == "sys1"
 
 
 @pytest.mark.parametrize(
@@ -413,5 +414,5 @@ def test_power_cli_forwards_the_system_selector_and_override(
 
     assert result.exit_code == 0, result.output
     assert operation.await_args.kwargs["ownership_override"] is True
-    assert operation.await_args.kwargs["system_name_or_uuid"] == "sys1"
+    assert operation.await_args.args[1] == "sys1"
     assert operation.await_args.kwargs["power_on"] is power_on
