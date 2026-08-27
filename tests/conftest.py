@@ -102,8 +102,10 @@ def no_ambient_hmc_settings(monkeypatch):
 
     A test that wants one of these sets it in its own body, which runs after this.
     """
-    wanted = {name.upper() for name in _UNSET_FOR_TESTS}
-    for name in [n for n in os.environ if n.upper() in wanted]:
+    # Folded down, matching pydantic-settings: an upper-fold both misses spellings
+    # the loader reads and matches spellings it ignores.
+    wanted = {name.lower() for name in _UNSET_FOR_TESTS}
+    for name in [n for n in os.environ if n.lower() in wanted]:
         monkeypatch.delenv(name, raising=False)
 
 

@@ -222,6 +222,38 @@ def test_a_case_variant_of_an_exact_case_reader_does_not_suppress_its_dotenv_lin
     assert HMCConfig(user="u", password="p").host == "lab-hmc.example.com"
 
 
+def test_the_already_set_gate_folds_down_like_the_loader(monkeypatch, tmp_path):
+    """#543. `_already_set` must decide with the relation the lookup uses.
+
+    Over Unicode `str.lower()` and `str.upper()` are different relations, so the
+    direction is load-bearing rather than cosmetic. `hmc_ssh_\u212aey_file`
+    (Kelvin sign) lowers onto `ssh_key_file` and is therefore a name `HMCConfig`
+    reads, while its upper-fold is not `HMC_SSH_KEY_FILE`. Spelled that way in a
+    `.env`, an upper-folding gate calls it a name nothing folds, falls through to
+    the exact-case test and injects it — and a newly created key lands last in
+    `os.environ` order, so the `.env` value takes the field from the operator's
+    export. That is the priority inversion this sweep exists to close, re-opened
+    for exactly the names the gate covers.
+    """
+    _isolated_environ(monkeypatch)
+    kelvin = "hmc_ssh_\u212aey_file"
+    # The premise, asserted rather than assumed: the loader reads that spelling
+    # and an upper-fold does not recognise it.
+    assert kelvin.lower() == "hmc_ssh_key_file"
+    assert kelvin.upper() != "HMC_SSH_KEY_FILE"
+
+    _clear(monkeypatch, "HMC_SSH_KEY_FILE")
+    monkeypatch.setenv("HMC_SSH_KEY_FILE", "/home/op/exported")
+    env_file = tmp_path / ".env"
+    env_file.write_text(f"{kelvin}=/home/op/from-dotenv\n")
+    monkeypatch.setattr(runner, "_ENV_FILE", env_file)
+
+    runner._load_dotenv()
+
+    config = HMCConfig(host="h", user="u", password="p")
+    assert config.ssh_key_file == "/home/op/exported"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("result", "expected"),

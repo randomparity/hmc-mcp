@@ -270,12 +270,21 @@ process environment's own order — pydantic-settings folds the environment into
 one case-blind mapping, so the later entry overwrites the earlier. Do not rely
 on that ordering: export one spelling.
 
-The authorization audit record's `attribution` folds the same way, so an ADR 0040
-record names the same claimant the ADR 0011 ownership stamp and the
-`X-Audit-Memento` header carry, whatever casing was exported
-([#543](https://github.com/randomparity/hmc-mcp/issues/543)). `audit.py` imports
-nothing from the package by design and so carries its own copy of the fold, which
-a test pins against `config.env_var_value` directly.
+The authorization audit record's `attribution` folds the same way, so casing no
+longer splits the trail: whichever spelling of `HMC_AGENT_ID` you export, the
+ADR 0040 record names the claimant the ADR 0011 ownership stamp and the
+`X-Audit-Memento` header carry ([#543](https://github.com/randomparity/hmc-mcp/issues/543)).
+`audit.py` imports nothing from the package by design and so carries its own copy
+of the fold, which a test pins against `config.env_var_value` directly.
+
+**Exported, though — a profile's `agent_id` is a different matter.** `audit.py`
+reads the environment and nothing else, which ADR 0040 decided deliberately: no
+module on the authorization decision path may name the variable, and reading it
+through `HMCConfig` would apply the validators that reject the malformed values
+most worth recording. So an `agent_id` that comes from a `config.toml` profile
+key rather than from the environment stamps the LPARs and sets the header while
+the authorization records still show no claimant. Export `HMC_AGENT_ID` — in any
+casing — when you want the whole trail attributed.
 
 Some readers do **not** fold case. Two of them are deliberate:
 

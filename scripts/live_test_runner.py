@@ -55,7 +55,15 @@ _ENV_FILE = Path(".env")
 #: matched without regard to case" section of docs/environment-variables.md), so
 #: treating a `hmc_profile` export as already-set would suppress the `.env` line
 #: spelling it canonically while nothing ever read the variant.
-_FOLDED_ENV_NAMES = frozenset(f"HMC_{field.upper()}" for field in HMCConfig.model_fields)
+#:
+#: Held folded **down**, and matched that way below, because that is the relation
+#: pydantic-settings uses and the one `env_var_value` looks names up with. Over
+#: Unicode the two directions are different relations: `hmc_ssh_Key_file`
+#: lowers onto `ssh_key_file` and so is a name the loader reads, while its
+#: upper-fold is not `HMC_SSH_KEY_FILE` — an upper-cased gate would miss it, fall
+#: through to the exact-case test, and re-open the `.env`-outranks-the-export
+#: inversion for exactly the names this set exists to cover.
+_FOLDED_ENV_NAMES = frozenset(f"hmc_{field.lower()}" for field in HMCConfig.model_fields)
 
 
 def _already_set(name: str) -> bool:
@@ -69,7 +77,7 @@ def _already_set(name: str) -> bool:
     the fold, and an operator who exported a lab host ran the destructive suite
     against the HMC `.env` named (#543).
     """
-    if name.upper() in _FOLDED_ENV_NAMES:
+    if name.lower() in _FOLDED_ENV_NAMES:
         return env_var_value(name) is not None
     return name in os.environ
 
