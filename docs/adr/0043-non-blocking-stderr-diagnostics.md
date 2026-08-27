@@ -145,9 +145,12 @@ pipe buffer it is standing in for.
   and the bound on outstanding writes is the part that keeps the server answering. #330's
   amendment to ADR 0051 widens it again: `uvicorn`, `uvicorn.access` and `mcp` join the
   `fastmcp` logger on this queue, on both transports. That still left this package's *own*
-  non-audit loggers off the sink, which is #534 and the amendment below; with it, every
-  logger a served process writes through — third-party or `hmc_mcp.*` — is on this queue.
-  Neither record claims fd 2 has a *single* writer: rich's startup banner and
+  non-audit loggers off the sink, which is #534 and the amendment below; with it, a served
+  process with no operator handler of its own puts every logger it writes through —
+  third-party or `hmc_mcp.*` — on this queue. Neither record claims fd 2 has a *single*
+  writer, and neither claims the guarantee survives an operator's own handler: on
+  `hmc_mcp` as on `hmc_mcp.audit`, an attached handler takes the records and its
+  blocking behaviour is the operator's, per the clause above. rich's startup banner and
   `Handler.handleError` still write directly, both recorded as residuals in ADR 0051, and a
   namespace outside the bound set with no handler of its own — `asyncio`, say — still walks to
   `logging.lastResort`.
@@ -177,8 +180,21 @@ One binding on the namespace covers every producer in it, present and future, be
 - **No handler is displaced, and no level is set.** ADR 0051's wholesale removal answers a
   problem that does not exist here — nothing but an operator attaches a handler to `hmc_mcp` —
   so the sink goes on only when the logger is bare, which also makes a second call add nothing.
-  The logger stays at `NOTSET`, so its effective level is still root's `WARNING`, the level
-  `logging.lastResort` used: this reroutes records rather than changing which ones exist.
+  Both the deferral and the `propagate = False` below are ADR 0040's treatment of
+  `hmc_mcp.audit` applied to the namespace around it, including its two unenforced constraints
+  on the attachment point: a handler an operator attaches here must not write to `sys.stdout`,
+  which under stdio is the JSON-RPC stream, and it is called on the dispatch path — the
+  `_log_unresolved` line runs inside a tool call — so a handler that blocks there blocks the
+  call, which is the failure this record exists to remove and which it cannot fix from here.
+- **The level is left at `NOTSET`, and that is not volume-neutral.** At the shipped default it
+  is: root sits at `WARNING`, so `WARNING` remains the floor — the level
+  `logging.lastResort` enforced. It diverges when an operator lowers root's level without
+  attaching a root handler, the one configuration in which `lastResort` was doing the
+  filtering: those sub-`WARNING` records were discarded before and are now rendered onto this
+  queue, and `_log_unresolved`'s repeat branch is `DEBUG` on every call. Accepted rather than
+  pinned at `WARNING`, because `propagate = False` has already closed the route by which such
+  an operator used to see these records at all, and a hard floor with no lever would make them
+  unreachable in a served process. An operator who lowers the level gets them, bounded.
 - **`propagate = False`, for ADR 0040's reason rather than a new one.** Under stdio a
   `StreamHandler(sys.stdout)` above this namespace would put a package record into the JSON-RPC
   stream. ADR 0040 set the flag on `hmc_mcp.audit` at import for exactly that; this extends the
@@ -189,16 +205,38 @@ One binding on the namespace covers every producer in it, present and future, be
 the audit stream stays bare one-line JSON with no prefix and no second rendering. The tests are
 in `tests/app/test_connection_authorization.py`; `tests/conftest.py` resets the binding between
 tests, without which one serving test would silence every later `caplog` assertion on an
-`hmc_mcp.*` record.
+`hmc_mcp.*` record. Within a single test the flag is not reset, so a test that serves and then
+asserts on an `hmc_mcp.*` record through `caplog` — whose handler is on root — passes
+vacuously; nothing does today, and the negative `caplog` assertions in
+`tests/unit/test_ownership.py` are the shape that would.
 
-**Which channel a non-audit `hmc_mcp.*` record uses.** This sink carries two grammars: ADR 0040's
-audit records, which are one line of ASCII JSON on the reserved `hmc_mcp.audit` logger, and
-diagnostics, which are prefixed prose. A record belongs on the audit stream only if it is an
-authorization decision in ADR 0040's schema — machine-parsed, with the stability rule that schema
-carries. Everything else this package says is a diagnostic and belongs on its own `hmc_mcp.*`
-module logger, where it now lands on the same queue, prefixed and escaped, beside
-`server._warn`'s startup lines. Startup state an operator should see — the effective value of a
-setting, say — is a diagnostic under this rule, not an audit record.
+**One more producer on a shared bound.** ADR 0051 recorded that its added producers reach the
+1024-slot capacity sooner and narrow the security-observability window; this adds the rest of
+the `hmc_mcp` namespace on the same terms. Against a destination that has stopped draining,
+package diagnostics can now displace audit records in the queue. Accepted on this record's own
+trade — a droppable trail that keeps serving over a complete one that stops — and bounded by
+the same precondition, a destination nobody is draining. The `records-dropped` marker already
+counts lines rather than records, so nothing about the accounting changes.
+
+**Which channel a non-audit `hmc_mcp.*` record uses.** This sink carries three grammars, not
+two, and the third is the one a caller is most likely to reach for by mistake:
+
+1. **Audit records** — one line of ASCII JSON on the reserved `hmc_mcp.audit` logger, ADR 0040's
+   schema. A record belongs here only if it is an authorization decision in that schema:
+   machine-parsed, and carrying the stability rule the schema carries.
+2. **Prefixed prose** — any `hmc_mcp.*` module logger, which since this amendment lands on the
+   queue marked `hmc_mcp: ` and control-character-escaped.
+3. **Bare prose** — `server._warn`, which submits through `audit.write_diagnostic` with no
+   formatter at all, so its lines carry neither the marker nor the escaping.
+
+**A new non-audit record uses grammar 2, the module logger.** Grammar 3 is not a general
+diagnostic channel: `_warn` exists for the fixed startup lines this package writes in full,
+before `.run()`, and an unmarked line at column 0 is exactly what `StreamSafeFormatter` was
+added to stop. Anything that interpolates a value — a setting, a path, a name from a config
+file — needs the marking and the escaping, so it goes on a module logger even when it is
+emitted at startup beside `_warn`'s lines. That is the answer for #533's startup announcement
+of the effective `authorize_power_operations`: a module logger, not `_warn`, and not the audit
+stream.
 
 ## Considered & rejected
 

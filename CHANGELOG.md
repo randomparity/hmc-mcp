@@ -270,9 +270,13 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   logger — a handler you attached to the root logger no longer sees these records in a served
   process, for the reason ADR 0040 already applied to `hmc_mcp.audit` (under stdio, a root
   handler on `sys.stdout` puts a package record into the JSON-RPC stream). A handler you attach
-  to `hmc_mcp` itself is left in place and takes the records instead. Nothing changes for a
-  library or CLI process, which installs no sink. Record volume is unchanged: the logger stays
-  at `NOTSET`, so `WARNING` is still the floor.
+  to `hmc_mcp` itself is left in place and takes the records instead — with the two constraints
+  `docs/authorization-audit.md` already states for a handler on `hmc_mcp.audit`: it must not
+  write to `sys.stdout` under stdio, and it is called on the dispatch path, so one that blocks
+  there blocks the call. Nothing changes for a library or CLI process, which installs no sink.
+  Record volume is unchanged at the shipped default, where root sits at `WARNING` — the level
+  `logging.lastResort` enforced. If you lower root's level *without* attaching a root handler,
+  sub-`WARNING` `hmc_mcp.*` records that used to be discarded now reach the sink.
 
 ### Facade manifest
 
