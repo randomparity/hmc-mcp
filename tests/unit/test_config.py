@@ -582,26 +582,63 @@ def test_audit_memento_override_warning_reaches_the_supported_facade():
     assert api.AuditMementoOverrideWarning is AuditMementoOverrideWarning
 
 
-def test_audit_memento_override_under_an_error_filter_fails_every_time(caplog):
-    """An error filter must not turn into a first-call-only failure.
+def test_audit_memento_override_under_an_error_filter_raises_once_then_throttles(
+    caplog,
+):
+    """An error filter must not reopen the per-tool-call flood.
 
-    The dedup state is recorded only after both emissions, so a caller running
-    ``-W error`` or ``PYTHONWARNINGS=error`` sees the same raise on every
-    construction — the pre-throttle behaviour — rather than one failed call
-    followed by silently successful ones, which reads as a flake and gets
-    retried away. The log record survives the raise for the same reason.
+    A raise does not stop a served process: ``_app._run`` does not catch, so
+    FastMCP turns it into a tool error result and keeps serving. If the dedup
+    state were recorded only after ``warnings.warn``, every raising construction
+    would leave it unrecorded and the log line beside it would write to fd 2 once
+    per MCP tool call — the exact flood #546 exists to remove, surviving under
+    ``PYTHONWARNINGS=error``.
+
+    So the state is marked before the warn and after the log: one raise and one
+    record per override state, which is what "warned once per state" means when
+    warnings are errors.
     """
     with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
         with warnings.catch_warnings():
             warnings.simplefilter("error", AuditMementoOverrideWarning)
+            with pytest.raises(AuditMementoOverrideWarning):
+                HMCConfig.from_mapping(
+                    {"agent_id": "strict-agent", "audit_memento": "mine"}
+                )
             for _ in range(3):
-                with pytest.raises(AuditMementoOverrideWarning):
+                cfg = HMCConfig.from_mapping(
+                    {"agent_id": "strict-agent", "audit_memento": "mine"}
+                )
+                assert cfg.effective_audit_memento == "hmc-mcp:strict-agent"
+
+    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    assert len(records) == 1
+
+
+def test_audit_memento_override_cap_overflow_degrades_to_the_prior_rate(caplog):
+    """Overflow costs the throttle, and the comment must not claim otherwise.
+
+    A working set one larger than the cap misses on every construction, so the
+    emission rate returns to where it was before this function was throttled at
+    all. That floor is documented rather than engineered around — no eviction
+    policy improves on it for a round-robin workload — and the served path cannot
+    reach it. Pinned so a future maintainer meets the floor here rather than in
+    production.
+    """
+    cap = config_module._MAX_REPORTED_MEMENTO_OVERRIDES
+    states = [(f"agent-{index}", "mine") for index in range(cap + 1)]
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", AuditMementoOverrideWarning)
+            for _ in range(2):
+                for agent_id, memento in states:
                     HMCConfig.from_mapping(
-                        {"agent_id": "strict-agent", "audit_memento": "mine"}
+                        {"agent_id": agent_id, "audit_memento": memento}
                     )
 
     records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
-    assert len(records) == 3
+    assert len(records) == 2 * len(states)
 
 
 # ---------------------------------------------------------------------------

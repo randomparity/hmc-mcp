@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (2026-08-15)
+Accepted (2026-08-15). Amended 2026-08-26 by issue #546 — see *Amendment (#546)* below: warning
+categories are a third fieldless exported class kind, so the Decision's "only two exported class
+kinds" sentence is no longer exhaustive.
 
 ## Context
 
@@ -80,6 +82,10 @@ read: `HMCClient`, whose supported surface is the lifecycle allowlist above, and
 types, whose supported surface is their constructor. A contract test holds the facade to exactly
 that pair, so a result type introduced in a fourth shape — a `NamedTuple`, an `attrs` class, a
 hand-written one — fails the suite instead of dropping out of this clause unnoticed.
+
+> **Amended by #546:** there are now three such kinds, not two — see *Amendment (#546)* below. An
+> exported warning category is fieldless like the error types, and what is supported about one is
+> its identity, not the inherited constructor this paragraph would otherwise assign it.
 
 For those two kinds the type half reads `__init__` in place of the fields. Their constructor
 parameter types *are* selected: this Decision's first paragraph already calls an exported name's

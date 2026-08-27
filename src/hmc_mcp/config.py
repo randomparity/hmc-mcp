@@ -69,10 +69,19 @@ _MAX_REPORTED_MEMENTO_OVERRIDES = 64
 #: any individual ``HMCConfig``, since what it throttles is one warning per
 #: *config*, repeated once per construction.
 #:
-#: Cleared wholesale on reaching the cap rather than evicted one entry at a time:
-#: the failure it degrades to is re-reporting states already reported, which is
-#: the pre-throttle behaviour and is bounded by the cap, where an LRU would need
-#: ordering state to save nothing that matters at 64 entries.
+#: **The cap bounds memory, not the emission rate.** Within a working set that
+#: fits, the throttle holds at one emission per state. A working set that does not
+#: fit degrades all the way back to the pre-throttle rate: 65 states rotating
+#: against a 64-entry cap miss on every construction, so every construction emits.
+#: Eviction policy does not rescue that — round-robin one past the cap is the
+#: Belady worst case for LRU and FIFO alike — so the set is cleared wholesale,
+#: which is the cheapest policy with that same floor and the one that keeps
+#: throttling a config that changes occasionally over a long process life.
+#:
+#: That floor is acceptable because it is where the code started; the served path
+#: this issue is about cannot reach it, since there the pair comes from the
+#: environment, CLI flags, or a TOML profile and the count is the operator's
+#: distinct profiles.
 #:
 #: This throttle sits *above* the ``warnings`` filters — a consumer running
 #: ``simplefilter("always")`` or ``PYTHONWARNINGS=always`` still gets one warning
@@ -379,14 +388,23 @@ class HMCConfig(BaseSettings):
         state ``effective_audit_memento`` reports deterministically and the
         ``X-Audit-Memento`` header carries on every request.
 
-        The state is marked reported only after both emissions have been made. A
-        caller running an error filter therefore gets the same failure on every
-        construction, as it did before this change, rather than a first-call-only
-        failure that reads as a flake — and the log record is not lost to a
-        ``warnings.warn`` that raised. The log line does repeat in that case,
-        which is the right trade: every one of those constructions raises out of
-        the validator, so there is no served process for it to flood, and a caller
-        swallowing the exception in a loop is asking for the per-attempt record.
+        The order is log, mark, warn. Marking before ``warnings.warn`` is what
+        makes the throttle survive an error filter: under ``PYTHONWARNINGS=error``
+        the call raises, and a raise does not stop a served process — ``_app._run``
+        does not catch, so FastMCP turns it into a tool error result and keeps
+        serving. Marking afterwards would leave the state unrecorded on every
+        raising construction, and the log line beside it would then write to fd 2
+        once per MCP tool call, at the client-owned rate: exactly the flood this
+        function was changed to remove, surviving in full under a hardened
+        posture. Logging before the warn is what keeps the record from being lost
+        to the raise.
+
+        The visible consequence is that under an error filter only the first
+        construction of a given override state raises; later ones return normally.
+        That is what "warned once per state" means when warnings are errors, not a
+        flake — and a bounded one-off failure naming the exact misconfiguration is
+        a better outcome than an unbounded write to the descriptor ADR 0043 exists
+        to stop blocking on.
         """
         if not (self.agent_id and self.audit_memento != "hmc-mcp"):
             return self
@@ -402,8 +420,8 @@ class HMCConfig(BaseSettings):
             f"hmc-mcp:{self.agent_id}"
         )
         _logger.warning(msg)
-        warnings.warn(msg, AuditMementoOverrideWarning, stacklevel=2)
         _reported_memento_overrides.add(override)
+        warnings.warn(msg, AuditMementoOverrideWarning, stacklevel=2)
         return self
 
     @property
