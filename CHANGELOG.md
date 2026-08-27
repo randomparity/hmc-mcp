@@ -192,7 +192,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   settings loader reads it. **Upgrade note:** a deployment whose environment already
   carries a case-variant `HMC_*` name gets a different resolution after this change —
   the export now beats the profile's TOML key where it previously lost. Audit for them
-  before upgrading (`env | grep -iE '^hmc_'`). Three things flip in the fail-open
+  before upgrading (`env | grep -iE '^hmc_'`). Four things flip in the fail-open
   direction. A stale `hmc_verify_ssl=false` over a profile's `verify_ssl = true` is at
   least visible, as `client.py` emits `tls-verification-disabled` naming the environment.
   A stale `hmc_authorize_power_operations=false` over a profile's `true` leaves no runtime
@@ -202,7 +202,13 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `connections = ["<default>"]` permits calls it previously denied, issued against the
   exported host, while a grant naming a profile key now denies calls it previously
   allowed. The authorization records show it — `connection.resolved` reads `<default>`
-  for a call that named a profile.
+  for a call that named a profile. Finally, a stale `hmc_agent_id` now beats a profile's
+  `agent_id`, and that is the identity the ADR 0011 ownership guard compares against, so
+  it changes which LPARs this process may mutate — `hmc_agent_id=team-b` over a profile's
+  `agent_id = "team-a"` turns every denial of a `team-b`-stamped partition into a
+  permit. The authorization record is the *weakest* check for this one: `audit.py` reads
+  `HMC_AGENT_ID` exact-case (#543), so under a variant its `attribution` reads unset.
+  Check the LPAR ownership stamps and the `X-Audit-Memento` header instead.
 
 ### Removed
 
