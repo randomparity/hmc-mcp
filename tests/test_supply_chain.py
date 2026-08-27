@@ -1,4 +1,7 @@
+import ast
+import importlib.metadata
 import re
+import sys
 import tomllib
 from pathlib import Path
 
@@ -21,7 +24,14 @@ RANGED_REQUIREMENT = re.compile(
 # The exhaustive library install-path set (ADR 0068). Adding a runtime
 # dependency means adding it here consciously, with its policy-checked range.
 LIBRARY_DEPENDENCIES = frozenset(
-    {"asyncssh", "defusedxml", "httpx", "pydantic", "pydantic-settings"}
+    {
+        "asyncssh",
+        "defusedxml",
+        "httpx",
+        "pydantic",
+        "pydantic-settings",
+        "typing-extensions",
+    }
 )
 DEPENDABOT_CONFIG = """\
 version: 2
@@ -109,6 +119,51 @@ def test_library_dependency_set_is_exhaustive() -> None:
     assert names == LIBRARY_DEPENDENCIES, (
         "a runtime dependency joined or left the library set; update "
         "LIBRARY_DEPENDENCIES and ADR 0068's policy notes together"
+    )
+
+
+def test_direct_third_party_imports_are_declared() -> None:
+    """Every imported third-party distribution is a direct project dependency."""
+    imported_modules: set[str] = set()
+    for path in (ROOT / "src" / "hmc_mcp").glob("*.py"):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_modules.update(
+                    alias.name.partition(".")[0] for alias in node.names
+                )
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                imported_modules.add(node.module.partition(".")[0])
+
+    third_party = imported_modules - sys.stdlib_module_names - {"hmc_mcp"}
+    distribution_names = importlib.metadata.packages_distributions()
+    imported_distributions = {
+        distribution.lower().replace("_", "-")
+        for module in third_party
+        for distribution in distribution_names.get(module, ())
+    }
+    unresolved = third_party - distribution_names.keys()
+
+    project = _pyproject()["project"]
+    requirements = [
+        *project["dependencies"],
+        *(
+            requirement
+            for extra in project["optional-dependencies"].values()
+            for requirement in extra
+        ),
+    ]
+    declared = {
+        re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", requirement)[0]
+        .lower()
+        .replace("_", "-")
+        for requirement in requirements
+    }
+
+    assert unresolved == set(), f"cannot map imported modules to distributions: {unresolved}"
+    assert imported_distributions <= declared, (
+        "runtime modules import undeclared distributions: "
+        f"{sorted(imported_distributions - declared)}"
     )
 
 
