@@ -10,7 +10,6 @@ from .._app import (
     run_sync,
 )
 
-from ..config import build_config
 from ..client.client_factory import client_from_env
 from ..operations.install import (
     install_lpar_os,
@@ -310,9 +309,12 @@ def hmc_list_vios_backups(
     Raises:
         ValueError: If the ``lsviosbk`` CSV is malformed.
     """
-    return run_sync(
-        lambda: list_vios_backups(build_config(profile=profile), vios_name_or_uuid)
-    )
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await list_vios_backups(hmc, vios_name_or_uuid)
+
+    return run_sync(_go)
 
 
 @tool(
@@ -350,15 +352,18 @@ def hmc_backup_vios(
         ValueError: If the backup type or catalog name is invalid, or a selector
             cannot be resolved to the required CLI identity.
     """
-    return run_sync(
-        lambda: backup_vios(
-            build_config(profile=profile),
-            system_name_or_uuid,
-            vios_name_or_uuid,
-            backup_name=backup_name,
-            backup_type=backup_type,
-        )
-    )
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await backup_vios(
+                hmc,
+                system_name_or_uuid,
+                vios_name_or_uuid,
+                backup_name=backup_name,
+                backup_type=backup_type,
+            )
+
+    return run_sync(_go)
 
 
 @tool(
@@ -398,16 +403,19 @@ def hmc_restore_vios(
         ValueError: If the restore type or catalog name is invalid, or a selector
             cannot be resolved to the required CLI identity.
     """
-    return run_sync(
-        lambda: restore_vios(
-            build_config(profile=profile),
-            system_name_or_uuid,
-            vios_name_or_uuid,
-            backup_name,
-            backup_type=backup_type,
-            restart_if_required=restart_if_required,
-        )
-    )
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await restore_vios(
+                hmc,
+                system_name_or_uuid,
+                vios_name_or_uuid,
+                backup_name,
+                backup_type=backup_type,
+                restart_if_required=restart_if_required,
+            )
+
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="vios.power_on", target_kind="vios")

@@ -360,6 +360,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 - Added: `backup_vios`, `list_vios_backups`, and `restore_vios`, together with their
   `BackupType` and `RestoreBackupType` input types. The reusable operations now own VIOS backup
   validation, catalog parsing, selector resolution, and concrete HMC CLI command construction.
+  All three operations now accept the facade's shared `HMCClient` and read its configuration at
+  the SSH boundary; this moves the frozen public signature digest.
 - Added: the presentation-neutral update operations `list_available_hmc_ptfs`,
   `update_console_software`, `update_firmware`, and `update_vios`, together with
   `ConsoleUpdateMediaType`, `ConsoleUpdateSource`, `IOAdapterUpdateModel`,

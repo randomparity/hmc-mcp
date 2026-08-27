@@ -9,7 +9,6 @@ import shlex
 from typing import Any, Literal
 
 from ..client import HMCClient
-from ..config import HMCConfig
 from ..documents import LparResources, build_vios_document
 from ..errors import HMCError
 from ..resource_identity import is_uuid, resolve_system_uuid, resolve_vios_uuid
@@ -121,7 +120,7 @@ _VALID_RESTORE_BACKUP_TYPES: frozenset[RestoreBackupType] = frozenset(
 
 
 async def _resolve_vios_backup_selectors(
-    config: HMCConfig,
+    hmc: HMCClient,
     system_name_or_uuid: str,
     vios_name_or_uuid: str,
 ) -> tuple[str, str]:
@@ -129,31 +128,29 @@ async def _resolve_vios_backup_selectors(
     system_name = system_name_or_uuid
     vios_uuid = vios_name_or_uuid
     if is_uuid(system_name_or_uuid) or not is_uuid(vios_name_or_uuid):
-        async with HMCClient(config) as hmc:
-            if is_uuid(system_name_or_uuid):
-                system_name = await _resolve_vios_backup_system_name(
-                    hmc, system_name_or_uuid
-                )
-            if not is_uuid(vios_name_or_uuid):
-                vios_uuid = await resolve_vios_uuid(
-                    hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
-                )
+        if is_uuid(system_name_or_uuid):
+            system_name = await _resolve_vios_backup_system_name(
+                hmc, system_name_or_uuid
+            )
+        if not is_uuid(vios_name_or_uuid):
+            vios_uuid = await resolve_vios_uuid(
+                hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            )
     return system_name, vios_uuid
 
 
 async def list_vios_backups(
-    config: HMCConfig, vios_name_or_uuid: str
+    hmc: HMCClient, vios_name_or_uuid: str
 ) -> list[dict[str, str]]:
     """Return the validated backup catalog for one VIOS."""
     vios_uuid = vios_name_or_uuid
     if not is_uuid(vios_name_or_uuid):
-        async with HMCClient(config) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+        vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
     command = (
         f"lsviosbk --filter {shlex.quote(build_filter([('vios_uuids', vios_uuid)]))} "
         "-F name,type --header"
     )
-    output = await run_hmc_cli(command, config)
+    output = await run_hmc_cli(command, hmc.config)
     if not output.strip():
         return []
     try:
@@ -202,7 +199,7 @@ def _validate_backup_name(backup_name: str) -> None:
 
 
 async def backup_vios(
-    config: HMCConfig,
+    hmc: HMCClient,
     system_name_or_uuid: str,
     vios_name_or_uuid: str,
     *,
@@ -217,18 +214,18 @@ async def backup_vios(
         )
     _validate_backup_name(backup_name)
     system_name, vios_uuid = await _resolve_vios_backup_selectors(
-        config, system_name_or_uuid, vios_name_or_uuid
+        hmc, system_name_or_uuid, vios_name_or_uuid
     )
     command = (
         f"mkviosbk -t {shlex.quote(backup_type)} "
         f"-m {shlex.quote(system_name)} --uuid {shlex.quote(vios_uuid)} "
         f"-f {shlex.quote(backup_name)}"
     )
-    return await run_hmc_cli(command, config)
+    return await run_hmc_cli(command, hmc.config)
 
 
 async def restore_vios(
-    config: HMCConfig,
+    hmc: HMCClient,
     system_name_or_uuid: str,
     vios_name_or_uuid: str,
     backup_name: str,
@@ -244,7 +241,7 @@ async def restore_vios(
         )
     _validate_backup_name(backup_name)
     system_name, vios_uuid = await _resolve_vios_backup_selectors(
-        config, system_name_or_uuid, vios_name_or_uuid
+        hmc, system_name_or_uuid, vios_name_or_uuid
     )
     command = (
         f"rstviosbk -t {shlex.quote(backup_type)} "
@@ -252,4 +249,4 @@ async def restore_vios(
         f"-f {shlex.quote(backup_name)}"
         f"{' -r' if restart_if_required else ''}"
     )
-    return await run_hmc_cli(command, config)
+    return await run_hmc_cli(command, hmc.config)
