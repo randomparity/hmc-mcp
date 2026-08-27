@@ -55,6 +55,19 @@ VG_ENTRY_EMPTY_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </entry>
 """
 
+VG_ENTRY_WITHOUT_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:vg-uuid-0003</id>
+  <title>VolumeGroup:data</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <VolumeGroupUUID>vg-uuid-0003</VolumeGroupUUID>
+      <GroupName>data</GroupName>
+    </VolumeGroup>
+  </content>
+</entry>
+"""
+
 
 @pytest.mark.asyncio
 async def test_get_media_repository(mock_hmc):
@@ -108,6 +121,20 @@ async def test_get_media_repository_not_found(mock_hmc):
 
     async with HMCClient(make_config()) as hmc:
         result = await hmc.get_media_repository("vios-uuid", "missing-uuid")
+
+    assert route.called
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_media_repository_absent_from_existing_volume_group(mock_hmc):
+    """An existing volume group without a repository is not a repository."""
+    route = mock_hmc.get(
+        "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid-0003"
+    ).mock(return_value=httpx.Response(200, text=VG_ENTRY_WITHOUT_REPO))
+
+    async with HMCClient(make_config()) as hmc:
+        result = await hmc.get_media_repository("vios-uuid", "vg-uuid-0003")
 
     assert route.called
     assert result is None
