@@ -198,9 +198,14 @@ One binding on the namespace covers every producer in it, present and future, be
   logging the moment they serve — silently, and under `--http` too, where stdout carries no
   protocol at all. The defect #534 names needs a handler on the walk and nothing else, and a
   duplicate rendering into a destination the operator chose is a far smaller cost than losing
-  the records there. The stdout hazard for these records is unchanged from before this
-  amendment, is the operator's own act, and is already documented in
-  `docs/authorization-audit.md`.
+  the records there. **The cost is named rather than waved at:** the marker and the escaping
+  are properties of the handler this installs, not of the stream, so an ancestor handler
+  pointed at stderr renders a second copy of each record unmarked and unescaped — the shape
+  `logging.basicConfig()` leaves. That is unchanged from before this amendment, since the same
+  record reached the same handler the same way, and it is the operator's own act; it is
+  documented in `docs/authorization-audit.md` beside the stdout hazard rather than being
+  presented as closed. Clearing `propagate` would close it, and would take the records out of
+  the operator's logging to do so — that is the trade, and it is taken the other way.
 - **The level is left at `NOTSET`, and this is not volume-neutral for the queue.** The floor is
   unchanged at the shipped default — root at `WARNING`, the level `logging.lastResort`
   enforced. What changes is how much reaches *this sink*: a record that previously found an

@@ -365,10 +365,12 @@ stream ADR 0040 defines as one JSON record per line. Serving these tools from `o
 what first makes those sites reachable with caller-controlled input, so this change closes it:
 every warning that interpolates the link uses `%r`. ADR 0051's Context weighed only HMC-returned
 text at that boundary; binding `hmc_mcp` to a `StreamSafeFormatter` sink is the general fix and is
-not made here. **It was made by #534**, whose amendment to ADR 0043 binds the namespace in a
-served process, so the raw-to-fd-2 route described above is closed there and the `%r` above is
-now the second layer rather than the only one. Outside a served process — a library caller that
-installs no sink — the paragraph still reads as written.
+not made here. **#534 made it in part**, binding the namespace in a served process so these
+records land on the bounded sink marked and escaped, which makes the `%r` above a second layer
+rather than the only one. It is not a closure. That binding deliberately leaves `propagate`
+alone, so an ancestor handler on stderr — what `logging.basicConfig()` leaves — still renders
+the same record with no marker and no escaping, and outside a served process nothing installs
+the sink at all. `%r` remains the layer that holds on those paths.
 
 `_confirm_missing` treats the HTTP 400 REST000E of issue #95 firmware as absence, so on exactly the
 firmware `job_href` exists to serve, a link whose parent resource was removed makes one live job
