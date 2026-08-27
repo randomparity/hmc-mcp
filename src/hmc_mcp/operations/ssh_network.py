@@ -103,6 +103,24 @@ class VnicChangeResult:
     errors: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class _VnicPreflightContext:
+    system_name: str
+    lpar_name: str
+    vnics: tuple[VnicSnapshot, ...]
+    backings: tuple[VnicBackingSnapshot, ...]
+    used_capacity: Decimal
+
+
+@dataclass(frozen=True)
+class _VnicReadback:
+    vnics: tuple[VnicSnapshot, ...]
+    backings: tuple[VnicBackingSnapshot, ...]
+    vnic_succeeded: bool
+    backing_succeeded: bool
+    errors: tuple[str, ...]
+
+
 class VnicCapabilityError(RuntimeError):
     """Raised when evidence does not admit a requested mutation."""
 
@@ -485,19 +503,51 @@ def _correlated_matching_backings(
     )
 
 
+def _reconciled_logical_ports(
+    direct: list[dict[str, str]],
+    backings: tuple[VnicBackingSnapshot, ...],
+) -> dict[tuple[str, str], tuple[str, Decimal]]:
+    direct_observations: dict[tuple[str, str], tuple[str, Decimal]] = {}
+    for row in direct:
+        key = row["adapter_id"], row["logical_port_id"]
+        observation = row["phys_port_id"], _decimal(row["capacity"], "capacity")
+        if key in direct_observations:
+            raise ValueError("duplicate direct logical-port inventory")
+        direct_observations[key] = observation
+    backing_observations: dict[tuple[str, str], tuple[str, Decimal]] = {}
+    for item in backings:
+        key = item.adapter_id, item.logical_port_id
+        observation = item.physical_port_id, item.desired_capacity_percent
+        if key in backing_observations:
+            raise ValueError("duplicate backing logical-port inventory")
+        backing_observations[key] = observation
+    for key in direct_observations.keys() & backing_observations.keys():
+        if direct_observations[key] != backing_observations[key]:
+            raise ValueError("conflicting cross-projection logical-port capacity")
+    return direct_observations | backing_observations
+
+
+def _used_port_capacity(
+    observations: dict[tuple[str, str], tuple[str, Decimal]],
+    selector: VnicBackingSelector,
+) -> Decimal:
+    return sum(
+        (
+            capacity
+            for (adapter, _), (port, capacity) in observations.items()
+            if adapter == selector.adapter_id and port == selector.physical_port_id
+        ),
+        Decimal(),
+    )
+
+
 async def _preflight_add(
     hmc: HMCClient,
     system: str,
     lpar: str,
     selector: VnicBackingSelector,
     override: bool,
-) -> tuple[
-    str,
-    str,
-    tuple[VnicSnapshot, ...],
-    tuple[VnicBackingSnapshot, ...],
-    Decimal,
-]:
+) -> _VnicPreflightContext:
     system_name, lpar_name = await _resolve(hmc, system, lpar, override)
     config = hmc.config
     await _require_admitted_environment(config, system_name)
@@ -538,39 +588,19 @@ async def _preflight_add(
     backings = tuple(
         _backing(row) for row in await list_vnic_backing_rows(config, system_name)
     )
-    direct_observations: dict[tuple[str, str], tuple[str, Decimal]] = {}
-    for row in direct:
-        key = row["adapter_id"], row["logical_port_id"]
-        observation = row["phys_port_id"], _decimal(row["capacity"], "capacity")
-        if key in direct_observations:
-            raise ValueError("duplicate direct logical-port inventory")
-        direct_observations[key] = observation
-    backing_observations: dict[tuple[str, str], tuple[str, Decimal]] = {}
-    for item in backings:
-        key = item.adapter_id, item.logical_port_id
-        observation = item.physical_port_id, item.desired_capacity_percent
-        if key in backing_observations:
-            raise ValueError("duplicate backing logical-port inventory")
-        backing_observations[key] = observation
-        if key in direct_observations and direct_observations[key] != observation:
-            raise ValueError("conflicting cross-projection logical-port capacity")
-    used = direct_observations | backing_observations
-    total = sum(
-        (
-            capacity
-            for (adapter, _), (port, capacity) in used.items()
-            if adapter == selector.adapter_id and port == selector.physical_port_id
-        ),
-        Decimal(),
+    observations = _reconciled_logical_ports(direct, backings)
+    return _VnicPreflightContext(
+        system_name,
+        lpar_name,
+        before,
+        backings,
+        _used_port_capacity(observations, selector),
     )
-    return system_name, lpar_name, before, backings, total
 
 
 async def _after(
     config: HMCConfig, system: str, lpar: str
-) -> tuple[
-    tuple[VnicSnapshot, ...], tuple[VnicBackingSnapshot, ...], bool, bool, list[str]
-]:
+) -> _VnicReadback:
     vnics: tuple[VnicSnapshot, ...] = ()
     backings: tuple[VnicBackingSnapshot, ...] = ()
     v_ok = b_ok = False
@@ -587,7 +617,7 @@ async def _after(
         b_ok = True
     except Exception as error:
         errors.append(f"backing reconciliation read failed: {error}")
-    return vnics, backings, v_ok, b_ok, errors
+    return _VnicReadback(vnics, backings, v_ok, b_ok, tuple(errors))
 
 
 def _add_payload(selector: VnicBackingSelector) -> str:
@@ -603,6 +633,130 @@ def _add_payload(selector: VnicBackingSelector) -> str:
     )
 
 
+def _reconcile_add(
+    context: _VnicPreflightContext,
+    readback: _VnicReadback,
+    selector: VnicBackingSelector,
+    port_vlan_id: int,
+    output: str,
+    mutation_errors: list[str],
+) -> VnicChangeResult:
+    errors = [*mutation_errors, *readback.errors]
+    candidates = _matching_vnics(context.vnics, selector, port_vlan_id)
+    backing_before = _correlated_matching_backings(
+        candidates, context.backings, selector
+    )
+    before_slots = {item.slot_num for item in context.vnics}
+    matching_after = (
+        _matching_vnics(readback.vnics, selector, port_vlan_id)
+        if readback.vnic_succeeded
+        else ()
+    )
+    backing_after = (
+        _correlated_matching_backings(matching_after, readback.backings, selector)
+        if readback.vnic_succeeded and readback.backing_succeeded
+        else ()
+    )
+    observed_new = tuple(
+        item for item in matching_after if item.slot_num not in before_slots
+    )
+    new_pairs = tuple(
+        pair
+        for pair in _pairs(readback.vnics, readback.backings, selector, port_vlan_id)
+        if pair[0].slot_num not in before_slots
+    )
+    final = (
+        readback.vnic_succeeded
+        and readback.backing_succeeded
+        and len(observed_new) == 1
+        and len(new_pairs) == 1
+        and len(backing_after) == 1
+    )
+    unchanged = (
+        readback.vnic_succeeded
+        and readback.backing_succeeded
+        and matching_after == candidates
+        and backing_after == backing_before
+    )
+    if not final:
+        errors.append(
+            "add reconciliation did not prove exactly one new active Operational backing"
+        )
+    return VnicChangeResult(
+        "add",
+        True,
+        True if final else False if unchanged else None,
+        selector,
+        observed_new[0].slot_num if len(observed_new) == 1 else None,
+        candidates,
+        backing_before,
+        matching_after,
+        backing_after,
+        readback.vnic_succeeded,
+        readback.backing_succeeded,
+        output,
+        tuple(errors),
+    )
+
+
+def _reconcile_remove(
+    selected: tuple[VnicSnapshot, ...],
+    correlated: tuple[VnicBackingSnapshot, ...],
+    selector: VnicBackingSelector,
+    slot_num: str,
+    readback: _VnicReadback,
+    output: str,
+    mutation_errors: list[str],
+) -> VnicChangeResult:
+    captured = correlated[0]
+    errors = [*mutation_errors, *readback.errors]
+    matching_after = (
+        tuple(item for item in readback.vnics if item.slot_num == slot_num)
+        if readback.vnic_succeeded
+        else ()
+    )
+    backing_after = (
+        tuple(
+            item
+            for item in readback.backings
+            if _same_backing_identity(item, captured)
+        )
+        if readback.backing_succeeded
+        else ()
+    )
+    final = (
+        readback.vnic_succeeded
+        and readback.backing_succeeded
+        and not matching_after
+        and not backing_after
+    )
+    unchanged = (
+        readback.vnic_succeeded
+        and readback.backing_succeeded
+        and selected[0] in readback.vnics
+        and bool(backing_after)
+    )
+    if not final:
+        errors.append(
+            "remove reconciliation did not prove the slot and captured backing absent"
+        )
+    return VnicChangeResult(
+        "remove",
+        True,
+        True if final else False if unchanged else None,
+        selector,
+        slot_num,
+        selected,
+        correlated,
+        matching_after,
+        backing_after,
+        readback.vnic_succeeded,
+        readback.backing_succeeded,
+        output,
+        tuple(errors),
+    )
+
+
 async def add_vnic(
     hmc: HMCClient,
     system_name_or_uuid: str,
@@ -615,22 +769,16 @@ async def add_vnic(
     selector = _validated(selector)
     if type(port_vlan_id) is not int or not 0 <= port_vlan_id <= 4094:
         raise ValueError("port_vlan_id must be an integer between 0 and 4094")
-    (
-        system_name,
-        lpar_name,
-        before,
-        all_backing_before,
-        used_capacity,
-    ) = await _preflight_add(
+    context = await _preflight_add(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
         selector,
         ownership_override,
     )
-    candidates = _matching_vnics(before, selector, port_vlan_id)
+    candidates = _matching_vnics(context.vnics, selector, port_vlan_id)
     matching_backing_before = _correlated_matching_backings(
-        candidates, all_backing_before, selector
+        candidates, context.backings, selector
     )
     pairs = _pairs(candidates, matching_backing_before, selector, port_vlan_id)
     if len(pairs) == 1 and len(candidates) == 1 and len(matching_backing_before) == 1:
@@ -653,81 +801,30 @@ async def add_vnic(
         raise VnicCapabilityError(
             "existing matching vNIC inventory is ambiguous or degraded"
         )
-    if used_capacity + selector.capacity_percent > 100:
-        raise ValueError(f"capacity exhausted: {used_capacity}% used of 100%")
+    if context.used_capacity + selector.capacity_percent > 100:
+        raise ValueError(
+            f"capacity exhausted: {context.used_capacity}% used of 100%"
+        )
     payload = _add_payload(selector)
     output = ""
     errors: list[str] = []
     try:
         output = await add_vnic_backing(
-            hmc.config, system_name, lpar_name, payload, port_vlan_id
+            hmc.config,
+            context.system_name,
+            context.lpar_name,
+            payload,
+            port_vlan_id,
         )
     except Exception as error:
         errors.append(f"mutation failed: {error}")
-    after, backing_after, v_ok, b_ok, read_errors = await _after(
-        hmc.config, system_name, lpar_name
+    readback = await _after(
+        hmc.config, context.system_name, context.lpar_name
     )
-    errors.extend(read_errors)
-    before_slots = {item.slot_num for item in before}
-    new_pairs = (
-        [
-            pair
-            for pair in _pairs(after, backing_after, selector, port_vlan_id)
-            if pair[0].slot_num not in before_slots
-        ]
-        if v_ok and b_ok
-        else []
+    result = _reconcile_add(
+        context, readback, selector, port_vlan_id, output, errors
     )
-    observed_new = (
-        [
-            item
-            for item in _matching_vnics(after, selector, port_vlan_id)
-            if item.slot_num not in before_slots
-        ]
-        if v_ok
-        else []
-    )
-    slot = observed_new[0].slot_num if len(observed_new) == 1 else None
-    matching_after = _matching_vnics(after, selector, port_vlan_id) if v_ok else ()
-    matching_backing_after = (
-        _correlated_matching_backings(matching_after, backing_after, selector)
-        if b_ok and v_ok
-        else ()
-    )
-    final = (
-        v_ok
-        and b_ok
-        and len(observed_new) == 1
-        and len(new_pairs) == 1
-        and len(matching_backing_after) == 1
-    )
-    unchanged = (
-        v_ok
-        and b_ok
-        and matching_after == candidates
-        and matching_backing_after == matching_backing_before
-    )
-    changed: bool | None = True if final else False if unchanged else None
-    if not final:
-        errors.append(
-            "add reconciliation did not prove exactly one new active Operational backing"
-        )
-    result = VnicChangeResult(
-        "add",
-        True,
-        changed,
-        selector,
-        slot,
-        candidates,
-        matching_backing_before,
-        matching_after,
-        matching_backing_after,
-        v_ok,
-        b_ok,
-        output,
-        tuple(errors),
-    )
-    if errors:
+    if result.errors:
         raise VnicPartialError("vNIC add could not be fully verified", result)
     return result
 
@@ -781,49 +878,12 @@ async def remove_vnic(
         output = await remove_vnic_slot(hmc.config, system_name, lpar_name, slot_num)
     except Exception as error:
         errors.append(f"mutation failed: {error}")
-    after, backing_after, v_ok, b_ok, read_errors = await _after(
+    readback = await _after(
         hmc.config, system_name, lpar_name
     )
-    errors.extend(read_errors)
-    slot_absent = v_ok and not any(item.slot_num == slot_num for item in after)
-    backing_absent = b_ok and not any(
-        _same_backing_identity(item, captured) for item in backing_after
+    result = _reconcile_remove(
+        selected, correlated, selector, slot_num, readback, output, errors
     )
-    final = slot_absent and backing_absent
-    unchanged = (
-        v_ok
-        and b_ok
-        and selected[0] in after
-        and any(_same_backing_identity(item, captured) for item in backing_after)
-    )
-    changed: bool | None = True if final else False if unchanged else None
-    if not final:
-        errors.append(
-            "remove reconciliation did not prove the slot and captured backing absent"
-        )
-    matching_after = (
-        tuple(item for item in after if item.slot_num == slot_num) if v_ok else ()
-    )
-    matching_backing_after = (
-        tuple(item for item in backing_after if _same_backing_identity(item, captured))
-        if b_ok
-        else ()
-    )
-    result = VnicChangeResult(
-        "remove",
-        True,
-        changed,
-        selector,
-        slot_num,
-        selected,
-        correlated,
-        matching_after,
-        matching_backing_after,
-        v_ok,
-        b_ok,
-        output,
-        tuple(errors),
-    )
-    if errors:
+    if result.errors:
         raise VnicPartialError("vNIC remove could not be fully verified", result)
     return result
