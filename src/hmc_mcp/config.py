@@ -589,12 +589,21 @@ def env_var_value(name: str) -> str | None:
     ``tests/unit/test_config.py`` pins the agreement against ``HMCConfig``
     itself rather than against that reading of the library, so a change to
     pydantic-settings' folding shows up as a failing test.
+
+    The keys are snapshotted and each read with a default, never iterated as
+    items: ``os.environ.items()`` comes from the ``Mapping`` mixin and re-indexes
+    every key after ``__iter__`` has already snapshotted them, so a key an
+    embedding host deletes from another thread in between raises ``KeyError``
+    out of here. Two of the callers are on the ADR 0038 dispatch-time
+    authorization path, where that would escape as a bare ``KeyError`` past the
+    denial machinery; the atomic ``os.environ.get`` calls this function replaced
+    could not raise, and neither may it.
     """
     wanted = name.lower()
     found: str | None = None
-    for key, value in os.environ.items():
+    for key in list(os.environ):
         if key.lower() == wanted:
-            found = value
+            found = os.environ.get(key, found)
     return found
 
 
