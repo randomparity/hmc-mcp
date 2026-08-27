@@ -31,7 +31,6 @@ from rich.markup import escape
 from rich.table import Table
 
 from ..client import HMCClient
-from ..client.client_factory import client_from_env
 from ..config import HMCConfig, build_config
 from ..resource_identity import is_uuid
 
@@ -175,14 +174,16 @@ def _current_options() -> GlobalOpts:
     return ctx.find_root().obj
 
 
-def _client():
+def _client() -> HMCClient:
     options = _current_options()
-    return client_from_env(
-        profile=options.profile,
-        host=options.host,
-        user=options.user,
-        password=options.password,
-        verify_ssl=options.verify_ssl,
+    return HMCClient(
+        build_config(
+            profile=options.profile,
+            host=options.host,
+            user=options.user,
+            password=options.password,
+            verify_ssl=options.verify_ssl,
+        )
     )
 
 
@@ -191,7 +192,7 @@ def _ssh_config() -> HMCConfig:
 
     None overrides are dropped so env vars and the TOML profile fill the rest.
     When no explicit host is given, the TOML profile loader is tried first
-    (same logic as ``client_from_env``).
+    (the same configuration path used by the REST client).
     """
     options = _current_options()
     return build_config(

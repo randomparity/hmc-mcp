@@ -221,7 +221,7 @@ def test_capacity_cli_preserves_connection_overrides():
     with (
         patch("hmc_mcp.operations.capacity.capacity_report", report),
         patch(
-            "hmc_mcp.cli_commands.app.client_from_env",
+            "hmc_mcp.cli_commands.app.HMCClient",
             return_value=_ClientContext(client),
         ) as client_factory,
     ):
@@ -244,13 +244,12 @@ def test_capacity_cli_preserves_connection_overrides():
         )
 
     assert result.exit_code == 0
-    client_factory.assert_called_once_with(
-        profile="lab",
-        host="hmc.override",
-        user="operator",
-        password="test-password",  # pragma: allowlist secret
-        verify_ssl=False,
-    )
+    client_factory.assert_called_once()
+    config = client_factory.call_args.args[0]
+    assert config.host == "hmc.override"
+    assert config.user == "operator"
+    assert config.password == "test-password"  # pragma: allowlist secret
+    assert config.verify_ssl is False
     report.assert_awaited_once_with(client)
 
 

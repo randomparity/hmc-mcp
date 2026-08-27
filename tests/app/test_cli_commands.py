@@ -1,9 +1,8 @@
 """Direct CLI command tests via ``typer.testing.CliRunner``.
 
-The REST-backed commands all funnel through ``cli_app._client`` →
-``cli_app.client_from_env`` (imported at ``cli_commands/app.py``), and the SSH-backed
+The REST-backed commands all funnel through ``cli_app._client`` and the SSH-backed
 commands through ``ssh_commands.run_hmc_command``. These tests monkeypatch those
-two factories so every command runs against a scripted fake — no HTTP, no SSH.
+two boundaries so every command runs against a scripted fake — no HTTP, no SSH.
 
 This closes the CLI blind spot where only the helpers (``_ssh_config``,
 ``_output``) were exercised and no command body was ever invoked, so the
@@ -489,7 +488,7 @@ class FakeHMC:
 def fake_hmc(monkeypatch):
     """Wire the CLI's client factory to a scripted FakeHMC for every command."""
     hmc = FakeHMC()
-    monkeypatch.setattr(cli_app, "client_from_env", lambda **kwargs: hmc)
+    monkeypatch.setattr(cli_app, "HMCClient", lambda _config: hmc)
 
     async def legacy_description(*_args):
         return "legacy partition"
@@ -506,11 +505,11 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
     seen = []
     hmc = FakeHMC()
 
-    def client_factory(**kwargs):
-        seen.append(kwargs)
+    def client_factory(config):
+        seen.append(config)
         return hmc
 
-    monkeypatch.setattr(cli_app, "client_from_env", client_factory)
+    monkeypatch.setattr(cli_app, "HMCClient", client_factory)
 
     first = RUNNER.invoke(
         cli.app,
@@ -519,10 +518,10 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
     second = RUNNER.invoke(cli.app, ["lpars", "list"])
 
     assert first.exit_code == second.exit_code == 0
-    assert seen[0]["host"] == "first-hmc"
-    assert seen[0]["user"] == "first-user"
-    assert seen[1]["host"] is None
-    assert seen[1]["user"] is None
+    assert seen[0].host == "first-hmc"
+    assert seen[0].user == "first-user"
+    assert seen[1].host == ""
+    assert seen[1].user == ""
 
 
 @pytest.mark.parametrize(
