@@ -270,7 +270,14 @@ process environment's own order — pydantic-settings folds the environment into
 one case-blind mapping, so the later entry overwrites the earlier. Do not rely
 on that ordering: export one spelling.
 
-Three readers do **not** fold case, and all three are worth knowing:
+The authorization audit record's `attribution` folds the same way, so an ADR 0040
+record names the same claimant the ADR 0011 ownership stamp and the
+`X-Audit-Memento` header carry, whatever casing was exported
+([#543](https://github.com/randomparity/hmc-mcp/issues/543)). `audit.py` imports
+nothing from the package by design and so carries its own copy of the fold, which
+a test pins against `config.env_var_value` directly.
+
+Two readers do **not** fold case, and both are worth knowing:
 
 - **`HMC_PROFILE` is matched exactly** on POSIX. It is not an `HMCConfig` field;
   `load_profile()` reads it directly to pick a profile, so no case-insensitive
@@ -279,17 +286,10 @@ Three readers do **not** fold case, and all three are worth knowing:
   variables alone when the file names none. On Windows this does not apply: the
   OS folds every environment variable name to upper case, so `hmc_profile` *is*
   `HMC_PROFILE` there and selects the profile it names.
-- **The authorization audit record's `attribution` reads `HMC_AGENT_ID`
-  exact-case** ([#543](https://github.com/randomparity/hmc-mcp/issues/543)).
-  `audit.py` imports nothing from the package by design, so it carries its own
-  read and has not been folded yet. Under a case-variant export the two halves
-  of the trail disagree: the ownership stamp and the `X-Audit-Memento` header
-  carry the variant's value, while the access-policy decision record shows no
-  claimant.
 - **A profile's `password_env` value names a variable read exact-case.**
   `load_profile()` looks the name up in `os.environ` directly, and correctly so:
   `password_env` points at an operator-chosen variable rather than at an
-  `HMCConfig` field, so there is no field name to fold it onto. Unlike the two
+  `HMCConfig` field, so there is no field name to fold it onto. Unlike the one
   above, this one **fails hard** instead of degrading — a name that is not
   present exactly as written raises `password_env=… is not set`, and the
   connection never opens. The templates in this repository always give it an

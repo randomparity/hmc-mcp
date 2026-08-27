@@ -37,6 +37,7 @@ from fastmcp import Client
 import shlex
 
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.config import env_var_value
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
 from hmc_mcp.server_command import configure_arbitrary_command_tool
@@ -102,7 +103,11 @@ def _bootstrap_config() -> None:
     # Fallback: local .env
     _load_dotenv()
 
-    if not os.environ.get("HMC_PASSWORD"):
+    # env_var_value, not os.environ.get: this predicts whether `HMCConfig` will
+    # resolve a password, and `HMCConfig` reads the name case-blind. An exact-case
+    # test refused to start on a lower- or mixed-case `hmc_password` export that
+    # would have connected (#543).
+    if not env_var_value("HMC_PASSWORD"):
         print("❌  No HMC credentials found.")
         print("   Configure ~/.config/hmc-mcp/config.toml or a local .env file.")
         sys.exit(1)
@@ -2106,7 +2111,12 @@ def _allow_iso_host() -> None:
     rather than replacing it, and it names the port as well as the host, so this
     permits the one server started below and no other loopback service.
     """
-    configured = os.environ.get("HMC_ISO_URL_ALLOWLIST", "")
+    # env_var_value reads whatever casing the operator exported, because that is
+    # the one `HMCConfig` will resolve — an exact-case read dropped a case
+    # variant's entries from the merged allowlist (#543). The write back is under
+    # the canonical spelling, which lands last in `os.environ` and so wins the
+    # same case-blind fold.
+    configured = env_var_value("HMC_ISO_URL_ALLOWLIST") or ""
     entries = [entry.strip() for entry in configured.split(",") if entry.strip()]
     if _ISO_HOST in entries:
         return

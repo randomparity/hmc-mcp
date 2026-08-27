@@ -283,9 +283,22 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `agent_id`, and that is the identity the ADR 0011 ownership guard compares against, so
   it changes which LPARs this process may mutate — `hmc_agent_id=team-b` over a profile's
   `agent_id = "team-a"` turns every denial of a `team-b`-stamped partition into a
-  permit. The authorization record is the *weakest* check for this one: `audit.py` reads
-  `HMC_AGENT_ID` exact-case (#543), so under a variant its `attribution` reads unset.
-  Check the LPAR ownership stamps and the `X-Audit-Memento` header instead.
+  permit. The authorization records show this one as well: `audit.py` folds the casings the
+  loader folds (#543), so a record's `attribution` names the identity the guard compared —
+  the same one the LPAR ownership stamps and the `X-Audit-Memento` header carry.
+- The authorization audit record's `attribution` reads `HMC_AGENT_ID` without regard to
+  case (#543, ADR 0040). `HMC_AGENT_ID` is an `HMCConfig` field and `HMCConfig` matches its
+  variables case-blind, so a `hmc_agent_id=alice` export stamped every LPAR the process
+  created with the ADR 0011 ownership token for `alice` and sent `X-Audit-Memento:
+  hmc-mcp:alice`, while every authorization record from that same process carried no
+  claimant at all — the audit stream said nobody acted while the partitions said `alice`
+  did. Several casings at once resolve to the last in the process environment's order, as
+  they do for every other `HMC_*` variable. `audit.py` imports nothing from the package, so
+  it carries its own copy of the fold rather than calling `config.env_var_value`; a test
+  pins the two against each other. `scripts/live_test_runner.py` folds case in the same two
+  places it predicted a config resolution exact-case: the credential pre-check, which
+  refused to start on a case-variant `hmc_password` that would have connected, and the
+  ISO allowlist merge, which dropped a case variant's entries.
 
 ### Removed
 

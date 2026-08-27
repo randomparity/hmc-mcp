@@ -69,6 +69,12 @@ Not spec-numbered, each pinning something a review round found:
   test_the_tls_record_carries_host_and_source          (#379)
   test_an_empty_tls_host_renders_empty_and_is_bounded  (#379)
   test_a_long_tls_source_stays_bounded                 (#379)
+
+#543, the attribution read's agreement with the loader that stamps the LPARs:
+
+  543a test_a_case_variant_agent_id_reaches_the_record_and_the_stamp_alike
+  543b test_the_last_agent_id_casing_in_the_environment_is_the_one_recorded
+  543c test_the_audit_env_fold_agrees_with_the_configs
 """
 
 from __future__ import annotations
@@ -330,6 +336,87 @@ def test_attribution_is_unverified_and_sourced_when_the_env_is_unset(monkeypatch
         "source": "environment:HMC_AGENT_ID",
         "verified": False,
     }
+
+
+def test_a_case_variant_agent_id_reaches_the_record_and_the_stamp_alike(monkeypatch):
+    """#543. One export, two halves of the trail, and they have to agree.
+
+    ``HMCConfig`` leaves pydantic-settings' ``case_sensitive`` at its ``False``
+    default, so ``hmc_agent_id=alice`` reaches ``config.agent_id``: the
+    ``X-Audit-Memento`` header goes out as ``hmc-mcp:alice`` and every LPAR the
+    process creates carries the ADR 0011 ownership token for ``alice``. The
+    authorization record read the same variable exact-case and saw nothing, so
+    the records said nobody acted while the partitions said ``alice`` did.
+
+    Both halves are driven here rather than one, because the defect was never
+    visible in either alone.
+    """
+    from hmc_mcp.config import HMCConfig
+
+    for spelling in ("HMC_AGENT_ID", "hmc_agent_id", "Hmc_Agent_Id"):
+        monkeypatch.delenv(spelling, raising=False)
+    monkeypatch.setenv("hmc_agent_id", "alice")
+
+    stamped = HMCConfig(host="h", user="u", password="p").agent_id
+    record = _authorization()
+
+    assert stamped == "alice"
+    assert record["attribution"] == {
+        "claim": stamped,
+        "source": "environment:HMC_AGENT_ID",
+        "verified": False,
+    }
+
+
+def test_the_last_agent_id_casing_in_the_environment_is_the_one_recorded(monkeypatch):
+    """#543. Two casings at once resolve the way the loader resolves them.
+
+    pydantic-settings folds the whole environment into one case-blind mapping in
+    ``os.environ`` order, so the later entry overwrites the earlier and the exact
+    spelling gets no precedence. Preferring the canonical spelling here would put
+    an empty ``HMC_AGENT_ID`` in the record while ``hmc_agent_id`` stamped the
+    partitions — the same divergence in the other direction.
+    """
+    from hmc_mcp.config import HMCConfig
+
+    for spelling in ("HMC_AGENT_ID", "hmc_agent_id", "Hmc_Agent_Id"):
+        monkeypatch.delenv(spelling, raising=False)
+    monkeypatch.setenv("HMC_AGENT_ID", "first")
+    monkeypatch.setenv("hmc_agent_id", "second")
+
+    stamped = HMCConfig(host="h", user="u", password="p").agent_id
+    assert _authorization()["attribution"]["claim"] == stamped
+
+
+@pytest.mark.parametrize(
+    "spellings",
+    [
+        (),
+        (("HMC_AGENT_ID", "canonical"),),
+        (("hmc_agent_id", "lower"),),
+        (("Hmc_Agent_Id", "mixed"),),
+        (("HMC_AGENT_ID", ""), ("hmc_agent_id", "nonempty")),
+        (("hmc_agent_id", "nonempty"), ("HMC_AGENT_ID", "")),
+    ],
+)
+def test_the_audit_env_fold_agrees_with_the_configs(monkeypatch, spellings):
+    """#543. The two folds are one rule, and this is what keeps them one.
+
+    ``audit`` imports nothing from ``hmc_mcp`` by design, so it cannot call
+    ``config.env_var_value`` and carries its own copy of the fold. A second
+    mechanism for one job only stays honest if something compares them, and
+    nothing else does — the copy is invisible from either side.
+    """
+    from hmc_mcp.config import env_var_value
+
+    for spelling in ("HMC_AGENT_ID", "hmc_agent_id", "Hmc_Agent_Id"):
+        monkeypatch.delenv(spelling, raising=False)
+    for name, value in spellings:
+        monkeypatch.setenv(name, value)
+
+    assert audit._env_var_value(audit.ATTRIBUTION_ENV) == env_var_value(
+        audit.ATTRIBUTION_ENV
+    )
 
 
 def test_decisions_matches_the_literal():
