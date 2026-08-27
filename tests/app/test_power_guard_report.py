@@ -16,7 +16,6 @@ import logging
 import pytest
 from fastmcp import Client
 
-from hmc_mcp import server_permissions
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.server_permissions import describe, resolve_power_guards
@@ -45,9 +44,6 @@ def no_native_config(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     monkeypatch.delenv("HMC_HOST", raising=False)
-    # The unresolved-connection log deduplicates process-wide, so a pair another
-    # test already reported would arrive here at DEBUG and vanish from caplog.
-    server_permissions._reported_unresolved.clear()
 
 
 def _write_config(tmp_path, body: str) -> None:
@@ -351,10 +347,44 @@ def test_the_unresolved_warning_is_said_once_not_once_per_call(tmp_path, caplog)
     ])
 
     with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_permissions"):
+        reported: set[tuple[str, str]] = set()
         for _ in range(3):
-            resolve_power_guards(policy)
+            resolve_power_guards(policy, reported)
 
     assert len(caplog.records) == 1
+
+
+@pytest.mark.asyncio
+async def test_each_application_has_its_own_unresolved_warning_history(
+    tmp_path, caplog
+):
+    """A fresh application emits its own startup-generation diagnostics."""
+    _write_config(
+        tmp_path,
+        """
+        default_profile = "present"
+
+        [profiles.present]
+        host = "hmc-a.example.com"
+        user = "admin"
+        """,
+    )
+    policy = _policy([
+        {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
+    ])
+    applications = (create_mcp(policy), create_mcp(policy))
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_permissions"):
+        for application in applications:
+            async with Client(application) as client:
+                await client.call_tool("hmc_effective_permissions", {})
+
+    unresolved = [
+        record
+        for record in caplog.records
+        if "reported as unresolved" in record.getMessage()
+    ]
+    assert len(unresolved) == 2
 
 
 def test_one_malformed_profile_does_not_take_down_the_whole_report(tmp_path):
