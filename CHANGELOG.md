@@ -202,6 +202,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- LPAR ownership operations now live with the ownership policy in `lpar_ownership`, and
+  post-activation affinity orchestration now lives with the shared affinity assessment models.
+  The facade names and signatures are unchanged.
 - `create_media_repository` no longer removes and recreates an existing virtual media
   repository. A repeated request for the same size returns the existing repository without a
   write; a different requested size raises an actionable conflict and leaves the repository

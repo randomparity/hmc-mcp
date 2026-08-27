@@ -32,7 +32,6 @@ from hmc_mcp.cli_commands import app as cli_app
 from hmc_mcp.cli_commands import lpars as cli_lpars
 from hmc_mcp.cli_commands import network as cli_network
 from hmc_mcp import lpar_ownership
-from hmc_mcp.operations import lpar as operations_lpar
 from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
@@ -497,7 +496,7 @@ def fake_hmc(monkeypatch):
         return "[hmc-mcp owner:hmc-mcp created:2026-08-14]"
 
     monkeypatch.setattr(lpar_ownership, "get_lpar_description", legacy_description)
-    monkeypatch.setattr(operations_lpar, "stamp_lpar_ownership", stamped)
+    monkeypatch.setattr(lpar_ownership, "stamp_lpar_ownership", stamped)
     return hmc
 
 

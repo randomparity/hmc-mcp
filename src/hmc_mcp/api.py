@@ -9,7 +9,9 @@ from hmc_mcp.affinity_assessment import (
     AffinityClassification,
     AffinityEvidence,
     CapturedPolicyState,
+    ProvisionAffinityAssessment,
     PolicyState,
+    assess_post_activation_affinity,
 )
 from hmc_mcp.documents import (
     BootDeviceSelector,
@@ -22,6 +24,14 @@ from hmc_mcp.documents import (
 )
 from hmc_mcp.errors import HMCError, HMCTransportError
 from hmc_mcp.jobs import DeviceType, JobOutcome, LuType, RemoteRestartOperation
+from hmc_mcp.lpar_ownership import (
+    authorize_decommission_lpar_ownership_snapshot,
+    authorize_lpar_mutation,
+    list_lpar_ownership,
+    resolve_lpar_ownership_names,
+    set_lpar_ownership_description,
+    stamp_created_lpar_ownership,
+)
 from hmc_mcp.operations.jobs import get_job, wait_for_job
 from hmc_mcp.operations.adapters import (
     AdapterResult,
@@ -38,24 +48,16 @@ from hmc_mcp.operations.install import InstallHandle, install_lpar_os, install_v
 from hmc_mcp.operations.lpar import (
     LparCreation,
     LparCreationResult,
-    ProvisionAffinityAssessment,
     clear_lpar_boot_order,
     read_lpar_boot_order,
     set_lpar_boot_order,
     LparPowerResult,
-    assess_post_activation_affinity,
-    authorize_decommission_lpar_ownership_snapshot,
-    authorize_lpar_mutation,
     create_and_stamp_lpar,
     delete_lpar,
     power_lpar,
     rename_lpar,
-    resolve_lpar_ownership_names,
-    list_lpar_ownership,
     set_lpar_memory,
-    set_lpar_ownership_description,
     set_lpar_processors,
-    stamp_created_lpar_ownership,
 )
 from hmc_mcp.operations.lpm import (
     LpmAffinityMigrationResult,

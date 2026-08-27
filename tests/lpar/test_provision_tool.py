@@ -17,7 +17,8 @@ import pytest
 
 from hmc_mcp.documents import LparResources
 from hmc_mcp.jobs import JobOutcome
-from hmc_mcp.operations.lpar import LparPowerResult, validate_affinity_request
+from hmc_mcp.operations.lpar import LparPowerResult
+from hmc_mcp.affinity_assessment import validate_affinity_request
 from hmc_mcp.operations.provision import (
     ProvisionAffinityAssessment,
     ProvisionNetwork,
@@ -38,7 +39,7 @@ def _patch_stamp_ownership():
     only) and must not attempt real SSH connections to hmc.test.
     """
     with patch(
-        "hmc_mcp.operations.lpar.stamp_lpar_ownership",
+        "hmc_mcp.lpar_ownership.stamp_lpar_ownership",
         new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-08-13]"),
     ):
         yield

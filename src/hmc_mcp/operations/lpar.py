@@ -4,18 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
-from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from hmc_mcp.affinity_assessment import (
-    AffinityAssessmentInput,
-    CapturedPolicyState,
-    assess_affinity,
+    LparAffinityAssessmentOutcome,
+    affinity_not_measured,
 )
 
-from .. import lpar_ownership
 from ..client import HMCClient
 from ..client.client_resolution import (
     MAX_PARENT_DISCOVERY_SYSTEMS,
@@ -44,25 +40,15 @@ from ..jobs import (
 )
 from ..lpar_ownership import (
     authorize_lpar_mutation,
-    authorize_lpar_ownership_description,
-    parse_lpar_ownership_owner,
     resolve_lpar_ownership_names,
-    resolve_system_name as _system_name,
-)
-from .ssh_network import (
-    get_lpar_memopt_score,
-    get_minimum_affinity_policy,
-    plan_lpar_memopt_scores,
+    stamp_created_lpar_ownership,
 )
 from ..ssh.transport import HMCCLIError
 from ..ssh.lpar import (
     _ssh_system_name,
     create_lpar_via_cli,
-    stamp_lpar_ownership,
     validate_caller_token,
-    validate_lpar_description,
 )
-from ..ssh.profiles import set_lpar_description
 from .assignments import (
     AssignmentStep,
     LparPcieAssignments,
@@ -188,12 +174,6 @@ async def _modify_lpar(
     )
 
 
-_CALLER_TOKEN = re.compile(
-    r"\[hmc-mcp owner:[^\s\[\]:]+ created:\d{4}-\d{2}-\d{2}\] "
-    r"\[caller (?P<token>[^\s\[\]]+)\]"
-)
-
-
 @dataclass(frozen=True)
 class LparCreation:
     """Inputs needed by both REST and CLI LPAR creation paths."""
@@ -237,100 +217,6 @@ class LparPowerOnOutcome:
     affinity_assessment: LparAffinityAssessmentOutcome
 
 
-@dataclass(frozen=True)
-class ProvisionAffinityAssessment:
-    """Caller-owned captured evidence and post-activation response policy."""
-
-    system_name_or_uuid: str = field(
-        metadata={"description": "Captured managed-system identity; must match target."}
-    )
-    lpar_name: str = field(
-        metadata={"description": "Captured LPAR name; must match requested name."}
-    )
-    captured_score: int | None = field(
-        metadata={"description": "Previously observed LPAR affinity score."}
-    )
-    captured_policy_state: CapturedPolicyState = field(
-        metadata={"description": "Capability and policy state at capture time."}
-    )
-    captured_minimum: int | None = field(
-        metadata={"description": "Minimum affinity score observed at capture time."}
-    )
-    captured_at: datetime = field(
-        metadata={"description": "Timezone-aware timestamp for captured evidence."}
-    )
-    stale_after_seconds: int = field(
-        metadata={"description": "Maximum accepted age of captured evidence."}
-    )
-    response: Literal["warn", "fail"] = field(
-        metadata={"description": "Explicit response to an adverse assessment."}
-    )
-    regression_threshold: int | None = field(
-        default=None,
-        metadata={"description": "Caller-owned maximum acceptable score regression."},
-    )
-    optimization_threshold: int | None = field(
-        default=None,
-        metadata={"description": "Caller-owned minimum worthwhile predicted gain."},
-    )
-    timeout_seconds: int = field(
-        default=300,
-        metadata={"description": "Maximum seconds to wait for PowerOn completion."},
-    )
-    poll_interval: int = field(
-        default=5,
-        metadata={"description": "Seconds between PowerOn job status reads."},
-    )
-
-
-@dataclass(frozen=True)
-class LparAffinityAssessmentOutcome:
-    """Whether and how post-activation affinity was assessed."""
-
-    measured: bool
-    status: Literal["skipped", "passed", "warned", "failed", "unavailable"]
-    reason: str
-    assessment: dict[str, Any] | None
-
-
-def affinity_not_measured(
-    status: Literal["skipped", "failed", "unavailable"], reason: str
-) -> LparAffinityAssessmentOutcome:
-    """Build an outcome for a measurement that did not run."""
-    return LparAffinityAssessmentOutcome(False, status, reason, None)
-
-
-def validate_affinity_request(
-    request: ProvisionAffinityAssessment, configured_minimum: int | None = None
-) -> None:
-    """Validate caller-controlled assessment values without HMC traffic."""
-    if request.response not in {"warn", "fail"}:
-        raise ValueError("affinity assessment response must be warn or fail")
-    if request.timeout_seconds < 0:
-        raise ValueError("affinity assessment timeout_seconds must be non-negative")
-    if request.poll_interval <= 0:
-        raise ValueError("affinity assessment poll_interval must be positive")
-    policy_state: Literal["configured", "absent"] = (
-        "configured" if configured_minimum is not None else "absent"
-    )
-    assess_affinity(
-        AffinityAssessmentInput(
-            captured_score=request.captured_score,
-            current_score=request.captured_score,
-            predicted_score=request.captured_score,
-            policy_state=policy_state,
-            captured_policy_state=request.captured_policy_state,
-            configured_minimum=configured_minimum,
-            captured_minimum=request.captured_minimum,
-            captured_at=request.captured_at,
-            assessed_at=request.captured_at,
-            stale_after_seconds=request.stale_after_seconds,
-            regression_threshold=request.regression_threshold,
-            optimization_threshold=request.optimization_threshold,
-        )
-    )
-
-
 def power_on_outcome(
     result: LparPowerResult,
     affinity_assessment: LparAffinityAssessmentOutcome | None = None,
@@ -360,89 +246,6 @@ def power_on_outcome(
     )
 
 
-def _score(row: dict[str, Any], key: str) -> int | None:
-    value = row.get(key)
-    if isinstance(value, bool) or not isinstance(value, (int, str)):
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        return None
-
-
-async def assess_post_activation_affinity(
-    hmc: HMCClient,
-    request: ProvisionAffinityAssessment,
-    *,
-    configured_minimum: int | None = None,
-) -> dict[str, Any]:
-    """Measure and classify affinity using the accepted assessment contract."""
-    current_row = await get_lpar_memopt_score(
-        hmc, request.system_name_or_uuid, request.lpar_name
-    )
-    predicted_rows = await plan_lpar_memopt_scores(
-        hmc, request.system_name_or_uuid
-    )
-    predicted_row = next(
-        (row for row in predicted_rows if row.get("lpar_name") == request.lpar_name),
-        None,
-    )
-    predicted_score = (
-        _score(predicted_row, "predicted_lpar_score") if predicted_row else None
-    )
-    if configured_minimum is None:
-        policy = await get_minimum_affinity_policy(
-            hmc, request.system_name_or_uuid, request.lpar_name
-        )
-        if policy.capability == "capability-unavailable":
-            policy_state: Literal["configured", "absent", "unsupported"] = "unsupported"
-        elif policy.min_affinity_score is not None:
-            policy_state = "configured"
-        else:
-            policy_state = "absent"
-        configured_minimum = policy.min_affinity_score
-    else:
-        policy_state = "configured"
-    assessment = assess_affinity(
-        AffinityAssessmentInput(
-            captured_score=request.captured_score,
-            current_score=_score(current_row, "curr_lpar_score"),
-            predicted_score=predicted_score,
-            policy_state=policy_state,
-            captured_policy_state=request.captured_policy_state,
-            configured_minimum=configured_minimum,
-            captured_minimum=request.captured_minimum,
-            captured_at=request.captured_at,
-            assessed_at=datetime.now(UTC),
-            stale_after_seconds=request.stale_after_seconds,
-            regression_threshold=request.regression_threshold,
-            optimization_threshold=request.optimization_threshold,
-        )
-    )
-    return {
-        "assessment": asdict(assessment),
-        "achieved_score": assessment.evidence.current_score,
-        "predicted_score": assessment.evidence.predicted_score,
-        "prediction_guaranteed": False,
-    }
-
-
-def classify_affinity_outcome(
-    result: dict[str, Any], response: Literal["warn", "fail"]
-) -> LparAffinityAssessmentOutcome:
-    """Map normalized assessment evidence to the standalone response contract."""
-    assessment = result["assessment"]
-    classification = assessment["classification"]
-    explanation = assessment["explanation"]
-    if classification == "none":
-        return LparAffinityAssessmentOutcome(True, "passed", explanation, result)
-    if classification == "unsupported-data":
-        status = "failed" if response == "fail" else "unavailable"
-        return LparAffinityAssessmentOutcome(True, status, explanation, result)
-    status = "failed" if response == "fail" else "warned"
-    return LparAffinityAssessmentOutcome(True, status, explanation, result)
-
-
 def activation_allows_assessment(result: LparPowerResult) -> tuple[bool, str]:
     """Return whether a waited PowerOn result proves successful activation."""
     outcome = job_outcome("PowerOn", result.job)
@@ -451,141 +254,6 @@ def activation_allows_assessment(result: LparPowerResult) -> tuple[bool, str]:
     if outcome.status not in SUCCESSFUL_JOB_STATUSES:
         return False, outcome.error or f"PowerOn ended with status {outcome.status}."
     return True, "PowerOn reached a successful terminal status."
-
-
-def parse_lpar_ownership_caller_token(description: str) -> str | None:
-    """Return the caller tracking token following a well-formed ownership stamp.
-
-    Matches the literal ``[caller <token>]`` segment only when it directly
-    follows a well-formed ADR 0011 ownership stamp and one space, and only
-    when exactly one such segment exists, so spoofed, duplicated, or
-    misordered segments yield ``None`` (ADR 0064).
-    """
-    matches = _CALLER_TOKEN.findall(description)
-    if len(matches) != 1:
-        return None
-    # A second bracketed caller segment makes provenance ambiguous even
-    # though only one of them can sit in the anchored slot after the stamp;
-    # refuse rather than guess which one is authoritative (ADR 0064).
-    if description.count("[caller ") != 1:
-        return None
-    return matches[0]
-
-
-def lpar_ownership_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    """Distill one parsed LogicalPartition feed entry into ownership facts.
-
-    The ``description`` field is the raw Description text: ``None`` when the
-    ``<Description>`` element is absent (how the HMC signals an empty
-    description, per the #374 live-REST survey), the element text otherwise.
-    A description that carries no well-formed ADR 0011 ownership stamp sets
-    ``unparsed`` — "owned by something that is not an hmc-mcp token" is a
-    different fact from "no description", and neither partition may be
-    silently dropped by a reconciliation sweep.
-    """
-    resource = entry.get("Resource") or {}
-    name = resource.get("PartitionName")
-    description = resource.get("Description")
-    owner = (
-        parse_lpar_ownership_owner(description)
-        if isinstance(description, str)
-        else None
-    )
-    return {
-        "lpar_name": name,
-        "lpar_uuid": entry.get("UUID"),
-        "description": description,
-        "owned": owner is not None,
-        "owner": owner,
-        "unparsed": description is not None and owner is None,
-    }
-
-
-async def list_lpar_ownership(
-    hmc: HMCClient,
-    system_name_or_uuid: str | None = None,
-) -> list[dict[str, Any]]:
-    """Read parsed ownership for every LPAR on a managed system in one call.
-
-    Uses the REST bulk list feed ``GET
-    /rest/api/uom/ManagedSystem/<uuid>/LogicalPartition``, which inlines the
-    complete LogicalPartition object — including ``Description`` — per entry
-    (#374 live-REST survey; attribute present since schema version V1_2_0),
-    so one request covers every partition with no per-partition detail calls.
-    With ``system_name_or_uuid`` omitted, falls back to a single fleet-wide
-    ``GET /rest/api/uom/LogicalPartition``, mirroring the ``hmc_list_lpars``
-    selector convention (ADR 0063).
-
-    Returns one dict per partition as built by :func:`lpar_ownership_entry`:
-    ``lpar_name``, ``lpar_uuid``, raw ``description`` (``None`` = element
-    absent), ``owned``/``owner`` for well-formed ADR 0011 stamps, and
-    ``unparsed`` for descriptions that carry no such stamp. Ownership parsing
-    reuses :func:`parse_lpar_ownership_owner`; no second token grammar exists.
-
-    Note: feed entries do not name their parent managed system, so fleet-wide
-    results identify partitions only by name/UUID; pass a selector for
-    per-system attribution.
-    """
-    if system_name_or_uuid is not None:
-        system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-        entries = await hmc.list_logical_partitions(system_uuid)
-    else:
-        entries = await hmc.list_uom("LogicalPartition")
-    return [lpar_ownership_entry(entry) for entry in entries]
-
-
-async def authorize_decommission_lpar_ownership_snapshot(
-    hmc: HMCClient,
-    system_name: str,
-    lpar_name: str,
-    *,
-    ownership_override: bool,
-) -> str | None:
-    """Read and authorize one ownership snapshot for LPAR decommission."""
-    description = await lpar_ownership.get_lpar_description(
-        hmc.config, system_name, lpar_name
-    )
-    return authorize_lpar_ownership_description(
-        hmc,
-        system_name,
-        lpar_name,
-        description,
-        operation="lpar-decommission-snapshot",
-        ownership_override=ownership_override,
-    )
-
-
-async def stamp_created_lpar_ownership(
-    hmc: HMCClient,
-    system_uuid: str,
-    system_fallback: str,
-    created_lpar: dict[str, Any],
-    caller_token: str | None = None,
-) -> tuple[bool | None, list[str]]:
-    confirmed_name = (created_lpar.get("Resource") or {}).get("PartitionName")
-    if not confirmed_name:
-        return None, ["ownership stamp skipped: create result has no partition name"]
-
-    system_name = await _system_name(hmc, system_uuid, system_fallback)
-    if system_name == system_uuid:
-        return None, [
-            f"ownership stamp skipped for LPAR {confirmed_name!r}: "
-            "could not resolve the managed-system name"
-        ]
-
-    token = await stamp_lpar_ownership(
-        hmc.config,
-        system_name,
-        confirmed_name,
-        agent_id=hmc.config.agent_id,
-        caller_token=caller_token,
-    )
-    if token is not None:
-        return True, []
-    _logger.warning(
-        "ownership stamp failed for LPAR %r on %r", confirmed_name, system_name
-    )
-    return False, [f"ownership stamp failed for LPAR {confirmed_name!r}"]
 
 
 async def create_and_stamp_lpar(
@@ -695,41 +363,6 @@ async def create_and_stamp_lpar(
             "release its resources."
         )
     return LparCreationResult(True, created_lpar, ownership_stamped, tuple(warnings))
-
-
-async def set_lpar_ownership_description(
-    hmc: HMCClient,
-    system_name_or_uuid: str,
-    lpar_name_or_uuid: str,
-    description: str,
-    *,
-    ownership_override: bool = False,
-) -> str:
-    """Validate, authorize, and write one LPAR description (ADR 0066).
-
-    The presentation-neutral guarded description write: validates the text
-    before any HMC traffic, enforces the description-field ownership token
-    (ADR 0011) via :func:`authorize_lpar_mutation`, then writes the new
-    description over SSH. Supports re-stamping an LPAR whose create-time
-    stamp failed and rewriting the token at pool return or handover; callers
-    compose the description themselves in the ADR 0011 / ADR 0064 token
-    format.
-    """
-    validate_lpar_description(description)
-    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
-    )
-    system_name, lpar_name = await resolve_lpar_ownership_names(
-        hmc, system_uuid, system_name_or_uuid, lpar_uuid
-    )
-    await authorize_lpar_mutation(
-        hmc,
-        system_name,
-        lpar_name,
-        ownership_override=ownership_override,
-    )
-    return await set_lpar_description(hmc.config, system_name, lpar_name, description)
 
 
 async def delete_lpar(

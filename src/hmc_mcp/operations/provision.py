@@ -16,15 +16,17 @@ from ..resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from ..documents import LparResources, PartitionType, StorageKind
 from ..errors import HMCError
 from ..jobs import JobOutcome, job_outcome
+from ..affinity_assessment import (
+    ProvisionAffinityAssessment,
+    assess_post_activation_affinity,
+    validate_affinity_request,
+)
 from .adapters import add_network_adapter, add_vios_adapter
 from .lpar import (
     LparCreation,
     LparCreationResult,
-    ProvisionAffinityAssessment,
-    assess_post_activation_affinity,
     create_and_stamp_lpar,
     power_lpar,
-    validate_affinity_request,
 )
 from .ssh_network import set_minimum_affinity_policy
 from ..ssh.transport import HMCCLIError

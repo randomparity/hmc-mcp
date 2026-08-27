@@ -27,6 +27,7 @@ from .app import (
 )
 
 from ..jobs import validate_wait_timing
+from ..lpar_ownership import set_lpar_ownership_description
 from ..operations.lpar import ProcessorCompatibilityMode
 from ..operations.lpar import (
     LparCreation,
@@ -34,7 +35,6 @@ from ..operations.lpar import (
     delete_lpar,
     power_lpar,
     rename_lpar,
-    set_lpar_ownership_description,
 )
 from ..operations.assignments import (
     LparPcieAssignments,

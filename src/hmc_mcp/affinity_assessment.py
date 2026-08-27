@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Literal
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from typing import Any, Literal
+
+from .client import HMCClient
+from .operations.ssh_network import (
+    get_lpar_memopt_score,
+    get_minimum_affinity_policy,
+    plan_lpar_memopt_scores,
+)
 
 AffinityClassification = Literal[
     "regression",
@@ -60,6 +67,181 @@ class AffinityAssessmentResult:
     evidence: AffinityEvidence
     explanation: str
     recommended_actions: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ProvisionAffinityAssessment:
+    """Caller-owned captured evidence and post-activation response policy."""
+
+    system_name_or_uuid: str = field(
+        metadata={"description": "Captured managed-system identity; must match target."}
+    )
+    lpar_name: str = field(
+        metadata={"description": "Captured LPAR name; must match requested name."}
+    )
+    captured_score: int | None = field(
+        metadata={"description": "Previously observed LPAR affinity score."}
+    )
+    captured_policy_state: CapturedPolicyState = field(
+        metadata={"description": "Capability and policy state at capture time."}
+    )
+    captured_minimum: int | None = field(
+        metadata={"description": "Minimum affinity score observed at capture time."}
+    )
+    captured_at: datetime = field(
+        metadata={"description": "Timezone-aware timestamp for captured evidence."}
+    )
+    stale_after_seconds: int = field(
+        metadata={"description": "Maximum accepted age of captured evidence."}
+    )
+    response: Literal["warn", "fail"] = field(
+        metadata={"description": "Explicit response to an adverse assessment."}
+    )
+    regression_threshold: int | None = field(
+        default=None,
+        metadata={"description": "Caller-owned maximum acceptable score regression."},
+    )
+    optimization_threshold: int | None = field(
+        default=None,
+        metadata={"description": "Caller-owned minimum worthwhile predicted gain."},
+    )
+    timeout_seconds: int = field(
+        default=300,
+        metadata={"description": "Maximum seconds to wait for PowerOn completion."},
+    )
+    poll_interval: int = field(
+        default=5,
+        metadata={"description": "Seconds between PowerOn job status reads."},
+    )
+
+
+@dataclass(frozen=True)
+class LparAffinityAssessmentOutcome:
+    """Whether and how post-activation affinity was assessed."""
+
+    measured: bool
+    status: Literal["skipped", "passed", "warned", "failed", "unavailable"]
+    reason: str
+    assessment: dict[str, Any] | None
+
+
+def affinity_not_measured(
+    status: Literal["skipped", "failed", "unavailable"], reason: str
+) -> LparAffinityAssessmentOutcome:
+    """Build an outcome for a measurement that did not run."""
+    return LparAffinityAssessmentOutcome(False, status, reason, None)
+
+
+def validate_affinity_request(
+    request: ProvisionAffinityAssessment, configured_minimum: int | None = None
+) -> None:
+    """Validate caller-controlled assessment values without HMC traffic."""
+    if request.response not in {"warn", "fail"}:
+        raise ValueError("affinity assessment response must be warn or fail")
+    if request.timeout_seconds < 0:
+        raise ValueError("affinity assessment timeout_seconds must be non-negative")
+    if request.poll_interval <= 0:
+        raise ValueError("affinity assessment poll_interval must be positive")
+    policy_state: Literal["configured", "absent"] = (
+        "configured" if configured_minimum is not None else "absent"
+    )
+    assess_affinity(
+        AffinityAssessmentInput(
+            captured_score=request.captured_score,
+            current_score=request.captured_score,
+            predicted_score=request.captured_score,
+            policy_state=policy_state,
+            captured_policy_state=request.captured_policy_state,
+            configured_minimum=configured_minimum,
+            captured_minimum=request.captured_minimum,
+            captured_at=request.captured_at,
+            assessed_at=request.captured_at,
+            stale_after_seconds=request.stale_after_seconds,
+            regression_threshold=request.regression_threshold,
+            optimization_threshold=request.optimization_threshold,
+        )
+    )
+
+
+def _score(row: dict[str, Any], key: str) -> int | None:
+    value = row.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+async def assess_post_activation_affinity(
+    hmc: HMCClient,
+    request: ProvisionAffinityAssessment,
+    *,
+    configured_minimum: int | None = None,
+) -> dict[str, Any]:
+    """Measure and classify affinity using the accepted assessment contract."""
+    current_row = await get_lpar_memopt_score(
+        hmc, request.system_name_or_uuid, request.lpar_name
+    )
+    predicted_rows = await plan_lpar_memopt_scores(hmc, request.system_name_or_uuid)
+    predicted_row = next(
+        (row for row in predicted_rows if row.get("lpar_name") == request.lpar_name),
+        None,
+    )
+    predicted_score = (
+        _score(predicted_row, "predicted_lpar_score") if predicted_row else None
+    )
+    if configured_minimum is None:
+        policy = await get_minimum_affinity_policy(
+            hmc, request.system_name_or_uuid, request.lpar_name
+        )
+        if policy.capability == "capability-unavailable":
+            policy_state: Literal["configured", "absent", "unsupported"] = "unsupported"
+        elif policy.min_affinity_score is not None:
+            policy_state = "configured"
+        else:
+            policy_state = "absent"
+        configured_minimum = policy.min_affinity_score
+    else:
+        policy_state = "configured"
+    assessment = assess_affinity(
+        AffinityAssessmentInput(
+            captured_score=request.captured_score,
+            current_score=_score(current_row, "curr_lpar_score"),
+            predicted_score=predicted_score,
+            policy_state=policy_state,
+            captured_policy_state=request.captured_policy_state,
+            configured_minimum=configured_minimum,
+            captured_minimum=request.captured_minimum,
+            captured_at=request.captured_at,
+            assessed_at=datetime.now(UTC),
+            stale_after_seconds=request.stale_after_seconds,
+            regression_threshold=request.regression_threshold,
+            optimization_threshold=request.optimization_threshold,
+        )
+    )
+    return {
+        "assessment": asdict(assessment),
+        "achieved_score": assessment.evidence.current_score,
+        "predicted_score": assessment.evidence.predicted_score,
+        "prediction_guaranteed": False,
+    }
+
+
+def classify_affinity_outcome(
+    result: dict[str, Any], response: Literal["warn", "fail"]
+) -> LparAffinityAssessmentOutcome:
+    """Map normalized assessment evidence to the standalone response contract."""
+    assessment = result["assessment"]
+    classification = assessment["classification"]
+    explanation = assessment["explanation"]
+    if classification == "none":
+        return LparAffinityAssessmentOutcome(True, "passed", explanation, result)
+    if classification == "unsupported-data":
+        status = "failed" if response == "fail" else "unavailable"
+        return LparAffinityAssessmentOutcome(True, status, explanation, result)
+    status = "failed" if response == "fail" else "warned"
+    return LparAffinityAssessmentOutcome(True, status, explanation, result)
 
 
 def _validate_score(value: int | None, name: str) -> None:

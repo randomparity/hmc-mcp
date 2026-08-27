@@ -14,7 +14,7 @@ import pytest
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.documents import LparResources
-from hmc_mcp.operations.lpar import _system_name
+from hmc_mcp.lpar_ownership import resolve_system_name as _system_name
 from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.server import (
     hmc_create_lpar,
@@ -160,7 +160,7 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
             new=AsyncMock(return_value=""),
         ) as create_via_cli,
         patch(
-            "hmc_mcp.operations.lpar.stamp_lpar_ownership",
+            "hmc_mcp.lpar_ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
     ):

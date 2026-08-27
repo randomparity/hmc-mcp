@@ -22,7 +22,7 @@ from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.dispatch_scope import dispatch_authorizer
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.client import HMCError
-from hmc_mcp.operations.lpar import ProvisionAffinityAssessment
+from hmc_mcp.affinity_assessment import ProvisionAffinityAssessment
 from hmc_mcp.server import (
     TOOL_SECURITY,
     create_mcp,
@@ -1000,11 +1000,11 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations.lpar.stamp_lpar_ownership",
+                "hmc_mcp.lpar_ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
         patch(
-            "hmc_mcp.operations.lpar._system_name",
+                "hmc_mcp.lpar_ownership.resolve_system_name",
             new=AsyncMock(return_value="sys1"),
         ),
     ):

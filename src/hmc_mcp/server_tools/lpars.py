@@ -10,6 +10,14 @@ from .._app import (
     run_sync,
 )
 from ..errors import HMCError
+from ..lpar_ownership import list_lpar_ownership
+from ..affinity_assessment import (
+    ProvisionAffinityAssessment,
+    affinity_not_measured,
+    assess_post_activation_affinity,
+    classify_affinity_outcome,
+    validate_affinity_request,
+)
 from ..ssh.transport import HMCCLIError
 from ..client.client_factory import client_from_env
 from ..documents import (
@@ -22,16 +30,11 @@ from ..operations.decommission import DecommissionResult, decommission_lpar
 from ..operations.lpar import (
     LparCreation,
     LparPowerOnOutcome,
-    ProvisionAffinityAssessment,
     activation_allows_assessment,
-    affinity_not_measured,
-    assess_post_activation_affinity,
-    classify_affinity_outcome,
     _check_lpar_write_error,
     create_and_stamp_lpar,
     clear_lpar_boot_order,
     delete_lpar,
-    list_lpar_ownership,
     _modify_lpar,
     power_lpar,
     power_on_outcome,
@@ -40,7 +43,6 @@ from ..operations.lpar import (
     set_lpar_boot_order,
     set_lpar_memory,
     set_lpar_processors,
-    validate_affinity_request,
 )
 from ..operations.assignments import (
     AssignmentStep,

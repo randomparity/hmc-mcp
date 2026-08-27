@@ -125,7 +125,8 @@ names are internal everywhere and are never inventoried.
 <!-- ADR-0029-INVENTORY:BEGIN -->
 
 - `affinity_assessment` — exports: `AffinityAssessmentInput`, `AffinityAssessmentResult`,
-  `AffinityClassification`, `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`.
+  `AffinityClassification`, `AffinityEvidence`, `CapturedPolicyState`,
+  `PolicyState`, `ProvisionAffinityAssessment`, `assess_post_activation_affinity`.
 - `client` — exports: `HMCClient`.
 - `client.client_adapters` — exports: `AdapterType`.
 - `config` — exports: `ConfigError`, `HMCConfig`, `load_profile`.
@@ -143,6 +144,9 @@ names are internal everywhere and are never inventoried.
   - Note: `JobOutcome`'s fields are a package-owned model contract except the opaque `job`
     mapping (ADR 0093). The synchronous helpers `job_identifier`, `job_outcome`, and
     `validate_wait_timing` stay in `jobs.py` as transformations and validators.
+- `lpar_ownership` — exports: `authorize_decommission_lpar_ownership_snapshot`,
+  `authorize_lpar_mutation`, `list_lpar_ownership`, `resolve_lpar_ownership_names`,
+  `set_lpar_ownership_description`, `stamp_created_lpar_ownership`.
 - `operations.adapters` — operations: `add_network_adapter`, `add_vios_adapter`, `delete_adapter`,
   `list_adapters`; types: `AdapterResult`; excluded synchronous: none.
 - `operations.assignments` — operations: `apply_lpar_pcie_assignments`,
@@ -176,23 +180,11 @@ names are internal everywhere and are never inventoried.
     Domain A over exported *functions*, which a type is not.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
   none.
-- `operations.lpar` — operations: `assess_post_activation_affinity`,
-  `authorize_decommission_lpar_ownership_snapshot`, `clear_lpar_boot_order`,
-  `create_and_stamp_lpar`, `delete_lpar`, `list_lpar_ownership`, `power_lpar`,
-  `read_lpar_boot_order`, `rename_lpar`,
-  `set_lpar_boot_order`, `set_lpar_memory`, `set_lpar_ownership_description`,
-  `set_lpar_processors`, `stamp_created_lpar_ownership`; types: `LparCreation`,
-  `LparCreationResult`, `LparPowerResult`, `ProvisionAffinityAssessment`,
-  `authorize_lpar_mutation`, `resolve_lpar_ownership_names`; excluded synchronous:
-  `activation_allows_assessment`, `affinity_not_measured`, `classify_affinity_outcome`,
-  `lpar_ownership_entry`, `parse_lpar_ownership_caller_token`, `power_on_outcome`,
-  `validate_affinity_request`.
-  - Note: `ProvisionAffinityAssessment` is defined here and used by `provision_lpar` as well.
-    The inventory keys on the module `api.py` imports a name from, not on the module that
-    defines it; those two agree here because the facade was changed to import it from this
-    module. They do not always agree — `MemoptLparSelector` and `MemoptResourceGroupSelector`
-    are defined in `ssh/affinity.py` and inventoried under `operations.ssh_network`, which is where
-    the facade takes them from.
+- `operations.lpar` — operations: `clear_lpar_boot_order`, `create_and_stamp_lpar`,
+  `delete_lpar`, `power_lpar`, `read_lpar_boot_order`, `rename_lpar`, `set_lpar_boot_order`,
+  `set_lpar_memory`, `set_lpar_processors`; types: `LparCreation`, `LparCreationResult`,
+  `LparPowerResult`; excluded synchronous: `activation_allows_assessment`,
+  `power_on_outcome`.
 - `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
   `run_lpm_affinity_preflight`, `validate_lpar_migration`; types: `LpmAffinityMigrationResult`,

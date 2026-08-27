@@ -36,10 +36,8 @@ from ..ssh.profiles import (
     set_lpar_msp,
     set_lpar_proc_compat,
 )
-from ..operations.lpar import (
-    ProcessorCompatibilityMode,
-    set_lpar_ownership_description,
-)
+from ..lpar_ownership import set_lpar_ownership_description
+from ..operations.lpar import ProcessorCompatibilityMode
 
 
 tool, register_tools, tool_security = tool_module()
