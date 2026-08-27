@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 import threading
+import time
 import warnings
 from pathlib import Path
 from types import MappingProxyType
@@ -549,6 +550,59 @@ def test_audit_memento_override_warning_is_filterable_alone():
     assert cfg.effective_audit_memento == "hmc-mcp:quiet-agent"
 
 
+class _SlowMembershipSet(set):
+    """A set whose membership test yields *after* answering.
+
+    Threads racing the real set never interleave here: nothing between the
+    membership test and the insert releases the GIL, so the first thread through
+    completes both before another is scheduled and the assertion holds whether or
+    not the code synchronises. The sleep opens that window deliberately — and it
+    has to come after ``super().__contains__``, not before. Sleeping first would
+    hand the first thread time to finish its insert, so every later thread would
+    then see ``True`` and the window would close rather than open, which is the
+    shape that silently made this test unable to fail.
+    """
+
+    def __contains__(self, item: object) -> bool:
+        present = super().__contains__(item)
+        time.sleep(0.02)
+        return present
+
+
+def test_audit_memento_override_warns_once_across_concurrent_threads(
+    caplog, monkeypatch
+):
+    """"At most once per state" must hold off the event-loop thread too.
+
+    ``server_permissions`` resolves guards under ``asyncio.to_thread`` and builds
+    one config per granted connection, so concurrent ``hmc_effective_permissions``
+    calls reach the validator from several worker threads at once. An
+    unsynchronised check-then-act lets each of them miss the membership test and
+    emit, turning "once per state" into O(concurrency).
+    """
+    monkeypatch.setattr(
+        config_module, "_reported_memento_overrides", _SlowMembershipSet()
+    )
+    workers = 8
+    ready = threading.Barrier(workers)
+
+    def build() -> None:
+        ready.wait()
+        HMCConfig.from_mapping({"agent_id": "race-agent", "audit_memento": "mine"})
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", AuditMementoOverrideWarning)
+            threads = [threading.Thread(target=build) for _ in range(workers)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    assert len(records) == 1
+
+
 def test_audit_memento_override_dedup_set_is_capped():
     """The retained state cannot grow without bound on the library path.
 
@@ -587,16 +641,16 @@ def test_audit_memento_override_under_an_error_filter_raises_once_then_throttles
 ):
     """An error filter must not reopen the per-tool-call flood.
 
-    A raise does not stop a served process: ``_app._run`` does not catch, so
-    FastMCP turns it into a tool error result and keeps serving. If the dedup
-    state were recorded only after ``warnings.warn``, every raising construction
-    would leave it unrecorded and the log line beside it would write to fd 2 once
-    per MCP tool call — the exact flood #546 exists to remove, surviving under
-    ``PYTHONWARNINGS=error``.
+    A raise does not stop the server. On most tool bodies ``_app._run`` does not
+    catch and it becomes a tool error result; on the permissions path
+    ``server_permissions._power_guard`` swallows it into an unresolved guard. Both
+    keep serving, so if the dedup state were recorded only after
+    ``warnings.warn``, every raising construction would leave it unrecorded and
+    the log line beside it would write to fd 2 once per MCP tool call — the exact
+    flood #546 exists to remove, surviving under ``PYTHONWARNINGS=error``.
 
-    So the state is marked before the warn and after the log: one raise and one
-    record per override state, which is what "warned once per state" means when
-    warnings are errors.
+    So the state is marked before the warn: one raise and one record per override
+    state, which is what "warned once per state" means when warnings are errors.
     """
     with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
         with warnings.catch_warnings():

@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import threading
 import tomllib
 import warnings
 from collections.abc import Mapping
@@ -90,6 +91,15 @@ _MAX_REPORTED_MEMENTO_OVERRIDES = 64
 #: private name. Nothing supported exposes one; if a consumer ever needs to
 #: observe the warning again, that is the decision to make then.
 _reported_memento_overrides: set[tuple[str, str]] = set()
+
+#: Serialises the check-then-act on :data:`_reported_memento_overrides`. Config
+#: construction is not confined to the event-loop thread — ``server_permissions``
+#: resolves guards under ``asyncio.to_thread``, one config per granted connection
+#: — so without this two racers both miss the membership test and both emit.
+#: Held only across the membership test, the cap check and the insert; the log and
+#: warning calls are made outside it, so a slow handler cannot block a config
+#: being built on another thread.
+_override_report_lock = threading.Lock()
 
 
 def validate_agent_id(agent_id: str) -> None:
@@ -388,31 +398,53 @@ class HMCConfig(BaseSettings):
         state ``effective_audit_memento`` reports deterministically and the
         ``X-Audit-Memento`` header carries on every request.
 
-        The order is log, mark, warn. Marking before ``warnings.warn`` is what
+        The order is mark, log, warn, and the mark is taken under
+        :data:`_override_report_lock`. Marking before ``warnings.warn`` is what
         makes the throttle survive an error filter: under ``PYTHONWARNINGS=error``
-        the call raises, and a raise does not stop a served process — ``_app._run``
-        does not catch, so FastMCP turns it into a tool error result and keeps
-        serving. Marking afterwards would leave the state unrecorded on every
-        raising construction, and the log line beside it would then write to fd 2
-        once per MCP tool call, at the client-owned rate: exactly the flood this
-        function was changed to remove, surviving in full under a hardened
-        posture. Logging before the warn is what keeps the record from being lost
-        to the raise.
+        the call raises, and a raise does not stop the server. Marking afterwards
+        would leave the state unrecorded on every raising construction, and the
+        log line beside it would then write to fd 2 once per MCP tool call, at the
+        client-owned rate — exactly the flood this function was changed to remove,
+        surviving in full under a hardened posture. Logging before the warn keeps
+        the record from being lost to the raise.
 
-        The visible consequence is that under an error filter only the first
-        construction of a given override state raises; later ones return normally.
-        That is what "warned once per state" means when warnings are errors, not a
-        flake — and a bounded one-off failure naming the exact misconfiguration is
-        a better outcome than an unbounded write to the descriptor ADR 0043 exists
-        to stop blocking on.
+        Where that raise lands depends on the path. ``_app._run`` does not catch,
+        so on most tool bodies it becomes a tool error result and the server keeps
+        serving. On the permissions path it is swallowed instead:
+        ``server_permissions._power_guard`` wraps ``build_config`` in a broad
+        ``except Exception``, and ``AuditMementoOverrideWarning`` is an
+        ``Exception``, so the first ``hmc_effective_permissions`` call under an
+        error filter reports ``authorize_power_operations`` as unresolved with
+        ``AuditMementoOverrideWarning`` as the detail. That is a misreport, and it
+        is one this throttle *shortens*: before the throttle every construction
+        raised, so under an error filter that guard read unresolved permanently.
+        Now it reads unresolved once and correctly thereafter.
+
+        The visible consequence, then, is that under an error filter only the first
+        construction of a given override state raises. That is what "warned once
+        per state" means when warnings are errors — and a bounded one-off naming
+        the exact misconfiguration is a better outcome than an unbounded write to
+        the descriptor ADR 0043 exists to stop blocking on.
+
+        The lock is what makes "at most once per state" true rather than
+        approximate. ``server_permissions`` resolves guards under
+        ``asyncio.to_thread`` and builds one config per granted connection, so
+        concurrent ``hmc_effective_permissions`` calls reach this validator from
+        several worker threads at once; an unsynchronised check-then-act would let
+        each of them miss the membership test and emit. The duplicates would be
+        harmless — CPython's set operations are individually atomic, so nothing is
+        lost or corrupted — but the promise would read "once per state" and deliver
+        O(concurrency), and the cap's own check-then-act has the same shape.
         """
         if not (self.agent_id and self.audit_memento != "hmc-mcp"):
             return self
         override = (self.agent_id, self.audit_memento)
-        if override in _reported_memento_overrides:
-            return self
-        if len(_reported_memento_overrides) >= _MAX_REPORTED_MEMENTO_OVERRIDES:
-            _reported_memento_overrides.clear()
+        with _override_report_lock:
+            if override in _reported_memento_overrides:
+                return self
+            if len(_reported_memento_overrides) >= _MAX_REPORTED_MEMENTO_OVERRIDES:
+                _reported_memento_overrides.clear()
+            _reported_memento_overrides.add(override)
         msg = (
             f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
             f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
@@ -420,7 +452,6 @@ class HMCConfig(BaseSettings):
             f"hmc-mcp:{self.agent_id}"
         )
         _logger.warning(msg)
-        _reported_memento_overrides.add(override)
         warnings.warn(msg, AuditMementoOverrideWarning, stacklevel=2)
         return self
 

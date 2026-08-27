@@ -416,7 +416,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   rather than only from `hmc_mcp.config`. Two adjacent gaps this change does not close now
   have owners: rerouting the package's `warnings.warn` output into the bounded sink is #550
   (blocked on #534), and the same uncategorised, unthrottled shape in `client.py`'s
-  `verify_ssl=False` warning is #551.
+  `verify_ssl=False` warning is #551. A third, #553, corrects
+  `server_permissions.resolve_power_guards`'s docstring, which records this flood as live and
+  deliberately unfiltered — true when written, false once this lands; that file is left
+  untouched here because #534 owns it while in flight.
 
 ### Removed
 
