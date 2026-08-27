@@ -249,6 +249,11 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "StorageKind",
         "LuType",
         "DeviceType",
+        "AuthenticationType",
+        "configure_remote_access",
+        "create_user",
+        "delete_user",
+        "modify_user",
         "power_system",
         "list_partition_templates",
         "get_partition_template",
@@ -1777,7 +1782,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "4d636f643b1566cbb1a0e408812f57c985486d028a9dcf36f428ed29fb530237"  # pragma: allowlist secret
+    expected_digest = "1aaf9ec8b5deaac88fe5ae1573d58665cef469f46a7a7e53ca7ef6dc7c1facfc"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -1903,6 +1908,7 @@ _FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[str, ...]] = {
         "unsupported-data",
         "none",
     ),
+    "AuthenticationType": ("Local", "LDAP", "Kerberos"),
     "BootDeviceSelector": ("cd", "disk", "network"),
     "CapabilityState": ("available", "capability-unavailable"),
     "CapturedPolicyState": ("configured", "absent", "unsupported", "missing"),

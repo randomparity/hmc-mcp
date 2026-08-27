@@ -137,8 +137,8 @@ names are internal everywhere and are never inventoried.
   `capture_lpar_console`.
   - Note: `capture_lpar_console` is an operation living outside `operations_*` (ADR 0072), so
     the selection rule does not reach it; it is exported by this entry alone.
-- `documents` — exports: `BootDeviceSelector`, `Keylock`, `LparResources`, `OsType`,
-  `PartitionType`, `SharingMode`, `StorageKind`.
+- `documents` — exports: `AuthenticationType`, `BootDeviceSelector`, `Keylock`, `LparResources`,
+  `OsType`, `PartitionType`, `SharingMode`, `StorageKind`.
 - `errors` — exports: `HMCError`, `HMCTransportError`.
 - `jobs` — exports: `DeviceType`, `JobOutcome`, `LuType`, `RemoteRestartOperation`.
   - Note: `JobOutcome`'s fields are a package-owned model contract except the opaque `job`
@@ -232,7 +232,8 @@ names are internal everywhere and are never inventoried.
 - `operations.templates` — operations: `deploy_partition_template`, `get_partition_template`,
   `list_partition_templates`; types: none; excluded synchronous: none.
 - `operations.updates` — operations: none; types: none; excluded synchronous: none.
-- `operations.users` — operations: none; types: none; excluded synchronous: none.
+- `operations.users` — operations: `configure_remote_access`, `create_user`, `delete_user`,
+  `modify_user`; types: none; excluded synchronous: none.
 - `operations.vios` — operations: `power_vios`; types: none; excluded synchronous: none.
 - `snapshot` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
   `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,

@@ -357,6 +357,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `configure_remote_access`, `create_user`, `delete_user`, and `modify_user`, plus their
+  `AuthenticationType` input type. These presentation-neutral operations already back the user
+  MCP tools and now satisfy ADR 0029's selection rule.
 - Changed: `install_vios` now places `system_name_or_uuid` before `vios_name_or_uuid`,
   matching `install_lpar_os` and the other system-scoped partition operations. This moves the
   frozen public signature digest.

@@ -14,6 +14,7 @@ from hmc_mcp.affinity_assessment import (
     assess_post_activation_affinity,
 )
 from hmc_mcp.documents import (
+    AuthenticationType,
     BootDeviceSelector,
     Keylock,
     LparResources,
@@ -187,6 +188,12 @@ from hmc_mcp.operations.templates import (
     list_partition_templates,
 )
 from hmc_mcp.operations.vios import power_vios
+from hmc_mcp.operations.users import (
+    configure_remote_access,
+    create_user,
+    delete_user,
+    modify_user,
+)
 from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.ssh.network import SriovMode
 from hmc_mcp.console_capture import (
@@ -386,6 +393,11 @@ __all__ = [
     "StorageKind",
     "LuType",
     "DeviceType",
+    "AuthenticationType",
+    "configure_remote_access",
+    "create_user",
+    "delete_user",
+    "modify_user",
     "power_system",
     "list_partition_templates",
     "get_partition_template",
