@@ -270,7 +270,23 @@ process environment's own order — pydantic-settings folds the environment into
 one case-blind mapping, so the later entry overwrites the earlier. Do not rely
 on that ordering: export one spelling.
 
-Three readers do **not** fold case, and all three are worth knowing:
+The authorization audit record's `attribution` folds the same way, so casing no
+longer splits the trail: whichever spelling of `HMC_AGENT_ID` you export, the
+ADR 0040 record names the claimant the ADR 0011 ownership stamp and the
+`X-Audit-Memento` header carry ([#543](https://github.com/randomparity/hmc-mcp/issues/543)).
+`audit.py` imports nothing from the package by design and so carries its own copy
+of the fold, which a test pins against `config.env_var_value` directly.
+
+**Exported, though — a profile's `agent_id` is a different matter.** `audit.py`
+reads the environment and nothing else, which ADR 0040 decided deliberately: no
+module on the authorization decision path may name the variable, and reading it
+through `HMCConfig` would apply the validators that reject the malformed values
+most worth recording. So an `agent_id` that comes from a `config.toml` profile
+key rather than from the environment stamps the LPARs and sets the header while
+the authorization records still show no claimant. Export `HMC_AGENT_ID` — in any
+casing — when you want the whole trail attributed.
+
+Some readers do **not** fold case. Two of them are deliberate:
 
 - **`HMC_PROFILE` is matched exactly** on POSIX. It is not an `HMCConfig` field;
   `load_profile()` reads it directly to pick a profile, so no case-insensitive
@@ -279,22 +295,24 @@ Three readers do **not** fold case, and all three are worth knowing:
   variables alone when the file names none. On Windows this does not apply: the
   OS folds every environment variable name to upper case, so `hmc_profile` *is*
   `HMC_PROFILE` there and selects the profile it names.
-- **The authorization audit record's `attribution` reads `HMC_AGENT_ID`
-  exact-case** ([#543](https://github.com/randomparity/hmc-mcp/issues/543)).
-  `audit.py` imports nothing from the package by design, so it carries its own
-  read and has not been folded yet. Under a case-variant export the two halves
-  of the trail disagree: the ownership stamp and the `X-Audit-Memento` header
-  carry the variant's value, while the access-policy decision record shows no
-  claimant.
 - **A profile's `password_env` value names a variable read exact-case.**
   `load_profile()` looks the name up in `os.environ` directly, and correctly so:
   `password_env` points at an operator-chosen variable rather than at an
-  `HMCConfig` field, so there is no field name to fold it onto. Unlike the two
+  `HMCConfig` field, so there is no field name to fold it onto. Unlike the one
   above, this one **fails hard** instead of degrading — a name that is not
   present exactly as written raises `password_env=… is not set`, and the
   connection never opens. The templates in this repository always give it an
   `HMC_*` name, so a case-variant export of that name is the likely way to hit
   it.
+
+One is not deliberate, and is worth knowing for that reason: the power-guard
+report's connection inventory reads `HMC_HOST` exact-case
+([#552](https://github.com/randomparity/hmc-mcp/issues/552)), while the dispatch
+path it describes folds. Under a case-variant export
+`hmc_effective_permissions` can list a `power_ownership_guards` row for a
+connection dispatch will never select — which matters here because the
+[Notes](#notes) send you to that tool, rather than to your shell, to check
+whether the guard took effect.
 
 ### Isolated construction
 

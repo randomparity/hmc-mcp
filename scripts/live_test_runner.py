@@ -37,6 +37,7 @@ from fastmcp import Client
 import shlex
 
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.config import HMCConfig, env_var_value
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
 from hmc_mcp.server_command import configure_arbitrary_command_tool
@@ -47,6 +48,38 @@ from hmc_mcp.ssh_commands import build_filter, validate_lpar_description
 # ---------------------------------------------------------------------------
 
 _ENV_FILE = Path(".env")
+
+#: The `HMC_*` names whose reader folds their casing: `HMCConfig`'s own fields,
+#: and only those. `HMC_PROFILE` and a profile's `password_env` target carry the
+#: prefix but are looked up in `os.environ` directly (see the "Variable names are
+#: matched without regard to case" section of docs/environment-variables.md), so
+#: treating a `hmc_profile` export as already-set would suppress the `.env` line
+#: spelling it canonically while nothing ever read the variant.
+#:
+#: Held folded **down**, and matched that way below, because that is the relation
+#: pydantic-settings uses and the one `env_var_value` looks names up with. Over
+#: Unicode the two directions are different relations: `hmc_ssh_Key_file`
+#: lowers onto `ssh_key_file` and so is a name the loader reads, while its
+#: upper-fold is not `HMC_SSH_KEY_FILE` — an upper-cased gate would miss it, fall
+#: through to the exact-case test, and re-open the `.env`-outranks-the-export
+#: inversion for exactly the names this set exists to cover.
+_FOLDED_ENV_NAMES = frozenset(f"hmc_{field.lower()}" for field in HMCConfig.model_fields)
+
+
+def _already_set(name: str) -> bool:
+    """Whether the environment already carries *name*, matched as its reader matches it.
+
+    This is what makes an exported variable outrank `.env` and `config.toml` — the
+    priority `_bootstrap_config` documents — for a case variant as well as the
+    canonical spelling. An exact-case membership test did not recognise an
+    exported `hmc_host` as an already-set `HMC_HOST`, so it injected the canonical
+    name; a newly created key lands last in `os.environ` order and therefore wins
+    the fold, and an operator who exported a lab host ran the destructive suite
+    against the HMC `.env` named (#543).
+    """
+    if name.lower() in _FOLDED_ENV_NAMES:
+        return env_var_value(name) is not None
+    return name in os.environ
 
 
 def _load_dotenv() -> None:
@@ -60,7 +93,7 @@ def _load_dotenv() -> None:
         key, _, val = line.partition("=")
         key = key.strip()
         val = val.strip().strip('"').strip("'")
-        if key and key not in os.environ:
+        if key and not _already_set(key):
             os.environ[key] = val
 
 
@@ -89,7 +122,7 @@ def _bootstrap_config() -> None:
             "HMC_SCHEMA_VERSION": cfg.schema_version,
         }
         for key, val in mapping.items():
-            if val and key not in os.environ:
+            if val and not _already_set(key):
                 os.environ[key] = val
         config_path = resolve_config_path()
         print(f"  Credentials loaded from {config_path} (profile: {cfg.host})")
@@ -102,7 +135,11 @@ def _bootstrap_config() -> None:
     # Fallback: local .env
     _load_dotenv()
 
-    if not os.environ.get("HMC_PASSWORD"):
+    # env_var_value, not os.environ.get: this predicts whether `HMCConfig` will
+    # resolve a password, and `HMCConfig` reads the name case-blind. An exact-case
+    # test refused to start on a lower- or mixed-case `hmc_password` export that
+    # would have connected (#543).
+    if not env_var_value("HMC_PASSWORD"):
         print("❌  No HMC credentials found.")
         print("   Configure ~/.config/hmc-mcp/config.toml or a local .env file.")
         sys.exit(1)
@@ -118,7 +155,11 @@ def _ensure_schema_version() -> None:
     mutate .env — the operator must add it intentionally.
     """
     _load_dotenv()
-    if os.environ.get("HMC_SCHEMA_VERSION"):
+    # env_var_value for the same reason as the credential pre-check above:
+    # `schema_version` is an `HMCConfig` field, so an exact-case probe exits 1
+    # telling the operator to set a variable a case variant has already set and
+    # the server is already sending (#543).
+    if env_var_value("HMC_SCHEMA_VERSION"):
         return
     print("⚠️  HMC_SCHEMA_VERSION is not set in .env or the environment.")
     print("   Add 'HMC_SCHEMA_VERSION=V1_0' to your .env file and re-run.")
@@ -2106,13 +2147,27 @@ def _allow_iso_host() -> None:
     rather than replacing it, and it names the port as well as the host, so this
     permits the one server started below and no other loopback service.
     """
-    configured = os.environ.get("HMC_ISO_URL_ALLOWLIST", "")
+    # env_var_value reads whatever casing the operator exported, because that is
+    # the one `HMCConfig` will resolve — an exact-case read dropped a case
+    # variant's entries from the merged allowlist (#543).
+    name = "HMC_ISO_URL_ALLOWLIST"
+    configured = env_var_value(name) or ""
     entries = [entry.strip() for entry in configured.split(",") if entry.strip()]
     if _ISO_HOST in entries:
         return
     entries.append(_ISO_HOST)
-    os.environ["HMC_ISO_URL_ALLOWLIST"] = ",".join(entries)
-    print(f"  ℹ  HMC_ISO_URL_ALLOWLIST={os.environ['HMC_ISO_URL_ALLOWLIST']}")
+    # The merged value has to be the one that reaches the field, so every other
+    # casing goes first. Assigning to a key that already exists updates it in
+    # place rather than moving it, so a variant inserted after the canonical name
+    # would stay last in `os.environ` order and stay the one pydantic-settings
+    # folds onto `iso_url_allowlist` — the runner would print an allowlist
+    # carrying its own host while ADR 0050 refused every one of its uploads.
+    # Removing the variants makes the canonical spelling the only spelling, which
+    # is also what lets the guard above short-circuit a second call.
+    for variant in [k for k in os.environ if k.lower() == name.lower() and k != name]:
+        del os.environ[variant]
+    os.environ[name] = ",".join(entries)
+    print(f"  ℹ  {name}={os.environ[name]}")
 
 
 def _serve_iso_over_http() -> None:
@@ -2945,7 +3000,8 @@ async def main(
         f"Starting live integration tests at "
         f"{datetime.now(timezone.utc).isoformat()}"
     )
-    print(f"HMC_SCHEMA_VERSION={os.environ.get('HMC_SCHEMA_VERSION', '(not set)')}")
+    schema_version = env_var_value("HMC_SCHEMA_VERSION") or "(not set)"
+    print(f"HMC_SCHEMA_VERSION={schema_version}")
 
     # Determine which sub-tasks to run
     if subtask_filter is not None:
