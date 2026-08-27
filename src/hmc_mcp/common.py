@@ -9,7 +9,13 @@ from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
 from .client import HMCClient
-from .config import ConfigError, HMCConfig, load_profile, resolve_config_path
+from .config import (
+    ConfigError,
+    HMCConfig,
+    env_var_value,
+    load_profile,
+    resolve_config_path,
+)
 
 _T = TypeVar("_T")
 
@@ -44,9 +50,12 @@ def build_config(profile: str | None = None, **overrides: Any) -> HMCConfig:
     """
     filtered = {k: v for k, v in overrides.items() if v is not None}
 
-    # When no explicit host is given, try the TOML profile loader first
+    # When no explicit host is given, try the TOML profile loader first.
+    # HMC_HOST is read case-insensitively, like HMCConfig reads it: which
+    # resolution path an invocation takes must not depend on how the operator
+    # spelled the variable, and connection_scope mirrors this gate (#531).
     explicit_host = filtered.get("host")
-    if not explicit_host and not os.environ.get("HMC_HOST"):
+    if not explicit_host and not env_var_value("HMC_HOST"):
         config_path = resolve_config_path()
         if config_path is not None or profile or os.environ.get("HMC_PROFILE"):
             try:

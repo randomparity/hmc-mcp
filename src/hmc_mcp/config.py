@@ -559,6 +559,54 @@ def list_profiles_and_nicknames(
     )
 
 
+def env_var_value(name: str) -> str | None:
+    """*name*'s value from the environment, matched the way ``HMCConfig`` matches it.
+
+    ``HMCConfig`` leaves pydantic-settings' ``case_sensitive`` at its ``False``
+    default, so ``hmc_host=...`` populates ``host`` exactly as ``HMC_HOST=...``
+    does. Every hand-rolled read of an ``HMC_*`` variable that predicts, mirrors,
+    or reports on that resolution has to match the same way, or it disagrees with
+    the loader it is describing — which is how a profile's TOML key came to beat a
+    lower-case export (#531).
+
+    Returns ``None`` only when no casing of *name* is set. When several casings
+    are set, the **last** one in ``os.environ`` order wins — the exact spelling
+    gets no precedence. That is not a tie-break chosen here: pydantic-settings'
+    ``parse_env_vars`` folds the whole environment into ``{key.lower(): value}``
+    in ``os.environ`` order, so the last match is the one that reaches the field.
+    Preferring the exact spelling instead would leave ``HMC_HOST=""`` beside a
+    non-empty ``hmc_host`` reading as an unset host to the ADR 0038 gates below
+    while the config resolved to the exported one — the fail-open this function
+    exists to close.
+
+    The fold is ``str.lower()`` for the same reason, and not because it reads
+    the same as ``str.upper()``: over Unicode the two are different relations,
+    and ``_get_env_var_key`` folds down. Folding up would both match names the
+    loader ignores and miss names it reads — ``hmc_ho\u017ft`` upper-folds to
+    ``HMC_HOST`` while the loader never sees it, and ``hmc_ssh_\u212aey_file``
+    reaches ``ssh_key_file`` while an upper-fold never matches it.
+
+    ``tests/unit/test_config.py`` pins the agreement against ``HMCConfig``
+    itself rather than against that reading of the library, so a change to
+    pydantic-settings' folding shows up as a failing test.
+
+    The keys are snapshotted and each read with a default, never iterated as
+    items: ``os.environ.items()`` comes from the ``Mapping`` mixin and re-indexes
+    every key after ``__iter__`` has already snapshotted them, so a key an
+    embedding host deletes from another thread in between raises ``KeyError``
+    out of here. Two of the callers are on the ADR 0038 dispatch-time
+    authorization path, where that would escape as a bare ``KeyError`` past the
+    denial machinery; the atomic ``os.environ.get`` calls this function replaced
+    could not raise, and neither may it.
+    """
+    wanted = name.lower()
+    found: str | None = None
+    for key in list(os.environ):
+        if key.lower() == wanted:
+            found = os.environ.get(key, found)
+    return found
+
+
 def _load_profile_from_document(
     doc: dict[str, Any],
     path: Path | None,
@@ -651,11 +699,16 @@ def _load_profile_from_document(
     # and _env_file=None below does not change that — it suppresses a dotenv
     # source (which HMCConfig does not configure at all) and never the
     # environment. HMCConfig.from_mapping is the isolated path; see ADR 0096.
+    #
+    # The membership test matches the loader's own casing rule via
+    # env_var_value: an exact-case test would leave the TOML value in the init
+    # kwargs for a lower- or mixed-case export that pydantic-settings does read,
+    # and init kwargs outrank every environment source (#531).
     env_prefix = "HMC_"
     filtered_entry = {
         k: v
         for k, v in entry.items()
-        if (env_prefix + k.upper()) not in os.environ
+        if env_var_value(env_prefix + k.upper()) is None
     }
     return HMCConfig(_env_file=None, **filtered_entry)  # ty: ignore[unknown-argument]
 

@@ -133,6 +133,43 @@ def test_empty_hmc_host_does_not_collapse(config, monkeypatch):
     assert selected_connection("lab", tool="hmc_delete_lpar") == "lab"
 
 
+@pytest.mark.parametrize("env_name", ["hmc_host", "Hmc_Host"])
+@pytest.mark.parametrize("token", [None, "", "lab", "prod", "never-configured"])
+def test_a_case_variant_hmc_host_collapses_the_token_space_too(
+    config, monkeypatch, token, env_name
+):
+    """Rule 1 mirrors ``build_config``'s gate, which is case-blind (#531).
+
+    Reading this variable exact-case while ``build_config`` reads it
+    case-insensitively is a fail-open: the token resolves to a profile key, a
+    grant naming that profile authorizes the call, and the connection the call
+    actually reaches is the one the export named.
+    """
+    monkeypatch.setenv(env_name, "env-hmc.example.com")
+    assert selected_connection(token, tool="hmc_delete_lpar") is None
+
+
+def test_an_empty_case_variant_hmc_host_does_not_collapse(config, monkeypatch):
+    """Case-blindness does not change the truthiness test rule 1 shares with build_config."""
+    monkeypatch.setenv("hmc_host", "")
+    assert selected_connection("lab", tool="hmc_delete_lpar") == "lab"
+
+
+def test_an_empty_exact_case_hmc_host_does_not_hide_a_non_empty_variant(
+    config, monkeypatch
+):
+    """The fail-open a tie-break preferring the exact spelling would leave open (#531).
+
+    ``HMC_HOST=""`` beside a non-empty ``hmc_host`` resolves to the variant in
+    ``HMCConfig``, so ``build_config`` reaches the exported host. Reading the
+    empty exact spelling here instead would resolve the token to ``lab``, and a
+    grant naming ``lab`` would authorize a call issued somewhere else entirely.
+    """
+    monkeypatch.setenv("HMC_HOST", "")
+    monkeypatch.setenv("hmc_host", "env-hmc.example.com")
+    assert selected_connection("lab", tool="hmc_delete_lpar") is None
+
+
 # ---------------------------------------------------------------------------
 # R8 — rule 2: a falsy token is the default connection
 # ---------------------------------------------------------------------------
@@ -393,8 +430,25 @@ def test_denial_explains_the_hmc_host_collapse(config, monkeypatch):
     with pytest.raises(ConnectionScopeError) as error:
         authorize("hmc_delete_lpar", SECURITY, {"profile": "prod"})
     message = str(error.value)
-    assert "HMC_HOST is set, so the 'profile' argument is ignored" in message
+    assert (
+        "HMC_HOST (in any casing) is set, so the 'profile' argument is ignored"
+        in message
+    )
     assert "evaluated as the '<default>' connection" in message
+    assert "env-hmc.example.com" not in message
+
+
+def test_a_case_variant_hmc_host_still_explains_the_collapse(config, monkeypatch):
+    """The clause describes the decision, so it has to fire on the same reading (#531)."""
+    monkeypatch.setenv("hmc_host", "env-hmc.example.com")
+    authorize = dispatch_authorizer(_policy("lab", name="lab-only"))
+    with pytest.raises(ConnectionScopeError) as error:
+        authorize("hmc_delete_lpar", SECURITY, {"profile": "prod"})
+    message = str(error.value)
+    assert (
+        "HMC_HOST (in any casing) is set, so the 'profile' argument is ignored"
+        in message
+    )
     assert "env-hmc.example.com" not in message
 
 

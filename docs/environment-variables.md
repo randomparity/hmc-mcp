@@ -107,10 +107,9 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   every other profile stays unguarded, including a second profile pointing at the
   same HMC, and both the MCP tools and the CLI take a caller-supplied profile
   selector. `HMC_AUTHORIZE_POWER_OPERATIONS` overrides every profile's TOML value,
-  so it is the setting that cannot be selected around — **spelled exactly**. The
-  profile loader drops a TOML key only when the variable's exact upper-case name
-  is in the environment, so a lower- or mixed-case export does not override a
-  profile that carries the key (#531).
+  so it is the setting that cannot be selected around — in any casing, see
+  [Variable names are matched without regard to
+  case](#variable-names-are-matched-without-regard-to-case).
 
   **Check that it actually took — ask the server, not the shell.** This setting
   fails **open**, and a mistyped profile key or environment variable is dropped
@@ -134,10 +133,14 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   every channel.
 
   A fourth value, `ambiguous`, means a **case variant** of
-  `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: only the exact upper-case
-  spelling is dropped from a profile's keys before the config is built, so a
-  variant loses to a profile there and wins where no profile is read — and nothing
-  in the server can tell which happened. Fix the spelling.
+  `HMC_AUTHORIZE_POWER_OPERATIONS` is exported. It over-reports
+  ([#547](https://github.com/randomparity/hmc-mcp/issues/547)): it was
+  introduced when a variant lost to a profile on one resolution path and won on
+  the other, and the fix for
+  [#531](https://github.com/randomparity/hmc-mcp/issues/531) removed that
+  divergence — a variant now drops the profile's key on both paths, so the value
+  came from the environment and `environment` is the truthful label. Read
+  `ambiguous` as `environment`, and fix the spelling.
 
   **With `HMC_HOST` set, expect fewer rows than your policy has connections.** Every
   connection token collapses to the default one at dispatch, so the report carries at
@@ -251,6 +254,47 @@ environment's `agent_id`.
 (constructor args > `HMC_*` > TOML profile > field default). That ordering is
 deliberate — it is how an operator overrides a committed profile for one
 invocation — and it applies to every field the profile omits as well.
+
+### Variable names are matched without regard to case
+
+`HMCConfig` leaves pydantic-settings' `case_sensitive` at its `False` default, so
+`hmc_host=…` and `Hmc_Host=…` reach the `host` field exactly as `HMC_HOST=…`
+does. Every precedence statement on this page holds for any casing, including
+the `HMC_AUTHORIZE_POWER_OPERATIONS` claim in the [Notes](#notes): a case variant
+beats the profile's TOML key for every field in the [Reference](#reference)
+table, and a case variant of `HMC_HOST` skips the TOML profile in the same way
+the canonical spelling does. The names are written in upper case throughout
+because that is the convention, not because the loader requires it. Setting two
+casings of the same variable at once resolves to the **last** of them in the
+process environment's own order — pydantic-settings folds the environment into
+one case-blind mapping, so the later entry overwrites the earlier. Do not rely
+on that ordering: export one spelling.
+
+Three readers do **not** fold case, and all three are worth knowing:
+
+- **`HMC_PROFILE` is matched exactly** on POSIX. It is not an `HMCConfig` field;
+  `load_profile()` reads it directly to pick a profile, so no case-insensitive
+  settings loader is involved. A lower-case `hmc_profile` export selects no
+  profile; selection falls back to `default_profile`, or to environment
+  variables alone when the file names none. On Windows this does not apply: the
+  OS folds every environment variable name to upper case, so `hmc_profile` *is*
+  `HMC_PROFILE` there and selects the profile it names.
+- **The authorization audit record's `attribution` reads `HMC_AGENT_ID`
+  exact-case** ([#543](https://github.com/randomparity/hmc-mcp/issues/543)).
+  `audit.py` imports nothing from the package by design, so it carries its own
+  read and has not been folded yet. Under a case-variant export the two halves
+  of the trail disagree: the ownership stamp and the `X-Audit-Memento` header
+  carry the variant's value, while the access-policy decision record shows no
+  claimant.
+- **A profile's `password_env` value names a variable read exact-case.**
+  `load_profile()` looks the name up in `os.environ` directly, and correctly so:
+  `password_env` points at an operator-chosen variable rather than at an
+  `HMCConfig` field, so there is no field name to fold it onto. Unlike the two
+  above, this one **fails hard** instead of degrading — a name that is not
+  present exactly as written raises `password_env=… is not set`, and the
+  connection never opens. The templates in this repository always give it an
+  `HMC_*` name, so a case-variant export of that name is the likely way to hit
+  it.
 
 ### Isolated construction
 

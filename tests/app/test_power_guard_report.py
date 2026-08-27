@@ -225,17 +225,22 @@ def test_a_case_variant_environment_variable_asserts_no_origin(monkeypatch):
     assert "case variant" in guard.detail
 
 
-def test_a_case_variant_does_not_claim_a_value_the_environment_lost(
-    monkeypatch, tmp_path
-):
-    """The mirror case, and the reason `environment` needs the exact spelling.
+def test_a_case_variant_overrides_a_profiles_value(monkeypatch, tmp_path):
+    """The mirror case, which #531 inverted.
 
-    `_load_profile_from_document` drops a TOML key only when its exact
-    upper-case spelling is a key of `os.environ`, so a case variant leaves the
-    profile's value in the init kwargs, where pydantic-settings ranks it above
-    the environment. The environment loses here — `authorized` is the profile's
-    `true`, not the variable's `false` — and a case-insensitive probe would
-    report that the environment won.
+    `_load_profile_from_document` used to drop a TOML key only when its exact
+    upper-case spelling was a key of `os.environ`, so a case variant left the
+    profile's value in the init kwargs, where pydantic-settings ranked it above
+    the environment. That was the divergence #531 fixed: the loader now folds
+    `HMC_*` names, so the variant drops the profile's key here exactly as it
+    already won on the env-only path, and `authorize_power_operations` is the
+    variable's `false` rather than the profile's `true`.
+
+    `source` stays `ambiguous` and therefore over-reports — with both paths
+    agreeing, `environment` is the truthful label. Removing the value changes a
+    documented literal alternative on the report, so it is tracked separately as
+    #547; this assertion pins the current behaviour so that change is visible
+    when it lands.
     """
     _write_config(
         tmp_path,
@@ -255,7 +260,7 @@ def test_a_case_variant_does_not_claim_a_value_the_environment_lost(
 
     guards = _by_connection(resolve_power_guards(policy))
 
-    assert guards["guarded"].authorize_power_operations is True
+    assert guards["guarded"].authorize_power_operations is False
     assert guards["guarded"].source == "ambiguous"
 
 

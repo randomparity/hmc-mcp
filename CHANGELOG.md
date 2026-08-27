@@ -160,9 +160,12 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `profile`, or `default`, where `default` is the answer that means nothing the operator
   wrote arrived. A fourth value, `ambiguous`, reports that a **case variant** of
   `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: pydantic-settings matches a variant
-  case-insensitively while the profile loader drops only the exact upper-case spelling
-  (#531), so a variant loses to a profile on one resolution path and wins on the other, and
-  nothing in the server can tell which happened. `hmc-mcp config show` could not answer
+  case-insensitively while the profile loader drops only the exact upper-case spelling, so a
+  variant loses to a profile on one resolution path and wins on the other, and nothing in the
+  server can tell which happened. **The #531 fix in this same release removes that
+  divergence**, so `ambiguous` ships over-reporting: a variant now drops the profile's key on
+  both paths and `environment` is the truthful label. Read `ambiguous` as `environment`;
+  #547 tracks removing the value. `hmc-mcp config show` could not answer
   either deployment the documentation
   recommends: it exits 1 with no `config.toml`, and it reads the invoking shell's environment
   rather than the served process's. The entry keeps the setting's own name and polarity —
@@ -242,6 +245,47 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `mac_address` (`-m`) join; `wait`/`wait_timeout_seconds`/`poll_interval`/
   `hmc_timeout_minutes` are removed because there is no job to poll (#410,
   ADR 0070).
+- A lower- or mixed-case `HMC_*` export now overrides a TOML profile's matching key, for
+  every `HMCConfig` field (#531). `HMCConfig` leaves pydantic-settings' `case_sensitive`
+  at its `False` default, so `hmc_host=…` always reached the `host` field; the profile
+  loader's exact-case membership test did not agree, and handed the profile's value to the
+  constructor as an init kwarg, which outranks every environment source. Three further
+  hand-rolled `HMC_*` reads that mirror or report on that resolution move to the same
+  case-insensitive rule: `build_config`'s `HMC_HOST` branch gate, the ADR 0038
+  `connection_scope` mirror of that gate, and the #379 TLS audit record's `source` field,
+  which named `explicit-argument` for a value only the environment had supplied. The
+  `connection_scope` mirror is what makes leaving it exact-case a fail-open — the token
+  would resolve to a profile key while the call reached the exported host — and pre-fix
+  that divergence was already reachable, though only for a profile that omits `host`,
+  since a profile carrying one handed it over as an init kwarg that outranked the variant.
+  One reader inside `src/hmc_mcp` is deliberately left behind: `audit.py` imports nothing
+  from the package by design, so its exact-case `HMC_AGENT_ID` attribution read needs its
+  own case-fold, tracked as #543 along with the two exact-case reads in
+  `scripts/live_test_runner.py`. Several casings of one
+  variable fold to a single field, and the last one in the process environment wins —
+  `env_var_value` resolves the tie the way pydantic-settings does, pinned by a test
+  against `HMCConfig` rather than against a reading of the library. `HMC_PROFILE` is
+  unchanged and still matched exactly on POSIX; it names no `HMCConfig` field and no
+  settings loader reads it. **Upgrade note:** a deployment whose environment already
+  carries a case-variant `HMC_*` name gets a different resolution after this change —
+  the export now beats the profile's TOML key where it previously lost. Audit for them
+  before upgrading (`env | grep -iE '^hmc_'`). Four things flip in the fail-open
+  direction. A stale `hmc_verify_ssl=false` over a profile's `verify_ssl = true` is at
+  least visible, as `client.py` emits `tls-verification-disabled` naming the environment.
+  A stale `hmc_authorize_power_operations=false` over a profile's `true` leaves no runtime
+  record at all — a guard that is off simply does not run — so `hmc-mcp config show` is
+  the check for that one. The largest is on the access-policy surface: a stale
+  `hmc_host` now collapses every connection token to `<default>`, so an ADR 0038 grant of
+  `connections = ["<default>"]` permits calls it previously denied, issued against the
+  exported host, while a grant naming a profile key now denies calls it previously
+  allowed. The authorization records show it — `connection.resolved` reads `<default>`
+  for a call that named a profile. Finally, a stale `hmc_agent_id` now beats a profile's
+  `agent_id`, and that is the identity the ADR 0011 ownership guard compares against, so
+  it changes which LPARs this process may mutate — `hmc_agent_id=team-b` over a profile's
+  `agent_id = "team-a"` turns every denial of a `team-b`-stamped partition into a
+  permit. The authorization record is the *weakest* check for this one: `audit.py` reads
+  `HMC_AGENT_ID` exact-case (#543), so under a variant its `attribution` reads unset.
+  Check the LPAR ownership stamps and the `X-Audit-Memento` header instead.
 
 ### Removed
 
