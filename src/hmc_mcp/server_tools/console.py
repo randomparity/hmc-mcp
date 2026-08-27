@@ -14,7 +14,7 @@ from ..resource_identity import (
     resolve_system_uuid,
 )
 from ..ssh.console import capture_lpar_console
-from ..ssh.lpar import _ssh_lpar_name
+from ..ssh.lpar import resolve_lpar_cli_name
 from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
@@ -84,7 +84,7 @@ def hmc_capture_lpar_console(
             lpar_name = (
                 lpar_name_or_uuid
                 if not is_uuid(lpar_name_or_uuid)
-                else await _ssh_lpar_name(hmc.config, lpar_uuid, system_name)
+                else await resolve_lpar_cli_name(hmc.config, lpar_uuid, system_name)
             )
             capture = await capture_lpar_console(
                 hmc,

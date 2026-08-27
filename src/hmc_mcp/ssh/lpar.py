@@ -220,7 +220,7 @@ async def resolve_system_cli_name(config: HMCConfig, system_uuid: str) -> str:
     return _match_uuid_name(raw, system_uuid, "system")
 
 
-async def _ssh_lpar_name(
+async def resolve_lpar_cli_name(
     config: HMCConfig,
     lpar_uuid: str,
     system_name: str | None = None,

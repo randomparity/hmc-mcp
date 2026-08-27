@@ -21,7 +21,7 @@ import pytest
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.ssh.transport import HMCCLIError
-from hmc_mcp.ssh.lpar import _ssh_lpar_name, resolve_system_cli_name
+from hmc_mcp.ssh.lpar import resolve_lpar_cli_name, resolve_system_cli_name
 from hmc_mcp.ssh.selectors import resolve_lpar_name, resolve_system_name
 
 from conftest import make_config
@@ -77,12 +77,14 @@ async def test_ssh_system_name_raises_when_uuid_missing():
 
 
 @pytest.mark.asyncio
-async def test_ssh_lpar_name_scopes_to_system():
-    """_ssh_lpar_name scopes lssyscfg -r lpar with -m when a system is given."""
+async def test_resolve_lpar_cli_name_scopes_to_system():
+    """resolve_lpar_cli_name scopes lssyscfg with -m when a system is given."""
     conn = _make_ssh_mock(_LPAR_ROWS)
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
-        name = await _ssh_lpar_name(make_config(), LPAR_UUID, system_name=SYSTEM_NAME)
+        name = await resolve_lpar_cli_name(
+            make_config(), LPAR_UUID, system_name=SYSTEM_NAME
+        )
 
     assert name == LPAR_NAME
     cmd = conn.run.call_args[0][0]
@@ -92,12 +94,12 @@ async def test_ssh_lpar_name_scopes_to_system():
 
 
 @pytest.mark.asyncio
-async def test_ssh_lpar_name_unscoped_without_system():
+async def test_resolve_lpar_cli_name_unscoped_without_system():
     """Without a system name the lookup spans all managed systems (no -m)."""
     conn = _make_ssh_mock(_LPAR_ROWS)
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
-        name = await _ssh_lpar_name(make_config(), LPAR_UUID)
+        name = await resolve_lpar_cli_name(make_config(), LPAR_UUID)
 
     assert name == LPAR_NAME
     cmd = conn.run.call_args[0][0]

@@ -21,7 +21,7 @@ from ..resource_identity import (
     resolve_system_uuid,
     resolve_vios_uuid,
 )
-from ..ssh.lpar import _ssh_lpar_name
+from ..ssh.lpar import resolve_lpar_cli_name
 from ..ssh.install import (
     build_installios_command,
     run_installios,
@@ -138,7 +138,7 @@ async def _submit_install(
     partition_name = (
         target_name_or_uuid
         if not is_uuid(target_name_or_uuid)
-        else await _ssh_lpar_name(hmc.config, target_uuid, system_name)
+        else await resolve_lpar_cli_name(hmc.config, target_uuid, system_name)
     )
 
     command, log_path = build_installios_command(
