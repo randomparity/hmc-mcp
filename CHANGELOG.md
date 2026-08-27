@@ -354,6 +354,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: `capture_lpar_snapshot` now reads the SSH configuration from its `HMCClient`
+  instead of requiring callers to pass the same client's configuration separately. This removes
+  the redundant `config` parameter and moves the frozen public signature digest.
 - Changed: LPAR-targeting facade operations now consistently place the managed-system selector
   before the partition selector. This reorders `install_lpar_os`, `power_lpar`,
   `set_lpar_processors`, `set_lpar_memory`, and all four virtual-adapter operations; callers

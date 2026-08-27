@@ -142,7 +142,7 @@ first, exactly as for the tool rows in §3.2.
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
 | `set_lpar_boot_order` | `operations/lpar.py:1320` | guarded (`:1424`) | — |
-| `clear_lpar_boot_order` | `operations/lpar.py:1387` | guarded (`:1478`) | — |
+| `clear_lpar_boot_order` | `operations/lpar.py:1385` | guarded (`:1416`) | — |
 | `assign_dedicated_pcie_slot` | `operations/pcie.py:182` | guarded (`:222`, via `_authorize_pcie_profile_request`) | — |
 | `unassign_dedicated_pcie_slot` | `operations/pcie.py:202` | guarded (`:222`) | — |
 | `assign_sriov_logical_port` | `operations/pcie.py:462` | guarded (`:313`, via `_resolve_lpar`) | — |

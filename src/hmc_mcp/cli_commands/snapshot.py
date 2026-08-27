@@ -10,7 +10,7 @@ from typing import NoReturn
 
 import typer
 
-from hmc_mcp.cli_commands.app import _client, _print_json, _run, _ssh_config, snapshot_app
+from hmc_mcp.cli_commands.app import _client, _print_json, _run, snapshot_app
 from hmc_mcp.operations.snapshot import assess_snapshot_affinity, capture_lpar_snapshot
 from hmc_mcp.affinity_assessment import PolicyState
 from hmc_mcp.snapshot import (
@@ -57,7 +57,6 @@ def snapshot_capture(
         async with _client() as hmc:
             return await capture_lpar_snapshot(
                 hmc,
-                _ssh_config(),
                 system_name_or_uuid,
                 lpar_name_or_uuid,
                 profile_name,

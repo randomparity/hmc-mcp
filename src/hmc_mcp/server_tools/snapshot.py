@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from hmc_mcp._app import run_sync
-from hmc_mcp.config import build_config
 from hmc_mcp.client.client_factory import client_from_env
 from dataclasses import asdict
 
@@ -78,7 +77,6 @@ def hmc_snapshot_capture(
         async with client_from_env(profile) as hmc:
             snapshot = await capture_lpar_snapshot(
                 hmc,
-                build_config(profile=profile),
                 system_name_or_uuid,
                 lpar_name_or_uuid,
                 profile_name,

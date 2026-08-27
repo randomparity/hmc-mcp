@@ -53,7 +53,7 @@ The exact supported contracts are:
 
 | Surface | Contract |
 |---|---|
-| Python | Async supported operations `capture_lpar_snapshot(hmc, config, system_name_or_uuid, lpar_name_or_uuid, profile_name) -> LparSnapshot`, `validate_lpar_snapshot(document) -> dict`, and `inspect_lpar_snapshot(document) -> SnapshotInspection`; synchronous parse/serialize/file helpers remain internal implementation details under ADR 0029. |
+| Python | Async supported operations `capture_lpar_snapshot(hmc, system_name_or_uuid, lpar_name_or_uuid, profile_name) -> LparSnapshot`, `validate_lpar_snapshot(document) -> dict`, and `inspect_lpar_snapshot(document) -> SnapshotInspection`; synchronous parse/serialize/file helpers remain internal implementation details under ADR 0029. |
 | MCP | `hmc_snapshot_capture(system_name_or_uuid, lpar_name_or_uuid, profile_name, profile=None) -> dict` with operation `snapshot.capture`; `hmc_snapshot_validate(document) -> dict` with operation `snapshot.validate`; `hmc_snapshot_inspect(document) -> dict` with operation `snapshot.inspect`. Local operations accept JSON text, not paths. |
 | CLI | `hmc-mcp snapshot capture SYSTEM LPAR PROFILE_NAME --output PATH`; `snapshot validate PATH`; `snapshot inspect PATH`. |
 

@@ -17,7 +17,6 @@ from hmc_mcp.affinity_assessment import (
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.resource_identity import resolve_lpar_uuid, resolve_system_name, resolve_system_uuid
-from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.ssh_network import (
     get_minimum_affinity_policy,
     get_lpar_memopt_score,
@@ -234,7 +233,6 @@ def _placement(resource: dict[str, Any]) -> dict[str, object]:
 
 async def capture_lpar_snapshot(
     hmc: HMCClient,
-    config: HMCConfig,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
     profile_name: str,
@@ -254,7 +252,7 @@ async def capture_lpar_snapshot(
     lpar_name = _text(lpar_resource.get("PartitionName"), "LPAR name")
     assert isinstance(lpar_name, str)
     native_data = await read_lpar_profile_record(
-        config, system_name, lpar_name, profile_name
+        hmc.config, system_name, lpar_name, profile_name
     )
     normalized: NormalizedConfiguration = _normalized_from_profile(
         _parse_profile(native_data)

@@ -1761,15 +1761,16 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         ]
         assert selector_names == ["system_name_or_uuid", "lpar_name_or_uuid"]
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved when LPAR operations standardized system-before-partition selectors,
-    # recomputed over keyword-only job polling controls and the SSH-backed operations'
+    # Moved when capture_lpar_snapshot stopped accepting a config already owned by
+    # its HMCClient, recomputed over LPAR operations' standardized selector order,
+    # keyword-only job polling controls, and the SSH-backed operations'
     # #468: `InstallHandle` replaces `dict[str, Any]` on both install
     # return annotations and contributes its own five-key entry. Recomputed over
     # #482's 717825fb, which added twelve `snapshot` models with their Pydantic
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "d7a091faafc2453d431434133a270ec1367e858fcc618b0bd13e90a2dbf70e98"  # pragma: allowlist secret
+    expected_digest = "1e69deebf0b87a87f139aa232acbb8309c2b524d87fb2c9dd81ef55934a3f31b"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

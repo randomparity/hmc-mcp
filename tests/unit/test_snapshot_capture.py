@@ -20,6 +20,7 @@ PROFILE = "name=default,lpar_name=aix,min_mem=4096,desired_mem=8192,max_mem=1638
 @pytest.mark.asyncio
 async def test_capture_separates_configuration_and_observations(monkeypatch) -> None:
     hmc = AsyncMock()
+    hmc.config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
     hmc.find_system_by_name.return_value = {"UUID": "sys-1"}
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-1"}
     hmc.get_console_info.return_value = {
@@ -101,7 +102,6 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
     )
     snapshot = await capture_lpar_snapshot(
         hmc,
-        HMCConfig(host="h", user="u", password="p", _env_file=None),
         "sys",
         "aix",
         "default",
@@ -137,7 +137,6 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
     )
     unsupported = await capture_lpar_snapshot(
         hmc,
-        HMCConfig(host="h", user="u", password="p", _env_file=None),
         "sys",
         "aix",
         "default",
@@ -158,7 +157,6 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
     with pytest.raises(ValueError, match="1 MiB"):
         await capture_lpar_snapshot(
             hmc,
-            HMCConfig(host="h", user="u", password="p", _env_file=None),
             "sys",
             "aix",
             "default",
@@ -168,6 +166,7 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
 @pytest.mark.asyncio
 async def test_capture_propagates_observation_failure(monkeypatch) -> None:
     hmc = AsyncMock()
+    hmc.config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
     hmc.find_system_by_name.return_value = {"UUID": "sys-1"}
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-1"}
     hmc.get_console_info.return_value = {"UUID": "hmc-1", "Resource": {}}
@@ -193,7 +192,6 @@ async def test_capture_propagates_observation_failure(monkeypatch) -> None:
     with pytest.raises(TimeoutError, match="timed out"):
         await capture_lpar_snapshot(
             hmc,
-            HMCConfig(host="h", user="u", password="p", _env_file=None),
             "sys",
             "aix",
             "default",
