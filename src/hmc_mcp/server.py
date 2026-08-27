@@ -507,13 +507,15 @@ def install_denial_log_filter() -> None:
 #: reaches them by propagation.
 _FASTMCP_LOGGER_NAME: Final = "fastmcp"
 
-#: How a FastMCP record renders once its ``RichHandler``s are gone. Taken from
-#: ``configure_logging``'s non-rich branch, which is FastMCP's own answer to
-#: rendering these records without ``rich``. Installing a ``Formatter`` at all is
-#: the load-bearing part: ``logging.Formatter.format`` is what appends
-#: ``exc_info``'s traceback, and without one the sink-backed handler would render
-#: the bare message and silently undo ADR 0046's guarantee that a genuine handler
-#: bug keeps its traceback.
+#: How a record renders on the sink, for both bindings below. The string is taken
+#: from FastMCP's ``configure_logging`` non-rich branch — its own answer to
+#: rendering these records without ``rich`` — and reused for the ``hmc_mcp``
+#: namespace rather than a second one invented for it. Installing a ``Formatter``
+#: at all is the load-bearing part, and it is load-bearing for both: it is
+#: ``logging.Formatter.format`` that appends ``exc_info``'s traceback, so without
+#: one the sink-backed handler renders the bare message and drops the traceback —
+#: undoing ADR 0046's guarantee for a FastMCP handler bug, and losing the cause on
+#: this package's own ``exc_info=`` call sites the same way.
 _SINK_LINE_FORMAT: Final = "%(levelname)s: %(message)s"
 
 #: This package's own logger namespace, and the parent of every logger in it
