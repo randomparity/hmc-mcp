@@ -106,21 +106,12 @@ async def update_console_software(
     hmc: HMCClient,
     console_uuid: str,
     repository: ConsoleUpdateSource,
-    kind: Literal["update", "upgrade"] = "update",
     *,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
 ) -> dict[str, Any] | None:
     """Submit a supported management-console software update."""
-    if kind == "upgrade":
-        raise ValueError(
-            "HMC upgrades are not a single ManagementConsole job. Use the documented "
-            "multi-job workflow beginning with SaveUpgradeData, followed by "
-            "DownloadNetworkInstallImages, SetAlternateDiskStartup, and ShutdownHMC."
-        )
-    if kind != "update":
-        raise ValueError(f"Unknown kind {kind!r}. Expected 'update' or 'upgrade'.")
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     console_path_id = quote(console_uuid, safe="")
     job = await hmc.submit_job(

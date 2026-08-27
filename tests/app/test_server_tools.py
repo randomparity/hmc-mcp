@@ -475,7 +475,7 @@ def test_hmc_update_kind_update(monkeypatch, mock_hmc):
     route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/UpdateManagementConsole"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    hmc_update_console_software(MC_UUID, CONSOLE_SOURCE, kind="update")
+    hmc_update_console_software(MC_UUID, CONSOLE_SOURCE)
     body = route.calls.last.request.content.decode()
     assert "UpdateManagementConsole</OperationName>" in body
     assert "MediaType</ParameterName>" in body
@@ -484,19 +484,8 @@ def test_hmc_update_kind_update(monkeypatch, mock_hmc):
     assert "/images/hmc" in body
 
 
-def test_hmc_update_kind_upgrade(monkeypatch, mock_hmc):
-    """A nonexistent single-job console upgrade is refused before I/O."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Upgrade").mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
-    with pytest.raises(ValueError, match="SaveUpgradeData"):
-        hmc_update_console_software(MC_UUID, CONSOLE_SOURCE, kind="upgrade")
-    assert not route.called
-
-
-def test_hmc_update_default_kind_is_update(monkeypatch, mock_hmc):
-    """hmc_update_console_software defaults to kind='update' when kind is omitted."""
+def test_hmc_update_submits_documented_operation(monkeypatch, mock_hmc):
+    """hmc_update_console_software has one supported update operation."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/UpdateManagementConsole"
@@ -666,15 +655,6 @@ def test_vios_stdout_does_not_overwrite_raw_top_level_value(monkeypatch, mock_hm
 
     assert result is raw
     assert result["stdOut"] == "raw value"
-
-
-def test_hmc_update_invalid_kind_raises(monkeypatch, mock_hmc):
-    """hmc_update_console_software raises ValueError for an unknown kind, never reaching the HMC."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Invalid")
-    with pytest.raises(ValueError, match="Unknown kind"):
-        hmc_update_console_software(MC_UUID, REPO, kind="invalid")  # type: ignore[arg-type]
-    assert not route.called
 
 
 def test_vios_update_invalid_kind_raises(monkeypatch, mock_hmc):

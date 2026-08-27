@@ -1838,7 +1838,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         if name in {"system_name_or_uuid", "vios_name_or_uuid"}
     ] == ["system_name_or_uuid", "vios_name_or_uuid"]
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved when install_vios adopted system-before-partition selector order,
+    # Moved when update_console_software dropped the permanently refused
+    # ``kind`` selector. Before that, install_vios adopted
+    # system-before-partition selector order,
     # recomputed over capture_lpar_snapshot dropping a config already owned by
     # its HMCClient, LPAR operations' standardized selector order,
     # keyword-only job polling controls, and the SSH-backed operations'
@@ -1848,7 +1850,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "ce9b752824906b9d1911738da728bbe8ea84201caaffa303550f0b5c59186376"  # pragma: allowlist secret
+    expected_digest = "1c98bd1763570d1b2093ab5f1dff2dd8386022d66df5aa220a95885b6df93be7"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

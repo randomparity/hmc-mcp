@@ -202,6 +202,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- `update_console_software` and `hmc_update_console_software` no longer expose a
+  `kind` selector whose `"upgrade"` branch always failed. The operation now models
+  only the supported `UpdateManagementConsole` job; any future multi-job console
+  upgrade will require a separately named workflow.
+
 - `upload_iso` now documents and returns its sole successful status, `"uploaded"`;
   removed the always-`None` `existing_name` result field and the CLI's unreachable
   duplicate-content output branch. Name collisions continue to raise

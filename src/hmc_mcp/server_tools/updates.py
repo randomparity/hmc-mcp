@@ -33,7 +33,6 @@ tool, register_tools, tool_security = tool_module()
 def hmc_update_console_software(
     console_uuid: str,
     repository: ConsoleUpdateSource,
-    kind: Literal["update", "upgrade"] = "update",
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
@@ -41,8 +40,6 @@ def hmc_update_console_software(
 ) -> dict[str, Any] | None:
     """Submit a documented HMC software update job.
 
-    kind='update' installs PTFs. ``upgrade`` is refused because IBM documents
-    a multi-job upgrade workflow, not one ManagementConsole Upgrade operation.
     repository uses the documented UpdateManagementConsole parameter names::
 
         {"MediaType": "NFS", "ServerHostOrIP": "repo.example.com",
@@ -57,7 +54,6 @@ def hmc_update_console_software(
     Args:
         console_uuid: Management-console UUID returned by ``hmc_console_info``.
         repository: Documented ``UpdateManagementConsole`` job parameters.
-        kind: ``update``; ``upgrade`` raises with multi-job workflow guidance.
         wait: Wait for the submitted job to reach a terminal state.
         timeout_seconds: Maximum wait duration in seconds.
         poll_interval: Seconds between job-status requests while waiting.
@@ -70,7 +66,6 @@ def hmc_update_console_software(
                 hmc,
                 console_uuid,
                 repository,
-                kind,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
