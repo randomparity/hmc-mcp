@@ -40,7 +40,7 @@ def adapters_list(
         async with _client() as hmc:
             return await list_adapters(hmc, lpar, adapter_type)
 
-    uuid, adapters = _run(_go)
+    adapters = _run(_go)
 
     _output(adapters, as_json, None, f"No {adapter_type} adapters on {lpar}")
 

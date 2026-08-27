@@ -21,12 +21,12 @@ async def list_adapters(
     lpar_name_or_uuid: str,
     adapter_type: AdapterType,
     system_name_or_uuid: str | None = None,
-) -> tuple[str, list[dict[str, Any]]]:
+) -> list[dict[str, Any]]:
     validate_adapter_type(adapter_type)
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
-    return lpar_uuid, await hmc.list_adapters(lpar_uuid, adapter_type)
+    return await hmc.list_adapters(lpar_uuid, adapter_type)
 
 
 async def add_network_adapter(

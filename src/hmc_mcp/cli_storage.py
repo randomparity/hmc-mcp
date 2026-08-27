@@ -37,6 +37,7 @@ from .operations_storage import (
     map_storage,
     upload_iso,
 )
+from .resource_identity import resolve_lpar_uuid
 from .operations_provision import ProvisionStorage, attach_disk_to_lpar
 
 
@@ -220,7 +221,9 @@ def storage_map(
 
     async def _go():
         async with _client() as hmc:
-            return await map_storage(hmc, vios, kind, disk, lpar, target)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
+            result = await map_storage(hmc, vios, kind, disk, lpar_uuid, target)
+            return lpar_uuid, result
 
     lpar_uuid, result = _run(_go)
 

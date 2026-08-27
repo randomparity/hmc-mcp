@@ -45,10 +45,9 @@ def hmc_list_adapters(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            _, adapters = await list_adapters(
+            return await list_adapters(
                 hmc, lpar_name_or_uuid, adapter_type, system_name_or_uuid
             )
-            return adapters
 
     return _run_limited_collection(operation, limit)
 

@@ -112,15 +112,14 @@ async def map_storage(
     lpar: str,
     target: str | None,
     system_name_or_uuid: str | None = None,
-) -> tuple[str, dict[str, Any] | None]:
+) -> dict[str, Any] | None:
     vios_uuid = await resolve_vios_uuid(hmc, vios)
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar, system_name_or_uuid=system_name_or_uuid
     )
-    resource = await hmc.map_storage_to_lpar(
+    return await hmc.map_storage_to_lpar(
         vios_uuid, kind, storage_name, lpar_uuid, target
     )
-    return lpar_uuid, resource
 
 
 async def create_media_repository(

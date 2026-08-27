@@ -256,7 +256,7 @@ def hmc_map_storage_to_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            _, resource = await map_storage(
+            return await map_storage(
                 hmc,
                 vios_name_or_uuid,
                 storage_kind,
@@ -265,7 +265,6 @@ def hmc_map_storage_to_lpar(
                 target_device,
                 system_name_or_uuid,
             )
-            return resource
 
     return _run(_go)
 
