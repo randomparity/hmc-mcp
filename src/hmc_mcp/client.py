@@ -649,7 +649,7 @@ class HMCClient(
         """Import an uploaded ISO into the Virtual Media Library (verification primitive).
 
         Creates VirtualOpticalMedia linked to the brokered file and returns the media UUID.
-        This method exists to verify the import endpoint behavior and checksum handling.
+        This method exists to verify the import endpoint behavior.
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         import_xml = build_linked_optical_media_document(
@@ -676,22 +676,6 @@ class HMCClient(
                 resp.text,
             )
 
-    async def _verify_imported_checksum(
-        self, vios_uuid: str, vg_uuid: str, media_name: str
-    ) -> dict[str, str] | None:
-        """Query imported media for checksum information (verification primitive).
-
-        Returns a dict with checksum type and value if exposed by the HMC.
-        Returns None if checksum information is not available.
-        """
-        path = (
-            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-            f"/VirtualMediaRepository/VMLibrary/VirtualOpticalMedia"
-        )
-        resp_text = await self._get(path)
-        if not resp_text:
-            return None
-        return None
     # ------------------------------------------------------------------ #
     # Web endpoint helpers (/rest/api/web/)
     #

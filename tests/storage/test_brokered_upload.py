@@ -102,46 +102,6 @@ BROKERED_ISO_IMPORT_RESPONSE = """<?xml version="1.0" encoding="UTF-8" standalon
 BROKERED_FILE_DELETE_RESPONSE_204 = ""
 
 # --------------------------------------------------------------------------- #
-# Checksum query fixtures
-# --------------------------------------------------------------------------- #
-
-# VirtualOpticalMedia listing that may or may not contain checksum information
-MEDIA_LIST_WITHOUT_CHECKSUM = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:uuid:imported-media-uuid-003</id>
-    <title>VirtualOpticalMedia:test-image.iso</title>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <VirtualOpticalMedia xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <MediaName>test-image.iso</MediaName>
-        <MediaSize>4500</MediaSize>
-        <MediaType>ISO9660</MediaType>
-      </VirtualOpticalMedia>
-    </content>
-  </entry>
-</feed>
-"""
-
-# Version-dependent checksum response (hypothetical - to be verified)
-MEDIA_LIST_WITH_CHECKSUM = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:uuid:imported-media-uuid-003</id>
-    <title>VirtualOpticalMedia:test-image.iso</title>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <VirtualOpticalMedia xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <MediaName>test-image.iso</MediaName>
-        <MediaSize>4500</MediaSize>
-        <MediaType>ISO9660</MediaType>
-        <ChecksumType>SHA-256</ChecksumType>
-        <ChecksumValue>abc123def456...</ChecksumValue>
-      </VirtualOpticalMedia>
-    </content>
-  </entry>
-</feed>
-"""
-
-# --------------------------------------------------------------------------- #
 # Test constants
 # --------------------------------------------------------------------------- #
 
@@ -422,32 +382,6 @@ async def test_broker_file_cleanup_failure(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="Brokered file cleanup failed"):
             await hmc._broker_file_cleanup(BROKER_URI)
-
-
-@pytest.mark.asyncio
-async def test_verify_imported_checksum_without_checksum(mock_hmc):
-    """Checksum query returns None when HMC does not expose checksum information."""
-    mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}/VirtualMediaRepository/VMLibrary/VirtualOpticalMedia"
-    ).mock(return_value=httpx.Response(200, text=MEDIA_LIST_WITHOUT_CHECKSUM))
-
-    async with HMCClient(make_config()) as hmc:
-        result = await hmc._verify_imported_checksum(VIOS_UUID, VG_UUID, MEDIA_NAME)
-
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_verify_imported_checksum_empty_response(mock_hmc):
-    """Checksum query returns None when endpoint returns empty response."""
-    mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}/VirtualMediaRepository/VMLibrary/VirtualOpticalMedia"
-    ).mock(return_value=httpx.Response(204, text=""))
-
-    async with HMCClient(make_config()) as hmc:
-        result = await hmc._verify_imported_checksum(VIOS_UUID, VG_UUID, MEDIA_NAME)
-
-    assert result is None
 
 
 @pytest.mark.asyncio
