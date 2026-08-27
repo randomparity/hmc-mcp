@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, Literal
 
 from .._app import (
-    _run,
+    run_sync,
 )
 
 from ..client import HMCClient
@@ -54,11 +54,12 @@ def hmc_create_vios(
         resources: Memory and processor settings for the VIOS.
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await _create_vios(hmc, system_name_or_uuid, name, resources)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="vios.delete", target_kind="vios")
@@ -91,11 +92,9 @@ def hmc_delete_vios(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await _delete_vios(
-                hmc, vios_name_or_uuid, system_name_or_uuid
-            )
+            return await _delete_vios(hmc, vios_name_or_uuid, system_name_or_uuid)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="vios.install", target_kind="vios")
@@ -190,7 +189,7 @@ def hmc_install_vios(
     # `install_*` returns an `InstallHandle`, and a `TypedDict` is not assignable
     # to `dict[str, Any]`. Widen here rather than narrowing this tool's return
     # annotation, which would move the derived MCP output schema.
-    return dict(_run(_go))
+    return dict(run_sync(_go))
 
 
 @tool(effect="destructive", operation="lpar.install_os", target_kind="lpar")
@@ -291,7 +290,7 @@ def hmc_install_lpar_os(
     # `install_*` returns an `InstallHandle`, and a `TypedDict` is not assignable
     # to `dict[str, Any]`. Widen here rather than narrowing this tool's return
     # annotation, which would move the derived MCP output schema.
-    return dict(_run(_go))
+    return dict(run_sync(_go))
 
 
 BackupType = Literal["vios", "viosioconfig", "ssp"]
@@ -424,7 +423,7 @@ def hmc_list_vios_backups(
     Raises:
         ValueError: If the ``lsviosbk`` CSV is malformed.
     """
-    output = _run(
+    output = run_sync(
         lambda: _run_vios_backup_list_command(
             vios_name_or_uuid,
             lambda uuid: (
@@ -478,7 +477,7 @@ def hmc_backup_vios(
             f"Must be one of: {', '.join(sorted(_VALID_BACKUP_TYPES))}"
         )
     _validate_backup_name(backup_name)
-    return _run(
+    return run_sync(
         lambda: _run_vios_backup_mutation_command(
             system_name_or_uuid,
             vios_name_or_uuid,
@@ -570,7 +569,7 @@ def hmc_restore_vios(
             f"Must be one of: {', '.join(sorted(_VALID_RESTORE_BACKUP_TYPES))}"
         )
     _validate_backup_name(backup_name)
-    return _run(
+    return run_sync(
         lambda: _run_vios_backup_mutation_command(
             system_name_or_uuid,
             vios_name_or_uuid,
@@ -614,7 +613,7 @@ def hmc_power_on_vios(
                 poll_interval=poll_interval,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="vios.power_off", target_kind="vios")
@@ -652,4 +651,4 @@ def hmc_power_off_vios(
                 poll_interval=poll_interval,
             )
 
-    return _run(_go)
+    return run_sync(_go)

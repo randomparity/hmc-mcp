@@ -5,7 +5,7 @@ from __future__ import annotations
 from ..tool_registry import tool_module
 
 from .._app import (
-    _run,
+    run_sync,
     _ssh_with_client,
 )
 from ..client.client_factory import client_from_env
@@ -185,7 +185,7 @@ def hmc_assign_dedicated_pcie_slot(
                 ownership_override=ownership_override,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="pcie.unassign_dedicated_slot", target_kind="lpar")
@@ -219,4 +219,4 @@ def hmc_unassign_dedicated_pcie_slot(
                 ownership_override=ownership_override,
             )
 
-    return _run(_go)
+    return run_sync(_go)

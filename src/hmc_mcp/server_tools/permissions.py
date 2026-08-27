@@ -563,9 +563,7 @@ def describe(
         ),
         enforced_dimensions=enforced,
         declared_only_dimensions=(
-            ()
-            if policy is None
-            else tuple(d for d in DIMENSIONS if d not in enforced)
+            () if policy is None else tuple(d for d in DIMENSIONS if d not in enforced)
         ),
         power_ownership_guards=power_guards,
     )

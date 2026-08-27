@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from fastmcp import FastMCP
 
-from .._app import _run
+from .._app import run_sync
 from ..config import build_config
 from ..ssh import run_hmc_cli
 from ..tool_registry import (
@@ -29,7 +29,7 @@ def hmc_run_command(cmd: str, profile: str | None = None) -> str:
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     config = build_config(profile=profile)
-    return _run(lambda: run_hmc_cli(cmd, config))
+    return run_sync(lambda: run_hmc_cli(cmd, config))
 
 
 HMC_RUN_COMMAND_SECURITY = ToolSecurity(

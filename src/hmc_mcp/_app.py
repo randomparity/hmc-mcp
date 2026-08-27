@@ -184,7 +184,7 @@ def create_mcp(instructions: str = INSTRUCTIONS) -> FastMCP:
     return FastMCP(name="hmc-mcp", instructions=instructions)
 
 
-def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
+def run_sync(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     """Run a coroutine-returning closure from a sync tool function."""
     return asyncio.run(fn())
 
@@ -196,7 +196,7 @@ def _run_limited_collection(
     """Run a full collection request, then cap its agent-facing result."""
     if limit is not None and limit < 0:
         raise ValueError("limit must be greater than or equal to 0")
-    entries = _run(fn)
+    entries = run_sync(fn)
     return entries if limit is None else entries[:limit]
 
 
@@ -249,7 +249,7 @@ def _ssh_with_client(
 ) -> _T:
     """Resolve name-or-uuid args to CLI names, then run an SSH tool body.
 
-    Collapses the pervasive ``async def _go`` + name resolution + ``_run``
+    Collapses the pervasive ``async def _go`` + name resolution + ``run_sync``
     scaffold in the SSH-passthrough tools, mirroring :func:`with_client` for
     the SSH seam. *system_name_or_uuid* and *lpar_name_or_uuid* may each be a
     CLI name (passed through untouched) or a UUID (resolved via REST, falling
@@ -273,4 +273,4 @@ def _ssh_with_client(
         )
         return await fn(config, system_name, lpar_name)
 
-    return _run(_go)
+    return run_sync(_go)

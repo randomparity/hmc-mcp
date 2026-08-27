@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from .._app import _run
+from .._app import run_sync
 from ..client.client_factory import client_from_env
 from ..operations.health import fleet_health
 from ..tool_registry import tool_module
@@ -25,4 +25,4 @@ def hmc_fleet_health(profile: str | None = None) -> dict[str, Any]:
         async with client_from_env(profile) as hmc:
             return asdict(await fleet_health(hmc))
 
-    return _run(operation)
+    return run_sync(operation)

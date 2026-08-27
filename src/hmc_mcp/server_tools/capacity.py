@@ -6,7 +6,7 @@ from ..tool_registry import tool_module
 
 from typing import Any
 
-from .._app import _run
+from .._app import run_sync
 from ..client.client_factory import client_from_env
 from ..operations.capacity import capacity_report, find_placement
 
@@ -26,7 +26,7 @@ def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
         async with client_from_env(profile) as hmc:
             return await capacity_report(hmc)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="placement.find", target_kind="console")
@@ -47,4 +47,4 @@ def hmc_find_placement(
         async with client_from_env(profile) as hmc:
             return await find_placement(hmc, desired_memory_mb, desired_proc_units)
 
-    return _run(_go)
+    return run_sync(_go)

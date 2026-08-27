@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hmc_mcp._app import _run
+from hmc_mcp._app import run_sync
 from hmc_mcp.config import build_config
 from hmc_mcp.client.client_factory import client_from_env
 from dataclasses import asdict
@@ -43,7 +43,7 @@ def hmc_snapshot_assess_affinity(
         optimization_threshold: Caller-owned minimum worthwhile potential gain.
         stale_after_seconds: Maximum permitted snapshot age in seconds.
     """
-    result = _run(
+    result = run_sync(
         lambda: assess_snapshot_affinity(
             document,
             current_score=current_score,
@@ -85,7 +85,7 @@ def hmc_snapshot_capture(
             )
             return snapshot.model_dump(mode="json", exclude_none=True)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(

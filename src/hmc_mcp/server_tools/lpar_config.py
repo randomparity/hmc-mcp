@@ -5,7 +5,7 @@ from __future__ import annotations
 from ..tool_registry import tool_module
 
 from .._app import (
-    _run,
+    run_sync,
     _ssh_with_client,
 )
 from ..config import build_config
@@ -46,6 +46,7 @@ from ..operations.lpar import (
 
 tool, register_tools, tool_security = tool_module()
 
+
 @tool(effect="read", operation="lpar.get_minimum_affinity_policy", target_kind="lpar")
 def hmc_get_minimum_affinity_policy(
     system_name_or_uuid: str,
@@ -59,7 +60,7 @@ def hmc_get_minimum_affinity_policy(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
+    return run_sync(
         lambda: get_minimum_affinity_policy(
             HMCClient(build_config(profile=profile)),
             system_name_or_uuid,
@@ -99,7 +100,7 @@ def hmc_set_minimum_affinity_policy(
                 ownership_override=ownership_override,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="lpar.get_memopt_score", target_kind="lpar")
@@ -113,7 +114,7 @@ def hmc_get_lpar_memopt_score(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
+    return run_sync(
         lambda: get_lpar_memopt_score(
             HMCClient(build_config(profile=profile)),
             system_name_or_uuid,
@@ -135,7 +136,7 @@ def hmc_list_lpar_memopt_scores(
         lpar_name_or_uuid: Optional partition name or UUID to filter to.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
+    return run_sync(
         lambda: list_lpar_memopt_scores(
             HMCClient(build_config(profile=profile)),
             system_name_or_uuid,
@@ -154,7 +155,7 @@ def hmc_get_system_memopt_score(
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
+    return run_sync(
         lambda: get_system_memopt_score(
             HMCClient(build_config(profile=profile)), system_name_or_uuid
         )
@@ -177,7 +178,7 @@ def hmc_plan_lpar_memopt_scores(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     validate_memopt_scenario(prioritized, excluded)
-    return _run(
+    return run_sync(
         lambda: plan_lpar_memopt_scores(
             HMCClient(build_config(profile=profile)),
             system_name_or_uuid,
@@ -203,7 +204,7 @@ def hmc_plan_system_memopt_score(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     validate_memopt_scenario(prioritized, excluded)
-    return _run(
+    return run_sync(
         lambda: plan_system_memopt_score(
             HMCClient(build_config(profile=profile)),
             system_name_or_uuid,
@@ -230,7 +231,7 @@ def hmc_list_resource_group_memopt_scores(
         selector: Resource-group names, IDs, or all groups; all when omitted.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
+    return run_sync(
         lambda: list_resource_group_memopt_scores(
             HMCClient(build_config(profile=profile)), system_name_or_uuid, selector
         )
@@ -254,7 +255,7 @@ def hmc_plan_resource_group_memopt_scores(
         selector: Resource-group names, IDs, or all groups; all when omitted.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
+    return run_sync(
         lambda: plan_resource_group_memopt_scores(
             HMCClient(build_config(profile=profile)), system_name_or_uuid, selector
         )
@@ -324,7 +325,7 @@ def hmc_set_lpar_description(
                 ownership_override=ownership_override,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="lpar.get_msp", target_kind="lpar")

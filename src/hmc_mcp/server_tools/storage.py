@@ -7,7 +7,7 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from .._app import (
-    _run,
+    run_sync,
     _run_limited_collection,
 )
 
@@ -102,7 +102,7 @@ def hmc_create_volume_group(
                 hmc, vios_name_or_uuid, name, physical_volumes
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 # Not exhaustive for the same reason as the adapter pair, and one more: it
@@ -161,7 +161,7 @@ def hmc_attach_disk_to_lpar(
                 system_name_or_uuid=system_name_or_uuid,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="storage.create_disk", target_kind="vios")
@@ -192,7 +192,7 @@ def hmc_create_virtual_disk(
                 hmc, vios_name_or_uuid, vg_uuid, disk_name, capacity_mib
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="storage.delete_disk", target_kind="vios")
@@ -216,11 +216,9 @@ def hmc_delete_virtual_disk(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await delete_virtual_disk(
-                hmc, vios_name_or_uuid, vg_uuid, disk_name
-            )
+            return await delete_virtual_disk(hmc, vios_name_or_uuid, vg_uuid, disk_name)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="storage.map", target_kind="vios")
@@ -266,7 +264,7 @@ def hmc_map_storage_to_lpar(
                 system_name_or_uuid,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="media.create_repository", target_kind="vios")
@@ -291,7 +289,7 @@ def hmc_create_media_repository(
                 hmc, vios_name_or_uuid, vg_uuid, size_mib
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="media.create", target_kind="vios")
@@ -321,7 +319,7 @@ def hmc_create_optical_media(
                 hmc, vios_name_or_uuid, vg_uuid, media_name, size_mib
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="media.delete_repository", target_kind="vios")
@@ -344,8 +342,8 @@ def hmc_delete_media_repository(
             await delete_media_repository(hmc, vios_name_or_uuid, vg_uuid)
         return f"Deleted media repository from VolumeGroup {vg_uuid}"
 
+    return run_sync(_go)
 
-    return _run(_go)
 
 @tool(effect="destructive", operation="media.delete", target_kind="vios")
 def hmc_delete_optical_media(
@@ -371,7 +369,7 @@ def hmc_delete_optical_media(
             await delete_optical_media(hmc, vios_name_or_uuid, vg_uuid, media_name)
         return f"Deleted optical media '{media_name}' from VolumeGroup {vg_uuid}"
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="media.get_repository", target_kind="vios")
@@ -393,7 +391,7 @@ def hmc_get_media_repository(
         async with client_from_env(profile) as hmc:
             return await get_media_repository(hmc, vios_name_or_uuid, vg_uuid)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="media.list", target_kind="vios")
@@ -416,7 +414,8 @@ def hmc_list_optical_media(
         async with client_from_env(profile) as hmc:
             return await list_optical_media(hmc, vios_name_or_uuid, vg_uuid)
 
-    return _run(_go)
+    return run_sync(_go)
+
 
 @tool(effect="read", operation="storage.list_mappings", target_kind="vios")
 def hmc_list_storage_mappings(
@@ -445,7 +444,7 @@ def hmc_list_storage_mappings(
                 hmc, vios_name_or_uuid, lpar_name_or_uuid, system_name_or_uuid
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="storage.detach_mapping", target_kind="vios")
@@ -470,7 +469,7 @@ def hmc_detach_storage_mapping(
             await detach_storage_mapping(hmc, vios_name_or_uuid, mapping_uuid)
             return mapping_uuid
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="cluster.list", target_kind="console")
@@ -529,7 +528,7 @@ def hmc_get_shared_storage_pool(
         async with client_from_env(profile) as hmc:
             return await hmc.get_shared_storage_pool(ssp_uuid)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="cluster.create_logical_unit", target_kind="cluster")
@@ -587,10 +586,12 @@ def hmc_create_logical_unit(
                 poll_interval=poll_interval,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
-@tool(effect="destructive", operation="cluster.delete_logical_unit", target_kind="cluster")
+@tool(
+    effect="destructive", operation="cluster.delete_logical_unit", target_kind="cluster"
+)
 def hmc_delete_logical_unit(
     cluster_uuid: str,
     lu_udid: str,
@@ -627,7 +628,8 @@ def hmc_delete_logical_unit(
                 poll_interval=poll_interval,
             )
 
-    return _run(_go)
+    return run_sync(_go)
+
 
 @tool(effect="mutate", operation="media.upload_iso", target_kind="vios")
 def hmc_upload_iso(
@@ -667,11 +669,14 @@ def hmc_upload_iso(
             if the download exceeds the size bound.
         FileExistsError: If media_name already exists in the repository.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await upload_iso(hmc, vios_name_or_uuid, vg_uuid, media_name, iso_source)
+            return await upload_iso(
+                hmc, vios_name_or_uuid, vg_uuid, media_name, iso_source
+            )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="media.list_mappings", target_kind="vios")
@@ -697,13 +702,15 @@ def hmc_list_optical_mappings(
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             mappings = await list_optical_mappings(
                 hmc, vios_name_or_uuid, lpar_name_or_uuid, system_name_or_uuid
             )
             return mappings if limit is None else mappings[:limit]
-    return _run(_go)
+
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="media.mount", target_kind="vios")
@@ -729,6 +736,7 @@ def hmc_mount_optical_media(
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await mount_optical_media(
@@ -739,7 +747,8 @@ def hmc_mount_optical_media(
                 target_device,
                 system_name_or_uuid,
             )
-    return _run(_go)
+
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="media.unmount", target_kind="vios")
@@ -793,10 +802,16 @@ def hmc_unmount_optical_media(
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             await unmount_optical_media(
-                hmc, vios_name_or_uuid, lpar_name_or_uuid, media_name, system_name_or_uuid
+                hmc,
+                vios_name_or_uuid,
+                lpar_name_or_uuid,
+                media_name,
+                system_name_or_uuid,
             )
             return f"Unmounted {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
-    return _run(_go)
+
+    return run_sync(_go)

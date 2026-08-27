@@ -7,7 +7,7 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from .._app import (
-    _run,
+    run_sync,
 )
 
 from ..client.client_factory import client_from_env
@@ -49,7 +49,7 @@ def hmc_get_pcm_preferences(
         async with client_from_env(profile) as hmc:
             return await get_pcm_preferences(hmc, category, resource_name_or_uuid)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="pcm.set_preferences", target_kind="metric_resource")
@@ -101,7 +101,7 @@ def hmc_set_pcm_preferences(
                 hmc, category, resource_name_or_uuid, flags
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="metrics.processed", target_kind="metric_resource")
@@ -282,7 +282,7 @@ def _metrics_links(
                 system_name_or_uuid,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 def _metrics_fetch(
@@ -310,4 +310,4 @@ def _metrics_fetch(
                 system_name_or_uuid,
             )
 
-    return _run(_go)
+    return run_sync(_go)

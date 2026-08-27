@@ -5,9 +5,14 @@ from __future__ import annotations
 import base64
 from typing import Any
 
-from .._app import _run
+from .._app import run_sync
 from ..client.client_factory import client_from_env
-from ..resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name, resolve_system_uuid
+from ..resource_identity import (
+    is_uuid,
+    resolve_lpar_uuid,
+    resolve_system_name,
+    resolve_system_uuid,
+)
 from ..console_capture import capture_lpar_console
 from ..ssh_lpar import _ssh_lpar_name
 from ..tool_registry import tool_module
@@ -98,4 +103,4 @@ def hmc_capture_lpar_console(
             "data_base64": base64.b64encode(capture.data).decode("ascii"),
         }
 
-    return _run(_go)
+    return run_sync(_go)

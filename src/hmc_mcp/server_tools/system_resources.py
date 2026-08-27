@@ -8,7 +8,7 @@ from ..tool_registry import tool_module
 
 from typing import Any
 
-from .._app import _run, _ssh_with_client
+from .._app import run_sync, _ssh_with_client
 from ..config import build_config
 from ..client import HMCClient
 from ..operations.pcie import (
@@ -41,7 +41,7 @@ def hmc_list_dedicated_pcie_slots(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     return asdict(
-        _run(
+        run_sync(
             lambda: list_dedicated_slots(
                 HMCClient(build_config(profile=profile)), system_name_or_uuid
             )
@@ -63,9 +63,11 @@ def hmc_list_sriov_adapters(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     return asdict(
-        _run(
+        run_sync(
             lambda: list_sriov_adapters(
-                HMCClient(build_config(profile=profile)), system_name_or_uuid, adapter_id
+                HMCClient(build_config(profile=profile)),
+                system_name_or_uuid,
+                adapter_id,
             )
         )
     )
@@ -91,7 +93,7 @@ def hmc_list_sriov_physical_ports(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     return asdict(
-        _run(
+        run_sync(
             lambda: list_sriov_physical_ports(
                 HMCClient(build_config(profile=profile)),
                 system_name_or_uuid,
@@ -124,7 +126,7 @@ def hmc_list_sriov_logical_ports(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     return asdict(
-        _run(
+        run_sync(
             lambda: list_sriov_logical_ports(
                 HMCClient(build_config(profile=profile)),
                 system_name_or_uuid,
@@ -136,7 +138,11 @@ def hmc_list_sriov_logical_ports(
     )
 
 
-@tool(effect="read", operation="system.get_proc_compat_modes", target_kind="managed_system")
+@tool(
+    effect="read",
+    operation="system.get_proc_compat_modes",
+    target_kind="managed_system",
+)
 def hmc_get_proc_compat_modes(
     system_name_or_uuid: str, profile: str | None = None
 ) -> list[str]:
@@ -190,7 +196,9 @@ def hmc_list_memory_pools(
     )
 
 
-@tool(effect="destructive", operation="memory_pool.remove", target_kind="managed_system")
+@tool(
+    effect="destructive", operation="memory_pool.remove", target_kind="managed_system"
+)
 def hmc_remove_memory_pool(
     system_name_or_uuid: str, pool_name: str, profile: str | None = None
 ) -> str:

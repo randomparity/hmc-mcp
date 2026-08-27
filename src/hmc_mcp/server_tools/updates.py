@@ -9,7 +9,7 @@ from typing import Any, Literal, cast
 from urllib.parse import quote
 
 from .._app import (
-    _run,
+    run_sync,
 )
 
 from ..client.client_factory import client_from_env
@@ -168,7 +168,7 @@ def hmc_update_console_software(
                 poll_interval,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="update.list_ptfs", target_kind="console")
@@ -212,7 +212,7 @@ def hmc_get_available_hmc_ptfs(
                 poll_interval,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="update.vios", target_kind="vios")
@@ -269,7 +269,7 @@ def hmc_vios_update(
             )
             return _with_vios_stdout(result, wait)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="update.firmware", target_kind="managed_system")
@@ -315,4 +315,4 @@ def hmc_update_firmware(
                 poll_interval,
             )
 
-    return _run(_go)
+    return run_sync(_go)

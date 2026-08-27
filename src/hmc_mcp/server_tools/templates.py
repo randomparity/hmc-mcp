@@ -7,7 +7,7 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from .._app import (
-    _run,
+    run_sync,
 )
 
 from ..client.client_factory import client_from_env
@@ -33,7 +33,7 @@ def hmc_list_partition_templates(profile: str | None = None) -> list[dict[str, A
         async with client_from_env(profile) as hmc:
             return await list_partition_templates(hmc)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="template.get", target_kind="template")
@@ -54,7 +54,7 @@ def hmc_get_partition_template(
         async with client_from_env(profile) as hmc:
             return await get_partition_template(hmc, template_uuid)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="template.deploy", target_kind="managed_system")
@@ -101,4 +101,4 @@ def hmc_deploy_partition_template(
                 poll_interval=poll_interval,
             )
 
-    return _run(_go)
+    return run_sync(_go)

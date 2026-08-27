@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..tool_registry import tool_module
 
-from .._app import _run
+from .._app import run_sync
 from ..client.client_factory import client_from_env
 from ..documents import LparResources, PartitionType
 from ..operations.provision import (
@@ -112,4 +112,4 @@ def hmc_provision_lpar(
                 affinity_assessment=affinity_assessment,
             )
 
-    return _run(_go)
+    return run_sync(_go)

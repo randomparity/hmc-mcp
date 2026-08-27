@@ -7,7 +7,7 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from .._app import (
-    _run,
+    run_sync,
 )
 from ..errors import HMCError
 from ..ssh import HMCCLIError
@@ -183,7 +183,7 @@ def hmc_create_lpar(
                 _check_lpar_write_error(exc)
                 raise
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 # Assignment collections can name both a managed system and a nested VIOS.
@@ -263,7 +263,7 @@ def hmc_modify_lpar(
                 (),
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="lpar.rename", target_kind="lpar")
@@ -303,7 +303,7 @@ def hmc_rename_lpar(
                 raise
             return updated
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="lpar.dlpar_proc", target_kind="lpar")
@@ -347,7 +347,7 @@ def hmc_dlpar_proc(
                 ownership_override=ownership_override,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="lpar.dlpar_mem", target_kind="lpar")
@@ -388,7 +388,7 @@ def hmc_dlpar_mem(
                 ownership_override=ownership_override,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="lpar.delete", target_kind="lpar")
@@ -435,7 +435,7 @@ def hmc_delete_lpar(
             )
             return f"Deleted LPAR {lpar_uuid}"
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="lpar.decommission", target_kind="lpar")
@@ -500,7 +500,7 @@ def hmc_decommission_lpar(
                 poll_interval=poll_interval,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="lpar.power_on", target_kind="lpar")
@@ -616,7 +616,7 @@ def hmc_power_on_lpar(
                 classify_affinity_outcome(assessment, affinity_assessment.response),
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="lpar.power_off", target_kind="lpar")
@@ -671,7 +671,7 @@ def hmc_power_off_lpar(
             )
             return result.job
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 # ====================================================================== #
@@ -707,6 +707,7 @@ def hmc_read_lpar_boot_order(
         - boot_device_list: The current BootDeviceList
         - last_booted_device_string: The device used on last boot
     """
+
     async def _go() -> dict[str, Any]:
         async with client_from_env(profile) as hmc:
             result = await read_lpar_boot_order(
@@ -716,7 +717,7 @@ def hmc_read_lpar_boot_order(
             )
             return result
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="boot_order.set", target_kind="lpar")
@@ -760,6 +761,7 @@ def hmc_set_lpar_boot_order(
         ...     ["network", "cd", "disk"]
         ... )
     """
+
     async def _go() -> dict[str, Any] | None:
         async with client_from_env(profile) as hmc:
             result = await set_lpar_boot_order(
@@ -771,7 +773,7 @@ def hmc_set_lpar_boot_order(
             )
             return result
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="boot_order.clear", target_kind="lpar")
@@ -801,6 +803,7 @@ def hmc_clear_lpar_boot_order(
     Returns:
         Updated LPAR resource if successful, None otherwise.
     """
+
     async def _go() -> dict[str, Any] | None:
         async with client_from_env(profile) as hmc:
             result = await clear_lpar_boot_order(
@@ -811,7 +814,7 @@ def hmc_clear_lpar_boot_order(
             )
             return result
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="lpar.list_ownership", target_kind="managed_system")
@@ -840,4 +843,4 @@ def hmc_list_lpar_ownership(
         async with client_from_env(profile) as hmc:
             return await list_lpar_ownership(hmc, system_name_or_uuid)
 
-    return _run(_go)
+    return run_sync(_go)

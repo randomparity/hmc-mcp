@@ -6,7 +6,7 @@ from ..tool_registry import tool_module
 
 from typing import Any
 
-from .._app import _run, _run_limited_collection
+from .._app import run_sync, _run_limited_collection
 from ..client.client_adapters import AdapterType, validate_adapter_type
 from ..client.client_factory import client_from_env
 from ..operations.adapters import (
@@ -94,7 +94,7 @@ def hmc_add_network_adapter(
                 )
             ).resource
 
-    return _run(operation)
+    return run_sync(operation)
 
 
 # Not exhaustive: `vios_partition_id` is a slot number within one managed
@@ -141,7 +141,7 @@ def hmc_add_vscsi_adapter(
                 )
             ).resource
 
-    return _run(operation)
+    return run_sync(operation)
 
 
 # Not exhaustive: `vios_partition_id` is a slot number within one managed
@@ -188,7 +188,7 @@ def hmc_add_vfc_adapter(
                 )
             ).resource
 
-    return _run(operation)
+    return run_sync(operation)
 
 
 @tool(effect="destructive", operation="adapter.delete", target_kind="lpar")
@@ -224,4 +224,4 @@ def hmc_delete_adapter(
             )
         return f"Deleted {adapter_type} {adapter_uuid} from {lpar_name_or_uuid}"
 
-    return _run(operation)
+    return run_sync(operation)

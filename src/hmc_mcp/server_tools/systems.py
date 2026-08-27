@@ -7,11 +7,16 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from .._app import (
-    _run,
+    run_sync,
     _run_limited_collection,
 )
 from ..client.client_factory import client_from_env
-from ..resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid, resolve_vios_uuid
+from ..resource_identity import (
+    is_uuid,
+    resolve_lpar_uuid,
+    resolve_system_uuid,
+    resolve_vios_uuid,
+)
 from ..config import (
     HMCConfig,
     _coerce_nicknames,
@@ -30,6 +35,7 @@ from ..operations.lpar import PartitionState
 
 tool, register_tools, tool_security = tool_module()
 
+
 @tool(effect="read", operation="console.info", target_kind="console")
 def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
     """Get HMC version, network configuration and links to managed systems.
@@ -44,10 +50,15 @@ def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
         async with client_from_env(profile) as hmc:
             return await hmc.get_console_info()
 
-    return _run(_go)
+    return run_sync(_go)
 
 
-@tool(effect="read", operation="config.list_hosts", target_kind="none", connection_argument=None)
+@tool(
+    effect="read",
+    operation="config.list_hosts",
+    target_kind="none",
+    connection_argument=None,
+)
 def hmc_list_configured_hosts() -> dict[str, Any]:
     """List all configured HMC profiles from the platform-native TOML config.
 
@@ -112,15 +123,15 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
     nicknames = _coerce_nicknames(doc.get("nicknames"), config_path)
     profile_keys = set(profiles_raw)
     nickname_entries = [
-          {"name": nick, "target": target, "target_exists": target in profile_keys}
-          for nick, target in nicknames.items()
-      ]
+        {"name": nick, "target": target, "target_exists": target in profile_keys}
+        for nick, target in nicknames.items()
+    ]
 
     return {
-          "profiles": profiles,
-          "nicknames": nickname_entries,
-          "config_file": str(config_path),
-      }
+        "profiles": profiles,
+        "nicknames": nickname_entries,
+        "config_file": str(config_path),
+    }
 
 
 @tool(effect="read", operation="system.list", target_kind="console")
@@ -219,7 +230,7 @@ def hmc_get_lpar(
                 lpar_name_or_uuid, system_uuid=system_uuid
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="lpar.get_state", target_kind="lpar")
@@ -246,7 +257,7 @@ def hmc_get_lpar_state(
                 "LogicalPartition", lpar_uuid, "PartitionState"
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="vios.list", target_kind="managed_system")
@@ -305,7 +316,7 @@ def hmc_get_vios(
             vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
             return await hmc.get_vios_storage_detail(vios_uuid)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="console.list_resources", target_kind="console")
@@ -355,7 +366,7 @@ def hmc_get_system(
                 return await hmc.get_managed_system(system_name_or_uuid)
             return await hmc.find_system_by_name(system_name_or_uuid)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="system.modify", target_kind="managed_system")
@@ -381,6 +392,7 @@ def hmc_modify_system(
         mem_mirroring_mode: Memory-mirroring mode, or null to leave it unchanged.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await _modify_system(
@@ -394,7 +406,7 @@ def hmc_modify_system(
                 mem_mirroring_mode=mem_mirroring_mode,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="system.power_on", target_kind="managed_system")
@@ -417,6 +429,7 @@ def hmc_power_on_system(
         poll_interval: Seconds between job polls when waiting; must be positive.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await power_system(
@@ -428,7 +441,7 @@ def hmc_power_on_system(
                 poll_interval=poll_interval,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="system.power_off", target_kind="managed_system")
@@ -453,6 +466,7 @@ def hmc_power_off_system(
         poll_interval: Seconds between job polls when waiting; must be positive.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await power_system(
@@ -465,4 +479,4 @@ def hmc_power_off_system(
                 poll_interval=poll_interval,
             )
 
-    return _run(_go)
+    return run_sync(_go)

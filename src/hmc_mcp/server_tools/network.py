@@ -10,7 +10,7 @@ import json
 from typing import Any
 
 from .._app import (
-    _run,
+    run_sync,
     _run_limited_collection,
 )
 
@@ -124,7 +124,7 @@ def hmc_create_virtual_network(
                 tagged=tagged,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(
@@ -152,7 +152,7 @@ def hmc_delete_virtual_network(
             await delete_virtual_network(hmc, system_name_or_uuid, network_uuid)
         return f"Deleted VirtualNetwork {network_uuid} from {system_name_or_uuid}"
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="network.list_bridges", target_kind="managed_system")
@@ -202,7 +202,7 @@ def hmc_list_fc_ports(
         lpar_name_or_uuid: Optional partition name or UUID to restrict results.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
+    return run_sync(
         lambda: list_fc_ports(
             HMCClient(build_config(profile=profile)),
             system_name_or_uuid,
@@ -235,7 +235,7 @@ def hmc_list_sea_adapters(
         lpar_name_or_uuid: Optional partition name or UUID to restrict results.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
+    return run_sync(
         lambda: list_sea_adapters(
             HMCClient(build_config(profile=profile)),
             system_name_or_uuid,
@@ -274,7 +274,7 @@ def hmc_set_sriov_adapter_mode(
             passthrough use.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
+    return run_sync(
         lambda: set_sriov_adapter_mode(
             HMCClient(build_config(profile=profile)),
             system_name_or_uuid,
@@ -328,7 +328,7 @@ def hmc_assign_sriov_logical_port(
                 )
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="sriov.unassign_logical_port", target_kind="lpar")
@@ -371,7 +371,7 @@ def hmc_unassign_sriov_logical_port(
                 )
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="vnic.list", target_kind="lpar")
@@ -394,13 +394,12 @@ def hmc_list_vnics(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await list_vnics(
-                hmc, system_name_or_uuid, lpar_name_or_uuid
-            )
+            return await list_vnics(hmc, system_name_or_uuid, lpar_name_or_uuid)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="vnic.add", target_kind="lpar")
@@ -433,6 +432,7 @@ def hmc_add_vnic(
         ownership_override: Bypass ownership rejection only after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             try:
@@ -455,7 +455,7 @@ def hmc_add_vnic(
                 raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
             return asdict(result)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="vnic.remove", target_kind="lpar")
@@ -478,6 +478,7 @@ def hmc_remove_vnic(
         ownership_override: Bypass ownership rejection only after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             try:
@@ -493,4 +494,4 @@ def hmc_remove_vnic(
                 raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
             return asdict(result)
 
-    return _run(_go)
+    return run_sync(_go)

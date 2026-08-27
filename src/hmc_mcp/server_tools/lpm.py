@@ -5,7 +5,7 @@ from __future__ import annotations
 from ..tool_registry import tool_module
 
 from .._app import (
-    _run,
+    run_sync,
 )
 
 from ..client.client_factory import client_from_env
@@ -84,7 +84,7 @@ def hmc_migrate_lpar(
             )
             return cast(JobOutcome, result.job)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="lpar.migrate_affinity", target_kind="lpar")
@@ -134,7 +134,7 @@ def hmc_migrate_lpar_with_affinity_preflight(
                 system_name_or_uuid=system_name_or_uuid,
             )
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="lpar.migrate_validate", target_kind="lpar")
@@ -184,7 +184,7 @@ def hmc_migrate_validate_lpar(
             )
             return result.job
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="lpar.migrate_abort", target_kind="lpar")
@@ -226,7 +226,7 @@ def hmc_migrate_abort_lpar(
             )
             return cast(JobOutcome, result.job)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="lpar.migrate_recover", target_kind="lpar")
@@ -268,7 +268,7 @@ def hmc_migrate_recover_lpar(
             )
             return cast(JobOutcome, result.job)
 
-    return _run(_go)
+    return run_sync(_go)
 
 
 @tool(effect="destructive", operation="lpar.remote_restart", target_kind="lpar")
@@ -320,4 +320,4 @@ def hmc_remote_restart_lpar(
             )
             return cast(JobOutcome, result.job)
 
-    return _run(_go)
+    return run_sync(_go)

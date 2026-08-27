@@ -7,7 +7,7 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from ..operations import jobs as operations_jobs
-from .._app import _run, _run_limited_collection
+from .._app import run_sync, _run_limited_collection
 from ..client.client_factory import client_from_env
 from ..errors import HMCError
 from ..jobs import JobOutcome
@@ -76,7 +76,7 @@ def hmc_get_job(
             outcome = await operations_jobs.get_job(hmc, job_uuid, job_href=job_href)
             return outcome.job
 
-    return _run(operation)
+    return run_sync(operation)
 
 
 @tool(effect="read", operation="job.list", target_kind="console")
@@ -95,6 +95,7 @@ def hmc_list_recent_jobs(
             work or network transfer.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
+
     async def operation():
         async with client_from_env(profile) as hmc:
             return await hmc.list_uom("Job")
@@ -204,4 +205,4 @@ def hmc_wait_for_job(
                 poll_interval=poll_interval,
             )
 
-    return _run(operation)
+    return run_sync(operation)
