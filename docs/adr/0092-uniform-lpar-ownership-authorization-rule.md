@@ -187,8 +187,8 @@ The remaining direct entry points and their guard state are:
 |---|---|---|---|
 | `configure_lpar_msp` | `operations/lpar_configuration.py:43` | guarded (`:25`) | — |
 | `configure_lpar_processor_compatibility` | `operations/lpar_configuration.py:58` | guarded (`:25`) | — |
-| `hmc_modify_lpar` | `server_tools/lpars.py:166` | **partially guarded** — the `assignments` leg delegates to guarded operations, the `resources` leg calls `modify_logical_partition` with no ownership check | #442 |
-| `hmc lpar modify` (CLI) | `cli_commands/lpars.py:941` | **partially guarded** — same split, unguarded resource write at `cli_commands/lpars.py:1067` | #442 |
+| `hmc_modify_lpar` | `server_tools/lpars.py:166` | guarded by `operations/lpar_dlpar.py:35` before any write | #442 |
+| `hmc lpar modify` (CLI) | `cli_commands/lpars.py:596` | guarded by `operations/lpar_dlpar.py:35` before any write | #442 |
 
 `hmc_dlpar_proc` and `hmc_dlpar_mem` were rows in this table at `b41e658`. #365
 extracted `set_lpar_processors` and `set_lpar_memory` from those tool bodies and
@@ -197,10 +197,11 @@ transition this table exists to drive. The tools still exist and still carry the
 same names and behaviour; they delegate. ADR 0094 records how the guard obtains a
 managed-system name when the caller omits the optional selector.
 
-`hmc_modify_lpar` is the sharpest illustration of the gap this ADR closes: one tool,
-one `ownership_override` argument, and two legs on opposite sides of the line — and
-the CLI repeats it, which is why §6 puts the guard in an operation rather than in
-either wrapper.
+`modify_lpar` closes the sharpest gap this ADR identified. The public operation
+resolves and authorizes the partition once before its ordered rename, resource, and
+assignment workflow (`operations/lpar_dlpar.py:35`). Both the MCP tool and CLI command
+delegate their complete workflow to it, so an adapter cannot accidentally place one
+kind of modification on the other side of the authorization boundary.
 
 #### 3.3 Operational — decide explicitly
 
@@ -535,9 +536,9 @@ That asymmetry is why §4 exists at all.
   each (§4). They are low-frequency by construction, and the alternative is a facade
   consumer with no authorization boundary at all on adapter, storage and LPM
   mutations.
-- `hmc_modify_lpar`'s two legs currently disagree (§3.2). Closing that means the
-  `resources` leg gains a guard, which changes its cost profile — it is the one
-  Reconfiguring operation a caller might invoke in a loop.
+- `modify_lpar` guards its complete workflow (§3.2), so resource-only calls now pay
+  the ownership check's SSH and REST cost. It is the one Reconfiguring operation a
+  caller might invoke in a loop.
 - `provision_lpar` calls `power_lpar` for its activation leg
   (`operations/provision.py:287`). With the setting on, that leg would authorize a
   partition the same workflow just created and stamped — the check passes but costs

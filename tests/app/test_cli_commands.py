@@ -1934,8 +1934,8 @@ def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
 
 
 def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
-    async def fake_mappings(_hmc, vios, lpar):
-        assert (vios, lpar) == (VIOS_UUID, None)
+    async def fake_mappings(_hmc, system, vios, lpar):
+        assert (system, vios, lpar) == (None, VIOS_UUID, None)
         return [
             {
                 "UUID": "map-1",
@@ -1958,8 +1958,8 @@ def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
 
 
 def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatch):
-    async def fake_mappings(_hmc, _vios, lpar):
-        assert lpar == LPAR_UUID
+    async def fake_mappings(_hmc, system, vios, lpar):
+        assert (system, vios, lpar) == (None, VIOS_UUID, LPAR_UUID)
         return [
             {
                 "UUID": "map-2",
@@ -1982,7 +1982,7 @@ def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatc
 
 
 def test_storage_list_mappings_json(direct_client, monkeypatch):
-    async def fake_mappings(_hmc, _vios, _lpar):
+    async def fake_mappings(_hmc, _system, _vios, _lpar):
         return [{"UUID": "map-1"}]
 
     monkeypatch.setattr(
