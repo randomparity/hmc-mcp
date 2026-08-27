@@ -231,7 +231,8 @@ names are internal everywhere and are never inventoried.
 - `operations.systems` — operations: `power_system`; types: none; excluded synchronous: none.
 - `operations.templates` — operations: `deploy_partition_template`, `get_partition_template`,
   `list_partition_templates`; types: none; excluded synchronous: none.
-- `operations.updates` — operations: none; types: none; excluded synchronous: none.
+- `operations.updates` — operations: `list_available_hmc_ptfs`, `update_console_software`,
+  `update_firmware`, `update_vios`; types: none; excluded synchronous: none.
 - `operations.users` — operations: `configure_remote_access`, `create_user`, `delete_user`,
   `modify_user`; types: none; excluded synchronous: none.
 - `operations.vios` — operations: `power_vios`; types: none; excluded synchronous: none.
@@ -246,6 +247,12 @@ names are internal everywhere and are never inventoried.
 - `ssh.affinity` — exports: `MinimumAffinityPolicy`.
 - `ssh.network` — exports: `SriovMode`.
 - `ssh.transport` — exports: `HMCCLIError`.
+- `update_jobs` — exports: `ConsoleUpdateMediaType`, `ConsoleUpdateSource`,
+  `IOAdapterUpdateModel`, `PlatformUpdateParameter`, `SriovAdapterUpdate`,
+  `SystemFirmwareUpdateModel`, `VIOSPlatformUpdate`, `VIOSUpdateHMCSource`,
+  `VIOSUpdateIBMWebsiteSource`, `VIOSUpdateNFSSource`, `VIOSUpdateSFTPSource`,
+  `VIOSUpdateUSBSource`, `VIOSUpgradeHMCSource`, `VIOSUpgradeNFSSource`,
+  `VIOSUpgradeSFTPSource`, `VIOSUpgradeUSBSource`.
 
 <!-- ADR-0029-INVENTORY:END -->
 

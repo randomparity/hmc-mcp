@@ -553,7 +553,7 @@ def test_vios_update_encodes_uuid_as_one_path_segment(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     hostile_uuid = "allowed/do/Shutdown?ignored="
     monkeypatch.setattr(
-        "hmc_mcp.server_tools.updates.resolve_vios_uuid",
+        "hmc_mcp.operations.updates.resolve_vios_uuid",
         AsyncMock(return_value=hostile_uuid),
     )
     route = mock_hmc.put(
@@ -578,14 +578,15 @@ def test_vios_update_encodes_uuid_as_one_path_segment(monkeypatch, mock_hmc):
         ({"ResourceType": "HMC", "Name": "image"}, "upgrade", "Disks"),
     ],
 )
-def test_vios_invalid_source_fails_before_client(monkeypatch, source, kind, message):
-    def fail_client(_profile):
-        raise AssertionError("client created")
-
-    monkeypatch.setattr("hmc_mcp.server_tools.updates.client_from_env", fail_client)
+def test_vios_invalid_source_fails_before_submission(
+    monkeypatch, mock_hmc, source, kind, message
+):
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(url__regex=r".*/VirtualIOServer/.*/do/.*")
 
     with pytest.raises(ValueError, match=message):
         hmc_vios_update(VIOS_UUID, source, kind=kind)
+    assert not route.called
 
 
 def _vios_job_with_stdout(status="COMPLETED", top_level=None):
@@ -605,11 +606,18 @@ def _vios_job_with_stdout(status="COMPLETED", top_level=None):
     return job
 
 
+def _mock_vios_submission(mock_hmc):
+    return mock_hmc.put(
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpdateVIOS"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+
 def test_vios_waited_terminal_result_projects_stdout(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
+    _mock_vios_submission(mock_hmc)
     raw = _vios_job_with_stdout()
     monkeypatch.setattr(
-        "hmc_mcp.server_tools.updates._submit_update", AsyncMock(return_value=raw)
+        "hmc_mcp.operations.updates._submit_update", AsyncMock(return_value=raw)
     )
 
     result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=True)
@@ -631,8 +639,9 @@ def test_vios_stdout_is_not_projected_without_terminal_wait(
     monkeypatch, mock_hmc, wait, job
 ):
     _hmc_env(monkeypatch)
+    _mock_vios_submission(mock_hmc)
     monkeypatch.setattr(
-        "hmc_mcp.server_tools.updates._submit_update", AsyncMock(return_value=job)
+        "hmc_mcp.operations.updates._submit_update", AsyncMock(return_value=job)
     )
 
     result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=wait)
@@ -643,9 +652,10 @@ def test_vios_stdout_is_not_projected_without_terminal_wait(
 
 def test_vios_stdout_does_not_overwrite_raw_top_level_value(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
+    _mock_vios_submission(mock_hmc)
     raw = _vios_job_with_stdout(top_level="raw value")
     monkeypatch.setattr(
-        "hmc_mcp.server_tools.updates._submit_update", AsyncMock(return_value=raw)
+        "hmc_mcp.operations.updates._submit_update", AsyncMock(return_value=raw)
     )
 
     result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=True)
@@ -913,6 +923,9 @@ def test_list_available_hmc_ptfs_validates_wait_timing_before_io(
     monkeypatch, mock_hmc, timeout_seconds, poll_interval, message
 ):
     _hmc_env(monkeypatch)
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
+    )
 
     with pytest.raises(ValueError, match=message):
         hmc_get_available_hmc_ptfs(
@@ -922,7 +935,7 @@ def test_list_available_hmc_ptfs_validates_wait_timing_before_io(
             poll_interval=poll_interval,
         )
 
-    assert not mock_hmc.calls
+    assert not route.called
 
 
 # ---------------------------------------------------------------------- #

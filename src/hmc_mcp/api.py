@@ -187,6 +187,12 @@ from hmc_mcp.operations.templates import (
     get_partition_template,
     list_partition_templates,
 )
+from hmc_mcp.operations.updates import (
+    list_available_hmc_ptfs,
+    update_console_software,
+    update_firmware,
+    update_vios,
+)
 from hmc_mcp.operations.vios import power_vios
 from hmc_mcp.operations.users import (
     configure_remote_access,
@@ -224,6 +230,24 @@ from hmc_mcp.snapshot import (
     SnapshotSource,
     SnapshotValidationError,
     SystemIdentity,
+)
+from hmc_mcp.update_jobs import (
+    ConsoleUpdateMediaType,
+    ConsoleUpdateSource,
+    IOAdapterUpdateModel,
+    PlatformUpdateParameter,
+    SriovAdapterUpdate,
+    SystemFirmwareUpdateModel,
+    VIOSPlatformUpdate,
+    VIOSUpdateHMCSource,
+    VIOSUpdateIBMWebsiteSource,
+    VIOSUpdateNFSSource,
+    VIOSUpdateSFTPSource,
+    VIOSUpdateUSBSource,
+    VIOSUpgradeHMCSource,
+    VIOSUpgradeNFSSource,
+    VIOSUpgradeSFTPSource,
+    VIOSUpgradeUSBSource,
 )
 
 __all__ = [
@@ -403,6 +427,26 @@ __all__ = [
     "get_partition_template",
     "deploy_partition_template",
     "power_vios",
+    "list_available_hmc_ptfs",
+    "update_console_software",
+    "update_firmware",
+    "update_vios",
+    "ConsoleUpdateMediaType",
+    "ConsoleUpdateSource",
+    "IOAdapterUpdateModel",
+    "PlatformUpdateParameter",
+    "SriovAdapterUpdate",
+    "SystemFirmwareUpdateModel",
+    "VIOSPlatformUpdate",
+    "VIOSUpdateHMCSource",
+    "VIOSUpdateIBMWebsiteSource",
+    "VIOSUpdateNFSSource",
+    "VIOSUpdateSFTPSource",
+    "VIOSUpdateUSBSource",
+    "VIOSUpgradeHMCSource",
+    "VIOSUpgradeNFSSource",
+    "VIOSUpgradeSFTPSource",
+    "VIOSUpgradeUSBSource",
     "capture_lpar_console",
     "ConsoleCapture",
     "ConsoleHeldError",

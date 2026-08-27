@@ -259,6 +259,26 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "get_partition_template",
         "deploy_partition_template",
         "power_vios",
+        "list_available_hmc_ptfs",
+        "update_console_software",
+        "update_firmware",
+        "update_vios",
+        "ConsoleUpdateMediaType",
+        "ConsoleUpdateSource",
+        "IOAdapterUpdateModel",
+        "PlatformUpdateParameter",
+        "SriovAdapterUpdate",
+        "SystemFirmwareUpdateModel",
+        "VIOSPlatformUpdate",
+        "VIOSUpdateHMCSource",
+        "VIOSUpdateIBMWebsiteSource",
+        "VIOSUpdateNFSSource",
+        "VIOSUpdateSFTPSource",
+        "VIOSUpdateUSBSource",
+        "VIOSUpgradeHMCSource",
+        "VIOSUpgradeNFSSource",
+        "VIOSUpgradeSFTPSource",
+        "VIOSUpgradeUSBSource",
         "capture_lpar_console",
         "ConsoleCapture",
         "ConsoleHeldError",
@@ -420,6 +440,16 @@ def _is_literal_subscript(node: ast.AST) -> bool:
     return isinstance(value, ast.Name) and value.id == "Literal"
 
 
+def _is_annotated_subscript(node: ast.AST) -> bool:
+    """Whether *node* subscripts ``Annotated`` from the typing namespace."""
+    if not isinstance(node, ast.Subscript):
+        return False
+    value = node.value
+    if isinstance(value, ast.Attribute):
+        return value.attr == "Annotated"
+    return isinstance(value, ast.Name) and value.id == "Annotated"
+
+
 def _annotation_paths(annotation: str, *, origin: str = "") -> set[tuple[str, ...]]:
     """Every dotted path an annotation's source text refers to.
 
@@ -443,12 +473,17 @@ def _annotation_paths(annotation: str, *, origin: str = "") -> set[tuple[str, ..
         ) from exc
 
     paths: set[tuple[str, ...]] = set()
-    literal_slices = {
+    ignored_nodes = {
         id(node.slice) for node in ast.walk(tree) if _is_literal_subscript(node)
     }
+    for node in ast.walk(tree):
+        if not _is_annotated_subscript(node):
+            continue
+        elements = node.slice.elts if isinstance(node.slice, ast.Tuple) else ()
+        ignored_nodes.update(id(element) for element in elements[1:])
     skip: set[int] = set()
     for node in ast.walk(tree):
-        if id(node) in literal_slices:
+        if id(node) in ignored_nodes:
             skip |= {id(child) for child in ast.walk(node)}
     for node in ast.walk(tree):
         if id(node) in skip:
@@ -1782,7 +1817,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "1aaf9ec8b5deaac88fe5ae1573d58665cef469f46a7a7e53ca7ef6dc7c1facfc"  # pragma: allowlist secret
+    expected_digest = "db935ab677fd170b07c97afa60db8ff13e8b9fb719b2695724c7e928782ac599"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -1912,6 +1947,16 @@ _FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[str, ...]] = {
     "BootDeviceSelector": ("cd", "disk", "network"),
     "CapabilityState": ("available", "capability-unavailable"),
     "CapturedPolicyState": ("configured", "absent", "unsupported", "missing"),
+    "ConsoleUpdateMediaType": (
+        "USB",
+        "NFS",
+        "SFTP",
+        "FTP",
+        "IBMWebsite",
+        "Disk",
+        "VirtualMedia",
+        "CDDVD",
+    ),
     "DeviceType": ("VirtualIO_Disk", "VirtualIO_Image"),
     "Keylock": ("normal", "manual", "auto"),
     "LuType": ("THIN", "THICK"),

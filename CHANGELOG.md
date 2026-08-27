@@ -357,6 +357,15 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: the presentation-neutral update operations `list_available_hmc_ptfs`,
+  `update_console_software`, `update_firmware`, and `update_vios`, together with
+  `ConsoleUpdateMediaType`, `ConsoleUpdateSource`, `IOAdapterUpdateModel`,
+  `PlatformUpdateParameter`, `SriovAdapterUpdate`, `SystemFirmwareUpdateModel`,
+  `VIOSPlatformUpdate`, `VIOSUpdateHMCSource`, `VIOSUpdateIBMWebsiteSource`,
+  `VIOSUpdateNFSSource`, `VIOSUpdateSFTPSource`, `VIOSUpdateUSBSource`,
+  `VIOSUpgradeHMCSource`, `VIOSUpgradeNFSSource`, `VIOSUpgradeSFTPSource`, and
+  `VIOSUpgradeUSBSource`. MCP handlers now only manage the configured client boundary and
+  delegate the complete workflow.
 - Added: `configure_remote_access`, `create_user`, `delete_user`, and `modify_user`, plus their
   `AuthenticationType` input type. These presentation-neutral operations already back the user
   MCP tools and now satisfy ADR 0029's selection rule.
