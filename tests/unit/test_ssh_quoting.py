@@ -13,27 +13,36 @@ command escape hatch.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import shlex
+from contextlib import asynccontextmanager
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.server import (
-    hmc_backup_vios,
-    hmc_backup_lpar_profiles,
-    hmc_list_memory_pools,
-    hmc_remove_memory_pool,
-    hmc_restore_vios,
-    hmc_set_lpar_description,
+from hmc_mcp.operations.pcie_validation import require_command_safe_text
+from hmc_mcp.operations.ssh_network import VnicBackingSelector, _validated
+from hmc_mcp.server_tools.lpar_config import (
+    hmc_set_lpar_description as hmc_set_lpar_description,
+)
+from hmc_mcp.server_tools.profiles import (
+    hmc_backup_lpar_profiles as hmc_backup_lpar_profiles,
+)
+from hmc_mcp.server_tools.system_resources import (
+    hmc_list_memory_pools as hmc_list_memory_pools,
+)
+from hmc_mcp.server_tools.system_resources import (
+    hmc_remove_memory_pool as hmc_remove_memory_pool,
+)
+from hmc_mcp.server_tools.vios import (
+    hmc_backup_vios as hmc_backup_vios,
+)
+from hmc_mcp.server_tools.vios import (
+    hmc_restore_vios as hmc_restore_vios,
 )
 from hmc_mcp.ssh.network import list_io_slots
-from hmc_mcp.operations.ssh_network import VnicBackingSelector, _validated
-from hmc_mcp.operations.pcie_validation import require_command_safe_text
-from decimal import Decimal
-
-from conftest import mock_uuid_resolution
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"

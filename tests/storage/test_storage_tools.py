@@ -9,33 +9,65 @@ tool bodies is exercised — the layer the client tests skip.  This mirrors
 
 from __future__ import annotations
 
-import httpx
-import pytest
 from unittest.mock import ANY, AsyncMock, patch
 
+import httpx
+import pytest
+from conftest import JOB_ENTRY
+
 from hmc_mcp.client.client_adapters import ADAPTER_TYPES
-from hmc_mcp.server import (
-    hmc_add_network_adapter,
-    hmc_add_vfc_adapter,
-    hmc_add_vscsi_adapter,
-    hmc_create_logical_unit,
-    hmc_create_media_repository,
-    hmc_create_optical_media,
-    hmc_create_virtual_disk,
-    hmc_create_volume_group,
-    hmc_delete_adapter,
-    hmc_delete_logical_unit,
-    hmc_delete_media_repository,
-    hmc_get_shared_storage_pool,
-    hmc_list_adapters,
-    hmc_list_clusters,
-    hmc_list_volume_groups,
-    hmc_map_storage_to_lpar,
-    hmc_list_shared_storage_pools,
+from hmc_mcp.server_tools.adapters import (
+    hmc_add_network_adapter as hmc_add_network_adapter,
+)
+from hmc_mcp.server_tools.adapters import (
+    hmc_add_vfc_adapter as hmc_add_vfc_adapter,
+)
+from hmc_mcp.server_tools.adapters import (
+    hmc_add_vscsi_adapter as hmc_add_vscsi_adapter,
+)
+from hmc_mcp.server_tools.adapters import (
+    hmc_delete_adapter as hmc_delete_adapter,
+)
+from hmc_mcp.server_tools.adapters import (
+    hmc_list_adapters as hmc_list_adapters,
+)
+from hmc_mcp.server_tools.storage import (
+    hmc_create_logical_unit as hmc_create_logical_unit,
+)
+from hmc_mcp.server_tools.storage import (
+    hmc_create_media_repository as hmc_create_media_repository,
+)
+from hmc_mcp.server_tools.storage import (
+    hmc_create_optical_media as hmc_create_optical_media,
+)
+from hmc_mcp.server_tools.storage import (
+    hmc_create_virtual_disk as hmc_create_virtual_disk,
+)
+from hmc_mcp.server_tools.storage import (
+    hmc_create_volume_group as hmc_create_volume_group,
+)
+from hmc_mcp.server_tools.storage import (
+    hmc_delete_logical_unit as hmc_delete_logical_unit,
+)
+from hmc_mcp.server_tools.storage import (
+    hmc_delete_media_repository as hmc_delete_media_repository,
 )
 from hmc_mcp.server_tools.storage import hmc_detach_storage_mapping
-
-from conftest import JOB_ENTRY
+from hmc_mcp.server_tools.storage import (
+    hmc_get_shared_storage_pool as hmc_get_shared_storage_pool,
+)
+from hmc_mcp.server_tools.storage import (
+    hmc_list_clusters as hmc_list_clusters,
+)
+from hmc_mcp.server_tools.storage import (
+    hmc_list_shared_storage_pools as hmc_list_shared_storage_pools,
+)
+from hmc_mcp.server_tools.storage import (
+    hmc_list_volume_groups as hmc_list_volume_groups,
+)
+from hmc_mcp.server_tools.storage import (
+    hmc_map_storage_to_lpar as hmc_map_storage_to_lpar,
+)
 
 
 @pytest.fixture(autouse=True)

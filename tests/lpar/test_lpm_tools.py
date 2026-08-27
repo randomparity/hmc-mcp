@@ -7,10 +7,11 @@ the tool bodies is exercised — the layer the client tests skip.
 """
 
 from dataclasses import asdict
+from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
-from unittest.mock import ANY, AsyncMock, patch
+from conftest import JOB_ENTRY
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.operations.lpm import (
@@ -18,15 +19,21 @@ from hmc_mcp.operations.lpm import (
     recover_lpar_migration,
     remote_restart_lpar,
 )
-from hmc_mcp.server import (
-    hmc_migrate_abort_lpar,
-    hmc_migrate_lpar,
-    hmc_migrate_recover_lpar,
-    hmc_migrate_validate_lpar,
-    hmc_remote_restart_lpar,
+from hmc_mcp.server_tools.lpm import (
+    hmc_migrate_abort_lpar as hmc_migrate_abort_lpar,
 )
-
-from conftest import JOB_ENTRY
+from hmc_mcp.server_tools.lpm import (
+    hmc_migrate_lpar as hmc_migrate_lpar,
+)
+from hmc_mcp.server_tools.lpm import (
+    hmc_migrate_recover_lpar as hmc_migrate_recover_lpar,
+)
+from hmc_mcp.server_tools.lpm import (
+    hmc_migrate_validate_lpar as hmc_migrate_validate_lpar,
+)
+from hmc_mcp.server_tools.lpm import (
+    hmc_remote_restart_lpar as hmc_remote_restart_lpar,
+)
 
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 TARGET_SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"

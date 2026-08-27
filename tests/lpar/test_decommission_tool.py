@@ -6,12 +6,12 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from conftest import assert_only_these_client_methods_used
+
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.decommission import DecommissionResult, decommission_lpar
-from hmc_mcp.server import hmc_decommission_lpar
+from hmc_mcp.server_tools.lpars import hmc_decommission_lpar as hmc_decommission_lpar
 
 SYSTEM_UUID = "11111111-1111-1111-1111-111111111111"
 LPAR_UUID = "22222222-2222-2222-2222-222222222222"

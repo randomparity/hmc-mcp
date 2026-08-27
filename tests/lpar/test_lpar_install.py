@@ -6,10 +6,10 @@ detached ``installios`` command and submits it over SSH.
 
 from __future__ import annotations
 
-import httpx
-import pytest
 from unittest.mock import patch
 
+import httpx
+import pytest
 from conftest import make_config
 
 from hmc_mcp.errors import HMCError
@@ -249,7 +249,7 @@ _INSTALL_KWARGS = {
 
 def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc):
     """The tool resolves the target then runs the composed installios command."""
-    from hmc_mcp.server import hmc_install_lpar_os
+    from hmc_mcp.server_tools.vios import hmc_install_lpar_os as hmc_install_lpar_os
 
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
@@ -293,7 +293,7 @@ def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc)
 
 def test_install_lpar_os_tool_rejects_invalid_arguments_before_any_io(monkeypatch):
     """Validator failures raise before an SSH session is opened."""
-    from hmc_mcp.server import hmc_install_lpar_os
+    from hmc_mcp.server_tools.vios import hmc_install_lpar_os as hmc_install_lpar_os
 
     _hmc_env(monkeypatch)
     with pytest.raises(ValueError, match="IPv4"):
@@ -308,7 +308,7 @@ def test_install_lpar_os_tool_rejects_invalid_arguments_before_any_io(monkeypatc
 
 
 def test_install_lpar_os_unknown_name_fails_before_submission(monkeypatch, mock_hmc):
-    from hmc_mcp.server import hmc_install_lpar_os
+    from hmc_mcp.server_tools.vios import hmc_install_lpar_os as hmc_install_lpar_os
 
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(

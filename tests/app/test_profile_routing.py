@@ -121,8 +121,8 @@ def _toml_two_profiles(tmp_path: Path) -> Path:
 
 def test_sequential_profile_routing(tmp_path, monkeypatch):
     """Two sequential calls with different profiles each hit the correct HMC host."""
-    from hmc_mcp.server import hmc_console_info
     from hmc_mcp.config import load_profile as real_load_profile
+    from hmc_mcp.server_tools.systems import hmc_console_info as hmc_console_info
 
     cfg_path = _toml_two_profiles(tmp_path)
 

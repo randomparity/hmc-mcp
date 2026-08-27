@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
-from hmc_mcp.server import (
-    hmc_backup_lpar_profiles,
-    hmc_restore_lpar_profiles,
-    hmc_sync_lpar_profile,
-)
-
+import pytest
 from conftest import mock_uuid_resolution
+
+from hmc_mcp.server_tools.profiles import (
+    hmc_backup_lpar_profiles as hmc_backup_lpar_profiles,
+)
+from hmc_mcp.server_tools.profiles import (
+    hmc_restore_lpar_profiles as hmc_restore_lpar_profiles,
+)
+from hmc_mcp.server_tools.profiles import (
+    hmc_sync_lpar_profile as hmc_sync_lpar_profile,
+)
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "managed_sys1"

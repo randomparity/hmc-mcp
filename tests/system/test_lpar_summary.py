@@ -9,8 +9,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from hmc_mcp.server import hmc_lpar_summary
 from hmc_mcp.operations.composite import _lpar_summary
+from hmc_mcp.server_tools.composite import hmc_lpar_summary as hmc_lpar_summary
 
 LPAR_UUID = "aabbccdd-1234-5678-abcd-000000000001"
 ADAPTER1_UUID = "aabbccdd-1234-5678-abcd-000000000002"

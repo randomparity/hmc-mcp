@@ -6,18 +6,22 @@ against the respx ``mock_hmc`` router so the argument->URL mapping in the
 tool bodies is exercised.
 """
 
-import httpx
-import pytest
 from unittest.mock import ANY, AsyncMock, patch
 
-from hmc_mcp.client import HMCError
-from hmc_mcp.server import (
-    hmc_deploy_partition_template,
-    hmc_get_partition_template,
-    hmc_list_partition_templates,
-)
-
+import httpx
+import pytest
 from conftest import JOB_ENTRY
+
+from hmc_mcp.client import HMCError
+from hmc_mcp.server_tools.templates import (
+    hmc_deploy_partition_template as hmc_deploy_partition_template,
+)
+from hmc_mcp.server_tools.templates import (
+    hmc_get_partition_template as hmc_get_partition_template,
+)
+from hmc_mcp.server_tools.templates import (
+    hmc_list_partition_templates as hmc_list_partition_templates,
+)
 
 TEMPLATE_UUID = "tmpl-uuid-1"
 TARGET_SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"

@@ -13,14 +13,14 @@ These tests verify that:
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCTransportError
 from hmc_mcp.ssh.transport import run_hmc_cli
-
-from conftest import mock_uuid_resolution
 
 # ---------------------------------------------------------------------------
 # Shared test constants
@@ -258,7 +258,7 @@ async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
 
 def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
     """hmc_run_command(cmd, profile=...) routes SSH to the profile's HMC host."""
-    from hmc_mcp.server import hmc_run_command
+    from hmc_mcp.server_tools.command import hmc_run_command as hmc_run_command
 
     with patch(
         "hmc_mcp.server_tools.command.build_config", return_value=DEV_CONFIG
@@ -273,7 +273,7 @@ def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
 
 def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
     """hmc_restore_vios with profile routes SSH to the profile's HMC host."""
-    from hmc_mcp.server import hmc_restore_vios
+    from hmc_mcp.server_tools.vios import hmc_restore_vios as hmc_restore_vios
 
     client_factory = MagicMock(side_effect=_vios_client_factory())
     monkeypatch.setattr("hmc_mcp.server_tools.vios.client_from_env", client_factory)
@@ -293,7 +293,9 @@ def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
 
 def test_hmc_list_memory_pools_profile_reaches_ssh(monkeypatch, mock_hmc):
     """hmc_list_memory_pools with profile threads profile through ssh_with_client."""
-    from hmc_mcp.server import hmc_list_memory_pools
+    from hmc_mcp.server_tools.system_resources import (
+        hmc_list_memory_pools as hmc_list_memory_pools,
+    )
 
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 

@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
-from hmc_mcp.server import hmc_list_fc_ports, hmc_list_sea_adapters
-
 from conftest import mock_uuid_resolution
+
+from hmc_mcp.server_tools.network import (
+    hmc_list_fc_ports as hmc_list_fc_ports,
+)
+from hmc_mcp.server_tools.network import (
+    hmc_list_sea_adapters as hmc_list_sea_adapters,
+)
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9009-42A-SN12345"

@@ -19,17 +19,21 @@ import httpx
 import pytest
 
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.client import HMCError
 from hmc_mcp.dispatch_scope import dispatch_authorizer
 from hmc_mcp.legacy_policy import compile_legacy_policy
-from hmc_mcp.client import HMCError
-from hmc_mcp.snapshots.affinity import ProvisionAffinityAssessment
 from hmc_mcp.server import (
     TOOL_SECURITY,
     create_mcp,
-    hmc_decommission_lpar,
-    hmc_delete_lpar,
-    hmc_delete_vios,
 )
+from hmc_mcp.server_tools.lpars import (
+    hmc_decommission_lpar as hmc_decommission_lpar,
+)
+from hmc_mcp.server_tools.lpars import (
+    hmc_delete_lpar as hmc_delete_lpar,
+)
+from hmc_mcp.server_tools.vios import hmc_delete_vios as hmc_delete_vios
+from hmc_mcp.snapshots.affinity import ProvisionAffinityAssessment
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
 # every consumer builds its own. The legacy-equivalent policy registers exactly the
@@ -272,10 +276,10 @@ def test_closed_vocab_enum_matches_runtime_constant():
     from hmc_mcp.client.client_adapters import ADAPTER_TYPES
     from hmc_mcp.client.client_users import _VALID_AUTHENTICATION_FILTERS
     from hmc_mcp.documents import (
+        AUTHENTICATION_TYPES,
         PARTITION_TYPES,
         SHARING_MODES,
         STORAGE_KINDS,
-        AUTHENTICATION_TYPES,
     )
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
     from hmc_mcp.operations.vios import _VALID_BACKUP_TYPES
@@ -356,8 +360,8 @@ def test_vios_backup_and_restore_schemas_pin_the_supported_contracts():
 
 
 def test_parameter_normalization_contract_is_schema_pinned():
-    from hmc_mcp.operations.pcm import PCM_CATEGORIES
     from hmc_mcp.operations.lpar import PARTITION_STATES, PROCESSOR_COMPATIBILITY_MODES
+    from hmc_mcp.operations.pcm import PCM_CATEGORIES
     from hmc_mcp.operations.systems import MANAGED_SYSTEM_STATES
 
     by_name = _tools_by_name()
@@ -803,7 +807,7 @@ def _affinity_request() -> ProvisionAffinityAssessment:
 
 def test_power_on_lpar_already_running_returns_message(monkeypatch, mock_hmc):
     """The already-running path returns the stable PowerOn outcome."""
-    from hmc_mcp.server import hmc_power_on_lpar
+    from hmc_mcp.server_tools.lpars import hmc_power_on_lpar as hmc_power_on_lpar
 
     _hmc_env(monkeypatch)
     power_on_route = _mock_power_on_guard(mock_hmc, "running")
@@ -827,7 +831,7 @@ def test_power_on_lpar_already_running_returns_message(monkeypatch, mock_hmc):
 
 def test_power_on_lpar_not_activated_submits_job(monkeypatch, mock_hmc):
     """hmc_power_on_lpar submits the PowerOn job when partition is not activated."""
-    from hmc_mcp.server import hmc_power_on_lpar
+    from hmc_mcp.server_tools.lpars import hmc_power_on_lpar as hmc_power_on_lpar
 
     _hmc_env(monkeypatch)
     power_on_route = _mock_power_on_guard(mock_hmc, "not activated")
@@ -870,7 +874,7 @@ def test_power_on_lpar_has_one_stable_output_schema():
 
 def test_power_on_lpar_force_skips_guard(monkeypatch, mock_hmc):
     """hmc_power_on_lpar(force=True) submits the job even when running."""
-    from hmc_mcp.server import hmc_power_on_lpar
+    from hmc_mcp.server_tools.lpars import hmc_power_on_lpar as hmc_power_on_lpar
 
     _hmc_env(monkeypatch)
     # When force=True the state check endpoint is not called; only the job PUT matters.
@@ -888,7 +892,7 @@ def test_power_on_lpar_force_skips_guard(monkeypatch, mock_hmc):
 
 def test_power_on_lpar_non_waiting_assessment_does_not_measure(monkeypatch, mock_hmc):
     """Opt-in assessment preserves non-waiting submission semantics."""
-    from hmc_mcp.server import hmc_power_on_lpar
+    from hmc_mcp.server_tools.lpars import hmc_power_on_lpar as hmc_power_on_lpar
 
     _hmc_env(monkeypatch)
     _mock_power_on_guard(mock_hmc, "not activated")
@@ -909,7 +913,7 @@ def test_power_on_lpar_already_running_assessment_does_not_measure(
     monkeypatch, mock_hmc
 ):
     """Already running is not an activation observed by this call."""
-    from hmc_mcp.server import hmc_power_on_lpar
+    from hmc_mcp.server_tools.lpars import hmc_power_on_lpar as hmc_power_on_lpar
 
     _hmc_env(monkeypatch)
     _mock_power_on_guard(mock_hmc, "running")
@@ -969,7 +973,7 @@ NEW_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 def test_create_lpar_refuses_name_collision(monkeypatch, mock_hmc):
     """hmc_create_lpar raises ValueError when a partition with the same name exists."""
-    from hmc_mcp.server import hmc_create_lpar
+    from hmc_mcp.server_tools.lpars import hmc_create_lpar as hmc_create_lpar
 
     _hmc_env(monkeypatch)
     mock_hmc.get(
@@ -988,7 +992,8 @@ def test_create_lpar_refuses_name_collision(monkeypatch, mock_hmc):
 def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
     """hmc_create_lpar creates the partition when no LPAR with the same name exists."""
     from unittest.mock import AsyncMock, patch
-    from hmc_mcp.server import hmc_create_lpar
+
+    from hmc_mcp.server_tools.lpars import hmc_create_lpar as hmc_create_lpar
 
     _hmc_env(monkeypatch)
     mock_hmc.get(

@@ -6,27 +6,44 @@ import ast
 from pathlib import Path
 
 import hmc_mcp.server as server
+from hmc_mcp.server_tools import (
+    adapters,
+    capacity,
+    command,
+    health,
+    jobs,
+    lpar_config,
+    lpars,
+    storage,
+    system_resources,
+    systems,
+    vios,
+)
 import hmc_mcp.ssh.transport as ssh
 
 
 def test_domain_handlers_live_in_focused_modules() -> None:
     expected_modules = {
-        server.hmc_fleet_health: "hmc_mcp.server_tools.health",
-        server.hmc_attach_disk_to_lpar: "hmc_mcp.server_tools.storage",
-        server.hmc_list_adapters: "hmc_mcp.server_tools.adapters",
-        server.hmc_get_job: "hmc_mcp.server_tools.jobs",
-        server.hmc_capacity_report: "hmc_mcp.server_tools.capacity",
-        server.hmc_run_command: "hmc_mcp.server_tools.command",
-        server.hmc_modify_system: "hmc_mcp.server_tools.systems",
-        server.hmc_power_on_system: "hmc_mcp.server_tools.systems",
-        server.hmc_power_off_system: "hmc_mcp.server_tools.systems",
-        server.hmc_power_on_vios: "hmc_mcp.server_tools.vios",
-        server.hmc_power_off_vios: "hmc_mcp.server_tools.vios",
-        server.hmc_power_on_lpar: "hmc_mcp.server_tools.lpars",
-        server.hmc_power_off_lpar: "hmc_mcp.server_tools.lpars",
-        server.hmc_get_lpar_description: "hmc_mcp.server_tools.lpar_config",
-        server.hmc_get_proc_compat_modes: "hmc_mcp.server_tools.system_resources",
-        server.hmc_list_memory_pools: "hmc_mcp.server_tools.system_resources",
+        health.hmc_fleet_health: "hmc_mcp.server_tools.health",
+        storage.hmc_attach_disk_to_lpar: "hmc_mcp.server_tools.storage",
+        adapters.hmc_list_adapters: "hmc_mcp.server_tools.adapters",
+        jobs.hmc_get_job: "hmc_mcp.server_tools.jobs",
+        capacity.hmc_capacity_report: "hmc_mcp.server_tools.capacity",
+        command.hmc_run_command: "hmc_mcp.server_tools.command",
+        systems.hmc_modify_system: "hmc_mcp.server_tools.systems",
+        systems.hmc_power_on_system: "hmc_mcp.server_tools.systems",
+        systems.hmc_power_off_system: "hmc_mcp.server_tools.systems",
+        vios.hmc_power_on_vios: "hmc_mcp.server_tools.vios",
+        vios.hmc_power_off_vios: "hmc_mcp.server_tools.vios",
+        lpars.hmc_power_on_lpar: "hmc_mcp.server_tools.lpars",
+        lpars.hmc_power_off_lpar: "hmc_mcp.server_tools.lpars",
+        lpar_config.hmc_get_lpar_description: "hmc_mcp.server_tools.lpar_config",
+        system_resources.hmc_get_proc_compat_modes: (
+            "hmc_mcp.server_tools.system_resources"
+        ),
+        system_resources.hmc_list_memory_pools: (
+            "hmc_mcp.server_tools.system_resources"
+        ),
     }
 
     for handler, module_name in expected_modules.items():

@@ -5,10 +5,11 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from hmc_mcp.server import hmc_set_sriov_adapter_mode
-
 from conftest import mock_uuid_resolution
+
+from hmc_mcp.server_tools.network import (
+    hmc_set_sriov_adapter_mode as hmc_set_sriov_adapter_mode,
+)
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"

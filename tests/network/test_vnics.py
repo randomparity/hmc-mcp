@@ -12,7 +12,12 @@ from hmc_mcp.operations.ssh_network import (
     VnicChangeResult,
     VnicPartialError,
 )
-from hmc_mcp.server import hmc_add_vnic, hmc_remove_vnic
+from hmc_mcp.server_tools.network import (
+    hmc_add_vnic as hmc_add_vnic,
+)
+from hmc_mcp.server_tools.network import (
+    hmc_remove_vnic as hmc_remove_vnic,
+)
 
 
 def _result(operation: str, slot_num: str) -> VnicChangeResult:

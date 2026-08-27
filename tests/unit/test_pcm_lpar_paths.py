@@ -5,22 +5,27 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from conftest import make_config
 
-from hmc_mcp.server_tools import metrics as server_metrics
 from hmc_mcp.client import HMCClient
 from hmc_mcp.operations.pcm import (
     get_pcm_preferences,
     resolve_pcm_resource,
     set_pcm_preferences,
 )
-from hmc_mcp.server import (
-    hmc_aggregated_metric_links,
-    hmc_aggregated_metrics,
-    hmc_processed_metric_links,
-    hmc_processed_metrics,
+from hmc_mcp.server_tools import metrics as server_metrics
+from hmc_mcp.server_tools.metrics import (
+    hmc_aggregated_metric_links as hmc_aggregated_metric_links,
 )
-
-from conftest import make_config
+from hmc_mcp.server_tools.metrics import (
+    hmc_aggregated_metrics as hmc_aggregated_metrics,
+)
+from hmc_mcp.server_tools.metrics import (
+    hmc_processed_metric_links as hmc_processed_metric_links,
+)
+from hmc_mcp.server_tools.metrics import (
+    hmc_processed_metrics as hmc_processed_metrics,
+)
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"

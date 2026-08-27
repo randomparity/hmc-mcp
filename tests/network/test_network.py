@@ -1,19 +1,27 @@
 """Tests for Virtual Network management (templates + client)."""
 
-import httpx
-import pytest
 from unittest.mock import ANY, AsyncMock, patch
 
+import httpx
+import pytest
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.documents import build_virtual_network_document
-from hmc_mcp.server import (
-    hmc_create_virtual_network,
-    hmc_delete_virtual_network,
-    hmc_list_network_bridges,
-    hmc_list_virtual_networks,
-    hmc_list_virtual_switches,
+from hmc_mcp.server_tools.network import (
+    hmc_create_virtual_network as hmc_create_virtual_network,
+)
+from hmc_mcp.server_tools.network import (
+    hmc_delete_virtual_network as hmc_delete_virtual_network,
+)
+from hmc_mcp.server_tools.network import (
+    hmc_list_network_bridges as hmc_list_network_bridges,
+)
+from hmc_mcp.server_tools.network import (
+    hmc_list_virtual_networks as hmc_list_virtual_networks,
+)
+from hmc_mcp.server_tools.network import (
+    hmc_list_virtual_switches as hmc_list_virtual_switches,
 )
 
 VSWITCH_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

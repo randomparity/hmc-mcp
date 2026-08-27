@@ -14,26 +14,26 @@ from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
+from conftest import JOB_ENTRY, assert_no_mutating_requests
 
 from hmc_mcp.documents import LparResources
 from hmc_mcp.jobs import JobOutcome
 from hmc_mcp.operations.lpar import LparPowerResult
-from hmc_mcp.snapshots.affinity import (
-    AffinityAssessmentResult,
-    AffinityEvidence,
-    PostActivationAffinityAssessment,
-    validate_affinity_request,
-)
 from hmc_mcp.operations.provision import (
     ProvisionAffinityAssessment,
     ProvisionNetwork,
     ProvisionStorage,
     _power_on,
 )
-from hmc_mcp.server import hmc_provision_lpar
-from hmc_mcp.ssh.transport import HMCCLIError
+from hmc_mcp.server_tools.provision import hmc_provision_lpar as hmc_provision_lpar
+from hmc_mcp.snapshots.affinity import (
+    AffinityAssessmentResult,
+    AffinityEvidence,
+    PostActivationAffinityAssessment,
+    validate_affinity_request,
+)
 from hmc_mcp.ssh.affinity import MinimumAffinityPolicy
-from conftest import JOB_ENTRY, assert_no_mutating_requests
+from hmc_mcp.ssh.transport import HMCCLIError
 
 
 @pytest.fixture(autouse=True)

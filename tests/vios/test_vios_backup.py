@@ -8,7 +8,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from hmc_mcp.config import build_config
-from hmc_mcp.server import hmc_backup_vios, hmc_list_vios_backups, hmc_restore_vios
+from hmc_mcp.server_tools.vios import (
+    hmc_backup_vios as hmc_backup_vios,
+)
+from hmc_mcp.server_tools.vios import (
+    hmc_list_vios_backups as hmc_list_vios_backups,
+)
+from hmc_mcp.server_tools.vios import (
+    hmc_restore_vios as hmc_restore_vios,
+)
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"

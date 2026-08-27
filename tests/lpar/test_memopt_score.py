@@ -7,19 +7,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
 import pytest
+from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.server import (
-    hmc_get_lpar_memopt_score,
-    hmc_list_lpar_memopt_scores,
+from hmc_mcp.server_tools.lpar_config import (
+    hmc_get_lpar_memopt_score as hmc_get_lpar_memopt_score,
+)
+from hmc_mcp.server_tools.lpar_config import (
+    hmc_list_lpar_memopt_scores as hmc_list_lpar_memopt_scores,
 )
 from hmc_mcp.ssh.affinity import (
     HMCCLIError,
     get_lpar_memopt_score,
     list_lpar_memopt_scores,
 )
-
-from conftest import mock_uuid_resolution
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"

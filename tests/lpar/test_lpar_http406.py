@@ -15,13 +15,19 @@ import pytest
 from hmc_mcp.client import HMCError
 from hmc_mcp.documents import LparResources
 from hmc_mcp.operations.lpar_ownership import _resolve_system_name as _system_name
-from hmc_mcp.ssh.transport import HMCCLIError
-from hmc_mcp.server import (
-    hmc_create_lpar,
-    hmc_dlpar_mem,
-    hmc_dlpar_proc,
-    hmc_modify_lpar,
+from hmc_mcp.server_tools.lpars import (
+    hmc_create_lpar as hmc_create_lpar,
 )
+from hmc_mcp.server_tools.lpars import (
+    hmc_dlpar_mem as hmc_dlpar_mem,
+)
+from hmc_mcp.server_tools.lpars import (
+    hmc_dlpar_proc as hmc_dlpar_proc,
+)
+from hmc_mcp.server_tools.lpars import (
+    hmc_modify_lpar as hmc_modify_lpar,
+)
+from hmc_mcp.ssh.transport import HMCCLIError
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"

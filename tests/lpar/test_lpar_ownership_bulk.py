@@ -14,7 +14,9 @@ import asyncio
 import httpx
 
 from hmc_mcp.operations import lpar_ownership
-from hmc_mcp.server import hmc_list_lpar_ownership
+from hmc_mcp.server_tools.lpars import (
+    hmc_list_lpar_ownership as hmc_list_lpar_ownership,
+)
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN123456"

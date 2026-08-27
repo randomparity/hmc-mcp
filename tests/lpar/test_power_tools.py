@@ -13,20 +13,32 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from conftest import JOB_ENTRY, SYSTEM_ENTRY
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.documents import LparResources
 from hmc_mcp.operations.systems import power_system
-from hmc_mcp.server import (
-    hmc_dlpar_mem,
-    hmc_dlpar_proc,
-    hmc_modify_system,
-    hmc_power_off_system,
-    hmc_power_off_vios,
-    hmc_power_on_system,
-    hmc_power_on_vios,
+from hmc_mcp.server_tools.lpars import (
+    hmc_dlpar_mem as hmc_dlpar_mem,
 )
-from conftest import JOB_ENTRY, SYSTEM_ENTRY
+from hmc_mcp.server_tools.lpars import (
+    hmc_dlpar_proc as hmc_dlpar_proc,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_modify_system as hmc_modify_system,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_power_off_system as hmc_power_off_system,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_power_on_system as hmc_power_on_system,
+)
+from hmc_mcp.server_tools.vios import (
+    hmc_power_off_vios as hmc_power_off_vios,
+)
+from hmc_mcp.server_tools.vios import (
+    hmc_power_on_vios as hmc_power_on_vios,
+)
 
 
 @pytest.mark.asyncio

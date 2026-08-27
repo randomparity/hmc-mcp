@@ -5,11 +5,15 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from hmc_mcp.server import hmc_list_memory_pools, hmc_remove_memory_pool
-from hmc_mcp.ssh.transport import HMCCLIError
-
 from conftest import mock_uuid_resolution
+
+from hmc_mcp.server_tools.system_resources import (
+    hmc_list_memory_pools as hmc_list_memory_pools,
+)
+from hmc_mcp.server_tools.system_resources import (
+    hmc_remove_memory_pool as hmc_remove_memory_pool,
+)
+from hmc_mcp.ssh.transport import HMCCLIError
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9009-41A-SN12345"
