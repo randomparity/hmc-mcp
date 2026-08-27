@@ -52,6 +52,7 @@ from .operations_lpm import (
     abort_lpar_migration,
     migrate_lpar,
     migrate_lpar_with_affinity_preflight,
+    validate_lpar_migration,
     recover_lpar_migration,
     remote_restart_lpar,
 )
@@ -700,8 +701,8 @@ def lpars_migrate_validate(
     """Validate whether an LPM migration would succeed."""
 
     async def _fn(hmc):
-        return await migrate_lpar(
-            hmc, name_or_uuid, target, profile, wait_time, validate=True
+        return await validate_lpar_migration(
+            hmc, name_or_uuid, target, profile, wait_time
         )
 
     _lpm_run(name_or_uuid, _fn, "MigrateValidate", target, yes)

@@ -16,6 +16,7 @@ from .operations_lpm import (
     abort_lpar_migration,
     migrate_lpar,
     migrate_lpar_with_affinity_preflight,
+    validate_lpar_migration,
     recover_lpar_migration,
     remote_restart_lpar,
 )
@@ -170,13 +171,12 @@ def hmc_migrate_validate_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            result = await migrate_lpar(
+            result = await validate_lpar_migration(
                 hmc,
                 lpar_name_or_uuid,
                 target_system_name_or_uuid,
                 target_profile_name,
                 wait_time,
-                validate=True,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,

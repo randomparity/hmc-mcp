@@ -265,6 +265,53 @@ async def _finish_job(
     return job_outcome(submitted_id or "", completed_job)
 
 
+async def _submit_migration_job(
+    hmc: HMCClient,
+    lpar_uuid: str,
+    target_system: str,
+    target_profile_name: str | None,
+    wait_time: int | None,
+    *,
+    validate: bool,
+) -> dict[str, Any] | None:
+    submit = hmc.lpar_migrate_validate if validate else hmc.lpar_migrate
+    return await submit(
+        lpar_uuid, target_system, target_profile_name, wait_time=wait_time
+    )
+
+
+async def validate_lpar_migration(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    target_system_name_or_uuid: str,
+    target_profile_name: str | None = None,
+    wait_time: int | None = None,
+    *,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    system_name_or_uuid: str | None = None,
+) -> LpmResult:
+    """Resolve selectors and submit standalone LPM validation."""
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
+    target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
+    job = await _submit_migration_job(
+        hmc,
+        lpar_uuid,
+        target_system,
+        target_profile_name,
+        wait_time,
+        validate=True,
+    )
+    return LpmResult(
+        lpar_uuid,
+        await _finish_job(hmc, job, wait, timeout_seconds, poll_interval),
+    )
+
+
 async def migrate_lpar(
     hmc: HMCClient,
     lpar_name_or_uuid: str,
@@ -272,31 +319,27 @@ async def migrate_lpar(
     target_profile_name: str | None = None,
     wait_time: int | None = None,
     *,
-    validate: bool = False,
     validate_first: bool = True,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     system_name_or_uuid: str | None = None,
 ) -> LpmResult:
-    """Resolve selectors and submit standalone validation or validation-first migration."""
-    effective_wait = wait or (validate_first and not validate)
+    """Resolve selectors and submit a migration, optionally validating first."""
+    effective_wait = wait or validate_first
     validate_wait_timing(effective_wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
     target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
-    if validate:
-        job = await hmc.lpar_migrate_validate(
-            lpar_uuid, target_system, target_profile_name, wait_time=wait_time
-        )
-        return LpmResult(
-            lpar_uuid,
-            await _finish_job(hmc, job, wait, timeout_seconds, poll_interval),
-        )
     if validate_first:
-        validation_job = await hmc.lpar_migrate_validate(
-            lpar_uuid, target_system, target_profile_name, wait_time=wait_time
+        validation_job = await _submit_migration_job(
+            hmc,
+            lpar_uuid,
+            target_system,
+            target_profile_name,
+            wait_time,
+            validate=True,
         )
         validation = await _finish_job(
             hmc, validation_job, True, timeout_seconds, poll_interval
@@ -308,8 +351,13 @@ async def migrate_lpar(
                 f"(status={validation.status or 'unknown'!r}, error={detail!r}); "
                 "migration was not submitted"
             )
-    job = await hmc.lpar_migrate(
-        lpar_uuid, target_system, target_profile_name, wait_time=wait_time
+    job = await _submit_migration_job(
+        hmc,
+        lpar_uuid,
+        target_system,
+        target_profile_name,
+        wait_time,
+        validate=False,
     )
     return LpmResult(
         lpar_uuid,
