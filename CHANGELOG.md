@@ -160,9 +160,12 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `profile`, or `default`, where `default` is the answer that means nothing the operator
   wrote arrived. A fourth value, `ambiguous`, reports that a **case variant** of
   `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: pydantic-settings matches a variant
-  case-insensitively while the profile loader drops only the exact upper-case spelling
-  (#531), so a variant loses to a profile on one resolution path and wins on the other, and
-  nothing in the server can tell which happened. `hmc-mcp config show` could not answer
+  case-insensitively while the profile loader drops only the exact upper-case spelling, so a
+  variant loses to a profile on one resolution path and wins on the other, and nothing in the
+  server can tell which happened. **The #531 fix in this same release removes that
+  divergence**, so `ambiguous` ships over-reporting: a variant now drops the profile's key on
+  both paths and `environment` is the truthful label. Read `ambiguous` as `environment`;
+  #547 tracks removing the value. `hmc-mcp config show` could not answer
   either deployment the documentation
   recommends: it exits 1 with no `config.toml`, and it reads the invoking shell's environment
   rather than the served process's. The entry keeps the setting's own name and polarity —
