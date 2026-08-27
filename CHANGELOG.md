@@ -258,10 +258,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   would resolve to a profile key while the call reached the exported host — and pre-fix
   that divergence was already reachable, though only for a profile that omits `host`,
   since a profile carrying one handed it over as an init kwarg that outranked the variant.
-  One reader inside `src/hmc_mcp` is deliberately left behind: `audit.py` imports nothing
-  from the package by design, so its exact-case `HMC_AGENT_ID` attribution read needs its
-  own case-fold, tracked as #543 along with the two exact-case reads in
-  `scripts/live_test_runner.py`. Several casings of one
+  One reader inside `src/hmc_mcp` was left behind by that change — `audit.py` imports
+  nothing from the package by design, so its `HMC_AGENT_ID` attribution read needed a
+  case-fold of its own — and #543 below carries it, along with the `scripts/live_test_runner.py`
+  sweep. Several casings of one
   variable fold to a single field, and the last one in the process environment wins —
   `env_var_value` resolves the tie the way pydantic-settings does, pinned by a test
   against `HMCConfig` rather than against a reading of the library. `HMC_PROFILE` is
