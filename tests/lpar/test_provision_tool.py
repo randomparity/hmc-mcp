@@ -548,7 +548,9 @@ def test_provision_lpar_full_workflow(monkeypatch, mock_hmc):
     assert result.workflow_completed is True
     assert result.lpar_uuid == LPAR_UUID
     assert result.dry_run is False
-    assert name_lookup.call_count == 1
+    # The explicit uniqueness precondition and the create workflow's own
+    # race-safe resolution each verify the name.
+    assert name_lookup.call_count == 2
     steps = {s["step"]: s for s in result.steps}
     assert steps["create"]["status"] == "ok"
     assert steps["network"]["status"] == "ok"
