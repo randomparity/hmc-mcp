@@ -343,27 +343,35 @@ def _restore_ctx_from_results(
     context captured by earlier sub-tasks (VIOS UUID, system UUID, etc.).
     """
     p = Path(results_path)
-    if not p.exists():
-        return
     try:
+        if not p.exists():
+            return
         saved = json.loads(p.read_text())
-        saved_ctx = saved.get("context") or {}
-        context = state.context
-        for key, current in asdict(context).items():
-            if current is None and saved_ctx.get(key) is not None:
-                setattr(context, key, saved_ctx[key])
-            elif key == "lp3_baseline" and not current and saved_ctx.get(key):
-                context.lp3_baseline = saved_ctx[key]
-            elif key == "vmedia_orig_boot_order" and not current and saved_ctx.get(key):
-                context.vmedia_orig_boot_order = saved_ctx[key]
-        print(
-            f"  ℹ  Context restored from {results_path} "
-            f"(vios_uuid={context.vios_uuid}, "
-            f"system_uuid={context.system_uuid}, "
-            f"vg_uuid={context.vg_uuid})"
-        )
-    except Exception as e:
-        print(f"  ⚠️  Could not restore context from {results_path}: {e}")
+        if not isinstance(saved, dict):
+            raise TypeError("results document must be a JSON object")
+        saved_ctx = saved.get("context")
+        if saved_ctx is None:
+            saved_ctx = {}
+        elif not isinstance(saved_ctx, dict):
+            raise TypeError("results context must be a JSON object")
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, KeyError) as exc:
+        print(f"  ⚠️  Could not restore context from {results_path}: {exc}")
+        return
+
+    context = state.context
+    for key, current in asdict(context).items():
+        if current is None and saved_ctx.get(key) is not None:
+            setattr(context, key, saved_ctx[key])
+        elif key == "lp3_baseline" and not current and saved_ctx.get(key):
+            context.lp3_baseline = saved_ctx[key]
+        elif key == "vmedia_orig_boot_order" and not current and saved_ctx.get(key):
+            context.vmedia_orig_boot_order = saved_ctx[key]
+    print(
+        f"  ℹ  Context restored from {results_path} "
+        f"(vios_uuid={context.vios_uuid}, "
+        f"system_uuid={context.system_uuid}, "
+        f"vg_uuid={context.vg_uuid})"
+    )
 
 
 async def main(

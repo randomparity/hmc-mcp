@@ -346,6 +346,29 @@ def test_restore_context_restores_identifiers_and_baseline(tmp_path):
     assert state.context.lp3_baseline == {"description": "original"}
 
 
+@pytest.mark.parametrize("document", ["not JSON", "[]", '{"context": []}'])
+def test_restore_context_reports_expected_results_file_failures(
+    tmp_path, capsys, document
+):
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(document)
+
+    runner._restore_ctx_from_results(runner.RunState(), str(results_path))
+
+    assert "Could not restore context" in capsys.readouterr().out
+
+
+def test_restore_context_propagates_unexpected_restoration_defects(
+    tmp_path, monkeypatch
+):
+    results_path = tmp_path / "previous.json"
+    results_path.write_text('{"context": {}}')
+    monkeypatch.setattr(runner, "asdict", lambda _context: (_ for _ in ()).throw(RuntimeError("defect")))
+
+    with pytest.raises(RuntimeError, match="defect"):
+        runner._restore_ctx_from_results(runner.RunState(), str(results_path))
+
+
 def test_live_context_has_no_mapping_facade():
     context = runner.LiveTestContext()
 
