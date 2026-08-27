@@ -186,11 +186,11 @@ async def _read_job(
     # A link this read just retired is no longer supplied; it is dead.
     supplied = None if stale_link else link
     dead = link if stale_link else dead_link
-    handle = _handle(outcome, job, supplied, dead)
-    return replace(outcome, job_href=handle), stale_link
+    persisted_job_href = _select_persisted_job_href(outcome, job, supplied, dead)
+    return replace(outcome, job_href=persisted_job_href), stale_link
 
 
-def _handle(
+def _select_persisted_job_href(
     outcome: JobOutcome,
     job: dict[str, Any] | None,
     link: str | None,
