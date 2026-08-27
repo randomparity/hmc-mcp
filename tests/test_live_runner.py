@@ -657,8 +657,8 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     monkeypatch.setattr(vmedia.Path, "is_file", lambda _path: True)
-    monkeypatch.setattr(vmedia, "_serve_iso_over_http", lambda: None)
     state = runner.RunState()
+    monkeypatch.setattr(state.iso_http_server, "start", lambda: None)
     _configure_vmedia_context(state, context)
 
     await workflow(None, state)
@@ -698,8 +698,8 @@ async def test_vmedia_boot_failure_still_restores_boot_order_and_unmounts(monkey
         return "PASS", {}
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    monkeypatch.setattr(vmedia, "_serve_iso_over_http", lambda: None)
     state = runner.RunState()
+    monkeypatch.setattr(state.iso_http_server, "start", lambda: None)
     _configure_vmedia_context(
         state,
         {
@@ -752,10 +752,14 @@ async def test_vmedia_teardown_continues_after_orphan_unmount_failure(monkeypatc
 async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
     _isolate_runner(monkeypatch)
     seen_states = []
+    closed_servers = []
     initial_system_uuids = []
 
     async def fake_subtask(_client, state):
         seen_states.append(state)
+        state.iso_http_server.close = lambda: closed_servers.append(
+            state.iso_http_server
+        )
         initial_system_uuids.append(state.context.system_uuid)
         state.context.system_uuid = "first-run-only"
         state.record(0, "fake", "PASS", {})
@@ -771,6 +775,10 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
     assert seen_states[0] is not seen_states[1]
     assert initial_system_uuids == [None, None]
     assert len(seen_states[1].results) == 1
+    assert closed_servers == [
+        seen_states[0].iso_http_server,
+        seen_states[1].iso_http_server,
+    ]
     assert (
         json.loads(second_path.read_text())["context"]["system_uuid"]
         == "first-run-only"

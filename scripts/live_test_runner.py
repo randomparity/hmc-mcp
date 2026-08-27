@@ -56,6 +56,7 @@ from live_test.lifecycle import (
     validate_provisioning_dry_run,
 )
 from live_test.vmedia import (
+    IsoHttpServer,
     vmedia_boot_verification,
     vmedia_bootstrap_and_create_repo,
     vmedia_mapping_crossvalidation,
@@ -229,6 +230,7 @@ class RunState:
 
     context: LiveTestContext = field(default_factory=LiveTestContext)
     results: list[dict[str, Any]] = field(default_factory=list)
+    iso_http_server: IsoHttpServer = field(default_factory=IsoHttpServer)
 
     async def call(self, client: Client, tool: str, **kwargs: Any) -> tuple[str, Any]:
         """Call a tool and return a PASS or FAIL result without raising."""
@@ -409,13 +411,16 @@ async def main(
     await configure_arbitrary_command_tool(
         True, mcp, permits=permits, authorize=authorize
     )
-    async with Client(mcp) as client:
-        for n in tasks:
-            fn = SUBTASKS.get(n)
-            if fn:
-                await fn(client, state)
-            else:
-                state.record(n, "runner", "FAIL", f"Unknown sub-task {n}")
+    try:
+        async with Client(mcp) as client:
+            for n in tasks:
+                fn = SUBTASKS.get(n)
+                if fn:
+                    await fn(client, state)
+                else:
+                    state.record(n, "runner", "FAIL", f"Unknown sub-task {n}")
+    finally:
+        state.iso_http_server.close()
 
     Path(results_path).write_text(
         json.dumps(

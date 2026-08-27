@@ -241,7 +241,31 @@ _HTTP_PORT = 18765
 _ISO_HOST = f"localhost:{_HTTP_PORT}"
 _ISO_URL = f"http://{_ISO_HOST}/{_ISO_FILENAME}"
 
-_iso_http_server: http.server.HTTPServer | None = None
+class IsoHttpServer:
+    """Invocation-owned HTTP fixture for virtual-media ISO uploads."""
+
+    def __init__(self) -> None:
+        self._server: http.server.HTTPServer | None = None
+
+    def start(self) -> None:
+        """Start serving the configured ISO directory once for this invocation."""
+        _allow_iso_host()
+        if self._server is not None:
+            return
+        handler = functools.partial(
+            http.server.SimpleHTTPRequestHandler,
+            directory=str(Path(_ISO_PATH).parent),
+        )
+        self._server = http.server.HTTPServer(("localhost", _HTTP_PORT), handler)
+        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+
+    def close(self) -> None:
+        """Stop serving and release the listening socket."""
+        if self._server is None:
+            return
+        self._server.shutdown()
+        self._server.server_close()
+        self._server = None
 
 
 def _allow_iso_host() -> None:
@@ -275,28 +299,6 @@ def _allow_iso_host() -> None:
         del os.environ[variant]
     os.environ[name] = ",".join(entries)
     print(f"  ℹ  {name}={os.environ[name]}")
-
-
-def _serve_iso_over_http() -> None:
-    """Publish the local ISO at ``_ISO_URL``, once per process.
-
-    ADR 0049 made an http(s) URL the only source ``hmc_upload_iso`` accepts, so
-    every upload step below goes through this server rather than handing the tool
-    a path. ADR 0050 then made the URL's host something an operator has to permit,
-    which is what :func:`_allow_iso_host` does for this run. The serving thread is
-    a daemon and is never shut down: ST20 re-uploads long after ST18 has returned,
-    and the process exit reclaims it.
-    """
-    _allow_iso_host()
-    global _iso_http_server
-    if _iso_http_server is not None:
-        return
-    handler = functools.partial(
-        http.server.SimpleHTTPRequestHandler,
-        directory=str(Path(_ISO_PATH).parent),
-    )
-    _iso_http_server = http.server.HTTPServer(("localhost", _HTTP_PORT), handler)
-    threading.Thread(target=_iso_http_server.serve_forever, daemon=True).start()
 
 
 async def vmedia_upload_iso(client: Client, state: RunState) -> None:
@@ -336,7 +338,7 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
     state.record(18, "iso_file_check", "PASS", f"ISO found: {_ISO_PATH}")
 
     try:
-        _serve_iso_over_http()
+        state.iso_http_server.start()
     except OSError as exc:
         state.record(
             18,
@@ -637,7 +639,7 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
     # Step 2 — Re-upload ISO (was deleted at end of ST19)
     print("  ⏳ Re-uploading ISO for boot test (may take several minutes)…")
     try:
-        _serve_iso_over_http()
+        state.iso_http_server.start()
     except OSError as exc:
         for name in _skip_names:
             state.skip(20, name, f"no HTTP server on port {_HTTP_PORT}: {exc}")
