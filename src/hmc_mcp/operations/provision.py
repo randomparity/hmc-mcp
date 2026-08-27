@@ -124,11 +124,6 @@ class AttachDiskResult:
     warnings: tuple[str, ...]
 
 
-# ---------------------------------------------------------------------- #
-# Precondition helpers
-# ---------------------------------------------------------------------- #
-
-
 async def _check_name_unique(hmc, name: str) -> None:
     """Raise ValueError if an LPAR with *name* already exists."""
     existing = await hmc.find_partition_by_name(name)
@@ -180,11 +175,6 @@ async def _check_vg_exists(hmc, vios_uuid: str, vg_uuid: str) -> None:
         )
 
 
-# ---------------------------------------------------------------------- #
-# Step runner
-# ---------------------------------------------------------------------- #
-
-
 def _step(name: str, status: str, result: Any = None) -> dict[str, Any]:
     """Build a single step-result dict."""
     entry: dict[str, Any] = {"step": name, "status": status}
@@ -209,9 +199,7 @@ async def _record_hmc_step(
 async def _add_network(
     hmc: HMCClient, lpar_uuid: str, port_vlan_id: int
 ) -> dict[str, Any] | None:
-    result = await add_network_adapter(
-        hmc, None, lpar_uuid, port_vlan_id
-    )
+    result = await add_network_adapter(hmc, None, lpar_uuid, port_vlan_id)
     return result.resource
 
 
@@ -498,11 +486,6 @@ def _failed_provision_result(
     return _provision_result(creation, created_uuid, steps, False)
 
 
-# ---------------------------------------------------------------------- #
-# Operation
-# ---------------------------------------------------------------------- #
-
-
 async def provision_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str,
@@ -518,61 +501,17 @@ async def provision_lpar(
     minimum_affinity_policy: MinimumAffinityPolicy | None = None,
     affinity_assessment: ProvisionAffinityAssessment | None = None,
 ) -> ProvisionResult:
-    """Provision a new LPAR end-to-end: create, add network adapter, add vSCSI
-    adapter, map disk storage, and power on — in a single call.
+    """Provision an LPAR after validating every requested dependency.
 
-    **Always validates preconditions first** (name uniqueness, VLAN existence,
-    volume-group existence). Pass ``dry_run=True`` to run *only* the
-    precondition checks without creating anything; the result will show each
-    step as ``{"status": "dry_run"}``.
+    ``dry_run`` performs only the precondition checks and marks each planned
+    step ``dry_run``. On partial failure, completed, failed, and remaining
+    steps are reported as ``ok``, ``error``, and ``skipped`` respectively;
+    no automatic rollback is attempted.
 
-    On partial failure the completed steps are reported as ``"ok"``, the
-    failed step as ``"error"``, and remaining steps as ``"skipped"``.
-    No automatic rollback is performed — clean up manually with
-    Delete the partition or its adapters manually as appropriate.
-
-    Parameters
-    ----------
-    system_name_or_uuid:
-        Target managed system — either a SystemName or UUID.
-    name:
-        Name for the new LPAR. Must be unique across the HMC.
-    network:
-        Virtual Ethernet VLAN and VIOS vSCSI attachment inputs.
-    storage:
-        VIOS-backed storage mapping inputs, including optional volume-group
-        validation.
-    resources:
-        Memory and processor bounds for the new partition.
-    partition_type:
-        Partition type: ``"AIX/Linux"`` (default), ``"OS400"``, or
-        ``"Virtual IO Server"``.
-    power_on:
-        Submit a PowerOn job after provisioning (default ``True``).
-    dry_run:
-        When ``True``, run precondition checks only — no LPAR is created.
-    caller_token:
-        Optional caller tracking reference embedded in the partition
-        description as ``[caller <token>]`` after the ownership stamp
-        (ADR 0064); 1–64 printable ASCII characters, no whitespace or
-        comma, equals, double quote, square brackets, or backslash.
-
-    Returns
-    -------
-    ProvisionResult with:
-    - ``resource_created``: whether the create operation succeeded.
-    - ``workflow_completed``: whether every requested step succeeded.
-    - ``lpar_uuid``: the validated UUID needed for follow-on operations.
-    - ``dry_run`` (bool): mirrors the input flag.
-    - ``steps`` (list): per-step result dicts ``{step, status, result?}``.
-      status is ``"ok"``, ``"error"``, ``"skipped"``, or ``"dry_run"``.
-    - ``warnings`` (list): non-fatal notices; includes ownership stamp failures
-      or skips when the stamp could not be applied after creation.
-    - ``ownership_stamped`` (bool | None): ``True`` when the description-field
-      ownership token was written; ``False`` when the SSH stamp attempt failed;
-      ``None`` when the stamp was not attempted. With ``caller_token``,
-      ``True`` confirms both the ownership stamp and the caller segment
-      landed (one combined write); ``False`` means both were lost.
+    Ownership stamping is best effort. ``ownership_stamped`` distinguishes a
+    confirmed write, a failed write, and a dry run where no stamp was
+    attempted. When ``caller_token`` is supplied, it is written together with
+    the ownership stamp, so the result describes both values as one write.
     """
 
     if affinity_assessment is not None:
@@ -604,27 +543,18 @@ async def provision_lpar(
         # and a malformed token must fail identically there (ADR 0064).
         validate_caller_token(caller_token)
 
-    # ----------------------------------------------------------------
-    # 1. Resolve system UUID
-    # ----------------------------------------------------------------
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     if minimum_affinity_policy is not None:
         system_name, _ = await resolve_ssh_names(hmc.config, system_name_or_uuid, None)
         assert system_name is not None
         await require_minimum_affinity_policy_capability(hmc.config, system_name)
 
-    # ----------------------------------------------------------------
-    # 2. Preconditions (always, including dry-run)
-    # ----------------------------------------------------------------
     await _check_name_unique(hmc, name)
     await _check_vlan_exists(hmc, system_uuid, network.port_vlan_id)
     if storage.vg_uuid is not None:
         await _check_vg_exists(hmc, storage.vios_uuid, storage.vg_uuid)
     await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
 
-    # ----------------------------------------------------------------
-    # 3. Dry-run exit
-    # ----------------------------------------------------------------
     step_names = ["create"]
     if minimum_affinity_policy is not None:
         step_names.append("minimum_affinity_policy")
@@ -676,9 +606,7 @@ async def provision_lpar(
     ):
         return _failed_provision_result(creation, created_uuid, steps, step_names)
 
-    if not await _run_network_leg(
-        steps, hmc, created_uuid, network.port_vlan_id
-    ):
+    if not await _run_network_leg(steps, hmc, created_uuid, network.port_vlan_id):
         return _failed_provision_result(creation, created_uuid, steps, step_names)
 
     storage_steps, storage_completed = await _run_storage_leg(
