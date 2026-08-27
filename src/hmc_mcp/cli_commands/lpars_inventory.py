@@ -29,13 +29,15 @@ def lpars_summary(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """One-call summary: state, RMC, memory/CPU, OS details, adapter count, description."""
+    from dataclasses import asdict
+
     from ..operations.composite import lpar_summary
 
     async def _go():
         async with _client() as hmc:
             return await lpar_summary(hmc, name_or_uuid)
 
-    summary = _run(_go)
+    summary = asdict(_run(_go))
 
     if as_json:
         _print_json(summary)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from ..tool_registry import tool_module
 
 from typing import Any
@@ -31,8 +32,10 @@ def hmc_lpar_summary(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await lpar_summary(
-                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            return asdict(
+                await lpar_summary(
+                    hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+                )
             )
 
     return run_sync(_go)
@@ -52,6 +55,6 @@ def hmc_system_summary(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await system_summary(hmc, system_name_or_uuid)
+            return asdict(await system_summary(hmc, system_name_or_uuid))
 
     return run_sync(_go)

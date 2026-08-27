@@ -70,4 +70,4 @@ async def test_find_placement_orders_smallest_sufficient_capacity_first():
         _CapacityClient(), desired_memory_mb=4096, desired_proc_units=1
     )
 
-    assert [candidate["system_uuid"] for candidate in result] == ["tight", "roomy"]
+    assert [candidate.system_uuid for candidate in result] == ["tight", "roomy"]

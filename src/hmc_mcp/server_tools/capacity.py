@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from ..tool_registry import tool_module
 
 from typing import Any
@@ -24,7 +25,7 @@ def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await capacity_report(hmc)
+            return [asdict(item) for item in await capacity_report(hmc)]
 
     return run_sync(_go)
 
@@ -45,6 +46,11 @@ def hmc_find_placement(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await find_placement(hmc, desired_memory_mb, desired_proc_units)
+            return [
+                asdict(item)
+                for item in await find_placement(
+                    hmc, desired_memory_mb, desired_proc_units
+                )
+            ]
 
     return run_sync(_go)

@@ -102,10 +102,13 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "delete_adapter",
         "AdapterResult",
         "AdapterType",
+        "CapacitySummary",
         "capacity_report",
         "find_placement",
         "lpar_summary",
+        "LparSummary",
         "system_summary",
+        "SystemSummary",
         "decommission_lpar",
         "DecommissionResult",
         "fleet_health",
@@ -1831,7 +1834,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "314afdfcad8726f89fcf3ac7aa850d821fcf6e0f14e3c5343bf8d512120dc57d"  # pragma: allowlist secret
+    expected_digest = "ca2a55d4a0bb133e18db792ebc17dfe97d06bae229e99057a2241e7aeb035c2a"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

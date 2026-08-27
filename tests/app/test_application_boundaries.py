@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 from typer.testing import CliRunner
 
 from hmc_mcp.cli import app
+from hmc_mcp.operations.composite import _lpar_summary, _system_summary
 
 
 class _ClientContext:
@@ -140,7 +141,9 @@ def test_tool_registry_does_not_import_the_policy_modules():
 
 def test_lpar_summary_cli_delegates_to_neutral_operation():
     client = object()
-    summary = AsyncMock(return_value={"name": "aix1"})
+    summary = AsyncMock(
+        return_value=_lpar_summary({"Resource": {"PartitionName": "aix1"}}, [])
+    )
     with (
         patch("hmc_mcp.operations.composite.lpar_summary", summary),
         patch(
@@ -155,7 +158,11 @@ def test_lpar_summary_cli_delegates_to_neutral_operation():
 
 def test_system_summary_cli_delegates_to_neutral_operation():
     client = object()
-    summary = AsyncMock(return_value={"name": "system1"})
+    summary = AsyncMock(
+        return_value=_system_summary(
+            {"Resource": {"SystemName": "system1"}}, [], []
+        )
+    )
     with (
         patch("hmc_mcp.operations.composite.system_summary", summary),
         patch("hmc_mcp.cli_commands.systems._client", return_value=_ClientContext(client)),

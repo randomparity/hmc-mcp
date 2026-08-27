@@ -146,9 +146,9 @@ names are internal everywhere and are never inventoried.
   `DedicatedPcieAssignment`, `LparPcieAssignments`, `LparPcieWorkflowResult`,
   `SriovLogicalPortAssignment`, `VnicAssignment`; excluded synchronous:
   `assignment_step_names`.
-- `operations.capacity` — operations: `capacity_report`, `find_placement`; types: none; excluded
+- `operations.capacity` — operations: `capacity_report`, `find_placement`; types: `CapacitySummary`; excluded
   synchronous: `lpar_processing_units`, `system_capacity`.
-- `operations.composite` — operations: `lpar_summary`, `system_summary`; types: none; excluded
+- `operations.composite` — operations: `lpar_summary`, `system_summary`; types: `LparSummary`, `SystemSummary`; excluded
   synchronous: none.
 - `operations.decommission` — operations: `decommission_lpar`; types: `DecommissionResult`;
   excluded synchronous: none.

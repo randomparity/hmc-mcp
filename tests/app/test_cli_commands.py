@@ -728,13 +728,20 @@ def test_lpars_list_state_filter(fake_hmc):
 
 
 def test_lpars_summary_renders_numeric_zero(monkeypatch):
-    summary = {
-        "name": "zero-lpar",
-        "current_memory_mb": 0,
-        "desired_memory_mb": 0,
-        "current_proc_units": 0.0,
-        "desired_proc_units": 0.0,
-    }
+    from hmc_mcp.operations.composite import _lpar_summary
+
+    summary = _lpar_summary(
+        {
+            "Resource": {
+                "PartitionName": "zero-lpar",
+                "CurrentMemory": 0,
+                "DesiredMemory": 0,
+                "CurrentProcessingUnits": 0.0,
+                "DesiredProcessingUnits": 0.0,
+            }
+        },
+        [],
+    )
     monkeypatch.setattr(
         "hmc_mcp.cli_commands.lpars_inventory._run", lambda _operation: summary
     )

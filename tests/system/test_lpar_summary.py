@@ -102,8 +102,8 @@ def test_lpar_summary_preserves_zero_and_falls_back_only_when_missing(
     resource, expected_memory, expected_processors
 ):
     summary = _lpar_summary({"Resource": resource}, [])
-    assert summary["current_memory_mb"] == expected_memory
-    assert summary["current_proc_units"] == expected_processors
+    assert summary.current_memory_mb == expected_memory
+    assert summary.current_proc_units == expected_processors
 
 
 # ---------------------------------------------------------------------- #

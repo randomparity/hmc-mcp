@@ -186,13 +186,15 @@ def systems_summary(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """One-call summary: state, MTMS, firmware, LPAR counts, free memory/CPU, VIOS count."""
+    from dataclasses import asdict
+
     from ..operations.composite import system_summary
 
     async def _go():
         async with _client() as hmc:
             return await system_summary(hmc, name_or_uuid)
 
-    result = _run(_go)
+    result = asdict(_run(_go))
     if as_json:
         _print_json(result)
         return
@@ -220,13 +222,15 @@ def systems_capacity(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Capacity report: memory/CPU totals and free resources per managed system."""
+    from dataclasses import asdict
+
     from ..operations.capacity import capacity_report
 
     async def _go():
         async with _client() as hmc:
             return await capacity_report(hmc)
 
-    report = _run(_go)
+    report = [asdict(item) for item in _run(_go)]
     if as_json:
         _print_json(report)
         return

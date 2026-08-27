@@ -444,6 +444,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
     activation leg of the workflow.
   - `PostActivationAffinityAssessment`: the typed result returned by
     `assess_post_activation_affinity`.
+  - `CapacitySummary`, `LparSummary`, `SystemSummary`: typed results for the public
+    capacity and inventory-summary operations.
   - `LpmAffinityMigrationResult`, `LpmAffinityPreflightOutcome`, `LpmAffinityPreflightRequest`,
     `migrate_lpar_with_affinity_preflight`, `run_lpm_affinity_preflight` (#320): the
     affinity-aware LPM preflight and the migration that runs it first.

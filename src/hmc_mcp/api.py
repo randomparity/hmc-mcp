@@ -45,8 +45,13 @@ from hmc_mcp.operations.adapters import (
     delete_adapter,
     list_adapters,
 )
-from hmc_mcp.operations.capacity import capacity_report, find_placement
-from hmc_mcp.operations.composite import lpar_summary, system_summary
+from hmc_mcp.operations.capacity import CapacitySummary, capacity_report, find_placement
+from hmc_mcp.operations.composite import (
+    LparSummary,
+    SystemSummary,
+    lpar_summary,
+    system_summary,
+)
 from hmc_mcp.operations.decommission import DecommissionResult, decommission_lpar
 from hmc_mcp.operations.health import FleetHealthResult, fleet_health
 from hmc_mcp.operations.install import InstallHandle, install_lpar_os, install_vios
@@ -291,10 +296,13 @@ __all__ = [
     "delete_adapter",
     "AdapterResult",
     "AdapterType",
+    "CapacitySummary",
     "capacity_report",
     "find_placement",
     "lpar_summary",
+    "LparSummary",
     "system_summary",
+    "SystemSummary",
     "decommission_lpar",
     "DecommissionResult",
     "fleet_health",
