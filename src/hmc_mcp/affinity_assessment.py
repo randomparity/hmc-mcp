@@ -52,11 +52,6 @@ class AffinityEvidence:
     regression_threshold: int | None
     optimization_threshold: int | None
 
-    def __getitem__(self, name: str) -> object:
-        """Support read-only mapping-style access for existing consumers."""
-        return getattr(self, name)
-
-
 @dataclass(frozen=True)
 class AffinityAssessmentResult:
     """Stable assessment verdict with the evidence that explains it."""

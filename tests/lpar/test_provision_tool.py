@@ -417,7 +417,7 @@ def test_provision_affinity_dry_run_never_powers_on_or_assesses(monkeypatch, moc
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
     with patch(
-        "hmc_mcp.operations_provision._assess_post_activation_affinity",
+        "hmc_mcp.operations_provision.assess_post_activation_affinity",
         new=AsyncMock(),
     ) as assess:
         result = hmc_provision_lpar(
@@ -433,7 +433,7 @@ def test_provision_affinity_power_off_is_skipped(monkeypatch, mock_hmc):
     _mock_preconditions(mock_hmc)
     _mock_execution_steps(mock_hmc)
     with patch(
-        "hmc_mcp.operations_provision._assess_post_activation_affinity",
+        "hmc_mcp.operations_provision.assess_post_activation_affinity",
         new=AsyncMock(),
     ) as assess:
         result = hmc_provision_lpar(
@@ -465,7 +465,7 @@ def test_provision_affinity_response_is_explicit(
             new=AsyncMock(return_value=_successful_power_outcome()),
         ),
         patch(
-            "hmc_mcp.operations_provision._assess_post_activation_affinity",
+            "hmc_mcp.operations_provision.assess_post_activation_affinity",
             new=AsyncMock(return_value=_assessment_result(classification)),
         ) as assess,
     ):
@@ -492,7 +492,7 @@ def test_provision_affinity_timeout_never_assesses(monkeypatch, mock_hmc):
             new=AsyncMock(return_value=timed_out),
         ),
         patch(
-            "hmc_mcp.operations_provision._assess_post_activation_affinity",
+            "hmc_mcp.operations_provision.assess_post_activation_affinity",
             new=AsyncMock(),
         ) as assess,
     ):

@@ -129,8 +129,8 @@ async def test_snapshot_affinity_assessment_composes_captured_evidence() -> None
     )
 
     assert result.classification == "regression"
-    assert result.evidence["captured_score"] == 90
-    assert result.evidence["assessed_at"] == "2026-08-24T21:00:00+00:00"
+    assert result.evidence.captured_score == 90
+    assert result.evidence.assessed_at == "2026-08-24T21:00:00+00:00"
 
 
 @pytest.mark.asyncio
@@ -261,7 +261,7 @@ async def test_snapshot_affinity_uses_thresholds_when_policy_is_unsupported() ->
     )
 
     assert result.classification == "regression"
-    assert result.evidence["captured_policy_state"] == "unsupported"
+    assert result.evidence.captured_policy_state == "unsupported"
 
 
 def test_minimum_affinity_policy_observation_round_trips() -> None:

@@ -407,23 +407,6 @@ def _validate_affinity_request(
     validate_affinity_request(request, configured_minimum)
 
 
-async def _assess_post_activation_affinity(
-    hmc: HMCClient,
-    system: str,
-    lpar: str,
-    request: ProvisionAffinityAssessment,
-    applied_policy: MinimumAffinityPolicy | None,
-) -> dict[str, Any]:
-    """Preserve the provisioning boundary while sharing measurement logic."""
-    del system, lpar
-    configured_minimum = (
-        applied_policy.min_affinity_score if applied_policy is not None else None
-    )
-    return await assess_post_activation_affinity(
-        hmc, request, configured_minimum=configured_minimum
-    )
-
-
 # ---------------------------------------------------------------------- #
 # Operation
 # ---------------------------------------------------------------------- #
@@ -671,12 +654,15 @@ async def provision_lpar(
             steps.append(_step("affinity_assessment", "skipped"))
             return _provision_result(creation, created_uuid, steps, False)
         try:
-            result = await _assess_post_activation_affinity(
+            configured_minimum = (
+                minimum_affinity_policy.min_affinity_score
+                if minimum_affinity_policy is not None
+                else None
+            )
+            result = await assess_post_activation_affinity(
                 hmc,
-                system_name_or_uuid,
-                name,
                 affinity_assessment,
-                minimum_affinity_policy,
+                configured_minimum=configured_minimum,
             )
         except (HMCError, HMCCLIError) as exc:
             steps.append(_step("affinity_assessment", "error", str(exc)))
