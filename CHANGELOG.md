@@ -202,6 +202,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- `provision_lpar` now requires `partition_type` and all subsequent workflow
+  controls as keyword arguments. The HMC client, system/name selectors, network,
+  storage, and resource payload remain positional; boolean and policy controls can
+  no longer be silently misbound by position.
+
 - `update_console_software` and `hmc_update_console_software` no longer expose a
   `kind` selector whose `"upgrade"` branch always failed. The operation now models
   only the supported `UpdateManagementConsole` job; any future multi-job console

@@ -1837,9 +1837,21 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         for name in vios_install_parameters
         if name in {"system_name_or_uuid", "vios_name_or_uuid"}
     ] == ["system_name_or_uuid", "vios_name_or_uuid"]
+    provision_parameters = inspect.signature(api.provision_lpar).parameters
+    for control in (
+        "partition_type",
+        "power_on",
+        "dry_run",
+        "assignments",
+        "caller_token",
+        "minimum_affinity_policy",
+        "affinity_assessment",
+    ):
+        assert provision_parameters[control].kind is inspect.Parameter.KEYWORD_ONLY
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved when update_console_software dropped the permanently refused
-    # ``kind`` selector. Before that, install_vios adopted
+    # Moved when provision_lpar made its workflow controls keyword-only.
+    # Before that, update_console_software dropped the permanently refused
+    # ``kind`` selector, and install_vios adopted
     # system-before-partition selector order,
     # recomputed over capture_lpar_snapshot dropping a config already owned by
     # its HMCClient, LPAR operations' standardized selector order,
@@ -1850,7 +1862,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "1c98bd1763570d1b2093ab5f1dff2dd8386022d66df5aa220a95885b6df93be7"  # pragma: allowlist secret
+    expected_digest = "2ff0873b77081a94bf4b2f49c0477d482194b1fcb50195c9edbbacd0335bfb8b"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

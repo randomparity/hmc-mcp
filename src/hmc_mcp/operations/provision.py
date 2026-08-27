@@ -494,6 +494,7 @@ async def provision_lpar(
     network: ProvisionNetwork,
     storage: ProvisionStorage,
     resources: LparResources,
+    *,
     partition_type: PartitionType = "AIX/Linux",
     power_on: bool = True,
     dry_run: bool = False,
