@@ -14,7 +14,7 @@ happened to one. None is usable by a supported library consumer:
 - `jobs.wait_for_submitted_job` (`src/hmc_mcp/jobs.py:219`) lives in `jobs.py`, which ADR 0029's
   selection rule does not reach — the rule governs `operations_*.py` modules
   (`docs/adr/0029-supported-reusable-python-api-contract.md:47-49`).
-- `HMCClient.get_job` (`src/hmc_mcp/client/__init__.py:904`) and `HMCClient.wait_for_job` (`:931`) are
+- `HMCClient.get_job` (`src/hmc_mcp/client/core.py:904`) and `HMCClient.wait_for_job` (`:931`) are
   inherited mixin methods outside the supported lifecycle allowlist, which ADR 0029 fixes at
   exactly `__init__`, `__aenter__`, `__aexit__`, `is_logged_on`, `logon`, and `logoff` (`:39-45`).
   They remain callable, but "may change without a compatibility release".

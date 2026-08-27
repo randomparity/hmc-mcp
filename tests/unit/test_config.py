@@ -1046,7 +1046,7 @@ def test_from_mapping_keeps_the_tls_audit_provenance_accurate(monkeypatch):
     ``explicit-argument`` for a value nobody supplied, pointing an operator at
     an argument that does not exist.
     """
-    from hmc_mcp.client import _verify_ssl_source
+    from hmc_mcp.client.core import _verify_ssl_source
 
     monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
 

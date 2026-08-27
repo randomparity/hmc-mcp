@@ -18,7 +18,8 @@ import asyncio
 import httpx
 import pytest
 
-from hmc_mcp.client import HMCClient, _reject_dot_segments, _reject_non_job_path
+from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import _reject_dot_segments, _reject_non_job_path
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 

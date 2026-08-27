@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from . import HMCClient
+from .core import HMCClient
 from ..config import build_config
 
 
