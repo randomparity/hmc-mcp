@@ -201,6 +201,47 @@ def _connection(token: Any, resolved: str | None) -> dict[str, Any]:
     }
 
 
+def _env_var_value(name: str) -> str | None:
+    """*name*'s value from the environment, matched the way ``HMCConfig`` matches it.
+
+    :data:`ATTRIBUTION_ENV` is also an ``HMCConfig`` field, and ``HMCConfig`` leaves
+    pydantic-settings' ``case_sensitive`` at its ``False`` default, so a
+    ``hmc_agent_id=…`` export reaches ``config.agent_id``: it stamps every LPAR the
+    process creates with the ADR 0011 ownership token and rides out in the
+    ``X-Audit-Memento`` header. Reading it exact-case here left the authorization
+    record unattributed for that same process, so the audit stream said nobody
+    acted while the partitions said somebody did (#543).
+
+    This duplicates ``config.env_var_value`` rather than calling it: no module on
+    the decision path may name :data:`ATTRIBUTION_ENV`, which is what the module
+    docstring's no-import rule protects. A second copy of one rule only stays
+    honest if something compares the two, so
+    ``test_the_audit_env_fold_agrees_with_the_configs`` pins them against each
+    other — a change to either that the other does not follow reddens there.
+
+    Both halves of the rule matter. The fold is ``str.lower()``, matching
+    pydantic-settings' own, which folds down; folding up would match names the
+    loader never reads and miss names it does. And when several casings are set
+    the **last** one in ``os.environ`` order wins, because that is the one its
+    case-blind fold leaves on the field — preferring the canonical spelling would
+    put an empty ``HMC_AGENT_ID`` in the record while ``hmc_agent_id`` stamped
+    the partitions, the same divergence in the other direction.
+
+    Keys are snapshotted and each read with a default rather than iterated as
+    items: ``os.environ.items()`` re-indexes every key after ``__iter__`` has
+    snapshotted them, so a key an embedding host deletes from another thread in
+    between raises ``KeyError``. This runs inside the record builder that
+    ``dispatch_scope.authorize`` calls ahead of a denial, where the
+    ``os.environ.get`` it replaced could not raise, and neither may it.
+    """
+    wanted = name.lower()
+    found: str | None = None
+    for key in list(os.environ):
+        if key.lower() == wanted:
+            found = os.environ.get(key, found)
+    return found
+
+
 def _attribution(claim: Any, source: str) -> dict[str, Any]:
     """Unverified attribution, with its source named.
 
@@ -275,7 +316,7 @@ def record_authorization(
                 for target in targets
             ],
             "attribution": _attribution(
-                os.environ.get(ATTRIBUTION_ENV), f"environment:{ATTRIBUTION_ENV}"
+                _env_var_value(ATTRIBUTION_ENV), f"environment:{ATTRIBUTION_ENV}"
             ),
         }
 

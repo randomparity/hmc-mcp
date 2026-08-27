@@ -261,10 +261,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   would resolve to a profile key while the call reached the exported host — and pre-fix
   that divergence was already reachable, though only for a profile that omits `host`,
   since a profile carrying one handed it over as an init kwarg that outranked the variant.
-  One reader inside `src/hmc_mcp` is deliberately left behind: `audit.py` imports nothing
-  from the package by design, so its exact-case `HMC_AGENT_ID` attribution read needs its
-  own case-fold, tracked as #543 along with the two exact-case reads in
-  `scripts/live_test_runner.py`. Several casings of one
+  One reader inside `src/hmc_mcp` was left behind by that change — `audit.py` imports
+  nothing from the package by design, so its `HMC_AGENT_ID` attribution read needed a
+  case-fold of its own — and #543 below carries it, along with the `scripts/live_test_runner.py`
+  sweep. Several casings of one
   variable fold to a single field, and the last one in the process environment wins —
   `env_var_value` resolves the tie the way pydantic-settings does, pinned by a test
   against `HMCConfig` rather than against a reading of the library. `HMC_PROFILE` is
@@ -286,9 +286,38 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `agent_id`, and that is the identity the ADR 0011 ownership guard compares against, so
   it changes which LPARs this process may mutate — `hmc_agent_id=team-b` over a profile's
   `agent_id = "team-a"` turns every denial of a `team-b`-stamped partition into a
-  permit. The authorization record is the *weakest* check for this one: `audit.py` reads
-  `HMC_AGENT_ID` exact-case (#543), so under a variant its `attribution` reads unset.
-  Check the LPAR ownership stamps and the `X-Audit-Memento` header instead.
+  permit. The authorization records show this one as well: `audit.py` folds the casings the
+  loader folds (#543), so a record's `attribution` names the identity the guard compared —
+  the same one the LPAR ownership stamps and the `X-Audit-Memento` header carry.
+- The authorization audit record's `attribution` reads `HMC_AGENT_ID` without regard to
+  case (#543, ADR 0040). `HMC_AGENT_ID` is an `HMCConfig` field and `HMCConfig` matches its
+  variables case-blind, so a `hmc_agent_id=alice` export stamped every LPAR the process
+  created with the ADR 0011 ownership token for `alice` and sent `X-Audit-Memento:
+  hmc-mcp:alice`, while every authorization record from that same process carried no
+  claimant at all — the audit stream said nobody acted while the partitions said `alice`
+  did. Several casings at once resolve to the last in the process environment's order, as
+  they do for every other `HMC_*` variable. `audit.py` imports nothing from the package, so
+  it carries its own copy of the fold rather than calling `config.env_var_value`; a test
+  pins the two against each other.
+- The live integration runner (`scripts/live_test_runner.py`) reads each `HMC_*` variable
+  the way that variable's own reader reads it (#543). Five places predicted or overrode a
+  config resolution exact-case. The credential and `HMC_SCHEMA_VERSION` pre-checks each refused to
+  start on a case variant that would have connected, telling the operator to set a variable
+  that was already set. The ISO allowlist merge dropped a case variant's entries, and it
+  now also removes every other casing before writing the canonical name — assigning to an
+  existing key updates it in place rather than moving it, so a variant would otherwise stay
+  last in `os.environ` order and stay the one that reaches the field, leaving ADR 0050 to
+  refuse every upload in the run while the printed banner said the host was permitted. The
+  worst was the `.env` loader: `_bootstrap_config` documents an already-set `HMC_*` variable
+  as priority 1 and `.env` as priority 3, but the exact-case membership test did not
+  recognise an exported `hmc_host` as an already-set `HMC_HOST`, injected the canonical
+  spelling, and — a newly created key landing last in `os.environ` order — let the
+  committed `.env` outrank the export, so an operator who exported a lab host ran the
+  destructive suite against the HMC `.env` named. The `config.toml` injection beside it
+  took the same guard. Only a name `HMCConfig` resolves as one of its own fields is folded:
+  `HMC_PROFILE` and a profile's `password_env` target carry the prefix but are read
+  exact-case, and folding them would let a variant nothing reads suppress the `.env` line
+  spelling them canonically.
 
 ### Removed
 
