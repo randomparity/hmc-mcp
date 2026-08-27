@@ -12,6 +12,7 @@ import pytest
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
+from hmc_mcp.errors import HMCError
 from hmc_mcp.documents import (
     build_media_repository_document,
     build_virtual_optical_media_document,
@@ -85,6 +86,43 @@ async def test_create_media_repository(mock_hmc):
     assert "VirtualMediaRepository" in body
     assert "VMLibrary" in body
     assert "2048" in body
+
+
+@pytest.mark.asyncio
+async def test_create_media_repository_returns_matching_existing_repository(mock_hmc):
+    """A matching create is idempotent and never rewrites the volume group."""
+    vg_path = "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid"
+    mock_hmc.get(vg_path).mock(
+        return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB)
+    )
+    post_route = mock_hmc.post(vg_path)
+
+    async with HMCClient(make_config()) as hmc:
+        result = await hmc.create_media_repository("vios-uuid", "vg-uuid", 7000)
+
+    assert result == {
+        "Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "7000"}
+    }
+    assert not post_route.called
+
+
+@pytest.mark.asyncio
+async def test_create_media_repository_refuses_to_replace_different_size(mock_hmc):
+    """Changing repository size requires a separately destructive operation."""
+    vg_path = "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid"
+    mock_hmc.get(vg_path).mock(
+        return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB)
+    )
+    post_route = mock_hmc.post(vg_path)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(
+            HMCError,
+            match="already exists with size 7000 MiB.*requested 2048 MiB",
+        ):
+            await hmc.create_media_repository("vios-uuid", "vg-uuid", 2048)
+
+    assert not post_route.called
 
 
 @pytest.mark.asyncio

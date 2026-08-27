@@ -202,7 +202,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
-
+- `create_media_repository` no longer removes and recreates an existing virtual media
+  repository. A repeated request for the same size returns the existing repository without a
+  write; a different requested size raises an actionable conflict and leaves the repository
+  untouched. Resizing or replacement requires a separately explicit destructive operation.
 - `hmc_wait_for_job` and `hmc_get_job` now read through `operations_jobs` instead of calling
   `HMCClient` directly, so an MCP caller can tell a reaped job from a running one (#474, ADR 0093
   amendment). **Tool behaviour changes:** a job the HMC no longer has returns `found: false`

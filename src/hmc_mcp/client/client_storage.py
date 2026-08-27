@@ -472,10 +472,29 @@ class StorageMixin:
         """
         _, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
 
-        mr_tag = f"{{{_UOM_NS}}}MediaRepositories"
-        existing_mr = vg_elem.find(f".//{mr_tag}")
-        if existing_mr is not None:
-            vg_elem.remove(existing_mr)
+        existing = self._find_vmlib(vg_elem)
+        if existing is not None:
+            name = existing.findtext(f"{{{_UOM_NS}}}RepositoryName") or existing.findtext(
+                "RepositoryName"
+            )
+            size = existing.findtext(f"{{{_UOM_NS}}}RepositorySize") or existing.findtext(
+                "RepositorySize"
+            )
+            if size == str(size_mib):
+                return {
+                    "Resource": {
+                        "RepositoryName": name or "VMLibrary",
+                        "RepositorySize": size,
+                    }
+                }
+            observed = f"{size} MiB" if size else "an unknown size"
+            raise HMCError(
+                "Virtual media repository already exists with size "
+                f"{observed}; requested {size_mib} MiB. "
+                "Create does not replace or resize an existing repository; "
+                "use an explicitly destructive repository operation.",
+                409,
+            )
 
         mr = self._build_mr_element(size_mib)
         self._insert_mr_at_correct_position(vg_elem, mr)
