@@ -1,4 +1,4 @@
-"""CLI commands for LPARs: list/show/state, power, LPM, lifecycle, description, MSP, and processor compatibility."""
+"""CLI commands for LPAR lifecycle, power, configuration, and inspection."""
 
 from __future__ import annotations
 
