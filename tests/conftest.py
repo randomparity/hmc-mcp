@@ -80,6 +80,24 @@ def default_power_ownership_guard_off(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def no_ambient_agent_id(monkeypatch):
+    """Give every test an unset `HMC_AGENT_ID`, in every casing.
+
+    The same hazard as the fixture above, and #543 widened it: `agent_id` reaches
+    the `X-Audit-Memento` header, the ADR 0011 ownership stamp, and — since the
+    authorization record's attribution stopped reading the variable exact-case —
+    the ADR 0040 audit stream as well. A developer or CI runner exporting
+    `hmc_agent_id`, which is the export #543 exists because operators make, turns
+    every one of those into a value the assertions do not expect, and the failure
+    message names a claimant rather than a casing.
+
+    A test that wants an agent id sets it in its own body, which runs after this.
+    """
+    for name in [n for n in os.environ if n.upper() == "HMC_AGENT_ID"]:
+        monkeypatch.delenv(name, raising=False)
+
+
 def _restore_fastmcp_logger() -> None:
     handlers, level, propagate = _PRISTINE_FASTMCP
     _FASTMCP_LOGGER.handlers[:] = handlers

@@ -296,9 +296,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   they do for every other `HMC_*` variable. `audit.py` imports nothing from the package, so
   it carries its own copy of the fold rather than calling `config.env_var_value`; a test
   pins the two against each other.
-- The live integration runner (`scripts/live_test_runner.py`) reads every `HMC_*` variable
-  the way `HMCConfig` reads it (#543). Four places predicted or overrode a config
-  resolution exact-case. The credential and `HMC_SCHEMA_VERSION` pre-checks each refused to
+- The live integration runner (`scripts/live_test_runner.py`) reads each `HMC_*` variable
+  the way that variable's own reader reads it (#543). Five places predicted or overrode a
+  config resolution exact-case. The credential and `HMC_SCHEMA_VERSION` pre-checks each refused to
   start on a case variant that would have connected, telling the operator to set a variable
   that was already set. The ISO allowlist merge dropped a case variant's entries, and it
   now also removes every other casing before writing the canonical name — assigning to an
@@ -310,8 +310,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   recognise an exported `hmc_host` as an already-set `HMC_HOST`, injected the canonical
   spelling, and — a newly created key landing last in `os.environ` order — let the
   committed `.env` outrank the export, so an operator who exported a lab host ran the
-  destructive suite against the HMC `.env` named. Names outside the `HMC_` prefix keep the
-  exact-case test; the loader folds only its own.
+  destructive suite against the HMC `.env` named. The `config.toml` injection beside it
+  took the same guard. Only a name `HMCConfig` resolves as one of its own fields is folded:
+  `HMC_PROFILE` and a profile's `password_env` target carry the prefix but are read
+  exact-case, and folding them would let a variant nothing reads suppress the `.env` line
+  spelling them canonically.
 
 ### Removed
 

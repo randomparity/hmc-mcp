@@ -37,7 +37,7 @@ from fastmcp import Client
 import shlex
 
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.config import env_var_value
+from hmc_mcp.config import HMCConfig, env_var_value
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
 from hmc_mcp.server_command import configure_arbitrary_command_tool
@@ -48,6 +48,30 @@ from hmc_mcp.ssh_commands import build_filter, validate_lpar_description
 # ---------------------------------------------------------------------------
 
 _ENV_FILE = Path(".env")
+
+#: The `HMC_*` names whose reader folds their casing: `HMCConfig`'s own fields,
+#: and only those. `HMC_PROFILE` and a profile's `password_env` target carry the
+#: prefix but are looked up in `os.environ` directly (see the "Variable names are
+#: matched without regard to case" section of docs/environment-variables.md), so
+#: treating a `hmc_profile` export as already-set would suppress the `.env` line
+#: spelling it canonically while nothing ever read the variant.
+_FOLDED_ENV_NAMES = frozenset(f"HMC_{field.upper()}" for field in HMCConfig.model_fields)
+
+
+def _already_set(name: str) -> bool:
+    """Whether the environment already carries *name*, matched as its reader matches it.
+
+    This is what makes an exported variable outrank `.env` and `config.toml` — the
+    priority `_bootstrap_config` documents — for a case variant as well as the
+    canonical spelling. An exact-case membership test did not recognise an
+    exported `hmc_host` as an already-set `HMC_HOST`, so it injected the canonical
+    name; a newly created key lands last in `os.environ` order and therefore wins
+    the fold, and an operator who exported a lab host ran the destructive suite
+    against the HMC `.env` named (#543).
+    """
+    if name.upper() in _FOLDED_ENV_NAMES:
+        return env_var_value(name) is not None
+    return name in os.environ
 
 
 def _load_dotenv() -> None:
@@ -61,24 +85,7 @@ def _load_dotenv() -> None:
         key, _, val = line.partition("=")
         key = key.strip()
         val = val.strip().strip('"').strip("'")
-        if not key:
-            continue
-        # `_bootstrap_config`'s priority 1 is an already-set HMC_* variable and
-        # priority 3 is this file, and `HMCConfig` matches HMC_* without regard to
-        # case — so an exported `hmc_host` *is* an already-set `HMC_HOST` as far
-        # as the loader is concerned. An exact-case membership test did not see
-        # it, injected the canonical spelling, and a newly created key lands last
-        # in `os.environ` order, so the committed `.env` value outranked the
-        # operator's export: an operator who exported a lab host ran the
-        # destructive suite against the one `.env` names (#543). Names outside the
-        # prefix keep the exact-case test, because the loader folds only its own
-        # and `os.environ` is case-sensitive on POSIX.
-        already_set = (
-            env_var_value(key) is not None
-            if key.lower().startswith("hmc_")
-            else key in os.environ
-        )
-        if not already_set:
+        if key and not _already_set(key):
             os.environ[key] = val
 
 
@@ -107,7 +114,7 @@ def _bootstrap_config() -> None:
             "HMC_SCHEMA_VERSION": cfg.schema_version,
         }
         for key, val in mapping.items():
-            if val and key not in os.environ:
+            if val and not _already_set(key):
                 os.environ[key] = val
         config_path = resolve_config_path()
         print(f"  Credentials loaded from {config_path} (profile: {cfg.host})")

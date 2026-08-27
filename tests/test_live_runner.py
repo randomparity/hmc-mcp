@@ -174,6 +174,32 @@ def test_a_dotenv_entry_never_outranks_a_case_variant_export(monkeypatch, tmp_pa
     assert config.schema_version == "V1_0"
 
 
+def test_a_case_variant_of_an_exact_case_reader_does_not_suppress_its_dotenv_line(
+    monkeypatch, tmp_path
+):
+    """#543. Only the names `HMCConfig` folds may be matched case-blind here.
+
+    `HMC_PROFILE` carries the prefix but is not an `HMCConfig` field:
+    `load_profile()` looks it up in `os.environ` directly, so a `hmc_profile`
+    export selects no profile. Folding it would let that inert variant suppress
+    the `.env` line spelling it canonically — the same silent misrouting this
+    sweep closes, running the other way.
+    """
+    _isolated_environ(monkeypatch)
+    for name in ("HMC_PROFILE", "HMC_HOST"):
+        _clear(monkeypatch, name)
+    monkeypatch.setenv("hmc_profile", "read-by-nothing")
+    monkeypatch.setenv("hmc_host", "lab-hmc.example.com")
+    env_file = tmp_path / ".env"
+    env_file.write_text("HMC_PROFILE=lab\nHMC_HOST=prod-hmc.example.com\n")
+    monkeypatch.setattr(runner, "_ENV_FILE", env_file)
+
+    runner._load_dotenv()
+
+    assert os.environ["HMC_PROFILE"] == "lab"
+    assert HMCConfig(user="u", password="p").host == "lab-hmc.example.com"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("result", "expected"),
