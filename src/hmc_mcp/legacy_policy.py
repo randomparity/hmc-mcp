@@ -116,11 +116,7 @@ def _escape(value: str) -> str:
 
 
 def _array(values: Sequence[str]) -> str:
-    """One TOML array of basic strings, rendered one entry per line.
-
-    No empty-sequence special case: the general path renders ``[\n]``, which is a valid
-    empty TOML array, so a second branch would only have been an uncovered one.
-    """
+    """Render a TOML array of basic strings with one entry per line."""
     body = "".join(f'\n    "{_escape(value)}",' for value in values)
     return f"[{body}\n]"
 
