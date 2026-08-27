@@ -178,27 +178,21 @@ names are internal everywhere and are never inventoried.
     Domain A over exported *functions*, which a type is not.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
   none.
-- `operations.lpar` — operations: `create_and_stamp_lpar`, `delete_lpar`, `power_lpar`,
-  `rename_lpar`; types: `LparCreation`, `LparCreationResult`, `LparPowerResult`,
-  `ProcessorCompatibilityMode`; excluded synchronous: `activation_allows_assessment`,
-  `power_on_outcome`.
-- `operations.lpar_boot_order` — operations: `clear_lpar_boot_order`,
-  `read_lpar_boot_order`, `set_lpar_boot_order`; types: none; excluded synchronous: none.
-- `operations.lpar_configuration` — operations: `configure_lpar_msp`,
-  `configure_lpar_processor_compatibility`, `synchronize_lpar_profile`; types: none;
-  excluded synchronous: none.
-- `operations.lpar_dlpar` — operations: `modify_lpar`, `set_lpar_memory`,
-  `set_lpar_processors`; types: none; excluded synchronous: none.
-- `operations.lpar_errors` — operations: none; types: none; excluded synchronous:
-  `translate_lpar_write_error`.
-- `operations.lpar_ownership` — operations:
+- `operations.lpar` — operations: none; types: none; excluded synchronous: none.
+- `operations.lpar.boot_order` — exports: `clear_lpar_boot_order`,
+  `read_lpar_boot_order`, `set_lpar_boot_order`.
+- `operations.lpar.configuration` — exports: `configure_lpar_msp`,
+  `configure_lpar_processor_compatibility`, `synchronize_lpar_profile`.
+- `operations.lpar.core` — exports: `LparCreation`, `LparCreationResult`,
+  `LparPowerResult`, `ProcessorCompatibilityMode`, `create_and_stamp_lpar`, `delete_lpar`,
+  `power_lpar`, `rename_lpar`.
+- `operations.lpar.dlpar` — exports: `modify_lpar`, `set_lpar_memory`,
+  `set_lpar_processors`.
+- `operations.lpar.ownership` — exports:
   `authorize_decommission_lpar_ownership_snapshot`, `authorize_lpar_mutation`,
   `list_lpar_ownership`, `resolve_lpar_ownership_names`, `set_lpar_ownership_description`,
-  `stamp_created_lpar_ownership`; types: none; excluded synchronous:
-  `authorize_lpar_ownership_description`, `lpar_ownership_entry`,
-  `parse_lpar_ownership_caller_token`, `parse_lpar_ownership_owner`.
-- `operations.lpar_workflows` — operations: `create_lpar`; types: none; excluded synchronous:
-  none.
+  `stamp_created_lpar_ownership`.
+- `operations.lpar.workflows` — exports: `create_lpar`.
 - `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
   `run_lpm_affinity_preflight`, `validate_lpar_migration`; types: `LpmAffinityMigrationResult`,

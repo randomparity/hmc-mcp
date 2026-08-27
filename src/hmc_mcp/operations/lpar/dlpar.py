@@ -7,28 +7,28 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..client import HMCClient
-from ..client.client_resolution import (
+from ...client import HMCClient
+from ...client.client_resolution import (
     MAX_PARENT_DISCOVERY_SYSTEMS,
     PARENT_DISCOVERY_TIMEOUT_SECONDS,
 )
-from ..documents import (
+from ...documents import (
     LparResources,
     build_dlpar_mem_document,
     build_dlpar_proc_document,
     build_lpar_document,
 )
-from ..errors import HMCError
-from ..resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
-from .assignments import (
+from ...errors import HMCError
+from ...resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
+from ..assignments import (
     WorkflowStep,
     LparPcieAssignments,
     LparPcieWorkflowResult,
     apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
-from .lpar_errors import translate_lpar_write_error
-from .lpar_ownership import authorize_lpar_mutation, resolve_lpar_ownership_names
+from .errors import translate_lpar_write_error
+from .ownership import authorize_lpar_mutation, resolve_lpar_ownership_names
 
 _logger = logging.getLogger(__name__)
 

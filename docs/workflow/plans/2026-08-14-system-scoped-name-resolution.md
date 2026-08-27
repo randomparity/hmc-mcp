@@ -71,7 +71,7 @@ no-match guidance is unchanged.
 
 ## Task 3: Expose scope on destructive tools
 
-**Files:** Modify `src/hmc_mcp/operations/lpar.py`,
+**Files:** Modify `src/hmc_mcp/operations/lpar/core.py`,
 `src/hmc_mcp/operations/vios.py`, `src/hmc_mcp/server_tools/lpars.py`, and
 `src/hmc_mcp/server_tools/vios.py`; test in `tests/app/test_server_tools.py`,
 `tests/app/test_capabilities.py`, `tests/lpar/test_power_tools.py`,

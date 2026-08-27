@@ -8,7 +8,7 @@ from typing import Any
 from ..client import HMCClient
 from ..client.client_adapters import AdapterType, validate_adapter_type
 from ..resource_identity import resolve_lpar_uuid
-from .lpar_dlpar import _resolve_and_authorize_lpar
+from .lpar.dlpar import _resolve_and_authorize_lpar
 
 
 @dataclass(frozen=True)

@@ -372,7 +372,7 @@ requirement 2 requires that ordinary MCP tool arguments never select or widen po
 - Annotations remain hints. A client that ignores them is unaffected, before and after.
 - `metric_resource` cannot be bound to an exact per-kind constraint without resolving the
   `category` argument. Stated here and left to #223 rather than guessed at declaration time.
-- HMC-side authorization, the LPAR ownership-token convention in `operations/lpar.py`, and
+- HMC-side authorization, the LPAR ownership-token convention in `operations/lpar/ownership.py`, and
   the password-policy DTO in `documents.py` are unrelated pre-existing mechanisms and are
   not touched.
 - Effect assignment is a human judgment recorded in source. The guardrail proves a

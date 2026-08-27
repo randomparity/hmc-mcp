@@ -57,7 +57,7 @@ the plan is the one that was verified.
 | `src/hmc_mcp/audit.py` | create | record vocabulary, rendering, truncation, the two emitters, the sink |
 | `src/hmc_mcp/target_scope.py` | modify | `denial_reason` added; `target_denial` refactored to read it |
 | `src/hmc_mcp/dispatch_scope.py` | modify | assemble and emit one record per decision |
-| `src/hmc_mcp/operations/lpar.py` | modify | `_audit_lpar_ownership_override` body calls `audit` |
+| `src/hmc_mcp/operations/lpar/ownership.py` | modify | `_audit_lpar_ownership_override` body calls `audit` |
 | `src/hmc_mcp/server.py` | modify | `_serve_application` installs the sink |
 | `tests/unit/test_audit.py` | create | rendering, truncation, sink, totality |
 | `tests/unit/test_target_scope.py` | modify | `denial_reason` case order |
@@ -430,7 +430,7 @@ passes. Re-run the Task 1 inventory check now that three tests have moved betwee
 
 ## Task 4 — converge the ownership override
 
-Modifies `src/hmc_mcp/operations/lpar.py` and `tests/unit/test_ownership.py`.
+Modifies `src/hmc_mcp/operations/lpar/ownership.py` and `tests/unit/test_ownership.py`.
 
 **`Refs #268`, deliberately not `Closes #268`.** The convergence does discharge #268's substance,
 and the natural instinct is a closing keyword. The campaign orchestrator ruled otherwise:

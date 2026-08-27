@@ -21,7 +21,7 @@ sources.
 ## Task 1: Prove and implement the orchestration contract
 
 **Files:** create `tests/lpar/test_decommission_tool.py` and
-`src/hmc_mcp/operations/decommission.py`; modify `src/hmc_mcp/operations/lpar.py` only
+`src/hmc_mcp/operations/decommission.py`; modify `src/hmc_mcp/operations/lpar/core.py` only
 if a read-only ownership-details helper is needed.
 
 **Interfaces:** define `DecommissionResult(resource_deleted, workflow_completed,

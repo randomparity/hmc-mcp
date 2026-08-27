@@ -5,16 +5,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..client import HMCClient
-from ..documents import (
+from ...client import HMCClient
+from ...documents import (
     BOOT_DEVICE_SELECTORS,
     build_boot_order_document,
     build_clear_boot_order_document,
 )
-from ..errors import HMCError
-from ..resource_identity import resolve_system_uuid
-from .lpar_errors import translate_lpar_write_error
-from .lpar_ownership import authorize_lpar_mutation, resolve_lpar_ownership_names
+from ...errors import HMCError
+from ...resource_identity import resolve_system_uuid
+from .errors import translate_lpar_write_error
+from .ownership import authorize_lpar_mutation, resolve_lpar_ownership_names
 
 _logger = logging.getLogger(__name__)
 

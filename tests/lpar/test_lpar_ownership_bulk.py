@@ -13,7 +13,7 @@ import asyncio
 
 import httpx
 
-from hmc_mcp.operations import lpar_ownership
+from hmc_mcp.operations.lpar import ownership as lpar_ownership
 from hmc_mcp.server_tools.lpars import (
     hmc_list_lpar_ownership as hmc_list_lpar_ownership,
 )

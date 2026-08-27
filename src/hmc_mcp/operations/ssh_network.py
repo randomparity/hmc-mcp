@@ -9,7 +9,7 @@ from typing import Literal
 from hmc_mcp.client import HMCClient
 from hmc_mcp.resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from hmc_mcp.config import HMCConfig
-from .lpar_ownership import (
+from .lpar.ownership import (
     authorize_lpar_mutation,
     resolve_lpar_ownership_names,
 )

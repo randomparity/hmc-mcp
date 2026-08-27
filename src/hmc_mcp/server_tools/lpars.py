@@ -10,7 +10,7 @@ from .._app import (
     run_sync,
 )
 from ..errors import HMCError
-from ..operations.lpar_ownership import list_lpar_ownership
+from ..operations.lpar.ownership import list_lpar_ownership
 from ..snapshots.affinity import (
     ProvisionAffinityAssessment,
     affinity_not_measured,
@@ -36,14 +36,14 @@ from ..operations.lpar import (
     power_on_outcome,
     rename_lpar,
 )
-from ..operations.lpar_boot_order import (
+from ..operations.lpar.boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,
     set_lpar_boot_order,
 )
-from ..operations.lpar_dlpar import modify_lpar, set_lpar_memory, set_lpar_processors
-from ..operations.lpar_errors import translate_lpar_write_error
-from ..operations.lpar_workflows import create_lpar
+from ..operations.lpar.dlpar import modify_lpar, set_lpar_memory, set_lpar_processors
+from ..operations.lpar.errors import translate_lpar_write_error
+from ..operations.lpar.workflows import create_lpar
 from ..operations.assignments import (
     LparPcieAssignments,
     LparPcieWorkflowResult,

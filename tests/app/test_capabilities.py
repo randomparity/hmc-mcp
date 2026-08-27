@@ -708,11 +708,11 @@ def test_delete_lpar_refuses_when_active(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations.lpar.resolve_lpar_ownership_names",
+            "hmc_mcp.operations.lpar.core.resolve_lpar_ownership_names",
             new=AsyncMock(return_value=("system-1", "lpar-1")),
         ),
         patch(
-            "hmc_mcp.operations.lpar.authorize_lpar_mutation", new=AsyncMock()
+            "hmc_mcp.operations.lpar.core.authorize_lpar_mutation", new=AsyncMock()
         ) as guard,
         pytest.raises(HMCError) as exc_info,
     ):
@@ -730,11 +730,11 @@ def test_delete_lpar_succeeds_when_powered_off(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations.lpar.resolve_lpar_ownership_names",
+            "hmc_mcp.operations.lpar.core.resolve_lpar_ownership_names",
             new=AsyncMock(return_value=("system-1", "lpar-1")),
         ),
         patch(
-            "hmc_mcp.operations.lpar.authorize_lpar_mutation", new=AsyncMock()
+            "hmc_mcp.operations.lpar.core.authorize_lpar_mutation", new=AsyncMock()
         ) as guard,
     ):
         result = hmc_delete_lpar(SYSTEM_UUID, LPAR_UUID, ownership_override=True)
@@ -1005,11 +1005,11 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations.lpar_ownership.stamp_lpar_ownership",
+            "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
         patch(
-            "hmc_mcp.operations.lpar_ownership._resolve_system_name",
+            "hmc_mcp.operations.lpar.ownership._resolve_system_name",
             new=AsyncMock(return_value="sys1"),
         ),
     ):

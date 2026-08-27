@@ -10,7 +10,7 @@ from .._app import (
 )
 from ..client.client_factory import client_from_env
 from ..operations.pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
-from ..operations.lpar_configuration import synchronize_lpar_profile
+from ..operations.lpar.configuration import synchronize_lpar_profile
 
 from ..ssh.profiles import (
     backup_lpar_profiles,

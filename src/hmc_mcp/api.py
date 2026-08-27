@@ -29,7 +29,7 @@ from hmc_mcp.documents import (
 )
 from hmc_mcp.errors import HMCError, HMCTransportError
 from hmc_mcp.jobs import DeviceType, JobOutcome, LuType, RemoteRestartOperation
-from hmc_mcp.operations.lpar_ownership import (
+from hmc_mcp.operations.lpar.ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     authorize_lpar_mutation,
     list_lpar_ownership,
@@ -60,7 +60,7 @@ from hmc_mcp.operations.install import (
     install_lpar_os,
     install_vios,
 )
-from hmc_mcp.operations.lpar import (
+from hmc_mcp.operations.lpar.core import (
     LparCreation,
     LparCreationResult,
     LparPowerResult,
@@ -70,22 +70,22 @@ from hmc_mcp.operations.lpar import (
     power_lpar,
     rename_lpar,
 )
-from hmc_mcp.operations.lpar_boot_order import (
+from hmc_mcp.operations.lpar.boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,
     set_lpar_boot_order,
 )
-from hmc_mcp.operations.lpar_configuration import (
+from hmc_mcp.operations.lpar.configuration import (
     configure_lpar_msp,
     configure_lpar_processor_compatibility,
     synchronize_lpar_profile,
 )
-from hmc_mcp.operations.lpar_dlpar import (
+from hmc_mcp.operations.lpar.dlpar import (
     modify_lpar,
     set_lpar_memory,
     set_lpar_processors,
 )
-from hmc_mcp.operations.lpar_workflows import create_lpar
+from hmc_mcp.operations.lpar.workflows import create_lpar
 from hmc_mcp.operations.lpm import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightOutcome,

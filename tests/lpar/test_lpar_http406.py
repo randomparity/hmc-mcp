@@ -14,7 +14,7 @@ import pytest
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.documents import LparResources
-from hmc_mcp.operations.lpar_ownership import _resolve_system_name as _system_name
+from hmc_mcp.operations.lpar.ownership import _resolve_system_name as _system_name
 from hmc_mcp.server_tools.lpars import (
     hmc_create_lpar as hmc_create_lpar,
 )
@@ -48,7 +48,7 @@ async def test_system_name_uses_fallback_only_for_expected_lookup_failures():
     hmc.get_managed_system.side_effect = HMCError("REST unavailable")
 
     with patch(
-        "hmc_mcp.operations.lpar_ownership.resolve_system_cli_name",
+        "hmc_mcp.operations.lpar.ownership.resolve_system_cli_name",
         new=AsyncMock(side_effect=HMCCLIError("SSH unavailable")),
     ):
         assert await _system_name(hmc, SYSTEM_UUID, "fallback") == "fallback"
@@ -118,7 +118,7 @@ def _partition_feed(*entries: str) -> str:
 def _unowned_partition():
     """Patch the SSH ownership read to report a partition with no ADR 0011 stamp."""
     return patch(
-        "hmc_mcp.operations.lpar_ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar.ownership.get_lpar_description",
         new=AsyncMock(return_value=""),
     )
 
@@ -158,15 +158,15 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
     # Patch CLI helpers and the stamp (stamp makes SSH call that would fail here).
     with (
         patch(
-            "hmc_mcp.operations.lpar.resolve_system_cli_name",
+            "hmc_mcp.operations.lpar.core.resolve_system_cli_name",
             new=AsyncMock(return_value="sys1"),
         ),
         patch(
-            "hmc_mcp.operations.lpar.create_lpar_via_cli",
+            "hmc_mcp.operations.lpar.core.create_lpar_via_cli",
             new=AsyncMock(return_value=""),
         ) as create_via_cli,
         patch(
-            "hmc_mcp.operations.lpar_ownership.stamp_lpar_ownership",
+            "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
     ):
@@ -201,7 +201,7 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations.lpar_dlpar._resolve_and_authorize_lpar",
+            "hmc_mcp.operations.lpar.dlpar._resolve_and_authorize_lpar",
             new=AsyncMock(return_value=LPAR_UUID),
         ),
         pytest.raises(HMCError) as exc_info,

@@ -27,7 +27,7 @@ from .lpar import (
     create_and_stamp_lpar,
     power_lpar,
 )
-from .lpar_dlpar import _resolve_and_authorize_lpar
+from .lpar.dlpar import _resolve_and_authorize_lpar
 from .ssh_network import set_minimum_affinity_policy
 from ..ssh.transport import HMCCLIError
 from ..ssh.selectors import resolve_ssh_names

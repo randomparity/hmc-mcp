@@ -29,14 +29,14 @@ from ..operations.lpar import (
     delete_lpar,
     power_lpar,
 )
-from ..operations.lpar_boot_order import (
+from ..operations.lpar.boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,
     set_lpar_boot_order,
 )
-from ..operations.lpar_dlpar import modify_lpar
-from ..operations.lpar_ownership import set_lpar_ownership_description
-from ..operations.lpar_workflows import create_lpar
+from ..operations.lpar.dlpar import modify_lpar
+from ..operations.lpar.ownership import set_lpar_ownership_description
+from ..operations.lpar.workflows import create_lpar
 from ..operations.provision import ProvisionNetwork, ProvisionStorage, provision_lpar
 from ..operations.ssh_network import (
     get_lpar_memopt_score,

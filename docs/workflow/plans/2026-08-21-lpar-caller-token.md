@@ -38,7 +38,7 @@ well-formed caller segment follows a well-formed ownership stamp.
 | File | Responsibility |
 |---|---|
 | `src/hmc_mcp/ssh_commands.py` | Token grammar validator; composed description write. |
-| `src/hmc_mcp/operations/lpar.py` | `LparCreation.caller_token`; anchored extractor; creation-path validation; threading. |
+| `src/hmc_mcp/operations/lpar/core.py`, `operations/lpar/ownership.py` | `LparCreation.caller_token`; anchored extractor; creation-path validation; threading. |
 | `src/hmc_mcp/server_tools/lpars.py` | `hmc_create_lpar` parameter, docstring, entry validation. |
 | `src/hmc_mcp/server_tools/provision.py`, `src/hmc_mcp/operations/provision.py` | `hmc_provision_lpar` parameter plumbing. |
 | `src/hmc_mcp/cli_commands/lpars.py` | `lpars create --caller-token` with entry validation. |
@@ -271,7 +271,7 @@ passes including pre-existing pins (`test_stamp_returns_token_on_success`,
 
 ## Task 3 — Creation-path plumbing and anchored extractor
 
-**Files:** `src/hmc_mcp/operations/lpar.py`; **Tests:** `tests/unit/test_ownership.py`,
+**Files:** `src/hmc_mcp/operations/lpar/core.py`; **Tests:** `tests/unit/test_ownership.py`,
 `tests/app/test_ownership_tools.py`.
 
 **Interfaces consumed:** `validate_caller_token` (Task 1).
@@ -361,7 +361,7 @@ whatever the neighboring tests import rather than inventing new imports.
 
 Run both files — ImportError/failure expected.
 
-**Step 2 — implement.** In `src/hmc_mcp/operations/lpar.py`:
+**Step 2 — implement.** In `src/hmc_mcp/operations/lpar/core.py`:
 
 (a) Extend the `.ssh_commands` import (line 28 area):
 

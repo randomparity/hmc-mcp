@@ -21,7 +21,7 @@ from ..jobs import (
     wait_for_submitted_job,
 )
 from ..errors import HMCError
-from .lpar_dlpar import _resolve_and_authorize_lpar
+from .lpar.dlpar import _resolve_and_authorize_lpar
 
 _MAX_CAPABILITY_LIMITS = 8
 _MAX_CAPABILITY_LIMIT_LENGTH = 200

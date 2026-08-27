@@ -1,6 +1,6 @@
 """Shared translation for HMC LPAR write rejections."""
 
-from ..errors import HMCError
+from ...errors import HMCError
 
 
 def translate_lpar_write_error(exc: HMCError) -> None:

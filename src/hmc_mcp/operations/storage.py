@@ -28,7 +28,7 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from .lpar_dlpar import _resolve_and_authorize_lpar
+from .lpar.dlpar import _resolve_and_authorize_lpar
 
 logger = logging.getLogger(__name__)
 

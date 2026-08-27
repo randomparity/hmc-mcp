@@ -19,7 +19,7 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from .lpar_ownership import (
+from .lpar.ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     resolve_lpar_ownership_names,
 )

@@ -6,14 +6,14 @@ import logging
 import re
 from typing import Any
 
-from .. import audit
-from ..client import HMCClient
-from ..errors import HMCError
-from ..resource_identity import resolve_lpar_uuid, resolve_system_uuid
-from ..ssh.transport import HMCCLIError
-from ..ssh.lpar import resolve_system_cli_name, stamp_lpar_ownership
-from ..ssh.description_validation import validate_lpar_description
-from ..ssh.profiles import get_lpar_description, set_lpar_description
+from ... import audit
+from ...client import HMCClient
+from ...errors import HMCError
+from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
+from ...ssh.transport import HMCCLIError
+from ...ssh.lpar import resolve_system_cli_name, stamp_lpar_ownership
+from ...ssh.description_validation import validate_lpar_description
+from ...ssh.profiles import get_lpar_description, set_lpar_description
 
 _logger = logging.getLogger(__name__)
 

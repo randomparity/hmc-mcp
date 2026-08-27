@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from ..client import HMCClient
-from ..errors import HMCError
-from .assignments import (
+from ...client import HMCClient
+from ...errors import HMCError
+from ..assignments import (
     WorkflowStep,
     LparPcieAssignments,
     LparPcieWorkflowResult,
     apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
-from .lpar import LparCreation, create_and_stamp_lpar
-from .lpar_errors import translate_lpar_write_error
+from .core import LparCreation, create_and_stamp_lpar
+from .errors import translate_lpar_write_error
 
 
 async def create_lpar(

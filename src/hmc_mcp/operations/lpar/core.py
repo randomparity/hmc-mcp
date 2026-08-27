@@ -11,17 +11,17 @@ from hmc_mcp.snapshots.affinity import (
     affinity_not_measured,
 )
 
-from ..client import HMCClient
-from ..resource_identity import resolve_lpar_uuid, resolve_system_uuid
-from ..documents import (
+from ...client import HMCClient
+from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
+from ...documents import (
     Keylock,
     LparResources,
     OsType,
     PartitionType,
     build_lpar_document,
 )
-from ..errors import HMCError
-from ..jobs import (
+from ...errors import HMCError
+from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
     DEFAULT_JOB_TIMEOUT_SECONDS,
     SUCCESSFUL_JOB_STATUSES,
@@ -31,14 +31,14 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from .lpar_ownership import (
+from .ownership import (
     authorize_lpar_mutation,
     resolve_lpar_ownership_names,
     stamp_created_lpar_ownership,
 )
-from .lpar_dlpar import _resolve_and_authorize_lpar
-from ..ssh.transport import HMCCLIError
-from ..ssh.lpar import (
+from .dlpar import _resolve_and_authorize_lpar
+from ...ssh.transport import HMCCLIError
+from ...ssh.lpar import (
     resolve_system_cli_name,
     create_lpar_via_cli,
     validate_caller_token,

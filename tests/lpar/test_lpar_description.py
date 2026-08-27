@@ -223,24 +223,24 @@ def test_foreign_owned_description_overwrite_issues_no_write(monkeypatch, mock_h
     write = AsyncMock()
     with (
         patch(
-                "hmc_mcp.operations.lpar_ownership.resolve_system_uuid",
+                "hmc_mcp.operations.lpar.ownership.resolve_system_uuid",
             new=AsyncMock(return_value=SYSTEM_UUID),
         ),
         patch(
-                "hmc_mcp.operations.lpar_ownership.resolve_lpar_uuid",
+                "hmc_mcp.operations.lpar.ownership.resolve_lpar_uuid",
             new=AsyncMock(return_value=LPAR_UUID),
         ),
         patch(
-                "hmc_mcp.operations.lpar_ownership.resolve_lpar_ownership_names",
+                "hmc_mcp.operations.lpar.ownership.resolve_lpar_ownership_names",
             new=AsyncMock(return_value=(SYSTEM_NAME, LPAR_NAME)),
         ),
         patch(
-            "hmc_mcp.operations.lpar_ownership.get_lpar_description",
+            "hmc_mcp.operations.lpar.ownership.get_lpar_description",
             new=AsyncMock(
                 return_value="[hmc-mcp owner:other created:2026-08-14]"
             ),
         ),
-        patch("hmc_mcp.operations.lpar_ownership.set_lpar_description", new=write),
+        patch("hmc_mcp.operations.lpar.ownership.set_lpar_description", new=write),
         pytest.raises(PermissionError, match="owned by 'other'"),
     ):
         hmc_set_lpar_description(SYSTEM_NAME, LPAR_NAME, "replacement")

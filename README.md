@@ -929,7 +929,7 @@ src/hmc_mcp/
   client/        # HMCClient plus domain mixins, parsing, and construction
   resource_identity.py      # managed-system, partition, and VIOS name/UUID resolution
   operations/    # workflows and policies shared by MCP and CLI presentations
-  operations/lpar_ownership.py  # ownership parsing, authorization, and name resolution
+    lpar/         # LPAR lifecycle, configuration, DLPAR, and ownership operations
   server_tools/  # MCP tool adapters grouped by resource family
   cli_commands/  # Typer command groups and shared CLI application state
   snapshots/     # portable LPAR snapshot models, affinity assessment, and operations

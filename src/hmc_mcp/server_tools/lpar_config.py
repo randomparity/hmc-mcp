@@ -34,8 +34,8 @@ from ..ssh.profiles import (
     get_lpar_msp,
     get_lpar_proc_compat,
 )
-from ..operations.lpar_ownership import set_lpar_ownership_description
-from ..operations.lpar_configuration import (
+from ..operations.lpar.ownership import set_lpar_ownership_description
+from ..operations.lpar.configuration import (
     configure_lpar_msp,
     configure_lpar_processor_compatibility,
 )
