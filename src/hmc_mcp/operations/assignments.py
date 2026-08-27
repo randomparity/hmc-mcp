@@ -226,12 +226,12 @@ async def prevalidate_lpar_pcie_assignments(
         )
 
     for adapter, physical in requested_capacity:
-        adapters = await list_sriov_adapters(hmc.config, system, adapter)
+        adapters = await list_sriov_adapters(hmc, system, adapter)
         if adapters.capability != "available" or len(adapters.items) != 1:
             raise ValueError(f"SR-IOV adapter {adapter!r} is unavailable")
         if adapters.items[0].mode != "sriov" or adapters.items[0].availability != "1":
             raise ValueError(f"SR-IOV adapter {adapter!r} is not healthy")
-        ports = await list_sriov_physical_ports(hmc.config, system, adapter, physical)
+        ports = await list_sriov_physical_ports(hmc, system, adapter, physical)
         if ports.capability != "available" or len(ports.items) != 1:
             raise ValueError(
                 f"SR-IOV physical port {adapter}/{physical} is unavailable"
@@ -240,7 +240,7 @@ async def prevalidate_lpar_pcie_assignments(
             raise ValueError(
                 f"SR-IOV physical port {adapter}/{physical} is not healthy"
             )
-        logical = await list_sriov_logical_ports(hmc.config, system, adapter, physical)
+        logical = await list_sriov_logical_ports(hmc, system, adapter, physical)
         if logical.capability != "available":
             raise ValueError(
                 logical.unavailable_reason or "logical-port inventory unavailable"
@@ -256,7 +256,7 @@ async def prevalidate_lpar_pcie_assignments(
         identity = item.backing.vios_name, item.backing.vios_lpar_id
         if identity in checked_vios:
             continue
-        system_name = (await list_sriov_adapters(hmc.config, system)).system
+        system_name = (await list_sriov_adapters(hmc, system)).system
         observed = await read_vios_identity(hmc.config, system_name, identity[0])
         if observed != {
             "name": identity[0],

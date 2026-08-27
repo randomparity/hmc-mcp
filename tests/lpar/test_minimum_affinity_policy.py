@@ -13,6 +13,7 @@ from hmc_mcp.cli_commands import lpars as cli_lpars
 from hmc_mcp.server_tools import lpar_config as server_lpar_config
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli import app
+from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.operations.ssh_network import (
@@ -31,6 +32,10 @@ from hmc_mcp.ssh_affinity import (
 
 def _config() -> HMCConfig:
     return HMCConfig(host="hmc.test", user="u", password="p", _env_file=None)
+
+
+def _client() -> HMCClient:
+    return HMCClient(_config())
 
 
 @pytest.mark.asyncio
@@ -210,7 +215,7 @@ async def test_shared_policy_operation_resolves_names_and_wraps_result():
         ),
         patch("hmc_mcp.operations.ssh_network.query_minimum_affinity_policy", query),
     ):
-        result = await get_minimum_affinity_policy(_config(), "system", "lpar")
+        result = await get_minimum_affinity_policy(_client(), "system", "lpar")
 
     assert result.capability == "available"
     assert result.system == "resolved-system"
@@ -269,8 +274,11 @@ def test_mcp_registers_minimum_affinity_policy_as_lpar_read():
     ],
 )
 def test_cli_policy_human_output(result, expected):
-    with patch.object(
-        cli_lpars, "get_minimum_affinity_policy", AsyncMock(return_value=result)
+    with (
+        patch.object(cli_lpars, "_ssh_client", return_value=_client()),
+        patch.object(
+            cli_lpars, "get_minimum_affinity_policy", AsyncMock(return_value=result)
+        ),
     ):
         invocation = CliRunner().invoke(
             app, ["lpars", "get-minimum-affinity-policy", "lpar", "system"]
@@ -284,7 +292,10 @@ def test_cli_policy_json_delegates():
         "available", "system", "lpar", 100, "fail", None
     )
     operation = AsyncMock(return_value=expected)
-    with patch.object(cli_lpars, "get_minimum_affinity_policy", operation):
+    with (
+        patch.object(cli_lpars, "_ssh_client", return_value=_client()),
+        patch.object(cli_lpars, "get_minimum_affinity_policy", operation),
+    ):
         invocation = CliRunner().invoke(
             app,
             [

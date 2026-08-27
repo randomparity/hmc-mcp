@@ -6,7 +6,6 @@ import base64
 from typing import Any
 
 from .._app import _run
-from ..config import build_config
 from ..client.client_factory import client_from_env
 from ..resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name, resolve_system_uuid
 from ..console_capture import capture_lpar_console
@@ -77,20 +76,19 @@ def hmc_capture_lpar_console(
                 if not is_uuid(system_name_or_uuid)
                 else await resolve_system_name(hmc, system_uuid)
             )
-        config = build_config(profile=profile)
-        lpar_name = (
-            lpar_name_or_uuid
-            if not is_uuid(lpar_name_or_uuid)
-            else await _ssh_lpar_name(config, lpar_uuid, system_name)
-        )
-        capture = await capture_lpar_console(
-            config,
-            system_name,
-            lpar_name,
-            duration_seconds=duration_seconds,
-            max_bytes=max_bytes,
-            idle_timeout_seconds=idle_timeout_seconds,
-        )
+            lpar_name = (
+                lpar_name_or_uuid
+                if not is_uuid(lpar_name_or_uuid)
+                else await _ssh_lpar_name(hmc.config, lpar_uuid, system_name)
+            )
+            capture = await capture_lpar_console(
+                hmc,
+                system_name,
+                lpar_name,
+                duration_seconds=duration_seconds,
+                max_bytes=max_bytes,
+                idle_timeout_seconds=idle_timeout_seconds,
+            )
         return {
             "system": capture.system,
             "partition": capture.lpar,

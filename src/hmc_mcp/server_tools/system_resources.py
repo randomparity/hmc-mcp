@@ -10,6 +10,7 @@ from typing import Any
 
 from .._app import _run, _ssh_with_client
 from ..config import build_config
+from ..client import HMCClient
 from ..operations.pcie import (
     list_dedicated_slots,
     list_sriov_adapters,
@@ -42,7 +43,7 @@ def hmc_list_dedicated_pcie_slots(
     return asdict(
         _run(
             lambda: list_dedicated_slots(
-                build_config(profile=profile), system_name_or_uuid
+                HMCClient(build_config(profile=profile)), system_name_or_uuid
             )
         )
     )
@@ -64,7 +65,7 @@ def hmc_list_sriov_adapters(
     return asdict(
         _run(
             lambda: list_sriov_adapters(
-                build_config(profile=profile), system_name_or_uuid, adapter_id
+                HMCClient(build_config(profile=profile)), system_name_or_uuid, adapter_id
             )
         )
     )
@@ -92,7 +93,7 @@ def hmc_list_sriov_physical_ports(
     return asdict(
         _run(
             lambda: list_sriov_physical_ports(
-                build_config(profile=profile),
+                HMCClient(build_config(profile=profile)),
                 system_name_or_uuid,
                 adapter_id,
                 physical_port_id,
@@ -125,7 +126,7 @@ def hmc_list_sriov_logical_ports(
     return asdict(
         _run(
             lambda: list_sriov_logical_ports(
-                build_config(profile=profile),
+                HMCClient(build_config(profile=profile)),
                 system_name_or_uuid,
                 adapter_id,
                 physical_port_id,

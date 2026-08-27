@@ -15,6 +15,7 @@ from .._app import (
 )
 
 from ..config import build_config
+from ..client import HMCClient
 from ..client.client_factory import client_from_env
 from ..operations.network import (
     create_virtual_network,
@@ -203,7 +204,9 @@ def hmc_list_fc_ports(
     """
     return _run(
         lambda: list_fc_ports(
-            build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
+            HMCClient(build_config(profile=profile)),
+            system_name_or_uuid,
+            lpar_name_or_uuid,
         )
     )
 
@@ -234,7 +237,9 @@ def hmc_list_sea_adapters(
     """
     return _run(
         lambda: list_sea_adapters(
-            build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
+            HMCClient(build_config(profile=profile)),
+            system_name_or_uuid,
+            lpar_name_or_uuid,
         )
     )
 
@@ -271,7 +276,10 @@ def hmc_set_sriov_adapter_mode(
     """
     return _run(
         lambda: set_sriov_adapter_mode(
-            build_config(profile=profile), system_name_or_uuid, adapter_id, mode
+            HMCClient(build_config(profile=profile)),
+            system_name_or_uuid,
+            adapter_id,
+            mode,
         )
     )
 
@@ -389,7 +397,7 @@ def hmc_list_vnics(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await list_vnics(
-                hmc.config, system_name_or_uuid, lpar_name_or_uuid
+                hmc, system_name_or_uuid, lpar_name_or_uuid
             )
 
     return _run(_go)

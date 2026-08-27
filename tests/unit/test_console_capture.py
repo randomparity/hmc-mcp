@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from conftest import make_config
+from hmc_mcp.client import HMCClient
 from hmc_mcp.console_capture import (
     HELD_SENTINEL,
     MAX_CAPTURE_BYTES,
@@ -28,6 +29,10 @@ from hmc_mcp.console_capture import (
 )
 
 BANNER = b"\r\n Open in progress  \r\n "
+
+
+def _client() -> HMCClient:
+    return HMCClient(make_config())
 
 # The exact recorded P1 contention output, quirks included.
 CONTENTION = (
@@ -97,7 +102,7 @@ async def _run_capture(connection: FakeConnection, **overrides) -> ConsoleCaptur
         patch("hmc_mcp.console_capture._RELEASE_PROBE_SECONDS", 0.2),
     ):
         capture = await capture_lpar_console(
-            make_config(),
+            _client(),
             "sys1",
             "lp1",
             **_capture_kwargs(**overrides),
@@ -131,7 +136,7 @@ async def test_out_of_range_bounds_are_rejected_before_any_ssh(field, value):
         "hmc_mcp.console_capture.open_hmc_connection", AsyncMock()
     ) as connect_mock:
         with pytest.raises(ValueError, match=field):
-            await capture_lpar_console(make_config(), "sys1", "lp1", **kwargs)
+            await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
     connect_mock.assert_not_awaited()
 
 
@@ -154,7 +159,7 @@ async def test_contention_sentinel_raises_distinct_error_and_never_releases():
     ):
         with pytest.raises(ConsoleHeldError) as excinfo:
             await capture_lpar_console(
-                make_config(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.05)
+                _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.05)
             )
     assert "already holds" in str(excinfo.value)
     # Exit code was 0 on the real HMC; only the sentinel detects this. And
@@ -181,7 +186,7 @@ async def test_contention_is_detected_when_it_arrives_midstream():
     ):
         with pytest.raises(ConsoleHeldError):
             await capture_lpar_console(
-                make_config(),
+                _client(),
                 "sys1",
                 "lp1",
                 **_capture_kwargs(duration_seconds=0.2, idle_timeout_seconds=0.2),
@@ -278,7 +283,7 @@ async def test_failed_rmvterm_still_probes_and_reports_honestly():
         ),
     ):
         capture = await capture_lpar_console(
-            make_config(), "sys1", "lp1", **_capture_kwargs()
+            _client(), "sys1", "lp1", **_capture_kwargs()
         )
     assert capture.released is False
 
@@ -306,7 +311,7 @@ async def test_cancellation_still_runs_release_to_completion():
     ):
         task = asyncio.ensure_future(
             capture_lpar_console(
-                make_config(),
+                _client(),
                 "sys1",
                 "lp1",
                 **_capture_kwargs(duration_seconds=30.0, idle_timeout_seconds=30.0),

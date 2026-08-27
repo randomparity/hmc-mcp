@@ -250,10 +250,11 @@ async def _system_name(config: HMCConfig, system: str) -> str:
 
 
 async def list_dedicated_slots(
-    config: HMCConfig,
+    hmc: HMCClient,
     system: str,
 ) -> InventoryResult[DedicatedSlot]:
     """List dedicated PCIe slots with stable identity and explicit unknowns."""
+    config = hmc.config
     system_name = await _system_name(config, system)
     rows = await list_dedicated_pcie_slot_rows(config, system_name)
     items: list[DedicatedSlot] = []
@@ -627,8 +628,9 @@ async def unassign_sriov_logical_port(
 
 
 async def set_sriov_adapter_mode(
-    config: HMCConfig, system: str, adapter_id: str, mode: SriovMode
+    hmc: HMCClient, system: str, adapter_id: str, mode: SriovMode
 ) -> str:
+    config = hmc.config
     validate_sriov_mode(mode)
     system_name = await _system_name(config, system)
     await _require_admitted_environment(config, system_name)
@@ -645,11 +647,12 @@ async def set_sriov_adapter_mode(
 
 
 async def list_sriov_adapters(
-    config: HMCConfig,
+    hmc: HMCClient,
     system: str,
     adapter_id: str | None = None,
 ) -> InventoryResult[SriovAdapter]:
     """Return the evidence-bounded SR-IOV adapter capability state."""
+    config = hmc.config
     system_name = await _system_name(config, system)
     try:
         await _require_admitted_environment(config, system_name)
@@ -683,12 +686,13 @@ async def list_sriov_adapters(
 
 
 async def list_sriov_physical_ports(
-    config: HMCConfig,
+    hmc: HMCClient,
     system: str,
     adapter_id: str | None = None,
     physical_port_id: str | None = None,
 ) -> InventoryResult[SriovPhysicalPort]:
     """Return the evidence-bounded SR-IOV physical-port capability state."""
+    config = hmc.config
     system_name = await _system_name(config, system)
     selector = InventorySelector(adapter_id, physical_port_id)
     try:
@@ -719,13 +723,14 @@ async def list_sriov_physical_ports(
 
 
 async def list_sriov_logical_ports(
-    config: HMCConfig,
+    hmc: HMCClient,
     system: str,
     adapter_id: str | None = None,
     physical_port_id: str | None = None,
     logical_port_id: str | None = None,
 ) -> InventoryResult[SriovLogicalPort]:
     """Return the evidence-bounded SR-IOV logical-port capability state."""
+    config = hmc.config
     system_name = await _system_name(config, system)
     selector = InventorySelector(adapter_id, physical_port_id, logical_port_id)
     try:

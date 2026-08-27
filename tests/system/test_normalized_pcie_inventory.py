@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.pcie import (
     list_dedicated_slots,
@@ -23,6 +24,10 @@ def _config() -> HMCConfig:
         password="password",  # pragma: allowlist secret
         _env_file=None,
     )
+
+
+def _client() -> HMCClient:
+    return HMCClient(_config())
 
 
 @pytest.mark.asyncio
@@ -82,7 +87,7 @@ async def test_dedicated_inventory_normalizes_identity_owner_and_unknowns() -> N
             AsyncMock(return_value=rows),
         ),
     ):
-        result = await list_dedicated_slots(_config(), "system-uuid")
+        result = await list_dedicated_slots(_client(), "system-uuid")
 
     assert result.capability == "available"
     assert result.unavailable_reason is None
@@ -109,7 +114,7 @@ async def test_dedicated_inventory_rejects_blank_identity() -> None:
         ),
     ):
         with pytest.raises(ValueError, match="drc_index"):
-            await list_dedicated_slots(_config(), "sys1")
+            await list_dedicated_slots(_client(), "sys1")
 
 
 @pytest.mark.asyncio
@@ -128,7 +133,7 @@ async def test_dedicated_inventory_rejects_whitespace_identity_and_normalizes_op
         ),
     ):
         with pytest.raises(ValueError, match="drc_index"):
-            await list_dedicated_slots(_config(), "sys1")
+            await list_dedicated_slots(_client(), "sys1")
 
 
 @pytest.mark.asyncio
@@ -144,7 +149,7 @@ async def test_dedicated_inventory_normalizes_whitespace_optional_fields() -> No
             AsyncMock(return_value=rows),
         ),
     ):
-        result = await list_dedicated_slots(_config(), "sys1")
+        result = await list_dedicated_slots(_client(), "sys1")
 
     assert result.items[0].description is None
     assert result.items[0].owner_lpar is None
@@ -218,10 +223,10 @@ async def test_sriov_inventories_use_admitted_read_projections() -> None:
             ),
         ),
     ):
-        adapter = await list_sriov_adapters(_config(), "system-uuid", "a1")
-        physical = await list_sriov_physical_ports(_config(), "system-uuid", "a1", "p2")
+        adapter = await list_sriov_adapters(_client(), "system-uuid", "a1")
+        physical = await list_sriov_physical_ports(_client(), "system-uuid", "a1", "p2")
         logical = await list_sriov_logical_ports(
-            _config(), "system-uuid", "a1", "p2", "l3"
+            _client(), "system-uuid", "a1", "p2", "l3"
         )
 
     for result in (adapter, physical, logical):
@@ -266,4 +271,4 @@ async def test_unconfigured_logical_port_requires_unique_physical_parent() -> No
         ),
         pytest.raises(RuntimeError, match="ambiguous physical-port parent"),
     ):
-        await list_sriov_logical_ports(_config(), "system-uuid", "a1")
+        await list_sriov_logical_ports(_client(), "system-uuid", "a1")

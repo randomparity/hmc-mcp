@@ -10,7 +10,9 @@ from unittest.mock import AsyncMock, patch
 from typer.testing import CliRunner
 
 from hmc_mcp import api
+from hmc_mcp.client import HMCClient
 from hmc_mcp.cli import app
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.pcie import (
     DedicatedSlot,
     InventoryResult,
@@ -26,6 +28,14 @@ from hmc_mcp.server_tools.system_resources import (
     hmc_list_sriov_physical_ports,
     tool_security,
 )
+
+
+def _client() -> HMCClient:
+    return HMCClient(
+        HMCConfig.from_mapping(
+            {"host": "hmc.test", "user": "hscroot", "password": "test"}  # pragma: allowlist secret
+        )
+    )
 
 
 def test_model_fields_are_the_documented_stable_schema() -> None:
@@ -196,10 +206,13 @@ def test_cli_logical_inventory_forwards_selectors_and_prints_json() -> None:
         [],
         "ADR 0053 admits selectors but no SR-IOV read projection",
     )
-    with patch(
-        "hmc_mcp.cli_commands.network.list_sriov_logical_ports",
-        AsyncMock(return_value=result),
-    ) as operation:
+    with (
+        patch("hmc_mcp.cli_commands.network._ssh_client", return_value=_client()),
+        patch(
+            "hmc_mcp.cli_commands.network.list_sriov_logical_ports",
+            AsyncMock(return_value=result),
+        ) as operation,
+    ):
         response = CliRunner().invoke(
             app,
             [
@@ -230,9 +243,12 @@ def test_cli_text_mode_reports_unavailable_capability() -> None:
         [],
         "ADR 0053 admits selectors but no SR-IOV read projection",
     )
-    with patch(
-        "hmc_mcp.cli_commands.network.list_sriov_adapters",
-        AsyncMock(return_value=result),
+    with (
+        patch("hmc_mcp.cli_commands.network._ssh_client", return_value=_client()),
+        patch(
+            "hmc_mcp.cli_commands.network.list_sriov_adapters",
+            AsyncMock(return_value=result),
+        ),
     ):
         response = CliRunner().invoke(app, ["network", "list-sriov-adapters", "sys1"])
 
@@ -251,7 +267,10 @@ def test_cli_text_mode_distinguishes_available_empty_and_records() -> None:
         "dedicated_slot", "available", "sys1", InventorySelector(), [item], None
     )
     operation = AsyncMock(side_effect=[empty, populated])
-    with patch("hmc_mcp.cli_commands.network.list_dedicated_slots", operation):
+    with (
+        patch("hmc_mcp.cli_commands.network._ssh_client", return_value=_client()),
+        patch("hmc_mcp.cli_commands.network.list_dedicated_slots", operation),
+    ):
         empty_response = CliRunner().invoke(
             app, ["network", "list-dedicated-pcie-slots", "sys1"]
         )

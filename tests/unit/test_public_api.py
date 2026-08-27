@@ -1729,14 +1729,15 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         "(system: str, partition: str, pid: int, log_path: str, message: str)"
     )
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by the HMCIdentity capitalization correction, recomputed over
+    # Moved when SSH-backed operations standardized their first parameter on
+    # `HMCClient`, recomputed over the HMCIdentity capitalization correction and
     # #468: `InstallHandle` replaces `dict[str, Any]` on both install
     # return annotations and contributes its own five-key entry. Recomputed over
     # #482's 717825fb, which added twelve `snapshot` models with their Pydantic
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "a58f6ec7c63beaef52b5ea200e253342f699a6a406a3b8f452419ac2c4239df2"  # pragma: allowlist secret
+    expected_digest = "efde3c5f86ce56c4ce2fa62fa7d9f1f9a79723f98581a4b5c6513831ae9a61b3"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

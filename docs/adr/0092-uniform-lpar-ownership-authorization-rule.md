@@ -145,11 +145,11 @@ first, exactly as for the tool rows in §3.2.
 | `clear_lpar_boot_order` | `operations/lpar.py:1332` | guarded (`:1476`) | — |
 | `assign_dedicated_pcie_slot` | `operations/pcie.py:178` | guarded (`:220`, via `_authorize_pcie_profile_request`) | — |
 | `unassign_dedicated_pcie_slot` | `operations/pcie.py:198` | guarded (`:220`) | — |
-| `assign_sriov_logical_port` | `operations/pcie.py:472` | guarded (`:311`, via `_resolve_lpar`) | — |
-| `unassign_sriov_logical_port` | `operations/pcie.py:556` | guarded (`:311`) | — |
-| `add_vnic` | `operations/ssh_network.py:616` | guarded (`:409`, via `_preflight_add:496` → `_resolve:403`) | — |
-| `remove_vnic` | `operations/ssh_network.py:745` | guarded (`:409`, via `_resolve`) | — |
-| `set_minimum_affinity_policy` | `operations/ssh_network.py:282` | guarded (`:293`) | — |
+| `assign_sriov_logical_port` | `operations/pcie.py:473` | guarded (`:324`, via `_resolve_lpar`) | — |
+| `unassign_sriov_logical_port` | `operations/pcie.py:557` | guarded (`:324`) | — |
+| `add_vnic` | `operations/ssh_network.py:625` | guarded (`:414`, via `_preflight_add:507` → `_resolve:414`) | — |
+| `remove_vnic` | `operations/ssh_network.py:754` | guarded (`:414`, via `_resolve`) | — |
+| `set_minimum_affinity_policy` | `operations/ssh_network.py:291` | guarded (`:302`) | — |
 | `set_lpar_processors` | `operations/lpar.py:1150` | guarded (`:1199`, and `:1149` on the override branch, via `_apply_dlpar_document:1152` → `_resolve_and_authorize_lpar:1060`) | — |
 | `set_lpar_memory` | `operations/lpar.py:1186` | guarded (`:1199`, and `:1149` on the override branch, via `_apply_dlpar_document`) | — |
 | `apply_lpar_pcie_assignments` | `operations/assignments.py:272` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
@@ -179,7 +179,7 @@ separately exempt — the function is classified here, once, as Reconfiguring.
 
 `assign_dedicated_pcie_slot` / `unassign_dedicated_pcie_slot` are guarded but
 currently inert: `_authorize_pcie_profile_request` raises
-`PcieAssignmentUnavailableError` unconditionally at `operations/pcie.py:226`, right
+`PcieAssignmentUnavailableError` unconditionally at `operations/pcie.py:244`, right
 after the guard, so neither can mutate anything at this commit. They count as
 correctly-shaped coverage, not as protection of a live mutation.
 
@@ -188,8 +188,8 @@ they are classified here and must gain both an operation and its guard (§6):
 
 | Entry point | Location | Status | Tracking |
 |---|---|---|---|
-| `hmc_set_lpar_msp` | `server_tools/lpar_config.py:345` | **unguarded** | #441 |
-| `hmc_set_lpar_proc_compat` | `server_tools/lpar_config.py:394` | **unguarded** | #441 |
+| `hmc_set_lpar_msp` | `server_tools/lpar_config.py:352` | **unguarded** | #441 |
+| `hmc_set_lpar_proc_compat` | `server_tools/lpar_config.py:401` | **unguarded** | #441 |
 | `hmc_modify_lpar` | `server_tools/lpars.py:193` | **partially guarded** — the `assignments` leg delegates to guarded operations, the `resources` leg calls `modify_logical_partition` at `:242` with no ownership check | #442 |
 | `hmc lpar modify` (CLI) | `cli_commands/lpars.py:941` | **partially guarded** — same split, unguarded resource write at `cli_commands/lpars.py:1067` | #442 |
 
@@ -229,7 +229,7 @@ exempt anyway.
 | `create_and_stamp_lpar` (`operations/lpar.py:536`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
 | `provision_lpar` (`operations/provision.py:513`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
 | `deploy_partition_template` (`operations/templates.py:88`) | Creates the partition and stamps it per ADR 0014. |
-| `hmc_capture_lpar_console` (`server_tools/console.py:20`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
+| `hmc_capture_lpar_console` (`server_tools/console.py:19`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_migrate_validate_lpar` (`server_tools/lpm.py:141`) | Calls `migrate_lpar(validate=True)`, which submits an LPM validation job and changes nothing. Once #373 guards the migrating branch, this tool reaches a guarded function on a branch that never mutates. |
 | `install_lpar_os` (`operations/install.py:180`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation *can be handed* a `LogicalPartition` selector and does not check the type locally; `installios` refuses a non-VIOS `-p` on the HMC, and because submission is detached that refusal reaches only the install log. That honesty gap is tracked by #460; it does not create an ownership decision, because a refused install mutates nothing. |
 | `install_vios` (`operations/install.py:296`) | Added by #366. Same reason. Resolves its target through the `VirtualIOServer` feed, so a name selector cannot name a `LogicalPartition` at all; a UUID selector is passed through unchecked, with the same #460 caveat. |
@@ -339,7 +339,7 @@ The two REST GETs come from `resolve_lpar_ownership_names`
 the SSH command takes. It calls `_system_name` (`:581`) → `hmc.get_managed_system`
 (`:591`) and `hmc.get_logical_partition` (`:582`) **unconditionally** — supplying
 `system_name_or_uuid` does not avoid either, as `rename_lpar` (`:917`) and
-`_authorize_pcie_profile_request` (`operations/pcie.py:217`) already demonstrate.
+`_authorize_pcie_profile_request` (`operations/pcie.py:218`) already demonstrate.
 
 The two REST reads are the same order of work `power_lpar` already does
 (`resolve_lpar_uuid` at `:904`, and a `get_quick_property` state check on power-on).

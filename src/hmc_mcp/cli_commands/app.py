@@ -203,6 +203,11 @@ def _ssh_config() -> HMCConfig:
     )
 
 
+def _ssh_client() -> HMCClient:
+    """Build an unconnected client for operations implemented over SSH."""
+    return HMCClient(_ssh_config())
+
+
 def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     """Run a coroutine-returning closure, routing failures to the CLI error path.
 

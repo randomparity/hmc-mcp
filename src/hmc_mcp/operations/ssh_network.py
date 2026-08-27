@@ -136,30 +136,34 @@ class MinimumAffinityPolicyResult:
 
 
 async def list_fc_ports(
-    config: HMCConfig, system: str, lpar: str | None = None
+    hmc: HMCClient, system: str, lpar: str | None = None
 ) -> list[dict[str, str]]:
+    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
     return await _list_fc_ports(config, cast(str, system_name), lpar_name)
 
 
 async def list_sea_adapters(
-    config: HMCConfig, system: str, lpar: str | None = None
+    hmc: HMCClient, system: str, lpar: str | None = None
 ) -> list[dict[str, str]]:
+    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
     return await _list_sea_adapters(config, cast(str, system_name), lpar_name)
 
 
 async def list_vnics(
-    config: HMCConfig, system: str, lpar: str
+    hmc: HMCClient, system: str, lpar: str
 ) -> list[dict[str, object]]:
+    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
     return await _list_vnics(config, cast(str, system_name), cast(str, lpar_name))
 
 
 async def get_lpar_memopt_score(
-    config: HMCConfig, system: str, lpar: str
+    hmc: HMCClient, system: str, lpar: str
 ) -> dict[str, object]:
     """Return one LPAR's current memory-optimization score."""
+    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
     return await _get_lpar_memopt_score(
         config, cast(str, system_name), cast(str, lpar_name)
@@ -167,26 +171,29 @@ async def get_lpar_memopt_score(
 
 
 async def list_lpar_memopt_scores(
-    config: HMCConfig, system: str, lpar: str | None = None
+    hmc: HMCClient, system: str, lpar: str | None = None
 ) -> list[dict[str, object]]:
     """Return current memory-optimization scores for selected system LPARs."""
+    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
     return await _list_lpar_memopt_scores(config, cast(str, system_name), lpar_name)
 
 
-async def get_system_memopt_score(config: HMCConfig, system: str) -> dict[str, object]:
+async def get_system_memopt_score(hmc: HMCClient, system: str) -> dict[str, object]:
     """Return a managed system's current memory-optimization score."""
+    config = hmc.config
     system_name, _ = await resolve_ssh_names(config, system, None)
     return await _get_system_memopt_score(config, cast(str, system_name))
 
 
 async def plan_lpar_memopt_scores(
-    config: HMCConfig,
+    hmc: HMCClient,
     system: str,
     prioritized: MemoptLparSelector | None = None,
     excluded: MemoptLparSelector | None = None,
 ) -> list[dict[str, object]]:
     """Return predicted LPAR scores for a read-only affinity scenario."""
+    config = hmc.config
     validate_memopt_scenario(prioritized, excluded)
     system_name, _ = await resolve_ssh_names(config, system, None)
     return await _plan_lpar_memopt_scores(
@@ -195,12 +202,13 @@ async def plan_lpar_memopt_scores(
 
 
 async def plan_system_memopt_score(
-    config: HMCConfig,
+    hmc: HMCClient,
     system: str,
     prioritized: MemoptLparSelector | None = None,
     excluded: MemoptLparSelector | None = None,
 ) -> dict[str, object]:
     """Return a predicted system score for a read-only affinity scenario."""
+    config = hmc.config
     validate_memopt_scenario(prioritized, excluded)
     system_name, _ = await resolve_ssh_names(config, system, None)
     return await _plan_system_memopt_score(
@@ -234,33 +242,34 @@ async def _resource_group_memopt_scores(
 
 
 async def list_resource_group_memopt_scores(
-    config: HMCConfig,
+    hmc: HMCClient,
     system: str,
     selector: MemoptResourceGroupSelector | None = None,
 ) -> ResourceGroupAffinityResult:
     """Return current resource-group affinity scores when supported."""
     return await _resource_group_memopt_scores(
-        config, system, selector, calculated=False
+        hmc.config, system, selector, calculated=False
     )
 
 
 async def plan_resource_group_memopt_scores(
-    config: HMCConfig,
+    hmc: HMCClient,
     system: str,
     selector: MemoptResourceGroupSelector | None = None,
 ) -> ResourceGroupAffinityResult:
     """Return potential resource-group affinity scores without running DPO."""
     return await _resource_group_memopt_scores(
-        config, system, selector, calculated=True
+        hmc.config, system, selector, calculated=True
     )
 
 
 async def get_minimum_affinity_policy(
-    config: HMCConfig,
+    hmc: HMCClient,
     system: str,
     lpar: str,
 ) -> MinimumAffinityPolicyResult:
     """Return an LPAR's minimum-affinity policy when supported."""
+    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
     resolved_system = cast(str, system_name)
     resolved_lpar = cast(str, lpar_name)

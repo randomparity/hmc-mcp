@@ -14,6 +14,7 @@ from fastmcp.exceptions import ToolError
 
 from hmc_mcp.server_tools import lpar_config as server_lpar_config
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.operations.ssh_network import (
@@ -47,6 +48,10 @@ def _config() -> HMCConfig:
         password="abc123",  # pragma: allowlist secret
         _env_file=None,
     )
+
+
+def _client() -> HMCClient:
+    return HMCClient(_config())
 
 
 def _connection(stdout: str = "") -> MagicMock:
@@ -106,7 +111,7 @@ def test_shared_affinity_operations_resolve_system_uuid_before_delegating(
             if primitive.startswith("plan_")
             else {}
         )
-        actual = asyncio.run(operation(_config(), system_uuid, **kwargs))
+        actual = asyncio.run(operation(_client(), system_uuid, **kwargs))
 
     assert actual == result
     resolve.assert_awaited_once_with(_config(), system_uuid, None)
@@ -138,7 +143,7 @@ def test_shared_planning_rejects_invalid_scenarios_before_system_resolution(
         with pytest.raises(ValueError, match=diagnostic):
             asyncio.run(
                 plan_lpar_memopt_scores_operation(
-                    _config(), SYSTEM, prioritized, excluded
+                    _client(), SYSTEM, prioritized, excluded
                 )
             )
 
@@ -173,8 +178,11 @@ def test_affinity_mcp_adapters_delegate_to_shared_operations(
 
     assert actual == result
     build.assert_called_once_with(profile="lab")
-    expected = (config, SYSTEM, selector, None) if kwargs else (config, SYSTEM)
-    delegated.assert_awaited_once_with(*expected)
+    actual_client = delegated.await_args.args[0]
+    assert isinstance(actual_client, HMCClient)
+    assert actual_client.config == config
+    expected = (SYSTEM, selector, None) if kwargs else (SYSTEM,)
+    assert delegated.await_args.args[1:] == expected
 
 
 @pytest.mark.parametrize(
@@ -244,7 +252,7 @@ def test_oversized_selector_is_rejected_before_resolution_or_transport():
         with pytest.raises(ValueError, match="option package exceeds 4096 UTF-8 bytes"):
             asyncio.run(
                 plan_lpar_memopt_scores_operation(
-                    _config(), SYSTEM, prioritized, excluded
+                    _client(), SYSTEM, prioritized, excluded
                 )
             )
 

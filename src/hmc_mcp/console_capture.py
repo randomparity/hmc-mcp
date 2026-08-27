@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .config import HMCConfig
+from .client import HMCClient
 from .errors import HMCError
 from .ssh import HMCCLIError, open_hmc_connection, run_hmc_command
 
@@ -452,7 +453,7 @@ async def _open_capture_stream(
 
 
 async def capture_lpar_console(
-    config: HMCConfig,
+    hmc: HMCClient,
     system_name: str,
     lpar_name: str,
     *,
@@ -476,7 +477,7 @@ async def capture_lpar_console(
 
     Args:
 
-        config: HMC SSH configuration (host, credentials, timeouts).
+        hmc: HMC client whose configuration supplies the SSH connection.
         system_name: Managed-system CLI name (UUIDs resolve upstream).
         lpar_name: Partition CLI name (UUIDs resolve upstream).
         duration_seconds: Wall-clock cap on the whole capture.
@@ -486,6 +487,7 @@ async def capture_lpar_console(
         idle_timeout_seconds: Client-side cap on silence (time since the last
             received byte); the HMC never times an idle stream out itself.
     """
+    config = hmc.config
     _validate_bounds(duration_seconds, max_bytes, idle_timeout_seconds)
     command = f"mkvterm -m {shlex.quote(system_name)} -p {shlex.quote(lpar_name)}"
     stdin = _SealedStdin()

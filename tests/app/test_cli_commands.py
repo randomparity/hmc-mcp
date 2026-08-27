@@ -26,8 +26,10 @@ from typer.testing import CliRunner
 from hmc_mcp import cli, ssh_affinity, ssh_commands, ssh_lpar, ssh_network, ssh_profiles
 from hmc_mcp.cli_commands import app as cli_app
 from hmc_mcp.cli_commands import lpars as cli_lpars
+from hmc_mcp.cli_commands import network as cli_network
 from hmc_mcp import lpar_ownership
 from hmc_mcp.operations import lpar as operations_lpar
+from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.ssh_network import VnicChangeResult, VnicPartialError
@@ -37,6 +39,11 @@ LPAR_NAME = "lpar1"
 
 def _patch_ssh_command(monkeypatch, replacement) -> None:
     """Replace the transport name owned by every SSH domain used by the CLI."""
+    config = HMCConfig.from_mapping(
+        {"host": "hmc.test", "user": "hscroot", "password": "test"}  # pragma: allowlist secret
+    )
+    for module in (cli_lpars, cli_network):
+        monkeypatch.setattr(module, "_ssh_client", lambda: HMCClient(config))
     for module in (ssh_affinity, ssh_lpar, ssh_network, ssh_profiles):
         monkeypatch.setattr(module, "run_hmc_command", replacement)
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
@@ -49,6 +56,15 @@ SSP_UUID = "88888888-8888-4888-8888-888888888888"
 TEMPLATE_UUID = "99999999-9999-4999-8999-999999999999"
 
 RUNNER = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _configured_ssh_client(monkeypatch) -> None:
+    config = HMCConfig.from_mapping(
+        {"host": "hmc.test", "user": "hscroot", "password": "test"}  # pragma: allowlist secret
+    )
+    for module in (cli_lpars, cli_network):
+        monkeypatch.setattr(module, "_ssh_client", lambda: HMCClient(config))
 
 
 class FakeHMC:

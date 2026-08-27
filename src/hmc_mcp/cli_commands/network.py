@@ -15,6 +15,7 @@ from .app import (
     _output,
     _print_json,
     _run,
+    _ssh_client,
     _ssh_config,
     _with_client,
     console,
@@ -85,7 +86,7 @@ def network_list_dedicated_pcie_slots(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List normalized dedicated PCIe slots on a managed system."""
-    result = _run(lambda: list_dedicated_slots(_ssh_config(), system_name))
+    result = _run(lambda: list_dedicated_slots(_ssh_client(), system_name))
     _print_pcie_inventory(result, as_json)
 
 
@@ -138,7 +139,7 @@ def network_list_sriov_adapters(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List normalized SR-IOV adapters or their unavailable capability."""
-    result = _run(lambda: list_sriov_adapters(_ssh_config(), system_name, adapter_id))
+    result = _run(lambda: list_sriov_adapters(_ssh_client(), system_name, adapter_id))
     _print_pcie_inventory(result, as_json)
 
 
@@ -152,7 +153,7 @@ def network_list_sriov_physical_ports(
     """List normalized SR-IOV physical ports or their unavailable capability."""
     result = _run(
         lambda: list_sriov_physical_ports(
-            _ssh_config(), system_name, adapter_id, physical_port_id
+            _ssh_client(), system_name, adapter_id, physical_port_id
         )
     )
     _print_pcie_inventory(result, as_json)
@@ -169,7 +170,7 @@ def network_list_sriov_logical_ports(
     """List normalized SR-IOV logical ports or their unavailable capability."""
     result = _run(
         lambda: list_sriov_logical_ports(
-            _ssh_config(),
+            _ssh_client(),
             system_name,
             adapter_id,
             physical_port_id,
@@ -348,7 +349,7 @@ def network_list_fc_ports(
 ) -> None:
     """List Virtual Fibre Channel (NPIV) adapters on a managed system."""
 
-    ports = _run(lambda: list_fc_ports(_ssh_config(), system_name, lpar_name))
+    ports = _run(lambda: list_fc_ports(_ssh_client(), system_name, lpar_name))
 
     _output(ports, as_json, None, "No FC ports found")
 
@@ -363,7 +364,7 @@ def network_list_sea_adapters(
 ) -> None:
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports on a managed system."""
 
-    adapters = _run(lambda: list_sea_adapters(_ssh_config(), system_name, lpar_name))
+    adapters = _run(lambda: list_sea_adapters(_ssh_client(), system_name, lpar_name))
 
     _output(adapters, as_json, None, "No SEA adapters found")
 
@@ -393,7 +394,7 @@ def network_set_sriov_mode(
 ) -> None:
     """Verify an adapter's current mode; transitions fail closed."""
     result = _run(
-        lambda: set_sriov_adapter_mode(_ssh_config(), system_name, adapter_id, mode)
+        lambda: set_sriov_adapter_mode(_ssh_client(), system_name, adapter_id, mode)
     )
 
     console.print(
@@ -410,8 +411,7 @@ def network_list_vnics(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR (HMC CLI via SSH)."""
-    config = _ssh_config()
-    vnics = _run(lambda: list_vnics(config, system_name, lpar))
+    vnics = _run(lambda: list_vnics(_ssh_client(), system_name, lpar))
     _output(vnics, as_json, None, "No vNICs found")
 
 

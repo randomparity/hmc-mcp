@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from hmc_mcp.cli_commands import lpars as cli_lpars
 from hmc_mcp.server_tools import lpar_config as server_lpar_config
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.operations.ssh_network import (
@@ -29,6 +30,10 @@ from hmc_mcp.ssh_affinity import (
 
 def _config() -> HMCConfig:
     return HMCConfig(host="hmc.test", user="u", password="p", _env_file=None)
+
+
+def _client() -> HMCClient:
+    return HMCClient(_config())
 
 
 V11 = "version= Version: 11\n Release: 2\n Service Pack: 1120\n"
@@ -229,7 +234,7 @@ def test_shared_operation_resolves_system_and_defaults_to_all():
         ),
     ):
         result = asyncio.run(
-            list_resource_group_memopt_scores(_config(), "system-uuid")
+            list_resource_group_memopt_scores(_client(), "system-uuid")
         )
     assert result.capability == "available"
     assert result.selector == MemoptResourceGroupSelector(all=True)
@@ -285,7 +290,10 @@ def test_resource_group_cli_delegates_id_zero_and_prints_json():
         None,
     )
     operation = AsyncMock(return_value=expected)
-    with patch.object(cli_lpars, "list_resource_group_memopt_scores", operation):
+    with (
+        patch.object(cli_lpars, "_ssh_client", return_value=_client()),
+        patch.object(cli_lpars, "list_resource_group_memopt_scores", operation),
+    ):
         result = CliRunner().invoke(
             app,
             [

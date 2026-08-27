@@ -351,6 +351,12 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: the first parameter of all SSH-backed public operations now consistently accepts
+  `HMCClient` instead of `HMCConfig`: `capture_lpar_console`, the normalized PCIe inventory and
+  SR-IOV mode operations, the FC/SEA/vNIC inventory operations, and the LPAR, system, and
+  resource-group affinity read and planning operations. Implementations read `hmc.config` at
+  the SSH boundary, matching every other supported operation and moving the frozen signature
+  digest.
 - Added: `validate_lpar_migration`, the standalone LPM validation operation already used by the
   MCP and CLI adapters. ADR 0029's selection rule requires it in the reusable facade.
 - Added: `HMCIdentity`, replacing the inconsistently capitalized `HmcIdentity` export. This is a
