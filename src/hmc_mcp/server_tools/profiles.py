@@ -1,0 +1,222 @@
+"""MCP tools for LPAR profile backup/restore/sync and I/O slot assignment."""
+
+from __future__ import annotations
+
+from ..tool_registry import tool_module
+
+from .._app import (
+    _run,
+    _ssh_with_client,
+)
+from ..client.client_factory import client_from_env
+from ..operations.pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
+
+from ..ssh_profiles import (
+    backup_lpar_profiles,
+    restore_lpar_profiles,
+    sync_lpar_profile,
+)
+
+
+# destructive because force=True silently overwrites an existing backup file on the HMC
+tool, register_tools, tool_security = tool_module()
+
+
+# Not exhaustive: `file_path` names a file on the HMC's own filesystem, which no
+# TargetKind can express, and `force=True` overwrites whatever is already there.
+# ADR 0036 placed `file_path` outside every grant; ADR 0039 makes that
+# enforceable by granting this tool only under `targets = "all-targets"`.
+@tool(
+    effect="destructive",
+    operation="lpar_profile.backup",
+    target_kind="managed_system",
+    exhaustive_targets=False,
+)
+def hmc_backup_lpar_profiles(
+    system_name_or_uuid: str,
+    file_path: str,
+    force: bool = False,
+    profile: str | None = None,
+) -> str:
+    """Backup all LPAR profiles on a Power system via the HMC CLI.
+
+    Runs ``bkprofdata -m <system_name> -f <file_path>`` on the HMC via SSH
+    and returns the raw command output.
+
+    The system may be given by CLI name or by UUID; a UUID is resolved to
+    its CLI name via REST (falling back to an lssyscfg lookup over SSH when
+    the REST API is unreachable) before the command runs.
+
+    **IMPORTANT:** file_path is on the HMC filesystem, not the local machine.
+    The backup file will be created at that path on the HMC host.
+
+    Args:
+        system_name_or_uuid: The name or UUID of the managed system (Power server).
+        file_path: Path on the HMC filesystem where the backup file will be saved.
+        force: When True, passes ``--force`` to ``bkprofdata`` so that an
+            existing file at ``file_path`` is overwritten. Defaults to False.
+        profile: optional TOML profile name; when omitted the env-default HMC is used.
+
+    Returns:
+        The raw HMC CLI output.
+
+    Raises:
+        ValueError: if ``file_path`` is empty or whitespace-only.
+    """
+    if not file_path or not file_path.strip():
+        raise ValueError("file_path must not be empty")
+    return _ssh_with_client(
+        lambda config, system_name, _: backup_lpar_profiles(
+            config, system_name, file_path, force=force
+        ),
+        system_name_or_uuid=system_name_or_uuid,
+        profile=profile,
+    )
+
+
+# Not exhaustive, for the same reason as its backup sibling: `file_path` is an
+# HMC-side path no TargetKind names, and the restore rewrites the profiles of
+# every partition on the system from whatever that file contains.
+@tool(
+    effect="destructive",
+    operation="lpar_profile.restore",
+    target_kind="managed_system",
+    exhaustive_targets=False,
+)
+def hmc_restore_lpar_profiles(
+    system_name_or_uuid: str, file_path: str, profile: str | None = None
+) -> str:
+    """Restore LPAR profiles from a backup file via the HMC CLI.
+
+    Runs ``rstprofdata -m <system_name> -f <file_path>`` on the HMC via SSH
+    and returns the raw command output.
+
+    The system may be given by CLI name or by UUID; a UUID is resolved to
+    its CLI name via REST (falling back to an lssyscfg lookup over SSH when
+    the REST API is unreachable) before the command runs.
+
+    **IMPORTANT:** file_path is on the HMC filesystem, not the local machine.
+    The backup file must already exist at that path on the HMC host.
+
+    WARNING: Restoring overwrites the current LPAR profile configuration.
+    Confirm the system_name_or_uuid and file_path before calling.
+
+    Args:
+        system_name_or_uuid: The name or UUID of the managed system (Power server).
+        file_path: Path on the HMC filesystem where the backup file is located.
+        profile: optional TOML profile name; when omitted the env-default HMC is used.
+
+    Returns:
+        The raw HMC CLI output."""
+    return _ssh_with_client(
+        lambda config, system_name, _: restore_lpar_profiles(
+            config, system_name, file_path
+        ),
+        system_name_or_uuid=system_name_or_uuid,
+        profile=profile,
+    )
+
+
+@tool(effect="destructive", operation="lpar_profile.sync", target_kind="lpar")
+def hmc_sync_lpar_profile(
+    system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
+) -> str:
+    """Sync an LPAR's running configuration back to its current profile.
+
+    Runs ``chsyscfg -r lpar -m <system_name> -i "name=<lpar_name>,sync_curr_profile=1"``
+    on the HMC via SSH and returns the raw command output.
+
+    This operation saves the LPAR's current running configuration to its
+    current named profile, overwriting the previous profile definition.
+
+    WARNING: Overwrites the current profile definition. Confirm the
+    system_name_or_uuid and lpar_name_or_uuid before calling.
+
+    The system and partition may be given by CLI name or by UUID; UUIDs
+    are resolved to their CLI names via REST (falling back to an lssyscfg
+    lookup over SSH when the REST API is unreachable) before the command
+    runs.
+
+    Args:
+        system_name_or_uuid: The name or UUID of the managed system (Power server).
+        lpar_name_or_uuid: The name or UUID of the logical partition to sync.
+        profile: optional TOML profile name; when omitted the env-default HMC is used.
+
+    Returns:
+        The raw HMC CLI output."""
+    return _ssh_with_client(
+        lambda config, system_name, lpar_name: sync_lpar_profile(
+            config, system_name, lpar_name
+        ),
+        system_name_or_uuid=system_name_or_uuid,
+        lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
+    )
+
+
+@tool(effect="mutate", operation="pcie.assign_dedicated_slot", target_kind="lpar")
+def hmc_assign_dedicated_pcie_slot(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    profile_name: str,
+    drc_index: str,
+    ownership_override: bool = False,
+    profile: str | None = None,
+) -> None:
+    """Assign a dedicated PCIe slot when safe profile readback is available.
+
+    Args:
+        system_name_or_uuid: The name or UUID of the managed system (Power server).
+        lpar_name_or_uuid: The name or UUID of the logical partition to assign the slot to.
+        profile_name: The name of the profile to modify.
+        drc_index: The DRC (Dynamic Reconfiguration Connector) index of the physical I/O slot.
+        ownership_override: Bypass ownership rejection only after operator approval.
+        profile: Optional configured HMC profile name.
+    """
+
+    async def _go() -> None:
+        async with client_from_env(profile) as hmc:
+            await assign_dedicated_pcie_slot(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                profile_name,
+                drc_index,
+                ownership_override=ownership_override,
+            )
+
+    return _run(_go)
+
+
+@tool(effect="mutate", operation="pcie.unassign_dedicated_slot", target_kind="lpar")
+def hmc_unassign_dedicated_pcie_slot(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    profile_name: str,
+    drc_index: str,
+    ownership_override: bool = False,
+    profile: str | None = None,
+) -> None:
+    """Unassign a dedicated PCIe slot when safe profile readback is available.
+
+    Args:
+        system_name_or_uuid: Managed-system name or UUID.
+        lpar_name_or_uuid: Logical-partition name or UUID.
+        profile_name: LPAR profile containing the dedicated slot.
+        drc_index: Normalized dedicated-slot DRC index.
+        ownership_override: Bypass ownership rejection only after operator approval.
+        profile: Optional configured HMC profile name.
+    """
+
+    async def _go() -> None:
+        async with client_from_env(profile) as hmc:
+            await unassign_dedicated_pcie_slot(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                profile_name,
+                drc_index,
+                ownership_override=ownership_override,
+            )
+
+    return _run(_go)

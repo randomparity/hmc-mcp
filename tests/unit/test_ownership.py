@@ -12,9 +12,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from hmc_mcp import audit, audit_sink, lpar_ownership, operations_lpar
+from hmc_mcp import audit, audit_sink, lpar_ownership
+from hmc_mcp.operations import lpar as operations_lpar
 from hmc_mcp.config import validate_agent_id
-from hmc_mcp.operations_lpar import (
+from hmc_mcp.operations.lpar import (
     authorize_decommission_lpar_ownership_snapshot,
     authorize_lpar_mutation,
 )
@@ -211,7 +212,7 @@ def _override_records(caplog):
 
 def test_authorize_lpar_mutation_override_is_audited(caplog):
     """Spec 26a. Replaces the pre-convergence test that read `extra=` attributes
-    off `hmc_mcp.operations_lpar` — exactly what convergence removes."""
+    off `hmc_mcp.operations.lpar` — exactly what convergence removes."""
     hmc = type("StubHMC", (), {"config": _config()})()
     read = AsyncMock()
     with (
@@ -237,7 +238,7 @@ def test_authorize_lpar_mutation_override_is_audited(caplog):
             "verified": False,
         },
     }
-    assert [r for r in caplog.records if r.name == "hmc_mcp.operations_lpar"] == []
+    assert [r for r in caplog.records if r.name == "hmc_mcp.operations.lpar"] == []
 
 
 def test_the_override_record_host_comes_from_the_client_config(caplog):
@@ -396,7 +397,7 @@ def test_a_foreign_owner_denial_records_both_halves_of_the_comparison(caplog):
             "verified": False,
         },
     }
-    assert [r for r in caplog.records if r.name == "hmc_mcp.operations_lpar"] == []
+    assert [r for r in caplog.records if r.name == "hmc_mcp.operations.lpar"] == []
 
 
 def test_a_malformed_token_denial_is_recorded_as_its_own_branch(caplog):
@@ -669,7 +670,7 @@ def test_stamp_bad_caller_token_raises_unswallowed():
     mock_set.assert_not_awaited()  # rejected before any SSH traffic
 
 
-from hmc_mcp.operations_lpar import parse_lpar_ownership_caller_token  # noqa: E402
+from hmc_mcp.operations.lpar import parse_lpar_ownership_caller_token  # noqa: E402
 
 
 def test_parse_caller_token_round_trip():
@@ -702,7 +703,7 @@ def test_parse_caller_token_spoofed_yields_none(description):
 
 def test_owner_parse_unaffected_by_caller_segment():
     """ADR 0011 ownership parse keeps working on combined descriptions (spec g5)."""
-    from hmc_mcp.operations_lpar import parse_lpar_ownership_owner
+    from hmc_mcp.operations.lpar import parse_lpar_ownership_owner
 
     description = "[hmc-mcp owner:alice created:2026-08-21] [caller JIRA-1]"
     assert parse_lpar_ownership_owner(description) == "alice"
@@ -717,15 +718,15 @@ def _patch_restamp_resolution():
     """Patch the operation's name resolution to fixed stubs."""
     return (
         patch(
-            "hmc_mcp.operations_lpar.resolve_system_uuid",
+            "hmc_mcp.operations.lpar.resolve_system_uuid",
             new=AsyncMock(return_value="sys-uuid"),
         ),
         patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_uuid",
+            "hmc_mcp.operations.lpar.resolve_lpar_uuid",
             new=AsyncMock(return_value="lpar-uuid"),
         ),
         patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
+            "hmc_mcp.operations.lpar.resolve_lpar_ownership_names",
             new=AsyncMock(return_value=("sys1", "lpar1")),
         ),
     )
@@ -739,7 +740,7 @@ def _run_set_ownership_description(description, *, ownership_override=False):
     patches = (
         *(_p for _p in _patch_restamp_resolution()),
         patch(
-            "hmc_mcp.operations_lpar.set_lpar_description",
+            "hmc_mcp.operations.lpar.set_lpar_description",
             new=write,
         ),
         patch(
@@ -785,7 +786,7 @@ def test_set_lpar_ownership_description_rejects_foreign_owned():
     patches = (
         *(_p for _p in _patch_restamp_resolution()),
         patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read),
-        patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
+        patch("hmc_mcp.operations.lpar.set_lpar_description", new=write),
     )
     with patches[0], patches[1], patches[2], patches[3], patches[4]:
         with pytest.raises(PermissionError, match="owned by 'bob'"):
@@ -807,7 +808,7 @@ def test_set_lpar_ownership_description_writes_unowned_lpar():
     patches = (
         *(_p for _p in _patch_restamp_resolution()),
         patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read),
-        patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
+        patch("hmc_mcp.operations.lpar.set_lpar_description", new=write),
     )
     with patches[0], patches[1], patches[2], patches[3], patches[4]:
         result = asyncio.run(
@@ -829,7 +830,7 @@ def test_set_lpar_ownership_description_override_bypasses_guard(caplog):
     patches = (
         *(_p for _p in _patch_restamp_resolution()),
         patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read),
-        patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
+        patch("hmc_mcp.operations.lpar.set_lpar_description", new=write),
     )
     with patches[0], patches[1], patches[2], patches[3], patches[4]:
         with caplog.at_level(logging.WARNING):
@@ -857,8 +858,8 @@ def test_set_lpar_ownership_description_rejects_invalid_text(bad):
     hmc = type("StubHMC", (), {"config": _config()})()
     write = AsyncMock()
     with (
-        patch("hmc_mcp.operations_lpar.resolve_system_uuid", new=resolve_system),
-        patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
+        patch("hmc_mcp.operations.lpar.resolve_system_uuid", new=resolve_system),
+        patch("hmc_mcp.operations.lpar.set_lpar_description", new=write),
         pytest.raises(ValueError),
     ):
         asyncio.run(
@@ -880,7 +881,7 @@ def test_set_lpar_ownership_description_restamps_failed_create_stamp():
     patches = (
         *(_p for _p in _patch_restamp_resolution()),
         patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read),
-        patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
+        patch("hmc_mcp.operations.lpar.set_lpar_description", new=write),
     )
     with patches[0], patches[1], patches[2], patches[3], patches[4]:
         result = asyncio.run(
@@ -898,7 +899,7 @@ def test_set_lpar_ownership_description_restamps_failed_create_stamp():
 
 
 from hmc_mcp.errors import HMCError  # noqa: E402
-from hmc_mcp.operations_lpar import LparCreation, create_and_stamp_lpar  # noqa: E402
+from hmc_mcp.operations.lpar import LparCreation, create_and_stamp_lpar  # noqa: E402
 from hmc_mcp.documents import LparResources  # noqa: E402
 from hmc_mcp.ssh import HMCCLIError  # noqa: E402
 

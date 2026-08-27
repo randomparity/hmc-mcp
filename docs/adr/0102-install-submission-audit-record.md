@@ -13,7 +13,7 @@ ownership guard and therefore no `ownership-denied` or `ownership-override` reco
 `authorization` record either. The HMC-side install log is keyed on the partition name
 alone, shared across managed systems, and truncated by the next submission.
 
-#366 left two `_logger.info` calls on `hmc_mcp.operations_install` in place of a record.
+#366 left two `_logger.info` calls on `hmc_mcp.operations.install` in place of a record.
 Nothing configures that namespace: `server.py` binds only the reserved `hmc_mcp.audit`
 logger and the four third-party ones, and no `basicConfig` or `dictConfig` exists in
 `src/hmc_mcp`. The module logger's effective level is the root's `WARNING`, so an `INFO`

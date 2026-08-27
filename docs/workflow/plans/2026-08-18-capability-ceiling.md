@@ -38,7 +38,7 @@ R1–R22) and `docs/adr/0037-composition-time-capability-ceiling.md`.
   `config` and `tool_registry` from the package
   (`tests/unit/test_access_policy.py::test_module_imports_only_the_declared_first_party_modules`)
   and must not import `hmc_mcp.server` (`::test_module_does_not_import_server`). Therefore
-  `tool_registry.py` must not import `access_policy.py`, and `server_permissions.py` must
+  `tool_registry.py` must not import `access_policy.py`, and `server_tools/permissions.py` must
   not import `server.py`.
 - **`api.__all__` is not changed.** `tests/unit/test_public_api.py::test_public_api_exports_the_adr_inventory`
   pins it literally, and `tests/unit/test_access_policy.py::test_api_surface_is_unchanged`
@@ -54,10 +54,10 @@ R1–R22) and `docs/adr/0037-composition-time-capability-ceiling.md`.
 | File | Status | Responsible for |
 |---|---|---|
 | `src/hmc_mcp/tool_registry.py` | modified | the `permits` gate on `tool_module().register_tools` |
-| `src/hmc_mcp/server_permissions.py` | **new** | the inspection tool: result types, its `ToolSecurity` record, and its gated registration factory |
+| `src/hmc_mcp/server_tools/permissions.py` | **new** | the inspection tool: result types, its `ToolSecurity` record, and its gated registration factory |
 | `src/hmc_mcp/server.py` | modified | `create_mcp(policy)`, the `TOOL_SECURITY` entry, fresh-composing entry points, the startup-warning function |
-| `src/hmc_mcp/server_command.py` | modified | the arbitrary-command / ceiling intersection |
-| `src/hmc_mcp/cli_app.py` | modified | `serve --access-policy NAME` and its load-error path |
+| `src/hmc_mcp/server_tools/command.py` | modified | the arbitrary-command / ceiling intersection |
+| `src/hmc_mcp/cli_commands/app.py` | modified | `serve --access-policy NAME` and its load-error path |
 | `tests/app/test_capability_ceiling.py` | **new** | R1–R3, R5–R6, R9a, R10a, R11–R18, R19a |
 | `tests/app/test_application_boundaries.py` | modified | the 128 → 129 tool-count contract |
 | `tests/app/test_tool_security.py` | modified | rule G10's two-name allowance |
@@ -264,7 +264,7 @@ from Task 1.
 **Interfaces this task publishes:**
 
 ```python
-# src/hmc_mcp/server_permissions.py
+# src/hmc_mcp/server_tools/permissions.py
 TOOL_NAME: str                                  # "hmc_effective_permissions"
 EFFECTIVE_PERMISSIONS_SECURITY: ToolSecurity
 UNKNOWN: str                                    # "unknown"
@@ -476,7 +476,7 @@ Expect `KeyError: 'hmc_effective_permissions'` from the `TOOL_SECURITY[...]` loo
 `test_inspection_is_registered_and_classified`, and a tool-not-found `ToolError` from
 `call_tool("hmc_effective_permissions", {})` in every test that calls `_inspect`.
 
-### Step 2.3 — Write `src/hmc_mcp/server_permissions.py`
+### Step 2.3 — Write `src/hmc_mcp/server_tools/permissions.py`
 
 ```python
 """The read-only effective-permission inspection tool.
@@ -743,7 +743,7 @@ Expect all to pass.
 ### Step 2.8 — Commit
 
 ```
-git add src/hmc_mcp/server_permissions.py src/hmc_mcp/server.py tests/
+git add src/hmc_mcp/server_tools/permissions.py src/hmc_mcp/server.py tests/
 git commit -m "feat(server): add the effective-permission inspection tool
 
 hmc_effective_permissions reports the live registry of the application it
@@ -769,7 +769,7 @@ Implements R5, R6, R9, R9a.
 **Interfaces this task publishes:**
 
 ```python
-# src/hmc_mcp/server_command.py
+# src/hmc_mcp/server_tools/command.py
 async def configure_arbitrary_command_tool(
     enabled: bool, mcp: FastMCP, *, permits: Callable[[str], bool] | None = None
 ) -> None
@@ -793,7 +793,7 @@ Append to `tests/app/test_capability_ceiling.py`:
 
 ```python
 def _configure(application, enabled, permits=None):
-    from hmc_mcp.server_command import configure_arbitrary_command_tool
+    from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 
     asyncio.run(configure_arbitrary_command_tool(enabled, application, permits=permits))
 
@@ -912,7 +912,7 @@ uv run --no-sync pytest -q tests/app/test_capability_ceiling.py -k "escape_hatch
 Expect `TypeError: configure_arbitrary_command_tool() got an unexpected keyword argument 'permits'`
 and `TypeError: main_stdio() got an unexpected keyword argument 'access_policy'`.
 
-### Step 3.3 — Intersect in `server_command.py`
+### Step 3.3 — Intersect in `server_tools/command.py`
 
 Replace `configure_arbitrary_command_tool`:
 
@@ -1088,7 +1088,7 @@ Expect all to pass.
 ### Step 3.6 — Commit
 
 ```
-git add src/hmc_mcp/server_command.py src/hmc_mcp/server.py tests/
+git add src/hmc_mcp/server_tools/command.py src/hmc_mcp/server.py tests/
 git commit -m "feat(server): intersect the escape hatch with the policy ceiling
 
 configure_arbitrary_command_tool takes the same permits predicate as the
@@ -1413,7 +1413,7 @@ warning loop, so the function, its call site, and `import sys` land in one commi
 
 ### Step 4.4 — Add the CLI option
 
-In `src/hmc_mcp/cli_app.py`, add to `serve`'s parameters, after `enable_arbitrary_command`:
+In `src/hmc_mcp/cli_commands/app.py`, add to `serve`'s parameters, after `enable_arbitrary_command`:
 
 ```python
     access_policy: str | None = typer.Option(
@@ -1471,7 +1471,7 @@ Expect all to pass.
 ### Step 4.6 — Commit
 
 ```
-git add src/hmc_mcp/server.py src/hmc_mcp/cli_app.py tests/app/test_capability_ceiling.py tests/app/test_serve.py
+git add src/hmc_mcp/server.py src/hmc_mcp/cli_commands/app.py tests/app/test_capability_ceiling.py tests/app/test_serve.py
 git commit -m "feat(cli): select an access policy at serve time
 
 serve --access-policy NAME loads and compiles the named policy and serves

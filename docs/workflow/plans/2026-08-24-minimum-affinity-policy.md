@@ -16,7 +16,7 @@ Python 3.11+ with async SSH operations, dataclasses, Typer, FastMCP, Pydantic, p
 ## Task 1: SSH policy contract and parser
 
 Files: `tests/lpar/test_minimum_affinity_policy.py`, `src/hmc_mcp/ssh_commands.py`, and
-`src/hmc_mcp/operations_ssh_network.py`.
+`src/hmc_mcp/operations/ssh_network.py`.
 
 Interfaces: define frozen `MinimumAffinityPolicyQuery` at the SSH boundary and frozen
 `MinimumAffinityPolicyResult` plus
@@ -38,7 +38,7 @@ non-capability errors propagate.
 
 Files: `tests/lpar/test_minimum_affinity_policy.py`, `tests/unit/test_public_api.py`,
 `tests/unit/test_tool_registry.py`, `tests/app/test_cli_commands.py`,
-`src/hmc_mcp/api.py`, `src/hmc_mcp/server_lpar_config.py`, `src/hmc_mcp/cli_lpars.py`, and the CLI
+`src/hmc_mcp/api.py`, `src/hmc_mcp/server_tools/lpar_config.py`, `src/hmc_mcp/cli_commands/lpars.py`, and the CLI
 registration module that currently registers affinity commands.
 
 Interfaces: export `get_minimum_affinity_policy`; add MCP operation
@@ -56,7 +56,7 @@ registered.
 ## Task 3: Portable snapshot capture
 
 Files: `tests/unit/test_snapshot.py`, `tests/lpar/test_snapshot_capture.py`,
-`src/hmc_mcp/snapshot.py`, and `src/hmc_mcp/operations_snapshot.py`.
+`src/hmc_mcp/snapshot.py`, and `src/hmc_mcp/operations/snapshot.py`.
 
 Interfaces: define `MINIMUM_AFFINITY_POLICY_MEDIA_TYPE`, optional
 `SnapshotCapability.unavailable_reason`, and optional

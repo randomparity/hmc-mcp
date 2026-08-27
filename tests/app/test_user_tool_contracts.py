@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hmc_mcp import server_users
+from hmc_mcp.server_tools import users as server_users
 
 
 def test_nullable_user_mutations_document_empty_responses() -> None:

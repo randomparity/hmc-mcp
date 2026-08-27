@@ -97,7 +97,7 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
 # explicit and is deliberately *not* a member: the selected VIOS backup catalog
 # contains the name, so it is reached through containment from a declared
 # selector. That holds only while the value cannot leave the catalog, which
-# `server_vios._validate_backup_name` is what enforces. ADR 0044 records the
+# `server_tools.vios._validate_backup_name` is what enforces. ADR 0044 records the
 # decision and the two questions it leaves open (#282, #283).
 #
 # This is not the complement of REQUIRED_TARGET_ARGUMENTS: `vios_partition_id`
@@ -168,7 +168,7 @@ class ToolSecurity:
     signature). See docs/adr/0039-dispatch-time-target-scope.md.
 
     Its default is the fail-closed value, so a record built by hand — as
-    ``server_command`` and ``server_permissions`` build theirs — is safe without
+    ``server_tools.command`` and ``server_tools.permissions`` build theirs — is safe without
     naming the field. Only :func:`tool_module`'s decorator, which has inspected a
     signature and found selectors, raises it.
     """

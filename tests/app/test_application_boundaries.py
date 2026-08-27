@@ -29,8 +29,8 @@ def test_cli_import_does_not_register_mcp_tools():
 import asyncio
 from hmc_mcp._app import create_mcp
 before = create_mcp()
-import hmc_mcp.cli_lpars
-import hmc_mcp.cli_systems
+import hmc_mcp.cli_commands.lpars
+import hmc_mcp.cli_commands.systems
 after = create_mcp()
 counts = (len(asyncio.run(before.list_tools())), len(asyncio.run(after.list_tools())))
 raise SystemExit(0 if before is not after and counts == (0, 0) else 1)
@@ -43,7 +43,7 @@ def test_domain_import_does_not_register_tools_on_base_application():
 import asyncio
 from hmc_mcp._app import create_mcp
 application = create_mcp()
-import hmc_mcp.server_lpars
+import hmc_mcp.server_tools.lpars
 raise SystemExit(0 if len(asyncio.run(application.list_tools())) == 0 else 1)
 """
     subprocess.run([sys.executable, "-c", script], check=True)
@@ -129,8 +129,8 @@ def test_lpar_summary_cli_delegates_to_neutral_operation():
     client = object()
     summary = AsyncMock(return_value={"name": "aix1"})
     with (
-        patch("hmc_mcp.operations_composite.lpar_summary", summary),
-        patch("hmc_mcp.cli_lpars._client", return_value=_ClientContext(client)),
+        patch("hmc_mcp.operations.composite.lpar_summary", summary),
+        patch("hmc_mcp.cli_commands.lpars._client", return_value=_ClientContext(client)),
     ):
         result = CliRunner().invoke(app, ["lpars", "summary", "aix1", "--json"])
     assert result.exit_code == 0
@@ -141,8 +141,8 @@ def test_system_summary_cli_delegates_to_neutral_operation():
     client = object()
     summary = AsyncMock(return_value={"name": "system1"})
     with (
-        patch("hmc_mcp.operations_composite.system_summary", summary),
-        patch("hmc_mcp.cli_systems._client", return_value=_ClientContext(client)),
+        patch("hmc_mcp.operations.composite.system_summary", summary),
+        patch("hmc_mcp.cli_commands.systems._client", return_value=_ClientContext(client)),
     ):
         result = CliRunner().invoke(app, ["systems", "summary", "system1", "--json"])
     assert result.exit_code == 0
@@ -150,13 +150,13 @@ def test_system_summary_cli_delegates_to_neutral_operation():
 
 
 def test_fleet_health_cli_delegates_to_neutral_operation():
-    from hmc_mcp.operations_health import FleetHealthResult
+    from hmc_mcp.operations.health import FleetHealthResult
 
     client = object()
     health = AsyncMock(return_value=FleetHealthResult((), (), (), (), ()))
     with (
-        patch("hmc_mcp.cli_systems.fleet_health", health),
-        patch("hmc_mcp.cli_systems._client", return_value=_ClientContext(client)),
+        patch("hmc_mcp.cli_commands.systems.fleet_health", health),
+        patch("hmc_mcp.cli_commands.systems._client", return_value=_ClientContext(client)),
     ):
         result = CliRunner().invoke(app, ["systems", "health", "--json"])
     assert result.exit_code == 0
@@ -165,14 +165,14 @@ def test_fleet_health_cli_delegates_to_neutral_operation():
 
 
 def test_fleet_health_cli_does_not_claim_healthy_when_telemetry_is_unavailable():
-    from hmc_mcp.operations_health import FleetHealthResult
+    from hmc_mcp.operations.health import FleetHealthResult
 
     client = object()
     warning = "Recent job health is unavailable"
     health = AsyncMock(return_value=FleetHealthResult((), (), (), (), (warning,)))
     with (
-        patch("hmc_mcp.cli_systems.fleet_health", health),
-        patch("hmc_mcp.cli_systems._client", return_value=_ClientContext(client)),
+        patch("hmc_mcp.cli_commands.systems.fleet_health", health),
+        patch("hmc_mcp.cli_commands.systems._client", return_value=_ClientContext(client)),
     ):
         result = CliRunner().invoke(app, ["systems", "health"])
     assert result.exit_code == 0
@@ -185,9 +185,9 @@ def test_capacity_clis_delegate_to_neutral_operations():
     report = AsyncMock(return_value=[])
     placement = AsyncMock(return_value=[])
     with (
-        patch("hmc_mcp.operations_capacity.capacity_report", report),
-        patch("hmc_mcp.operations_capacity.find_placement", placement),
-        patch("hmc_mcp.cli_systems._client", return_value=_ClientContext(client)),
+        patch("hmc_mcp.operations.capacity.capacity_report", report),
+        patch("hmc_mcp.operations.capacity.find_placement", placement),
+        patch("hmc_mcp.cli_commands.systems._client", return_value=_ClientContext(client)),
     ):
         capacity_result = CliRunner().invoke(app, ["systems", "capacity", "--json"])
         placement_result = CliRunner().invoke(
@@ -203,9 +203,9 @@ def test_capacity_cli_preserves_connection_overrides():
     client = object()
     report = AsyncMock(return_value=[])
     with (
-        patch("hmc_mcp.operations_capacity.capacity_report", report),
+        patch("hmc_mcp.operations.capacity.capacity_report", report),
         patch(
-            "hmc_mcp.cli_app.client_from_env",
+            "hmc_mcp.cli_commands.app.client_from_env",
             return_value=_ClientContext(client),
         ) as client_factory,
     ):
@@ -240,7 +240,7 @@ def test_capacity_cli_preserves_connection_overrides():
 
 def test_provision_cli_delegates_to_neutral_operation():
     client = object()
-    from hmc_mcp.operations_provision import ProvisionResult
+    from hmc_mcp.operations.provision import ProvisionResult
 
     provision = AsyncMock(
         return_value=ProvisionResult(False, False, None, True, None, (), ())
@@ -266,8 +266,8 @@ def test_provision_cli_delegates_to_neutral_operation():
         "--json",
     ]
     with (
-        patch("hmc_mcp.operations_provision.provision_lpar", provision),
-        patch("hmc_mcp.cli_lpars._client", return_value=_ClientContext(client)),
+        patch("hmc_mcp.operations.provision.provision_lpar", provision),
+        patch("hmc_mcp.cli_commands.lpars._client", return_value=_ClientContext(client)),
     ):
         result = CliRunner().invoke(app, args)
     assert result.exit_code == 0

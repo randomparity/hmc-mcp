@@ -1,7 +1,7 @@
 """Tests for the hmc_system_summary composite tool.
 
 Exercises the tool against a mocked HMC (respx) so the URL mapping and
-field-extraction logic in server_composite.py is verified without a live HMC.
+field-extraction logic in server_tools/composite.py is verified without a live HMC.
 """
 
 from __future__ import annotations

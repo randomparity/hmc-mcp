@@ -35,8 +35,8 @@ One source file is added, three change, and one operator document is added.
 | `src/hmc_mcp/dispatch_scope.py` | unchanged decision; additionally assembles and emits exactly one record per decision it reaches. |
 | `src/hmc_mcp/target_scope.py` | gains `denial_reason`, the single owner of the four-way target-denial case selection; `target_denial` reads it instead of repeating it. |
 | `src/hmc_mcp/server.py` | `_serve_application` installs the sink, beside its existing `_warn` call. |
-| `src/hmc_mcp/operations_lpar.py` | `_audit_lpar_ownership_override`'s body becomes a call into `audit`; the two call sites and the rest of the file are untouched. Converges the package's second audit emitter (`Refs #268`). |
-| `tests/unit/test_ownership.py` | `test_authorize_lpar_mutation_override_is_audited` asserts `record.getMessage() == "LPAR ownership override approved"` and reads `record.hmc_system` / `hmc_lpar` / `hmc_agent_id` off the `extra=` payload on logger `hmc_mcp.operations_lpar` — exactly what convergence removes, so it is **replaced** by test 26a rather than left to fail. Its sibling `…_normal_access_has_no_override_audit` still asserts the right thing but would pass vacuously against the old logger name, so it is repointed too. |
+| `src/hmc_mcp/operations/lpar.py` | `_audit_lpar_ownership_override`'s body becomes a call into `audit`; the two call sites and the rest of the file are untouched. Converges the package's second audit emitter (`Refs #268`). |
+| `tests/unit/test_ownership.py` | `test_authorize_lpar_mutation_override_is_audited` asserts `record.getMessage() == "LPAR ownership override approved"` and reads `record.hmc_system` / `hmc_lpar` / `hmc_agent_id` off the `extra=` payload on logger `hmc_mcp.operations.lpar` — exactly what convergence removes, so it is **replaced** by test 26a rather than left to fail. Its sibling `…_normal_access_has_no_override_audit` still asserts the right thing but would pass vacuously against the old logger name, so it is repointed too. |
 | `docs/authorization-audit.md` (new) | the operator-facing contract for both records: field sets, reason-code table, logger name, level split, how to route or silence them, the merged-descriptor caveat, the `<default>`/`<unresolved>` reserved-rendering collision, and the instruction to skip a non-parsing line rather than fail (the reservation is checked inside this package only). |
 | `README.md` | one caveat beside the existing "never stdout" sentence in the startup-warnings section, which has the same descriptor-merge limit, plus a pointer to the new document. |
 
@@ -94,7 +94,7 @@ both; every caller-supplied value is truncated to 128 characters on both.
 | `event` | emitted by | level | fields after `time`, `event` |
 |---|---|---|---|
 | `authorization` | `dispatch_scope.authorize` | deny `WARNING`, allow `INFO` | `policy`, `tool`, `effect`, `decision`, `reason`, `connection`, `targets`, `attribution` |
-| `ownership-override` | `operations_lpar`, via `audit` | `WARNING` | `system`, `lpar`, `attribution` |
+| `ownership-override` | `operations.lpar`, via `audit` | `WARNING` | `system`, `lpar`, `attribution` |
 
 `ownership-override` omits the authorization fields rather than nulling them: an ADR 0011
 ownership override is not an access-policy decision, and empty fields would read as one. Its
@@ -469,10 +469,10 @@ structure holds (test 8b below).
 
 26a. An approved override emits one `ownership-override` record on `hmc_mcp.audit` carrying the
     system, the LPAR, and `attribution.source == "config:agent_id"`, and emits nothing on
-    `hmc_mcp.operations_lpar`.
+    `hmc_mcp.operations.lpar`.
 26b. Its caller-supplied `system` and `lpar` are truncated to 128 characters and ASCII-escaped,
     like the authorization record's values.
-26c. `operations_lpar` does not resolve the audit logger itself — `audit` is the only module in
+26c. `operations.lpar` does not resolve the audit logger itself — `audit` is the only module in
     `src/hmc_mcp` that names `hmc_mcp.audit` (the same scan as test 8a).
 26d. The override still reaches stderr on a CLI-shaped path where `install_audit_sink` was never
     called, at `WARNING`, so a CLI user does not silently lose it. **The test must isolate the
@@ -658,7 +658,7 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
 - A9. Operator documentation describes both records, the reason codes, the logger name, and how to
   route or silence them.
 - A10. `just verify` passes bare on the branch head.
-- A11. The package has exactly one audit emitter module. `operations_lpar`'s override record is
+- A11. The package has exactly one audit emitter module. `operations.lpar`'s override record is
   produced by `audit`, in the same grammar, and no longer through `extra=`. (tests 26a–26e)
 - A12. The claims ADR 0040 makes about *this checkout* are pinned by tests, not by assertion.
   This traces to the campaign orchestrator's ruling of 2026-08-19 — "verify by execution the five

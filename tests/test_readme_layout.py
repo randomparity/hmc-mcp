@@ -50,8 +50,10 @@ def test_layout_block_lists_filenames_and_globs() -> None:
     """A parse that silently found nothing would make the coverage check vacuous."""
     entries = _layout_entries(_readme())
 
-    assert "client_*.py" in entries
+    assert "ssh_*.py" in entries
     assert "config.py" in entries
+    layout = _layout_block(_readme())
+    assert all(name in layout for name in ("client/", "operations/", "server_tools/", "cli_commands/"))
 
 
 def test_every_module_has_a_layout_entry() -> None:

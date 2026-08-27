@@ -213,7 +213,7 @@ def test_two_profile_strings_produce_distinct_clients(tmp_path, monkeypatch):
                 patch.object(HMCClient, "__aexit__", fake_context_exit),
                 patch.object(HMCClient, "get_console_info", fake_get_console),
             ):
-                from hmc_mcp.client_factory import client_from_env
+                from hmc_mcp.client.client_factory import client_from_env
 
                 async def call_a():
                     async with client_from_env("alpha") as hmc:
@@ -268,7 +268,7 @@ def test_nickname_reaches_client_from_env(tmp_path, monkeypatch):
     resolving a nickname here proves the nickname works on both surfaces without
     a per-tool change.
     """
-    from hmc_mcp.client_factory import client_from_env
+    from hmc_mcp.client.client_factory import client_from_env
 
     cfg_path = _toml_with_nickname(tmp_path)
     monkeypatch.setattr("hmc_mcp.config.resolve_config_path", lambda: cfg_path)
@@ -314,7 +314,7 @@ def test_boot_order_tools_route_the_profile_they_declare(
     Authorization in #222 decides on the declared argument, so a handler that
     discards it authorizes one connection and reaches another.
     """
-    from hmc_mcp import server_lpars
+    from hmc_mcp.server_tools import lpars as server_lpars
 
     seen: list[str | None] = []
 

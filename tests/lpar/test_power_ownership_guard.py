@@ -15,9 +15,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from hmc_mcp import audit_sink, cli_lpars, operations_provision, server_lpars
+from hmc_mcp import audit_sink
+from hmc_mcp.cli_commands import lpars as cli_lpars
+from hmc_mcp.operations import provision as operations_provision
+from hmc_mcp.server_tools import lpars as server_lpars
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations_lpar import power_lpar
+from hmc_mcp.operations.lpar import power_lpar
 from hmc_mcp.ssh import HMCCLIError
 
 LPAR_UUID = "11111111-1111-1111-1111-111111111111"

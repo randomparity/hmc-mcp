@@ -61,7 +61,7 @@ def test_get_media_repository(monkeypatch, mock_hmc):
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
     ).mock(return_value=httpx.Response(200, text=VG_FEED_WITH_REPO))
 
-    from hmc_mcp.server_storage import hmc_get_media_repository
+    from hmc_mcp.server_tools.storage import hmc_get_media_repository
 
     result = hmc_get_media_repository(VIOS_UUID, VG_UUID)
 
@@ -105,7 +105,7 @@ def test_list_optical_media(monkeypatch, mock_hmc):
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
     ).mock(return_value=httpx.Response(200, text=media_feed))
 
-    from hmc_mcp.server_storage import hmc_list_optical_media
+    from hmc_mcp.server_tools.storage import hmc_list_optical_media
 
     media_list = hmc_list_optical_media(VIOS_UUID, VG_UUID)
 
@@ -123,7 +123,7 @@ def test_get_media_repository_not_found(monkeypatch, mock_hmc):
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/missing-uuid"
     ).mock(return_value=httpx.Response(404, text=""))
 
-    from hmc_mcp.server_storage import hmc_get_media_repository
+    from hmc_mcp.server_tools.storage import hmc_get_media_repository
 
     result = hmc_get_media_repository(VIOS_UUID, "missing-uuid")
 
@@ -139,7 +139,7 @@ def test_list_optical_media_empty(monkeypatch, mock_hmc):
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
     ).mock(return_value=httpx.Response(200, text=VG_FEED_WITH_REPO))
 
-    from hmc_mcp.server_storage import hmc_list_optical_media
+    from hmc_mcp.server_tools.storage import hmc_list_optical_media
 
     media_list = hmc_list_optical_media(VIOS_UUID, VG_UUID)
 

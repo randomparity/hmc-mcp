@@ -36,7 +36,7 @@ inline `.env` reference in the *Use with Hermes Agent* section and the stale
   existing capability test (`test_every_registered_tool_matches_its_category`)
   enforces that classification and catches divergence between the decorator
   tag and the `_app.py` set.
-- The tool is implemented in `server_system.py` because a single lightweight
+- The tool is implemented in `server_tools/system.py` because a single lightweight
   function does not warrant a new module; avoiding a new `server.py` import
   chain is the governing reason, not a loose analogy to the other tools in
   that file.
@@ -58,7 +58,7 @@ config path, parse TOML, and apply secret-redaction logic itself — every agent
 would duplicate that logic. A first-class tool centralises the redaction
 contract where it can be tested and enforced.
 
-**Implement in a new `server_config.py` module.** Rejected because the tool is
+**Implement in a new `server_tools/config.py` module.** Rejected because the tool is
 a single lightweight function; a new file adds an import chain in `server.py`
 with no architectural benefit.
 

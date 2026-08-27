@@ -47,7 +47,7 @@ def test_top_level_group_paths_match_the_apps_own_registry() -> None:
     paths = smoke_cli_groups.group_paths(app)
 
     # Two independent derivations of the same set: the built command tree (what
-    # the script reads) and the registry `cli_app` writes to. Only the top level
+    # the script reads) and the registry `cli_commands.app` writes to. Only the top level
     # is compared -- the registry holds nothing about groups nested deeper.
     assert {path[0] for path in paths if len(path) == 1} == {
         group.name for group in app.registered_groups

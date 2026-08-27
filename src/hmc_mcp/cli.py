@@ -8,13 +8,13 @@ Usage examples:
     hmc-mcp console info              # HMC version / connectivity check
 
 This module is a thin aggregator: the command groups live in
-domain submodules (``cli_systems``, ``cli_lpars``, ...) that register
-themselves on the shared :class:`typer.Typer` in ``cli_app``.
+domain modules in :mod:`hmc_mcp.cli_commands` that register themselves on the
+shared :class:`typer.Typer` in :mod:`hmc_mcp.cli_commands.app`.
 """
 
 from __future__ import annotations
 
-from .cli_app import (
+from .cli_commands.app import (
     GlobalOpts as GlobalOpts,
     _ssh_config as _ssh_config,
     app as app,
@@ -22,18 +22,18 @@ from .cli_app import (
     main as main,
 )
 
-from . import cli_adapters  # noqa: F401  (side-effect: registers commands)
-from . import cli_cluster  # noqa: F401  (side-effect: registers commands)
-from . import cli_console  # noqa: F401  (side-effect: registers commands)
-from . import cli_jobs  # noqa: F401  (side-effect: registers commands)
-from . import cli_lpars  # noqa: F401  (side-effect: registers commands)
-from . import cli_memory_pools  # noqa: F401  (side-effect: registers commands)
-from . import cli_metrics  # noqa: F401  (side-effect: registers commands)
-from . import cli_network  # noqa: F401  (side-effect: registers commands)
-from . import cli_raw  # noqa: F401  (side-effect: registers commands)
-from . import cli_snapshot  # noqa: F401  (side-effect: registers commands)
-from . import cli_storage  # noqa: F401  (side-effect: registers commands)
-from . import cli_systems  # noqa: F401  (side-effect: registers commands)
-from . import cli_templates  # noqa: F401  (side-effect: registers commands)
-from . import cli_vios  # noqa: F401  (side-effect: registers commands)
-from . import cli_config  # noqa: F401  (side-effect: registers commands)
+from .cli_commands import adapters  # noqa: F401  (registers commands)
+from .cli_commands import cluster  # noqa: F401  (registers commands)
+from .cli_commands import config  # noqa: F401  (registers commands)
+from .cli_commands import console as _console_commands  # noqa: F401
+from .cli_commands import jobs  # noqa: F401  (registers commands)
+from .cli_commands import lpars  # noqa: F401  (registers commands)
+from .cli_commands import memory_pools  # noqa: F401  (registers commands)
+from .cli_commands import metrics  # noqa: F401  (registers commands)
+from .cli_commands import network  # noqa: F401  (registers commands)
+from .cli_commands import raw  # noqa: F401  (registers commands)
+from .cli_commands import snapshot  # noqa: F401  (registers commands)
+from .cli_commands import storage  # noqa: F401  (registers commands)
+from .cli_commands import systems  # noqa: F401  (registers commands)
+from .cli_commands import templates  # noqa: F401  (registers commands)
+from .cli_commands import vios  # noqa: F401  (registers commands)

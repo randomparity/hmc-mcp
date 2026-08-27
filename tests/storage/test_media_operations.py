@@ -6,7 +6,7 @@ import pytest
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
-from hmc_mcp.operations_storage import (
+from hmc_mcp.operations.storage import (
     get_media_repository,
     list_optical_media,
     unmount_optical_media,
@@ -327,7 +327,7 @@ async def test_unmount_optical_media_resolves_vios_and_lpar_names(mock_hmc):
 
 def test_detach_optical_mapping_alias_is_gone():
     """Issue #362: the duplicate name is removed outright, with no shim."""
-    import hmc_mcp.operations_storage as ops
+    import hmc_mcp.operations.storage as ops
 
     assert not hasattr(ops, "detach_optical_mapping")
 
@@ -341,7 +341,8 @@ def test_unmount_docstrings_carry_both_halves_of_the_selector_caveat():
     and a wrongly detached boot disk, and nothing else in the suite asserts they
     still say so. Same contract as tests/app/test_user_tool_contracts.py.
     """
-    from hmc_mcp import operations_storage, server_storage
+    from hmc_mcp.server_tools import storage as server_storage
+    from hmc_mcp.operations import storage as operations_storage
 
     for handler in (
         server_storage.hmc_unmount_optical_media,

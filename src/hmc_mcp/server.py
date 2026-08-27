@@ -73,34 +73,34 @@ from .connection_scope import ConnectionScopeError
 from .dispatch_scope import dispatch_authorizer
 from .target_scope import TargetScopeError
 from .tool_registry import Authorize, ToolSecurity, build_tool_security
-from . import (
-    server_adapters,
-    server_capacity,
-    server_composite,
-    server_console,
-    server_health,
-    server_jobs,
-    server_lpar_config,
-    server_lpars,
-    server_lpm,
-    server_metrics,
-    server_network,
-    server_profiles,
-    server_snapshot,
-    server_provision,
-    server_storage,
-    server_system_resources,
-    server_systems,
-    server_templates,
-    server_updates,
-    server_users,
-    server_vios,
+from .server_tools import (
+    adapters as server_adapters,
+    capacity as server_capacity,
+    composite as server_composite,
+    console as server_console,
+    health as server_health,
+    jobs as server_jobs,
+    lpar_config as server_lpar_config,
+    lpars as server_lpars,
+    lpm as server_lpm,
+    metrics as server_metrics,
+    network as server_network,
+    profiles as server_profiles,
+    provision as server_provision,
+    snapshot as server_snapshot,
+    storage as server_storage,
+    system_resources as server_system_resources,
+    systems as server_systems,
+    templates as server_templates,
+    updates as server_updates,
+    users as server_users,
+    vios as server_vios,
 )
-from .server_console import (
+from .server_tools.console import (
     hmc_capture_lpar_console as hmc_capture_lpar_console,
 )
 
-from .server_systems import (
+from .server_tools.systems import (
     hmc_console_info as hmc_console_info,
     hmc_get_system as hmc_get_system,
     hmc_get_lpar as hmc_get_lpar,
@@ -115,28 +115,28 @@ from .server_systems import (
     hmc_list_systems as hmc_list_systems,
     hmc_list_vios as hmc_list_vios,
 )
-from .server_capacity import (
+from .server_tools.capacity import (
     hmc_capacity_report as hmc_capacity_report,
     hmc_find_placement as hmc_find_placement,
 )
-from .server_command import (
+from .server_tools.command import (
     HMC_RUN_COMMAND_SECURITY,
     hmc_run_command as hmc_run_command,
     configure_arbitrary_command_tool,
 )
-from .server_jobs import (
+from .server_tools.jobs import (
     hmc_get_job as hmc_get_job,
     hmc_list_recent_jobs as hmc_list_recent_jobs,
     hmc_wait_for_job as hmc_wait_for_job,
 )
-from .server_health import hmc_fleet_health as hmc_fleet_health
-from .server_permissions import (
+from .server_tools.health import hmc_fleet_health as hmc_fleet_health
+from .server_tools.permissions import (
     EFFECTIVE_PERMISSIONS_SECURITY,
     TOOL_NAME as PERMISSIONS_TOOL_NAME,
     register_permissions_tool,
 )
 
-from .server_lpars import (
+from .server_tools.lpars import (
     hmc_create_lpar as hmc_create_lpar,
     hmc_decommission_lpar as hmc_decommission_lpar,
     hmc_delete_lpar as hmc_delete_lpar,
@@ -148,7 +148,7 @@ from .server_lpars import (
     hmc_power_off_lpar as hmc_power_off_lpar,
     hmc_power_on_lpar as hmc_power_on_lpar,
 )
-from .server_vios import (
+from .server_tools.vios import (
     hmc_backup_vios as hmc_backup_vios,
     hmc_create_vios as hmc_create_vios,
     hmc_delete_vios as hmc_delete_vios,
@@ -159,14 +159,14 @@ from .server_vios import (
     hmc_power_on_vios as hmc_power_on_vios,
     hmc_restore_vios as hmc_restore_vios,
 )
-from .server_adapters import (
+from .server_tools.adapters import (
     hmc_add_network_adapter as hmc_add_network_adapter,
     hmc_add_vfc_adapter as hmc_add_vfc_adapter,
     hmc_add_vscsi_adapter as hmc_add_vscsi_adapter,
     hmc_delete_adapter as hmc_delete_adapter,
     hmc_list_adapters as hmc_list_adapters,
 )
-from .server_storage import (
+from .server_tools.storage import (
     hmc_attach_disk_to_lpar as hmc_attach_disk_to_lpar,
     hmc_create_logical_unit as hmc_create_logical_unit,
     hmc_create_media_repository as hmc_create_media_repository,
@@ -181,7 +181,7 @@ from .server_storage import (
     hmc_map_storage_to_lpar as hmc_map_storage_to_lpar,
     hmc_list_shared_storage_pools as hmc_list_shared_storage_pools,
 )
-from .server_network import (
+from .server_tools.network import (
     hmc_assign_sriov_logical_port as hmc_assign_sriov_logical_port,
     hmc_add_vnic as hmc_add_vnic,
     hmc_create_virtual_network as hmc_create_virtual_network,
@@ -196,19 +196,19 @@ from .server_network import (
     hmc_set_sriov_adapter_mode as hmc_set_sriov_adapter_mode,
     hmc_unassign_sriov_logical_port as hmc_unassign_sriov_logical_port,
 )
-from .server_lpm import (
+from .server_tools.lpm import (
     hmc_migrate_abort_lpar as hmc_migrate_abort_lpar,
     hmc_migrate_lpar as hmc_migrate_lpar,
     hmc_migrate_recover_lpar as hmc_migrate_recover_lpar,
     hmc_migrate_validate_lpar as hmc_migrate_validate_lpar,
     hmc_remote_restart_lpar as hmc_remote_restart_lpar,
 )
-from .server_templates import (
+from .server_tools.templates import (
     hmc_deploy_partition_template as hmc_deploy_partition_template,
     hmc_get_partition_template as hmc_get_partition_template,
     hmc_list_partition_templates as hmc_list_partition_templates,
 )
-from .server_metrics import (
+from .server_tools.metrics import (
     hmc_aggregated_metric_links as hmc_aggregated_metric_links,
     hmc_aggregated_metrics as hmc_aggregated_metrics,
     hmc_get_pcm_preferences as hmc_get_pcm_preferences,
@@ -216,7 +216,7 @@ from .server_metrics import (
     hmc_processed_metrics as hmc_processed_metrics,
     hmc_set_pcm_preferences as hmc_set_pcm_preferences,
 )
-from .server_users import (
+from .server_tools.users import (
     hmc_configure_remote_access as hmc_configure_remote_access,
     hmc_create_user as hmc_create_user,
     hmc_delete_user as hmc_delete_user,
@@ -227,25 +227,25 @@ from .server_users import (
     hmc_list_users as hmc_list_users,
     hmc_modify_user as hmc_modify_user,
 )
-from .server_updates import (
+from .server_tools.updates import (
     hmc_get_available_hmc_ptfs as hmc_get_available_hmc_ptfs,
     hmc_update_console_software as hmc_update_console_software,
     hmc_update_firmware as hmc_update_firmware,
     hmc_vios_update as hmc_vios_update,
 )
-from .server_profiles import (
+from .server_tools.profiles import (
     hmc_assign_dedicated_pcie_slot as hmc_assign_dedicated_pcie_slot,
     hmc_backup_lpar_profiles as hmc_backup_lpar_profiles,
     hmc_restore_lpar_profiles as hmc_restore_lpar_profiles,
     hmc_sync_lpar_profile as hmc_sync_lpar_profile,
     hmc_unassign_dedicated_pcie_slot as hmc_unassign_dedicated_pcie_slot,
 )
-from .server_snapshot import (
+from .server_tools.snapshot import (
     hmc_snapshot_capture as hmc_snapshot_capture,
     hmc_snapshot_inspect as hmc_snapshot_inspect,
     hmc_snapshot_validate as hmc_snapshot_validate,
 )
-from .server_lpar_config import (
+from .server_tools.lpar_config import (
     hmc_get_lpar_description as hmc_get_lpar_description,
     hmc_get_lpar_msp as hmc_get_lpar_msp,
     hmc_get_lpar_memopt_score as hmc_get_lpar_memopt_score,
@@ -260,7 +260,7 @@ from .server_lpar_config import (
     hmc_set_lpar_msp as hmc_set_lpar_msp,
     hmc_set_lpar_proc_compat as hmc_set_lpar_proc_compat,
 )
-from .server_system_resources import (
+from .server_tools.system_resources import (
     hmc_get_proc_compat_modes as hmc_get_proc_compat_modes,
     hmc_list_dedicated_pcie_slots as hmc_list_dedicated_pcie_slots,
     hmc_list_io_slots as hmc_list_io_slots,
@@ -270,11 +270,11 @@ from .server_system_resources import (
     hmc_list_sriov_physical_ports as hmc_list_sriov_physical_ports,
     hmc_remove_memory_pool as hmc_remove_memory_pool,
 )
-from .server_composite import (
+from .server_tools.composite import (
     hmc_lpar_summary as hmc_lpar_summary,
     hmc_system_summary as hmc_system_summary,
 )
-from .server_provision import (
+from .server_tools.provision import (
     hmc_provision_lpar as hmc_provision_lpar,
 )
 

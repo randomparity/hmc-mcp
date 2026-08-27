@@ -8,7 +8,7 @@ import pytest
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import JobOutcome
-from hmc_mcp.operations_lpm import migrate_lpar
+from hmc_mcp.operations.lpm import migrate_lpar
 
 
 def _job(status: str, *, error: str | None = None) -> dict:

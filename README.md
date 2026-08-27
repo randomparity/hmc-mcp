@@ -926,16 +926,16 @@ src/hmc_mcp/
   xmlutil.py     # defusedxml Atom-feed -> dict parsing
   errors.py      # HMCError (shared by client and its mixins)
   error_translation.py       # presentation-neutral wording for identified HMC failures
-  client.py      # async HMCClient: session, transport, uom helpers, jobs
-  client_*.py    # per-domain mixins (users, systems, lpars, storage, pcm, ...)
-  client_parse.py# defusedxml wrappers tagging failures with the HMC call
-  client_factory.py         # construct clients from CLI, environment, and profiles
+  client/        # HMCClient plus domain mixins, parsing, and construction
   resource_identity.py      # managed-system, partition, and VIOS name/UUID resolution
   lpar_ownership.py         # ownership parsing, authorization, and CLI-name resolution
-  operations_*.py# workflows and policies shared by MCP and CLI presentations
+  operations/    # workflows and policies shared by MCP and CLI presentations
+  server_tools/  # MCP tool adapters grouped by resource family
+  cli_commands/  # Typer command groups and shared CLI application state
   affinity_assessment.py     # evidence-first, read-only LPAR NUMA-affinity assessment
   snapshot.py    # version-1 portable LPAR snapshot values and local I/O
   ssh.py         # transport-only asyncssh session and command execution
+  ssh_*.py       # HMC CLI operations grouped by resource family
   ssh_commands.py# resource operations implemented with the HMC CLI
   ssh_selectors.py           # public resource selectors for the HMC SSH commands
   console_capture.py         # bounded, non-interactive LPAR console capture (mkvterm)
@@ -953,10 +953,10 @@ src/hmc_mcp/
   _app.py        # shared FastMCP instance, sync-run and SSH helpers, entry points
   server.py      # MCP composition, startup validation, logging, and serving bootstrap
   server_*.py    # resource-domain @mcp.tool definitions (systems, lpars, VIOS, ...)
-  server_lpar_config.py      # SSH-only LPAR configuration handlers
-  server_system_resources.py # SSH-only managed-system resource handlers
+  server_tools/lpar_config.py      # SSH-only LPAR configuration handlers
+  server_tools/system_resources.py # SSH-only managed-system resource handlers
   cli.py         # thin aggregator importing every cli_*.py command module
-  cli_app.py     # root Typer app, GlobalOpts/GLOBALS, shared CLI helpers
+  cli_commands/app.py     # root Typer app, GlobalOpts/GLOBALS, shared CLI helpers
   cli_*.py       # per-domain CLI commands (systems, lpars, storage, ...)
 tests/           # pytest + respx, no real HMC needed
 scripts/         # smoke/manual harnesses

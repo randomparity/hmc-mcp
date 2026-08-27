@@ -118,7 +118,7 @@ Add a bounded capture, not a terminal:
   lpar_name, *, duration_seconds, max_bytes, idle_timeout_seconds) ->
   ConsoleCapture` with `ConsoleCapture(system, lpar, data, stop_reason,
   released)` and `ConsoleHeldError`; exported through `hmc_mcp.api`.
-- `hmc_capture_lpar_console` MCP tool (`server_console.py`, operation
+- `hmc_capture_lpar_console` MCP tool (`server_tools/console.py`, operation
   `lpar.capture_console`).
 
 **Effect classification: `mutate`, deliberately not `read`.** The capture

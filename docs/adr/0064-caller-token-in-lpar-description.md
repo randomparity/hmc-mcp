@@ -75,10 +75,10 @@ existing defensive last resort for transport errors.
 
 - **Fold the caller token into the ownership stamp's brackets.**
   verified: the ADR 0011 parse regex
-  (`hmc_mcp/operations_lpar.py:_OWNERSHIP_TOKEN`) anchors `]` immediately after
+  (`hmc_mcp/operations/lpar.py:_OWNERSHIP_TOKEN`) anchors `]` immediately after
   `created:<date>`; text inside the brackets makes every stamped description
   fail the ownership parse, and `_authorize_lpar_ownership_description`
-  (operations_lpar.py:141-156) then fails closed — raising `PermissionError`
+  (operations/lpar.py:141-156) then fails closed — raising `PermissionError`
   for *any* mutation, including by the legitimate owner — rather than
   downgrading to "no claim".
 - **Compose the caller token into the initial create payload** (REST

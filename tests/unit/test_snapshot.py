@@ -11,7 +11,7 @@ from hmc_mcp.snapshot import (
     parse_snapshot,
     serialize_snapshot,
 )
-from hmc_mcp.operations_snapshot import assess_snapshot_affinity
+from hmc_mcp.operations.snapshot import assess_snapshot_affinity
 
 
 def _document() -> dict:

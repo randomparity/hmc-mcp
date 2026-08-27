@@ -212,7 +212,7 @@ def test_inspection_reports_no_policy_honestly():
     """
     from dataclasses import asdict
 
-    from hmc_mcp.server_permissions import describe
+    from hmc_mcp.server_tools.permissions import describe
 
     result = asdict(
         describe({"hmc_list_systems": _guarded_stub()}, None, TOOL_SECURITY, ())
@@ -349,7 +349,7 @@ def _configure(application, enabled, permits=None, policy=None):
     independently of the authorizer to isolate which gate withheld the tool.
     """
     from hmc_mcp.dispatch_scope import dispatch_authorizer
-    from hmc_mcp.server_command import configure_arbitrary_command_tool
+    from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 
     effective = policy if policy is not None else _legacy(include_arbitrary_command=True)
     asyncio.run(
@@ -459,7 +459,7 @@ def test_the_two_dimension_tuples_partition_every_dimension_under_a_policy():
     The property the old encoding broke. Asserted over the enforcing composition
     and the drifted one together, since the bug was visible only in the second.
     """
-    from hmc_mcp.server_permissions import DIMENSIONS
+    from hmc_mcp.server_tools.permissions import DIMENSIONS
 
     enforcing = create_mcp(_policy(READ_ONLY_GRANT))
     drifted = create_mcp(_policy(READ_ONLY_GRANT))
@@ -482,7 +482,7 @@ def test_an_unwrapped_connection_bearing_tool_withholds_the_dispatch_claim():
     `ceiling_enforced` re-checks the tool dimension only. The claim now rests on
     the registered callable, which is the only thing that can carry the check.
     """
-    from hmc_mcp.server_permissions import describe
+    from hmc_mcp.server_tools.permissions import describe
 
     def hmc_list_systems(profile: str | None = None) -> str:
         return "ok"
@@ -501,7 +501,7 @@ def test_a_name_outside_the_index_withholds_every_enforcement_claim():
 
     The same fail-closed default `_permission` applies to `exhaustive_targets`.
     """
-    from hmc_mcp.server_permissions import describe
+    from hmc_mcp.server_tools.permissions import describe
 
     def hmc_not_in_the_index() -> str:
         return "ok"
@@ -528,7 +528,7 @@ def test_an_unwrapped_tool_costs_only_the_target_label():
     """
     from dataclasses import replace
 
-    from hmc_mcp.server_permissions import describe
+    from hmc_mcp.server_tools.permissions import describe
 
     def hmc_list_lpars(profile: str | None = None) -> str:
         return "ok"
@@ -592,7 +592,7 @@ def test_a_table_grant_registry_reports_targets_enforced():
     is called directly rather than through the tool: under a table-only policy the
     inspection tool denies itself, which is the denial the test above pins.
     """
-    from hmc_mcp.server_permissions import describe
+    from hmc_mcp.server_tools.permissions import describe
 
     policy = _policy(TABLE_GRANT)
     application = create_mcp(policy)
@@ -1062,7 +1062,7 @@ def test_a_name_outside_the_index_is_reported_as_unbounded():
     bound it. Mutating that default to `True` left the whole suite green, so the
     justification had no test behind it.
     """
-    from hmc_mcp.server_permissions import UNKNOWN, _permission
+    from hmc_mcp.server_tools.permissions import UNKNOWN, _permission
 
     reported = _permission("hmc_not_in_the_index", {})
 

@@ -194,13 +194,13 @@ already handles env vars via `env_prefix`.
 
 ---
 
-## Phase 4 — Update cli_app.py: add --profile option
+## Phase 4 — Update cli_commands/app.py: add --profile option
 
 **Task:** Add a `--profile` / `HMC_PROFILE` option to the root CLI callback.
 Thread the profile through `_client()` and `_ssh_config()` via
 `client_from_env`.
 
-**Files touched:** `src/hmc_mcp/cli_app.py`
+**Files touched:** `src/hmc_mcp/cli_commands/app.py`
 
 **Changes:**
 

@@ -18,8 +18,8 @@ options are to name the profile memorably or duplicate the profile table.
 
 Name selection is a single concern already: `load_profile` picks a name
 (explicit arg → `HMC_PROFILE` → `default_profile`) and then looks it up in
-`doc["profiles"]`. The CLI (`cli_app.py` `--profile` → `client_from_env`) and
-every MCP tool (`server_systems.py` and siblings call `client_from_env(profile)`)
+`doc["profiles"]`. The CLI (`cli_commands/app.py` `--profile` → `client_from_env`) and
+every MCP tool (`server_tools/systems.py` and siblings call `client_from_env(profile)`)
 all funnel through `load_profile`, so resolving a nickname there reaches both
 surfaces with no per-tool change. This builds on ADR 0006 (TOML profile loader),
 ADR 0007 (CLI config commands), ADR 0008/0009 (per-call profile routing), and

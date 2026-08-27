@@ -169,5 +169,5 @@ checked to establish that nothing in this path replays a sent request.
 - Issue #203: Public media upload API (follow-up)
 - IBM HMC REST API documentation (Power8/Power9/Power10)
 - `tests/storage/test_brokered_upload.py` - deterministic transport fixtures
-- `src/hmc_mcp/client.py` - private transport primitives (lines 343-447)
-- `src/hmc_mcp/client_storage.py` - existing media repository operations
+- `src/hmc_mcp/client/__init__.py` - private transport primitives (lines 343-447)
+- `src/hmc_mcp/client/client_storage.py` - existing media repository operations

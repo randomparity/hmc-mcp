@@ -27,7 +27,7 @@ them to this issue.
 
 Add `profile: str | None = None` as the *last* keyword parameter on every
 `@mcp.tool` function whose body calls `_ssh_with_client` or `run_hmc_cli`
-directly. The three tool bodies in `server_vios.py` and `server_system.py`
+directly. The three tool bodies in `server_tools/vios.py` and `server_tools/system.py`
 that call `run_hmc_cli` directly are updated to pass the profile through.
 
 ### `_ssh_with_client` signature

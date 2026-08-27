@@ -12,11 +12,11 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp import server_lpar_config
+from hmc_mcp.server_tools import lpar_config as server_lpar_config
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.legacy_policy import compile_legacy_policy
-from hmc_mcp.operations_ssh_network import (
+from hmc_mcp.operations.ssh_network import (
     get_system_memopt_score as get_system_memopt_score_operation,
     plan_lpar_memopt_scores as plan_lpar_memopt_scores_operation,
     plan_system_memopt_score as plan_system_memopt_score_operation,
@@ -96,10 +96,10 @@ def test_shared_affinity_operations_resolve_system_uuid_before_delegating(
 
     with (
         patch(
-            "hmc_mcp.operations_ssh_network.resolve_ssh_names",
+            "hmc_mcp.operations.ssh_network.resolve_ssh_names",
             AsyncMock(return_value=(SYSTEM, None)),
         ) as resolve,
-        patch(f"hmc_mcp.operations_ssh_network._{primitive}", delegated),
+        patch(f"hmc_mcp.operations.ssh_network._{primitive}", delegated),
     ):
         kwargs = (
             {"prioritized": selector, "excluded": None}
@@ -134,7 +134,7 @@ def test_shared_planning_rejects_invalid_scenarios_before_system_resolution(
 ):
     resolve = AsyncMock()
 
-    with patch("hmc_mcp.operations_ssh_network.resolve_ssh_names", resolve):
+    with patch("hmc_mcp.operations.ssh_network.resolve_ssh_names", resolve):
         with pytest.raises(ValueError, match=diagnostic):
             asyncio.run(
                 plan_lpar_memopt_scores_operation(
@@ -199,7 +199,7 @@ def test_affinity_mcp_rejects_invalid_scenarios_before_system_resolution(
 
     with (
         patch.object(server_lpar_config, "build_config", return_value=_config()),
-        patch("hmc_mcp.operations_ssh_network.resolve_ssh_names", resolve),
+        patch("hmc_mcp.operations.ssh_network.resolve_ssh_names", resolve),
     ):
         with pytest.raises(ValueError, match=diagnostic):
             server_lpar_config.hmc_plan_system_memopt_score(
@@ -240,7 +240,7 @@ def test_oversized_selector_is_rejected_before_resolution_or_transport():
     resolve = AsyncMock()
     prioritized, excluded, package = _quote_heavy_dual_selector_package(extra_byte=True)
 
-    with patch("hmc_mcp.operations_ssh_network.resolve_ssh_names", resolve):
+    with patch("hmc_mcp.operations.ssh_network.resolve_ssh_names", resolve):
         with pytest.raises(ValueError, match="option package exceeds 4096 UTF-8 bytes"):
             asyncio.run(
                 plan_lpar_memopt_scores_operation(

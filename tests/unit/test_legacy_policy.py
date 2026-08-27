@@ -22,7 +22,7 @@ Spec item -> node id:
 
 The inventory guard below is per-module by construction, as the one in
 ``tests/unit/test_audit.py`` is: it reads this file and asserts every node id named
-above still exists. R11/R11a live in ``tests/app/test_cli_config.py`` and R1-R5b in
+above still exists. R11/R11a live in ``tests/app/test_cli_commands/config.py`` and R1-R5b in
 ``tests/app/test_fail_closed_startup.py``, each with its own header and guard.
 """
 

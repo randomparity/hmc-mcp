@@ -84,7 +84,7 @@ binding requirement is
 the lowest-scoring leg, so a total that clears the floor on the interpreter a contributor happens
 to run locally can still fail one they never ran.
 
-The legs vary on two axes, not one. `src/hmc_mcp/config.py` and `src/hmc_mcp/cli_config.py`
+The legs vary on two axes, not one. `src/hmc_mcp/config.py` and `src/hmc_mcp/cli_commands/config.py`
 between them carry five `sys.platform` branches, so a developer's darwin machine covers the darwin
 arms and CI's `ubuntu-24.04` and `ubuntu-24.04-arm` runners cover the POSIX arms, and each misses
 what the other covers.
@@ -103,10 +103,10 @@ The target is a total of **at least 90.50%**, which at the current package size 
 means **no more than 567 missed statements**, down from 611 — a margin of roughly half a point,
 requiring at least 44 currently-missed statements to be covered.
 
-The primary vehicle is `src/hmc_mcp/cli_storage.py`, the largest single gap at 110 missed
-statements of 199 (45%). It is a thin Typer layer over `operations_storage` and
-`operations_provision`, and `tests/app/test_cli_commands.py` already provides the harness for
-exercising it: a `FakeHMC` scripted stand-in installed over `cli_app.client_from_env`, driven
+The primary vehicle is `src/hmc_mcp/cli_commands/storage.py`, the largest single gap at 110 missed
+statements of 199 (45%). It is a thin Typer layer over `operations.storage` and
+`operations.provision`, and `tests/app/test_cli_commands.py` already provides the harness for
+exercising it: a `FakeHMC` scripted stand-in installed over `cli_commands.app.client_from_env`, driven
 through `typer.testing.CliRunner`. New tests follow that established pattern rather than
 introducing a second CLI-testing idiom.
 
@@ -255,7 +255,7 @@ The test therefore asserts:
   collection error taking every test in the file down, against [ADR
   0001](../../adr/0001-pin-direct-dependencies-and-automate-updates.md). It matches the comment
   form rather than the
-  substring `pragma`, so the existing `# pragma: allowlist secret` in `cli_config.py` is not a
+  substring `pragma`, so the existing `# pragma: allowlist secret` in `cli_commands/config.py` is not a
   false positive;
 - the whole `justfile` and every workflow carry none of `--cov-fail-under`, `--cov-precision`,
   `--cov-config`, or `COVERAGE_RCFILE`, and no `--no-cov` without a test path beside it; and the

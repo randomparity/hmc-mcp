@@ -11,8 +11,8 @@ import pytest
 @pytest.mark.parametrize(
     "modules",
     [
-        ("hmc_mcp.operations_lpar", "hmc_mcp.operations_ssh_network"),
-        ("hmc_mcp.operations_ssh_network", "hmc_mcp.operations_lpar"),
+        ("hmc_mcp.operations.lpar", "hmc_mcp.operations.ssh_network"),
+        ("hmc_mcp.operations.ssh_network", "hmc_mcp.operations.lpar"),
     ],
 )
 def test_lpar_and_ssh_network_operations_import_in_either_order(

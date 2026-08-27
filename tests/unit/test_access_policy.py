@@ -327,7 +327,7 @@ def test_unknown_tool_error_names_the_regeneration_remedy() -> None:
     """A tool a later release retired or renamed must not fail with only the bare
     name. The message must lead with the direct fix (remove or rename the stale
     entry, no generation required) and frame the generator as scoped discovery
-    only, carrying the same "widest policy" caveat cli_app.py's sibling startup
+    only, carrying the same "widest policy" caveat cli_commands/app.py's sibling startup
     refusal already gives the generator — never bare, which would read as "copy
     this document in". The bare command would collide besides: the file already
     exists, since it was just read and compiled, and the generator never

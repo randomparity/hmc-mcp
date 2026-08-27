@@ -42,9 +42,9 @@ from the spec. Later tasks must make these assertions pass without compatibility
 
 ## Task 2: Implement install timing and unit-safe storage names
 
-**Files:** modify `src/hmc_mcp/server_vios.py`, `src/hmc_mcp/jobs.py`, storage server,
+**Files:** modify `src/hmc_mcp/server_tools/vios.py`, `src/hmc_mcp/jobs.py`, storage server,
 operations, clients and builders under `src/hmc_mcp/`, plus their direct tests and CLI
-adapters in `src/hmc_mcp/cli_storage.py` and `src/hmc_mcp/cli_cluster.py`.
+adapters in `src/hmc_mcp/cli_commands/storage.py` and `src/hmc_mcp/cli_commands/cluster.py`.
 
 **Interfaces:** Install server functions expose the exact signature in Global Constraints.
 Storage functions expose `capacity_mib`, `size_mib`, and `lu_size_gib` end to end; HMC XML
@@ -63,8 +63,8 @@ field names remain unchanged.
 
 ## Task 3: Normalize switch names and closed vocabularies
 
-**Files:** modify network/adapter/SSH server and operation modules, `server_systems.py`,
-`server_metrics.py`, `operations_pcm.py`, `server_lpar_config.py`, applicable CLI modules,
+**Files:** modify network/adapter/SSH server and operation modules, `server_tools/systems.py`,
+`server_tools/metrics.py`, `operations/pcm.py`, `server_tools/lpar_config.py`, applicable CLI modules,
 and their direct tests.
 
 **Interfaces:** Numeric selectors are `virtual_switch_id`; the vNIC selector is

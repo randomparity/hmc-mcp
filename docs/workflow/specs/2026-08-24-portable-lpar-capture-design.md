@@ -12,7 +12,7 @@ remain excluded.
 
 `snapshot.py` owns the strict value model, duplicate-aware JSON parsing, bounded local document
 reading, serialization, and inspection. It is presentation-neutral and performs no HMC I/O.
-`operations_snapshot.py` composes existing REST inventory and SSH profile/affinity operations into
+`operations/snapshot.py` composes existing REST inventory and SSH profile/affinity operations into
 one capture. Server and CLI adapters delegate to those two modules; they do not duplicate schema
 or collection logic.
 

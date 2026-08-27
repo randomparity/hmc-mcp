@@ -1,7 +1,7 @@
 """Tool-layer tests for the virtual adapter / storage / SSP tools.
 
 The document builders are covered in this dir's other tests; these tests call
-the actual ``@mcp.tool`` functions in ``server_storage`` against the respx
+the actual ``@mcp.tool`` functions in ``server_tools.storage`` against the respx
 ``mock_hmc`` router so the argument->URL and argument->XML mapping in the
 tool bodies is exercised — the layer the client tests skip.  This mirrors
 ``tests/app/test_server_tools.py`` for the storage domain.
@@ -12,7 +12,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from hmc_mcp.client_adapters import ADAPTER_TYPES
+from hmc_mcp.client.client_adapters import ADAPTER_TYPES
 from hmc_mcp.server import (
     hmc_add_network_adapter,
     hmc_add_vfc_adapter,
@@ -32,7 +32,7 @@ from hmc_mcp.server import (
     hmc_map_storage_to_lpar,
     hmc_list_shared_storage_pools,
 )
-from hmc_mcp.server_storage import hmc_detach_storage_mapping
+from hmc_mcp.server_tools.storage import hmc_detach_storage_mapping
 
 from conftest import JOB_ENTRY
 

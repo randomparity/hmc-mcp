@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations_snapshot import capture_lpar_snapshot
-from hmc_mcp.operations_snapshot import _placement
-from hmc_mcp.operations_ssh_network import (
+from hmc_mcp.operations.snapshot import capture_lpar_snapshot
+from hmc_mcp.operations.snapshot import _placement
+from hmc_mcp.operations.ssh_network import (
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
 )
@@ -50,11 +50,11 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
         },
     }
     monkeypatch.setattr(
-        "hmc_mcp.operations_snapshot.read_lpar_profile_record",
+        "hmc_mcp.operations.snapshot.read_lpar_profile_record",
         AsyncMock(return_value=PROFILE),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_snapshot.get_lpar_memopt_score",
+        "hmc_mcp.operations.snapshot.get_lpar_memopt_score",
         AsyncMock(
             return_value={
                 "lpar_name": "aix",
@@ -64,15 +64,15 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_snapshot.get_system_memopt_score",
+        "hmc_mcp.operations.snapshot.get_system_memopt_score",
         AsyncMock(return_value={"curr_sys_score": "90"}),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_snapshot.plan_lpar_memopt_scores",
+        "hmc_mcp.operations.snapshot.plan_lpar_memopt_scores",
         AsyncMock(return_value=[{"predicted_lpar_score": "97"}]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_snapshot.plan_system_memopt_score",
+        "hmc_mcp.operations.snapshot.plan_system_memopt_score",
         AsyncMock(return_value={"predicted_sys_score": "92"}),
     )
     result = ResourceGroupAffinityResult(
@@ -84,15 +84,15 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
         unavailable_reason="unsupported",
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_snapshot.list_resource_group_memopt_scores",
+        "hmc_mcp.operations.snapshot.list_resource_group_memopt_scores",
         AsyncMock(return_value=result),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_snapshot.plan_resource_group_memopt_scores",
+        "hmc_mcp.operations.snapshot.plan_resource_group_memopt_scores",
         AsyncMock(return_value=result),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_snapshot.get_minimum_affinity_policy",
+        "hmc_mcp.operations.snapshot.get_minimum_affinity_policy",
         AsyncMock(
             return_value=MinimumAffinityPolicyResult(
                 "available", "sys", "aix", 80, "warn", None
@@ -123,7 +123,7 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
         "min_affinity_score_action": "warn",
     }
     monkeypatch.setattr(
-        "hmc_mcp.operations_snapshot.get_minimum_affinity_policy",
+        "hmc_mcp.operations.snapshot.get_minimum_affinity_policy",
         AsyncMock(
             return_value=MinimumAffinityPolicyResult(
                 "capability-unavailable",
@@ -152,7 +152,7 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
         "unavailable_reason": "upgrade system firmware",
     }
     monkeypatch.setattr(
-        "hmc_mcp.operations_snapshot.read_lpar_profile_record",
+        "hmc_mcp.operations.snapshot.read_lpar_profile_record",
         AsyncMock(return_value=PROFILE + ",padding=" + ("x" * 1_048_576)),
     )
     with pytest.raises(ValueError, match="1 MiB"):
@@ -183,11 +183,11 @@ async def test_capture_propagates_observation_failure(monkeypatch) -> None:
         "Resource": {"PartitionName": "aix", "PartitionID": 7},
     }
     monkeypatch.setattr(
-        "hmc_mcp.operations_snapshot.read_lpar_profile_record",
+        "hmc_mcp.operations.snapshot.read_lpar_profile_record",
         AsyncMock(return_value=PROFILE),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_snapshot.get_lpar_memopt_score",
+        "hmc_mcp.operations.snapshot.get_lpar_memopt_score",
         AsyncMock(side_effect=TimeoutError("timed out")),
     )
     with pytest.raises(TimeoutError, match="timed out"):

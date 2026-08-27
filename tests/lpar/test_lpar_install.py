@@ -324,7 +324,7 @@ def test_install_lpar_os_unknown_name_fails_before_submission(monkeypatch, mock_
     async def fail(config, cmd):  # pragma: no cover — must never be reached
         raise AssertionError("run_installios must not be called")
 
-    with patch("hmc_mcp.operations_install.run_installios", new=fail):
+    with patch("hmc_mcp.operations.install.run_installios", new=fail):
         with pytest.raises(ValueError, match="No LPAR named"):
             hmc_install_lpar_os("nosuchlpar", "sys1", **_INSTALL_KWARGS)
 

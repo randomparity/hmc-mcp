@@ -496,7 +496,7 @@ def test_show_reads_config_document_exactly_once(tmp_path, monkeypatch):
     """
     from unittest.mock import MagicMock
 
-    import hmc_mcp.cli_config as cli_config_mod
+    import hmc_mcp.cli_commands.config as cli_config_mod
     import hmc_mcp.config as config_mod
 
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
@@ -528,7 +528,7 @@ def test_list_reads_config_document_exactly_once(tmp_path, monkeypatch):
     """
     from unittest.mock import MagicMock
 
-    import hmc_mcp.cli_config as cli_config_mod
+    import hmc_mcp.cli_commands.config as cli_config_mod
     import hmc_mcp.config as config_mod
 
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
@@ -725,7 +725,7 @@ def test_a_write_failure_after_the_create_leaves_no_partial_file(tmp_path, monke
     over it, and does not compile, so `serve` refuses too. That is a deployment that can
     neither start nor recover without a manual delete.
     """
-    import hmc_mcp.cli_config as cli_config
+    import hmc_mcp.cli_commands.config as cli_config
 
     def _explode(*_args, **_kwargs):
         raise OSError(28, "No space left on device")

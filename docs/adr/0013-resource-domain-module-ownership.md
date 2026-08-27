@@ -7,8 +7,8 @@ Accepted (2026-08-14)
 ## Context
 
 The server and CLI grew from a few broad modules into resource-domain modules.
-Several accepted ADRs still name removed modules such as `server_system.py`,
-`server_power.py`, and `server_cli.py`. Their behavioral decisions remain in
+Several accepted ADRs still name removed modules such as `server_tools/system.py`,
+`server_tools/power.py`, and `server_tools/cli.py`. Their behavioral decisions remain in
 force, but those paths no longer describe where the behavior is owned.
 
 ## Decision

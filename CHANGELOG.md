@@ -351,6 +351,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `validate_lpar_migration`, the standalone LPM validation operation already used by the
+  MCP and CLI adapters. ADR 0029's selection rule requires it in the reusable facade.
 - Added: `HMCIdentity`, replacing the inconsistently capitalized `HmcIdentity` export. This is a
   breaking public rename and moves the frozen signature digest; no compatibility alias remains.
 - Added: `InstallHandle` (#468), the `TypedDict` `install_lpar_os` and `install_vios` now return

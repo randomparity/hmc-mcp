@@ -60,10 +60,10 @@ LPAR can be tracked back to the caller's tracking protocols.
 | File | Change |
 |---|---|
 | `src/hmc_mcp/ssh_commands.py` | Add `validate_caller_token()`; extend `stamp_lpar_ownership(..., caller_token=None)` to compose the full description in one write. |
-| `src/hmc_mcp/operations_lpar.py` | Add `caller_token` field to `LparCreation`; add `parse_lpar_ownership_caller_token()`; validate as the first statement of `create_and_stamp_lpar`; thread through `stamp_created_lpar_ownership`. |
-| `src/hmc_mcp/server_lpars.py` | Add `caller_token: str \| None = None` to `hmc_create_lpar`; validate at entry. |
-| `src/hmc_mcp/server_provision.py`, `operations_provision.py` | Same parameter on `hmc_provision_lpar`, threaded into `LparCreation`. |
-| `src/hmc_mcp/cli_lpars.py` | `--caller-token` option on the CLI create command. |
+| `src/hmc_mcp/operations/lpar.py` | Add `caller_token` field to `LparCreation`; add `parse_lpar_ownership_caller_token()`; validate as the first statement of `create_and_stamp_lpar`; thread through `stamp_created_lpar_ownership`. |
+| `src/hmc_mcp/server_tools/lpars.py` | Add `caller_token: str \| None = None` to `hmc_create_lpar`; validate at entry. |
+| `src/hmc_mcp/server_tools/provision.py`, `operations/provision.py` | Same parameter on `hmc_provision_lpar`, threaded into `LparCreation`. |
+| `src/hmc_mcp/cli_commands/lpars.py` | `--caller-token` option on the CLI create command. |
 | `README.md` | Tool-table rows mention the optional token. |
 | Tests | Unit + respx contract tests per repo layout; ADR 0016 schema contract tests for the new parameters. |
 

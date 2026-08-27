@@ -60,13 +60,13 @@ str}` — consistent with `hmc_list_fc_ports` / `hmc_list_vnics` results.
   `HMCCLIError` when the HMC exits 0 but reports no row (anomalous); a
   non-zero exit (e.g. `The partition named X was not found.`) surfaces as
   `HMCCLIError` from the transport, as with every SSH tool.
-- `operations_ssh_network.py` owns the shared, presentation-neutral workflows.
+- `operations/ssh_network.py` owns the shared, presentation-neutral workflows.
   Each resolves name-or-UUID selectors through `resolve_ssh_names` and then
   calls the corresponding `ssh_commands` primitive, following ADR 0013.
-- `server_lpar_config.py` hosts the two MCP tools tagged `_READ_ONLY`; both
+- `server_tools/lpar_config.py` hosts the two MCP tools tagged `_READ_ONLY`; both
   delegate to the shared operation through the existing profile-aware client
   boundary.
-- `cli_lpars.py` hosts the two CLI commands and delegates to the same shared
+- `cli_commands/lpars.py` hosts the two CLI commands and delegates to the same shared
   operations after loading the selected SSH profile.
 - Registration: both tool names are added to `READ_ONLY_TOOLS` in `_app.py`
   and re-exported from `server.py`. Because ADR 0029 selects every public

@@ -260,7 +260,7 @@ def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
     from hmc_mcp.server import hmc_run_command
 
     with patch(
-        "hmc_mcp.server_command.build_config", return_value=DEV_CONFIG
+        "hmc_mcp.server_tools.command.build_config", return_value=DEV_CONFIG
     ) as mock_config:
         conn = _make_ssh_mock("output")
         with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
@@ -274,9 +274,9 @@ def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
     """hmc_restore_vios with profile routes SSH to the profile's HMC host."""
     from hmc_mcp.server import hmc_restore_vios
 
-    monkeypatch.setattr("hmc_mcp.server_vios.client_from_env", _vios_client_factory())
+    monkeypatch.setattr("hmc_mcp.server_tools.vios.client_from_env", _vios_client_factory())
     with patch(
-        "hmc_mcp.server_vios.build_config", return_value=DEV_CONFIG
+        "hmc_mcp.server_tools.vios.build_config", return_value=DEV_CONFIG
     ) as mock_config:
         conn = _make_ssh_mock("")
         with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:

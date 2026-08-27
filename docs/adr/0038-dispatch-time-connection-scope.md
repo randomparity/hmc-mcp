@@ -14,7 +14,7 @@ ADR 0037 enforced the first of those three dimensions by not registering a withh
 and made `hmc_effective_permissions` label the other two as declared but not enforced.
 
 So today a granted tool may be called with any `profile` value the caller likes.
-`server_lpars.py` selects the connection inside the handler and begins work; `common.py`
+`server_tools/lpars.py` selects the connection inside the handler and begins work; `common.py`
 `build_config` constructs configuration for whatever the caller named. Epic #218
 requirement 4 and issue #222 close that gap: reauthorize the connection immediately
 before handler execution, so a mutation fails closed *before* any REST or SSH operation.
@@ -392,7 +392,7 @@ becomes `("targets",)`, which is what ADR 0037 said this entry would do.
 - **`ConnectionScopeError` is a new public exception on the MCP error path**, surfaced to
   the client as a tool error. It is absent from `api.__all__`, per ADR 0029's placement of
   the server policy boundary outside the supported reusable Python API — the same
-  placement `access_policy.py` and `server_permissions.py` already have.
+  placement `access_policy.py` and `server_tools/permissions.py` already have.
 - No new runtime dependency. `inspect`, `functools`, and `os` are stdlib and already
   imported across the package.
 

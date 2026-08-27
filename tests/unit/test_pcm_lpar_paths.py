@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from hmc_mcp import server_metrics
+from hmc_mcp.server_tools import metrics as server_metrics
 from hmc_mcp.client import HMCClient
-from hmc_mcp.operations_pcm import (
+from hmc_mcp.operations.pcm import (
     get_pcm_preferences,
     resolve_pcm_resource,
     set_pcm_preferences,

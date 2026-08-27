@@ -38,10 +38,10 @@ well-formed caller segment follows a well-formed ownership stamp.
 | File | Responsibility |
 |---|---|
 | `src/hmc_mcp/ssh_commands.py` | Token grammar validator; composed description write. |
-| `src/hmc_mcp/operations_lpar.py` | `LparCreation.caller_token`; anchored extractor; creation-path validation; threading. |
-| `src/hmc_mcp/server_lpars.py` | `hmc_create_lpar` parameter, docstring, entry validation. |
-| `src/hmc_mcp/server_provision.py`, `src/hmc_mcp/operations_provision.py` | `hmc_provision_lpar` parameter plumbing. |
-| `src/hmc_mcp/cli_lpars.py` | `lpars create --caller-token` with entry validation. |
+| `src/hmc_mcp/operations/lpar.py` | `LparCreation.caller_token`; anchored extractor; creation-path validation; threading. |
+| `src/hmc_mcp/server_tools/lpars.py` | `hmc_create_lpar` parameter, docstring, entry validation. |
+| `src/hmc_mcp/server_tools/provision.py`, `src/hmc_mcp/operations/provision.py` | `hmc_provision_lpar` parameter plumbing. |
+| `src/hmc_mcp/cli_commands/lpars.py` | `lpars create --caller-token` with entry validation. |
 | `README.md` | Two tool-table rows. |
 | `tests/unit/test_ownership.py`, `tests/app/test_ownership_tools.py`, `tests/lpar/test_provision_tool.py`, `tests/app/test_lifecycle_schema_descriptions.py` | Contracts above. |
 
@@ -271,7 +271,7 @@ passes including pre-existing pins (`test_stamp_returns_token_on_success`,
 
 ## Task 3 — Creation-path plumbing and anchored extractor
 
-**Files:** `src/hmc_mcp/operations_lpar.py`; **Tests:** `tests/unit/test_ownership.py`,
+**Files:** `src/hmc_mcp/operations/lpar.py`; **Tests:** `tests/unit/test_ownership.py`,
 `tests/app/test_ownership_tools.py`.
 
 **Interfaces consumed:** `validate_caller_token` (Task 1).
@@ -285,7 +285,7 @@ statement; `stamp_created_lpar_ownership(..., caller_token=None)`.
 In `tests/unit/test_ownership.py` append:
 
 ```python
-from hmc_mcp.operations_lpar import parse_lpar_ownership_caller_token  # noqa: E402
+from hmc_mcp.operations.lpar import parse_lpar_ownership_caller_token  # noqa: E402
 
 
 def test_parse_caller_token_round_trip():
@@ -344,7 +344,7 @@ def test_create_lpar_valid_caller_token_stamped(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with patch(
-            "hmc_mcp.operations_lpar.stamp_lpar_ownership", new=capture_stamp
+            "hmc_mcp.operations.lpar.stamp_lpar_ownership", new=capture_stamp
         ):
             result = hmc_create_lpar(
                 system_name_or_uuid=SYSTEM_UUID, name="test-lpar",
@@ -361,7 +361,7 @@ whatever the neighboring tests import rather than inventing new imports.
 
 Run both files — ImportError/failure expected.
 
-**Step 2 — implement.** In `src/hmc_mcp/operations_lpar.py`:
+**Step 2 — implement.** In `src/hmc_mcp/operations/lpar.py`:
 
 (a) Extend the `.ssh_commands` import (line 28 area):
 
@@ -464,8 +464,8 @@ existing pins untouched. Commit `feat: thread caller token through LPAR creation
 
 ## Task 4 — MCP tool surfaces
 
-**Files:** `src/hmc_mcp/server_lpars.py`, `src/hmc_mcp/server_provision.py`,
-`src/hmc_mcp/operations_provision.py`;
+**Files:** `src/hmc_mcp/server_tools/lpars.py`, `src/hmc_mcp/server_tools/provision.py`,
+`src/hmc_mcp/operations/provision.py`;
 **Tests:** `tests/lpar/test_provision_tool.py`,
 `tests/app/test_lifecycle_schema_descriptions.py`.
 
@@ -534,7 +534,7 @@ result documentation — the `Returns:` prose of `hmc_create_lpar`'s docstring
     were lost; ``None`` means the stamp was skipped — the reason is in ``warnings``.
 ```
 
-`src/hmc_mcp/server_lpars.py`: add below the existing `.operations_lpar` import block:
+`src/hmc_mcp/server_tools/lpars.py`: add below the existing `.operations_lpar` import block:
 
 ```python
 from .ssh_commands import validate_caller_token
@@ -567,13 +567,13 @@ and pass it into the `LparCreation(...)` construction (after `max_virtual_slots,
                         caller_token=caller_token,
 ```
 
-`src/hmc_mcp/server_provision.py`: same signature addition after
+`src/hmc_mcp/server_tools/provision.py`: same signature addition after
 `assignments: LparPcieAssignments = LparPcieAssignments(),` (line 56), same docstring
 wording in its `Args:` section, same first-statement validation (import
 `validate_caller_token` from `.ssh_commands`), and pass
 `caller_token=caller_token` into the `provision_lpar(...)` call (lines 80–91).
 
-`src/hmc_mcp/operations_provision.py`: add `caller_token: str | None = None` keyword
+`src/hmc_mcp/operations/provision.py`: add `caller_token: str | None = None` keyword
 to `provision_lpar`'s signature (documented in its Returns-docstring list like the
 other parameters) and change the construction at line 465 to
 `LparCreation(name, partition_type, resources, caller_token=caller_token)`.
@@ -586,7 +586,7 @@ passes. Commit `feat: expose caller_token on hmc_create_lpar and hmc_provision_l
 
 ## Task 5 — CLI option, README, full guardrails
 
-**Files:** `src/hmc_mcp/cli_lpars.py` (`lpars_create`, lines 465–570), `README.md`.
+**Files:** `src/hmc_mcp/cli_commands/lpars.py` (`lpars_create`, lines 465–570), `README.md`.
 
 **Step 1 — implement.**
 

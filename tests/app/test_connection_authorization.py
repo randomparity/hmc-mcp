@@ -15,7 +15,9 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp import audit_sink, server_command, server_lpars
+from hmc_mcp import audit_sink
+from hmc_mcp.server_tools import command as server_command
+from hmc_mcp.server_tools import lpars as server_lpars
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.dispatch_scope import dispatch_authorizer
@@ -124,7 +126,7 @@ def _registered(application) -> dict:
 
 # Every name a handler could reach an HMC through, patched at *every* module
 # that rebound it at import. Patching only `hmc_mcp.config.build_config` proves
-# nothing: `server_vios`, `server_command`, and `_app` each hold their own
+# nothing: `server_tools.vios`, `server_command`, and `_app` each hold their own
 # reference, so a call through one of those would sail past an unpatched source
 # module and the test would still be green.
 _OUTBOUND_NAMES = ("build_config", "client_from_env", "run_hmc_cli", "run_hmc_command")
@@ -559,7 +561,7 @@ def test_the_permissions_site_routes_through_the_shared_helper(monkeypatch):
     that this site honours the same contract as the other two rather than
     deciding for itself.
     """
-    from hmc_mcp import server_permissions
+    from hmc_mcp.server_tools import permissions as server_permissions
 
     calls: list[tuple] = []
     real = server_permissions.authorized

@@ -6,7 +6,7 @@ import pytest
 
 from conftest import assert_only_these_client_methods_used
 
-from hmc_mcp.operations_provision import (
+from hmc_mcp.operations.provision import (
     AttachDiskResult,
     ProvisionStorage,
     attach_disk_to_lpar,

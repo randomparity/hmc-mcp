@@ -3,7 +3,7 @@
 ## Scope
 
 - `src/hmc_mcp/jobs.py`: make terminal classification exhaustive and normalize fallback errors.
-- `src/hmc_mcp/operations_health.py`: consume the actionable classification through the existing
+- `src/hmc_mcp/operations/health.py`: consume the actionable classification through the existing
   failed-status interface.
 - `tests/unit/test_job_lifecycle.py`: prove the partition and every outcome class.
 - `tests/system/test_fleet_health.py`: prove every actionable terminal status is visible.

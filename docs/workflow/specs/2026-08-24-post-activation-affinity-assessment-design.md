@@ -37,10 +37,10 @@ the current policy and uses its capability and value as the current policy input
 
 ## Components and data flow
 
-`operations_provision.py` validates the request before HMC traffic, waits for PowerOn, normalizes its
+`operations/provision.py` validates the request before HMC traffic, waits for PowerOn, normalizes its
 terminal outcome, reads current/calculated affinity and current minimum policy through existing
 presentation-neutral SSH operations, calls `assess_affinity`, and records stable steps/warnings.
-`server_provision.py` exposes the optional request without adding another tool. Public exports expose
+`server_tools/provision.py` exposes the optional request without adding another tool. Public exports expose
 the request type beside existing provisioning types.
 
 ## Failure handling

@@ -31,11 +31,11 @@ Every SSH-backing `@mcp.tool` function gains `profile: str | None = None` as its
 last keyword parameter. Callers that omit it observe identical behavior to today.
 
 **Affected tool files:**
-- `server_cli.py` — 10 tools via `_ssh_with_client`
-- `server_network.py` — 6 tools via `_ssh_with_client`
-- `server_profiles.py` — 4 tools via `_ssh_with_client`
-- `server_vios.py` — 3 tools calling `run_hmc_cli` directly
-- `server_system.py` — 1 tool (`hmc_run_command`) calling `run_hmc_cli` directly
+- `server_tools/cli.py` — 10 tools via `_ssh_with_client`
+- `server_tools/network.py` — 6 tools via `_ssh_with_client`
+- `server_tools/profiles.py` — 4 tools via `_ssh_with_client`
+- `server_tools/vios.py` — 3 tools calling `run_hmc_cli` directly
+- `server_tools/system.py` — 1 tool (`hmc_run_command`) calling `run_hmc_cli` directly
 
 ### `_ssh_with_client(fn, *, system_name_or_uuid, lpar_name_or_uuid, profile)`
 

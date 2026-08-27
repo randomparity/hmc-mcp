@@ -1,7 +1,7 @@
 """Tool-layer tests for the partition-template library MCP tools.
 
 The client methods and job builder are covered in test_templates_api.py;
-these tests call the actual ``@mcp.tool`` functions in ``server_templates``
+these tests call the actual ``@mcp.tool`` functions in ``server_tools.templates``
 against the respx ``mock_hmc`` router so the argument->URL mapping in the
 tool bodies is exercised.
 """
@@ -153,7 +153,7 @@ def test_deploy_partition_template_resolves_target_system_name(monkeypatch, mock
     )
     resolver = AsyncMock(return_value=TARGET_SYSTEM_UUID)
 
-    with patch("hmc_mcp.operations_templates.resolve_system_uuid", new=resolver):
+    with patch("hmc_mcp.operations.templates.resolve_system_uuid", new=resolver):
         hmc_deploy_partition_template("draft-uuid", "system-prod")
 
     resolver.assert_awaited_once_with(ANY, "system-prod")
@@ -239,7 +239,7 @@ def test_deploy_partition_template_completed_stamps_the_new_lpar(monkeypatch, mo
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     stamp = AsyncMock(return_value=(True, []))
-    with patch("hmc_mcp.operations_templates.stamp_created_lpar_ownership", new=stamp):
+    with patch("hmc_mcp.operations.templates.stamp_created_lpar_ownership", new=stamp):
         result = hmc_deploy_partition_template(
             "draft-uuid",
             TARGET_SYSTEM_UUID,

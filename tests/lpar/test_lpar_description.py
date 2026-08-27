@@ -165,7 +165,7 @@ def test_set_lpar_description_rejects_record_delimiters_in_description(monkeypat
 # ---------------------------------------------------------------------- #
 # hmc_set_lpar_description — ASCII validation
 # ---------------------------------------------------------------------- #
-# The guard fires in hmc_set_lpar_description (server_lpar_config.py) *before*
+# The guard fires in hmc_set_lpar_description (server_tools/lpar_config.py) *before*
 # UUID resolution and before the SSH command is built.  Rejection tests
 # therefore need no UUID mocks and no SSH mock.
 
@@ -219,15 +219,15 @@ def test_foreign_owned_description_overwrite_issues_no_write(monkeypatch, mock_h
     write = AsyncMock()
     with (
         patch(
-            "hmc_mcp.operations_lpar.resolve_system_uuid",
+            "hmc_mcp.operations.lpar.resolve_system_uuid",
             new=AsyncMock(return_value=SYSTEM_UUID),
         ),
         patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_uuid",
+            "hmc_mcp.operations.lpar.resolve_lpar_uuid",
             new=AsyncMock(return_value=LPAR_UUID),
         ),
         patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
+            "hmc_mcp.operations.lpar.resolve_lpar_ownership_names",
             new=AsyncMock(return_value=(SYSTEM_NAME, LPAR_NAME)),
         ),
         patch(
@@ -236,7 +236,7 @@ def test_foreign_owned_description_overwrite_issues_no_write(monkeypatch, mock_h
                 return_value="[hmc-mcp owner:other created:2026-08-14]"
             ),
         ),
-        patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
+        patch("hmc_mcp.operations.lpar.set_lpar_description", new=write),
         pytest.raises(PermissionError, match="owned by 'other'"),
     ):
         hmc_set_lpar_description(SYSTEM_NAME, LPAR_NAME, "replacement")

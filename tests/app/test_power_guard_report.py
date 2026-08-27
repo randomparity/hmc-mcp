@@ -18,7 +18,7 @@ from fastmcp import Client
 
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.server_permissions import describe, resolve_power_guards
+from hmc_mcp.server_tools.permissions import describe, resolve_power_guards
 
 ALL_TOOLS_GRANT = [
     {"effects": ["read"], "connections": ["<default>"], "targets": "all-targets"}
@@ -61,7 +61,7 @@ def test_the_value_is_readable_with_no_config_file_present():
     """#470's acceptance: the env-var-only shape `config show` cannot answer for.
 
     `config_show` exits 1 before it builds any config when the platform-native
-    path is absent (`src/hmc_mcp/cli_config.py:159-161`), which is exactly the
+    path is absent (`src/hmc_mcp/cli_commands/config.py:159-161`), which is exactly the
     deployment `docs/environment-variables.md` opens by describing.
     """
     guards = resolve_power_guards(None)
@@ -88,7 +88,7 @@ def test_an_unreadable_config_file_reads_as_default_on_the_default_connection(
     _write_config(tmp_path, "[profiles.a\nhost = 'h'\n")
     policy = _policy(ALL_TOOLS_GRANT)
 
-    with caplog.at_level(logging.DEBUG, logger="hmc_mcp.server_permissions"):
+    with caplog.at_level(logging.DEBUG, logger="hmc_mcp.server_tools.permissions"):
         (guard,) = resolve_power_guards(policy)
 
     assert guard.connection == DEFAULT_CONNECTION_TOKEN
@@ -292,7 +292,7 @@ def test_a_connection_that_cannot_be_resolved_is_reported_not_raised(tmp_path, c
         {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
     ])
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_permissions"):
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_tools.permissions"):
         guards = _by_connection(resolve_power_guards(policy))
 
     assert guards["absent"].authorize_power_operations is None
@@ -346,7 +346,7 @@ def test_the_unresolved_warning_is_said_once_not_once_per_call(tmp_path, caplog)
         {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
     ])
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_permissions"):
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_tools.permissions"):
         reported: set[tuple[str, str]] = set()
         for _ in range(3):
             resolve_power_guards(policy, reported)
@@ -374,7 +374,7 @@ async def test_each_application_has_its_own_unresolved_warning_history(
     ])
     applications = (create_mcp(policy), create_mcp(policy))
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_permissions"):
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_tools.permissions"):
         for application in applications:
             async with Client(application) as client:
                 await client.call_tool("hmc_effective_permissions", {})

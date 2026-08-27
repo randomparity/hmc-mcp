@@ -325,12 +325,12 @@ def _compile_grant(
         if tool not in tool_security:
             # The direct fix comes first: remove or rename the stale entry, no
             # generation required. The generator is discovery only, scoped to the
-            # tool name, with the same "widest policy" caveat cli_app.py's sibling
+            # tool name, with the same "widest policy" caveat cli_commands/app.py's sibling
             # startup refusal already carries — this hint must not read as "copy
             # this document in", the one thing ADR 0036 asked every message here to
             # avoid. The bare command would collide besides: this policy already
             # exists on disk (it was just read and compiled), and the generator
-            # never overwrites (ADR 0041, cli_config.py's `_write_exclusive`), so
+            # never overwrites (ADR 0041, cli_commands/config.py's `_write_exclusive`), so
             # the scratch path is a concrete example, not a placeholder to reuse
             # across retries.
             raise AccessPolicyError(

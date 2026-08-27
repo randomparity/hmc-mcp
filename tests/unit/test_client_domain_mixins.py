@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from hmc_mcp.client_lpars import LparsMixin
-from hmc_mcp.client_lpm import LpmMixin
-from hmc_mcp.client_network import NetworkMixin
-from hmc_mcp.client_storage import StorageMixin
-from hmc_mcp.client_systems import SystemsMixin
-from hmc_mcp.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
-from hmc_mcp.client_templates import TemplatesMixin
+from hmc_mcp.client.client_lpars import LparsMixin
+from hmc_mcp.client.client_lpm import LpmMixin
+from hmc_mcp.client.client_network import NetworkMixin
+from hmc_mcp.client.client_storage import StorageMixin
+from hmc_mcp.client.client_systems import SystemsMixin
+from hmc_mcp.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
+from hmc_mcp.client.client_templates import TemplatesMixin
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 
@@ -222,7 +222,7 @@ async def test_lpar_parent_discovery_has_total_deadline(monkeypatch):
         _entry("sys-a", "system-a", "ManagedSystem")
     ]
     client.list_logical_partitions = AsyncMock(side_effect=_yield_empty)
-    monkeypatch.setattr("hmc_mcp.client_lpars.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr("hmc_mcp.client.client_lpars.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0)
 
     with pytest.raises(ValueError, match="timed out; supply managed-system scope"):
         await client.find_partition_by_name("shared")
@@ -570,7 +570,7 @@ async def test_vios_parent_discovery_has_total_deadline(monkeypatch):
         return_value=[_entry("sys-a", "system-a", "ManagedSystem")]
     )
     client.list_vios = AsyncMock(side_effect=_yield_empty)
-    monkeypatch.setattr("hmc_mcp.client_systems.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr("hmc_mcp.client.client_systems.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0)
 
     with pytest.raises(ValueError, match="timed out; supply managed-system scope"):
         await client.find_vios_by_name("shared")

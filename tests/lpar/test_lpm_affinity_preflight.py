@@ -6,13 +6,13 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations_lpm import (
+from hmc_mcp.operations.lpm import (
     LpmAffinityPreflightRequest,
     evaluate_lpm_affinity_preflight,
     migrate_lpar_with_affinity_preflight,
     run_lpm_affinity_preflight,
 )
-from hmc_mcp.server_lpm import hmc_migrate_lpar_with_affinity_preflight
+from hmc_mcp.server_tools.lpm import hmc_migrate_lpar_with_affinity_preflight
 
 
 class _ClientContext:
@@ -199,7 +199,7 @@ def test_mcp_fail_closed_surface_returns_stable_companion(
 ) -> None:
     hmc = AsyncMock()
     monkeypatch.setattr(
-        "hmc_mcp.server_lpm.client_from_env", lambda profile: _ClientContext(hmc)
+        "hmc_mcp.server_tools.lpm.client_from_env", lambda profile: _ClientContext(hmc)
     )
 
     result = hmc_migrate_lpar_with_affinity_preflight(
@@ -227,7 +227,7 @@ async def test_passing_preflight_composes_before_canonical_validation(
         order.append("validation-and-migration")
         return type("Result", (), {"lpar_uuid": "uuid-1", "job": "job"})()
 
-    monkeypatch.setattr("hmc_mcp.operations_lpm.migrate_lpar", fake_migrate)
+    monkeypatch.setattr("hmc_mcp.operations.lpm.migrate_lpar", fake_migrate)
     result = await migrate_lpar_with_affinity_preflight(
         hmc, "lpar-1", "target-1", _request(response=response)
     )

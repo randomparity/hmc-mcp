@@ -34,7 +34,7 @@
 - Rewrite all metrics tests to use new names and `mode=` parameter
 - Preserve the same behavioural assertions
 
-### Task 2: Implement merged tools in `server_updates.py`
+### Task 2: Implement merged tools in `server_tools/updates.py`
 
 - Remove `hmc_update_hmc` and `hmc_upgrade_hmc`
 - Add `hmc_hmc_update(system_uuid, repository, kind: Literal["update", "upgrade"] = "update")`
@@ -46,7 +46,7 @@
   - Same pattern for `VirtualIOServer`
 - Retain `hmc_update_firmware` and `hmc_get_available_hmc_ptfs` unchanged
 
-### Task 3: Implement merged tools in `server_metrics.py`
+### Task 3: Implement merged tools in `server_tools/metrics.py`
 
 - Remove `hmc_get_processed_metric_links` and `hmc_get_processed_metrics`
 - Add `hmc_processed_metrics(category, resource_uuid, start_ts, end_ts=None, no_of_samples=None, mode: Literal["links", "fetch"] = "fetch")`

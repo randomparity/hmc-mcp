@@ -1,7 +1,7 @@
 """Supported reusable-library facade for hmc-mcp."""
 
 from hmc_mcp.client import HMCClient
-from hmc_mcp.client_adapters import AdapterType
+from hmc_mcp.client.client_adapters import AdapterType
 from hmc_mcp.config import ConfigError, HMCConfig, load_profile
 from hmc_mcp.affinity_assessment import (
     AffinityAssessmentInput,
@@ -22,20 +22,20 @@ from hmc_mcp.documents import (
 )
 from hmc_mcp.errors import HMCError, HMCTransportError
 from hmc_mcp.jobs import DeviceType, JobOutcome, LuType, RemoteRestartOperation
-from hmc_mcp.operations_jobs import get_job, wait_for_job
-from hmc_mcp.operations_adapters import (
+from hmc_mcp.operations.jobs import get_job, wait_for_job
+from hmc_mcp.operations.adapters import (
     AdapterResult,
     add_network_adapter,
     add_vios_adapter,
     delete_adapter,
     list_adapters,
 )
-from hmc_mcp.operations_capacity import capacity_report, find_placement
-from hmc_mcp.operations_composite import lpar_summary, system_summary
-from hmc_mcp.operations_decommission import DecommissionResult, decommission_lpar
-from hmc_mcp.operations_health import FleetHealthResult, fleet_health
-from hmc_mcp.operations_install import InstallHandle, install_lpar_os, install_vios
-from hmc_mcp.operations_lpar import (
+from hmc_mcp.operations.capacity import capacity_report, find_placement
+from hmc_mcp.operations.composite import lpar_summary, system_summary
+from hmc_mcp.operations.decommission import DecommissionResult, decommission_lpar
+from hmc_mcp.operations.health import FleetHealthResult, fleet_health
+from hmc_mcp.operations.install import InstallHandle, install_lpar_os, install_vios
+from hmc_mcp.operations.lpar import (
     LparCreation,
     LparCreationResult,
     ProvisionAffinityAssessment,
@@ -57,7 +57,7 @@ from hmc_mcp.operations_lpar import (
     set_lpar_processors,
     stamp_created_lpar_ownership,
 )
-from hmc_mcp.operations_lpm import (
+from hmc_mcp.operations.lpm import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightOutcome,
     LpmAffinityPreflightRequest,
@@ -68,15 +68,16 @@ from hmc_mcp.operations_lpm import (
     run_lpm_affinity_preflight,
     recover_lpar_migration,
     remote_restart_lpar,
+    validate_lpar_migration,
 )
-from hmc_mcp.operations_network import (
+from hmc_mcp.operations.network import (
     create_virtual_network,
     delete_virtual_network,
     list_network_bridges,
     list_virtual_networks,
     list_virtual_switches,
 )
-from hmc_mcp.operations_pcm import (
+from hmc_mcp.operations.pcm import (
     MetricKind,
     PcmCategory,
     PcmResource,
@@ -86,7 +87,7 @@ from hmc_mcp.operations_pcm import (
     resolve_pcm_resource,
     set_pcm_preferences,
 )
-from hmc_mcp.operations_pcie import (
+from hmc_mcp.operations.pcie import (
     CapabilityState,
     DedicatedSlot,
     InventoryResult,
@@ -110,7 +111,7 @@ from hmc_mcp.operations_pcie import (
     set_sriov_adapter_mode,
     unassign_sriov_logical_port,
 )
-from hmc_mcp.operations_assignments import (
+from hmc_mcp.operations.assignments import (
     AssignmentResult,
     AssignmentStep,
     DedicatedPcieAssignment,
@@ -121,7 +122,7 @@ from hmc_mcp.operations_assignments import (
     apply_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
-from hmc_mcp.operations_provision import (
+from hmc_mcp.operations.provision import (
     AttachDiskResult,
     ProvisionNetwork,
     ProvisionResult,
@@ -129,7 +130,7 @@ from hmc_mcp.operations_provision import (
     attach_disk_to_lpar,
     provision_lpar,
 )
-from hmc_mcp.operations_ssh_network import (
+from hmc_mcp.operations.ssh_network import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
     MinimumAffinityPolicyResult,
@@ -156,7 +157,7 @@ from hmc_mcp.operations_ssh_network import (
     remove_vnic,
 )
 from hmc_mcp.ssh_affinity import MinimumAffinityPolicy
-from .operations_storage import (
+from .operations.storage import (
     create_logical_unit,
     create_media_repository,
     create_optical_media,
@@ -177,13 +178,13 @@ from .operations_storage import (
     unmount_optical_media,
     upload_iso,
 )
-from hmc_mcp.operations_systems import power_system
-from hmc_mcp.operations_templates import (
+from hmc_mcp.operations.systems import power_system
+from hmc_mcp.operations.templates import (
     deploy_partition_template,
     get_partition_template,
     list_partition_templates,
 )
-from hmc_mcp.operations_vios import power_vios
+from hmc_mcp.operations.vios import power_vios
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_network import SriovMode
 from hmc_mcp.console_capture import (
@@ -192,7 +193,7 @@ from hmc_mcp.console_capture import (
     StopReason,
     capture_lpar_console,
 )
-from hmc_mcp.operations_snapshot import (
+from hmc_mcp.operations.snapshot import (
     assess_snapshot_affinity,
     capture_lpar_snapshot,
     inspect_lpar_snapshot,
@@ -273,6 +274,7 @@ __all__ = [
     "abort_lpar_migration",
     "recover_lpar_migration",
     "remote_restart_lpar",
+    "validate_lpar_migration",
     "RemoteRestartOperation",
     "LpmResult",
     "LpmAffinityPreflightRequest",

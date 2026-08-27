@@ -29,7 +29,7 @@ from hmc_mcp.server import (
     hmc_set_lpar_description,
 )
 from hmc_mcp.ssh_network import list_io_slots
-from hmc_mcp.operations_ssh_network import VnicBackingSelector, _required, _validated
+from hmc_mcp.operations.ssh_network import VnicBackingSelector, _required, _validated
 from decimal import Decimal
 
 from conftest import mock_uuid_resolution
@@ -193,7 +193,7 @@ def test_vios_backup_tools_quote_hostile_backup_name(
     Quoting and containment are separate controls and this proves the first.
     """
     _hmc_env(monkeypatch)
-    monkeypatch.setattr("hmc_mcp.server_vios.client_from_env", _vios_client_factory())
+    monkeypatch.setattr("hmc_mcp.server_tools.vios.client_from_env", _vios_client_factory())
     conn = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):

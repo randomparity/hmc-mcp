@@ -14,7 +14,7 @@ import pytest
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.documents import LparResources
-from hmc_mcp.operations_lpar import _system_name
+from hmc_mcp.operations.lpar import _system_name
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.server import (
     hmc_create_lpar,
@@ -42,7 +42,7 @@ async def test_system_name_uses_fallback_only_for_expected_lookup_failures():
     hmc.get_managed_system.side_effect = HMCError("REST unavailable")
 
     with patch(
-        "hmc_mcp.operations_lpar._ssh_system_name",
+        "hmc_mcp.lpar_ownership._ssh_system_name",
         new=AsyncMock(side_effect=HMCCLIError("SSH unavailable")),
     ):
         assert await _system_name(hmc, SYSTEM_UUID, "fallback") == "fallback"
@@ -152,15 +152,15 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
     # Patch CLI helpers and the stamp (stamp makes SSH call that would fail here).
     with (
         patch(
-            "hmc_mcp.operations_lpar._ssh_system_name",
+            "hmc_mcp.operations.lpar._ssh_system_name",
             new=AsyncMock(return_value="sys1"),
         ),
         patch(
-            "hmc_mcp.operations_lpar.create_lpar_via_cli",
+            "hmc_mcp.operations.lpar.create_lpar_via_cli",
             new=AsyncMock(return_value=""),
         ) as create_via_cli,
         patch(
-            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            "hmc_mcp.operations.lpar.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
     ):

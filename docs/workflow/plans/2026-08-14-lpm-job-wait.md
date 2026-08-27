@@ -26,7 +26,7 @@ same result; migrate and migrate-validate retain their current raw-job behavior.
 
 ## Task 1: Normalize the three LPM operation results
 
-**Files:** Modify `src/hmc_mcp/operations_lpm.py`; extend
+**Files:** Modify `src/hmc_mcp/operations/lpm.py`; extend
 `tests/lpar/test_lpm_tools.py`.
 
 **Interfaces:** Import `JobOutcome`, `job_identifier`, and `job_outcome`. Widen
@@ -61,7 +61,7 @@ HMC data only in the stable outcome's `job` field.
 
 ## Task 2: Expose the stable MCP contract
 
-**Files:** Modify `src/hmc_mcp/server_lpm.py`; extend
+**Files:** Modify `src/hmc_mcp/server_tools/lpm.py`; extend
 `tests/lpar/test_lpm_tools.py` and `tests/app/test_capabilities.py`.
 
 **Interfaces:** Each owned MCP function declares `-> JobOutcome`, accepts
@@ -86,7 +86,7 @@ set across modes; no other MCP tool schema changes.
 
 ## Task 3: Mirror wait controls in the CLI
 
-**Files:** Modify `src/hmc_mcp/cli_lpars.py`; extend
+**Files:** Modify `src/hmc_mcp/cli_commands/lpars.py`; extend
 `tests/app/test_cli_commands.py`.
 
 **Interfaces:** Add `wait`, `timeout`, and `interval` Typer options with defaults

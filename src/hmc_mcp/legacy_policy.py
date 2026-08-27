@@ -4,7 +4,7 @@ Since ADR 0041 a server cannot be composed without an access policy, so every ex
 deployment needs one that grants what the unpolicied server granted. This module is where
 that document is authored. It is a different job from ``access_policy.py``, which loads,
 validates, and compiles an operator's own file; this one writes the operator's first file
-for them, and ``cli_config`` is what puts it on disk.
+for them, and ``cli_commands.config`` is what puts it on disk.
 
 The grant names its tools explicitly rather than granting effect classes. An ``effects``
 grant would silently confer every tool a later release adds; a named list pins the surface

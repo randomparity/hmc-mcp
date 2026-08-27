@@ -19,7 +19,10 @@ from typing import get_args, get_type_hints
 import pytest
 from pydantic import BaseModel
 
-from hmc_mcp import server_command, server_permissions, server_vios, tool_registry
+from hmc_mcp import tool_registry
+from hmc_mcp.server_tools import command as server_command
+from hmc_mcp.server_tools import permissions as server_permissions
+from hmc_mcp.server_tools import vios as server_vios
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.dispatch_scope import dispatch_authorizer
 from hmc_mcp.legacy_policy import compile_legacy_policy
@@ -828,7 +831,7 @@ def test_every_handler_routes_the_connection_argument_it_declares():
     root = Path(server_command.__file__).parent
     checked: set[str] = set()
 
-    for path in sorted(root.glob("server_*.py")):
+    for path in sorted(root.glob("*.py")):
         functions = _module_functions(ast.parse(path.read_text(encoding="utf-8")))
         for name in sorted(functions.keys() & set(TOOL_SECURITY)):
             _assert_handler_routes(
@@ -1428,7 +1431,7 @@ def test_every_handler_reads_the_target_selectors_it_declares():
     unread: dict[str, list[str]] = {}
     checked: set[str] = set()
 
-    for path in sorted(root.glob("server_*.py")):
+    for path in sorted(root.glob("*.py")):
         functions = _module_functions(ast.parse(path.read_text(encoding="utf-8")))
         for name in sorted(functions.keys() & set(TOOL_SECURITY)):
             body = functions[name]

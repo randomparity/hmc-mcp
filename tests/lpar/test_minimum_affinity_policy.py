@@ -9,12 +9,13 @@ import pytest
 from fastmcp import Client
 from typer.testing import CliRunner
 
-from hmc_mcp import cli_lpars, server_lpar_config
+from hmc_mcp.cli_commands import lpars as cli_lpars
+from hmc_mcp.server_tools import lpar_config as server_lpar_config
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli import app
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.legacy_policy import compile_legacy_policy
-from hmc_mcp.operations_ssh_network import (
+from hmc_mcp.operations.ssh_network import (
     MinimumAffinityPolicyResult,
     get_minimum_affinity_policy,
     set_minimum_affinity_policy,
@@ -146,7 +147,7 @@ async def test_public_policy_setter_validates_before_resolution():
     hmc = AsyncMock()
     hmc.config = _config()
     resolver = AsyncMock()
-    with patch("hmc_mcp.operations_ssh_network.resolve_system_uuid", resolver):
+    with patch("hmc_mcp.operations.ssh_network.resolve_system_uuid", resolver):
         with pytest.raises(ValueError, match="none, warn, or fail"):
             await set_minimum_affinity_policy(
                 hmc,
@@ -168,19 +169,19 @@ async def test_public_policy_setter_authorizes_before_mutation():
     mutate = AsyncMock(side_effect=lambda *args: events.append("mutate") or "changed")
     with (
         patch(
-            "hmc_mcp.operations_ssh_network.resolve_system_uuid",
+            "hmc_mcp.operations.ssh_network.resolve_system_uuid",
             AsyncMock(return_value="su"),
         ),
         patch(
-            "hmc_mcp.operations_ssh_network.resolve_lpar_uuid",
+            "hmc_mcp.operations.ssh_network.resolve_lpar_uuid",
             AsyncMock(return_value="lu"),
         ),
         patch(
-            "hmc_mcp.operations_ssh_network.resolve_lpar_ownership_names",
+            "hmc_mcp.operations.ssh_network.resolve_lpar_ownership_names",
             AsyncMock(return_value=("system", "lpar")),
         ),
-        patch("hmc_mcp.operations_ssh_network.authorize_lpar_mutation", authorize),
-        patch("hmc_mcp.operations_ssh_network.set_minimum_affinity_policy_cli", mutate),
+        patch("hmc_mcp.operations.ssh_network.authorize_lpar_mutation", authorize),
+        patch("hmc_mcp.operations.ssh_network.set_minimum_affinity_policy_cli", mutate),
     ):
         result = await set_minimum_affinity_policy(
             hmc, "system", "lpar", MinimumAffinityPolicy(80, "warn")
@@ -204,10 +205,10 @@ async def test_shared_policy_operation_resolves_names_and_wraps_result():
     )
     with (
         patch(
-            "hmc_mcp.operations_ssh_network.resolve_ssh_names",
+            "hmc_mcp.operations.ssh_network.resolve_ssh_names",
             AsyncMock(return_value=("resolved-system", "resolved-lpar")),
         ),
-        patch("hmc_mcp.operations_ssh_network.query_minimum_affinity_policy", query),
+        patch("hmc_mcp.operations.ssh_network.query_minimum_affinity_policy", query),
     ):
         result = await get_minimum_affinity_policy(_config(), "system", "lpar")
 

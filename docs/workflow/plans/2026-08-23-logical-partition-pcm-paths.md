@@ -14,9 +14,9 @@ their owning managed system and reject unsupported combinations. The Python
 
 ## Task 1: Implement the owned PCM target atomically
 
-Files: `src/hmc_mcp/client_pcm.py`, `src/hmc_mcp/client_contracts.py`,
-`src/hmc_mcp/operations_pcm.py`, `src/hmc_mcp/server_metrics.py`,
-`src/hmc_mcp/cli_metrics.py`, `tests/unit/test_pcm.py`, and
+Files: `src/hmc_mcp/client/client_pcm.py`, `src/hmc_mcp/client/client_contracts.py`,
+`src/hmc_mcp/operations/pcm.py`, `src/hmc_mcp/server_tools/metrics.py`,
+`src/hmc_mcp/cli_commands/metrics.py`, `tests/unit/test_pcm.py`, and
 `tests/app/test_cli_commands.py`, and `README.md`.
 
 This is one task because the client, operation, MCP, and CLI signature changes

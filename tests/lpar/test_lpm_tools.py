@@ -1,7 +1,7 @@
 """Tool-layer tests for the Live Partition Mobility MCP tools.
 
 The job XML builders and client methods are covered in test_lpm.py; these
-tests call the actual ``@mcp.tool`` functions in ``server_lpm`` against the
+tests call the actual ``@mcp.tool`` functions in ``server_tools.lpm`` against the
 respx ``mock_hmc`` router so the argument->URL and argument->XML mapping in
 the tool bodies is exercised — the layer the client tests skip.
 """
@@ -13,7 +13,7 @@ import pytest
 from unittest.mock import ANY, AsyncMock, patch
 
 from hmc_mcp.client import HMCError
-from hmc_mcp.operations_lpm import (
+from hmc_mcp.operations.lpm import (
     abort_lpar_migration,
     recover_lpar_migration,
     remote_restart_lpar,
@@ -95,7 +95,7 @@ def test_migrate_lpar_resolves_target_system_uuid(monkeypatch, mock_hmc):
     route = _job_route(mock_hmc, "Migrate")
     resolver = AsyncMock(return_value="vrml12-fsp")
 
-    with patch("hmc_mcp.operations_lpm.resolve_system_name", new=resolver):
+    with patch("hmc_mcp.operations.lpm.resolve_system_name", new=resolver):
         hmc_migrate_lpar(LPAR_UUID, TARGET_SYSTEM_UUID, validate_first=False)
 
     resolver.assert_awaited_once_with(ANY, TARGET_SYSTEM_UUID)

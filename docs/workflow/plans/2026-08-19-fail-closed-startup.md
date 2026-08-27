@@ -7,7 +7,7 @@ granted, so an existing deployment can migrate.
 
 **Architecture.** `server.create_mcp(policy)` becomes the single composer and loses its default;
 the module-level `server.mcp` is deleted. A new `hmc_mcp.legacy_policy` builds, renders, and
-compiles the legacy-equivalent document; `cli_config` writes it; `cli_app.serve` refuses without
+compiles the legacy-equivalent document; `cli_commands.config` writes it; `cli_commands.app.serve` refuses without
 `--access-policy`; both scripts compose through the generator.
 
 **Tech stack.** Python 3.11-3.14, `uv`, `pytest`, `typer`, `pydantic`, `fastmcp`, stdlib
@@ -57,8 +57,8 @@ compiles the legacy-equivalent document; `cli_config` writes it; `cli_app.serve`
 |---|---|---|
 | `src/hmc_mcp/legacy_policy.py` | **new** | Building, rendering, and compiling the legacy-equivalent document |
 | `src/hmc_mcp/server.py` | modified | `create_mcp` requires a policy; `mcp` deleted; `_gates` non-optional; `_unselected_policy_file` deleted; warnings and docstrings |
-| `src/hmc_mcp/cli_app.py` | modified | `serve`'s `--access-policy` requirement, the guarded path helper, the two refusals, markup escaping in `_fail`/`_usage_error`, help text |
-| `src/hmc_mcp/cli_config.py` | modified | `config init-access-policy`; module docstring |
+| `src/hmc_mcp/cli_commands/app.py` | modified | `serve`'s `--access-policy` requirement, the guarded path helper, the two refusals, markup escaping in `_fail`/`_usage_error`, help text |
+| `src/hmc_mcp/cli_commands/config.py` | modified | `config init-access-policy`; module docstring |
 | `scripts/smoke_mcp.py` | modified | Compose through the generator |
 | `scripts/live_test_runner.py` | modified | Compose through the generator with the escape hatch opted in, and pass the gates |
 | `README.md`, `docs/authorization-audit.md` | modified | Migration section, examples, corrected claims, runnable commands |
@@ -160,8 +160,8 @@ real loader; a profile key holding a quote, a backslash, a newline, or U+007F ro
    `tests/app/test_capability_ceiling.py::test_an_authored_but_unselected_policy_file_is_warned`,
    whose condition is now unreachable — invert it to assert the warning set no longer carries
    that line, rather than deleting it. The same file reaches the removed application twice, at
-   `patch.object(type(server_module.mcp), "run", _capture)` and
-   `served["app"] is not server_module.mcp`: the patch target becomes `FastMCP` and the identity
+   `patch.object(type(server_tools.module.mcp), "run", _capture)` and
+   `served["app"] is not server_tools.module.mcp`: the patch target becomes `FastMCP` and the identity
    assertion compares against the application the entry point composed (R2d).
 6. Update the module docstring's `Run:` block so both invocations carry `--access-policy NAME`
    (R16c).
@@ -179,7 +179,7 @@ registers exactly the 129 ordinary tools.
 
 ## Task 3 — `serve` refuses, and CLI text stops lying
 
-**Modifies** `src/hmc_mcp/cli_app.py`.
+**Modifies** `src/hmc_mcp/cli_commands/app.py`.
 
 1. Write `test_serve_without_a_policy_exits_2` and
    `test_serve_with_an_absent_policy_file_exits_1` (R5, R5a) using `typer.testing.CliRunner`,
@@ -220,7 +220,7 @@ the generator; a bracketed exception message reaches stderr intact.
 
 ## Task 4 — the generator command
 
-**Modifies** `src/hmc_mcp/cli_config.py`. **Tests** `tests/app/test_cli_config.py`.
+**Modifies** `src/hmc_mcp/cli_commands/config.py`. **Tests** `tests/app/test_cli_config.py`.
 
 1. Write `test_generating_writes_a_loadable_policy_at_0600`,
    `test_generating_twice_refuses_and_leaves_the_file_byte_identical`, and
@@ -247,7 +247,7 @@ the generator; a bracketed exception message reaches stderr intact.
    `--output` and merge by hand (R11).
 5. Print the written path to stdout and the activation hint to stderr, both escaped (R16e).
 6. Broaden `config_app`'s help beyond "Profile configuration commands." and add the command to
-   `cli_config.py`'s module docstring (R16d).
+   `cli_commands/config.py`'s module docstring (R16d).
 
 **Acceptance:** the command writes a file that `load_access_policy` accepts; a second run exits 1
 with the file unchanged byte-for-byte and a message naming the remedy; `--output` redirects.
@@ -281,7 +281,7 @@ file map.
    `hmc_mcp._app` import. Its two `create_mcp()` calls and its `== 129` assertions survive
    unchanged once the policy is supplied, because G2 pins that number.
 6. `tests/app/test_serve.py`, by breakage class (R2b):
-   1. six `patch.object(type(server_app.mcp), "run", ...)` targets become `FastMCP`;
+   1. six `patch.object(type(server_tools.app.mcp), "run", ...)` targets become `FastMCP`;
    2. five `access_policy=None` forwarding assertions become a real `AccessPolicy`;
    3. two `assert calls == [(enabled, None, None)]` become non-`None` gate assertions;
    4. four bare `main_stdio(...)` / `main_http(...)` calls gain an `access_policy` argument;

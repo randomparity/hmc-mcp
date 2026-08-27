@@ -1,7 +1,7 @@
 """Tests for the hmc_lpar_summary composite tool.
 
 Exercises the tool against a mocked HMC (respx) so the URL mapping and
-field-extraction logic in server_composite.py is verified without a live HMC.
+field-extraction logic in server_tools/composite.py is verified without a live HMC.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from hmc_mcp.server import hmc_lpar_summary
-from hmc_mcp.operations_composite import _lpar_summary
+from hmc_mcp.operations.composite import _lpar_summary
 
 LPAR_UUID = "aabbccdd-1234-5678-abcd-000000000001"
 ADAPTER1_UUID = "aabbccdd-1234-5678-abcd-000000000002"

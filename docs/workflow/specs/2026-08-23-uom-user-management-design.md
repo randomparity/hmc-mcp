@@ -42,7 +42,7 @@ convention; HTTP and parse failures retain the shared `HMCError` behavior.
 
 `documents.py` builds typed UOM `UserProfile` and `ManagementConsole`
 documents. `client_users.py` owns the exact child/group paths, HTTP verbs, and
-feed parsing. `server_users.py` exposes the MCP contracts and delegates XML
+feed parsing. `server_tools/users.py` exposes the MCP contracts and delegates XML
 construction and transport. The existing tool registry and security metadata
 remain the registration boundary.
 

@@ -9,12 +9,12 @@ import pytest
 from fastmcp import Client
 from typer.testing import CliRunner
 
-from hmc_mcp import server_lpar_config
-from hmc_mcp import cli_lpars
+from hmc_mcp.cli_commands import lpars as cli_lpars
+from hmc_mcp.server_tools import lpar_config as server_lpar_config
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.legacy_policy import compile_legacy_policy
-from hmc_mcp.operations_ssh_network import (
+from hmc_mcp.operations.ssh_network import (
     ResourceGroupAffinityResult,
     list_resource_group_memopt_scores,
 )
@@ -221,11 +221,11 @@ def test_shared_operation_resolves_system_and_defaults_to_all():
     )
     with (
         patch(
-            "hmc_mcp.operations_ssh_network.resolve_ssh_names",
+            "hmc_mcp.operations.ssh_network.resolve_ssh_names",
             AsyncMock(return_value=("resolved-system", None)),
         ) as resolve,
         patch(
-            "hmc_mcp.operations_ssh_network.query_resource_group_memopt_scores", query
+            "hmc_mcp.operations.ssh_network.query_resource_group_memopt_scores", query
         ),
     ):
         result = asyncio.run(

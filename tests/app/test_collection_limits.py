@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from hmc_mcp import (
-    server_adapters,
-    server_jobs,
-    server_network,
-    server_storage,
-    server_systems,
+from hmc_mcp.server_tools import (
+    adapters as server_adapters,
+    jobs as server_jobs,
+    network as server_network,
+    storage as server_storage,
+    systems as server_systems,
 )
 from hmc_mcp._app import _run_limited_collection
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
@@ -243,7 +243,7 @@ def test_adapter_type_selector_runs_before_results_are_capped():
         patch.object(
             server_adapters,
             "list_adapters",
-            new=AsyncMock(return_value=("lpar-uuid", entries)),
+            new=AsyncMock(return_value=entries),
         ) as list_selected,
     ):
         result = server_adapters.hmc_list_adapters(

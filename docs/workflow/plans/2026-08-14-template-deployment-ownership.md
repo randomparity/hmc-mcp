@@ -4,7 +4,7 @@
 one safely identifiable new LPAR and reports every inconclusive or failed attempt without
 changing deployment success.
 
-**Architecture:** `operations_templates` captures and compares system-scoped LPAR
+**Architecture:** `operations.templates` captures and compares system-scoped LPAR
 snapshots around the existing deployment job. It delegates the actual best-effort stamp
 to the ownership operation already used by direct creation. UUID comparison is strict:
 one malformed entry invalidates a snapshot, and only one new UUID authorizes stamping.
@@ -31,9 +31,9 @@ one malformed entry invalidates a snapshot, and only one new UUID authorizes sta
 - `tests/unit/test_template_ownership.py` — pure snapshot-selection and async orchestration
   tests, including call order and degraded dependencies.
 - `tests/app/test_template_tools.py` — public MCP result-shape and non-wait regression tests.
-- `src/hmc_mcp/operations_lpar.py` — expose the existing shared stamp operation.
-- `src/hmc_mcp/operations_templates.py` — list-diff inference and deploy orchestration.
-- `src/hmc_mcp/server_templates.py` — public behavior documentation.
+- `src/hmc_mcp/operations/lpar.py` — expose the existing shared stamp operation.
+- `src/hmc_mcp/operations/templates.py` — list-diff inference and deploy orchestration.
+- `src/hmc_mcp/server_tools/templates.py` — public behavior documentation.
 - `src/hmc_mcp/_app.py` — MCP-wide ownership instructions.
 - `docs/adr/0011-multi-agent-lpar-ownership.md` — replace the now-resolved known-gap text.
 
@@ -65,7 +65,7 @@ one malformed entry invalidates a snapshot, and only one new UUID authorizes sta
    import failure because `_new_lpar_from_snapshots` does not exist. This is the required
    red proof.
 3. Implement only `_snapshot_uuids` and `_new_lpar_from_snapshots` in
-   `operations_templates.py`. Run the pure-helper tests again and expect them green. Do not
+   `operations/templates.py`. Run the pure-helper tests again and expect them green. Do not
    change `deploy_partition_template` or the result shape in this step.
 4. Add async orchestration tests using an `AsyncMock` client and monkeypatched
    `resolve_system_uuid`, `wait_for_submitted_job`, and
@@ -92,8 +92,8 @@ target.
 
 ## Task 2: Implement conservative inference and shared stamping
 
-**Files:** modify `src/hmc_mcp/operations_lpar.py` and
-`src/hmc_mcp/operations_templates.py`; test the files from Task 1.
+**Files:** modify `src/hmc_mcp/operations/lpar.py` and
+`src/hmc_mcp/operations/templates.py`; test the files from Task 1.
 
 **Interfaces**
 
@@ -107,10 +107,10 @@ target.
 - `deploy_partition_template` keeps its existing signature and adds
   `ownership_stamped` to normally returned dictionaries.
 
-1. Rename the existing helper in `operations_lpar.py`, add its concrete `HMCClient` type,
+1. Rename the existing helper in `operations/lpar.py`, add its concrete `HMCClient` type,
    and update `create_and_stamp_lpar` to call the renamed function. Do not change its
    system-name resolution, SSH call, or warning contract.
-2. In `operations_templates.py`, import `logging` and the shared stamp operation, define a
+2. In `operations/templates.py`, import `logging` and the shared stamp operation, define a
    module logger, and replace the unconditional manual-warning constant with reason-specific
    constants for non-wait, non-completed job, unavailable baseline/post snapshot, malformed
    snapshot, zero candidate, and multiple candidates.
@@ -129,8 +129,8 @@ target.
 6. Run the focused command from Task 1; expect all focused tests green. Temporarily change
    the cardinality guard from `len(new_uuids) == 1` to accepting multiple candidates, run
    the multiple-candidate test and confirm it fails, then restore the guard and rerun green.
-7. Run `uv run ruff check src/hmc_mcp/operations_lpar.py
-   src/hmc_mcp/operations_templates.py tests/unit/test_template_ownership.py
+7. Run `uv run ruff check src/hmc_mcp/operations/lpar.py
+   src/hmc_mcp/operations/templates.py tests/unit/test_template_ownership.py
    tests/app/test_template_tools.py` and `uv run ty check`; expect zero warnings/errors.
 8. Commit the code and tests with `feat: stamp template-deployed LPAR ownership`.
 
@@ -140,7 +140,7 @@ existing job exceptions and direct-create stamping remain unchanged.
 
 ## Task 3: Align ownership-facing documentation and verify the branch
 
-**Files:** modify `src/hmc_mcp/server_templates.py`, `src/hmc_mcp/_app.py`, and
+**Files:** modify `src/hmc_mcp/server_tools/templates.py`, `src/hmc_mcp/_app.py`, and
 `docs/adr/0011-multi-agent-lpar-ownership.md`; test relevant app and smoke suites.
 
 **Interfaces**

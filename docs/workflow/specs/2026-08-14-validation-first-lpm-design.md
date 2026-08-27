@@ -16,10 +16,10 @@ the migration submission, but never weakens the validation gate. Both MCP paths 
 
 ## Components
 
-- `operations_lpm.py` owns sequencing and returns the existing `LpmResult` containing a
+- `operations/lpm.py` owns sequencing and returns the existing `LpmResult` containing a
   `JobOutcome`.
-- `server_lpm.py` adds the public option and documents ordering/default/failure.
-- `cli_lpars.py` mirrors `--validate-first/--no-validate-first` and wait controls.
+- `server_tools/lpm.py` adds the public option and documents ordering/default/failure.
+- `cli_commands/lpars.py` mirrors `--validate-first/--no-validate-first` and wait controls.
 - Focused operation, MCP, CLI, and capability tests pin ordering, opt-out, failures, timeout,
   exception detail, stable shape, and read/write classification.
 - README and MCP instructions describe the safe default narrowly.

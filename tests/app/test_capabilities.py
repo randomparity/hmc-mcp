@@ -22,7 +22,7 @@ from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.dispatch_scope import dispatch_authorizer
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.client import HMCError
-from hmc_mcp.operations_lpar import ProvisionAffinityAssessment
+from hmc_mcp.operations.lpar import ProvisionAffinityAssessment
 from hmc_mcp.server import (
     TOOL_SECURITY,
     create_mcp,
@@ -142,7 +142,7 @@ def test_schema_description_checker_rejects_top_level_and_nested_gaps():
 @pytest.mark.parametrize("arbitrary_command_enabled", [False, True])
 def test_every_registered_parameter_has_a_description(arbitrary_command_enabled):
     """Every exposed object property must carry useful rendered guidance."""
-    from hmc_mcp import server_command
+    from hmc_mcp.server_tools import command as server_command
 
     try:
         asyncio.run(
@@ -189,7 +189,7 @@ def test_fleet_health_is_read_only():
 
 
 def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
-    from hmc_mcp import server_command
+    from hmc_mcp.server_tools import command as server_command
 
     try:
         asyncio.run(
@@ -269,8 +269,8 @@ def test_closed_vocab_enum_matches_runtime_constant():
     adding a value must be a single edit. This pins the rendered schema to the
     constant so either side changing alone is caught.
     """
-    from hmc_mcp.client_adapters import ADAPTER_TYPES
-    from hmc_mcp.client_users import _VALID_AUTHENTICATION_FILTERS
+    from hmc_mcp.client.client_adapters import ADAPTER_TYPES
+    from hmc_mcp.client.client_users import _VALID_AUTHENTICATION_FILTERS
     from hmc_mcp.documents import (
         PARTITION_TYPES,
         SHARING_MODES,
@@ -278,7 +278,7 @@ def test_closed_vocab_enum_matches_runtime_constant():
         AUTHENTICATION_TYPES,
     )
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
-    from hmc_mcp.server_vios import _VALID_BACKUP_TYPES
+    from hmc_mcp.server_tools.vios import _VALID_BACKUP_TYPES
     from hmc_mcp.ssh_network import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
 
     by_name = _tools_by_name()
@@ -356,9 +356,9 @@ def test_vios_backup_and_restore_schemas_pin_the_supported_contracts():
 
 
 def test_parameter_normalization_contract_is_schema_pinned():
-    from hmc_mcp.operations_pcm import PCM_CATEGORIES
-    from hmc_mcp.operations_lpar import PROCESSOR_COMPATIBILITY_MODES
-    from hmc_mcp.server_systems import MANAGED_SYSTEM_STATES, PARTITION_STATES
+    from hmc_mcp.operations.pcm import PCM_CATEGORIES
+    from hmc_mcp.operations.lpar import PARTITION_STATES, PROCESSOR_COMPATIBILITY_MODES
+    from hmc_mcp.operations.systems import MANAGED_SYSTEM_STATES
 
     by_name = _tools_by_name()
     replacements = {
@@ -704,11 +704,11 @@ def test_delete_lpar_refuses_when_active(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
+            "hmc_mcp.operations.lpar.resolve_lpar_ownership_names",
             new=AsyncMock(return_value=("system-1", "lpar-1")),
         ),
         patch(
-            "hmc_mcp.operations_lpar.authorize_lpar_mutation", new=AsyncMock()
+            "hmc_mcp.operations.lpar.authorize_lpar_mutation", new=AsyncMock()
         ) as guard,
         pytest.raises(HMCError) as exc_info,
     ):
@@ -726,11 +726,11 @@ def test_delete_lpar_succeeds_when_powered_off(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
+            "hmc_mcp.operations.lpar.resolve_lpar_ownership_names",
             new=AsyncMock(return_value=("system-1", "lpar-1")),
         ),
         patch(
-            "hmc_mcp.operations_lpar.authorize_lpar_mutation", new=AsyncMock()
+            "hmc_mcp.operations.lpar.authorize_lpar_mutation", new=AsyncMock()
         ) as guard,
     ):
         result = hmc_delete_lpar(SYSTEM_UUID, LPAR_UUID, ownership_override=True)
@@ -1000,11 +1000,11 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            "hmc_mcp.operations.lpar.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
         patch(
-            "hmc_mcp.operations_lpar._system_name",
+            "hmc_mcp.operations.lpar._system_name",
             new=AsyncMock(return_value="sys1"),
         ),
     ):

@@ -71,7 +71,7 @@ def default_power_ownership_guard_off(monkeypatch):
     Every casing, not just the canonical one: `HMCConfig` leaves
     pydantic-settings' `case_sensitive` at its `False` default, so a developer or
     CI runner exporting `hmc_authorize_power_operations` sets the field exactly
-    as the upper-case spelling does — and `server_permissions` reads the casing
+    as the upper-case spelling does — and `server_tools.permissions` reads the casing
     itself to decide the reported `source`. Clearing only the exact name leaves
     both observable in the tests that pin them.
     """

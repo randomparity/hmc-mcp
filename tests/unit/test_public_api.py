@@ -28,12 +28,12 @@ from typing import (
 
 import pytest
 
-import hmc_mcp
 from hmc_mcp import api
-from hmc_mcp.client_contracts import PcmClient
-from hmc_mcp.client_templates import TemplatesMixin
+from hmc_mcp import operations
+from hmc_mcp.client.client_contracts import PcmClient
+from hmc_mcp.client.client_templates import TemplatesMixin
 
-# ADR 0029's Decision section selects, from each ``operations_*`` module, "every non-underscore
+# ADR 0029's Decision section selects, from each ``operations.*`` module, "every non-underscore
 # top-level coroutine function the module itself defines, and each package-owned input, result,
 # enum, or literal-alias type appearing in a selected function's public signature". Both halves
 # are keyed by ``(defining module, name)``: two ``operations_*`` modules may define the same
@@ -66,7 +66,7 @@ _ADR_0029_PATH = (
 )
 _INVENTORY_BEGIN = "<!-- ADR-0029-INVENTORY:BEGIN -->"
 _INVENTORY_END = "<!-- ADR-0029-INVENTORY:END -->"
-_INVENTORY_ENTRY = re.compile(r"^- `([a-z_][a-z0-9_]*)` — (.+)$")
+_INVENTORY_ENTRY = re.compile(r"^- `([a-z_][a-z0-9_.]*)` — (.+)$")
 _INVENTORY_CLAUSE = re.compile(
     r"^(operations|types|excluded synchronous|exports): (.+)$"
 )
@@ -137,9 +137,10 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "migrate_lpar_with_affinity_preflight",
         "run_lpm_affinity_preflight",
         "abort_lpar_migration",
-        "recover_lpar_migration",
-        "remote_restart_lpar",
-        "RemoteRestartOperation",
+            "recover_lpar_migration",
+            "remote_restart_lpar",
+            "validate_lpar_migration",
+            "RemoteRestartOperation",
         "LpmResult",
         "LpmAffinityPreflightRequest",
         "LpmAffinityPreflightOutcome",
@@ -283,11 +284,13 @@ def test_public_api_exports_the_adr_inventory() -> None:
 
 
 def _operations_modules() -> dict[str, ModuleType]:
-    """Every ``hmc_mcp.operations_*`` module ADR 0029's selection rule governs."""
+    """Every ``hmc_mcp.operations.*`` module ADR 0029's selection rule governs."""
     return {
-        f"hmc_mcp.{found.name}": import_module(f"hmc_mcp.{found.name}")
-        for found in pkgutil.iter_modules(hmc_mcp.__path__)
-        if found.name.startswith("operations_")
+        f"hmc_mcp.operations.{found.name}": import_module(
+            f"hmc_mcp.operations.{found.name}"
+        )
+        for found in pkgutil.iter_modules(operations.__path__)
+        if not found.name.startswith("_")
     }
 
 
@@ -297,7 +300,7 @@ def _selected_operations(modules: dict[str, ModuleType]) -> set[tuple[str, str]]
     A coroutine an operation module merely imported is owned by the module that
     defined it, so ``__module__`` decides ownership and no name is selected twice.
     Selection is keyed by ``(module, name)`` rather than by bare name: two
-    ``operations_*`` modules defining the same public name are two distinct
+    ``operations.*`` modules defining the same public name are two distinct
     obligations, and a bare-name key would let exporting either one discharge both.
     """
     selected: set[tuple[str, str]] = set()
@@ -849,7 +852,7 @@ def test_adr_0029_selection_rule_rejects_undeclared_operations() -> None:
     ``ADR_0029_OPERATION_EXCLUSIONS`` is empty, so the real check exercises the
     clean path only. Drive the same helpers with a synthetic operations module.
     """
-    module = ModuleType("hmc_mcp.operations_synthetic")
+    module = ModuleType("hmc_mcp.operations.synthetic")
 
     async def stray_operation(hmc: object) -> None: ...
 
@@ -859,13 +862,13 @@ def test_adr_0029_selection_rule_rejects_undeclared_operations() -> None:
 
     def sync_helper(hmc: object) -> None: ...
 
-    borrowed_operation.__module__ = "hmc_mcp.operations_storage"
+    borrowed_operation.__module__ = "hmc_mcp.operations.storage"
     for value in (stray_operation, _private_operation, sync_helper):
         value.__module__ = module.__name__
     for value in (stray_operation, borrowed_operation, _private_operation, sync_helper):
         setattr(module, value.__name__, value)
 
-    stray = ("hmc_mcp.operations_synthetic", "stray_operation")
+    stray = ("hmc_mcp.operations.synthetic", "stray_operation")
 
     # Only the public coroutine the module itself defines is selected.
     selected = _selected_operations({module.__name__: module})
@@ -896,8 +899,8 @@ def test_adr_0029_selection_survives_a_name_two_modules_define() -> None:
     There is no collision in the package today, which is why this is proven
     synthetically rather than against the real modules.
     """
-    first = ModuleType("hmc_mcp.operations_first")
-    second = ModuleType("hmc_mcp.operations_second")
+    first = ModuleType("hmc_mcp.operations.first")
+    second = ModuleType("hmc_mcp.operations.second")
     for module in (first, second):
 
         async def collide(hmc: object) -> None: ...
@@ -907,14 +910,14 @@ def test_adr_0029_selection_survives_a_name_two_modules_define() -> None:
 
     selected = _selected_operations({m.__name__: m for m in (first, second)})
     assert selected == {
-        ("hmc_mcp.operations_first", "collide"),
-        ("hmc_mcp.operations_second", "collide"),
+        ("hmc_mcp.operations.first", "collide"),
+        ("hmc_mcp.operations.second", "collide"),
     }
 
-    exported_one = {("hmc_mcp.operations_first", "collide")}
+    exported_one = {("hmc_mcp.operations.first", "collide")}
     assert _selection_faults(selected, exported_one, {})[
         "selected but not exported or excluded"
-    ] == ["hmc_mcp.operations_second:collide"]
+    ] == ["hmc_mcp.operations.second:collide"]
 
 
 @dataclass(frozen=True)
@@ -927,7 +930,7 @@ class SyntheticResult:
 
 # Reassigned after ``@dataclass`` runs, not before: the decorator resolves field types
 # through ``sys.modules[cls.__module__]`` and would fail on a name that is not one.
-SyntheticResult.__module__ = "hmc_mcp.operations_typed"
+SyntheticResult.__module__ = "hmc_mcp.operations.typed"
 SyntheticFlavour = Literal["thin", "thick"]
 
 
@@ -946,8 +949,8 @@ class SyntheticSnapshot:
     flavour: SyntheticFlavour
 
 
-SyntheticNested.__module__ = "hmc_mcp.operations_typed"
-SyntheticSnapshot.__module__ = "hmc_mcp.operations_typed"
+SyntheticNested.__module__ = "hmc_mcp.operations.typed"
+SyntheticSnapshot.__module__ = "hmc_mcp.operations.typed"
 
 
 class SyntheticPartialError(Exception):
@@ -967,8 +970,8 @@ class SyntheticPartialError(Exception):
         self.flavour = flavour
 
 
-SyntheticPartialError.__module__ = "hmc_mcp.operations_typed"
-SyntheticPartialError.__init__.__module__ = "hmc_mcp.operations_typed"
+SyntheticPartialError.__module__ = "hmc_mcp.operations.typed"
+SyntheticPartialError.__init__.__module__ = "hmc_mcp.operations.typed"
 
 
 def test_adr_0029_type_rule_reddens_end_to_end(
@@ -983,7 +986,7 @@ def test_adr_0029_type_rule_reddens_end_to_end(
     module is registered because a real owned class always reaches its own module
     through ``sys.modules``, and the field half looks it up there.
     """
-    module = ModuleType("hmc_mcp.operations_typed")
+    module = ModuleType("hmc_mcp.operations.typed")
 
     async def synthetic_operation(
         hmc: object, flavour: SyntheticFlavour
@@ -998,8 +1001,8 @@ def test_adr_0029_type_rule_reddens_end_to_end(
         {(module.__name__, "synthetic_operation")}, {module.__name__: module}
     )
     assert faults["selected but not exported or excluded"] == [
-        "hmc_mcp.operations_typed:SyntheticFlavour",
-        "hmc_mcp.operations_typed:SyntheticResult",
+        "hmc_mcp.operations.typed:SyntheticFlavour",
+        "hmc_mcp.operations.typed:SyntheticResult",
     ]
 
 
@@ -1013,7 +1016,7 @@ def test_adr_0029_type_rule_descends_into_owned_model_fields(
     the shape #482 found twelve models and seven aliases deep — a facade correct under
     the old signature-only walk still leaves both unnameable by a consumer.
     """
-    module = ModuleType("hmc_mcp.operations_typed")
+    module = ModuleType("hmc_mcp.operations.typed")
 
     async def snapshot_operation(hmc: object) -> SyntheticSnapshot: ...
 
@@ -1028,9 +1031,9 @@ def test_adr_0029_type_rule_descends_into_owned_model_fields(
         {(module.__name__, "snapshot_operation")}, {module.__name__: module}
     )
     assert faults["selected but not exported or excluded"] == [
-        "hmc_mcp.operations_typed:SyntheticFlavour",
-        "hmc_mcp.operations_typed:SyntheticNested",
-        "hmc_mcp.operations_typed:SyntheticSnapshot",
+        "hmc_mcp.operations.typed:SyntheticFlavour",
+        "hmc_mcp.operations.typed:SyntheticNested",
+        "hmc_mcp.operations.typed:SyntheticSnapshot",
     ]
 
 
@@ -1045,7 +1048,7 @@ def test_adr_0029_type_rule_reaches_an_exported_errors_constructor(
     all (#502). Driving it with an empty operation set isolates this half, so every
     fault below arrives through ``__init__`` and through nothing else.
     """
-    module = ModuleType("hmc_mcp.operations_typed")
+    module = ModuleType("hmc_mcp.operations.typed")
     module.SyntheticFlavour = SyntheticFlavour  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, module.__name__, module)
     monkeypatch.setattr(
@@ -1055,8 +1058,8 @@ def test_adr_0029_type_rule_reaches_an_exported_errors_constructor(
 
     faults = _unexported_owned_types(set(), {})
     assert faults["selected but not exported or excluded"] == [
-        "hmc_mcp.operations_typed:SyntheticFlavour",
-        "hmc_mcp.operations_typed:SyntheticResult",
+        "hmc_mcp.operations.typed:SyntheticFlavour",
+        "hmc_mcp.operations.typed:SyntheticResult",
     ]
 
 
@@ -1071,7 +1074,7 @@ def test_adr_0029_type_rule_requires_a_manifest_entry_not_a_bare_binding(
     distinction has no live case and stays unproven — and therefore free to be
     weakened back — unless a synthetic one drives it.
     """
-    module = ModuleType("hmc_mcp.operations_typed")
+    module = ModuleType("hmc_mcp.operations.typed")
 
     async def synthetic_operation(hmc: object) -> SyntheticResult: ...
 
@@ -1086,12 +1089,12 @@ def test_adr_0029_type_rule_requires_a_manifest_entry_not_a_bare_binding(
         {(module.__name__, "synthetic_operation")}, {module.__name__: module}
     )
     assert faults["selected but not exported or excluded"] == [
-        "hmc_mcp.operations_typed:SyntheticResult"
+        "hmc_mcp.operations.typed:SyntheticResult"
     ]
 
 
 def test_owned_type_walk_reaches_nested_and_callable_annotations() -> None:
-    pcm_resource = import_module("hmc_mcp.operations_pcm").PcmResource
+    pcm_resource = import_module("hmc_mcp.operations.pcm").PcmResource
     collected: dict[tuple[str, str], object] = {}
     _collect_owned_types(list[pcm_resource | None], collected)
     # A ``Callable`` parameter list is a plain list, not a subscripted generic.
@@ -1100,9 +1103,9 @@ def test_owned_type_walk_reaches_nested_and_callable_annotations() -> None:
     _collect_owned_types(dict[str, object], collected)
     # Nor does an underscore-private owned type: ADR 0029 keeps it internal.
     _collect_owned_types(
-        type("_Internal", (), {"__module__": "hmc_mcp.operations_pcm"}), collected
+        type("_Internal", (), {"__module__": "hmc_mcp.operations.pcm"}), collected
     )
-    assert collected == {("hmc_mcp.operations_pcm", "PcmResource"): pcm_resource}
+    assert collected == {("hmc_mcp.operations.pcm", "PcmResource"): pcm_resource}
 
     # A ``TypeVar`` names no type either; its bound is walked in its place.
     from_bound: dict[tuple[str, str], object] = {}
@@ -1117,10 +1120,10 @@ def test_literal_alias_clause_reads_paths_the_resolved_hints_lose(
 
     A dotted reference and a quoted forward reference each name an alias as surely as
     a bare name does. Both are attributed to the module that *defines* the alias, not
-    the one whose operation consumes it: ``operations_lpm`` names
+    the one whose operation consumes it: ``operations.lpm`` names
     ``RemoteRestartOperation`` and ``jobs`` owns it.
     """
-    lpm = import_module("hmc_mcp.operations_lpm")
+    lpm = import_module("hmc_mcp.operations.lpm")
     jobs = import_module("hmc_mcp.jobs")
 
     async def dotted(hmc: object, operation: jobs.RemoteRestartOperation) -> None: ...
@@ -1178,9 +1181,9 @@ def test_annotation_walk_names_the_operation_when_an_annotation_will_not_parse()
 ):
     """An unreadable signature is a guard failure, and must report as one."""
     with pytest.raises(FacadeContractError) as error:
-        _annotation_paths("not a valid annotation", origin="operations_x.do_thing")
+        _annotation_paths("not a valid annotation", origin="operations.x.do_thing")
 
-    assert "operations_x.do_thing" in str(error.value)
+    assert "operations.x.do_thing" in str(error.value)
     assert "not a valid annotation" in str(error.value)
 
 
@@ -1192,15 +1195,15 @@ def test_literal_alias_clause_unwraps_annotated_and_stops_at_the_package_edge() 
     assert _literal_alias(namespace, ("Absent",)) is None
 
     # An alias a module imports from outside the package is no facade export:
-    # ``operations_pcm`` takes ``Literal`` itself from ``typing``.
-    pcm = import_module("hmc_mcp.operations_pcm")
+    # ``operations.pcm`` takes ``Literal`` itself from ``typing``.
+    pcm = import_module("hmc_mcp.operations.pcm")
     assert _defining_module(pcm, "Literal") is None
-    assert _defining_module(pcm, "PcmCategory") == "hmc_mcp.operations_pcm"
+    assert _defining_module(pcm, "PcmCategory") == "hmc_mcp.operations.pcm"
 
 
 def test_literal_alias_clause_rejects_an_evaluated_annotation() -> None:
     """The clause rests on the future import; a module without it must not go quiet."""
-    module = ModuleType("hmc_mcp.operations_evaluated")
+    module = ModuleType("hmc_mcp.operations.evaluated")
 
     async def evaluated(hmc: object) -> None: ...
 
@@ -1272,7 +1275,7 @@ def test_operations_modules_define_no_unselectable_operation_shapes() -> None:
 
 
 def test_unselectable_shape_detector_recognises_each_shape() -> None:
-    module = ModuleType("hmc_mcp.operations_shapes")
+    module = ModuleType("hmc_mcp.operations.shapes")
 
     async def owned(hmc: object) -> None: ...
 
@@ -1285,7 +1288,7 @@ def test_unselectable_shape_detector_recognises_each_shape() -> None:
     streamer.__module__ = module.__name__
     # A factory in another module stamps its own ``__module__`` on what it builds, and
     # that module does not publish the result under this name.
-    elsewhere.__module__ = "hmc_mcp.operations_storage"
+    elsewhere.__module__ = "hmc_mcp.operations.storage"
     module.owned = owned  # type: ignore[attr-defined]
     module.streamer = streamer  # type: ignore[attr-defined]
     module.factory_built = elsewhere  # type: ignore[attr-defined]
@@ -1295,10 +1298,10 @@ def test_unselectable_shape_detector_recognises_each_shape() -> None:
     module.map_storage = api.map_storage  # type: ignore[attr-defined]
 
     assert _unselectable_operation_shapes({module.__name__: module}) == {
-        "functools.partial": ["hmc_mcp.operations_shapes:partial_built"],
-        "asynchronous generator": ["hmc_mcp.operations_shapes:streamer"],
+        "functools.partial": ["hmc_mcp.operations.shapes:partial_built"],
+        "asynchronous generator": ["hmc_mcp.operations.shapes:streamer"],
         "coroutine its declared module does not publish": [
-            "hmc_mcp.operations_shapes:factory_built"
+            "hmc_mcp.operations.shapes:factory_built"
         ],
     }
 
@@ -1455,7 +1458,7 @@ def _entries_from(
     return _adr_0029_inventory()
 
 
-_PROBE_ENTRY = "- `operations_vios` — operations: `power_vios`."
+_PROBE_ENTRY = "- `operations.vios` — operations: `power_vios`."
 _PROBE_NOTE = "  - Note: narrative the parser passes over."
 
 _REJECTED_FENCE_BODIES = {
@@ -1484,7 +1487,7 @@ def test_inventory_parser_rejects_text_that_is_not_a_note(
     reopened the swallow, and a fake clause rode in behind a note.
     """
     assert _entries_from(monkeypatch, tmp_path, _PROBE_ENTRY) == {
-        "operations_vios": {"operations": ["power_vios"]}
+        "operations.vios": {"operations": ["power_vios"]}
     }
     # A blank line before a note, and a second paragraph inside one, are ordinary
     # markdown and stay legal — a note ends by dedenting, not at the first blank line.
@@ -1492,7 +1495,7 @@ def test_inventory_parser_rejects_text_that_is_not_a_note(
         f"{_PROBE_ENTRY}\n\n{_PROBE_NOTE}\n    wrapped narrative.",
         f"{_PROBE_ENTRY}\n{_PROBE_NOTE}\n\n    a second paragraph of narrative.",
     ):
-        assert set(_entries_from(monkeypatch, tmp_path, legal)) == {"operations_vios"}
+        assert set(_entries_from(monkeypatch, tmp_path, legal)) == {"operations.vios"}
 
     accepted = []
     for label, body in _REJECTED_FENCE_BODIES.items():
@@ -1643,7 +1646,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         records how each derives the managed system its ownership guard needs
         when the caller omits the optional selector.
         Before that, issue #366 extracted the ``installios`` install
-        orchestration out of the MCP tool bodies into ``operations_install``
+        orchestration out of the MCP tool bodies into ``operations.install``
         and exported ``install_lpar_os`` and ``install_vios``. Both return the
         CLI bridge's detach handle, not an HMC job identifier: ADR 0069 found
         no ``InstallLPAR``/``InstallVIOS`` REST job on any surveyed HMC and
@@ -1733,7 +1736,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "c0fe307e98a495e8e8ecaf7c3a6889bc626848aac1e48c7f52148012db630a4b"  # pragma: allowlist secret
+    expected_digest = "a58f6ec7c63beaef52b5ea200e253342f699a6a406a3b8f452419ac2c4239df2"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -1935,9 +1938,9 @@ loaded = sorted(
     if name.split('.', 1)[0] in {'fastmcp', 'mcp', 'rich', 'typer'}
     or name == 'hmc_mcp._app'
     or name == 'hmc_mcp.cli'
-    or name.startswith('hmc_mcp.cli_')
+    or name.startswith('hmc_mcp.cli_commands')
     or name == 'hmc_mcp.server'
-    or name.startswith('hmc_mcp.server_')
+    or name.startswith('hmc_mcp.server_tools')
 )
 assert loaded == [], loaded
 """

@@ -623,5 +623,5 @@ Validated against live P9, P10, and P11 managed systems on HMC V10R3M1060 and HM
 
 - [IBM HMC commands reference (Power10)](https://www.ibm.com/docs/en/power10/7063-CR1?topic=hmc-commands)
 - [`src/hmc_mcp/ssh_commands.py`](../src/hmc_mcp/ssh_commands.py) — all SSH command construction
-- [`src/hmc_mcp/server_vios.py`](../src/hmc_mcp/server_vios.py) — VIOS backup commands
+- [`src/hmc_mcp/server_tools/vios.py`](../src/hmc_mcp/server_tools/vios.py) — VIOS backup commands
 - [`scripts/live_test_runner.py`](../scripts/live_test_runner.py) — live-test uses of HMC CLI

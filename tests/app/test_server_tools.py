@@ -304,7 +304,7 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     # stamp_lpar_ownership calls set_lpar_description over SSH;
     # patch stamp to avoid needing a live SSH server in this XML-building test.
     with patch(
-        "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+        "hmc_mcp.operations.lpar.stamp_lpar_ownership",
         new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-01-01]"),
     ):
         result = hmc_create_lpar(
@@ -349,11 +349,11 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(201, text=LPAR_FEED.format(name="ded")))
     with (
         patch(
-            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            "hmc_mcp.operations.lpar.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
         patch(
-            "hmc_mcp.operations_lpar._system_name",
+            "hmc_mcp.operations.lpar._system_name",
             new=AsyncMock(return_value="sys1"),
         ),
     ):
@@ -398,10 +398,10 @@ def test_rename_lpar_authorizes_and_writes_name(monkeypatch, mock_hmc):
     guard = AsyncMock()
     with (
         patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
+            "hmc_mcp.operations.lpar.resolve_lpar_ownership_names",
             new=AsyncMock(return_value=("system-1", "owned-lpar")),
         ),
-        patch("hmc_mcp.operations_lpar.authorize_lpar_mutation", new=guard),
+        patch("hmc_mcp.operations.lpar.authorize_lpar_mutation", new=guard),
     ):
         result = hmc_rename_lpar(
             SYSTEM_UUID,
@@ -426,11 +426,11 @@ def test_foreign_owned_rename_issues_no_write(monkeypatch, mock_hmc):
     write = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}")
     with (
         patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
+            "hmc_mcp.operations.lpar.resolve_lpar_ownership_names",
             new=AsyncMock(return_value=("system-1", "owned-lpar")),
         ),
         patch(
-            "hmc_mcp.operations_lpar.authorize_lpar_mutation",
+            "hmc_mcp.operations.lpar.authorize_lpar_mutation",
             new=AsyncMock(side_effect=PermissionError("foreign owner")),
         ),
         pytest.raises(PermissionError, match="foreign owner"),
@@ -447,11 +447,11 @@ def test_foreign_owned_delete_issues_no_write(monkeypatch, mock_hmc):
     write = mock_hmc.delete(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}")
     with (
         patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
+            "hmc_mcp.operations.lpar.resolve_lpar_ownership_names",
             new=AsyncMock(return_value=("system-1", "owned-lpar")),
         ),
         patch(
-            "hmc_mcp.operations_lpar.authorize_lpar_mutation",
+            "hmc_mcp.operations.lpar.authorize_lpar_mutation",
             new=AsyncMock(side_effect=PermissionError("foreign owner")),
         ),
         pytest.raises(PermissionError, match="foreign owner"),
@@ -553,7 +553,7 @@ def test_vios_update_encodes_uuid_as_one_path_segment(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     hostile_uuid = "allowed/do/Shutdown?ignored="
     monkeypatch.setattr(
-        "hmc_mcp.server_updates.resolve_vios_uuid",
+        "hmc_mcp.server_tools.updates.resolve_vios_uuid",
         AsyncMock(return_value=hostile_uuid),
     )
     route = mock_hmc.put(
@@ -582,7 +582,7 @@ def test_vios_invalid_source_fails_before_client(monkeypatch, source, kind, mess
     def fail_client(_profile):
         raise AssertionError("client created")
 
-    monkeypatch.setattr("hmc_mcp.server_updates.client_from_env", fail_client)
+    monkeypatch.setattr("hmc_mcp.server_tools.updates.client_from_env", fail_client)
 
     with pytest.raises(ValueError, match=message):
         hmc_vios_update(VIOS_UUID, source, kind=kind)
@@ -609,7 +609,7 @@ def test_vios_waited_terminal_result_projects_stdout(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     raw = _vios_job_with_stdout()
     monkeypatch.setattr(
-        "hmc_mcp.server_updates._update_op", AsyncMock(return_value=raw)
+        "hmc_mcp.server_tools.updates._update_op", AsyncMock(return_value=raw)
     )
 
     result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=True)
@@ -632,7 +632,7 @@ def test_vios_stdout_is_not_projected_without_terminal_wait(
 ):
     _hmc_env(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.server_updates._update_op", AsyncMock(return_value=job)
+        "hmc_mcp.server_tools.updates._update_op", AsyncMock(return_value=job)
     )
 
     result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=wait)
@@ -645,7 +645,7 @@ def test_vios_stdout_does_not_overwrite_raw_top_level_value(monkeypatch, mock_hm
     _hmc_env(monkeypatch)
     raw = _vios_job_with_stdout(top_level="raw value")
     monkeypatch.setattr(
-        "hmc_mcp.server_updates._update_op", AsyncMock(return_value=raw)
+        "hmc_mcp.server_tools.updates._update_op", AsyncMock(return_value=raw)
     )
 
     result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=True)
@@ -1294,7 +1294,7 @@ def test_job_href_cannot_forge_a_log_record(monkeypatch, mock_hmc, caplog):
         return_value=httpx.Response(404, text="gone")
     )
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
         assert hmc_get_job("job-uuid-999", job_href=forged) is None
 
     assert caplog.records, "the found=False translation is expected to warn"

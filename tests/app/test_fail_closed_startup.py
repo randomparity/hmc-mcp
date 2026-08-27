@@ -25,7 +25,7 @@ Spec item -> node id:
   L1   test_serve_without_a_policy_exits_2_as_a_subprocess
   L2   test_the_documented_migration_works_end_to_end
 
-R11 and R11a live in tests/app/test_cli_config.py; R7-R10, R9a and R9b in
+R11 and R11a live in tests/app/test_cli_commands/config.py; R7-R10, R9a and R9b in
 tests/unit/test_legacy_policy.py. Each of the three modules carries its own header and
 its own inventory guard, because the guard pattern reads ``__file__`` and cannot span
 modules. R16, R16a-R16d and R17 are documentation requirements with no node id.
@@ -361,7 +361,7 @@ def test_error_text_survives_square_brackets(capsys):
     empty string, so the generator's most important diagnostic named a key the operator
     could not see.
     """
-    from hmc_mcp.cli_app import _fail
+    from hmc_mcp.cli_commands.app import _fail
 
     with pytest.raises(typer.Exit):
         _fail(ValueError('came from a [profiles." prod"] key in config.toml'))
@@ -375,7 +375,7 @@ def test_error_text_survives_a_closing_tag_shape(capsys):
     `_check_entries` renders the offending value under `repr()`, so a profile key like
     `[/prod]` reaches this helper as literal text and must not be parsed as markup.
     """
-    from hmc_mcp.cli_app import _usage_error
+    from hmc_mcp.cli_commands.app import _usage_error
 
     with pytest.raises(typer.Exit):
         _usage_error("connections entry '[/prod]' is empty or padded")

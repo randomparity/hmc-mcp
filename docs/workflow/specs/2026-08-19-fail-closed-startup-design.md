@@ -392,7 +392,7 @@ precedes the first `serve` line. A command that fails when followed is a defect 
 change that broke it, not a stale example.
 
 **R16c — `serve --help` stops advertising the mode it now refuses.**
-`src/hmc_mcp/cli_app.py`'s `--access-policy` option help ("Without it, no capability ceiling
+`src/hmc_mcp/cli_commands/app.py`'s `--access-policy` option help ("Without it, no capability ceiling
 is applied and every tool is exposed") and the `serve` docstring ("Without the option no
 policy applies") both describe omitting the option as a supported mode. `hmc-mcp serve
 --help` is the first thing an operator runs after R5 refuses them, so they would read that
@@ -406,7 +406,7 @@ until #225 makes startup fail closed" — this entry is #225. R16a's principle, 
 help text and docstrings rather than to a command.
 
 **R16d — The `config` group stops calling itself profile-only.** `config_app` is declared
-`help="Profile configuration commands."`, and `cli_config.py`'s module docstring enumerates
+`help="Profile configuration commands."`, and `cli_commands/config.py`'s module docstring enumerates
 the three existing commands. `hmc-mcp config --help` is what an operator runs the moment
 R5's message points them at `hmc-mcp config init-access-policy`, and it would list a
 server-access-policy generator under a heading asserting the exact conflation R16b refuses —

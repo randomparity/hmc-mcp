@@ -8,7 +8,7 @@ through provisioning without inventing REST or snapshot/profile application fiel
 ## Architecture
 
 The shared policy value and CLI command live in `ssh_commands.py`; the presentation-neutral
-authorization workflow lives in `operations_ssh_network.py`; adapters and provisioning delegate to
+authorization workflow lives in `operations/ssh_network.py`; adapters and provisioning delegate to
 those boundaries. Tests prove fail-fast ordering and command construction.
 
 ## Tech stack and global constraints
@@ -39,7 +39,7 @@ min_affinity_score_action: Literal["none", "warn", "fail"])`; define
 
 ## Task 2: Authorized public setter
 
-Files: `src/hmc_mcp/operations_ssh_network.py`, `src/hmc_mcp/server_lpar_config.py`,
+Files: `src/hmc_mcp/operations/ssh_network.py`, `src/hmc_mcp/server_tools/lpar_config.py`,
 `src/hmc_mcp/api.py`, `src/hmc_mcp/server.py`, `tests/lpar/test_minimum_affinity_policy.py`, and
 public API/registry boundary tests as required.
 
@@ -59,7 +59,7 @@ ownership_override=False, profile=None) -> str`.
 
 ## Task 3: Optional provisioning policy
 
-Files: `src/hmc_mcp/operations_provision.py`, `src/hmc_mcp/server_provision.py`, and provisioning
+Files: `src/hmc_mcp/operations/provision.py`, `src/hmc_mcp/server_tools/provision.py`, and provisioning
 tests.
 
 Interfaces: add keyword `minimum_affinity_policy: MinimumAffinityPolicy | None = None` to

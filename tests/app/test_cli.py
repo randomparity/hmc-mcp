@@ -9,7 +9,8 @@ explicit init arg would otherwise shadow the environment).
 
 from __future__ import annotations
 
-from hmc_mcp import cli, cli_app
+from hmc_mcp import cli
+from hmc_mcp.cli_commands import app as cli_app
 from hmc_mcp.resource_identity import is_uuid
 
 

@@ -611,7 +611,7 @@ V2–V9 with a message naming the tool, and `TypeError` when a mandatory field i
 
 ## Task 2 — the escape hatch and the composed index
 
-**Modifies:** `src/hmc_mcp/server_command.py`, `src/hmc_mcp/server.py`.
+**Modifies:** `src/hmc_mcp/server_tools/command.py`, `src/hmc_mcp/server.py`.
 
 **Interfaces consumed:** `ToolSecurity`, `annotations_for`, `validate_security`,
 `build_tool_security` from Task 1.
@@ -620,7 +620,7 @@ V2–V9 with a message naming the tool, and `TypeError` when a mandatory field i
 
 ### Steps
 
-1. **Rewrite the head of `src/hmc_mcp/server_command.py`.** Replace the `_STATE_CHANGING`
+1. **Rewrite the head of `src/hmc_mcp/server_tools/command.py`.** Replace the `_STATE_CHANGING`
    import and the `mcp.tool(...)` call:
 
 ```python
@@ -738,30 +738,30 @@ no longer re-exports the frozensets.
    changes — for a creation tool, the container that gains it. Target selectors are built,
    never written.
 
-   `server_adapters.py` — all `target_kind="lpar"`:
+   `server_tools/adapters.py` — all `target_kind="lpar"`:
    `hmc_list_adapters` read `adapter.list`; `hmc_add_network_adapter` mutate
    `adapter.add_network`; `hmc_add_vscsi_adapter` mutate `adapter.add_vscsi`;
    `hmc_add_vfc_adapter` mutate `adapter.add_vfc`; `hmc_delete_adapter` destructive
    `adapter.delete`.
 
-   `server_capacity.py` — all `read`, `target_kind="console"`:
+   `server_tools/capacity.py` — all `read`, `target_kind="console"`:
    `hmc_capacity_report` `capacity.report`; `hmc_find_placement` `placement.find`.
 
-   `server_composite.py` — both `read`: `hmc_lpar_summary` `lpar.summary` `lpar`;
+   `server_tools/composite.py` — both `read`: `hmc_lpar_summary` `lpar.summary` `lpar`;
    `hmc_system_summary` `system.summary` `managed_system`.
 
-   `server_health.py` — `hmc_fleet_health` read `health.fleet` `console`.
+   `server_tools/health.py` — `hmc_fleet_health` read `health.fleet` `console`.
 
-   `server_jobs.py` — all `read`: `hmc_get_job` `job.get` `job`; `hmc_list_recent_jobs`
+   `server_tools/jobs.py` — all `read`: `hmc_get_job` `job.get` `job`; `hmc_list_recent_jobs`
    `job.list` `console`; `hmc_wait_for_job` `job.wait` `job`.
 
-   `server_lpar_config.py` — all `target_kind="lpar"`:
+   `server_tools/lpar_config.py` — all `target_kind="lpar"`:
    `hmc_get_lpar_description` read `lpar.get_description`; `hmc_set_lpar_description` mutate
    `lpar.set_description`; `hmc_get_lpar_msp` read `lpar.get_msp`; `hmc_set_lpar_msp` mutate
    `lpar.set_msp`; `hmc_get_lpar_proc_compat` read `lpar.get_proc_compat`;
    `hmc_set_lpar_proc_compat` mutate `lpar.set_proc_compat`.
 
-   `server_lpars.py`: `hmc_create_lpar` mutate `lpar.create` `managed_system`;
+   `server_tools/lpars.py`: `hmc_create_lpar` mutate `lpar.create` `managed_system`;
    `hmc_modify_lpar` mutate `lpar.modify` `lpar`; `hmc_rename_lpar` mutate `lpar.rename`
    `lpar`; `hmc_dlpar_proc` mutate `lpar.dlpar_proc` `lpar`; `hmc_dlpar_mem` mutate
    `lpar.dlpar_mem` `lpar`; `hmc_delete_lpar` destructive `lpar.delete` `lpar`;
@@ -771,18 +771,18 @@ no longer re-exports the frozensets.
    mutate `boot_order.set` `lpar`; `hmc_clear_lpar_boot_order` mutate `boot_order.clear`
    `lpar`.
 
-   `server_lpm.py` — all `target_kind="lpar"`: `hmc_migrate_lpar` mutate `lpar.migrate`;
+   `server_tools/lpm.py` — all `target_kind="lpar"`: `hmc_migrate_lpar` mutate `lpar.migrate`;
    `hmc_migrate_validate_lpar` mutate `lpar.migrate_validate`; `hmc_migrate_abort_lpar`
    destructive `lpar.migrate_abort`; `hmc_migrate_recover_lpar` mutate
    `lpar.migrate_recover`; `hmc_remote_restart_lpar` destructive `lpar.remote_restart`.
 
-   `server_metrics.py` — all `target_kind="metric_resource"`: `hmc_get_pcm_preferences` read
+   `server_tools/metrics.py` — all `target_kind="metric_resource"`: `hmc_get_pcm_preferences` read
    `pcm.get_preferences`; `hmc_set_pcm_preferences` mutate `pcm.set_preferences`;
    `hmc_processed_metrics` read `metrics.processed`; `hmc_processed_metric_links` read
    `metrics.processed_links`; `hmc_aggregated_metrics` read `metrics.aggregated`;
    `hmc_aggregated_metric_links` read `metrics.aggregated_links`.
 
-   `server_network.py`: `hmc_list_virtual_switches` read `network.list_switches`
+   `server_tools/network.py`: `hmc_list_virtual_switches` read `network.list_switches`
    `managed_system`; `hmc_list_virtual_networks` read `network.list_networks`
    `managed_system`; `hmc_create_virtual_network` mutate `network.create_network`
    `managed_system`; `hmc_delete_virtual_network` destructive `network.delete_network`
@@ -793,14 +793,14 @@ no longer re-exports the frozensets.
    read `vnic.list` `lpar`; `hmc_add_vnic` mutate `vnic.add` `lpar`; `hmc_remove_vnic`
    destructive `vnic.remove` `lpar`.
 
-   `server_profiles.py`: `hmc_backup_lpar_profiles` destructive `lpar_profile.backup`
+   `server_tools/profiles.py`: `hmc_backup_lpar_profiles` destructive `lpar_profile.backup`
    `managed_system`; `hmc_restore_lpar_profiles` destructive `lpar_profile.restore`
    `managed_system`; `hmc_sync_lpar_profile` destructive `lpar_profile.sync` `lpar`;
    `hmc_assign_profile_io_slot` mutate `lpar_profile.assign_io_slot` `lpar`.
 
-   `server_provision.py` — `hmc_provision_lpar` mutate `provision.lpar` `managed_system`.
+   `server_tools/provision.py` — `hmc_provision_lpar` mutate `provision.lpar` `managed_system`.
 
-   `server_storage.py`: `hmc_list_volume_groups` read `storage.list_volume_groups` `vios`;
+   `server_tools/storage.py`: `hmc_list_volume_groups` read `storage.list_volume_groups` `vios`;
    `hmc_create_volume_group` mutate `storage.create_volume_group` `vios`;
    `hmc_attach_disk_to_lpar` mutate `storage.attach_disk` `lpar`; `hmc_create_virtual_disk`
    mutate `storage.create_disk` `vios`; `hmc_delete_virtual_disk` destructive
@@ -821,12 +821,12 @@ no longer re-exports the frozensets.
    `hmc_unmount_optical_media` destructive `media.unmount` `vios`;
    `hmc_detach_optical_mapping` destructive `media.detach_mapping` `vios`.
 
-   `server_system_resources.py` — all `target_kind="managed_system"`:
+   `server_tools/system_resources.py` — all `target_kind="managed_system"`:
    `hmc_get_proc_compat_modes` read `system.get_proc_compat_modes`; `hmc_list_io_slots` read
    `io_slot.list`; `hmc_list_memory_pools` read `memory_pool.list`; `hmc_remove_memory_pool`
    destructive `memory_pool.remove`.
 
-   `server_systems.py`: `hmc_console_info` read `console.info` `console`;
+   `server_tools/systems.py`: `hmc_console_info` read `console.info` `console`;
    `hmc_list_configured_hosts` read `config.list_hosts` **`none`** with
    `connection_argument=None`; `hmc_list_systems` read `system.list` `console`;
    `hmc_list_lpars` read `lpar.list` `managed_system`; `hmc_get_lpar` read `lpar.get` `lpar`;
@@ -837,15 +837,15 @@ no longer re-exports the frozensets.
    `system.power_on` `managed_system`; `hmc_power_off_system` destructive
    `system.power_off` `managed_system`.
 
-   `server_templates.py`: `hmc_list_partition_templates` read `template.list` `console`;
+   `server_tools/templates.py`: `hmc_list_partition_templates` read `template.list` `console`;
    `hmc_get_partition_template` read `template.get` `template`;
    `hmc_deploy_partition_template` mutate `template.deploy` `managed_system`.
 
-   `server_updates.py`: `hmc_update_console_software` mutate `update.console` `console`;
+   `server_tools/updates.py`: `hmc_update_console_software` mutate `update.console` `console`;
    `hmc_get_available_hmc_ptfs` read `update.list_ptfs` `console`; `hmc_vios_update` mutate
    `update.vios` `vios`; `hmc_update_firmware` mutate `update.firmware` `managed_system`.
 
-   `server_users.py`: `hmc_list_users` read `user.list` `console`; `hmc_get_user` read
+   `server_tools/users.py`: `hmc_list_users` read `user.list` `console`; `hmc_get_user` read
    `user.get` `user` **+ `extra_targets=(("user", "name"),)`**; `hmc_create_user` mutate
    `user.create` `user` **+ extra_targets**; `hmc_modify_user` mutate `user.modify` `user`
    **+ extra_targets**; `hmc_delete_user` destructive `user.delete` `user` **+
@@ -857,7 +857,7 @@ no longer re-exports the frozensets.
    `hmc_get_ldap_config` read `ldap.get` `console`; `hmc_configure_ldap` mutate
    `ldap.configure` `console`; `hmc_remove_ldap_config` destructive `ldap.remove` `console`.
 
-   `server_vios.py`: `hmc_create_vios` mutate `vios.create` `managed_system`;
+   `server_tools/vios.py`: `hmc_create_vios` mutate `vios.create` `managed_system`;
    `hmc_delete_vios` destructive `vios.delete` `vios`; `hmc_install_vios` mutate
    `vios.install` `vios`; `hmc_install_lpar_os` mutate `lpar.install_os` `lpar`;
    `hmc_list_vios_backups` read `vios.list_backups` `vios`; `hmc_backup_vios` mutate
@@ -1133,10 +1133,10 @@ def test_legacy_classification_sets_are_gone():
    the snapshot.
 
 3. **Prove the guardrail bites.** Temporarily change one tool's `effect` in
-   `server_lpars.py` from `destructive` to `mutate`, run the module, and confirm both
+   `server_tools/lpars.py` from `destructive` to `mutate`, run the module, and confirm both
    `test_no_classification_regresses_against_the_pre_adr_sets` and
    `test_delete_and_remove_tools_are_destructive` go red. Revert with
-   `git checkout -- src/hmc_mcp/server_lpars.py` and confirm green again.
+   `git checkout -- src/hmc_mcp/server_tools/lpars.py` and confirm green again.
 
 4. **Commit.** `git commit -m "test: add exhaustive tool security registry contract"`
 
