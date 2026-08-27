@@ -14,6 +14,10 @@ from hmc_mcp.lpar_ownership import (
     resolve_lpar_ownership_names,
 )
 from hmc_mcp.operations.pcie import _require_admitted_environment
+from hmc_mcp.operations.pcie_validation import (
+    require_command_safe_text,
+    validate_capacity_percent,
+)
 from hmc_mcp.ssh_affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
@@ -305,29 +309,6 @@ async def set_minimum_affinity_policy(
     return await set_minimum_affinity_policy_cli(hmc.config, *names, policy)
 
 
-def _required(value: str, name: str) -> str:
-    if not value.strip():
-        raise ValueError(f"{name} must not be blank")
-    structural = {"/": "slash", ",": "comma", "=": "equals sign", '"': "double quote"}
-    for character, label in structural.items():
-        if character in value:
-            raise ValueError(
-                f"{name} contains {label}; it would alter HMC command structure"
-            )
-    if any(ord(character) < 32 or ord(character) == 127 for character in value):
-        raise ValueError(f"{name} contains a control character")
-    return value
-
-
-def _capacity(value: Decimal) -> Decimal:
-    if not value.is_finite() or value < 1 or value > 100:
-        raise ValueError("capacity_percent must be between 1 and 100")
-    exponent = value.as_tuple().exponent
-    if isinstance(exponent, int) and exponent < -2:
-        raise ValueError("capacity_percent supports at most two decimal places")
-    return value
-
-
 def _decimal(value: str, field: str) -> Decimal:
     try:
         result = Decimal(value)
@@ -340,11 +321,11 @@ def _decimal(value: str, field: str) -> Decimal:
 
 def _validated(selector: VnicBackingSelector) -> VnicBackingSelector:
     return VnicBackingSelector(
-        _required(selector.vios_name, "vios_name"),
-        _required(selector.vios_lpar_id, "vios_lpar_id"),
-        _required(selector.adapter_id, "adapter_id"),
-        _required(selector.physical_port_id, "physical_port_id"),
-        _capacity(selector.capacity_percent),
+        require_command_safe_text(selector.vios_name, "vios_name"),
+        require_command_safe_text(selector.vios_lpar_id, "vios_lpar_id"),
+        require_command_safe_text(selector.adapter_id, "adapter_id"),
+        require_command_safe_text(selector.physical_port_id, "physical_port_id"),
+        validate_capacity_percent(selector.capacity_percent),
     )
 
 
@@ -759,7 +740,7 @@ async def remove_vnic(
     *,
     ownership_override: bool = False,
 ) -> VnicChangeResult:
-    slot_num = _required(slot_num, "slot_num")
+    slot_num = require_command_safe_text(slot_num, "slot_num")
     system_name, lpar_name = await _resolve(
         hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
     )

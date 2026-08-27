@@ -29,7 +29,8 @@ from hmc_mcp.server import (
     hmc_set_lpar_description,
 )
 from hmc_mcp.ssh_network import list_io_slots
-from hmc_mcp.operations.ssh_network import VnicBackingSelector, _required, _validated
+from hmc_mcp.operations.ssh_network import VnicBackingSelector, _validated
+from hmc_mcp.operations.pcie_validation import require_command_safe_text
 from decimal import Decimal
 
 from conftest import mock_uuid_resolution
@@ -117,7 +118,7 @@ def test_add_vnic_rejects_structural_selector_characters():
 def test_remove_vnic_rejects_structural_slot_characters():
     """Slot removal rejects characters that alter the HMC attribute payload."""
     with pytest.raises(ValueError, match="alter HMC command structure"):
-        _required(f"4,{HOSTILE}", "slot_num")
+        require_command_safe_text(f"4,{HOSTILE}", "slot_num")
 
 
 def test_set_lpar_description_quotes_hostile_description(monkeypatch, mock_hmc):

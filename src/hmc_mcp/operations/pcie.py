@@ -27,6 +27,10 @@ from hmc_mcp.ssh_network import (
     unassign_sriov_logical_port_profile,
     validate_sriov_mode,
 )
+from hmc_mcp.operations.pcie_validation import (
+    require_command_safe_text,
+    validate_capacity_percent,
+)
 from hmc_mcp.ssh_selectors import resolve_ssh_names
 
 
@@ -280,21 +284,6 @@ def _optional_text(value: str) -> str | None:
     return value if value.strip() else None
 
 
-def _required(value: str, name: str) -> str:
-    if not value.strip():
-        raise ValueError(f"{name} must not be blank")
-    return value
-
-
-def _capacity(value: Decimal) -> Decimal:
-    if not value.is_finite() or value < 1 or value > 100:
-        raise ValueError("capacity_percent must be between 1 and 100")
-    exponent = value.as_tuple().exponent
-    if isinstance(exponent, int) and exponent < -2:
-        raise ValueError("capacity_percent supports at most two decimal places")
-    return value
-
-
 def _snapshot(row: dict[str, str]) -> SriovLogicalPortSnapshot:
     return SriovLogicalPortSnapshot(
         row["adapter_id"],
@@ -382,16 +371,16 @@ async def _preflight_sriov_assignment(
     ownership_override: bool,
 ) -> _SriovAssignmentContext | SriovLogicalPortChangeResult:
     selector = InventorySelector(
-        _required(adapter_id, "adapter_id"),
-        _required(physical_port_id, "physical_port_id"),
-        _required(logical_port_id, "logical_port_id"),
+        require_command_safe_text(adapter_id, "adapter_id"),
+        require_command_safe_text(physical_port_id, "physical_port_id"),
+        require_command_safe_text(logical_port_id, "logical_port_id"),
     )
-    capacity = _capacity(capacity_percent)
+    capacity = validate_capacity_percent(capacity_percent)
     system_name, lpar_name = await _resolve_lpar(
         hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
     )
     config = hmc.config
-    _required(profile_name, "profile_name")
+    require_command_safe_text(profile_name, "profile_name")
     await _require_admitted_environment(config, system_name)
     adapters = [
         row
@@ -455,7 +444,7 @@ async def _preflight_sriov_assignment(
         if row["logical_port_id"] in seen:
             raise ValueError("duplicate logical-port inventory rows")
         seen.add(row["logical_port_id"])
-        total += _capacity(Decimal(row["capacity"]))
+        total += validate_capacity_percent(Decimal(row["capacity"]))
     if total + capacity > 100:
         raise ValueError(f"capacity exhausted: {total}% used of 100%")
     state = await read_sriov_lpar_state(config, system_name, lpar_name)
@@ -566,11 +555,11 @@ async def unassign_sriov_logical_port(
     ownership_override: bool = False,
 ) -> SriovLogicalPortChangeResult:
     selector = InventorySelector(
-        _required(adapter_id, "adapter_id"),
-        _required(physical_port_id, "physical_port_id"),
-        _required(logical_port_id, "logical_port_id"),
+        require_command_safe_text(adapter_id, "adapter_id"),
+        require_command_safe_text(physical_port_id, "physical_port_id"),
+        require_command_safe_text(logical_port_id, "logical_port_id"),
     )
-    _required(profile_name, "profile_name")
+    require_command_safe_text(profile_name, "profile_name")
     system_name, lpar_name = await _resolve_lpar(
         hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
     )
@@ -637,7 +626,7 @@ async def set_sriov_adapter_mode(
     rows = [
         row
         for row in await list_sriov_adapter_rows(config, system_name)
-        if row["adapter_id"] == _required(adapter_id, "adapter_id")
+        if row["adapter_id"] == require_command_safe_text(adapter_id, "adapter_id")
     ]
     if len(rows) == 1 and rows[0]["config_state"] == mode:
         return f"Adapter {adapter_id} already in {mode} mode"

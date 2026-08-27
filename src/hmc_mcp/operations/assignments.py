@@ -17,6 +17,10 @@ from hmc_mcp.operations.pcie import (
     list_sriov_physical_ports,
 )
 from hmc_mcp.operations.ssh_network import VnicBackingSelector, add_vnic
+from hmc_mcp.operations.pcie_validation import (
+    require_command_safe_text,
+    validate_capacity_percent,
+)
 from hmc_mcp.ssh_network import (
     list_sriov_configured_logical_port_rows,
     list_vnic_backing_rows,
@@ -109,29 +113,6 @@ class LparPcieWorkflowResult:
         return self.lpar[key]
 
 
-def _required(value: str, name: str) -> str:
-    if not value.strip():
-        raise ValueError(f"{name} must not be blank")
-    structural = {"/": "slash", ",": "comma", "=": "equals sign", '"': "double quote"}
-    for character, label in structural.items():
-        if character in value:
-            raise ValueError(
-                f"{name} contains {label}; it would alter HMC command structure"
-            )
-    if any(ord(character) < 32 or ord(character) == 127 for character in value):
-        raise ValueError(f"{name} contains a control character")
-    return value
-
-
-def _capacity(value: Decimal) -> Decimal:
-    if not value.is_finite() or value < 1 or value > 100:
-        raise ValueError("capacity_percent must be between 1 and 100")
-    exponent = value.as_tuple().exponent
-    if isinstance(exponent, int) and exponent < -2:
-        raise ValueError("capacity_percent supports at most two decimal places")
-    return value
-
-
 def _request_names(assignments: LparPcieAssignments) -> list[str]:
     return [
         *(f"dedicated[{index}]" for index, _ in enumerate(assignments.dedicated)),
@@ -177,18 +158,18 @@ async def prevalidate_lpar_pcie_assignments(
     """Validate the complete collection without reserving or mutating resources."""
     if assignments.dedicated:
         for item in assignments.dedicated:
-            _required(item.profile_name, "profile_name")
-            _required(item.drc_index, "drc_index")
+            require_command_safe_text(item.profile_name, "profile_name")
+            require_command_safe_text(item.drc_index, "drc_index")
         raise PcieAssignmentUnavailableError(PCIE_ASSIGNMENT_UNAVAILABLE_REASON)
 
     identities: dict[tuple[str, str], tuple[str, Decimal]] = {}
     requested_capacity: dict[tuple[str, str], Decimal] = {}
     for item in assignments.sriov:
-        _required(item.profile_name, "profile_name")
-        adapter = _required(item.adapter_id, "adapter_id")
-        physical = _required(item.physical_port_id, "physical_port_id")
-        logical = _required(item.logical_port_id, "logical_port_id")
-        capacity = _capacity(item.capacity_percent)
+        require_command_safe_text(item.profile_name, "profile_name")
+        adapter = require_command_safe_text(item.adapter_id, "adapter_id")
+        physical = require_command_safe_text(item.physical_port_id, "physical_port_id")
+        logical = require_command_safe_text(item.logical_port_id, "logical_port_id")
+        capacity = validate_capacity_percent(item.capacity_percent)
         key = adapter, logical
         observation = physical, capacity
         if key in identities:
@@ -203,11 +184,11 @@ async def prevalidate_lpar_pcie_assignments(
     vnic_identities: set[tuple[str, str, str, str, Decimal, int]] = set()
     for item in assignments.vnics:
         backing = item.backing
-        adapter = _required(backing.adapter_id, "adapter_id")
-        physical = _required(backing.physical_port_id, "physical_port_id")
-        _required(backing.vios_name, "vios_name")
-        _required(backing.vios_lpar_id, "vios_lpar_id")
-        capacity = _capacity(backing.capacity_percent)
+        adapter = require_command_safe_text(backing.adapter_id, "adapter_id")
+        physical = require_command_safe_text(backing.physical_port_id, "physical_port_id")
+        require_command_safe_text(backing.vios_name, "vios_name")
+        require_command_safe_text(backing.vios_lpar_id, "vios_lpar_id")
+        capacity = validate_capacity_percent(backing.capacity_percent)
         if type(item.port_vlan_id) is not int or not 0 <= item.port_vlan_id <= 4094:
             raise ValueError("port_vlan_id must be an integer between 0 and 4094")
         identity = (

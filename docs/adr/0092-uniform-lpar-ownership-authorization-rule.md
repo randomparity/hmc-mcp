@@ -143,21 +143,21 @@ first, exactly as for the tool rows in §3.2.
 |---|---|---|---|
 | `set_lpar_boot_order` | `operations/lpar.py:1267` | guarded (`:1424`) | — |
 | `clear_lpar_boot_order` | `operations/lpar.py:1334` | guarded (`:1478`) | — |
-| `assign_dedicated_pcie_slot` | `operations/pcie.py:178` | guarded (`:220`, via `_authorize_pcie_profile_request`) | — |
-| `unassign_dedicated_pcie_slot` | `operations/pcie.py:198` | guarded (`:220`) | — |
-| `assign_sriov_logical_port` | `operations/pcie.py:473` | guarded (`:324`, via `_resolve_lpar`) | — |
-| `unassign_sriov_logical_port` | `operations/pcie.py:557` | guarded (`:324`) | — |
-| `add_vnic` | `operations/ssh_network.py:625` | guarded (`:414`, via `_preflight_add:507` → `_resolve:414`) | — |
-| `remove_vnic` | `operations/ssh_network.py:754` | guarded (`:414`, via `_resolve`) | — |
-| `set_minimum_affinity_policy` | `operations/ssh_network.py:291` | guarded (`:302`) | — |
+| `assign_dedicated_pcie_slot` | `operations/pcie.py:182` | guarded (`:222`, via `_authorize_pcie_profile_request`) | — |
+| `unassign_dedicated_pcie_slot` | `operations/pcie.py:202` | guarded (`:222`) | — |
+| `assign_sriov_logical_port` | `operations/pcie.py:462` | guarded (`:313`, via `_resolve_lpar`) | — |
+| `unassign_sriov_logical_port` | `operations/pcie.py:546` | guarded (`:313`) | — |
+| `add_vnic` | `operations/ssh_network.py:606` | guarded (`:395`, via `_preflight_add:488` → `_resolve:395`) | — |
+| `remove_vnic` | `operations/ssh_network.py:735` | guarded (`:395`, via `_resolve`) | — |
+| `set_minimum_affinity_policy` | `operations/ssh_network.py:295` | guarded (`:306`) | — |
 | `set_lpar_processors` | `operations/lpar.py:1152` | guarded (`:1201`, and `:1151` on the override branch, via `_apply_dlpar_document:1154` → `_resolve_and_authorize_lpar:1062`) | — |
 | `set_lpar_memory` | `operations/lpar.py:1188` | guarded (`:1201`, and `:1151` on the override branch, via `_apply_dlpar_document`) | — |
-| `apply_lpar_pcie_assignments` | `operations/assignments.py:272` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
+| `apply_lpar_pcie_assignments` | `operations/assignments.py:253` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
 | `add_network_adapter` | `operations/adapters.py:32` | **unguarded** | #372 |
 | `add_vios_adapter` | `operations/adapters.py:57` | **unguarded** | #372 |
 | `delete_adapter` | `operations/adapters.py:75` | **unguarded** | #372 |
 | `map_storage` | `operations/storage.py:109` | **unguarded** | #372 |
-| `attach_disk_to_lpar` | `operations/provision.py:339` | **unguarded** | #372 |
+| `attach_disk_to_lpar` | `operations/provision.py:340` | **unguarded** | #372 |
 | `mount_optical_media` | `operations/storage.py:650` | **unguarded** | #440 |
 | `unmount_optical_media` | `operations/storage.py:670` | **unguarded** | #440 |
 | `migrate_lpar` | `operations/lpm.py:317` | **unguarded**; the guard belongs on the `validate=False` branch (see below) | #373 |
@@ -227,7 +227,7 @@ exempt anyway.
 | Operation | Reason |
 |---|---|
 | `create_and_stamp_lpar` (`operations/lpar.py:538`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
-| `provision_lpar` (`operations/provision.py:513`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
+| `provision_lpar` (`operations/provision.py:514`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
 | `deploy_partition_template` (`operations/templates.py:93`) | Creates the partition and stamps it per ADR 0014. |
 | `hmc_capture_lpar_console` (`server_tools/console.py:19`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_migrate_validate_lpar` (`server_tools/lpm.py:141`) | Calls `migrate_lpar(validate=True)`, which submits an LPM validation job and changes nothing. Once #373 guards the migrating branch, this tool reaches a guarded function on a branch that never mutates. |
