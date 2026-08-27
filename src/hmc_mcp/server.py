@@ -34,9 +34,11 @@ Addressing:
     REST resolution and has no ``lssyscfg`` fallback; a system UUID resolves to
     its unique MTMS identity rather than its CLI name.
 
-This module is a thin aggregator: the tool handlers live in domain
-submodules (``server_lpars``, ``server_storage``, ...). ``create_mcp``
-explicitly registers each domain on a fresh application instance.
+This module is the MCP composition and serving bootstrap boundary. Tool handlers
+live in domain submodules (``server_lpars``, ``server_storage``, ...), and
+``create_mcp`` explicitly registers each domain on a fresh application instance.
+The serving entry points also validate startup policy, emit startup diagnostics,
+and configure the logging boundaries for stdio and HTTP transports.
 """
 
 from __future__ import annotations

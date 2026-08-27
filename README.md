@@ -951,7 +951,7 @@ src/hmc_mcp/
   audit_sink.py  # non-blocking audit and diagnostic transport
   tool_registry.py           # local MCP tool collection, each tool carrying ToolSecurity
   _app.py        # shared FastMCP instance, sync-run and SSH helpers, entry points
-  server.py      # thin aggregator importing every server_*.py tool module
+  server.py      # MCP composition, startup validation, logging, and serving bootstrap
   server_*.py    # resource-domain @mcp.tool definitions (systems, lpars, VIOS, ...)
   server_lpar_config.py      # SSH-only LPAR configuration handlers
   server_system_resources.py # SSH-only managed-system resource handlers
