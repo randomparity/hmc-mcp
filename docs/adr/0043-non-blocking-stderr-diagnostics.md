@@ -150,10 +150,11 @@ pipe buffer it is standing in for.
   third-party or `hmc_mcp.*` — on this queue. Neither record claims fd 2 has a *single*
   writer, and neither claims the guarantee survives an operator's own handler: on
   `hmc_mcp` as on `hmc_mcp.audit`, an attached handler takes the records and its
-  blocking behaviour is the operator's, per the clause above. rich's startup banner and
-  `Handler.handleError` still write directly, both recorded as residuals in ADR 0051, and a
-  namespace outside the bound set with no handler of its own — `asyncio`, say — still walks to
-  `logging.lastResort`.
+  blocking behaviour is the operator's, per the clause above. Three direct writers remain, and
+  they bound what "through a logger" means: rich's startup banner and `Handler.handleError`,
+  both recorded as residuals in ADR 0051, and `warnings.warn` — see the amendment below, which
+  names it. A namespace outside the bound set with no handler of its own — `asyncio`, say —
+  still walks to `logging.lastResort`.
 - **A process that never installs the sink is unchanged.** `logging.lastResort` writes
   synchronously at `WARNING`, so a CLI ownership-override record still blocks on an undrained
   stderr. No dispatch path exists in such a process, and `install_audit_sink` runs on every serve
@@ -169,11 +170,13 @@ zero handlers in its `callHandlers` walk and went to `logging.lastResort` — a 
 fd 2, synchronous and unbounded, without ADR 0051's prefix or its escaping. Twenty-one
 `WARNING`-or-above call sites across six modules were on that route — `config`,
 `server_permissions`, `operations_jobs`, `operations_lpar`, `operations_templates` and
-`console_capture`. #534 names two of them, and they are the two that are rate-limited:
-`HMCConfig._warn_audit_memento_override` fires once per config construction, and
-`_log_unresolved` was deduplicated by #470 to one line per distinct failure *because* the route
-was unbounded. The other nineteen are not rate-limited, which is what the queue-pressure clause
-below is sized from.
+`console_capture`. #534 names two of them. Exactly one is rate-limited: `_log_unresolved`, which
+#470 deduplicated to one line per distinct failure *because* the route was unbounded. The other
+twenty are not. `HMCConfig._warn_audit_memento_override` fires once per config *construction*,
+which is not a rate limit in a served process — `common.build_config` builds a fresh config
+inside each tool body, so with `HMC_AGENT_ID` set alongside a custom `HMC_AUDIT_MEMENTO` that
+site emits one `WARNING` per tool call, at a rate the MCP client owns. That is what the
+queue-pressure clause below is sized from.
 
 One binding on the namespace covers every producer in it, present and future, because
 `callHandlers` reaches a parent's handler. Three choices inside it:
@@ -223,13 +226,26 @@ between tests so a serving test cannot take a later test's `hmc_mcp.*` records o
 **More producers on a shared bound.** ADR 0051 recorded that its added producers reach the
 1024-slot capacity sooner and narrow the security-observability window; this adds the rest of
 the `hmc_mcp` namespace on the same terms, and it is the larger of the two additions —
-twenty-one call sites, nineteen of them unrated, against a queue whose other occupant is the
-authorization trail. Against a destination that has stopped draining, package diagnostics can
+twenty-one call sites, twenty of them unthrottled and one of those emitting per tool call,
+against a queue whose other occupant is the authorization trail. Against a destination that
+has stopped draining, package diagnostics can
 displace audit records. Accepted on this record's own trade — a droppable trail that keeps
 serving over a complete one that stops — and bounded by the same precondition, a destination
 nobody is draining, which under stdio is the client harming itself. The `records-dropped`
 marker already counts lines rather than records, so the accounting is unchanged and a reader
 still learns how many lines are missing.
+
+**Residual: `warnings.warn` is a fourth writer and this does not reach it.**
+`HMCConfig._warn_audit_memento_override` emits twice — `warnings.warn` *and* `_logger.warning`.
+Only the second moves onto this queue. The first reaches `warnings.showwarning`, which writes
+straight to `sys.stderr`: two physical lines at column 0, unmarked, unescaped, synchronous and
+unbounded, from inside a config construction that happens per tool call. That is the writer this
+record exists to remove, on a mechanism it does not cover — `logging` is not involved, and
+nothing in this package calls `logging.captureWarnings`. Not closed here: `captureWarnings(True)`
+is a process-global reroute of *every* warning, a wider liberty than #534's charter, and the
+alternative — dropping the `warnings.warn` call now that its message reaches the sink as a
+record — is a change to that function's contract with library callers, who do not install a
+sink. Tracked as #546.
 
 **Which channel a non-audit `hmc_mcp.*` record uses.** This sink carries three grammars, not
 two, and the third is the one a caller is most likely to reach for by mistake:

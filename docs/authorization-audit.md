@@ -363,7 +363,11 @@ Three things to know if you consume this stream:
   It is not new — the same record reached the same handler the same way before #534 — but the
   marker is a property of this package's own handler, not of the stream, and a consumer
   hardening on it must know that. Do not attach a stderr handler above `hmc_mcp` in a
-  deployment whose stderr is parsed.
+  deployment whose stderr is parsed. One writer is unmarked with no operator handler
+  involved: `warnings.warn`, which this package uses beside the log record for the
+  `HMC_AGENT_ID` / `HMC_AUDIT_MEMENTO` override and which `logging` never sees. Those two
+  lines land at column 0 unmarked, on every tool call in a deployment that sets both. #546
+  tracks it.
 
 ## What this is not
 

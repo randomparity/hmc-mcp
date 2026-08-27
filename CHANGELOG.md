@@ -264,8 +264,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   sink (#534, ADR 0043 amendment). Only the reserved `hmc_mcp.audit` logger and the third-party
   set were on it, so a warning from any other module — `hmc_mcp.config`'s audit-memento override,
   `hmc_mcp.server_permissions`' unresolved-profile line — reached fd 2 through
-  `logging.lastResort`: synchronous, unbounded, and unescaped. Those lines now carry the
-  `hmc_mcp:` producer prefix and are drop-counted like every other line on the queue.
+  `logging.lastResort`: synchronous, unbounded, and unescaped. Those *log records* now carry
+  the `hmc_mcp:` producer prefix and are drop-counted like every other line on the queue.
+  `warnings.warn` is a separate mechanism and is not covered — the audit-memento override
+  emits one of each, and its warning still goes straight to `sys.stderr` (#546).
   **What an operator sees change:** the prefix, and — if you route `hmc_mcp.*` into your own
   logging — a second rendering, because `propagate` is deliberately left alone here, unlike on
   `hmc_mcp.audit`. Your handlers keep receiving these records exactly as before; the sink is an
