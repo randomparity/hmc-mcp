@@ -406,6 +406,7 @@ async def _probe_released(
                     lpar_name,
                     exc,
                 )
+                return False
             return True
         # Timeout with no output: unknown state. Issue rmvterm anyway — if
         # the probe's slow-starting mkvterm actually acquired the slot, this

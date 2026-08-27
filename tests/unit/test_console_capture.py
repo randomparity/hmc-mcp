@@ -271,6 +271,30 @@ async def test_release_proven_by_clean_probe_mkterm():
 
 
 @pytest.mark.asyncio
+async def test_release_probe_teardown_failure_is_not_reported_as_released():
+    from hmc_mcp.ssh.transport import HMCCLIError
+
+    connection = FakeConnection([FakeProcess(BANNER), FakeProcess(BANNER)])
+    release = AsyncMock(
+        side_effect=["Close command sent", HMCCLIError("probe teardown failed")]
+    )
+    with (
+        patch(
+            "hmc_mcp.ssh.console.open_hmc_connection",
+            AsyncMock(return_value=connection),
+        ),
+        patch("hmc_mcp.ssh.console.run_hmc_command", release),
+        patch("hmc_mcp.ssh.console._RELEASE_PROBE_SECONDS", 0.2),
+    ):
+        capture = await capture_lpar_console(
+            _client(), "sys1", "lp1", **_capture_kwargs()
+        )
+
+    assert release.await_count == 2
+    assert capture.released is False
+
+
+@pytest.mark.asyncio
 async def test_rmvterm_exit_zero_alone_is_not_proof():
     # P2: rmvterm says "Close command sent" (exit 0) but the slot is still
     # held — the probe sees the sentinel, so released stays False.
