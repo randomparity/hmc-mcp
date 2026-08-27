@@ -137,10 +137,10 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "migrate_lpar_with_affinity_preflight",
         "run_lpm_affinity_preflight",
         "abort_lpar_migration",
-            "recover_lpar_migration",
-            "remote_restart_lpar",
-            "validate_lpar_migration",
-            "RemoteRestartOperation",
+        "recover_lpar_migration",
+        "remote_restart_lpar",
+        "validate_lpar_migration",
+        "RemoteRestartOperation",
         "LpmResult",
         "LpmAffinityPreflightRequest",
         "LpmAffinityPreflightOutcome",
@@ -258,7 +258,12 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "list_partition_templates",
         "get_partition_template",
         "deploy_partition_template",
+        "list_vios_backups",
+        "backup_vios",
+        "restore_vios",
         "power_vios",
+        "BackupType",
+        "RestoreBackupType",
         "list_available_hmc_ptfs",
         "update_console_software",
         "update_firmware",
@@ -1817,7 +1822,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "db935ab677fd170b07c97afa60db8ff13e8b9fb719b2695724c7e928782ac599"  # pragma: allowlist secret
+    expected_digest = "d7304fcb135185be0af39e8600534c09ed01f1233befa1d3953966258dd84261"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -1944,6 +1949,7 @@ _FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[str, ...]] = {
         "none",
     ),
     "AuthenticationType": ("Local", "LDAP", "Kerberos"),
+    "BackupType": ("vios", "viosioconfig", "ssp"),
     "BootDeviceSelector": ("cd", "disk", "network"),
     "CapabilityState": ("available", "capability-unavailable"),
     "CapturedPolicyState": ("configured", "absent", "unsupported", "missing"),
@@ -1972,6 +1978,7 @@ _FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[str, ...]] = {
         "cleanup",
         "cancel",
     ),
+    "RestoreBackupType": ("viosioconfig", "ssp"),
     "ResourceKind": (
         "dedicated_slot",
         "sriov_adapter",

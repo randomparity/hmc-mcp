@@ -235,7 +235,8 @@ names are internal everywhere and are never inventoried.
   `update_firmware`, `update_vios`; types: none; excluded synchronous: none.
 - `operations.users` — operations: `configure_remote_access`, `create_user`, `delete_user`,
   `modify_user`; types: none; excluded synchronous: none.
-- `operations.vios` — operations: `power_vios`; types: none; excluded synchronous: none.
+- `operations.vios` — operations: `backup_vios`, `list_vios_backups`, `power_vios`,
+  `restore_vios`; types: `BackupType`, `RestoreBackupType`; excluded synchronous: none.
 - `snapshot` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
   `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,
   `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotInspection`, `SnapshotObservations`,

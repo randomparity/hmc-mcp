@@ -278,7 +278,7 @@ def test_closed_vocab_enum_matches_runtime_constant():
         AUTHENTICATION_TYPES,
     )
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
-    from hmc_mcp.server_tools.vios import _VALID_BACKUP_TYPES
+    from hmc_mcp.operations.vios import _VALID_BACKUP_TYPES
     from hmc_mcp.ssh.network import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
 
     by_name = _tools_by_name()
@@ -1000,11 +1000,11 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
 
     with (
         patch(
-                "hmc_mcp.lpar_ownership.stamp_lpar_ownership",
+            "hmc_mcp.lpar_ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
         patch(
-                "hmc_mcp.lpar_ownership.resolve_system_name",
+            "hmc_mcp.lpar_ownership.resolve_system_name",
             new=AsyncMock(return_value="sys1"),
         ),
     ):

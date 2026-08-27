@@ -193,7 +193,14 @@ from hmc_mcp.operations.updates import (
     update_firmware,
     update_vios,
 )
-from hmc_mcp.operations.vios import power_vios
+from hmc_mcp.operations.vios import (
+    BackupType,
+    RestoreBackupType,
+    backup_vios,
+    list_vios_backups,
+    power_vios,
+    restore_vios,
+)
 from hmc_mcp.operations.users import (
     configure_remote_access,
     create_user,
@@ -426,7 +433,12 @@ __all__ = [
     "list_partition_templates",
     "get_partition_template",
     "deploy_partition_template",
+    "list_vios_backups",
+    "backup_vios",
+    "restore_vios",
     "power_vios",
+    "BackupType",
+    "RestoreBackupType",
     "list_available_hmc_ptfs",
     "update_console_software",
     "update_firmware",

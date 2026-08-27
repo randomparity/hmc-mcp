@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from typing import Any
+from collections.abc import Mapping
+import csv
+import io
+import shlex
+from typing import Any, Literal
 
 from ..client import HMCClient
 from ..config import HMCConfig
@@ -11,6 +14,7 @@ from ..documents import LparResources, build_vios_document
 from ..errors import HMCError
 from ..resource_identity import is_uuid, resolve_system_uuid, resolve_vios_uuid
 from ..ssh.transport import run_hmc_cli
+from ..ssh.commands import build_filter
 from ..jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
     DEFAULT_JOB_TIMEOUT_SECONDS,
@@ -108,13 +112,20 @@ async def _resolve_vios_backup_system_name(
     )
 
 
-async def _run_vios_backup_mutation(
+BackupType = Literal["vios", "viosioconfig", "ssp"]
+RestoreBackupType = Literal["viosioconfig", "ssp"]
+_VALID_BACKUP_TYPES: frozenset[BackupType] = frozenset({"vios", "viosioconfig", "ssp"})
+_VALID_RESTORE_BACKUP_TYPES: frozenset[RestoreBackupType] = frozenset(
+    {"viosioconfig", "ssp"}
+)
+
+
+async def _resolve_vios_backup_selectors(
     config: HMCConfig,
     system_name_or_uuid: str,
     vios_name_or_uuid: str,
-    build_command: Callable[[str, str], str],
-) -> str:
-    """Resolve backup selectors and run one VIOS catalog mutation command."""
+) -> tuple[str, str]:
+    """Resolve backup selectors to the identities required by the HMC CLI."""
     system_name = system_name_or_uuid
     vios_uuid = vios_name_or_uuid
     if is_uuid(system_name_or_uuid) or not is_uuid(vios_name_or_uuid):
@@ -127,17 +138,118 @@ async def _run_vios_backup_mutation(
                 vios_uuid = await resolve_vios_uuid(
                     hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
                 )
-    return await run_hmc_cli(build_command(system_name, vios_uuid), config)
+    return system_name, vios_uuid
 
 
-async def _run_vios_backup_listing(
-    config: HMCConfig,
-    vios_name_or_uuid: str,
-    build_command: Callable[[str], str],
-) -> str:
-    """Resolve a VIOS selector and run one catalog listing command."""
+async def list_vios_backups(
+    config: HMCConfig, vios_name_or_uuid: str
+) -> list[dict[str, str]]:
+    """Return the validated backup catalog for one VIOS."""
     vios_uuid = vios_name_or_uuid
     if not is_uuid(vios_name_or_uuid):
         async with HMCClient(config) as hmc:
             vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-    return await run_hmc_cli(build_command(vios_uuid), config)
+    command = (
+        f"lsviosbk --filter {shlex.quote(build_filter([('vios_uuids', vios_uuid)]))} "
+        "-F name,type --header"
+    )
+    output = await run_hmc_cli(command, config)
+    if not output.strip():
+        return []
+    try:
+        reader = csv.DictReader(io.StringIO(output, newline=""), strict=True)
+        if reader.fieldnames != ["name", "type"]:
+            raise ValueError(
+                "Malformed lsviosbk CSV: expected the exact header 'name,type'."
+            )
+        results: list[dict[str, str]] = []
+        for row in reader:
+            name = row.get("name")
+            backup_type = row.get("type")
+            if None in row or not name or not backup_type:
+                raise ValueError(
+                    "Malformed lsviosbk CSV: each row must contain exactly one "
+                    "nonempty name and type."
+                )
+            results.append({"name": name, "type": backup_type})
+    except csv.Error as exc:
+        raise ValueError(f"Malformed lsviosbk CSV: {exc}") from exc
+    return results
+
+
+def _validate_backup_name(backup_name: str) -> None:
+    """Refuse a name that could identify anything except one catalog entry.
+
+    Catalog operations stay bounded by the VIOS selected with ``--uuid`` only
+    while the backup name cannot be interpreted as a path or command option.
+    Deliberately avoid a character-set or length rule so valid names outside a
+    guessed HMC grammar remain usable.
+    """
+    if (
+        not backup_name
+        or backup_name != backup_name.strip()
+        or "/" in backup_name
+        or "\\" in backup_name
+        or backup_name.strip(".") == ""
+        or backup_name.startswith("-")
+    ):
+        raise ValueError(
+            f"backup_name {backup_name!r} must be a nonempty, unpadded catalog "
+            "name without path separators; it must not consist only of dots or "
+            "start with '-'. It is resolved inside the declared VIOS's own backup "
+            "catalog."
+        )
+
+
+async def backup_vios(
+    config: HMCConfig,
+    system_name_or_uuid: str,
+    vios_name_or_uuid: str,
+    *,
+    backup_name: str,
+    backup_type: BackupType = "vios",
+) -> str:
+    """Create a named VIOS backup and return the raw HMC CLI output."""
+    if backup_type not in _VALID_BACKUP_TYPES:
+        raise ValueError(
+            f"Invalid backup_type {backup_type!r}. "
+            f"Must be one of: {', '.join(sorted(_VALID_BACKUP_TYPES))}"
+        )
+    _validate_backup_name(backup_name)
+    system_name, vios_uuid = await _resolve_vios_backup_selectors(
+        config, system_name_or_uuid, vios_name_or_uuid
+    )
+    command = (
+        f"mkviosbk -t {shlex.quote(backup_type)} "
+        f"-m {shlex.quote(system_name)} --uuid {shlex.quote(vios_uuid)} "
+        f"-f {shlex.quote(backup_name)}"
+    )
+    return await run_hmc_cli(command, config)
+
+
+async def restore_vios(
+    config: HMCConfig,
+    system_name_or_uuid: str,
+    vios_name_or_uuid: str,
+    backup_name: str,
+    *,
+    backup_type: RestoreBackupType,
+    restart_if_required: bool = False,
+) -> str:
+    """Restore a VIOS backup and return the raw HMC CLI output."""
+    if backup_type not in _VALID_RESTORE_BACKUP_TYPES:
+        raise ValueError(
+            f"Invalid backup_type {backup_type!r}. "
+            f"Must be one of: {', '.join(sorted(_VALID_RESTORE_BACKUP_TYPES))}"
+        )
+    _validate_backup_name(backup_name)
+    system_name, vios_uuid = await _resolve_vios_backup_selectors(
+        config, system_name_or_uuid, vios_name_or_uuid
+    )
+    command = (
+        f"rstviosbk -t {shlex.quote(backup_type)} "
+        f"-m {shlex.quote(system_name)} --uuid {shlex.quote(vios_uuid)} "
+        f"-f {shlex.quote(backup_name)}"
+        f"{' -r' if restart_if_required else ''}"
+    )
+    return await run_hmc_cli(command, config)

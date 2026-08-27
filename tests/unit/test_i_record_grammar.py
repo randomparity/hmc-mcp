@@ -216,13 +216,19 @@ def test_build_attribute_record_accepts_a_trailing_quoted_pair():
         quoted=("backing_devices",),
     )
     assert record == 'port_vlan_id=7,"backing_devices=dev1,dev2"'
-    assert build_attribute_record(
-        [("backing_devices", "dev1,dev2")], quoted=("backing_devices",)
-    ) == '"backing_devices=dev1,dev2"'
-    assert build_attribute_record(
-        [("backing_devices", "dev1"), ("port_vlan_id", 7)],
-        quoted=("backing_devices",),
-    ) == "backing_devices=dev1,port_vlan_id=7"
+    assert (
+        build_attribute_record(
+            [("backing_devices", "dev1,dev2")], quoted=("backing_devices",)
+        )
+        == '"backing_devices=dev1,dev2"'
+    )
+    assert (
+        build_attribute_record(
+            [("backing_devices", "dev1"), ("port_vlan_id", 7)],
+            quoted=("backing_devices",),
+        )
+        == "backing_devices=dev1,port_vlan_id=7"
+    )
 
 
 def test_build_attribute_record_refuses_a_duplicate_across_marked_and_unmarked():
@@ -294,7 +300,9 @@ HOSTILE_FILTER = "x,injected=1"
 def test_filter_site_refuses_a_hostile_name(fn_name, extra_args):
     """A delimiter-carrying name is refused before any command is built."""
     modules = (ssh_network, ssh_profiles)
-    fn = next(getattr(module, fn_name) for module in modules if hasattr(module, fn_name))
+    fn = next(
+        getattr(module, fn_name) for module in modules if hasattr(module, fn_name)
+    )
     with pytest.raises(HMCCLIError, match="comma"):
         asyncio.run(fn(_config(), "sys-a", HOSTILE_FILTER, *extra_args))
 
@@ -399,9 +407,7 @@ def test_sync_lpar_profile_rejects_a_hostile_lpar_name():
 
 def test_assign_profile_io_slot_rejects_a_hostile_drc_index():
     with pytest.raises(HMCCLIError, match="comma"):
-        asyncio.run(
-            assign_profile_io_slot(_config(), "sys", "lpar1", "prof1", HOSTILE)
-        )
+        asyncio.run(assign_profile_io_slot(_config(), "sys", "lpar1", "prof1", HOSTILE))
 
 
 def test_assign_profile_io_slot_rejects_a_hostile_profile_name():
@@ -424,7 +430,6 @@ def test_assign_profile_io_slot_rejects_a_hostile_lpar_name():
 
 BUILDER_NAME = "build_attribute_record"
 FILTER_BUILDER_NAME = "build_filter"
-
 
 
 # The one value-form `-a` site: `chhwres -r mempool -o r -a <pool_name>`
@@ -678,9 +683,7 @@ def _selected_literals(node: ast.AST, predicate) -> list[ast.AST]:
         | _keyword_value_constants(node)
     )
     return [
-        child
-        for child in ast.walk(node)
-        if id(child) not in skip and predicate(child)
+        child for child in ast.walk(node) if id(child) not in skip and predicate(child)
     ]
 
 
@@ -736,9 +739,7 @@ def _unguarded_a_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[st
                 ):
                     problems.append(ast.unparse(literal))
         return problems
-    return _unguarded_payloads_for(
-        func, _is_an_a_record_literal, "-a", BUILDER_NAME
-    )
+    return _unguarded_payloads_for(func, _is_an_a_record_literal, "-a", BUILDER_NAME)
 
 
 def _unguarded_filter_values(
@@ -791,15 +792,11 @@ def test_every_site_is_built_by_its_shared_builder(label, predicate, checker):
     sites = _selected_functions(predicate)
     assert sites, f"no {label} sites found — the AST scan stopped working"
 
-    skipping = {
-        name: unguarded
-        for name, node in sites
-        if (unguarded := checker(node))
-    }
+    skipping = {name: unguarded for name, node in sites if (unguarded := checker(node))}
     assert not skipping, (
         f"these {label} payloads are not built by their shared builder: "
         f"{skipping}. shlex.quote protects the shell word only; the "
-        'grammar\'s own ",", "=" and "\"" structure needs the builder.'
+        'grammar\'s own ",", "=" and """ structure needs the builder.'
     )
 
 
@@ -881,7 +878,7 @@ def test_the_scan_finds_every_known_site():
         "set_lpar_msp",
         "get_lpar_proc_compat",
         "query_minimum_affinity_policy",
-        "hmc_list_vios_backups",
+        "list_vios_backups",
         "capture_lpar_baseline",
         "mutate_lpar_properties",
         "restore_lpar_baseline",

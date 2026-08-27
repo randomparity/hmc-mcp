@@ -4,12 +4,7 @@ from __future__ import annotations
 
 from ..tool_registry import tool_module
 
-from ..ssh.commands import build_filter
-
-import csv
-import io
-import shlex
-from typing import Any, Literal
+from typing import Any
 
 from .._app import (
     run_sync,
@@ -24,11 +19,14 @@ from ..operations.install import (
 )
 from ..documents import LparResources, VIOS_DEFAULT_RESOURCES
 from ..operations.vios import (
+    BackupType,
+    RestoreBackupType,
     _create_vios,
     _delete_vios,
+    backup_vios,
+    list_vios_backups,
     power_vios,
-    _run_vios_backup_listing,
-    _run_vios_backup_mutation,
+    restore_vios,
 )
 
 
@@ -295,40 +293,6 @@ def hmc_install_lpar_os(
     return dict(run_sync(_go))
 
 
-BackupType = Literal["vios", "viosioconfig", "ssp"]
-RestoreBackupType = Literal["viosioconfig", "ssp"]
-_VALID_BACKUP_TYPES: frozenset[BackupType] = frozenset({"vios", "viosioconfig", "ssp"})
-_VALID_RESTORE_BACKUP_TYPES: frozenset[RestoreBackupType] = frozenset(
-    {"viosioconfig", "ssp"}
-)
-
-
-def _parse_lsviosbk_output(text: str) -> list[dict[str, str]]:
-    """Parse the exact ``name,type`` CSV projection returned by ``lsviosbk``."""
-    if not text.strip():
-        return []
-    try:
-        reader = csv.DictReader(io.StringIO(text, newline=""), strict=True)
-        if reader.fieldnames != ["name", "type"]:
-            raise ValueError(
-                "Malformed lsviosbk CSV: expected the exact header 'name,type'."
-            )
-
-        results: list[dict[str, str]] = []
-        for row in reader:
-            name = row.get("name")
-            backup_type = row.get("type")
-            if None in row or not name or not backup_type:
-                raise ValueError(
-                    "Malformed lsviosbk CSV: each row must contain exactly one "
-                    "nonempty name and type."
-                )
-            results.append({"name": name, "type": backup_type})
-    except csv.Error as exc:
-        raise ValueError(f"Malformed lsviosbk CSV: {exc}") from exc
-    return results
-
-
 @tool(effect="read", operation="vios.list_backups", target_kind="vios")
 def hmc_list_vios_backups(
     vios_name_or_uuid: str, profile: str | None = None
@@ -346,17 +310,9 @@ def hmc_list_vios_backups(
     Raises:
         ValueError: If the ``lsviosbk`` CSV is malformed.
     """
-    output = run_sync(
-        lambda: _run_vios_backup_listing(
-            build_config(profile=profile),
-            vios_name_or_uuid,
-            lambda uuid: (
-                f"lsviosbk --filter {shlex.quote(build_filter([('vios_uuids', uuid)]))} "
-                "-F name,type --header"
-            ),
-        )
+    return run_sync(
+        lambda: list_vios_backups(build_config(profile=profile), vios_name_or_uuid)
     )
-    return _parse_lsviosbk_output(output)
 
 
 @tool(
@@ -394,59 +350,15 @@ def hmc_backup_vios(
         ValueError: If the backup type or catalog name is invalid, or a selector
             cannot be resolved to the required CLI identity.
     """
-    if backup_type not in _VALID_BACKUP_TYPES:
-        raise ValueError(
-            f"Invalid backup_type {backup_type!r}. "
-            f"Must be one of: {', '.join(sorted(_VALID_BACKUP_TYPES))}"
-        )
-    _validate_backup_name(backup_name)
     return run_sync(
-        lambda: _run_vios_backup_mutation(
+        lambda: backup_vios(
             build_config(profile=profile),
             system_name_or_uuid,
             vios_name_or_uuid,
-            lambda system_name, vios_uuid: (
-                f"mkviosbk -t {shlex.quote(backup_type)} "
-                f"-m {shlex.quote(system_name)} --uuid {shlex.quote(vios_uuid)} "
-                f"-f {shlex.quote(backup_name)}"
-            ),
+            backup_name=backup_name,
+            backup_type=backup_type,
         )
     )
-
-
-def _validate_backup_name(backup_name: str) -> None:
-    """Refuse a ``backup_name`` that could denote anything but a catalog entry.
-
-    ADR 0044 keeps catalog operations bounded by the VIOS their ``--uuid``
-    selector names, which holds only while this value is resolved inside that
-    VIOS's own backup catalog. Four shapes are refused, not because no catalog
-    could hold such a name but because the tool cannot treat any of them as one:
-    an empty or padded value, one carrying a path separator, one made only of
-    dots, and one starting with ``-``. The last is refused for what is *unknown*
-    about it — how the HMC CLI parses a bare leading dash in this position is not
-    established here, and ``shlex.quote`` offers no cover because such a value
-    holds no shell metacharacter and is emitted unquoted.
-
-    Deliberately no character-set or length rule, so a catalog entry outside
-    whatever grammar the HMC enforces stays usable. ADR 0039 made the same call
-    for ``job_href``, refusing dot-segments but not requiring a UUID shape:
-    refusing a legitimate identifier would trade a regression for reach the
-    narrow refusal has already removed.
-    """
-    if (
-        not backup_name
-        or backup_name != backup_name.strip()
-        or "/" in backup_name
-        or "\\" in backup_name
-        or backup_name.strip(".") == ""
-        or backup_name.startswith("-")
-    ):
-        raise ValueError(
-            f"backup_name {backup_name!r} must be a nonempty, unpadded catalog "
-            "name without path separators; it must not consist only of dots or "
-            "start with '-'. It is resolved inside the declared VIOS's own backup "
-            "catalog."
-        )
 
 
 @tool(
@@ -486,23 +398,14 @@ def hmc_restore_vios(
         ValueError: If the restore type or catalog name is invalid, or a selector
             cannot be resolved to the required CLI identity.
     """
-    if backup_type not in _VALID_RESTORE_BACKUP_TYPES:
-        raise ValueError(
-            f"Invalid backup_type {backup_type!r}. "
-            f"Must be one of: {', '.join(sorted(_VALID_RESTORE_BACKUP_TYPES))}"
-        )
-    _validate_backup_name(backup_name)
     return run_sync(
-        lambda: _run_vios_backup_mutation(
+        lambda: restore_vios(
             build_config(profile=profile),
             system_name_or_uuid,
             vios_name_or_uuid,
-            lambda system_name, vios_uuid: (
-                f"rstviosbk -t {shlex.quote(backup_type)} "
-                f"-m {shlex.quote(system_name)} --uuid {shlex.quote(vios_uuid)} "
-                f"-f {shlex.quote(backup_name)}"
-                f"{' -r' if restart_if_required else ''}"
-            ),
+            backup_name,
+            backup_type=backup_type,
+            restart_if_required=restart_if_required,
         )
     )
 
