@@ -465,14 +465,15 @@ async def _run_affinity_leg(
     except (HMCError, HMCCLIError) as exc:
         steps.append(_step("affinity_assessment", "error", str(exc)))
         return False, ()
-    classification = result["assessment"]["classification"]
+    classification = result.assessment.classification
+    serialized_result = asdict(result)
     if classification == "none":
-        steps.append(_step("affinity_assessment", "ok", result))
+        steps.append(_step("affinity_assessment", "ok", serialized_result))
         return True, ()
     if assessment.response == "fail":
-        steps.append(_step("affinity_assessment", "error", result))
+        steps.append(_step("affinity_assessment", "error", serialized_result))
         return False, ()
-    steps.append(_step("affinity_assessment", "ok", result))
+    steps.append(_step("affinity_assessment", "ok", serialized_result))
     return True, (f"Post-activation affinity assessment: {classification}",)
 
 

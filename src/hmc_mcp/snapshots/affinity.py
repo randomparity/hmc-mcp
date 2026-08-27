@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -70,6 +70,16 @@ class AffinityAssessmentResult:
 
 
 @dataclass(frozen=True)
+class PostActivationAffinityAssessment:
+    """Typed post-activation measurement and its underlying assessment."""
+
+    assessment: AffinityAssessmentResult
+    achieved_score: int | None
+    predicted_score: int | None
+    prediction_guaranteed: bool
+
+
+@dataclass(frozen=True)
 class ProvisionAffinityAssessment:
     """Caller-owned captured evidence and post-activation response policy."""
 
@@ -122,7 +132,7 @@ class LparAffinityAssessmentOutcome:
     measured: bool
     status: Literal["skipped", "passed", "warned", "failed", "unavailable"]
     reason: str
-    assessment: dict[str, Any] | None
+    assessment: PostActivationAffinityAssessment | None
 
 
 def affinity_not_measured(
@@ -178,7 +188,7 @@ async def assess_post_activation_affinity(
     request: ProvisionAffinityAssessment,
     *,
     configured_minimum: int | None = None,
-) -> dict[str, Any]:
+) -> PostActivationAffinityAssessment:
     """Measure and classify affinity using the accepted assessment contract."""
     current_row = await get_lpar_memopt_score(
         hmc, request.system_name_or_uuid, request.lpar_name
@@ -220,21 +230,20 @@ async def assess_post_activation_affinity(
             optimization_threshold=request.optimization_threshold,
         )
     )
-    return {
-        "assessment": asdict(assessment),
-        "achieved_score": assessment.evidence.current_score,
-        "predicted_score": assessment.evidence.predicted_score,
-        "prediction_guaranteed": False,
-    }
+    return PostActivationAffinityAssessment(
+        assessment=assessment,
+        achieved_score=assessment.evidence.current_score,
+        predicted_score=assessment.evidence.predicted_score,
+        prediction_guaranteed=False,
+    )
 
 
 def classify_affinity_outcome(
-    result: dict[str, Any], response: Literal["warn", "fail"]
+    result: PostActivationAffinityAssessment, response: Literal["warn", "fail"]
 ) -> LparAffinityAssessmentOutcome:
     """Map normalized assessment evidence to the standalone response contract."""
-    assessment = result["assessment"]
-    classification = assessment["classification"]
-    explanation = assessment["explanation"]
+    classification = result.assessment.classification
+    explanation = result.assessment.explanation
     if classification == "none":
         return LparAffinityAssessmentOutcome(True, "passed", explanation, result)
     if classification == "unsupported-data":

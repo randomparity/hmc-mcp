@@ -251,7 +251,8 @@ names are internal everywhere and are never inventoried.
     strings, booleans, and opaque mappings.
 - `snapshots.affinity` — exports: `AffinityAssessmentInput`, `AffinityAssessmentResult`,
   `AffinityClassification`, `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`,
-  `ProvisionAffinityAssessment`, `assess_post_activation_affinity`.
+  `PostActivationAffinityAssessment`, `ProvisionAffinityAssessment`,
+  `assess_post_activation_affinity`.
 - `snapshots.operations` — exports: `assess_snapshot_affinity`, `capture_lpar_snapshot`,
   `inspect_lpar_snapshot`, `validate_lpar_snapshot`.
 - `ssh.affinity` — exports: `MinimumAffinityPolicy`.

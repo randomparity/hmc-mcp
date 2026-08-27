@@ -18,7 +18,12 @@ import pytest
 from hmc_mcp.documents import LparResources
 from hmc_mcp.jobs import JobOutcome
 from hmc_mcp.operations.lpar import LparPowerResult
-from hmc_mcp.snapshots.affinity import validate_affinity_request
+from hmc_mcp.snapshots.affinity import (
+    AffinityAssessmentResult,
+    AffinityEvidence,
+    PostActivationAffinityAssessment,
+    validate_affinity_request,
+)
 from hmc_mcp.operations.provision import (
     ProvisionAffinityAssessment,
     ProvisionNetwork,
@@ -372,17 +377,27 @@ def test_provision_affinity_applied_policy_validates_against_captured_state(
 
 
 def _assessment_result(classification="none"):
-    return {
-        "assessment": {
-            "classification": classification,
-            "evidence": {"current_score": 82, "predicted_score": 90},
-            "explanation": "assessment",
-            "recommended_actions": (),
-        },
-        "achieved_score": 82,
-        "predicted_score": 90,
-        "prediction_guaranteed": False,
-    }
+    evidence = AffinityEvidence(
+        captured_score=80,
+        current_score=82,
+        predicted_score=90,
+        policy_state="absent",
+        captured_policy_state="absent",
+        configured_minimum=None,
+        captured_minimum=None,
+        captured_at=datetime.now(UTC).isoformat(),
+        assessed_at=datetime.now(UTC).isoformat(),
+        stale_after_seconds=300,
+        regression_threshold=None,
+        optimization_threshold=None,
+    )
+    assessment = AffinityAssessmentResult(
+        classification=classification,
+        evidence=evidence,
+        explanation="assessment",
+        recommended_actions=(),
+    )
+    return PostActivationAffinityAssessment(assessment, 82, 90, False)
 
 
 def _successful_power_outcome():

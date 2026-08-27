@@ -9,6 +9,10 @@ import pytest
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.snapshots.affinity import (
+    AffinityAssessmentResult,
+    AffinityClassification,
+    AffinityEvidence,
+    PostActivationAffinityAssessment,
     ProvisionAffinityAssessment,
     assess_post_activation_affinity,
     classify_affinity_outcome,
@@ -43,13 +47,30 @@ def _request(response: Literal["warn", "fail"] = "warn") -> ProvisionAffinityAss
     )
 
 
-def _assessment(classification: str, explanation: str = "reason") -> dict:
-    return {
-        "assessment": {
-            "classification": classification,
-            "explanation": explanation,
-        }
-    }
+def _assessment(
+    classification: str, explanation: str = "reason"
+) -> PostActivationAffinityAssessment:
+    evidence = AffinityEvidence(
+        captured_score=80,
+        current_score=82,
+        predicted_score=84,
+        policy_state="absent",
+        captured_policy_state="absent",
+        configured_minimum=None,
+        captured_minimum=None,
+        captured_at=datetime.now(UTC).isoformat(),
+        assessed_at=datetime.now(UTC).isoformat(),
+        stale_after_seconds=300,
+        regression_threshold=5,
+        optimization_threshold=5,
+    )
+    assessment = AffinityAssessmentResult(
+        classification=cast(AffinityClassification, classification),
+        evidence=evidence,
+        explanation=explanation,
+        recommended_actions=(),
+    )
+    return PostActivationAffinityAssessment(assessment, 82, 84, False)
 
 
 def test_unsupported_measurement_is_unavailable_for_warning_intent() -> None:
@@ -114,7 +135,7 @@ async def test_measurement_runs_current_prediction_and_policy_reads_after_succes
     ):
         result = await assess_post_activation_affinity(hmc, _request())
 
-    assert result["assessment"]["classification"] == "none"
+    assert result.assessment.classification == "none"
     current.assert_awaited_once()
     predicted.assert_awaited_once()
     policy_read.assert_awaited_once()
