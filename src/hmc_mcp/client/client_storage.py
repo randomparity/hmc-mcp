@@ -309,10 +309,7 @@ class StorageMixin:
             )
 
     # ------------------------------------------------------------------ #
-    # Virtual Media Repository / Virtual Optical Media (VolumeGroup POSTs)
-    # ------------------------------------------------------------------ #
-    # ------------------------------------------------------------------ #
-    # Read-modify-write helpers for VolumeGroup media-repository operations
+    # Virtual media repository (VolumeGroup read-modify-write operations)
     # ------------------------------------------------------------------ #
 
     async def _get_vg_raw_xml(
@@ -329,14 +326,12 @@ class StorageMixin:
         if not raw:
             raise HMCError(f"GET {path} returned empty body", 200, "")
 
-        # Register the UOM namespace prefix so serialised XML uses the correct
-        # namespace URI rather than ns0/ns1 auto-generated prefixes.
+        # The HMC rejects auto-generated ns0/ns1 prefixes despite equivalent URIs.
         ET.register_namespace("", _UOM_NS)
         ET.register_namespace("atom", _ATOM_NS)
 
         root = ET.fromstring(raw)
-        # Response is either an Atom feed (feed/entry/content/VolumeGroup)
-        # or a bare VolumeGroup element.
+        # Firmware returns either an Atom-wrapped or bare VolumeGroup document.
         ns = {"atom": _ATOM_NS, "uom": _UOM_NS}
         vg_elem = (
             root.find(".//atom:entry/atom:content/uom:VolumeGroup", ns)
@@ -344,7 +339,6 @@ class StorageMixin:
             or root.find(".//VolumeGroup")
         )
         if vg_elem is None:
-            # Fallback: the root itself may be VolumeGroup
             local = root.tag.split("}")[-1] if "}" in root.tag else root.tag
             if local == "VolumeGroup":
                 vg_elem = root
@@ -443,7 +437,6 @@ class StorageMixin:
         def _local(tag: str) -> str:
             return tag.split("}")[-1]
 
-        # Prefer inserting before PhysicalVolumes.
         insert_at = next(
             (
                 i
@@ -453,7 +446,6 @@ class StorageMixin:
             None,
         )
         if insert_at is None:
-            # Fall back: insert after MaximumLogicalVolumes.
             insert_at = next(
                 (
                     i + 1
@@ -480,13 +472,11 @@ class StorageMixin:
         """
         _, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
 
-        # Remove any existing VMLibrary so creation is idempotent.
         mr_tag = f"{{{_UOM_NS}}}MediaRepositories"
         existing_mr = vg_elem.find(f".//{mr_tag}")
         if existing_mr is not None:
             vg_elem.remove(existing_mr)
 
-        # Build the MediaRepositories block and insert in the correct schema position.
         mr = self._build_mr_element(size_mib)
         self._insert_mr_at_correct_position(vg_elem, mr)
 
@@ -520,12 +510,9 @@ class StorageMixin:
                 "",
             )
 
-        # VirtualOpticalMedia entries live inside an <OpticalMedia> container,
-        # not directly inside VirtualMediaRepository.
         opt_media_tag = f"{{{_UOM_NS}}}OpticalMedia"
         opt_media = vmlib.find(opt_media_tag) or vmlib.find(".//OpticalMedia")
         if opt_media is None:
-            # Create the OpticalMedia container before RepositoryName.
             repo_name_tag = f"{{{_UOM_NS}}}RepositoryName"
             repo_name_idx = next(
                 (
@@ -550,7 +537,7 @@ class StorageMixin:
         ET.SubElement(meta, f"{{{_UOM_NS}}}Atom")
         n = ET.SubElement(vom, f"{{{_UOM_NS}}}MediaName")
         n.text = media_name
-        # The HMC XSD uses 'Size' (not 'MediaSize') for the capacity field.
+        # The HMC XSD names this field Size, not MediaSize.
         s = ET.SubElement(vom, f"{{{_UOM_NS}}}Size")
         s.text = str(size_mib)
         t = ET.SubElement(vom, f"{{{_UOM_NS}}}MountType")
@@ -571,7 +558,6 @@ class StorageMixin:
         mr_tag = f"{{{_UOM_NS}}}MediaRepositories"
         mr = vg_elem.find(f".//{mr_tag}")
         if mr is None:
-            # Nothing to delete — treat as success.
             return None
         vg_elem.remove(mr)
 
@@ -591,12 +577,11 @@ class StorageMixin:
         if vmlib is None:
             return None  # Nothing to remove.
 
-        # VirtualOpticalMedia lives inside the OpticalMedia container.
         opt_media_tag = f"{{{_UOM_NS}}}OpticalMedia"
         vom_tag = f"{{{_UOM_NS}}}VirtualOpticalMedia"
         name_tag = f"{{{_UOM_NS}}}MediaName"
 
-        # Search the OpticalMedia container first, then fall back to direct children.
+        # Older firmware may place media directly beneath the repository.
         opt_media = vmlib.find(opt_media_tag) or vmlib.find(".//OpticalMedia")
         search_in = opt_media if opt_media is not None else vmlib
 
@@ -607,7 +592,7 @@ class StorageMixin:
                 to_remove = vom
                 break
         if to_remove is None:
-            return None  # Already gone.
+            return None
         search_in.remove(to_remove)
 
         return await self._post_vg_xml(vios_uuid, vg_uuid, vg_elem)
@@ -662,19 +647,16 @@ class StorageMixin:
         if not entries:
             return []
 
-        # Extract VirtualOpticalMedia entries from the VolumeGroup response.
         # The HMC V10R3 structure is:
         #   Resource.MediaRepositories.VirtualMediaRepository.OpticalMedia.VirtualOpticalMedia
         # Older firmware may use a bare path without the wrappers.
         optical_media: list[dict[str, Any]] = []
         for entry in entries:
             resource = entry.get("Resource", {})
-            # Try wrapper path first, then bare path.
             mr_container = resource.get("MediaRepositories") or resource
             repo = mr_container.get("VirtualMediaRepository", {})
             if not isinstance(repo, dict):
                 repo = {}
-            # V10R3+: VirtualOpticalMedia entries are inside an OpticalMedia container.
             opt_media_container = repo.get("OpticalMedia", repo)
             if not isinstance(opt_media_container, dict):
                 opt_media_container = repo
@@ -716,18 +698,15 @@ class StorageMixin:
         if not isinstance(mappings, list):
             mappings = [mappings] if mappings else []
 
-        # Filter for optical mappings only (backed by VirtualOpticalMedia)
         optical_mappings = []
         for m in mappings:
             if not isinstance(m, dict):
                 continue
 
-            # Check if backed by VirtualOpticalMedia
             storage = m.get("Storage", {})
             if "VirtualOpticalMedia" in storage:
                 optical_mappings.append(m)
 
-        # Filter by LPAR if specified
         if lpar_uuid:
             expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
             optical_mappings = [
@@ -753,13 +732,11 @@ class StorageMixin:
         Returns the new VirtualSCSIMapping entry if it can be located in the
         response feed, else None.
         """
-        # Step 1 — GET the full VIOS document (without schema version to avoid 406)
         get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
         vios_xml = await self._get(get_path, "VirtualIOServer", include_schema_version=False)
         if not vios_xml:
             raise HMCError(f"GET {get_path} returned empty response", 200, "")
 
-        # Step 2 — Parse raw XML and locate VirtualSCSIMappings element
         try:
             root = ET.fromstring(vios_xml)
         except ET.ParseError as exc:
@@ -769,7 +746,7 @@ class StorageMixin:
 
         vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
         if vios_elem is None:
-            vios_elem = root  # already the VirtualIOServer element
+            vios_elem = root
         sys_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
@@ -781,12 +758,11 @@ class StorageMixin:
                 vios_xml,
             )
 
-        # Step 4 — Build the new mapping XML element and append it
         lpar_link = (
             f"{self._rest_base_url}/rest/api/uom/ManagedSystem/{sys_uuid}"
             f"/LogicalPartition/{lpar_uuid}"
         )
-        mount_type = "r"  # read-only optical media
+        mount_type = "r"
         new_mapping_xml = (
             f'<VirtualSCSIMapping xmlns="{_UOM_NS}" xmlns:atom="{_ATOM_NS}" schemaVersion="V1_0">'
             f"<Metadata><Atom/></Metadata>"
@@ -809,10 +785,9 @@ class StorageMixin:
             ) from exc
         mappings_elem.append(new_mapping_elem)
 
-        # Step 5 — POST the full modified VIOS document to the system-scoped endpoint
         post_path = f"/rest/api/uom/ManagedSystem/{sys_uuid}/VirtualIOServer/{vios_uuid}"
         body = ET.tostring(vios_elem, encoding="unicode")
-        # Use Accept: */* as the reference implementation does; Content-Type stays VirtualIOServer
+        # V10R3 returns 406 unless this update advertises an unrestricted response.
         resp = await self._request(
             "POST",
             post_path,
@@ -870,7 +845,7 @@ class StorageMixin:
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
         if mappings_elem is None:
-            return  # No mappings — nothing to remove.
+            return
 
         to_remove = None
         for mapping in list(mappings_elem):
@@ -880,7 +855,7 @@ class StorageMixin:
                 break
 
         if to_remove is None:
-            return  # Mapping already gone — idempotent.
+            return
 
         mappings_elem.remove(to_remove)
 
