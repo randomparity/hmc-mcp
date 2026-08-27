@@ -671,10 +671,6 @@ def hmc_read_lpar_boot_order(
     Returns the boot device order for the LPAR, including both the pending
     boot string (next boot) and the current boot device list.
 
-    Args:
-        system_name_or_uuid: CLI name or UUID of the managed system.
-        lpar_uuid: UUID of the logical partition.
-
     Returns:
         Dictionary with boot order information containing:
         - lpar_uuid: UUID of the LPAR
@@ -717,13 +713,6 @@ def hmc_set_lpar_boot_order(
                  The first device is tried first, then the second, etc.
         ownership_override: If True, skip ownership token validation.
         profile: Optional configured HMC profile name; uses the default when omitted.
-
-    Args:
-        system_name_or_uuid: CLI name or UUID of the managed system.
-        lpar_uuid: UUID of the logical partition.
-        devices: Ordered list of boot device selectors (cd, disk, network).
-                 The first device is tried first, then the second, etc.
-        ownership_override: If True, skip ownership token validation.
 
     Returns:
         Updated LPAR resource if successful, None otherwise.
@@ -770,11 +759,6 @@ def hmc_clear_lpar_boot_order(
         lpar_uuid: UUID of the logical partition.
         ownership_override: If True, skip ownership token validation.
         profile: Optional configured HMC profile name; uses the default when omitted.
-
-    Args:
-        system_name_or_uuid: CLI name or UUID of the managed system.
-        lpar_uuid: UUID of the logical partition.
-        ownership_override: If True, skip ownership token validation.
 
     Returns:
         Updated LPAR resource if successful, None otherwise.
