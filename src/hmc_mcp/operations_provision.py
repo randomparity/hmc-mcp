@@ -407,6 +407,104 @@ def _validate_affinity_request(
     validate_affinity_request(request, configured_minimum)
 
 
+async def _run_policy_leg(
+    steps: list[dict[str, Any]],
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name: str,
+    policy: MinimumAffinityPolicy | None,
+) -> bool:
+    if policy is None:
+        return True
+    return await _record_hmc_step(
+        steps,
+        "minimum_affinity_policy",
+        set_minimum_affinity_policy(hmc, system_name_or_uuid, lpar_name, policy),
+    )
+
+
+async def _run_network_leg(
+    steps: list[dict[str, Any]], hmc: HMCClient, lpar_uuid: str, vlan_id: int
+) -> bool:
+    return await _record_hmc_step(
+        steps, "network", _add_network(hmc, lpar_uuid, vlan_id)
+    )
+
+
+async def _run_assignment_leg(
+    steps: list[dict[str, Any]],
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name: str,
+    assignments: LparPcieAssignments,
+) -> bool:
+    result = await _apply_validated_lpar_pcie_assignments(
+        hmc, system_name_or_uuid, lpar_name, assignments
+    )
+    steps.extend(_step(item.step, item.status, item.result) for item in result.steps)
+    return result.workflow_completed
+
+
+async def _run_power_leg(
+    steps: list[dict[str, Any]],
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_uuid: str,
+    assessment: ProvisionAffinityAssessment | None,
+) -> bool:
+    try:
+        result = await _power_on(hmc, system_name_or_uuid, lpar_uuid, assessment)
+    except (HMCError, ValueError) as exc:
+        steps.append(_step("power_on", "error", str(exc)))
+        return False
+    if isinstance(result, JobOutcome):
+        if result.timed_out or result.error is not None:
+            message = result.error or (
+                "PowerOn did not reach a successful terminal status before timeout"
+            )
+            steps.append(_step("power_on", "error", message))
+            return False
+        steps.append(_step("power_on", "ok", asdict(result)))
+    else:
+        steps.append(_step("power_on", "ok", result))
+    return True
+
+
+async def _run_affinity_leg(
+    steps: list[dict[str, Any]],
+    hmc: HMCClient,
+    assessment: ProvisionAffinityAssessment,
+    policy: MinimumAffinityPolicy | None,
+) -> tuple[bool, tuple[str, ...]]:
+    configured_minimum = policy.min_affinity_score if policy is not None else None
+    try:
+        result = await assess_post_activation_affinity(
+            hmc, assessment, configured_minimum=configured_minimum
+        )
+    except (HMCError, HMCCLIError) as exc:
+        steps.append(_step("affinity_assessment", "error", str(exc)))
+        return False, ()
+    classification = result["assessment"]["classification"]
+    if classification == "none":
+        steps.append(_step("affinity_assessment", "ok", result))
+        return True, ()
+    if assessment.response == "fail":
+        steps.append(_step("affinity_assessment", "error", result))
+        return False, ()
+    steps.append(_step("affinity_assessment", "ok", result))
+    return True, (f"Post-activation affinity assessment: {classification}",)
+
+
+def _failed_provision_result(
+    creation: LparCreationResult,
+    created_uuid: str,
+    steps: list[dict[str, Any]],
+    step_names: list[str],
+) -> ProvisionResult:
+    _skip_steps(steps, step_names[len(steps) :])
+    return _provision_result(creation, created_uuid, steps, False)
+
+
 # ---------------------------------------------------------------------- #
 # Operation
 # ---------------------------------------------------------------------- #
@@ -575,28 +673,19 @@ async def provision_lpar(
         return _provision_result(creation, None, steps, False)
     steps.append(_step("create", "ok", created_lpar))
 
-    if minimum_affinity_policy is not None:
-        if not await _record_hmc_step(
-            steps,
-            "minimum_affinity_policy",
-            set_minimum_affinity_policy(
-                hmc,
-                system_name_or_uuid,
-                name,
-                minimum_affinity_policy,
-            ),
-        ):
-            _skip_steps(steps, step_names[2:])
-            return _provision_result(creation, created_uuid, steps, False)
-
-    if not await _record_hmc_step(
+    if not await _run_policy_leg(
         steps,
-        "network",
-        _add_network(hmc, created_uuid, network.port_vlan_id),
+        hmc,
+        system_name_or_uuid,
+        name,
+        minimum_affinity_policy,
     ):
-        network_index = step_names.index("network")
-        _skip_steps(steps, step_names[network_index + 1 :])
-        return _provision_result(creation, created_uuid, steps, False)
+        return _failed_provision_result(creation, created_uuid, steps, step_names)
+
+    if not await _run_network_leg(
+        steps, hmc, created_uuid, network.port_vlan_id
+    ):
+        return _failed_provision_result(creation, created_uuid, steps, step_names)
 
     storage_steps, storage_completed = await _run_storage_leg(
         hmc,
@@ -607,74 +696,27 @@ async def provision_lpar(
     )
     steps.extend(storage_steps)
     if not storage_completed:
-        _skip_steps(steps, [*assignment_names, *(["power_on"] if power_on else [])])
-        return _provision_result(creation, created_uuid, steps, False)
+        return _failed_provision_result(creation, created_uuid, steps, step_names)
 
-    assignment_result = await _apply_validated_lpar_pcie_assignments(
-        hmc, system_name_or_uuid, name, assignments
-    )
-    steps.extend(
-        _step(item.step, item.status, item.result) for item in assignment_result.steps
-    )
-    if not assignment_result.workflow_completed:
-        if power_on:
-            _skip_steps(steps, ["power_on"])
-        return _provision_result(creation, created_uuid, steps, False)
+    if not await _run_assignment_leg(
+        steps, hmc, system_name_or_uuid, name, assignments
+    ):
+        return _failed_provision_result(creation, created_uuid, steps, step_names)
 
-    if power_on:
-        try:
-            power_result = await _power_on(
-                hmc, system_name_or_uuid, created_uuid, affinity_assessment
-            )
-        except (HMCError, ValueError) as exc:
-            # ValueError too: with authorize_power_operations on, the leg reaches
-            # the ADR 0011 guard, whose name resolution raises ValueError when the
-            # managed system or the just-created partition cannot be read back.
-            # Losing that to an uncaught exception would discard the result naming
-            # the LPAR this workflow created — the identity the caller needs, since
-            # nothing here rolls back.
-            steps.append(_step("power_on", "error", str(exc)))
-            if affinity_assessment is not None:
-                steps.append(_step("affinity_assessment", "skipped"))
-            return _provision_result(creation, created_uuid, steps, False)
-        if isinstance(power_result, JobOutcome):
-            if power_result.timed_out or power_result.error is not None:
-                message = power_result.error or (
-                    "PowerOn did not reach a successful terminal status before timeout"
-                )
-                steps.append(_step("power_on", "error", message))
-                steps.append(_step("affinity_assessment", "skipped"))
-                return _provision_result(creation, created_uuid, steps, False)
-            steps.append(_step("power_on", "ok", asdict(power_result)))
-        else:
-            steps.append(_step("power_on", "ok", power_result))
+    if power_on and not await _run_power_leg(
+        steps, hmc, system_name_or_uuid, created_uuid, affinity_assessment
+    ):
+        return _failed_provision_result(creation, created_uuid, steps, step_names)
 
     if affinity_assessment is not None:
         if not power_on:
             steps.append(_step("affinity_assessment", "skipped"))
             return _provision_result(creation, created_uuid, steps, False)
-        try:
-            configured_minimum = (
-                minimum_affinity_policy.min_affinity_score
-                if minimum_affinity_policy is not None
-                else None
-            )
-            result = await assess_post_activation_affinity(
-                hmc,
-                affinity_assessment,
-                configured_minimum=configured_minimum,
-            )
-        except (HMCError, HMCCLIError) as exc:
-            steps.append(_step("affinity_assessment", "error", str(exc)))
+        completed, warnings = await _run_affinity_leg(
+            steps, hmc, affinity_assessment, minimum_affinity_policy
+        )
+        if not completed:
             return _provision_result(creation, created_uuid, steps, False)
-        classification = result["assessment"]["classification"]
-        if classification != "none":
-            warning = f"Post-activation affinity assessment: {classification}"
-            if affinity_assessment.response == "fail":
-                steps.append(_step("affinity_assessment", "error", result))
-                return _provision_result(creation, created_uuid, steps, False)
-            steps.append(_step("affinity_assessment", "ok", result))
-            return _provision_result(creation, created_uuid, steps, True, (warning,))
-        steps.append(_step("affinity_assessment", "ok", result))
+        return _provision_result(creation, created_uuid, steps, True, warnings)
 
     return _provision_result(creation, created_uuid, steps, True)
