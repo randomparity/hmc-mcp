@@ -266,6 +266,22 @@ async def test_rmvterm_exit_zero_alone_is_not_proof():
 
 
 @pytest.mark.asyncio
+async def test_fragmented_probe_contention_sentinel_is_not_acquisition():
+    split = len(HELD_SENTINEL) // 2
+    contention_chunks = (
+        b"\r\n " + HELD_SENTINEL[:split],
+        HELD_SENTINEL[split:] + b" \r\n Exiting.... ",
+    )
+    connection = FakeConnection(
+        [FakeProcess(BANNER), FakeProcess(*contention_chunks)]
+    )
+
+    capture = await _run_capture(connection)
+
+    assert capture.released is False
+
+
+@pytest.mark.asyncio
 async def test_failed_rmvterm_still_probes_and_reports_honestly():
     # rmvterm fails (HMCCLIError, as run_hmc_command raises); the probe then
     # finds the sentinel — released stays False instead of being asserted.

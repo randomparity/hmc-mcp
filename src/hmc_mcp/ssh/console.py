@@ -64,6 +64,7 @@ StopReason = Literal["duration", "max_bytes", "idle", "remote-close", "error"]
 #: Matching the sentence alone keeps detection robust against those cosmetic
 #: quirks while staying anchored to the exact recorded bytes.
 HELD_SENTINEL = b"A terminal session is already open for this partition."
+ACQUIRED_SENTINEL = b"Open in progress"
 
 #: How long the release probe waits for its own ``mkvterm`` to speak before
 #: giving up (P1/P5: both the contention text and the HMC banner arrive
@@ -361,14 +362,12 @@ async def _probe_released(
             while True:
                 remaining = deadline - loop.time()
                 if remaining <= 0:
-                    acquired_evidence = bool(buf) and HELD_SENTINEL not in buf
                     break
                 try:
                     chunk = await asyncio.wait_for(
                         process.stdout.read(_CHUNK), remaining
                     )
                 except TimeoutError:
-                    acquired_evidence = bool(buf) and HELD_SENTINEL not in buf
                     break
                 except Exception:
                     break  # transport trouble: unproven, nothing more to learn
@@ -378,12 +377,13 @@ async def _probe_released(
                 buf += chunk
                 if HELD_SENTINEL in buf:
                     saw_sentinel = True
-                else:
-                    # Any other output is the HMC's own vterm banner: the
-                    # slot accepted the probe's mkvterm, which proves the
-                    # release (P2).
+                    break
+                if ACQUIRED_SENTINEL in buf:
+                    # The recorded HMC acquisition banner proves the probe's
+                    # mkvterm owns the slot. Arbitrary partial output does not:
+                    # it may be the beginning of the contention sentinel.
                     acquired_evidence = True
-                break
+                    break
         finally:
             stdin.close()
             connection.close()
