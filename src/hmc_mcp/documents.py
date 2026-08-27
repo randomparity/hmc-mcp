@@ -1199,33 +1199,11 @@ def merge_remote_access_document(
     return ET.tostring(console, encoding="unicode")
 
 
-# ====================================================================== #
-# LPAR Boot Order (PendingBootString / BootListInformation)
-#
-# PendingBootString controls the boot device order for an LPAR's next boot.
-# It's a space-separated list of boot device selectors (cd, disk, network)
-# that determines the priority order. The HMC stores this in the
-# BootListInformation element of a LogicalPartition.
-#
-# Operations:
-# - build_boot_order_document: Set a custom boot order
-# - build_clear_boot_order_document: Clear the boot order (restore defaults)
-# ====================================================================== #
-
-
 def _build_pending_boot_string(devices: list[str]) -> str:
-    """Build a PendingBootString from validated boot device selectors.
-
-    Args:
-        devices: Ordered list of boot device selectors (cd, disk, network). Validated against BOOT_DEVICE_SELECTORS.
-
-    Returns:
-        Space-separated string of device selectors.
-    """
+    """Join validated boot device selectors for ``PendingBootString``."""
     if not devices:
         raise ValueError("Boot order must contain at least one device")
 
-    # Validate all selectors
     for device in devices:
         if device not in BOOT_DEVICE_SELECTORS:
             raise ValueError(

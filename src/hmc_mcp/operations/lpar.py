@@ -1357,7 +1357,6 @@ async def set_lpar_boot_order(
     if not devices:
         raise ValueError("Boot order must contain at least one device")
 
-    # Resolve system and LPAR names for ownership authorization
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     system_name, lpar_name = await resolve_lpar_ownership_names(
         hmc, system_uuid, system_name_or_uuid, lpar_uuid
@@ -1366,7 +1365,6 @@ async def set_lpar_boot_order(
         hmc, system_name, lpar_name, ownership_override=ownership_override
     )
 
-    # Build and submit the boot order document
     xml = build_boot_order_document(devices)
     try:
         updated = await hmc.modify_logical_partition(lpar_uuid, xml)
@@ -1411,7 +1409,6 @@ async def clear_lpar_boot_order(
     # Import here to avoid circular imports
     from ..documents import build_clear_boot_order_document
 
-    # Resolve system and LPAR names for ownership authorization
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     system_name, lpar_name = await resolve_lpar_ownership_names(
         hmc, system_uuid, system_name_or_uuid, lpar_uuid
@@ -1420,7 +1417,6 @@ async def clear_lpar_boot_order(
         hmc, system_name, lpar_name, ownership_override=ownership_override
     )
 
-    # Build and submit the clear boot order document
     xml = build_clear_boot_order_document()
     try:
         updated = await hmc.modify_logical_partition(lpar_uuid, xml)
