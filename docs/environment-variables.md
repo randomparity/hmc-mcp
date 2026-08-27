@@ -277,7 +277,7 @@ record names the same claimant the ADR 0011 ownership stamp and the
 nothing from the package by design and so carries its own copy of the fold, which
 a test pins against `config.env_var_value` directly.
 
-Two readers do **not** fold case, and both are worth knowing:
+Some readers do **not** fold case. Two of them are deliberate:
 
 - **`HMC_PROFILE` is matched exactly** on POSIX. It is not an `HMCConfig` field;
   `load_profile()` reads it directly to pick a profile, so no case-insensitive
@@ -295,6 +295,15 @@ Two readers do **not** fold case, and both are worth knowing:
   connection never opens. The templates in this repository always give it an
   `HMC_*` name, so a case-variant export of that name is the likely way to hit
   it.
+
+One is not deliberate, and is worth knowing for that reason: the power-guard
+report's connection inventory reads `HMC_HOST` exact-case
+([#552](https://github.com/randomparity/hmc-mcp/issues/552)), while the dispatch
+path it describes folds. Under a case-variant export
+`hmc_effective_permissions` can list a `power_ownership_guards` row for a
+connection dispatch will never select — which matters here because the
+[Notes](#notes) send you to that tool, rather than to your shell, to check
+whether the guard took effect.
 
 ### Isolated construction
 

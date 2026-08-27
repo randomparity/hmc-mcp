@@ -133,18 +133,40 @@ def test_the_iso_allowlist_merge_reaches_the_field_and_is_idempotent(monkeypatch
     name = "HMC_ISO_URL_ALLOWLIST"
     _isolated_environ(monkeypatch)
     _clear(monkeypatch, name)
-    monkeypatch.setenv(name, "example.com")
-    monkeypatch.setenv("hmc_iso_url_allowlist", "example.com")
+    # Two casings, two *different* values: identical ones would leave an
+    # exact-case read and a folded one returning the same string, and the test
+    # could not tell which one it was running against.
+    monkeypatch.setenv(name, "canonical.example.com")
+    monkeypatch.setenv("hmc_iso_url_allowlist", "variant.example.com")
 
     runner._allow_iso_host()
 
     merged = os.environ[name]
     assert [k for k in os.environ if k.lower() == name.lower()] == [name]
-    assert merged.split(",") == ["example.com", runner._ISO_HOST]
+    assert merged.split(",") == ["variant.example.com", runner._ISO_HOST]
     assert HMCConfig(host="h", user="u", password="p").iso_url_allowlist == merged
 
     runner._allow_iso_host()
     assert os.environ[name] == merged
+
+
+def test_the_iso_allowlist_merge_keeps_a_variant_only_operator_entry(monkeypatch):
+    """#543 / ADR 0050. The deletion loop must never run on an empty merge.
+
+    This is the case the deletion makes destructive: with only a variant set, an
+    exact-case read yields nothing, `entries` becomes the runner's own host
+    alone, and the loop then deletes the key that held the operator's ISO
+    servers. They would be gone from the run with no diagnostic — the banner
+    prints a one-entry allowlist that looks deliberate.
+    """
+    name = "HMC_ISO_URL_ALLOWLIST"
+    _isolated_environ(monkeypatch)
+    _clear(monkeypatch, name)
+    monkeypatch.setenv("hmc_iso_url_allowlist", "operator.example.com")
+
+    runner._allow_iso_host()
+
+    assert os.environ[name].split(",") == ["operator.example.com", runner._ISO_HOST]
 
 
 def test_a_dotenv_entry_never_outranks_a_case_variant_export(monkeypatch, tmp_path):
