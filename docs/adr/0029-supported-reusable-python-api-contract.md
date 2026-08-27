@@ -184,7 +184,7 @@ names are internal everywhere and are never inventoried.
   `delete_lpar`, `power_lpar`, `read_lpar_boot_order`, `rename_lpar`, `set_lpar_boot_order`,
   `set_lpar_memory`, `set_lpar_processors`; types: `LparCreation`, `LparCreationResult`,
   `LparPowerResult`; excluded synchronous: `activation_allows_assessment`,
-  `power_on_outcome`.
+  `power_on_outcome`, `translate_lpar_write_error`.
 - `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
   `run_lpm_affinity_preflight`, `validate_lpar_migration`; types: `LpmAffinityMigrationResult`,

@@ -31,7 +31,7 @@ from ..operations.lpar import (
     LparCreation,
     LparPowerOnOutcome,
     activation_allows_assessment,
-    _check_lpar_write_error,
+    translate_lpar_write_error,
     create_and_stamp_lpar,
     clear_lpar_boot_order,
     delete_lpar,
@@ -181,7 +181,7 @@ def hmc_create_lpar(
                     creation.warnings,
                 )
             except HMCError as exc:
-                _check_lpar_write_error(exc)
+                translate_lpar_write_error(exc)
                 raise
 
     return run_sync(_go)
@@ -227,6 +227,7 @@ def hmc_modify_lpar(
         ownership_override: Bypass assignment ownership rejection after operator approval.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await _modify_lpar(
@@ -274,7 +275,7 @@ def hmc_rename_lpar(
                     ownership_override=ownership_override,
                 )
             except HMCError as exc:
-                _check_lpar_write_error(exc)
+                translate_lpar_write_error(exc)
                 raise
             return updated
 

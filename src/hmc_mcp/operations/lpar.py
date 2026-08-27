@@ -59,6 +59,7 @@ from .assignments import (
     _apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
+
 _logger = logging.getLogger(__name__)
 
 PartitionState = Literal[
@@ -117,7 +118,7 @@ PROCESSOR_COMPATIBILITY_MODES: frozenset[ProcessorCompatibilityMode] = frozenset
 )
 
 
-def _check_lpar_write_error(exc: HMCError) -> None:
+def translate_lpar_write_error(exc: HMCError) -> None:
     """Translate an LPAR write rejection while preserving its response body."""
     if exc.status_code == 406:
         raise HMCError(
@@ -155,7 +156,7 @@ async def _modify_lpar(
                 lpar_uuid, build_lpar_document(name=None, resources=resources)
             )
         except HMCError as exc:
-            _check_lpar_write_error(exc)
+            translate_lpar_write_error(exc)
             raise
         steps.append(AssignmentStep("resources", "ok", modified))
 
@@ -577,9 +578,7 @@ class _SkippedFrames:
         if len(self.unreadable) > len(shown):
             parts.append(f"and {len(self.unreadable) - len(shown)} more")
         if self.unusable_entries:
-            parts.append(
-                f"{self.unusable_entries} with incomplete inventory metadata"
-            )
+            parts.append(f"{self.unusable_entries} with incomplete inventory metadata")
         return f" ({self.total} could not be read: {', '.join(parts)})"
 
 
@@ -834,7 +833,7 @@ async def _apply_dlpar_document(
     try:
         return await hmc.modify_logical_partition(lpar_uuid, document)
     except HMCError as exc:
-        _check_lpar_write_error(exc)
+        translate_lpar_write_error(exc)
         raise
 
 
@@ -1002,7 +1001,7 @@ async def set_lpar_boot_order(
     try:
         updated = await hmc.modify_logical_partition(lpar_uuid, xml)
     except HMCError as exc:
-        _check_lpar_write_error(exc)
+        translate_lpar_write_error(exc)
         raise
 
     _logger.info(
@@ -1051,7 +1050,7 @@ async def clear_lpar_boot_order(
     try:
         updated = await hmc.modify_logical_partition(lpar_uuid, xml)
     except HMCError as exc:
-        _check_lpar_write_error(exc)
+        translate_lpar_write_error(exc)
         raise
 
     _logger.info(
