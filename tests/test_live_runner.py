@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import importlib.util
+import os
 import re
 import sys
 from pathlib import Path
@@ -76,8 +77,32 @@ def _isolate_runner(monkeypatch) -> None:
     monkeypatch.setattr(runner, "configure_arbitrary_command_tool", configure)
 
 
+def _clear(monkeypatch, name: str) -> None:
+    """Delete every casing of *name*, not just the canonical one.
+
+    The runner reads its `HMC_*` variables the way `HMCConfig` does, so a test
+    that isolates one spelling does not isolate the variable: an ambient
+    `hmc_schema_version` in a developer's shell or on a CI runner reaches the
+    code under test and the assertion fails saying nothing about casing (#543).
+    """
+    for spelling in [k for k in list(os.environ) if k.lower() == name.lower()]:
+        monkeypatch.delenv(spelling, raising=False)
+
+
+def _isolated_environ(monkeypatch) -> None:
+    """Give the test its own ``os.environ``, restored on teardown.
+
+    The runner mutates the process environment directly — it injects, and now
+    deletes — so a key the code under test creates is not one ``monkeypatch``
+    recorded, and teardown cannot take it back. Swapping the mapping itself is
+    what keeps a runner test from leaking an `HMC_*` variable into every test
+    that runs after it.
+    """
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+
+
 def test_schema_preflight_is_explicit_and_actionable(monkeypatch, capsys):
-    monkeypatch.delenv("HMC_SCHEMA_VERSION", raising=False)
+    _clear(monkeypatch, "HMC_SCHEMA_VERSION")
     monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -85,6 +110,68 @@ def test_schema_preflight_is_explicit_and_actionable(monkeypatch, capsys):
 
     assert exc_info.value.code == 1
     assert "Add 'HMC_SCHEMA_VERSION=V1_0'" in capsys.readouterr().out
+
+
+def test_schema_preflight_accepts_a_case_variant_the_loader_reads(monkeypatch):
+    """#543. It must not refuse to start on a value the server will send."""
+    _clear(monkeypatch, "HMC_SCHEMA_VERSION")
+    monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
+    monkeypatch.setenv("hmc_schema_version", "V1_0")
+
+    assert HMCConfig(host="h", user="u", password="p").schema_version == "V1_0"
+    runner._ensure_schema_version()  # returns rather than exiting 1
+
+
+def test_the_iso_allowlist_merge_reaches_the_field_and_is_idempotent(monkeypatch):
+    """#543 / ADR 0050. The merged value has to be the one the loader resolves.
+
+    Three post-conditions, because the runner cannot diagnose their absence: it
+    prints the allowlist it believes it set, and if a case variant still outranks
+    the canonical spelling, ADR 0050 refuses every upload in the run while the
+    printed evidence says the host is permitted.
+    """
+    name = "HMC_ISO_URL_ALLOWLIST"
+    _isolated_environ(monkeypatch)
+    _clear(monkeypatch, name)
+    monkeypatch.setenv(name, "example.com")
+    monkeypatch.setenv("hmc_iso_url_allowlist", "example.com")
+
+    runner._allow_iso_host()
+
+    merged = os.environ[name]
+    assert [k for k in os.environ if k.lower() == name.lower()] == [name]
+    assert merged.split(",") == ["example.com", runner._ISO_HOST]
+    assert HMCConfig(host="h", user="u", password="p").iso_url_allowlist == merged
+
+    runner._allow_iso_host()
+    assert os.environ[name] == merged
+
+
+def test_a_dotenv_entry_never_outranks_a_case_variant_export(monkeypatch, tmp_path):
+    """#543. `_bootstrap_config`'s priority 1 beats its priority 3 in any casing.
+
+    The exact-case membership test injected the canonical spelling beside an
+    exported variant; a newly created key lands last in `os.environ` order, so
+    the committed `.env` won and an operator who exported a lab host ran the
+    destructive suite against the one `.env` names.
+    """
+    _isolated_environ(monkeypatch)
+    for name in ("HMC_HOST", "HMC_PASSWORD", "HMC_SCHEMA_VERSION"):
+        _clear(monkeypatch, name)
+    monkeypatch.setenv("hmc_host", "lab-hmc.example.com")
+    env_file = tmp_path / ".env"
+    env_file.write_text("HMC_HOST=prod-hmc.example.com\nHMC_SCHEMA_VERSION=V1_0\n")
+    monkeypatch.setattr(runner, "_ENV_FILE", env_file)
+
+    runner._load_dotenv()
+
+    # `host` is left to the environment deliberately: a constructor argument
+    # outranks every environment source, which is the one precedence this test
+    # must not use.
+    config = HMCConfig(user="u", password="p")
+    assert config.host == "lab-hmc.example.com"
+    # A name the environment does not carry in any casing is still injected.
+    assert config.schema_version == "V1_0"
 
 
 @pytest.mark.asyncio

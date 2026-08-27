@@ -61,7 +61,24 @@ def _load_dotenv() -> None:
         key, _, val = line.partition("=")
         key = key.strip()
         val = val.strip().strip('"').strip("'")
-        if key and key not in os.environ:
+        if not key:
+            continue
+        # `_bootstrap_config`'s priority 1 is an already-set HMC_* variable and
+        # priority 3 is this file, and `HMCConfig` matches HMC_* without regard to
+        # case — so an exported `hmc_host` *is* an already-set `HMC_HOST` as far
+        # as the loader is concerned. An exact-case membership test did not see
+        # it, injected the canonical spelling, and a newly created key lands last
+        # in `os.environ` order, so the committed `.env` value outranked the
+        # operator's export: an operator who exported a lab host ran the
+        # destructive suite against the one `.env` names (#543). Names outside the
+        # prefix keep the exact-case test, because the loader folds only its own
+        # and `os.environ` is case-sensitive on POSIX.
+        already_set = (
+            env_var_value(key) is not None
+            if key.lower().startswith("hmc_")
+            else key in os.environ
+        )
+        if not already_set:
             os.environ[key] = val
 
 

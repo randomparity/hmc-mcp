@@ -295,14 +295,23 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   did. Several casings at once resolve to the last in the process environment's order, as
   they do for every other `HMC_*` variable. `audit.py` imports nothing from the package, so
   it carries its own copy of the fold rather than calling `config.env_var_value`; a test
-  pins the two against each other. `scripts/live_test_runner.py` folds case in the three
-  places it predicted a config resolution exact-case: the credential pre-check and the
-  `HMC_SCHEMA_VERSION` pre-check, each of which refused to start on a case variant that
-  would have connected — telling the operator to set a variable already set — and the ISO
-  allowlist merge, which dropped a case variant's entries. That merge now also drops every
-  other casing before writing the canonical name, because assigning to an existing key
-  updates it in place rather than moving it, so a variant would otherwise stay last in
-  `os.environ` order and stay the one that reaches the field.
+  pins the two against each other.
+- The live integration runner (`scripts/live_test_runner.py`) reads every `HMC_*` variable
+  the way `HMCConfig` reads it (#543). Four places predicted or overrode a config
+  resolution exact-case. The credential and `HMC_SCHEMA_VERSION` pre-checks each refused to
+  start on a case variant that would have connected, telling the operator to set a variable
+  that was already set. The ISO allowlist merge dropped a case variant's entries, and it
+  now also removes every other casing before writing the canonical name — assigning to an
+  existing key updates it in place rather than moving it, so a variant would otherwise stay
+  last in `os.environ` order and stay the one that reaches the field, leaving ADR 0050 to
+  refuse every upload in the run while the printed banner said the host was permitted. The
+  worst was the `.env` loader: `_bootstrap_config` documents an already-set `HMC_*` variable
+  as priority 1 and `.env` as priority 3, but the exact-case membership test did not
+  recognise an exported `hmc_host` as an already-set `HMC_HOST`, injected the canonical
+  spelling, and — a newly created key landing last in `os.environ` order — let the
+  committed `.env` outrank the export, so an operator who exported a lab host ran the
+  destructive suite against the HMC `.env` named. Names outside the `HMC_` prefix keep the
+  exact-case test; the loader folds only its own.
 
 ### Removed
 
