@@ -101,7 +101,7 @@ def _common(monkeypatch: pytest.MonkeyPatch) -> None:
         AsyncMock(return_value=("system-a", "client-a")),
     )
     monkeypatch.setattr(f"{module}.authorize_lpar_mutation", AsyncMock())
-    monkeypatch.setattr(f"{module}._require_admitted_environment", AsyncMock())
+    monkeypatch.setattr(f"{module}.require_admitted_environment", AsyncMock())
     monkeypatch.setattr(
         f"{module}.read_vios_identity",
         AsyncMock(

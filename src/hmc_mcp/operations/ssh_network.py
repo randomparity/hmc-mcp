@@ -13,7 +13,7 @@ from .lpar_ownership import (
     authorize_lpar_mutation,
     resolve_lpar_ownership_names,
 )
-from hmc_mcp.operations.pcie import _require_admitted_environment
+from hmc_mcp.operations.pcie import require_admitted_environment
 from hmc_mcp.operations.pcie_validation import (
     require_command_safe_text,
     validate_capacity_percent,
@@ -542,7 +542,7 @@ async def _preflight_add(
 ) -> _VnicPreflightContext:
     system_name, lpar_name = await _resolve(hmc, system, lpar, override)
     config = hmc.config
-    await _require_admitted_environment(config, system_name)
+    await require_admitted_environment(config, system_name)
     identity = await read_vios_identity(config, system_name, selector.vios_name)
     expected = {
         "name": selector.vios_name,
@@ -823,7 +823,7 @@ async def remove_vnic(
     system_name, lpar_name = await _resolve(
         hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
     )
-    await _require_admitted_environment(hmc.config, system_name)
+    await require_admitted_environment(hmc.config, system_name)
     all_vnics = _vnics(await list_vnic_rows(hmc.config, system_name, lpar_name))
     all_backings = tuple(
         _backing(row) for row in await list_vnic_backing_rows(hmc.config, system_name)

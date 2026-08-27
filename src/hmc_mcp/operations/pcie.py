@@ -297,7 +297,7 @@ def _snapshot(row: dict[str, str]) -> SriovLogicalPortSnapshot:
     )
 
 
-async def _require_admitted_environment(config: HMCConfig, system_name: str) -> None:
+async def require_admitted_environment(config: HMCConfig, system_name: str) -> None:
     version, model = await read_sriov_environment(config, system_name)
     normalized = " ".join(version.split()).lower()
     admitted = _ADMITTED_HMC_RELEASE.lower() in normalized or all(
@@ -459,7 +459,7 @@ async def _preflight_sriov_assignment(
     )
     config = hmc.config
     require_command_safe_text(profile_name, "profile_name")
-    await _require_admitted_environment(config, system_name)
+    await require_admitted_environment(config, system_name)
     physical, rows, before = await _read_sriov_assignment_inventory(
         config,
         system_name,
@@ -622,7 +622,7 @@ async def unassign_sriov_logical_port(
         hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
     )
     config = hmc.config
-    await _require_admitted_environment(config, system_name)
+    await require_admitted_environment(config, system_name)
     state = await read_sriov_lpar_state(config, system_name, lpar_name)
     if state["state"] != "Not Activated":
         raise SriovLogicalPortCapabilityError(
@@ -680,7 +680,7 @@ async def set_sriov_adapter_mode(
     config = hmc.config
     validate_sriov_mode(mode)
     system_name = await _system_name(config, system)
-    await _require_admitted_environment(config, system_name)
+    await require_admitted_environment(config, system_name)
     rows = [
         row
         for row in await list_sriov_adapter_rows(config, system_name)
@@ -702,7 +702,7 @@ async def list_sriov_adapters(
     config = hmc.config
     system_name = await _system_name(config, system)
     try:
-        await _require_admitted_environment(config, system_name)
+        await require_admitted_environment(config, system_name)
     except SriovLogicalPortCapabilityError as caught:
         return _unavailable(
             "sriov_adapter", system_name, InventorySelector(adapter_id), str(caught)
@@ -743,7 +743,7 @@ async def list_sriov_physical_ports(
     system_name = await _system_name(config, system)
     selector = InventorySelector(adapter_id, physical_port_id)
     try:
-        await _require_admitted_environment(config, system_name)
+        await require_admitted_environment(config, system_name)
     except SriovLogicalPortCapabilityError as caught:
         return _unavailable("sriov_physical_port", system_name, selector, str(caught))
     if adapter_id is None:
@@ -781,7 +781,7 @@ async def list_sriov_logical_ports(
     system_name = await _system_name(config, system)
     selector = InventorySelector(adapter_id, physical_port_id, logical_port_id)
     try:
-        await _require_admitted_environment(config, system_name)
+        await require_admitted_environment(config, system_name)
     except SriovLogicalPortCapabilityError as caught:
         return _unavailable("sriov_logical_port", system_name, selector, str(caught))
     if adapter_id is None:

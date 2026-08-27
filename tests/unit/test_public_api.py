@@ -42,7 +42,12 @@ from hmc_mcp.client.client_contracts import PcmClient, TemplatesClient
 # the ADR text excluding it — ``_ADR_CITATION`` enforces the citation, so "internal" is not an
 # acceptable excuse. The tests below also reject entries that no longer describe a real omission,
 # so neither mapping can silently accumulate dead excuses.
-ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {}
+ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {
+    (
+        "hmc_mcp.operations.pcie",
+        "require_admitted_environment",
+    ): "ADR 0029 excludes this shared admission-policy guard from domain operations",
+}
 ADR_0029_TYPE_EXCLUSIONS: dict[tuple[str, str], str] = {}
 
 
@@ -911,8 +916,7 @@ _CLEAN_FAULTS = {
 def test_adr_0029_selection_rule_rejects_undeclared_operations() -> None:
     """The guard above is only worth its place if it reddens; prove that it does.
 
-    ``ADR_0029_OPERATION_EXCLUSIONS`` is empty, so the real check exercises the
-    clean path only. Drive the same helpers with a synthetic operations module.
+    Drive the same helpers with a synthetic operations module.
     """
     module = ModuleType("hmc_mcp.operations.synthetic")
 
@@ -1582,7 +1586,12 @@ def _expected_inventory() -> dict[str, dict[str, list[str]]]:
         if module_name not in modules:
             expected[short] = {"exports": imported}
             continue
-        operations = sorted(n for m, n in selected if m == module_name)
+        operations = sorted(
+            name
+            for selected_module, name in selected
+            if selected_module == module_name
+            and (selected_module, name) not in ADR_0029_OPERATION_EXCLUSIONS
+        )
         expected[short] = {
             "operations": operations,
             "types": sorted(set(imported) - set(operations)),

@@ -58,6 +58,12 @@ synchronous function is a transformation, parser, or validator rather than an as
 operation and is excluded for that concrete contract-readiness reason. Imported transport types
 such as `Any` and built-in containers are not facade exports.
 
+`operations.pcie.require_admitted_environment` is the one asynchronous exception. It is a shared
+admission-policy guard called by complete PCIe and SSH-network operations, not a domain operation a
+consumer can use independently: it accepts an already-resolved CLI system name and returns no
+domain result. It therefore remains outside the facade while retaining a public module name so
+sibling operation modules can depend on the seam without crossing a private boundary.
+
 That type half is transitive through an exported model's fields. This Decision already calls the
 fields of an exported package-owned model supported, and a supported field is a promise a consumer
 cannot use unless they can name the field's type: they cannot annotate a variable holding one,
