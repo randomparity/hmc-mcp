@@ -430,7 +430,10 @@ def test_denial_explains_the_hmc_host_collapse(config, monkeypatch):
     with pytest.raises(ConnectionScopeError) as error:
         authorize("hmc_delete_lpar", SECURITY, {"profile": "prod"})
     message = str(error.value)
-    assert "HMC_HOST is set, so the 'profile' argument is ignored" in message
+    assert (
+        "HMC_HOST (in any casing) is set, so the 'profile' argument is ignored"
+        in message
+    )
     assert "evaluated as the '<default>' connection" in message
     assert "env-hmc.example.com" not in message
 
@@ -442,7 +445,10 @@ def test_a_case_variant_hmc_host_still_explains_the_collapse(config, monkeypatch
     with pytest.raises(ConnectionScopeError) as error:
         authorize("hmc_delete_lpar", SECURITY, {"profile": "prod"})
     message = str(error.value)
-    assert "HMC_HOST is set, so the 'profile' argument is ignored" in message
+    assert (
+        "HMC_HOST (in any casing) is set, so the 'profile' argument is ignored"
+        in message
+    )
     assert "env-hmc.example.com" not in message
 
 

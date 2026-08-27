@@ -49,7 +49,8 @@ _DENIED = (
     "names {tool}, or call {tool} with a connection the policy grants."
 )
 _HMC_HOST_CLAUSE = (
-    "HMC_HOST is set, so the {argument!r} argument is ignored and the call was "
+    "HMC_HOST (in any casing) is set, so the {argument!r} argument is ignored "
+    "and the call was "
     "evaluated as the {default!r} connection. "
 )
 

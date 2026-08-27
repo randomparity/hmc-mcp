@@ -266,7 +266,7 @@ process environment's own order — pydantic-settings folds the environment into
 one case-blind mapping, so the later entry overwrites the earlier. Do not rely
 on that ordering: export one spelling.
 
-Two readers do **not** fold case, and both are worth knowing:
+Three readers do **not** fold case, and all three are worth knowing:
 
 - **`HMC_PROFILE` is matched exactly** on POSIX. It is not an `HMCConfig` field;
   `load_profile()` reads it directly to pick a profile, so no case-insensitive
@@ -282,6 +282,15 @@ Two readers do **not** fold case, and both are worth knowing:
   of the trail disagree: the ownership stamp and the `X-Audit-Memento` header
   carry the variant's value, while the access-policy decision record shows no
   claimant.
+- **A profile's `password_env` value names a variable read exact-case.**
+  `load_profile()` looks the name up in `os.environ` directly, and correctly so:
+  `password_env` points at an operator-chosen variable rather than at an
+  `HMCConfig` field, so there is no field name to fold it onto. Unlike the two
+  above, this one **fails hard** instead of degrading — a name that is not
+  present exactly as written raises `password_env=… is not set`, and the
+  connection never opens. The templates in this repository always give it an
+  `HMC_*` name, so a case-variant export of that name is the likely way to hit
+  it.
 
 ### Isolated construction
 
