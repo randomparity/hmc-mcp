@@ -21,7 +21,7 @@ from .client_resolution import (
     MAX_PARENT_DISCOVERY_SYSTEMS,
     PARENT_DISCOVERY_TIMEOUT_SECONDS,
 )
-from .common import is_uuid, resolve_lpar_uuid, resolve_system_uuid
+from .resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
 from .documents import (
     Keylock,
     LparResources,

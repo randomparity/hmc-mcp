@@ -563,7 +563,7 @@ def test_legacy_classification_sets_are_gone():
 
 
 # A handler's connection routes through exactly these three helpers. Every one
-# of them resolves an HMCConfig from `common.build_config`, so a call that omits
+# of them resolves an HMCConfig from `config.build_config`, so a call that omits
 # the handler's declared connection argument reaches the deployment default
 # whatever the caller — and the access policy — named.
 _CONNECTION_BUILDERS = frozenset(

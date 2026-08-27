@@ -87,7 +87,7 @@ def test_an_unreadable_config_file_reads_as_default_on_the_default_connection(
     `docs/environment-variables.md` otherwise glosses as "nothing you wrote
     arrived". The boolean is right; the operator instruction that paragraph gives
     rests entirely on this behaviour. Pinned here so a change to
-    `common.build_config`'s swallow reddens a test rather than rotting a doc.
+    `config.build_config`'s swallow reddens a test rather than rotting a doc.
     """
     _write_config(tmp_path, "[profiles.a\nhost = 'h'\n")
     policy = _policy(ALL_TOOLS_GRANT)

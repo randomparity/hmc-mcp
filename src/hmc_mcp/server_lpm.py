@@ -8,7 +8,7 @@ from ._app import (
     _run,
 )
 
-from .common import client_from_env
+from .client_factory import client_from_env
 from .jobs import JobOutcome
 from .operations_lpm import (
     LpmAffinityMigrationResult,

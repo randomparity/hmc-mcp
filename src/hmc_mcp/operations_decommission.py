@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from .client_adapters import AdapterType
 from .client import HMCClient
-from .common import is_uuid, resolve_system_uuid
+from .resource_identity import is_uuid, resolve_system_uuid
 from .errors import HMCError
 from .jobs import (
     SUCCESSFUL_JOB_STATUSES,

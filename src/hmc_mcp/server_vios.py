@@ -18,13 +18,9 @@ from ._app import (
 
 from .client import HMCClient
 from .errors import HMCError
-from .common import (
-    build_config,
-    client_from_env,
-    is_uuid,
-    resolve_system_uuid,
-    resolve_vios_uuid,
-)
+from .config import build_config
+from .client_factory import client_from_env
+from .resource_identity import is_uuid, resolve_system_uuid, resolve_vios_uuid
 from .jobs import validate_wait_timing
 from .operations_install import (
     install_lpar_os,

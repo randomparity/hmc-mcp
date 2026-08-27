@@ -11,7 +11,8 @@ from ._app import (
 )
 from .errors import HMCError
 from .ssh import HMCCLIError
-from .common import client_from_env, resolve_lpar_uuid
+from .client_factory import client_from_env
+from .resource_identity import resolve_lpar_uuid
 from .documents import (
     Keylock,
     LparResources,

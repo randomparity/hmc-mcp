@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .client import HMCClient
-from .common import is_uuid
+from .resource_identity import is_uuid
 from .config import HMCConfig
 from .errors import HMCTransportError
 from .ssh_commands import _ssh_lpar_name, _ssh_system_name

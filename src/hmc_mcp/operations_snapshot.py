@@ -16,7 +16,7 @@ from hmc_mcp.affinity_assessment import (
 )
 
 from hmc_mcp.client import HMCClient
-from hmc_mcp.common import resolve_lpar_uuid, resolve_system_name, resolve_system_uuid
+from hmc_mcp.resource_identity import resolve_lpar_uuid, resolve_system_name, resolve_system_uuid
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations_ssh_network import (
     get_minimum_affinity_policy,

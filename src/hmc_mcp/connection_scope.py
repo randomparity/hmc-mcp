@@ -9,7 +9,7 @@ module that could union one dimension across grants is a module that could break
 that rule. See docs/adr/0038-dispatch-time-connection-scope.md, and
 docs/adr/0039-dispatch-time-target-scope.md for why the loop moved out.
 
-The connection is not the caller's token. ``common.build_config`` discards the
+The connection is not the caller's token. ``config.build_config`` discards the
 token entirely when ``HMC_HOST`` is set, and ``config.load_profile`` resolves an
 ADR 0030 nickname to a different profile, so the token is normalized to the
 connection that will actually be selected before it is compared.

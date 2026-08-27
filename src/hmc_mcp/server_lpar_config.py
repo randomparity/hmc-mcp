@@ -8,7 +8,8 @@ from ._app import (
     _run,
     _ssh_with_client,
 )
-from .common import build_config, client_from_env
+from .config import build_config
+from .client_factory import client_from_env
 from .operations_ssh_network import (
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,

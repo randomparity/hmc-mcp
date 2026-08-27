@@ -7,7 +7,7 @@ from collections.abc import Callable
 from fastmcp import FastMCP
 
 from ._app import _run
-from .common import build_config
+from .config import build_config
 from .ssh import run_hmc_cli
 from .tool_registry import (
     Authorize,

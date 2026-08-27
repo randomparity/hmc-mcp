@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .client import HMCClient
-from .common import resolve_lpar_uuid, resolve_system_uuid
+from .resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from .errors import HMCError
 from .error_translation import translate_pcm_error
 from .pcm import newest_metric_link

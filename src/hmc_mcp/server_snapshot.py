@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from hmc_mcp._app import _run
-from hmc_mcp.common import build_config, client_from_env
+from hmc_mcp.config import build_config
+from hmc_mcp.client_factory import client_from_env
 from dataclasses import asdict
 
 from hmc_mcp.affinity_assessment import PolicyState

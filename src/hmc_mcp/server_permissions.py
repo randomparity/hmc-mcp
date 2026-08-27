@@ -25,7 +25,7 @@ from fastmcp import FastMCP
 from pydantic import ValidationError
 
 from .access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy, AllTargets, Grant
-from .common import build_config
+from .config import build_config
 from .config import ConfigError, HMCConfig
 from .tool_registry import (
     Authorize,
@@ -368,7 +368,7 @@ def _guard_source(config: HMCConfig) -> tuple[str, str | None]:
 
     ``default`` also covers a ``config.toml`` that exists but could not be read,
     parsed, or resolved to a profile, on the ``<default>`` connection only:
-    :func:`~hmc_mcp.common.build_config` catches that ``ConfigError`` itself when
+    :func:`~hmc_mcp.config.build_config` catches that ``ConfigError`` itself when
     no profile was named and falls through to env-only construction, so
     :func:`_power_guard` is handed a valid config and never sees the failure.
     The boolean stays right — the runtime resolves ``false`` the same way — but
@@ -387,7 +387,7 @@ def _guard_source(config: HMCConfig) -> tuple[str, str | None]:
 def _power_guard(profile: str | None) -> PowerOwnershipGuard:
     """Resolve the guard for one connection the way a tool call would.
 
-    :func:`~hmc_mcp.common.build_config` is the resolution every tool and CLI
+    :func:`~hmc_mcp.config.build_config` is the resolution every tool and CLI
     entry point runs, so asking it is what makes the answer *effective* rather
     than merely declared — including the case an operator cannot see from the
     file alone, where an ambient ``HMC_HOST`` sends resolution down the env-only

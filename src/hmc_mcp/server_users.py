@@ -6,7 +6,7 @@ from typing import Any
 
 from ._app import _run
 from .client_users import AuthenticationFilter
-from .common import client_from_env
+from .client_factory import client_from_env
 from .documents import (
     AuthenticationType,
     build_hmc_user_document,

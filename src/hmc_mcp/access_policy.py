@@ -34,7 +34,7 @@ from .tool_registry import TARGET_KINDS, TargetKind, ToolSecurity
 ACCESS_POLICY_FILENAME = "access-policy.toml"
 
 # The policy token for the environment/default HMC connection. It compiles to
-# ``None``, which is what ``common.build_config(profile=None)`` already means.
+# ``None``, which is what ``config.build_config(profile=None)`` already means.
 # Angle brackets are not valid in a TOML bare key, so a connection profile would
 # have to be written quoted to collide with it.
 DEFAULT_CONNECTION_TOKEN = "<default>"
@@ -248,7 +248,7 @@ class Grant:
     the three dimensions are never unioned independently across grants.
 
     ``connections`` holds ``None`` for the environment/default connection, which
-    is what ``common.build_config(profile=None)`` means.
+    is what ``config.build_config(profile=None)`` means.
 
     ``effects`` is what the grant *authored* — the effect-class names written in
     the document, in document order — while ``tools`` is what it *resolves to*.

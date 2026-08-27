@@ -93,7 +93,7 @@ def systems_show(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Show full details of one managed system (accepts name or UUID)."""
-    from .common import is_uuid
+    from .resource_identity import is_uuid
 
     system = _with_client(
         lambda hmc: (

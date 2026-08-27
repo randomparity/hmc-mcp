@@ -8,7 +8,7 @@ import math
 from typing import Any, Literal
 
 from .client import HMCClient
-from .common import is_uuid, resolve_lpar_uuid, resolve_system_name
+from .resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name
 from .jobs import (
     JobOutcome,
     RemoteRestartOperation,

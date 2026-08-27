@@ -10,7 +10,7 @@ from ._app import (
     _run,
 )
 
-from .common import client_from_env
+from .client_factory import client_from_env
 from .operations_templates import (
     deploy_partition_template,
     get_partition_template,

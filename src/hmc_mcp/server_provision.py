@@ -5,7 +5,7 @@ from __future__ import annotations
 from .tool_registry import tool_module
 
 from ._app import _run
-from .common import client_from_env
+from .client_factory import client_from_env
 from .documents import LparResources, PartitionType
 from .operations_provision import (
     ProvisionAffinityAssessment,

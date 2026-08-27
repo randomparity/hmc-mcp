@@ -11,7 +11,7 @@ from ._app import (
     _run_limited_collection,
 )
 
-from .common import client_from_env
+from .client_factory import client_from_env
 from .documents import StorageKind
 from .jobs import (
     DeviceType,

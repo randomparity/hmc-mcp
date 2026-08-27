@@ -6,7 +6,7 @@ import asyncio
 from typing import Any
 
 from .client import HMCClient
-from .common import resolve_lpar_uuid, resolve_system_uuid
+from .resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from .operations_capacity import lpar_processing_units
 
 

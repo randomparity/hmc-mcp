@@ -5,7 +5,7 @@ Holds the root :class:`typer.Typer` (``app``), every sub-command group
 (``GlobalOpts``), the shared output / run helpers used by the
 command bodies, the ``serve`` command, and the cross-domain name-or-uuid
 resolver (``_resolve_partition_uuid``). The ``is_uuid`` predicate itself lives
-in :mod:`hmc_mcp.common` so the server (``_app``) and CLI share one
+in :mod:`hmc_mcp.resource_identity` so the server (``_app``) and CLI share one
 definition.
 
 The per-domain command modules (``cli_systems``, ``cli_lpars``, ...) import
@@ -30,9 +30,10 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from .common import build_config, client_from_env, is_uuid, run_with_client
 from .client import HMCClient
-from .config import HMCConfig
+from .client_factory import client_from_env
+from .config import HMCConfig, build_config
+from .resource_identity import is_uuid
 
 _T = TypeVar("_T")
 
@@ -227,7 +228,11 @@ def _with_client(fn: Callable[[HMCClient], Awaitable[_T]]) -> _T:
     Control-flow signals pass through untouched, as in :func:`_run`.
     """
     try:
-        return run_with_client(_client, fn)
+        async def _run() -> _T:
+            async with _client() as hmc:
+                return await fn(hmc)
+
+        return asyncio.run(_run())
     except (typer.Abort, typer.Exit):
         raise
     except Exception as exc:

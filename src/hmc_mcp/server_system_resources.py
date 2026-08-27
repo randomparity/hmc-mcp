@@ -9,7 +9,7 @@ from .tool_registry import tool_module
 from typing import Any
 
 from ._app import _run, _ssh_with_client
-from .common import build_config
+from .config import build_config
 from .operations_pcie import (
     list_dedicated_slots,
     list_sriov_adapters,

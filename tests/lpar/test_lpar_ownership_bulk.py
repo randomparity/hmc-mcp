@@ -221,7 +221,7 @@ def test_operation_reuses_the_shared_ownership_parser(monkeypatch, mock_hmc):
 
     monkeypatch.setattr(operations_lpar, "parse_lpar_ownership_owner", spy)
 
-    from hmc_mcp.common import client_from_env
+    from hmc_mcp.client_factory import client_from_env
 
     async def _run_op():
         async with client_from_env() as hmc:

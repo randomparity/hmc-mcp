@@ -6,7 +6,7 @@ from dataclasses import asdict
 from typing import Any
 
 from ._app import _run
-from .common import client_from_env
+from .client_factory import client_from_env
 from .operations_health import fleet_health
 from .tool_registry import tool_module
 

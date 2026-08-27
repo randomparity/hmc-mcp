@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from hmc_mcp.common import build_config
+from hmc_mcp.config import build_config
 from hmc_mcp.config import (
     ConfigError,
     HMCConfig,

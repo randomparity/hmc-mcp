@@ -8,7 +8,7 @@ from ._app import (
     _run,
     _ssh_with_client,
 )
-from .common import client_from_env
+from .client_factory import client_from_env
 from .operations_pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
 
 from .ssh_commands import (

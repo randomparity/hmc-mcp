@@ -14,7 +14,8 @@ from ._app import (
     _run_limited_collection,
 )
 
-from .common import build_config, client_from_env
+from .config import build_config
+from .client_factory import client_from_env
 from .operations_network import (
     create_virtual_network,
     delete_virtual_network,

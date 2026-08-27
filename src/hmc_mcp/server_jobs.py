@@ -8,7 +8,7 @@ from typing import Any
 
 from . import operations_jobs
 from ._app import _run, _run_limited_collection
-from .common import client_from_env
+from .client_factory import client_from_env
 from .errors import HMCError
 from .jobs import JobOutcome
 

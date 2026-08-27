@@ -11,7 +11,7 @@ from pydantic import TypeAdapter, ValidationError
 from rich.table import Table
 from typing import Literal, cast
 
-from .common import is_uuid
+from .resource_identity import is_uuid
 from .jobs import REMOTE_RESTART_OPERATIONS, RemoteRestartOperation
 from .cli_app import (
     _client,

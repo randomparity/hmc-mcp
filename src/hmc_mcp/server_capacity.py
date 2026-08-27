@@ -7,7 +7,7 @@ from .tool_registry import tool_module
 from typing import Any
 
 from ._app import _run
-from .common import client_from_env
+from .client_factory import client_from_env
 from .operations_capacity import capacity_report, find_placement
 
 

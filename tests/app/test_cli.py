@@ -10,7 +10,7 @@ explicit init arg would otherwise shadow the environment).
 from __future__ import annotations
 
 from hmc_mcp import cli, cli_app
-from hmc_mcp.common import is_uuid
+from hmc_mcp.resource_identity import is_uuid
 
 
 def test_ssh_config_uses_global_overrides(monkeypatch):

@@ -12,7 +12,8 @@ from ._app import (
     _run,
 )
 
-from .common import client_from_env, resolve_system_uuid, resolve_vios_uuid
+from .client_factory import client_from_env
+from .resource_identity import resolve_system_uuid, resolve_vios_uuid
 from .errors import HMCError
 from .jobs import (
     TERMINAL_JOB_STATUSES,

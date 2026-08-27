@@ -13,13 +13,7 @@ from typing_extensions import TypedDict
 
 from . import audit
 from .client import HMCClient
-from .common import (
-    is_uuid,
-    resolve_lpar_uuid,
-    resolve_system_name,
-    resolve_system_uuid,
-    resolve_vios_uuid,
-)
+from .resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name, resolve_system_uuid, resolve_vios_uuid
 from .ssh_commands import (
     _ssh_lpar_name,
     build_installios_command,

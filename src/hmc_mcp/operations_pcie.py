@@ -8,7 +8,7 @@ from typing import Generic, Literal, TypeVar, cast
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.client import HMCClient
-from hmc_mcp.common import resolve_lpar_uuid, resolve_system_uuid
+from hmc_mcp.resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from hmc_mcp.operations_lpar import (
     authorize_lpar_mutation,
     resolve_lpar_ownership_names,

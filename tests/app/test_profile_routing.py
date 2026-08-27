@@ -130,8 +130,8 @@ def test_sequential_profile_routing(tmp_path, monkeypatch):
         return real_load_profile(profile=profile, config_path=cfg_path)
 
     with (
-        patch("hmc_mcp.common.load_profile", side_effect=_load_profile_with_path),
-        patch("hmc_mcp.common.resolve_config_path", return_value=cfg_path),
+        patch("hmc_mcp.config.load_profile", side_effect=_load_profile_with_path),
+        patch("hmc_mcp.config.resolve_config_path", return_value=cfg_path),
         respx.mock(assert_all_called=False) as router_a,
     ):
         # Alpha profile → hmc-a.test
@@ -148,8 +148,8 @@ def test_sequential_profile_routing(tmp_path, monkeypatch):
         result_a = hmc_console_info(profile="alpha")
 
     with (
-        patch("hmc_mcp.common.load_profile", side_effect=_load_profile_with_path),
-        patch("hmc_mcp.common.resolve_config_path", return_value=cfg_path),
+        patch("hmc_mcp.config.load_profile", side_effect=_load_profile_with_path),
+        patch("hmc_mcp.config.resolve_config_path", return_value=cfg_path),
         respx.mock(assert_all_called=False) as router_b,
     ):
         # Beta profile → hmc-b.test
@@ -205,7 +205,7 @@ def test_two_profile_strings_produce_distinct_clients(tmp_path, monkeypatch):
             return cfg_path
 
         with (
-            patch("hmc_mcp.common.resolve_config_path", side_effect=patched_resolve),
+            patch("hmc_mcp.config.resolve_config_path", side_effect=patched_resolve),
             patch("hmc_mcp.config.resolve_config_path", side_effect=patched_resolve),
         ):
             with (
@@ -213,7 +213,7 @@ def test_two_profile_strings_produce_distinct_clients(tmp_path, monkeypatch):
                 patch.object(HMCClient, "__aexit__", fake_context_exit),
                 patch.object(HMCClient, "get_console_info", fake_get_console),
             ):
-                from hmc_mcp.common import client_from_env
+                from hmc_mcp.client_factory import client_from_env
 
                 async def call_a():
                     async with client_from_env("alpha") as hmc:
@@ -268,10 +268,10 @@ def test_nickname_reaches_client_from_env(tmp_path, monkeypatch):
     resolving a nickname here proves the nickname works on both surfaces without
     a per-tool change.
     """
-    from hmc_mcp.common import client_from_env
+    from hmc_mcp.client_factory import client_from_env
 
     cfg_path = _toml_with_nickname(tmp_path)
-    monkeypatch.setattr("hmc_mcp.common.resolve_config_path", lambda: cfg_path)
+    monkeypatch.setattr("hmc_mcp.config.resolve_config_path", lambda: cfg_path)
     monkeypatch.setattr("hmc_mcp.config.resolve_config_path", lambda: cfg_path)
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     monkeypatch.delenv("HMC_HOST", raising=False)

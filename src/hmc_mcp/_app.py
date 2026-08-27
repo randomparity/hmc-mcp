@@ -21,7 +21,7 @@ from typing import Any, Literal, TypeVar, overload
 
 from fastmcp import FastMCP
 
-from .common import build_config
+from .config import build_config
 from .config import HMCConfig
 from .ssh_selectors import resolve_ssh_names
 

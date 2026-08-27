@@ -2022,10 +2022,11 @@ def test_run_propagates_a_typer_exit_code_unchanged():
 def test_with_client_propagates_a_typer_exit_code_unchanged(monkeypatch):
     """``_with_client`` shares ``_run``'s control-flow passthrough."""
 
-    def boom(_factory, _fn):
+    def boom(coroutine):
+        coroutine.close()
         raise typer.Exit(code=2)
 
-    monkeypatch.setattr("hmc_mcp.cli_app.run_with_client", boom)
+    monkeypatch.setattr("hmc_mcp.cli_app.asyncio.run", boom)
 
     with pytest.raises(typer.Exit) as excinfo:
         cli_app._with_client(lambda hmc: None)

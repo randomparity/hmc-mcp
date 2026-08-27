@@ -745,3 +745,33 @@ def load_profile(
     path = _selected_config_path(config_path)
     doc: dict[str, Any] = {} if path is None else _read_config_document(path)
     return _load_profile_from_document(doc, path, profile)
+
+
+def build_config(profile: str | None = None, **overrides: Any) -> HMCConfig:
+    """Build configuration from CLI options, environment, and a TOML profile."""
+    filtered = {key: value for key, value in overrides.items() if value is not None}
+
+    explicit_host = filtered.get("host")
+    if not explicit_host and not env_var_value("HMC_HOST"):
+        config_path = resolve_config_path()
+        if config_path is not None or profile or os.environ.get("HMC_PROFILE"):
+            try:
+                base = load_profile(profile=profile)
+                if filtered:
+                    merged = {
+                        key: getattr(base, key) for key in base.model_fields_set
+                    }
+                    merged.update(filtered)
+                    base = HMCConfig(
+                        _env_file=None,  # ty: ignore[unknown-argument]
+                        **merged,
+                    )
+                return base
+            except ConfigError:
+                if profile:
+                    raise
+
+    return HMCConfig(
+        _env_file=None,  # ty: ignore[unknown-argument]
+        **filtered,
+    )

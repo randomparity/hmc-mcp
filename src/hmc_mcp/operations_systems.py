@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .client import HMCClient
-from .common import resolve_system_uuid
+from .resource_identity import resolve_system_uuid
 from .jobs import validate_wait_timing, wait_for_submitted_job
 
 

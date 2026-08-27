@@ -929,7 +929,8 @@ src/hmc_mcp/
   client.py      # async HMCClient: session, transport, uom helpers, jobs
   client_*.py    # per-domain mixins (users, systems, lpars, storage, pcm, ...)
   client_parse.py# defusedxml wrappers tagging failures with the HMC call
-  common.py      # shared HMCClient/config helpers for tool definitions
+  client_factory.py         # construct clients from CLI, environment, and profiles
+  resource_identity.py      # managed-system, partition, and VIOS name/UUID resolution
   operations_*.py# workflows and policies shared by MCP and CLI presentations
   affinity_assessment.py     # evidence-first, read-only LPAR NUMA-affinity assessment
   snapshot.py    # version-1 portable LPAR snapshot values and local I/O

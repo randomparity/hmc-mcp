@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from .client import HMCClient
-from .common import resolve_system_uuid
+from .resource_identity import resolve_system_uuid
 from .errors import HMCError
 from .error_translation import translate_template_error
 from .jobs import validate_wait_timing, wait_for_submitted_job

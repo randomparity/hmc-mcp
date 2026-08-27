@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from .client import HMCClient
-from .common import resolve_lpar_uuid, resolve_system_uuid
+from .resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from .documents import LparResources, PartitionType, StorageKind
 from .errors import HMCError
 from .jobs import JobOutcome, job_outcome

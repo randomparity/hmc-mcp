@@ -8,7 +8,7 @@ from typing import Any
 
 from ._app import _run, _run_limited_collection
 from .client_adapters import AdapterType, validate_adapter_type
-from .common import client_from_env
+from .client_factory import client_from_env
 from .operations_adapters import (
     add_network_adapter,
     add_vios_adapter,

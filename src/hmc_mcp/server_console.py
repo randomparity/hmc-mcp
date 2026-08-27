@@ -6,14 +6,9 @@ import base64
 from typing import Any
 
 from ._app import _run
-from .common import (
-    build_config,
-    client_from_env,
-    is_uuid,
-    resolve_lpar_uuid,
-    resolve_system_name,
-    resolve_system_uuid,
-)
+from .config import build_config
+from .client_factory import client_from_env
+from .resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name, resolve_system_uuid
 from .console_capture import capture_lpar_console
 from .ssh_commands import _ssh_lpar_name
 from .tool_registry import tool_module

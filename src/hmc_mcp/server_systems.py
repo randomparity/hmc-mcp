@@ -10,13 +10,8 @@ from ._app import (
     _run,
     _run_limited_collection,
 )
-from .common import (
-    client_from_env,
-    is_uuid,
-    resolve_lpar_uuid,
-    resolve_system_uuid,
-    resolve_vios_uuid,
-)
+from .client_factory import client_from_env
+from .resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid, resolve_vios_uuid
 from .config import (
     HMCConfig,
     _coerce_nicknames,

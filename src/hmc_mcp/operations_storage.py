@@ -15,7 +15,7 @@ from .client import HMCClient
 from .config import ISO_URL_ALLOWLIST_HELP
 from .errors import HMCError
 from .client_contracts import httpx
-from .common import resolve_lpar_uuid, resolve_vios_uuid
+from .resource_identity import resolve_lpar_uuid, resolve_vios_uuid
 from .documents import StorageKind
 from .jobs import (
     DeviceType,

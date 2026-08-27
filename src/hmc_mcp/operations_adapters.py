@@ -7,7 +7,7 @@ from typing import Any
 
 from .client import HMCClient
 from .client_adapters import AdapterType, validate_adapter_type
-from .common import resolve_lpar_uuid
+from .resource_identity import resolve_lpar_uuid
 
 
 @dataclass(frozen=True)
