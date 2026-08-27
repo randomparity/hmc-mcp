@@ -25,7 +25,7 @@ from hmc_mcp.documents import (
 )
 from hmc_mcp.errors import HMCError, HMCTransportError
 from hmc_mcp.jobs import DeviceType, JobOutcome, LuType, RemoteRestartOperation
-from hmc_mcp.lpar_ownership import (
+from hmc_mcp.operations.lpar_ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     authorize_lpar_mutation,
     list_lpar_ownership,

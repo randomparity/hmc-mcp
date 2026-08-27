@@ -1000,11 +1000,11 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.lpar_ownership.stamp_lpar_ownership",
+            "hmc_mcp.operations.lpar_ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
         patch(
-            "hmc_mcp.lpar_ownership.resolve_system_name",
+            "hmc_mcp.operations.lpar_ownership._resolve_system_name",
             new=AsyncMock(return_value="sys1"),
         ),
     ):

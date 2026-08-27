@@ -30,7 +30,7 @@ async def get_lpar_description(
     per-partition detail), byte-for-byte identical to this CLI output, present
     since REST schema version V1_2_0, with an empty description signaled by
     element absence rather than an empty element. Bulk ownership reads use
-    that feed (``hmc_mcp.lpar_ownership.list_lpar_ownership``); this SSH read
+    that feed (``hmc_mcp.operations.lpar_ownership.list_lpar_ownership``); this SSH read
     stays for the CLI-name-keyed write flows that share this module's
     transport.
     """

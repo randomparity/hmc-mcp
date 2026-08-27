@@ -14,7 +14,7 @@ import pytest
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.documents import LparResources
-from hmc_mcp.lpar_ownership import resolve_system_name as _system_name
+from hmc_mcp.operations.lpar_ownership import _resolve_system_name as _system_name
 from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.server import (
     hmc_create_lpar,
@@ -42,7 +42,7 @@ async def test_system_name_uses_fallback_only_for_expected_lookup_failures():
     hmc.get_managed_system.side_effect = HMCError("REST unavailable")
 
     with patch(
-        "hmc_mcp.lpar_ownership._ssh_system_name",
+        "hmc_mcp.operations.lpar_ownership._ssh_system_name",
         new=AsyncMock(side_effect=HMCCLIError("SSH unavailable")),
     ):
         assert await _system_name(hmc, SYSTEM_UUID, "fallback") == "fallback"
@@ -112,7 +112,7 @@ def _partition_feed(*entries: str) -> str:
 def _unowned_partition():
     """Patch the SSH ownership read to report a partition with no ADR 0011 stamp."""
     return patch(
-        "hmc_mcp.lpar_ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=""),
     )
 
@@ -160,7 +160,7 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
             new=AsyncMock(return_value=""),
         ) as create_via_cli,
         patch(
-            "hmc_mcp.lpar_ownership.stamp_lpar_ownership",
+            "hmc_mcp.operations.lpar_ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
     ):

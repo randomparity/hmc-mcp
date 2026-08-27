@@ -119,10 +119,10 @@ against that commit rather than maintained forward.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `delete_lpar` | `operations/lpar.py:371` | guarded (`:386`) | — |
+| `delete_lpar` | `operations/lpar.py:372` | guarded (`:387`) | — |
 | `decommission_lpar` | `operations/decommission.py:612` | guarded (`:289`, `:643`, `:662`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
-| `rename_lpar` | `operations/lpar.py:483` | guarded (`:499`) | — |
-| `set_lpar_ownership_description` | `lpar_ownership.py:264` | guarded (`:281`) | — |
+| `rename_lpar` | `operations/lpar.py:484` | guarded (`:500`) | — |
+| `set_lpar_ownership_description` | `operations/lpar_ownership.py:264` | guarded (`:281`) | — |
 | `hmc_sync_lpar_profile` | `server_tools/profiles.py:121` | **unguarded** | #441 |
 
 `rename_lpar` is Destructive rather than Reconfiguring because the partition name
@@ -141,8 +141,8 @@ first, exactly as for the tool rows in §3.2.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `set_lpar_boot_order` | `operations/lpar.py:956` | guarded (`:997`) | — |
-| `clear_lpar_boot_order` | `operations/lpar.py:1018` | guarded (`:1049`) | — |
+| `set_lpar_boot_order` | `operations/lpar.py:955` | guarded (`:996`) | — |
+| `clear_lpar_boot_order` | `operations/lpar.py:1017` | guarded (`:1045`) | — |
 | `assign_dedicated_pcie_slot` | `operations/pcie.py:182` | guarded (`:222`, via `_authorize_pcie_profile_request`) | — |
 | `unassign_dedicated_pcie_slot` | `operations/pcie.py:202` | guarded (`:222`) | — |
 | `assign_sriov_logical_port` | `operations/pcie.py:462` | guarded (`:313`, via `_resolve_lpar`) | — |
@@ -150,8 +150,8 @@ first, exactly as for the tool rows in §3.2.
 | `add_vnic` | `operations/ssh_network.py:760` | guarded (`:419`, via `_preflight_add:544` → `_resolve:413`) | — |
 | `remove_vnic` | `operations/ssh_network.py:832` | guarded (`:419`, via `_resolve`) | — |
 | `set_minimum_affinity_policy` | `operations/ssh_network.py:313` | guarded (`:326`) | — |
-| `set_lpar_processors` | `operations/lpar.py:841` | guarded (`:828`, via `_apply_dlpar_document:820` → `_resolve_and_authorize_lpar:728`) | — |
-| `set_lpar_memory` | `operations/lpar.py:877` | guarded (`:828`, via `_apply_dlpar_document`) | — |
+| `set_lpar_processors` | `operations/lpar.py:840` | guarded (`:827`, via `_apply_dlpar_document:819` → `_resolve_and_authorize_lpar:727`) | — |
+| `set_lpar_memory` | `operations/lpar.py:876` | guarded (`:827`, via `_apply_dlpar_document`) | — |
 | `apply_lpar_pcie_assignments` | `operations/assignments.py:275` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
 | `add_network_adapter` | `operations/adapters.py:32` | **unguarded** | #372 |
 | `add_vios_adapter` | `operations/adapters.py:57` | **unguarded** | #372 |
@@ -209,7 +209,7 @@ either wrapper.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `power_lpar` | `operations/lpar.py:406` | guarded when opted in (`:445`, via `_resolve_and_authorize_lpar`); §4 | #371 |
+| `power_lpar` | `operations/lpar.py:407` | guarded when opted in (`:446`, via `_resolve_and_authorize_lpar`); §4 | #371 |
 
 `power_lpar` is the whole class. Both `hmc_power_on_lpar` (`server_tools/lpars.py:504`)
 and `hmc_power_off_lpar` (`server_tools/lpars.py:615`) delegate to it, and so does the
@@ -226,7 +226,7 @@ exempt anyway.
 
 | Operation | Reason |
 |---|---|
-| `create_and_stamp_lpar` (`operations/lpar.py:262`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
+| `create_and_stamp_lpar` (`operations/lpar.py:263`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
 | `provision_lpar` (`operations/provision.py:506`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
 | `deploy_partition_template` (`operations/templates.py:93`) | Creates the partition and stamps it per ADR 0014. |
 | `hmc_capture_lpar_console` (`server_tools/console.py:24`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |

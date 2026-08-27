@@ -31,7 +31,7 @@ from hmc_mcp.ssh import profiles as ssh_profiles
 from hmc_mcp.cli_commands import app as cli_app
 from hmc_mcp.cli_commands import lpars as cli_lpars
 from hmc_mcp.cli_commands import network as cli_network
-from hmc_mcp import lpar_ownership
+from hmc_mcp.operations import lpar_ownership
 from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError

@@ -144,9 +144,6 @@ names are internal everywhere and are never inventoried.
   - Note: `JobOutcome`'s fields are a package-owned model contract except the opaque `job`
     mapping (ADR 0093). The synchronous helpers `job_identifier`, `job_outcome`, and
     `validate_wait_timing` stay in `jobs.py` as transformations and validators.
-- `lpar_ownership` — exports: `authorize_decommission_lpar_ownership_snapshot`,
-  `authorize_lpar_mutation`, `list_lpar_ownership`, `resolve_lpar_ownership_names`,
-  `set_lpar_ownership_description`, `stamp_created_lpar_ownership`.
 - `operations.adapters` — operations: `add_network_adapter`, `add_vios_adapter`, `delete_adapter`,
   `list_adapters`; types: `AdapterResult`; excluded synchronous: none.
 - `operations.assignments` — operations: `apply_lpar_pcie_assignments`,
@@ -185,6 +182,12 @@ names are internal everywhere and are never inventoried.
   `set_lpar_memory`, `set_lpar_processors`; types: `LparCreation`, `LparCreationResult`,
   `LparPowerResult`; excluded synchronous: `activation_allows_assessment`,
   `power_on_outcome`, `translate_lpar_write_error`.
+- `operations.lpar_ownership` — operations:
+  `authorize_decommission_lpar_ownership_snapshot`, `authorize_lpar_mutation`,
+  `list_lpar_ownership`, `resolve_lpar_ownership_names`, `set_lpar_ownership_description`,
+  `stamp_created_lpar_ownership`; types: none; excluded synchronous:
+  `authorize_lpar_ownership_description`, `lpar_ownership_entry`,
+  `parse_lpar_ownership_caller_token`, `parse_lpar_ownership_owner`.
 - `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
   `run_lpm_affinity_preflight`, `validate_lpar_migration`; types: `LpmAffinityMigrationResult`,

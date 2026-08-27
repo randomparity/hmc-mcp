@@ -122,7 +122,7 @@ async def test_disabled_guard_powers_a_partition_owned_by_another_agent() -> Non
     hmc = _hmc(authorize=False, agent_id="alice")
 
     with patch(
-        "hmc_mcp.lpar_ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_BOB),
     ) as read:
         await power_lpar(hmc, None, LPAR_UUID, power_on=False)
@@ -150,7 +150,7 @@ async def test_enabled_guard_refuses_a_partition_another_agent_owns() -> None:
     hmc = _hmc(authorize=True, agent_id="alice")
 
     with patch(
-        "hmc_mcp.lpar_ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_BOB),
     ):
         with pytest.raises(PermissionError, match="ownership_override=true"):
@@ -169,7 +169,7 @@ async def test_enabled_guard_powers_a_partition_this_agent_owns() -> None:
     hmc = _hmc(authorize=True, agent_id="alice")
 
     with patch(
-        "hmc_mcp.lpar_ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_ALICE),
     ) as read:
         result = await power_lpar(
@@ -191,7 +191,7 @@ async def test_enabled_guard_runs_before_the_already_running_short_circuit() -> 
     hmc.get_quick_property.return_value = "running"
 
     with patch(
-        "hmc_mcp.lpar_ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_BOB),
     ):
         with pytest.raises(PermissionError):
@@ -211,7 +211,7 @@ async def test_ownership_override_submits_the_job_and_is_audited(caplog) -> None
 
     with (
         patch(
-            "hmc_mcp.lpar_ownership.get_lpar_description",
+            "hmc_mcp.operations.lpar_ownership.get_lpar_description",
             new=AsyncMock(return_value=OWNED_BY_BOB),
         ) as read,
         caplog.at_level(logging.WARNING),
@@ -246,7 +246,7 @@ async def test_enabled_guard_fails_closed_when_the_ownership_read_fails() -> Non
     hmc = _hmc(authorize=True)
 
     with patch(
-        "hmc_mcp.lpar_ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar_ownership.get_lpar_description",
         new=AsyncMock(side_effect=HMCCLIError("SSH command timed out after 300s")),
     ):
         with pytest.raises(HMCCLIError, match="timed out"):
@@ -273,7 +273,7 @@ async def test_enabled_guard_resolves_the_managed_system_once() -> None:
     hmc.find_partition_by_name.return_value = {"UUID": LPAR_UUID}
 
     with patch(
-        "hmc_mcp.lpar_ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_ALICE),
     ):
         await power_lpar(
@@ -293,7 +293,7 @@ async def test_enabled_guard_discovers_the_owning_system_without_a_selector() ->
     hmc = _hmc(authorize=True, agent_id="alice")
 
     with patch(
-        "hmc_mcp.lpar_ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_ALICE),
     ) as read:
         result = await power_lpar(hmc, None, LPAR_UUID, power_on=False)
@@ -308,7 +308,7 @@ async def test_enabled_guard_refuses_a_partition_owned_by_a_discovered_system() 
     hmc = _hmc(authorize=True, agent_id="alice")
 
     with patch(
-        "hmc_mcp.lpar_ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_BOB),
     ):
         with pytest.raises(PermissionError, match="ownership_override=true"):
@@ -323,7 +323,7 @@ async def test_override_without_a_selector_skips_the_fleet_walk() -> None:
     hmc = _hmc(authorize=True)
 
     with patch(
-        "hmc_mcp.lpar_ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_BOB),
     ) as read:
         result = await power_lpar(
@@ -346,7 +346,7 @@ async def test_enabled_guard_refuses_a_uuid_paired_with_a_foreign_system() -> No
     hmc.list_logical_partitions.return_value = [{"UUID": OTHER_LPAR_UUID}]
 
     with patch(
-        "hmc_mcp.lpar_ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_ALICE),
     ) as read:
         with pytest.raises(ValueError, match="does not belong to managed system"):

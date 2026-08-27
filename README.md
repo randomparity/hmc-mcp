@@ -928,8 +928,8 @@ src/hmc_mcp/
   error_translation.py       # presentation-neutral wording for identified HMC failures
   client/        # HMCClient plus domain mixins, parsing, and construction
   resource_identity.py      # managed-system, partition, and VIOS name/UUID resolution
-  lpar_ownership.py         # ownership parsing, authorization, and CLI-name resolution
   operations/    # workflows and policies shared by MCP and CLI presentations
+  operations/lpar_ownership.py  # ownership parsing, authorization, and name resolution
   server_tools/  # MCP tool adapters grouped by resource family
   cli_commands/  # Typer command groups and shared CLI application state
   affinity_assessment.py     # evidence-first, read-only LPAR NUMA-affinity assessment

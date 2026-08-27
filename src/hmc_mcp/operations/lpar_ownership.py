@@ -1,4 +1,4 @@
-"""LPAR ownership authorization and identity resolution."""
+"""LPAR ownership authorization and identity resolution operations."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ import logging
 import re
 from typing import Any
 
-from . import audit
-from .client import HMCClient
-from .errors import HMCError
-from .resource_identity import resolve_lpar_uuid, resolve_system_uuid
-from .ssh.transport import HMCCLIError
-from .ssh.lpar import _ssh_system_name, stamp_lpar_ownership
-from .ssh.description_validation import validate_lpar_description
-from .ssh.profiles import get_lpar_description, set_lpar_description
+from .. import audit
+from ..client import HMCClient
+from ..errors import HMCError
+from ..resource_identity import resolve_lpar_uuid, resolve_system_uuid
+from ..ssh.transport import HMCCLIError
+from ..ssh.lpar import _ssh_system_name, stamp_lpar_ownership
+from ..ssh.description_validation import validate_lpar_description
+from ..ssh.profiles import get_lpar_description, set_lpar_description
 
 _logger = logging.getLogger(__name__)
 
@@ -173,7 +173,7 @@ async def resolve_lpar_ownership_names(
     lpar_uuid: str,
 ) -> tuple[str, str]:
     """Resolve the CLI names required to read an LPAR ownership token."""
-    system_name = await resolve_system_name(hmc, system_uuid, system_name_or_uuid)
+    system_name = await _resolve_system_name(hmc, system_uuid, system_name_or_uuid)
     lpar = await hmc.get_logical_partition(lpar_uuid)
     lpar_name = ((lpar or {}).get("Resource") or {}).get("PartitionName")
     if not lpar_name:
@@ -181,7 +181,7 @@ async def resolve_lpar_ownership_names(
     return system_name, lpar_name
 
 
-async def resolve_system_name(hmc: HMCClient, system_uuid: str, fallback: str) -> str:
+async def _resolve_system_name(hmc: HMCClient, system_uuid: str, fallback: str) -> str:
     """Resolve an HMC CLI system name, falling back to the caller's selector."""
     try:
         system = await hmc.get_managed_system(system_uuid)
@@ -239,7 +239,7 @@ async def stamp_created_lpar_ownership(
     if not confirmed_name:
         return None, ["ownership stamp skipped: create result has no partition name"]
 
-    system_name = await resolve_system_name(hmc, system_uuid, system_fallback)
+    system_name = await _resolve_system_name(hmc, system_uuid, system_fallback)
     if system_name == system_uuid:
         return None, [
             f"ownership stamp skipped for LPAR {confirmed_name!r}: "

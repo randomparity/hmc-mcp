@@ -36,7 +36,7 @@ from ..ssh.profiles import (
     set_lpar_msp,
     set_lpar_proc_compat,
 )
-from ..lpar_ownership import set_lpar_ownership_description
+from ..operations.lpar_ownership import set_lpar_ownership_description
 from ..operations.lpar import ProcessorCompatibilityMode
 
 

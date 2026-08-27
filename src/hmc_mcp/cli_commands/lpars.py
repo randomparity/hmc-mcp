@@ -27,7 +27,7 @@ from .app import (
 )
 
 from ..jobs import validate_wait_timing
-from ..lpar_ownership import set_lpar_ownership_description
+from ..operations.lpar_ownership import set_lpar_ownership_description
 from ..operations.lpar import ProcessorCompatibilityMode
 from ..operations.lpar import (
     LparCreation,
