@@ -6,34 +6,34 @@ domain mixin; this module only defines methods for cluster.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from typing import Any
 
+from .client_contracts import ClusterClient
 from ..jobs import DeviceType, LuType, create_logical_unit_job, delete_logical_unit_job
 
 
 class ClusterMixin:
-    list_uom: Callable[..., Awaitable[list[dict[str, Any]]]]
-    get_uom: Callable[..., Awaitable[dict[str, Any] | None]]
-    submit_job: Callable[..., Awaitable[dict[str, Any] | None]]
-
     # ------------------------------------------------------------------ #
     # Cluster / Shared Storage Pool (SSP)
     # ------------------------------------------------------------------ #
-    async def list_clusters(self) -> list[dict[str, Any]]:
+    async def list_clusters(self: ClusterClient) -> list[dict[str, Any]]:
         return await self.list_uom("Cluster")
 
-    async def get_cluster(self, cluster_uuid: str) -> dict[str, Any] | None:
+    async def get_cluster(
+        self: ClusterClient, cluster_uuid: str
+    ) -> dict[str, Any] | None:
         return await self.get_uom("Cluster", cluster_uuid)
 
-    async def list_shared_storage_pools(self) -> list[dict[str, Any]]:
+    async def list_shared_storage_pools(self: ClusterClient) -> list[dict[str, Any]]:
         return await self.list_uom("SharedStoragePool")
 
-    async def get_shared_storage_pool(self, ssp_uuid: str) -> dict[str, Any] | None:
+    async def get_shared_storage_pool(
+        self: ClusterClient, ssp_uuid: str
+    ) -> dict[str, Any] | None:
         return await self.get_uom("SharedStoragePool", ssp_uuid)
 
     async def create_logical_unit(
-        self,
+        self: ClusterClient,
         cluster_uuid: str,
         lu_name: str,
         lu_size_gib: int,
@@ -55,7 +55,7 @@ class ClusterMixin:
         )
 
     async def delete_logical_unit(
-        self, cluster_uuid: str, lu_udid: str
+        self: ClusterClient, cluster_uuid: str, lu_udid: str
     ) -> dict[str, Any] | None:
         """Submit a DeleteLogicalUnit job against a Cluster/SSP."""
 

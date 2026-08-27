@@ -7,9 +7,9 @@ domain mixin; this module only defines methods for systems.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
 from typing import Any
 
+from .client_contracts import SystemsClient
 from .client_parse import _parse_feed
 from .client_resolution import (
     PARENT_DISCOVERY_TIMEOUT_SECONDS,
@@ -26,15 +26,8 @@ from ..jobs import (
 
 
 class SystemsMixin:
-    list_uom: Callable[..., Awaitable[list[dict[str, Any]]]]
-    get_uom: Callable[..., Awaitable[dict[str, Any] | None]]
-    search_uom: Callable[..., Awaitable[list[dict[str, Any]]]]
-    _get: Callable[..., Awaitable[str]]
-    _post: Callable[..., Awaitable[str]]
-    submit_job: Callable[..., Awaitable[dict[str, Any] | None]]
-
     # -- Convenience wrappers for the common resources ----------------- #
-    async def get_console_info(self) -> dict[str, Any] | None:
+    async def get_console_info(self: SystemsClient) -> dict[str, Any] | None:
         """ManagementConsole: HMC version, network info, links to systems."""
         # Some HMC firmware builds return HTTP 500 on the unfiltered
         # ManagementConsole feed due to a null SessionId in the response XML.
@@ -52,7 +45,7 @@ class SystemsMixin:
                 return None
             raise
 
-    async def list_managed_systems(self) -> list[dict[str, Any]]:
+    async def list_managed_systems(self: SystemsClient) -> list[dict[str, Any]]:
         # Some HMC firmware builds return HTTP 500 on the unfiltered
         # ManagedSystem feed due to null property values in hardware-inventory
         # sub-elements (e.g. VirtualPersistentMemoryVolume/Uuid,
@@ -75,10 +68,14 @@ class SystemsMixin:
                 ) from exc
             raise
 
-    async def get_managed_system(self, uuid: str) -> dict[str, Any] | None:
+    async def get_managed_system(
+        self: SystemsClient, uuid: str
+    ) -> dict[str, Any] | None:
         return await self.get_uom("ManagedSystem", uuid)
 
-    async def find_system_by_name(self, name: str) -> dict[str, Any] | None:
+    async def find_system_by_name(
+        self: SystemsClient, name: str
+    ) -> dict[str, Any] | None:
         """Find a managed system by its SystemName (exact match)."""
         results = await self.search_uom("ManagedSystem", "SystemName", name)
         if len(results) > 1:
@@ -91,7 +88,7 @@ class SystemsMixin:
         return results[0] if results else None
 
     async def modify_managed_system(
-        self, system_uuid: str, system_xml: str
+        self: SystemsClient, system_uuid: str, system_xml: str
     ) -> dict[str, Any] | None:
         """Modify a managed system's properties (POST a partial ManagedSystem doc).
 
@@ -107,7 +104,9 @@ class SystemsMixin:
     # ------------------------------------------------------------------ #
     # Managed-system / VIOS power jobs
     # ------------------------------------------------------------------ #
-    async def power_on_system(self, system_uuid: str) -> dict[str, Any] | None:
+    async def power_on_system(
+        self: SystemsClient, system_uuid: str
+    ) -> dict[str, Any] | None:
         """Power on a managed system (PowerOn job)."""
 
         return await self.submit_job(
@@ -116,7 +115,7 @@ class SystemsMixin:
         )
 
     async def power_off_system(
-        self, system_uuid: str, immediate: bool = False
+        self: SystemsClient, system_uuid: str, immediate: bool = False
     ) -> dict[str, Any] | None:
         """Power off a managed system (PowerOff job; immediate skips graceful shutdown)."""
 
@@ -126,7 +125,7 @@ class SystemsMixin:
         )
 
     async def find_vios_by_name(
-        self, name: str, system_uuid: str | None = None
+        self: SystemsClient, name: str, system_uuid: str | None = None
     ) -> dict[str, Any] | None:
         """Find a Virtual I/O Server by its PartitionName (exact match)."""
         if system_uuid:
@@ -201,7 +200,9 @@ class SystemsMixin:
         )
         raise ValueError(f"Ambiguous VIOS name {name!r}: {details}")
 
-    async def power_on_vios(self, vios_uuid: str) -> dict[str, Any] | None:
+    async def power_on_vios(
+        self: SystemsClient, vios_uuid: str
+    ) -> dict[str, Any] | None:
         """Power on a VIOS (PowerOn job)."""
 
         return await self.submit_job(
@@ -209,7 +210,7 @@ class SystemsMixin:
         )
 
     async def power_off_vios(
-        self, vios_uuid: str, immediate: bool = False
+        self: SystemsClient, vios_uuid: str, immediate: bool = False
     ) -> dict[str, Any] | None:
         """Power off a VIOS (PowerOff job; immediate skips graceful shutdown)."""
 
@@ -218,14 +219,18 @@ class SystemsMixin:
             power_off_vios_job(immediate),
         )
 
-    async def list_vios(self, system_uuid: str | None = None) -> list[dict[str, Any]]:
+    async def list_vios(
+        self: SystemsClient, system_uuid: str | None = None
+    ) -> list[dict[str, Any]]:
         if system_uuid:
             path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer"
             xml = await self._get(path, "VirtualIOServer")
             return _parse_feed(xml, path) if xml else []
         return await self.list_uom("VirtualIOServer")
 
-    async def get_vios_storage_detail(self, vios_uuid: str) -> dict[str, Any] | None:
+    async def get_vios_storage_detail(
+        self: SystemsClient, vios_uuid: str
+    ) -> dict[str, Any] | None:
         """GET VirtualIOServer device mappings.
 
         Requests the documented ViosSCSIMapping and ViosFCMapping groups and

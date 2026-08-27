@@ -6,44 +6,43 @@ domain mixin; this module only defines methods for network.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from typing import Any
 
+from .client_contracts import NetworkClient
 from .client_parse import _parse_feed
-from ..config import HMCConfig
 from ..documents import build_virtual_network_document
 
 
 class NetworkMixin:
-    config: HMCConfig
-    _rest_base_url: str
-    _get: Callable[..., Awaitable[str]]
-    _put: Callable[..., Awaitable[str]]
-    _delete: Callable[..., Awaitable[None]]
-
     # ------------------------------------------------------------------ #
     # Virtual Network management (children of ManagedSystem)
     # ------------------------------------------------------------------ #
-    async def list_virtual_switches(self, system_uuid: str) -> list[dict[str, Any]]:
+    async def list_virtual_switches(
+        self: NetworkClient, system_uuid: str
+    ) -> list[dict[str, Any]]:
         """List VirtualSwitches on a managed system (names, IDs, mode)."""
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualSwitch"
         xml = await self._get(path, "VirtualSwitch")
         return _parse_feed(xml, path) if xml else []
 
-    async def list_virtual_networks(self, system_uuid: str) -> list[dict[str, Any]]:
+    async def list_virtual_networks(
+        self: NetworkClient, system_uuid: str
+    ) -> list[dict[str, Any]]:
         """List Virtual Networks (VLANs) on a managed system."""
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork"
         xml = await self._get(path, "VirtualNetwork")
         return _parse_feed(xml, path) if xml else []
 
-    async def list_network_bridges(self, system_uuid: str) -> list[dict[str, Any]]:
+    async def list_network_bridges(
+        self: NetworkClient, system_uuid: str
+    ) -> list[dict[str, Any]]:
         """List NetworkBridges (Shared Ethernet Adapters) on a managed system."""
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}/NetworkBridge"
         xml = await self._get(path, "NetworkBridge")
         return _parse_feed(xml, path) if xml else []
 
     async def create_virtual_network(
-        self,
+        self: NetworkClient,
         system_uuid: str,
         name: str,
         vlan_id: int,
@@ -73,7 +72,9 @@ class NetworkMixin:
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
-    async def delete_virtual_network(self, system_uuid: str, network_uuid: str) -> None:
+    async def delete_virtual_network(
+        self: NetworkClient, system_uuid: str, network_uuid: str
+    ) -> None:
         """Delete a Virtual Network from a managed system."""
         await self._delete(
             f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork/{network_uuid}"

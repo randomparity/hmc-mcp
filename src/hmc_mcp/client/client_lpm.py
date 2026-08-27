@@ -6,9 +6,9 @@ domain mixin; this module only defines methods for lpm.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from typing import Any
 
+from .client_contracts import LpmClient
 from ..jobs import (
     RemoteRestartOperation,
     migrate_abort_lpar_job,
@@ -20,18 +20,18 @@ from ..jobs import (
 
 
 class LpmMixin:
-    submit_job: Callable[..., Awaitable[dict[str, Any] | None]]
-
     # ------------------------------------------------------------------ #
     # Live Partition Mobility (LPM)
     # ------------------------------------------------------------------ #
-    async def _lpar_job(self, lpar_uuid: str, operation: str, job_xml: str) -> dict[str, Any] | None:
+    async def _lpar_job(
+        self: LpmClient, lpar_uuid: str, operation: str, job_xml: str
+    ) -> dict[str, Any] | None:
         return await self.submit_job(
             f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", job_xml
         )
 
     async def lpar_migrate(
-        self,
+        self: LpmClient,
         lpar_uuid: str,
         target_system: str,
         target_profile_name: str | None = None,
@@ -42,12 +42,16 @@ class LpmMixin:
         """Migrate (LPM) an LPAR to another managed system."""
 
         xml = migrate_lpar_job(
-            target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
+            target_system,
+            target_profile_name,
+            destination_lpar_id,
+            shared_proc_pool_id,
+            wait_time,
         )
         return await self._lpar_job(lpar_uuid, "Migrate", xml)
 
     async def lpar_migrate_validate(
-        self,
+        self: LpmClient,
         lpar_uuid: str,
         target_system: str,
         target_profile_name: str | None = None,
@@ -58,22 +62,32 @@ class LpmMixin:
         """Validate whether an LPM migration would succeed."""
 
         xml = migrate_validate_lpar_job(
-            target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
+            target_system,
+            target_profile_name,
+            destination_lpar_id,
+            shared_proc_pool_id,
+            wait_time,
         )
         return await self._lpar_job(lpar_uuid, "MigrateValidate", xml)
 
-    async def lpar_migrate_abort(self, lpar_uuid: str) -> dict[str, Any] | None:
+    async def lpar_migrate_abort(
+        self: LpmClient, lpar_uuid: str
+    ) -> dict[str, Any] | None:
         """Abort an in-progress LPM migration."""
 
         return await self._lpar_job(lpar_uuid, "MigrateAbort", migrate_abort_lpar_job())
 
-    async def lpar_migrate_recover(self, lpar_uuid: str) -> dict[str, Any] | None:
+    async def lpar_migrate_recover(
+        self: LpmClient, lpar_uuid: str
+    ) -> dict[str, Any] | None:
         """Recover an LPAR after a failed LPM migration."""
 
-        return await self._lpar_job(lpar_uuid, "MigrateRecover", migrate_recover_lpar_job())
+        return await self._lpar_job(
+            lpar_uuid, "MigrateRecover", migrate_recover_lpar_job()
+        )
 
     async def lpar_remote_restart(
-        self,
+        self: LpmClient,
         lpar_uuid: str,
         operation: RemoteRestartOperation,
         managed_system: str,

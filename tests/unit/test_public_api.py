@@ -30,8 +30,7 @@ import pytest
 
 from hmc_mcp import api
 from hmc_mcp import operations
-from hmc_mcp.client.client_contracts import PcmClient
-from hmc_mcp.client.client_templates import TemplatesMixin
+from hmc_mcp.client.client_contracts import PcmClient, TemplatesClient
 
 # ADR 0029's Decision section selects, from each ``operations.*`` module, "every non-underscore
 # top-level coroutine function the module itself defines, and each package-owned input, result,
@@ -1632,7 +1631,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
 def test_runtime_httpx_annotations_remain_resolvable() -> None:
     assert get_type_hints(PcmClient)["_http"].__module__ == "httpx"
     assert get_type_hints(PcmClient._request)["return"].__module__ == "httpx"
-    assert get_type_hints(TemplatesMixin)["_http"].__module__ == "httpx"
+    assert get_type_hints(TemplatesClient._request)["return"].__module__ == "httpx"
 
 
 def _typed_dict_text(exported: type) -> str:

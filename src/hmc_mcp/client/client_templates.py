@@ -6,27 +6,21 @@ domain mixin; this module only defines methods for templates.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from typing import Any
 
-from .client_contracts import httpx
+from .client_contracts import TemplatesClient
 from .client_parse import _parse_feed
 from ..errors import HMCError
 from ..jobs import deploy_partition_template_job
 
 
 class TemplatesMixin:
-    _http: httpx.AsyncClient
-    _session_token: str | None
-    _request: Callable[..., Awaitable[httpx.Response]]
-    submit_job: Callable[..., Awaitable[dict[str, Any] | None]]
-
     # ------------------------------------------------------------------ #
     # Template Library (/rest/api/templates/, templates+xml media type)
     # ------------------------------------------------------------------ #
     TEMPLATES_MEDIA = "application/vnd.ibm.powervm.templates+xml"
 
-    async def _templates_get(self, path: str) -> str:
+    async def _templates_get(self: TemplatesClient, path: str) -> str:
         resp = await self._request(
             "GET",
             path,
@@ -38,12 +32,14 @@ class TemplatesMixin:
             raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
         return resp.text
 
-    async def list_partition_templates(self) -> list[dict[str, Any]]:
+    async def list_partition_templates(self: TemplatesClient) -> list[dict[str, Any]]:
         """List all partition templates in the template library."""
         xml = await self._templates_get("/rest/api/templates/PartitionTemplate")
         return _parse_feed(xml, "/rest/api/templates/PartitionTemplate") if xml else []
 
-    async def get_partition_template(self, template_uuid: str) -> dict[str, Any] | None:
+    async def get_partition_template(
+        self: TemplatesClient, template_uuid: str
+    ) -> dict[str, Any] | None:
         """Get one partition template by UUID."""
         xml = await self._templates_get(
             f"/rest/api/templates/PartitionTemplate/{template_uuid}"
@@ -56,7 +52,7 @@ class TemplatesMixin:
         return entries[0] if entries else None
 
     async def deploy_partition_template(
-        self, draft_template_uuid: str, target_system_uuid: str
+        self: TemplatesClient, draft_template_uuid: str, target_system_uuid: str
     ) -> dict[str, Any] | None:
         """Deploy a partition from a *draft* template onto a managed system.
 

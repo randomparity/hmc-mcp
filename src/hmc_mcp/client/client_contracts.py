@@ -160,3 +160,163 @@ class StorageClient(Protocol):
     ) -> None: ...
 
     def _find_vmlib(self, vg_elem: ET.Element) -> ET.Element | None: ...
+
+
+class AdaptersClient(Protocol):
+    """Host operations required by :class:`client_adapters.AdaptersMixin`."""
+
+    async def list_child(
+        self, parent_type: str, parent_uuid: str, child_type: str
+    ) -> list[dict[str, Any]]: ...
+
+    async def create_child(
+        self, parent_type: str, parent_uuid: str, child_type: str, child_xml: str
+    ) -> dict[str, Any] | None: ...
+
+    async def delete_child(
+        self, parent_type: str, parent_uuid: str, child_type: str, child_uuid: str
+    ) -> None: ...
+
+
+class JobClient(Protocol):
+    """Host operation shared by mixins that submit HMC jobs."""
+
+    async def submit_job(
+        self, job_path: str, job_request_xml: str
+    ) -> dict[str, Any] | None: ...
+
+
+class ClusterClient(JobClient, Protocol):
+    """Host operations required by :class:`client_cluster.ClusterMixin`."""
+
+    async def list_uom(
+        self, resource_type: str, group: str | None = None
+    ) -> list[dict[str, Any]]: ...
+
+    async def get_uom(
+        self, resource_type: str, uuid: str, group: str | None = None
+    ) -> dict[str, Any] | None: ...
+
+
+class LpmClient(JobClient, Protocol):
+    """Host operations required by :class:`client_lpm.LpmMixin`."""
+
+    async def _lpar_job(
+        self, lpar_uuid: str, operation: str, job_xml: str
+    ) -> dict[str, Any] | None: ...
+
+
+class NetworkClient(Protocol):
+    """Host state and operations required by :class:`client_network.NetworkMixin`."""
+
+    _rest_base_url: str
+
+    async def _get(
+        self,
+        path: str,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str: ...
+
+    async def _put(
+        self,
+        path: str,
+        body: str | bytes,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str: ...
+
+    async def _delete(self, path: str) -> None: ...
+
+
+class SystemsClient(JobClient, Protocol):
+    """Host operations required by :class:`client_systems.SystemsMixin`."""
+
+    async def list_uom(
+        self, resource_type: str, group: str | None = None
+    ) -> list[dict[str, Any]]: ...
+
+    async def get_uom(
+        self, resource_type: str, uuid: str, group: str | None = None
+    ) -> dict[str, Any] | None: ...
+
+    async def search_uom(
+        self, resource_type: str, property_name: str, property_value: str
+    ) -> list[dict[str, Any]]: ...
+
+    async def _get(
+        self,
+        path: str,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str: ...
+
+    async def _post(
+        self,
+        path: str,
+        body: str | bytes,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str: ...
+
+    async def list_managed_systems(self) -> list[dict[str, Any]]: ...
+
+    async def get_managed_system(self, uuid: str) -> dict[str, Any] | None: ...
+
+    async def list_vios(
+        self, system_uuid: str | None = None
+    ) -> list[dict[str, Any]]: ...
+
+
+class TemplatesClient(JobClient, Protocol):
+    """Host state and operations required by :class:`client_templates.TemplatesMixin`."""
+
+    TEMPLATES_MEDIA: str
+    _session_token: str | None
+
+    async def _request(
+        self, method: str, path: str, **kwargs: Any
+    ) -> httpx.Response: ...
+
+    async def _templates_get(self, path: str) -> str: ...
+
+
+class UsersClient(Protocol):
+    """Host operations required by :class:`client_users.UsersMixin`."""
+
+    async def _get(
+        self,
+        path: str,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str: ...
+
+    async def _post(
+        self,
+        path: str,
+        body: str | bytes,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str: ...
+
+    async def _put(
+        self,
+        path: str,
+        body: str | bytes,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str: ...
+
+    async def _delete(self, path: str) -> None: ...
+
+    async def _request(
+        self, method: str, path: str, **kwargs: Any
+    ) -> httpx.Response: ...
+
+    def _child_path(self, console_uuid: str, child_type: str) -> str: ...
+
+    def _entries(self, xml_text: str, path: str) -> list[dict[str, Any]]: ...
+
+    def _first_entry(self, xml_text: str, path: str) -> dict[str, Any] | None: ...
+
+    async def _get_remote_access_xml(self, path: str) -> str: ...
