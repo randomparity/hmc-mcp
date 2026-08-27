@@ -124,9 +124,6 @@ names are internal everywhere and are never inventoried.
 
 <!-- ADR-0029-INVENTORY:BEGIN -->
 
-- `affinity_assessment` — exports: `AffinityAssessmentInput`, `AffinityAssessmentResult`,
-  `AffinityClassification`, `AffinityEvidence`, `CapturedPolicyState`,
-  `PolicyState`, `ProvisionAffinityAssessment`, `assess_post_activation_affinity`.
 - `client` — exports: `HMCClient`.
 - `client.client_adapters` — exports: `AdapterType`.
 - `config` — exports: `ConfigError`, `HMCConfig`, `load_profile`.
@@ -217,8 +214,6 @@ names are internal everywhere and are never inventoried.
 - `operations.provision` — operations: `attach_disk_to_lpar`, `provision_lpar`; types:
   `AttachDiskResult`, `ProvisionNetwork`, `ProvisionResult`, `ProvisionStorage`; excluded
   synchronous: none.
-- `operations.snapshot` — operations: `assess_snapshot_affinity`, `capture_lpar_snapshot`,
-  `inspect_lpar_snapshot`, `validate_lpar_snapshot`; types: none; excluded synchronous: none.
 - `operations.ssh_network` — operations: `add_vnic`, `get_lpar_memopt_score`,
   `get_minimum_affinity_policy`, `get_system_memopt_score`, `list_fc_ports`,
   `list_lpar_memopt_scores`, `list_resource_group_memopt_scores`, `list_sea_adapters`,
@@ -246,7 +241,7 @@ names are internal everywhere and are never inventoried.
 - `operations.vios` — operations: `backup_vios`, `create_vios`, `delete_vios`,
   `list_vios_backups`, `power_vios`, `restore_vios`; types: `BackupType`, `RestoreBackupType`;
   excluded synchronous: `validate_vios_backup_name`.
-- `snapshot` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
+- `snapshots` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
   `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,
   `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotInspection`, `SnapshotObservations`,
   `SnapshotSource`, `SnapshotValidationError`, `SystemIdentity`.
@@ -254,6 +249,11 @@ names are internal everywhere and are never inventoried.
     `LparSnapshot`, selected by the Decision's transitive type clause rather than by appearing
     in an operation's signature. `SnapshotInspection` reaches none of them: its own fields are
     strings, booleans, and opaque mappings.
+- `snapshots.affinity` — exports: `AffinityAssessmentInput`, `AffinityAssessmentResult`,
+  `AffinityClassification`, `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`,
+  `ProvisionAffinityAssessment`, `assess_post_activation_affinity`.
+- `snapshots.operations` — exports: `assess_snapshot_affinity`, `capture_lpar_snapshot`,
+  `inspect_lpar_snapshot`, `validate_lpar_snapshot`.
 - `ssh.affinity` — exports: `MinimumAffinityPolicy`.
 - `ssh.console` — exports: `ConsoleCapture`, `ConsoleHeldError`, `StopReason`,
   `capture_lpar_console`.

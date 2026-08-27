@@ -932,8 +932,7 @@ src/hmc_mcp/
   operations/lpar_ownership.py  # ownership parsing, authorization, and name resolution
   server_tools/  # MCP tool adapters grouped by resource family
   cli_commands/  # Typer command groups and shared CLI application state
-  affinity_assessment.py     # evidence-first, read-only LPAR NUMA-affinity assessment
-  snapshot.py    # version-1 portable LPAR snapshot values and local I/O
+  snapshots/     # portable LPAR snapshot models, affinity assessment, and operations
   ssh/            # asyncssh transport plus HMC CLI operations by resource family
     ssh/*.py       # transport, shared parsing, and resource-specific commands
   ssh/console.py             # bounded, non-interactive LPAR console capture (mkvterm)

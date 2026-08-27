@@ -16,7 +16,7 @@ from ..resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from ..documents import LparResources, PartitionType, StorageKind
 from ..errors import HMCError
 from ..jobs import JobOutcome, job_outcome
-from ..affinity_assessment import (
+from ..snapshots.affinity import (
     ProvisionAffinityAssessment,
     assess_post_activation_affinity,
     validate_affinity_request,

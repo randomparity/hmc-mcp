@@ -18,7 +18,7 @@ import pytest
 from hmc_mcp.documents import LparResources
 from hmc_mcp.jobs import JobOutcome
 from hmc_mcp.operations.lpar import LparPowerResult
-from hmc_mcp.affinity_assessment import validate_affinity_request
+from hmc_mcp.snapshots.affinity import validate_affinity_request
 from hmc_mcp.operations.provision import (
     ProvisionAffinityAssessment,
     ProvisionNetwork,

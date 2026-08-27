@@ -77,6 +77,9 @@ def _arg_after(args: list[str], option: str) -> str:
 
 def _vios_client_factory():
     hmc = AsyncMock()
+    hmc.config = HMCConfig.from_mapping(
+        {"host": "hmc.test", "user": "hscroot", "password": "p"}
+    )
     hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
     hmc.find_vios_by_name.return_value = {"UUID": SYSTEM_UUID}
 
@@ -225,6 +228,7 @@ def test_vios_backup_tools_keep_hostile_direct_system_name_in_one_argument(
 ):
     """A caller-controlled direct system name remains one exact ``-m`` word."""
     _hmc_env(monkeypatch)
+    monkeypatch.setattr("hmc_mcp.server_tools.vios.client_from_env", _vios_client_factory())
     conn = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):

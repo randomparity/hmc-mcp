@@ -193,7 +193,13 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
-    with pytest.raises(HMCError) as exc_info:
+    with (
+        patch(
+            "hmc_mcp.operations.lpar_dlpar._resolve_and_authorize_lpar",
+            new=AsyncMock(return_value=LPAR_UUID),
+        ),
+        pytest.raises(HMCError) as exc_info,
+    ):
         hmc_modify_lpar(
             lpar_name_or_uuid=LPAR_UUID,
             resources=LparResources(desired_memory=8192),

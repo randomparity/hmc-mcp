@@ -7,7 +7,7 @@ from ..tool_registry import tool_module
 from .._app import run_sync
 from ..client.client_factory import client_from_env
 from ..documents import LparResources, PartitionType
-from ..affinity_assessment import ProvisionAffinityAssessment
+from ..snapshots.affinity import ProvisionAffinityAssessment
 from ..operations.provision import (
     ProvisionNetwork,
     ProvisionResult,

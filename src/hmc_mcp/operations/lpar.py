@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from hmc_mcp.affinity_assessment import (
+from hmc_mcp.snapshots.affinity import (
     LparAffinityAssessmentOutcome,
     affinity_not_measured,
 )

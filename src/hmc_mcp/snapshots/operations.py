@@ -9,7 +9,7 @@ import math
 import re
 from typing import Any
 
-from hmc_mcp.affinity_assessment import (
+from hmc_mcp.snapshots.affinity import (
     AffinityAssessmentInput,
     AffinityAssessmentResult,
     PolicyState,
@@ -27,7 +27,7 @@ from hmc_mcp.operations.ssh_network import (
     plan_resource_group_memopt_scores,
     plan_system_memopt_score,
 )
-from hmc_mcp.snapshot import (
+from .models import (
     MINIMUM_AFFINITY_POLICY_MEDIA_TYPE,
     PLACEMENT_MEDIA_TYPE,
     PROFILE_MEDIA_TYPE,

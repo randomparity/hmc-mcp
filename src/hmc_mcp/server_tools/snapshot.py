@@ -6,9 +6,9 @@ from hmc_mcp._app import run_sync
 from hmc_mcp.client.client_factory import client_from_env
 from dataclasses import asdict
 
-from hmc_mcp.affinity_assessment import PolicyState
-from hmc_mcp.operations.snapshot import assess_snapshot_affinity, capture_lpar_snapshot
-from hmc_mcp.snapshot import inspect_snapshot, parse_snapshot
+from hmc_mcp.snapshots.affinity import PolicyState
+from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
+from hmc_mcp.snapshots import inspect_snapshot, parse_snapshot
 from hmc_mcp.tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()

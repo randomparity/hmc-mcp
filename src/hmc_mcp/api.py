@@ -3,7 +3,7 @@
 from hmc_mcp.client import HMCClient
 from hmc_mcp.client.client_adapters import AdapterType
 from hmc_mcp.config import ConfigError, HMCConfig, load_profile
-from hmc_mcp.affinity_assessment import (
+from hmc_mcp.snapshots.affinity import (
     AffinityAssessmentInput,
     AffinityAssessmentResult,
     AffinityClassification,
@@ -227,13 +227,13 @@ from hmc_mcp.ssh.console import (
     StopReason,
     capture_lpar_console,
 )
-from hmc_mcp.operations.snapshot import (
+from hmc_mcp.snapshots.operations import (
     assess_snapshot_affinity,
     capture_lpar_snapshot,
     inspect_lpar_snapshot,
     validate_lpar_snapshot,
 )
-from hmc_mcp.snapshot import (
+from hmc_mcp.snapshots import (
     HMCIdentity,
     LparIdentity,
     LparSnapshot,
