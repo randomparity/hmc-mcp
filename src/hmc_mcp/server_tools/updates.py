@@ -17,6 +17,11 @@ from ..resource_identity import resolve_system_uuid, resolve_vios_uuid
 from ..errors import HMCError
 from ..jobs import (
     TERMINAL_JOB_STATUSES,
+    validate_wait_timing,
+    vios_stdout,
+    wait_for_submitted_job,
+)
+from ..update_jobs import (
     ConsoleUpdateSource,
     PlatformUpdateParameter,
     VIOSSource,
@@ -27,9 +32,6 @@ from ..jobs import (
     platform_update_job,
     update_vios_job,
     upgrade_vios_job,
-    validate_wait_timing,
-    vios_stdout,
-    wait_for_submitted_job,
 )
 
 

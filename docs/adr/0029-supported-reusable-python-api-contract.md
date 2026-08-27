@@ -208,6 +208,8 @@ names are internal everywhere and are never inventoried.
   `SriovLogicalPort`, `SriovLogicalPortCapabilityError`, `SriovLogicalPortChangeResult`,
   `SriovLogicalPortPartialError`, `SriovLogicalPortSnapshot`, `SriovPhysicalPort`; excluded
   synchronous: none.
+- `operations.pcie_validation` — operations: none; types: none; excluded synchronous:
+  `require_command_safe_text`, `require_nonblank_text`, `validate_capacity_percent`.
 - `operations.pcm` — operations: `get_pcm_preferences`, `metric_data`, `metric_links`,
   `resolve_pcm_resource`, `set_pcm_preferences`; types: `MetricKind`, `PcmCategory`,
   `PcmResource`; excluded synchronous: `preference_flags`, `validate_pcm_metric_target`,

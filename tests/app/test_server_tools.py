@@ -19,7 +19,7 @@ import httpx
 import pytest
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.jobs import PlatformUpdateParameter, SystemFirmwareUpdate
+from hmc_mcp.update_jobs import PlatformUpdateParameter, SystemFirmwareUpdate
 from hmc_mcp.documents import LparResources
 from hmc_mcp.server import (
     hmc_create_lpar,

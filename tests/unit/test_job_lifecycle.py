@@ -12,14 +12,16 @@ from hmc_mcp.jobs import (
     FAILED_JOB_STATUSES,
     SUCCESSFUL_JOB_STATUSES,
     TERMINAL_JOB_STATUSES,
-    PlatformUpdateParameter,
-    VIOSUpdateSource,
-    VIOSUpgradeSource,
     job_identifier,
     job_outcome,
     validate_wait_timing,
     vios_stdout,
     wait_for_submitted_job,
+)
+from hmc_mcp.update_jobs import (
+    PlatformUpdateParameter,
+    VIOSUpdateSource,
+    VIOSUpgradeSource,
 )
 
 _SUCCESSFUL_TERMINAL_STATUSES = {"COMPLETED", "COMPLETED_OK"}

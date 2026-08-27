@@ -532,7 +532,7 @@ def test_update_source_enums_match_runtime_constants():
 
     Each public tool schema is pinned to the corresponding runtime Literal.
     """
-    from hmc_mcp.jobs import (
+    from hmc_mcp.update_jobs import (
         _CONSOLE_UPDATE_MEDIA_TYPES,
         _VIOS_UPDATE_RESOURCE_TYPES,
         _VIOS_UPGRADE_RESOURCE_TYPES,

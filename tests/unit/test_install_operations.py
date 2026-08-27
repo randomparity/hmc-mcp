@@ -35,6 +35,11 @@ _REQUEST = {
 }
 
 
+def _operation_args(operation, target: str, system: str) -> tuple[str, str]:
+    """Return each operation's public selector order."""
+    return (system, target) if operation is install_lpar_os else (target, system)
+
+
 def _hmc(**resolutions) -> AsyncMock:
     """A duck-typed client whose name lookups resolve to the test fixtures."""
     hmc = AsyncMock()
@@ -82,7 +87,9 @@ async def test_operation_submits_the_composed_installios_command(operation, find
     ssh = _Ssh()
 
     with _patch_ssh(ssh):
-        result = await operation(hmc, "target1", "sys1", **_REQUEST)
+        result = await operation(
+            hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST
+        )
 
     expected, log_path = build_installios_command(
         system_name="sys1",
@@ -111,7 +118,10 @@ async def test_operation_returns_without_polling_for_completion(operation):
     ssh = _Ssh()
 
     with _patch_ssh(ssh):
-        await asyncio.wait_for(operation(hmc, "target1", "sys1", **_REQUEST), 5)
+        await asyncio.wait_for(
+            operation(hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST),
+            5,
+        )
 
     assert len(ssh.commands) == 1
     hmc.get_job.assert_not_awaited()
@@ -126,7 +136,9 @@ async def test_operation_resolves_uuid_targets_to_cli_names(operation):
     ssh = _Ssh(name_rows=f"{LPAR_UUID},target1\n")
 
     with _patch_ssh(ssh):
-        result = await operation(hmc, LPAR_UUID, SYSTEM_UUID, **_REQUEST)
+        result = await operation(
+            hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), **_REQUEST
+        )
 
     assert result["system"] == "sys1"
     assert result["partition"] == "target1"
@@ -158,7 +170,11 @@ async def test_operation_rejects_invalid_input_before_any_io(
 
     with _patch_ssh(ssh):
         with pytest.raises(ValueError, match=message):
-            await operation(hmc, "target1", "sys1", **{**_REQUEST, field: value})
+            await operation(
+                hmc,
+                *_operation_args(operation, "target1", "sys1"),
+                **{**_REQUEST, field: value},
+            )
 
     assert ssh.commands == []
     hmc.find_system_by_name.assert_not_awaited()
@@ -180,7 +196,9 @@ async def test_operation_fails_before_submission_for_an_unknown_target(
 
     with _patch_ssh(ssh):
         with pytest.raises(ValueError, match=message):
-            await operation(hmc, "nosuchtarget", "sys1", **_REQUEST)
+            await operation(
+                hmc, *_operation_args(operation, "nosuchtarget", "sys1"), **_REQUEST
+            )
 
     assert ssh.commands == []
 
@@ -195,7 +213,9 @@ async def test_operation_surfaces_a_failed_submission(operation):
 
     with patch("hmc_mcp.ssh_install.run_hmc_command", new=fail):
         with pytest.raises(HMCCLIError, match="exit status 127"):
-            await operation(hmc, "target1", "sys1", **_REQUEST)
+            await operation(
+                hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST
+            )
 
 
 @pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
@@ -207,7 +227,9 @@ async def test_unresolvable_uuid_target_raises_before_submitting(operation):
 
     with _patch_ssh(ssh):
         with pytest.raises(HMCCLIError, match="Could not resolve"):
-            await operation(hmc, LPAR_UUID, SYSTEM_UUID, **_REQUEST)
+            await operation(
+                hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), **_REQUEST
+            )
 
     assert ssh.commands == ["lssyscfg -r lpar -m sys1 -F UUID,PartitionName"]
 
@@ -220,7 +242,10 @@ def _install_records(text: str) -> list[dict]:
             candidate = json.loads(line)
         except ValueError:
             continue
-        if isinstance(candidate, dict) and candidate.get("event") == "install-attempted":
+        if (
+            isinstance(candidate, dict)
+            and candidate.get("event") == "install-attempted"
+        ):
             records.append(candidate)
     return records
 
@@ -248,7 +273,9 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     hmc.config = make_config(host="hmc.test", agent_id="agent-7")
 
     with _patch_ssh(_Ssh()):
-        result = await operation(hmc, "target1", "sys1", **_REQUEST)
+        result = await operation(
+            hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST
+        )
 
     assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink did not settle"
     captured = capsys.readouterr()
@@ -278,7 +305,9 @@ async def test_a_submission_is_recorded_for_a_bare_api_consumer(operation, capsy
     hmc = _hmc()
     try:
         with _patch_ssh(_Ssh()):
-            await operation(hmc, "target1", "sys1", **_REQUEST)
+            await operation(
+                hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST
+            )
         captured = capsys.readouterr()
     finally:
         logging.root.handlers[:] = saved_root
@@ -306,7 +335,9 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
 
     with patch("hmc_mcp.ssh_install.run_hmc_command", new=fail):
         with pytest.raises(HMCCLIError):
-            await operation(hmc, "target1", "sys1", **_REQUEST)
+            await operation(
+                hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST
+            )
 
     assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink did not settle"
     record = _one_install_record(capsys.readouterr().err)

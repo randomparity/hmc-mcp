@@ -8,7 +8,8 @@ from conftest import JOB_ENTRY, make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.errors import HMCError
-from hmc_mcp.jobs import (
+from hmc_mcp.jobs import build_job_request, job_outcome
+from hmc_mcp.update_jobs import (
     IOAdapterUpdate,
     PlatformUpdateParameter,
     SriovAdapterUpdate,
@@ -16,8 +17,6 @@ from hmc_mcp.jobs import (
     VIOSPlatformUpdate,
     VIOSUpdateSource,
     VIOSUpgradeSource,
-    build_job_request,
-    job_outcome,
     platform_update_job,
     update_hmc_job,
     update_vios_job,

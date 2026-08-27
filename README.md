@@ -941,6 +941,7 @@ src/hmc_mcp/
   console_capture.py         # bounded, non-interactive LPAR console capture (mkvterm)
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
+  update_jobs.py # update/upgrade request schemas and payload builders
   pcm.py         # PCM metrics/preferences parsing + XML documents
   access_policy.py           # server access policy: TOML loading, validation, compilation
   legacy_policy.py           # the legacy-equivalent access policy, built and compiled

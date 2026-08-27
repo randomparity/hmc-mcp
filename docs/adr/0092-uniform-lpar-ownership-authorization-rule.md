@@ -190,7 +190,7 @@ they are classified here and must gain both an operation and its guard (§6):
 |---|---|---|---|
 | `hmc_set_lpar_msp` | `server_tools/lpar_config.py:352` | **unguarded** | #441 |
 | `hmc_set_lpar_proc_compat` | `server_tools/lpar_config.py:401` | **unguarded** | #441 |
-| `hmc_modify_lpar` | `server_tools/lpars.py:193` | **partially guarded** — the `assignments` leg delegates to guarded operations, the `resources` leg calls `modify_logical_partition` at `:242` with no ownership check | #442 |
+| `hmc_modify_lpar` | `server_tools/lpars.py:196` | **partially guarded** — the `assignments` leg delegates to guarded operations, the `resources` leg calls `modify_logical_partition` at `:242` with no ownership check | #442 |
 | `hmc lpar modify` (CLI) | `cli_commands/lpars.py:941` | **partially guarded** — same split, unguarded resource write at `cli_commands/lpars.py:1067` | #442 |
 
 `hmc_dlpar_proc` and `hmc_dlpar_mem` were rows in this table at `b41e658`. #365
