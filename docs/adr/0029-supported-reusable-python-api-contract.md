@@ -132,10 +132,15 @@ names are internal everywhere and are never inventoried.
 
 - `client.client_adapters` — exports: `AdapterType`.
 - `client.core` — exports: `HMCClient`, `TLSVerificationDisabledWarning`.
-- `config` — exports: `ConfigError`, `HMCConfig`, `load_profile`.
+- `config` — exports: `AuditMementoOverrideWarning`, `ConfigError`, `HMCConfig`,
+  `load_profile`.
   - Note: `load_profile` is synchronous and exported all the same. It is a configuration
     constructor, not a domain operation, and the synchronous-exclusion reason above does not
     reach it.
+  - Note: `AuditMementoOverrideWarning` is a warning category, not an operation or a model.
+    It is exported because a consumer told to `filterwarnings` on it needs an import path this
+    contract will not move under them (#546); a filter target reachable only from
+    `hmc_mcp.config` would be one this record calls an implementation detail.
 - `documents` — exports: `AuthenticationType`, `BootDeviceSelector`, `Keylock`, `LparResources`,
   `MemoryMirroringMode`, `OsType`, `PartitionType`, `PowerOffPolicy`,
   `PowerOnLparStartPolicy`, `SharingMode`, `StorageKind`.

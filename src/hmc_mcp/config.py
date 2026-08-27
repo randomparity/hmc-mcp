@@ -44,6 +44,10 @@ class AuditMementoOverrideWarning(UserWarning):
     — without also silencing every other ``UserWarning`` its process raises. It
     subclasses ``UserWarning`` rather than replacing it, so a caller that already
     catches the broad category keeps catching this.
+
+    Re-exported from ``hmc_mcp.api``, which ADR 0029 makes the only supported
+    import path for a library consumer: a filter target reachable only from
+    ``hmc_mcp.config`` would be one the compatibility contract lets us move.
     """
 
 
@@ -320,35 +324,60 @@ class HMCConfig(BaseSettings):
         ``hmc-mcp:<agent_id>`` and the custom ``audit_memento`` is ignored, which
         an operator reading HMC audit logs has no other way to discover.
 
-        Said **once per override state**, not once per construction. The
-        distinction is the whole point: ``common.build_config`` builds a fresh
-        ``HMCConfig`` inside every tool body, so an unthrottled emission here runs
-        at a rate the MCP client owns, and the message is identical every time.
-        Both halves are throttled together — the log record because it competes
-        for slots on the bounded stderr sink's queue with the ADR 0040
-        authorization trail, the ``warnings.warn`` because a caller that has set
-        ``simplefilter("always")`` would otherwise get it per construction too.
+        Said **once per override state**, not once per construction.
+        ``common.build_config`` builds a fresh ``HMCConfig`` inside every tool
+        body, so an unthrottled emission here runs at a rate the MCP client owns
+        and the message is identical every time.
+
+        The log half is what actually repeated per call. It reaches fd 2 through
+        ``logging.lastResort`` — nothing binds the ``hmc_mcp`` namespace to
+        ADR 0043's bounded stderr sink today, so the write is unbounded,
+        synchronous, and without ADR 0051's prefix and escaping. #534 will bind
+        the namespace, at which point this record would instead compete for slots
+        on that queue with the ADR 0040 authorization trail; the throttle is worth
+        having on either channel, and this docstring describes the one in force.
+
+        The ``warnings.warn`` half repeats only for a caller who has widened the
+        filters. Under the default ``default`` action it already rendered once per
+        process, because ``stacklevel=2`` inside a pydantic validator puts the
+        ``__warningregistry__`` in pydantic's frame and every call site shares it;
+        a caller running ``simplefilter("always")`` got it per construction. Both
+        halves are throttled together so the two channels cannot disagree about
+        how many times the override was reported.
 
         The dedup key is the ``(agent_id, audit_memento)`` pair rather than this
         call site, so an operator who *changes* either value still gets a line for
         the new state; keying on the site would hide exactly the event worth
-        seeing. ``_log_unresolved`` in ``server_permissions`` throttles the same
-        shape for the same reason.
+        seeing. ``_log_unresolved`` in ``server_permissions`` throttles for the
+        same reason but not by the same mechanism: it demotes the repeat to
+        ``DEBUG``, where this drops it. Its repeat carries a *distinct* ``reason``
+        worth recovering at a raised level; this one is a verbatim re-render of a
+        state ``effective_audit_memento`` reports deterministically and the
+        ``X-Audit-Memento`` header carries on every request.
+
+        The state is marked reported only after both emissions have been made. A
+        caller running an error filter therefore gets the same failure on every
+        construction, as it did before this change, rather than a first-call-only
+        failure that reads as a flake — and the log record is not lost to a
+        ``warnings.warn`` that raised. The log line does repeat in that case,
+        which is the right trade: every one of those constructions raises out of
+        the validator, so there is no served process for it to flood, and a caller
+        swallowing the exception in a loop is asking for the per-attempt record.
         """
         if not (self.agent_id and self.audit_memento != "hmc-mcp"):
             return self
         override = (self.agent_id, self.audit_memento)
         if override in _reported_memento_overrides:
             return self
-        _reported_memento_overrides.add(override)
         msg = (
             f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
             f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
             "ignored — X-Audit-Memento is always sent as "
             f"hmc-mcp:{self.agent_id}"
         )
-        warnings.warn(msg, AuditMementoOverrideWarning, stacklevel=2)
         _logger.warning(msg)
+        warnings.warn(msg, AuditMementoOverrideWarning, stacklevel=2)
+        _reported_memento_overrides.add(override)
         return self
 
     @property

@@ -548,6 +548,41 @@ def test_audit_memento_override_warning_is_filterable_alone():
     assert cfg.effective_audit_memento == "hmc-mcp:quiet-agent"
 
 
+def test_audit_memento_override_warning_reaches_the_supported_facade():
+    """A consumer filtering on the category must not need an unsupported import.
+
+    ADR 0029 makes ``hmc_mcp.api`` the only supported reusable-library import
+    path, so a filter target only ``hmc_mcp.config`` exposes is one the
+    compatibility contract permits moving out from under a consumer.
+    """
+    from hmc_mcp import api
+
+    assert "AuditMementoOverrideWarning" in api.__all__
+    assert api.AuditMementoOverrideWarning is AuditMementoOverrideWarning
+
+
+def test_audit_memento_override_under_an_error_filter_fails_every_time(caplog):
+    """An error filter must not turn into a first-call-only failure.
+
+    The dedup state is recorded only after both emissions, so a caller running
+    ``-W error`` or ``PYTHONWARNINGS=error`` sees the same raise on every
+    construction — the pre-throttle behaviour — rather than one failed call
+    followed by silently successful ones, which reads as a flake and gets
+    retried away. The log record survives the raise for the same reason.
+    """
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", AuditMementoOverrideWarning)
+            for _ in range(3):
+                with pytest.raises(AuditMementoOverrideWarning):
+                    HMCConfig.from_mapping(
+                        {"agent_id": "strict-agent", "audit_memento": "mine"}
+                    )
+
+    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    assert len(records) == 3
+
+
 # ---------------------------------------------------------------------------
 # Nickname resolution (issue #226)
 # ---------------------------------------------------------------------------

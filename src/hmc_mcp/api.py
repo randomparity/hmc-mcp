@@ -9,7 +9,12 @@ an operation's docstring when it defines a narrower failure contract.
 
 from hmc_mcp.client.core import HMCClient, TLSVerificationDisabledWarning
 from hmc_mcp.client.client_adapters import AdapterType
-from hmc_mcp.config import ConfigError, HMCConfig, load_profile
+from hmc_mcp.config import (
+    AuditMementoOverrideWarning,
+    ConfigError,
+    HMCConfig,
+    load_profile,
+)
 from hmc_mcp.operations.affinity import (
     AffinityAssessmentInput,
     AffinityAssessmentResult,
@@ -332,6 +337,7 @@ __all__ = [
     "PolicyState",
     "HMCConfig",
     "ConfigError",
+    "AuditMementoOverrideWarning",
     "load_profile",
     "HMCError",
     "HMCTransportError",

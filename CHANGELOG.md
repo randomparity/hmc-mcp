@@ -396,16 +396,27 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   spelling them canonically.
 - The warning that `HMC_AGENT_ID` is discarding a custom `HMC_AUDIT_MEMENTO` is now emitted
   once per override state instead of once per `HMCConfig` construction (#546), and its
-  `warnings.warn` half carries the new `hmc_mcp.config.AuditMementoOverrideWarning` category
-  instead of a bare `UserWarning`. `common.build_config` builds a fresh config inside every
-  tool body, so both halves previously fired on every MCP tool call, at a rate the client
-  owns — the log record competing for slots on the bounded stderr sink's queue with the
-  ADR 0040 authorization trail. The dedup key is the `(agent_id, audit_memento)` pair, so an
-  operator who changes either value still gets a line for the new state; what stops is the
-  repetition of an identical one. **Operator-visible change:** in a long-lived server the
-  message now appears once rather than per call. The new category subclasses `UserWarning`,
-  so a consumer catching or filtering the broad category is unaffected; one that wants to
-  silence only this line can now filter on `AuditMementoOverrideWarning`.
+  `warnings.warn` half carries the new `AuditMementoOverrideWarning` category instead of a
+  bare `UserWarning`. `common.build_config` builds a fresh config inside every tool body, so
+  the **log** half fired on every MCP tool call, at a rate the client owns. That record does
+  not currently reach ADR 0043's bounded stderr sink — nothing binds the `hmc_mcp` logger
+  namespace to it, so it goes to fd 2 through `logging.lastResort`, unbounded and without
+  ADR 0051's prefix and escaping; #534 is the change that binds the namespace, after which
+  the same record would compete for queue slots with the ADR 0040 authorization trail. The
+  **warn** half repeated only for a caller who had widened the filters: under Python's
+  default `default` action it already rendered once per process, because `stacklevel=2`
+  inside a pydantic validator puts the `__warningregistry__` in pydantic's frame and every
+  call site shares it. Both halves are now throttled together on the `(agent_id,
+  audit_memento)` pair, so an operator who changes either value still gets a line for the new
+  state and the two channels cannot disagree about how often it was reported.
+  **Operator-visible change:** in a long-lived server the message now appears once rather
+  than per call. The new category subclasses `UserWarning`, so a consumer catching or
+  filtering the broad category is unaffected; one that wants to silence only this line can
+  filter on `AuditMementoOverrideWarning`, which is exported from `hmc_mcp.api` (ADR 0029)
+  rather than only from `hmc_mcp.config`. Two adjacent gaps this change does not close now
+  have owners: rerouting the package's `warnings.warn` output into the bounded sink is #550
+  (blocked on #534), and the same uncategorised, unthrottled shape in `client.py`'s
+  `verify_ssl=False` warning is #551.
 
 ### Removed
 
@@ -678,6 +689,13 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `hmc_mcp.snapshot.SnapshotConfiguration` with no supported import path to name it. This
   records the manifest catching up, not a new capability. No type moved modules and no value set
   changed.
+- Added: `AuditMementoOverrideWarning` (#546), the warning category the `HMC_AGENT_ID` /
+  `HMC_AUDIT_MEMENTO` override warning is now raised with. It does **not** move the frozen
+  public signature digest: like `ConfigError`, it inherits a constructor `inspect.signature`
+  cannot render, so it contributes no digest entry. It is exported because ADR 0029 makes
+  `hmc_mcp.api` the only supported import path, and a filter target reachable only from
+  `hmc_mcp.config` would be one this project may move without a compatibility release — a
+  consumer told to `filterwarnings` on the category needs a name that holds still.
 - Fixed: `set_sriov_adapter_mode` appeared twice in `hmc_mcp.api.__all__` (#446). The name is
   imported once, so the duplicate was inert at runtime, but ADR 0029 calls `__all__` an
   exhaustive manifest and a repeated entry makes it malformed. The export set is unchanged.
