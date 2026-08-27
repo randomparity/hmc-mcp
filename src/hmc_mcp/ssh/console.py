@@ -340,9 +340,8 @@ async def _probe_released(
     stdin = _SealedStdin()
     try:
         try:
-            connection = await open_hmc_connection(config)
-            process = await connection.create_process(
-                mkvterm_command, stdin=stdin.read_fd, encoding=None
+            connection, process = await _open_capture_stream(
+                config, mkvterm_command, stdin
             )
         except Exception as exc:
             logger.warning(
@@ -352,7 +351,6 @@ async def _probe_released(
                 exc,
             )
             return False
-        stdin.transfer_read_end()
         saw_sentinel = False
         acquired_evidence = False
         remote_exited = False

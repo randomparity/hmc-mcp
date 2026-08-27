@@ -24,6 +24,7 @@ from hmc_mcp.ssh.console import (
     ConsoleCapture,
     ConsoleHeldError,
     _SealedStdin,
+    _probe_released,
     _truncate,
     capture_lpar_console,
 )
@@ -315,6 +316,19 @@ async def test_failed_rmvterm_still_probes_and_reports_honestly():
             _client(), "sys1", "lp1", **_capture_kwargs()
         )
     assert capture.released is False
+
+
+@pytest.mark.asyncio
+async def test_release_probe_closes_connection_when_process_start_fails():
+    connection = FakeConnection([])
+    with patch(
+        "hmc_mcp.ssh.console.open_hmc_connection",
+        AsyncMock(return_value=connection),
+    ):
+        released = await _probe_released(make_config(), "sys1", "lp1")
+
+    assert released is False
+    assert connection.closed is True
 
 
 @pytest.mark.asyncio
