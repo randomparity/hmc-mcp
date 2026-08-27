@@ -394,6 +394,18 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `HMC_PROFILE` and a profile's `password_env` target carry the prefix but are read
   exact-case, and folding them would let a variant nothing reads suppress the `.env` line
   spelling them canonically.
+- The warning that `HMC_AGENT_ID` is discarding a custom `HMC_AUDIT_MEMENTO` is now emitted
+  once per override state instead of once per `HMCConfig` construction (#546), and its
+  `warnings.warn` half carries the new `hmc_mcp.config.AuditMementoOverrideWarning` category
+  instead of a bare `UserWarning`. `common.build_config` builds a fresh config inside every
+  tool body, so both halves previously fired on every MCP tool call, at a rate the client
+  owns — the log record competing for slots on the bounded stderr sink's queue with the
+  ADR 0040 authorization trail. The dedup key is the `(agent_id, audit_memento)` pair, so an
+  operator who changes either value still gets a line for the new state; what stops is the
+  repetition of an identical one. **Operator-visible change:** in a long-lived server the
+  message now appears once rather than per call. The new category subclasses `UserWarning`,
+  so a consumer catching or filtering the broad category is unaffected; one that wants to
+  silence only this line can now filter on `AuditMementoOverrideWarning`.
 
 ### Removed
 

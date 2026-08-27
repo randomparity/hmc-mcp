@@ -5,6 +5,7 @@ All tests use tmp_path and monkeypatch — no test touches the real user home.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import threading
@@ -17,6 +18,7 @@ import pytest
 
 from hmc_mcp.config import build_config
 from hmc_mcp.config import (
+    AuditMementoOverrideWarning,
     ConfigError,
     HMCConfig,
     config_dir,
@@ -458,6 +460,92 @@ def test_agent_id_from_env(monkeypatch):
     cfg = HMCConfig()
     assert cfg.agent_id == "env-agent"
     assert cfg.effective_audit_memento == "hmc-mcp:env-agent"
+
+
+# ---------------------------------------------------------------------------
+# The override warning is emitted once per override state, not once per
+# construction — and each channel it uses is filterable (issue #546)
+# ---------------------------------------------------------------------------
+
+
+def test_audit_memento_override_warns_once_per_process():
+    """Repeated construction under one override state warns exactly once.
+
+    ``simplefilter("always")`` disables Python's own per-location deduplication,
+    so the single record here is the config module's doing rather than the
+    warnings machinery's. It has to be: a served process builds a fresh
+    ``HMCConfig`` inside every tool body, at a rate the MCP client owns.
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        for _ in range(5):
+            HMCConfig.from_mapping({"agent_id": "loop-agent", "audit_memento": "mine"})
+
+    assert len(caught) == 1
+    assert issubclass(caught[0].category, AuditMementoOverrideWarning)
+
+
+def test_audit_memento_override_logs_once_per_process(caplog):
+    """The log half is throttled with the warning half, not separately.
+
+    Both used to fire on every construction; the log record is the half that
+    consumes a slot on the bounded stderr sink's queue.
+    """
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", AuditMementoOverrideWarning)
+            for _ in range(5):
+                HMCConfig.from_mapping(
+                    {"agent_id": "log-agent", "audit_memento": "mine"}
+                )
+
+    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    assert len(records) == 1
+    assert "HMC_AGENT_ID is set" in records[0].getMessage()
+
+
+def test_audit_memento_override_warns_again_for_a_changed_override():
+    """Deduplication keys on the override state, so a changed one still surfaces.
+
+    Silencing per call site rather than per state would hide exactly the event an
+    operator needs to see: the value they just changed still being discarded.
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        HMCConfig.from_mapping({"agent_id": "agent-one", "audit_memento": "mine"})
+        HMCConfig.from_mapping({"agent_id": "agent-one", "audit_memento": "mine"})
+        HMCConfig.from_mapping({"agent_id": "agent-two", "audit_memento": "mine"})
+        HMCConfig.from_mapping({"agent_id": "agent-two", "audit_memento": "yours"})
+
+    assert len(caught) == 3
+    messages = [str(each.message) for each in caught]
+    assert "'agent-one'" in messages[0] and "'mine'" in messages[0]
+    assert "'agent-two'" in messages[1] and "'mine'" in messages[1]
+    assert "'agent-two'" in messages[2] and "'yours'" in messages[2]
+
+
+def test_audit_memento_override_warning_is_its_own_category():
+    with pytest.warns(AuditMementoOverrideWarning, match="HMC_AGENT_ID is set"):
+        HMCConfig.from_mapping({"agent_id": "cat-agent", "audit_memento": "mine"})
+
+
+def test_audit_memento_override_warning_is_filterable_alone():
+    """A caller can silence this warning without silencing every UserWarning.
+
+    ``AuditMementoOverrideWarning`` subclasses ``UserWarning``, so a consumer
+    already catching the broad category keeps working; the subclass is what lets
+    one that does not want *this* line keep the rest.
+    """
+    assert issubclass(AuditMementoOverrideWarning, UserWarning)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        warnings.simplefilter("ignore", AuditMementoOverrideWarning)
+        cfg = HMCConfig.from_mapping(
+            {"agent_id": "quiet-agent", "audit_memento": "mine"}
+        )
+
+    assert cfg.effective_audit_memento == "hmc-mcp:quiet-agent"
 
 
 # ---------------------------------------------------------------------------

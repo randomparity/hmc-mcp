@@ -36,6 +36,29 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _logger = logging.getLogger(__name__)
 
 
+class AuditMementoOverrideWarning(UserWarning):
+    """``HMC_AGENT_ID`` is discarding a custom ``HMC_AUDIT_MEMENTO``.
+
+    A category of its own so a consumer can silence exactly this warning —
+    ``warnings.filterwarnings("ignore", category=AuditMementoOverrideWarning)``
+    — without also silencing every other ``UserWarning`` its process raises. It
+    subclasses ``UserWarning`` rather than replacing it, so a caller that already
+    catches the broad category keeps catching this.
+    """
+
+
+#: Override states :meth:`HMCConfig._warn_audit_memento_override` has already
+#: reported, as ``(agent_id, audit_memento)`` pairs. Process-global and
+#: deliberately never pruned: it must outlive the individual ``HMCConfig``, since
+#: what it throttles is one warning per *config*, repeated once per construction.
+#:
+#: Growth is bounded by the operator's own configuration, not by the caller.
+#: The pair is read from the environment, from CLI flags, or from a named TOML
+#: profile; the profile selector an MCP tool accepts chooses among the profiles
+#: in that file, so a client cannot mint override states to fill this set.
+_reported_memento_overrides: set[tuple[str, str]] = set()
+
+
 def validate_agent_id(agent_id: str) -> None:
     """Validate an agent identifier used in audit and ownership tokens."""
     if not agent_id:
@@ -291,21 +314,41 @@ class HMCConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _warn_audit_memento_override(self) -> "HMCConfig":
-        """Warn when HMC_AGENT_ID is set and HMC_AUDIT_MEMENTO has been customised.
+        """Say once that HMC_AGENT_ID is discarding a custom HMC_AUDIT_MEMENTO.
 
-        When both are set, effective_audit_memento returns ``hmc-mcp:<agent_id>``
-        and ignores the custom audit_memento.  Emitting a warning at construction
-        time prevents silent surprises in HMC audit logs.
+        When both are set, :attr:`effective_audit_memento` returns
+        ``hmc-mcp:<agent_id>`` and the custom ``audit_memento`` is ignored, which
+        an operator reading HMC audit logs has no other way to discover.
+
+        Said **once per override state**, not once per construction. The
+        distinction is the whole point: ``common.build_config`` builds a fresh
+        ``HMCConfig`` inside every tool body, so an unthrottled emission here runs
+        at a rate the MCP client owns, and the message is identical every time.
+        Both halves are throttled together — the log record because it competes
+        for slots on the bounded stderr sink's queue with the ADR 0040
+        authorization trail, the ``warnings.warn`` because a caller that has set
+        ``simplefilter("always")`` would otherwise get it per construction too.
+
+        The dedup key is the ``(agent_id, audit_memento)`` pair rather than this
+        call site, so an operator who *changes* either value still gets a line for
+        the new state; keying on the site would hide exactly the event worth
+        seeing. ``_log_unresolved`` in ``server_permissions`` throttles the same
+        shape for the same reason.
         """
-        if self.agent_id and self.audit_memento != "hmc-mcp":
-            msg = (
-                f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
-                f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
-                "ignored — X-Audit-Memento is always sent as "
-                f"hmc-mcp:{self.agent_id}"
-            )
-            warnings.warn(msg, UserWarning, stacklevel=2)
-            _logger.warning(msg)
+        if not (self.agent_id and self.audit_memento != "hmc-mcp"):
+            return self
+        override = (self.agent_id, self.audit_memento)
+        if override in _reported_memento_overrides:
+            return self
+        _reported_memento_overrides.add(override)
+        msg = (
+            f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
+            f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
+            "ignored — X-Audit-Memento is always sent as "
+            f"hmc-mcp:{self.agent_id}"
+        )
+        warnings.warn(msg, AuditMementoOverrideWarning, stacklevel=2)
+        _logger.warning(msg)
         return self
 
     @property

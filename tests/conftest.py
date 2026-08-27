@@ -12,6 +12,7 @@ import httpx
 import pytest
 import respx
 
+from hmc_mcp import config
 from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.audit.sink import AUDIT_LOGGER_NAME
 from hmc_mcp.config import HMCConfig
@@ -114,6 +115,29 @@ def no_ambient_hmc_settings(monkeypatch):
     wanted = {name.lower() for name in _UNSET_FOR_TESTS}
     for name in [n for n in os.environ if n.lower() in wanted]:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def reset_audit_memento_override_dedup():
+    """Give every test an empty ``config`` override-warning dedup set (#546).
+
+    The set is process-global by design — it is what keeps the warning to one
+    line per override state in a served process, where a fresh ``HMCConfig`` is
+    built inside every tool body. In a test session that same lifetime makes the
+    first test to construct a config under a given ``(agent_id, audit_memento)``
+    pair silence every later one, so a test that asserts the warning fires would
+    pass or fail on collection order.
+
+    Cleared at setup as well as teardown, and autouse rather than opted into,
+    for the reason ``isolate_audit_logging`` gives just below: the tests that
+    merely *construct* an overriding config leak the state as readily as the ones
+    that assert on it, and any enumeration of them goes stale. Matches the
+    explicit ``server_permissions._reported_unresolved.clear()`` in
+    ``tests/app/test_power_guard_report.py``.
+    """
+    config._reported_memento_overrides.clear()
+    yield
+    config._reported_memento_overrides.clear()
 
 
 def _restore_fastmcp_logger() -> None:
