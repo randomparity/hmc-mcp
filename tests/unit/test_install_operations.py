@@ -206,20 +206,6 @@ async def test_unresolvable_uuid_target_raises_before_submitting(operation):
     assert ssh.commands == ["lssyscfg -r lpar -m sys1 -F UUID,PartitionName"]
 
 
-def _reserve_the_audit_logger() -> logging.Logger:
-    """The reserved logger as a fresh interpreter has it, ready for one delivery test.
-
-    ``audit`` sets ``propagate = False`` at import (#272), and the autouse
-    ``isolate_audit_logging`` fixture resets it to ``True`` between tests — so
-    restoring it here is restoring the shipped state, not configuring anything.
-    """
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
-    logger.handlers.clear()
-    logger.setLevel(logging.NOTSET)
-    logger.propagate = False
-    return logger
-
-
 def _install_records(text: str) -> list[dict]:
     """Every ``install-attempted`` record a consumer would parse out of *text*."""
     records = []
@@ -251,7 +237,6 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     the root's ``WARNING`` — dropped before formatting, and below
     ``logging.lastResort``'s threshold too.
     """
-    _reserve_the_audit_logger()
     audit.install_audit_sink()
     hmc = _hmc()
     hmc.config = make_config(host="hmc.test", agent_id="agent-7")
@@ -279,7 +264,9 @@ async def test_a_submission_is_recorded_for_a_bare_api_consumer(operation, capsy
     ``Logger.callHandlers`` consults ``logging.lastResort``. It drops anything
     below ``WARNING``, which is why ADR 0102 §3 fixes the record's level there.
     """
-    _reserve_the_audit_logger()
+    # `audit` closes propagation at import (#272); the autouse isolation fixture
+    # reopens it, so this restores the shipped state rather than configuring it.
+    logging.getLogger(audit.AUDIT_LOGGER_NAME).propagate = False
     saved_root = list(logging.root.handlers)
     logging.root.handlers.clear()
     hmc = _hmc()
@@ -305,7 +292,6 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
     needs the partition and the log path — and where a record written after a
     successful submit would not exist.
     """
-    _reserve_the_audit_logger()
     audit.install_audit_sink()
     hmc = _hmc()
 
@@ -328,7 +314,6 @@ async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
 ):
     """A request refused by validation or name resolution submits nothing, so it
     is not an attempt against any partition's disks and leaves no record."""
-    _reserve_the_audit_logger()
     audit.install_audit_sink()
 
     with _patch_ssh(_Ssh()):

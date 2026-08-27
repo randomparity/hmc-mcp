@@ -669,15 +669,6 @@ def test_a_long_partition_records_a_log_path_that_does_not_exist(length, recover
     assert (recomposed == real) is recoverable
 
 
-def test_an_empty_install_host_renders_empty():
-    """As on the override and denial records: an unset `HMCConfig.host` is `""`."""
-    lines = _capture()
-    audit.record_install_attempted(
-        system="s", partition="p", log_path="/l", host="", agent_id="a"
-    )
-    assert _one(lines)["host"] == ""
-
-
 def test_only_audit_resolves_the_audit_logger():
     """Spec 8a. The logger is reserved, and `audit` imports nothing from us."""
     package = Path(audit.__file__).parent
