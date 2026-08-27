@@ -32,18 +32,24 @@ async def list_adapters(
 async def add_network_adapter(
     hmc: HMCClient,
     lpar_name_or_uuid: str,
-    vlan: int,
-    slot: int | None,
-    vswitch: int | None,
-    tagged: bool,
-    mac: str | None,
+    port_vlan_id: int,
+    *,
+    slot_number: int | None = None,
+    virtual_switch_id: int | None = None,
+    tagged: bool = False,
+    mac_address: str | None = None,
     system_name_or_uuid: str | None = None,
 ) -> AdapterResult:
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
     resource = await hmc.add_network_adapter(
-        lpar_uuid, vlan, slot, vswitch, tagged, mac
+        lpar_uuid,
+        port_vlan_id,
+        slot_number,
+        virtual_switch_id,
+        tagged,
+        mac_address,
     )
     return AdapterResult(lpar_uuid, resource)
 

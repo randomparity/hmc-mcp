@@ -69,7 +69,13 @@ def adapters_add_network(
     async def _go():
         async with _client() as hmc:
             return await add_network_adapter(
-                hmc, lpar, vlan, slot, virtual_switch_id, tagged, mac
+                hmc,
+                lpar,
+                vlan,
+                slot_number=slot,
+                virtual_switch_id=virtual_switch_id,
+                tagged=tagged,
+                mac_address=mac,
             )
 
     _adapter_mutation(_go, lpar, "network")

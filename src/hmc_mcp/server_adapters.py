@@ -87,11 +87,11 @@ def hmc_add_network_adapter(
                     hmc,
                     lpar_name_or_uuid,
                     port_vlan_id,
-                    slot_number,
-                    virtual_switch_id,
-                    tagged,
-                    mac_address,
-                    system_name_or_uuid,
+                    slot_number=slot_number,
+                    virtual_switch_id=virtual_switch_id,
+                    tagged=tagged,
+                    mac_address=mac_address,
+                    system_name_or_uuid=system_name_or_uuid,
                 )
             ).resource
 
