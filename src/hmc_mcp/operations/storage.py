@@ -485,6 +485,40 @@ async def list_optical_media(
     )
 
 
+async def _upload_iso_via_broker(
+    hmc: HMCClient,
+    vios_uuid: str,
+    vg_uuid: str,
+    media_name: str,
+    iso_path: Path,
+    file_size: int,
+) -> dict[str, Any] | None:
+    """Run the HMC broker allocation, upload, import, and release transaction."""
+    broker_uri: str | None = None
+    try:
+        broker_uri = await hmc._broker_file_create(vios_uuid, vg_uuid, media_name)
+        with iso_path.open("rb") as handle:
+            await hmc._broker_file_upload(
+                broker_uri, _aiter_file_chunks(handle), file_size
+            )
+        await hmc._broker_iso_import(vios_uuid, vg_uuid, media_name, broker_uri)
+
+        updated_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
+        return next(
+            (media for media in updated_media if media.get("MediaName") == media_name),
+            None,
+        )
+    finally:
+        primary_error = sys.exception()
+        if broker_uri:
+            try:
+                await hmc._broker_file_cleanup(broker_uri)
+            except Exception:
+                if primary_error is None:
+                    raise
+                logger.exception("broker cleanup failed for ISO upload %s", broker_uri)
+
+
 async def upload_iso(
     hmc: HMCClient,
     vios_name_or_uuid: str,
@@ -555,21 +589,10 @@ async def upload_iso(
 
     iso_path, iso_sha256, file_size = await _download_iso_from_url(iso_url)
 
-    broker_uri: str | None = None
     try:
-        broker_uri = await hmc._broker_file_create(vios_uuid, vg_uuid, media_name)
-
-        with iso_path.open("rb") as f:
-            await hmc._broker_file_upload(broker_uri, _aiter_file_chunks(f), file_size)
-
-        await hmc._broker_iso_import(vios_uuid, vg_uuid, media_name, broker_uri)
-
-        updated_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
-        uploaded_media_entry = None
-        for media in updated_media:
-            if media.get("MediaName") == media_name:
-                uploaded_media_entry = media
-                break
+        uploaded_media_entry = await _upload_iso_via_broker(
+            hmc, vios_uuid, vg_uuid, media_name, iso_path, file_size
+        )
 
         return {
             "status": "uploaded",
@@ -580,35 +603,19 @@ async def upload_iso(
         }
     finally:
         primary_error = sys.exception()
-        cleanup_error: Exception | None = None
-
-        # Always release the broker file slot (404 is tolerated)
-        if broker_uri:
-            try:
-                await hmc._broker_file_cleanup(broker_uri)
-            except Exception as exc:
-                if primary_error is None:
-                    cleanup_error = exc
-                else:
-                    logger.exception(
-                        "broker cleanup failed for ISO upload %s", broker_uri
-                    )
 
         if iso_path.exists():
             try:
                 iso_path.unlink()
             except OSError as exc:
-                if primary_error is None and cleanup_error is None:
+                if primary_error is None:
                     exc.add_note(
                         f"ISO upload completed, but temporary file cleanup failed: "
                         f"{iso_path}"
                     )
-                    cleanup_error = exc
+                    raise
                 else:
                     logger.exception("temporary ISO cleanup failed for %s", iso_path)
-
-        if cleanup_error is not None:
-            raise cleanup_error
 
 
 async def create_logical_unit(
