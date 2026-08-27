@@ -613,8 +613,8 @@ def _add_payload(selector: VnicBackingSelector) -> str:
 
 async def add_vnic(
     hmc: HMCClient,
-    system: str,
-    lpar: str,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
     selector: VnicBackingSelector,
     port_vlan_id: int,
     *,
@@ -629,7 +629,13 @@ async def add_vnic(
         before,
         all_backing_before,
         used_capacity,
-    ) = await _preflight_add(hmc, system, lpar, selector, ownership_override)
+    ) = await _preflight_add(
+        hmc,
+        system_name_or_uuid,
+        lpar_name_or_uuid,
+        selector,
+        ownership_override,
+    )
     candidates = _matching_vnics(before, selector, port_vlan_id)
     matching_backing_before = _correlated_matching_backings(
         candidates, all_backing_before, selector
@@ -736,14 +742,16 @@ async def add_vnic(
 
 async def remove_vnic(
     hmc: HMCClient,
-    system: str,
-    lpar: str,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
     slot_num: str,
     *,
     ownership_override: bool = False,
 ) -> VnicChangeResult:
     slot_num = _required(slot_num, "slot_num")
-    system_name, lpar_name = await _resolve(hmc, system, lpar, ownership_override)
+    system_name, lpar_name = await _resolve(
+        hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
+    )
     await _require_admitted_environment(hmc.config, system_name)
     all_vnics = _vnics(await list_vnic_rows(hmc.config, system_name, lpar_name))
     all_backings = tuple(

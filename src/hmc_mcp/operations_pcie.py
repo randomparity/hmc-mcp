@@ -303,19 +303,26 @@ async def _require_admitted_environment(config: HMCConfig, system_name: str) -> 
 
 
 async def _resolve_lpar(
-    hmc: HMCClient, system: str, lpar: str, override: bool
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    override: bool,
 ) -> tuple[str, str]:
-    system_uuid = await resolve_system_uuid(hmc, system)
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system_uuid)
-    names = await resolve_lpar_ownership_names(hmc, system_uuid, system, lpar_uuid)
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
+    )
+    names = await resolve_lpar_ownership_names(
+        hmc, system_uuid, system_name_or_uuid, lpar_uuid
+    )
     await authorize_lpar_mutation(hmc, *names, ownership_override=override)
     return names
 
 
 async def assign_sriov_logical_port(
     hmc: HMCClient,
-    system: str,
-    lpar: str,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
     adapter_id: str,
     physical_port_id: str,
     logical_port_id: str,
@@ -330,7 +337,9 @@ async def assign_sriov_logical_port(
         _required(logical_port_id, "logical_port_id"),
     )
     capacity = _capacity(capacity_percent)
-    system_name, lpar_name = await _resolve_lpar(hmc, system, lpar, ownership_override)
+    system_name, lpar_name = await _resolve_lpar(
+        hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
+    )
     config = hmc.config
     _required(profile_name, "profile_name")
     await _require_admitted_environment(config, system_name)
@@ -471,8 +480,8 @@ async def assign_sriov_logical_port(
 
 async def unassign_sriov_logical_port(
     hmc: HMCClient,
-    system: str,
-    lpar: str,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
     profile_name: str,
     adapter_id: str,
     physical_port_id: str,
@@ -486,7 +495,9 @@ async def unassign_sriov_logical_port(
         _required(logical_port_id, "logical_port_id"),
     )
     _required(profile_name, "profile_name")
-    system_name, lpar_name = await _resolve_lpar(hmc, system, lpar, ownership_override)
+    system_name, lpar_name = await _resolve_lpar(
+        hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
+    )
     config = hmc.config
     await _require_admitted_environment(config, system_name)
     state = await read_sriov_lpar_state(config, system_name, lpar_name)
