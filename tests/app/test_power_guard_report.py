@@ -18,7 +18,7 @@ from fastmcp import Client
 
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.server_tools.permissions import describe, resolve_power_guards
+from hmc_mcp.server_tools.permissions import build_effective_permissions, resolve_power_guards
 
 ALL_TOOLS_GRANT = [
     {"effects": ["read"], "connections": ["<default>"], "targets": "all-targets"}
@@ -503,12 +503,12 @@ def test_a_connection_no_grant_names_is_not_reported():
 def test_describe_carries_the_guards_it_is_given():
     """The report is assembled from a resolved value, not resolved inside it.
 
-    `describe` stays a pure function of its arguments: the filesystem and
+    `build_effective_permissions` stays a pure function of its arguments: the filesystem and
     environment reads happen at the one call site that owns them.
     """
     guards = resolve_power_guards(None)
 
-    result = describe({}, None, TOOL_SECURITY, guards)
+    result = build_effective_permissions({}, None, TOOL_SECURITY, guards)
 
     assert result.power_ownership_guards == guards
 

@@ -503,7 +503,7 @@ def resolve_power_guards(
     return tuple(_power_guard(name, reported_unresolved) for name in ordered)
 
 
-def describe(
+def build_effective_permissions(
     handlers: Mapping[str, object],
     policy: AccessPolicy | None,
     tool_security: Mapping[str, ToolSecurity],
@@ -533,7 +533,7 @@ def describe(
     so a policy denying everything is enforced maximally rather than not at all.
     The state is unreachable through the tool — its own registration is what
     makes *handlers* non-empty — so this only binds a direct caller of
-    :func:`describe`.
+    :func:`build_effective_permissions`.
 
     *power_guards* arrives resolved rather than being read here, so this stays a
     pure function of its arguments; :func:`resolve_power_guards` owns the
@@ -636,7 +636,9 @@ def register_permissions_tool(
         power_guards = await asyncio.to_thread(
             resolve_power_guards, policy, reported_unresolved
         )
-        return describe(handlers, policy, tool_security, power_guards)
+        return build_effective_permissions(
+            handlers, policy, tool_security, power_guards
+        )
 
     validate_security(EFFECTIVE_PERMISSIONS_SECURITY, hmc_effective_permissions)
     # Wrapped like every other tool since #297, and it is this site that made the

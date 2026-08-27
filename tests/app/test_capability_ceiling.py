@@ -200,11 +200,11 @@ def _guarded_stub(name: str = "hmc_list_systems"):
 def test_inspection_reports_no_policy_honestly():
     """R14, R16, retargeted by ADR 0041: no *composed* application reaches this arm.
 
-    The behaviour is unchanged and still worth pinning — `describe` documents itself as
+    The behaviour is unchanged and still worth pinning — `build_effective_permissions` documents itself as
     binding a direct caller, and ADR 0041 deliberately kept its `AccessPolicy | None`
     parameter rather than narrowing the public report's schema. What changed is the
     route: `create_mcp()` no longer produces an application to ask, so the honest
-    null-reporting is asserted against `describe` itself.
+    null-reporting is asserted against `build_effective_permissions` itself.
 
     Both dimension tuples are empty here and that is not the partition ADR 0047
     imposes elsewhere: with no policy selected nothing is declared, so nothing can
@@ -212,10 +212,10 @@ def test_inspection_reports_no_policy_honestly():
     """
     from dataclasses import asdict
 
-    from hmc_mcp.server_tools.permissions import describe
+    from hmc_mcp.server_tools.permissions import build_effective_permissions
 
     result = asdict(
-        describe({"hmc_list_systems": _guarded_stub()}, None, TOOL_SECURITY, ())
+        build_effective_permissions({"hmc_list_systems": _guarded_stub()}, None, TOOL_SECURITY, ())
     )
 
     assert result["policy_name"] is None
@@ -482,12 +482,12 @@ def test_an_unwrapped_connection_bearing_tool_withholds_the_dispatch_claim():
     `ceiling_enforced` re-checks the tool dimension only. The claim now rests on
     the registered callable, which is the only thing that can carry the check.
     """
-    from hmc_mcp.server_tools.permissions import describe
+    from hmc_mcp.server_tools.permissions import build_effective_permissions
 
     def hmc_list_systems(profile: str | None = None) -> str:
         return "ok"
 
-    result = describe(
+    result = build_effective_permissions(
         {"hmc_list_systems": hmc_list_systems}, _legacy(), TOOL_SECURITY, ()
     )
 
@@ -501,12 +501,12 @@ def test_a_name_outside_the_index_withholds_every_enforcement_claim():
 
     The same fail-closed default `_permission` applies to `exhaustive_targets`.
     """
-    from hmc_mcp.server_tools.permissions import describe
+    from hmc_mcp.server_tools.permissions import build_effective_permissions
 
     def hmc_not_in_the_index() -> str:
         return "ok"
 
-    result = describe(
+    result = build_effective_permissions(
         {"hmc_not_in_the_index": hmc_not_in_the_index}, _legacy(), TOOL_SECURITY, ()
     )
 
@@ -523,12 +523,12 @@ def test_an_unwrapped_tool_costs_only_the_target_label():
     applies even under `all-targets`. The connection dimension is untouched here
     because the fixture's tool routes no connection, so that dimension has nothing
     to say about it, which is what isolates the target label. `create_mcp` cannot
-    produce this registry any more; a direct caller of `describe` still can, and
+    produce this registry any more; a direct caller of `build_effective_permissions` still can, and
     the label has to stay honest for one.
     """
     from dataclasses import replace
 
-    from hmc_mcp.server_tools.permissions import describe
+    from hmc_mcp.server_tools.permissions import build_effective_permissions
 
     def hmc_list_lpars(profile: str | None = None) -> str:
         return "ok"
@@ -537,7 +537,7 @@ def test_an_unwrapped_tool_costs_only_the_target_label():
     assert security.targets, "the fixture needs a tool that declares selectors"
     index = {**TOOL_SECURITY, "hmc_list_lpars": replace(security, connection_argument=None)}
 
-    result = describe({"hmc_list_lpars": hmc_list_lpars}, _legacy(), index, ())
+    result = build_effective_permissions({"hmc_list_lpars": hmc_list_lpars}, _legacy(), index, ())
 
     assert result.ceiling_enforced is True
     assert result.enforced_dimensions == ("tools", "connections")
@@ -588,11 +588,11 @@ def test_a_table_grant_registry_reports_targets_enforced():
     """#297: nothing escapes the target check now, so the label is earned.
 
     ADR 0047 withheld this label for exactly the registry below, because the two
-    connection-less tools registered unwrapped and skipped the check. `describe`
+    connection-less tools registered unwrapped and skipped the check. `build_effective_permissions`
     is called directly rather than through the tool: under a table-only policy the
     inspection tool denies itself, which is the denial the test above pins.
     """
-    from hmc_mcp.server_tools.permissions import describe
+    from hmc_mcp.server_tools.permissions import build_effective_permissions
 
     policy = _policy(TABLE_GRANT)
     application = create_mcp(policy)
@@ -602,7 +602,7 @@ def test_a_table_grant_registry_reports_targets_enforced():
     }
     assert "hmc_effective_permissions" in handlers
 
-    result = describe(handlers, policy, TOOL_SECURITY, ())
+    result = build_effective_permissions(handlers, policy, TOOL_SECURITY, ())
 
     assert result.ceiling_enforced is True
     assert result.enforced_dimensions == ("tools", "connections", "targets")
@@ -683,7 +683,7 @@ def test_the_connectionless_tools_stay_reachable_under_every_granting_shape(
 def test_the_authorization_witness_is_not_forged_by_functools_wraps():
     """ADR 0047: `__wrapped__` is set by any decorator; the marker is not.
 
-    `is_authorized_wrapper` is what `describe` believes, so a witness an
+    `is_authorized_wrapper` is what `build_effective_permissions` believes, so a witness an
     unrelated decorator could set would make the enforcement label meaningless.
     """
     import functools
@@ -713,7 +713,7 @@ def test_the_authorization_witness_is_not_forged_by_functools_wraps():
     # A tool with no connection argument is wrapped like any other since #297.
     assert local_only is not handler
     assert is_authorized_wrapper(local_only) is True
-    # A registration carrying no callable at all — what `describe` reads when a
+    # A registration carrying no callable at all — what `build_effective_permissions` reads when a
     # provider hands back a `Tool` that is not a `FunctionTool`.
     assert is_authorized_wrapper(None) is False
 
