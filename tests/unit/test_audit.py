@@ -397,6 +397,13 @@ def test_the_last_agent_id_casing_in_the_environment_is_the_one_recorded(monkeyp
         (("Hmc_Agent_Id", "mixed"),),
         (("HMC_AGENT_ID", ""), ("hmc_agent_id", "nonempty")),
         (("hmc_agent_id", "nonempty"), ("HMC_AGENT_ID", "")),
+        # Dotless i: `str.lower()` leaves it alone and neither fold matches, so
+        # both copies must return None. `str.upper()` turns it into `HMC_AGENT_ID`
+        # and would return the value — a name the loader never reads, recorded as
+        # a claimant the ownership stamp does not carry. Every ASCII case above
+        # passes under either fold direction, so without this the parametrization
+        # cannot see the half of the rule both docstrings call load-bearing.
+        (("hmc_agent_ıd", "dotless-i"),),
     ],
 )
 def test_the_audit_env_fold_agrees_with_the_configs(monkeypatch, spellings):

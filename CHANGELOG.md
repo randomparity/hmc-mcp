@@ -295,10 +295,14 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   did. Several casings at once resolve to the last in the process environment's order, as
   they do for every other `HMC_*` variable. `audit.py` imports nothing from the package, so
   it carries its own copy of the fold rather than calling `config.env_var_value`; a test
-  pins the two against each other. `scripts/live_test_runner.py` folds case in the same two
-  places it predicted a config resolution exact-case: the credential pre-check, which
-  refused to start on a case-variant `hmc_password` that would have connected, and the
-  ISO allowlist merge, which dropped a case variant's entries.
+  pins the two against each other. `scripts/live_test_runner.py` folds case in the three
+  places it predicted a config resolution exact-case: the credential pre-check and the
+  `HMC_SCHEMA_VERSION` pre-check, each of which refused to start on a case variant that
+  would have connected — telling the operator to set a variable already set — and the ISO
+  allowlist merge, which dropped a case variant's entries. That merge now also drops every
+  other casing before writing the canonical name, because assigning to an existing key
+  updates it in place rather than moving it, so a variant would otherwise stay last in
+  `os.environ` order and stay the one that reaches the field.
 
 ### Removed
 

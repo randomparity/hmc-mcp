@@ -123,7 +123,11 @@ def _ensure_schema_version() -> None:
     mutate .env — the operator must add it intentionally.
     """
     _load_dotenv()
-    if os.environ.get("HMC_SCHEMA_VERSION"):
+    # env_var_value for the same reason as the credential pre-check above:
+    # `schema_version` is an `HMCConfig` field, so an exact-case probe exits 1
+    # telling the operator to set a variable a case variant has already set and
+    # the server is already sending (#543).
+    if env_var_value("HMC_SCHEMA_VERSION"):
         return
     print("⚠️  HMC_SCHEMA_VERSION is not set in .env or the environment.")
     print("   Add 'HMC_SCHEMA_VERSION=V1_0' to your .env file and re-run.")
@@ -2113,16 +2117,26 @@ def _allow_iso_host() -> None:
     """
     # env_var_value reads whatever casing the operator exported, because that is
     # the one `HMCConfig` will resolve — an exact-case read dropped a case
-    # variant's entries from the merged allowlist (#543). The write back is under
-    # the canonical spelling, which lands last in `os.environ` and so wins the
-    # same case-blind fold.
-    configured = env_var_value("HMC_ISO_URL_ALLOWLIST") or ""
+    # variant's entries from the merged allowlist (#543).
+    name = "HMC_ISO_URL_ALLOWLIST"
+    configured = env_var_value(name) or ""
     entries = [entry.strip() for entry in configured.split(",") if entry.strip()]
     if _ISO_HOST in entries:
         return
     entries.append(_ISO_HOST)
-    os.environ["HMC_ISO_URL_ALLOWLIST"] = ",".join(entries)
-    print(f"  ℹ  HMC_ISO_URL_ALLOWLIST={os.environ['HMC_ISO_URL_ALLOWLIST']}")
+    # The merged value has to be the one that reaches the field, so every other
+    # casing goes first. Assigning to a key that already exists updates it in
+    # place rather than moving it, so a variant inserted after the canonical name
+    # would stay last in `os.environ` order and stay the one pydantic-settings
+    # folds onto `iso_url_allowlist` — the runner would print an allowlist
+    # carrying its own host while ADR 0050 refused every one of its uploads.
+    # Removing the variants makes the canonical spelling the only spelling, which
+    # is also what lets the guard above short-circuit a second call.
+    for variant in [k for k in list(os.environ) if k.lower() == name.lower()]:
+        if variant != name:
+            del os.environ[variant]
+    os.environ[name] = ",".join(entries)
+    print(f"  ℹ  {name}={os.environ[name]}")
 
 
 def _serve_iso_over_http() -> None:
@@ -2955,7 +2969,8 @@ async def main(
         f"Starting live integration tests at "
         f"{datetime.now(timezone.utc).isoformat()}"
     )
-    print(f"HMC_SCHEMA_VERSION={os.environ.get('HMC_SCHEMA_VERSION', '(not set)')}")
+    schema_version = env_var_value("HMC_SCHEMA_VERSION")
+    print(f"HMC_SCHEMA_VERSION={schema_version if schema_version else '(not set)'}")
 
     # Determine which sub-tasks to run
     if subtask_filter is not None:
