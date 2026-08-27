@@ -118,13 +118,7 @@ class StorageMixin:
         if not xml:
             return None
         entries = _parse_feed(xml, path)
-        if not entries:
-            return None
-        entry = entries[0]
-        resource = entry.get("Resource")
-        if not isinstance(resource, dict) or "VirtualMediaRepository" not in resource:
-            return None
-        return entry
+        return entries[0] if entries else None
 
     async def create_volume_group(
         self: StorageClient,
@@ -637,7 +631,13 @@ class StorageMixin:
         if not xml:
             return None
         entries = _parse_feed(xml, path)
-        return entries[0] if entries else None
+        if not entries:
+            return None
+        entry = entries[0]
+        resource = entry.get("Resource")
+        if not isinstance(resource, dict) or "VirtualMediaRepository" not in resource:
+            return None
+        return entry
 
     async def list_optical_media(
         self: StorageClient, vios_uuid: str, vg_uuid: str

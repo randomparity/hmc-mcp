@@ -34,12 +34,23 @@ def _feed(uuid: str, rtype: str, **fields: str) -> str:
 """
 
 
-VG_FEED_WITH_REPO = _feed(
-    VG_UUID,
-    "VolumeGroup",
-    VolumeGroupUUID=VG_UUID,
-    GroupName="VMLibrary",
-)
+VG_FEED_WITH_REPO = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:{VG_UUID}</id>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <VolumeGroupUUID>{VG_UUID}</VolumeGroupUUID>
+        <GroupName>VMLibrary</GroupName>
+        <VirtualMediaRepository schemaVersion="V1_0">
+          <RepositoryName>VMLibrary</RepositoryName>
+          <RepositorySize>40960</RepositorySize>
+        </VirtualMediaRepository>
+      </VolumeGroup>
+    </content>
+  </entry>
+</feed>
+"""
 
 
 def test_get_media_repository(monkeypatch, mock_hmc):
