@@ -52,7 +52,7 @@ class _Value(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-class HmcIdentity(_Value):
+class HMCIdentity(_Value):
     uuid: str = Field(min_length=1)
     name: str | None
     version: str | None
@@ -97,7 +97,7 @@ class LparIdentity(_Value):
 
 
 class SnapshotSource(_Value):
-    hmc: HmcIdentity
+    hmc: HMCIdentity
     system: SystemIdentity
     lpar: LparIdentity
 

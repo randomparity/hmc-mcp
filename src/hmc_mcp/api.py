@@ -199,7 +199,7 @@ from hmc_mcp.operations_snapshot import (
     validate_lpar_snapshot,
 )
 from hmc_mcp.snapshot import (
-    HmcIdentity,
+    HMCIdentity,
     LparIdentity,
     LparSnapshot,
     MemoryProjection,
@@ -394,7 +394,7 @@ __all__ = [
     "LparSnapshot",
     "SnapshotInspection",
     "SnapshotValidationError",
-    "HmcIdentity",
+    "HMCIdentity",
     "SystemIdentity",
     "LparIdentity",
     "SnapshotSource",

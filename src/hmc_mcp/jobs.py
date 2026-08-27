@@ -731,7 +731,7 @@ _VIOS_UPGRADE_REQUIRED = {
 _PLATFORM_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-class SRIOVAdapterUpdateModel(BaseModel):
+class SriovAdapterUpdate(BaseModel):
     """One documented SR-IOV adapter update selection."""
 
     model_config = _PLATFORM_MODEL_CONFIG
@@ -755,7 +755,7 @@ class SystemFirmwareUpdateModel(BaseModel):
     ]
     UpdateOrder: Annotated[int, Field(description="Platform update execution order.")]
     SRIOVAdapterUpdate: Annotated[
-        list[SRIOVAdapterUpdateModel] | None,
+        list[SriovAdapterUpdate] | None,
         Field(description="SR-IOV adapters updated with the system firmware step."),
     ] = None
 
@@ -852,7 +852,6 @@ class PlatformUpdateParameter(BaseModel):
         return self
 
 
-SRIOVAdapterUpdate = SRIOVAdapterUpdateModel
 SystemFirmwareUpdate = SystemFirmwareUpdateModel
 IOAdapterUpdate = IOAdapterUpdateModel
 

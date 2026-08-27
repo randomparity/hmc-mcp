@@ -11,7 +11,7 @@ from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import (
     IOAdapterUpdate,
     PlatformUpdateParameter,
-    SRIOVAdapterUpdate,
+    SriovAdapterUpdate,
     SystemFirmwareUpdate,
     VIOSPlatformUpdate,
     VIOSUpdateSource,
@@ -85,7 +85,7 @@ def test_platform_update_job_uses_nested_native_json() -> None:
             UpdateType="NoUpdate",
             UpdateOrder=3,
             SRIOVAdapterUpdate=[
-                SRIOVAdapterUpdate(AdapterID="1", SubType="adapterdriver,adapter")
+                SriovAdapterUpdate(AdapterID="1", SubType="adapterdriver,adapter")
             ],
         ),
         VIOSUpdate=[
@@ -151,14 +151,14 @@ def test_platform_update_job_uses_nested_native_json() -> None:
     "subtype", ["adapterdriver", "Adapter", "adapterdriver,adapter"]
 )
 def test_platform_update_accepts_documented_sriov_subtypes(subtype: str) -> None:
-    item = SRIOVAdapterUpdate(AdapterID="1", SubType=subtype)  # type: ignore[arg-type]
+    item = SriovAdapterUpdate(AdapterID="1", SubType=subtype)  # type: ignore[arg-type]
     assert item.SubType == subtype
 
 
 @pytest.mark.parametrize("subtype", ["adapter", "AdapterDriver", "ADAPTER"])
 def test_platform_update_rejects_undocumented_sriov_subtypes(subtype: str) -> None:
     with pytest.raises(ValidationError):
-        SRIOVAdapterUpdate(AdapterID="1", SubType=subtype)  # type: ignore[arg-type]
+        SriovAdapterUpdate(AdapterID="1", SubType=subtype)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -234,7 +234,7 @@ def test_platform_update_requires_resource_for_vios_update() -> None:
             SystemFirmwareUpdate,
             {"UpdateType": "Update", "UpdateOrder": 1, "unexpected": True},
         ),
-        (SRIOVAdapterUpdate, {"AdapterID": "1", "SubType": "Adapter", "bad": 1}),
+        (SriovAdapterUpdate, {"AdapterID": "1", "SubType": "Adapter", "bad": 1}),
         (
             VIOSPlatformUpdate,
             {
@@ -258,8 +258,8 @@ def test_platform_update_models_reject_unknown_keys(model, value) -> None:
 @pytest.mark.parametrize(
     ("model", "value"),
     [
-        (SRIOVAdapterUpdate, {"AdapterID": "", "SubType": "Adapter"}),
-        (SRIOVAdapterUpdate, {"AdapterID": "   ", "SubType": "Adapter"}),
+        (SriovAdapterUpdate, {"AdapterID": "", "SubType": "Adapter"}),
+        (SriovAdapterUpdate, {"AdapterID": "   ", "SubType": "Adapter"}),
         (IOAdapterUpdate, {"Id": "", "Device": "nvme0", "Repository": "disk"}),
         (IOAdapterUpdate, {"Id": "   ", "Device": "nvme0", "Repository": "disk"}),
         (IOAdapterUpdate, {"Id": "1", "Device": "", "Repository": "disk"}),

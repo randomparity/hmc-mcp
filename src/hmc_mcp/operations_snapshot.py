@@ -32,7 +32,7 @@ from hmc_mcp.snapshot import (
     PLACEMENT_MEDIA_TYPE,
     PROFILE_MEDIA_TYPE,
     SCORES_MEDIA_TYPE,
-    HmcIdentity,
+    HMCIdentity,
     LparIdentity,
     LparSnapshot,
     NativeProfile,
@@ -296,7 +296,7 @@ async def capture_lpar_snapshot(
         version=1,
         captured_at=_utcnow(),
         source=SnapshotSource(
-            hmc=HmcIdentity(
+            hmc=HMCIdentity(
                 uuid=hmc_uuid,
                 name=_text(console_resource.get("HostName"), "HMC name", optional=True),
                 version=_text(

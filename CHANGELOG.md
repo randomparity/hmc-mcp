@@ -351,6 +351,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `HMCIdentity`, replacing the inconsistently capitalized `HmcIdentity` export. This is a
+  breaking public rename and moves the frozen signature digest; no compatibility alias remains.
 - Added: `InstallHandle` (#468), the `TypedDict` `install_lpar_os` and `install_vios` now return
   in place of `dict[str, Any]`. Runtime behaviour and both MCP tool responses are unchanged — a
   `TypedDict` is a plain `dict` — but the five keys `system`, `partition`, `pid`, `log_path`, and
@@ -417,7 +419,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   not a new capability.
 - Added: nineteen types ADR 0029's type clause now reaches through the fields of an exported
   model (#482); this moves the frozen public signature digest. Twelve `hmc_mcp.snapshot` models
-  behind `LparSnapshot` — `HmcIdentity`, `LparIdentity`,
+  behind `LparSnapshot` — `HMCIdentity`, `LparIdentity`,
   `MemoryProjection`, `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`,
   `ProcessorProjection`, `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotObservations`,
   `SnapshotSource`, `SystemIdentity` — and seven literal aliases: `AffinityClassification`

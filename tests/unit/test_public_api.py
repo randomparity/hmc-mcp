@@ -260,7 +260,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "LparSnapshot",
         "SnapshotInspection",
         "SnapshotValidationError",
-        "HmcIdentity",
+        "HMCIdentity",
         "SystemIdentity",
         "LparIdentity",
         "SnapshotSource",
@@ -1718,7 +1718,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     }
     # At least one manifest entry must carry an `Annotated` field, or the CI matrix
     # stops exercising the interpreter divergence `_signature_text` normalises away.
-    assert "Annotated[str, MinLen" in signatures["HmcIdentity"]
+    assert "Annotated[str, MinLen" in signatures["HMCIdentity"]
     # The same guard for the `TypedDict` branch. A digest is an opaque hash, so a
     # `_typed_dict_text` degraded to empty or partial text would move it once and
     # read as an ordinary manifest move to whoever recomputed it.
@@ -1726,13 +1726,14 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         "(system: str, partition: str, pid: int, log_path: str, message: str)"
     )
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #468: `InstallHandle` replaces `dict[str, Any]` on both install
+    # Moved by the HMCIdentity capitalization correction, recomputed over
+    # #468: `InstallHandle` replaces `dict[str, Any]` on both install
     # return annotations and contributes its own five-key entry. Recomputed over
     # #482's 717825fb, which added twelve `snapshot` models with their Pydantic
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "270f9389f83fd828848b636f85ccdc98e9525a3f8efe01e81db6eb4be9cee786"  # pragma: allowlist secret
+    expected_digest = "c0fe307e98a495e8e8ecaf7c3a6889bc626848aac1e48c7f52148012db630a4b"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

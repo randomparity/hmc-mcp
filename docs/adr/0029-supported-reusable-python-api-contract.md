@@ -233,10 +233,11 @@ names are internal everywhere and are never inventoried.
   `unmount_optical_media`, `upload_iso`; types: none; excluded synchronous:
   `validate_logical_unit_create`, `validate_logical_unit_wait`.
 - `operations_systems` — operations: `power_system`; types: none; excluded synchronous: none.
+- `operations_users` — operations: none; types: none; excluded synchronous: none.
 - `operations_templates` — operations: `deploy_partition_template`, `get_partition_template`,
   `list_partition_templates`; types: none; excluded synchronous: none.
 - `operations_vios` — operations: `power_vios`; types: none; excluded synchronous: none.
-- `snapshot` — exports: `HmcIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
+- `snapshot` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
   `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,
   `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotInspection`, `SnapshotObservations`,
   `SnapshotSource`, `SnapshotValidationError`, `SystemIdentity`.
