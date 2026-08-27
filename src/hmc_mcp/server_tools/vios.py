@@ -27,7 +27,7 @@ from ..operations.install import (
 )
 from ..ssh import run_hmc_cli
 from ..documents import LparResources, VIOS_DEFAULT_RESOURCES
-from ..operations.vios import _create_vios, _delete_vios
+from ..operations.vios import _create_vios, _delete_vios, power_vios
 
 
 tool, register_tools, tool_security = tool_module()
@@ -604,8 +604,6 @@ def hmc_power_on_vios(
     """
 
     async def _go():
-        from ..operations.vios import power_vios
-
         async with client_from_env(profile) as hmc:
             return await power_vios(
                 hmc,
@@ -642,8 +640,6 @@ def hmc_power_off_vios(
     """
 
     async def _go():
-        from ..operations.vios import power_vios
-
         async with client_from_env(profile) as hmc:
             return await power_vios(
                 hmc,

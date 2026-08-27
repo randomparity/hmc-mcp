@@ -8,7 +8,6 @@ from hmc_mcp.operations.lpar import delete_lpar, power_lpar, rename_lpar
 from hmc_mcp.operations.vios import power_vios
 from hmc_mcp.server_tools import lpars as server_lpars
 from hmc_mcp.server_tools import vios as server_vios
-from hmc_mcp.operations import vios as operations_vios
 
 
 def _client_factory(hmc):
@@ -78,7 +77,6 @@ async def test_power_lpar_forwards_optional_system_scope():
 
     await power_lpar(
         hmc,
-        None,
         "system-name",
         "aix1",
         power_on=False,
@@ -118,7 +116,7 @@ def test_power_off_lpar_tool_forwards_system_scope(monkeypatch):
         "aix1", system_name_or_uuid="system-name"
     )
 
-    assert operation.await_args.kwargs["system_name_or_uuid"] == "system-name"
+    assert operation.await_args.args[1] == "system-name"
 
 
 def test_delete_vios_tool_scopes_name_before_mutation(monkeypatch):
@@ -163,7 +161,7 @@ def test_power_off_vios_tool_forwards_system_scope(monkeypatch):
     hmc = AsyncMock()
     operation = AsyncMock(return_value={"UUID": "job-uuid"})
     monkeypatch.setattr(server_vios, "client_from_env", _client_factory(hmc))
-    monkeypatch.setattr(operations_vios, "power_vios", operation)
+    monkeypatch.setattr(server_vios, "power_vios", operation)
 
     server_vios.hmc_power_off_vios(
         "vios1", system_name_or_uuid="system-name"

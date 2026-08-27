@@ -24,9 +24,8 @@ from ..documents import (
     PowerOffPolicy,
     PowerOnLparStartPolicy,
 )
-from ..operations.systems import _modify_system
+from ..operations.systems import ManagedSystemState, _modify_system, power_system
 from ..operations.lpar import PartitionState
-from ..operations.systems import ManagedSystemState
 
 
 tool, register_tools, tool_security = tool_module()
@@ -419,8 +418,6 @@ def hmc_power_on_system(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
     async def _go():
-        from ..operations.systems import power_system
-
         async with client_from_env(profile) as hmc:
             return await power_system(
                 hmc,
@@ -457,8 +454,6 @@ def hmc_power_off_system(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
     async def _go():
-        from ..operations.systems import power_system
-
         async with client_from_env(profile) as hmc:
             return await power_system(
                 hmc,

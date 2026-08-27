@@ -31,11 +31,14 @@ from ..operations.lpar import (
     classify_affinity_outcome,
     _check_lpar_write_error,
     create_and_stamp_lpar,
+    clear_lpar_boot_order,
     delete_lpar,
     list_lpar_ownership,
     power_lpar,
     power_on_outcome,
+    read_lpar_boot_order,
     rename_lpar,
+    set_lpar_boot_order,
     set_lpar_memory,
     set_lpar_processors,
     validate_affinity_request,
@@ -704,8 +707,6 @@ def hmc_read_lpar_boot_order(
         - boot_device_list: The current BootDeviceList
         - last_booted_device_string: The device used on last boot
     """
-    from ..operations.lpar import read_lpar_boot_order
-
     async def _go() -> dict[str, Any]:
         async with client_from_env(profile) as hmc:
             result = await read_lpar_boot_order(
@@ -759,8 +760,6 @@ def hmc_set_lpar_boot_order(
         ...     ["network", "cd", "disk"]
         ... )
     """
-    from ..operations.lpar import set_lpar_boot_order
-
     async def _go() -> dict[str, Any] | None:
         async with client_from_env(profile) as hmc:
             result = await set_lpar_boot_order(
@@ -802,8 +801,6 @@ def hmc_clear_lpar_boot_order(
     Returns:
         Updated LPAR resource if successful, None otherwise.
     """
-    from ..operations.lpar import clear_lpar_boot_order
-
     async def _go() -> dict[str, Any] | None:
         async with client_from_env(profile) as hmc:
             result = await clear_lpar_boot_order(

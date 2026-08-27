@@ -49,6 +49,19 @@ raise SystemExit(0 if len(asyncio.run(application.list_tools())) == 0 else 1)
     subprocess.run([sys.executable, "-c", script], check=True)
 
 
+def test_operation_modules_import_before_their_server_tool_consumers():
+    """Keep operation modules independent of the application-facing tool layer."""
+    script = """
+import hmc_mcp.operations.lpar
+import hmc_mcp.operations.systems
+import hmc_mcp.operations.vios
+import hmc_mcp.server_tools.lpars
+import hmc_mcp.server_tools.systems
+import hmc_mcp.server_tools.vios
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)
+
+
 def test_create_mcp_returns_independent_complete_applications():
     import asyncio
 
