@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import shlex
 from dataclasses import dataclass
@@ -111,7 +112,7 @@ def _validate_bounds(
     duration_seconds: float, max_bytes: int, idle_timeout_seconds: float
 ) -> None:
     """Reject non-positive or over-ceiling bounds with actionable messages."""
-    if duration_seconds <= 0:
+    if not math.isfinite(duration_seconds) or duration_seconds <= 0:
         raise ValueError(f"duration_seconds must be positive, got {duration_seconds}")
     if duration_seconds > MAX_CAPTURE_SECONDS:
         raise ValueError(
@@ -124,7 +125,7 @@ def _validate_bounds(
         raise ValueError(
             f"max_bytes must not exceed {MAX_CAPTURE_BYTES}, got {max_bytes}"
         )
-    if idle_timeout_seconds <= 0:
+    if not math.isfinite(idle_timeout_seconds) or idle_timeout_seconds <= 0:
         raise ValueError(
             f"idle_timeout_seconds must be positive, got {idle_timeout_seconds}"
         )

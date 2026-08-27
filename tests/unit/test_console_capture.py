@@ -140,6 +140,19 @@ async def test_out_of_range_bounds_are_rejected_before_any_ssh(field, value):
     connect_mock.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["duration_seconds", "idle_timeout_seconds"])
+async def test_nan_time_bounds_are_rejected_before_any_ssh(field):
+    kwargs = _capture_kwargs()
+    kwargs[field] = float("nan")
+    with patch(
+        "hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()
+    ) as connect_mock:
+        with pytest.raises(ValueError, match=field):
+            await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
+    connect_mock.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # Contention (P1)
 # ---------------------------------------------------------------------------
