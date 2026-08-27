@@ -42,10 +42,10 @@ import shlex
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from .config import HMCConfig
-from .client import HMCClient
-from .errors import HMCError
-from .ssh.transport import HMCCLIError, open_hmc_connection, run_hmc_command
+from ..config import HMCConfig
+from ..client import HMCClient
+from ..errors import HMCError
+from .transport import HMCCLIError, open_hmc_connection, run_hmc_command
 
 logger = logging.getLogger(__name__)
 

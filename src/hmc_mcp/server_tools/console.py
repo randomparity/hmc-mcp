@@ -13,7 +13,7 @@ from ..resource_identity import (
     resolve_system_name,
     resolve_system_uuid,
 )
-from ..console_capture import capture_lpar_console
+from ..ssh.console import capture_lpar_console
 from ..ssh.lpar import _ssh_lpar_name
 from ..tool_registry import tool_module
 

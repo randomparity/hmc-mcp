@@ -17,7 +17,7 @@ import pytest
 
 from conftest import make_config
 from hmc_mcp.client import HMCClient
-from hmc_mcp.console_capture import (
+from hmc_mcp.ssh.console import (
     HELD_SENTINEL,
     MAX_CAPTURE_BYTES,
     MAX_CAPTURE_SECONDS,
@@ -92,14 +92,14 @@ def _capture_kwargs(**overrides):
 async def _run_capture(connection: FakeConnection, **overrides) -> ConsoleCapture:
     with (
         patch(
-            "hmc_mcp.console_capture.open_hmc_connection",
+            "hmc_mcp.ssh.console.open_hmc_connection",
             AsyncMock(return_value=connection),
         ),
         patch(
-            "hmc_mcp.console_capture.run_hmc_command",
+            "hmc_mcp.ssh.console.run_hmc_command",
             AsyncMock(return_value="Close command sent"),
         ) as release_mock,
-        patch("hmc_mcp.console_capture._RELEASE_PROBE_SECONDS", 0.2),
+        patch("hmc_mcp.ssh.console._RELEASE_PROBE_SECONDS", 0.2),
     ):
         capture = await capture_lpar_console(
             _client(),
@@ -133,7 +133,7 @@ async def test_out_of_range_bounds_are_rejected_before_any_ssh(field, value):
     kwargs = _capture_kwargs()
     kwargs[field] = value
     with patch(
-        "hmc_mcp.console_capture.open_hmc_connection", AsyncMock()
+        "hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()
     ) as connect_mock:
         with pytest.raises(ValueError, match=field):
             await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
@@ -150,11 +150,11 @@ async def test_contention_sentinel_raises_distinct_error_and_never_releases():
     connection = FakeConnection([FakeProcess(CONTENTION)])
     with (
         patch(
-            "hmc_mcp.console_capture.open_hmc_connection",
+            "hmc_mcp.ssh.console.open_hmc_connection",
             AsyncMock(return_value=connection),
         ),
         patch(
-            "hmc_mcp.console_capture.run_hmc_command", AsyncMock()
+            "hmc_mcp.ssh.console.run_hmc_command", AsyncMock()
         ) as release_mock,
     ):
         with pytest.raises(ConsoleHeldError) as excinfo:
@@ -179,10 +179,10 @@ async def test_contention_is_detected_when_it_arrives_midstream():
     connection = FakeConnection([FakeProcess(BANNER, CONTENTION)])
     with (
         patch(
-            "hmc_mcp.console_capture.open_hmc_connection",
+            "hmc_mcp.ssh.console.open_hmc_connection",
             AsyncMock(return_value=connection),
         ),
-        patch("hmc_mcp.console_capture.run_hmc_command", AsyncMock()),
+        patch("hmc_mcp.ssh.console.run_hmc_command", AsyncMock()),
     ):
         with pytest.raises(ConsoleHeldError):
             await capture_lpar_console(
@@ -274,11 +274,11 @@ async def test_failed_rmvterm_still_probes_and_reports_honestly():
     connection = FakeConnection([FakeProcess(BANNER), FakeProcess(CONTENTION)])
     with (
         patch(
-            "hmc_mcp.console_capture.open_hmc_connection",
+            "hmc_mcp.ssh.console.open_hmc_connection",
             AsyncMock(return_value=connection),
         ),
         patch(
-            "hmc_mcp.console_capture.run_hmc_command",
+            "hmc_mcp.ssh.console.run_hmc_command",
             AsyncMock(side_effect=HMCCLIError("rmvterm failed")),
         ),
     ):
@@ -301,11 +301,11 @@ async def test_cancellation_still_runs_release_to_completion():
 
     with (
         patch(
-            "hmc_mcp.console_capture.open_hmc_connection",
+            "hmc_mcp.ssh.console.open_hmc_connection",
             AsyncMock(return_value=connection),
         ),
         patch(
-            "hmc_mcp.console_capture.run_hmc_command",
+            "hmc_mcp.ssh.console.run_hmc_command",
             AsyncMock(side_effect=fake_run_command),
         ),
     ):

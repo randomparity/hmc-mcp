@@ -936,7 +936,7 @@ src/hmc_mcp/
   snapshot.py    # version-1 portable LPAR snapshot values and local I/O
   ssh/            # asyncssh transport plus HMC CLI operations by resource family
     ssh/*.py       # transport, shared parsing, and resource-specific commands
-  console_capture.py         # bounded, non-interactive LPAR console capture (mkvterm)
+  ssh/console.py             # bounded, non-interactive LPAR console capture (mkvterm)
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
   update_jobs.py # update/upgrade request schemas and payload builders

@@ -114,7 +114,7 @@ truncation rule is protocol-derived (ECMA-48 shapes), not prototype-verified.
 Add a bounded capture, not a terminal:
 
 - `hmc_mcp.ssh.open_hmc_connection` — the long-lived connection primitive.
-- `hmc_mcp.console_capture.capture_lpar_console(config, system_name,
+- `hmc_mcp.ssh.console.capture_lpar_console(config, system_name,
   lpar_name, *, duration_seconds, max_bytes, idle_timeout_seconds) ->
   ConsoleCapture` with `ConsoleCapture(system, lpar, data, stop_reason,
   released)` and `ConsoleHeldError`; exported through `hmc_mcp.api`.

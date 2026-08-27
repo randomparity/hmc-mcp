@@ -133,10 +133,6 @@ names are internal everywhere and are never inventoried.
   - Note: `load_profile` is synchronous and exported all the same. It is a configuration
     constructor, not a domain operation, and the synchronous-exclusion reason above does not
     reach it.
-- `console_capture` — exports: `ConsoleCapture`, `ConsoleHeldError`, `StopReason`,
-  `capture_lpar_console`.
-  - Note: `capture_lpar_console` is an operation living outside `operations_*` (ADR 0072), so
-    the selection rule does not reach it; it is exported by this entry alone.
 - `documents` — exports: `AuthenticationType`, `BootDeviceSelector`, `Keylock`, `LparResources`,
   `OsType`, `PartitionType`, `SharingMode`, `StorageKind`.
 - `errors` — exports: `HMCError`, `HMCTransportError`.
@@ -249,6 +245,10 @@ names are internal everywhere and are never inventoried.
     in an operation's signature. `SnapshotInspection` reaches none of them: its own fields are
     strings, booleans, and opaque mappings.
 - `ssh.affinity` — exports: `MinimumAffinityPolicy`.
+- `ssh.console` — exports: `ConsoleCapture`, `ConsoleHeldError`, `StopReason`,
+  `capture_lpar_console`.
+  - Note: `capture_lpar_console` is an operation living outside `operations_*` (ADR 0072), so
+    the selection rule does not reach it; it is exported by this entry alone.
 - `ssh.network` — exports: `SriovMode`.
 - `ssh.transport` — exports: `HMCCLIError`.
 - `update_jobs` — exports: `ConsoleUpdateMediaType`, `ConsoleUpdateSource`,

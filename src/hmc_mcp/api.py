@@ -209,7 +209,7 @@ from hmc_mcp.operations.users import (
 )
 from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.ssh.network import SriovMode
-from hmc_mcp.console_capture import (
+from hmc_mcp.ssh.console import (
     ConsoleCapture,
     ConsoleHeldError,
     StopReason,
