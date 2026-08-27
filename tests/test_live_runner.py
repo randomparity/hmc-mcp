@@ -18,6 +18,9 @@ from hmc_mcp.server import TOOL_SECURITY
 
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
+sys.path.insert(0, str(_RUNNER_PATH.parent))
+from live_test import inventory, lifecycle, results, vmedia  # noqa: E402
+
 _SPEC = importlib.util.spec_from_file_location("hmc_live_test_runner", _RUNNER_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 runner = importlib.util.module_from_spec(_SPEC)
@@ -139,14 +142,14 @@ def test_the_iso_allowlist_merge_reaches_the_field_and_is_idempotent(monkeypatch
     monkeypatch.setenv(name, "canonical.example.com")
     monkeypatch.setenv("hmc_iso_url_allowlist", "variant.example.com")
 
-    runner._allow_iso_host()
+    vmedia._allow_iso_host()
 
     merged = os.environ[name]
     assert [k for k in os.environ if k.lower() == name.lower()] == [name]
-    assert merged.split(",") == ["variant.example.com", runner._ISO_HOST]
+    assert merged.split(",") == ["variant.example.com", vmedia._ISO_HOST]
     assert HMCConfig(host="h", user="u", password="p").iso_url_allowlist == merged
 
-    runner._allow_iso_host()
+    vmedia._allow_iso_host()
     assert os.environ[name] == merged
 
 
@@ -164,9 +167,9 @@ def test_the_iso_allowlist_merge_keeps_a_variant_only_operator_entry(monkeypatch
     _clear(monkeypatch, name)
     monkeypatch.setenv("hmc_iso_url_allowlist", "operator.example.com")
 
-    runner._allow_iso_host()
+    vmedia._allow_iso_host()
 
-    assert os.environ[name].split(",") == ["operator.example.com", runner._ISO_HOST]
+    assert os.environ[name].split(",") == ["operator.example.com", vmedia._ISO_HOST]
 
 
 def test_a_dotenv_entry_never_outranks_a_case_variant_export(monkeypatch, tmp_path):
@@ -264,7 +267,8 @@ def test_the_already_set_gate_folds_down_like_the_loader(monkeypatch, tmp_path):
     ],
 )
 async def test_call_normalizes_fastmcp_result_shapes(result, expected):
-    assert await runner.call(_ScriptedClient(result=result), "tool") == (
+    state = runner.RunState()
+    assert await state.call(_ScriptedClient(result=result), "tool") == (
         "PASS",
         expected,
     )
@@ -272,7 +276,7 @@ async def test_call_normalizes_fastmcp_result_shapes(result, expected):
 
 @pytest.mark.asyncio
 async def test_call_returns_traceable_failure():
-    status, data = await runner.call(
+    status, data = await runner.RunState().call(
         _ScriptedClient(error=RuntimeError("transport failed")), "tool"
     )
 
@@ -284,8 +288,7 @@ async def test_call_returns_traceable_failure():
 def test_expected_hmc_limitation_is_classified_as_skip():
     state = runner.RunState()
 
-    runner._record_expected_or_real(
-        state,
+    state.record_expected_or_real(
         5,
         "optional_tool",
         "FAIL",
@@ -301,11 +304,11 @@ def test_expected_hmc_limitation_is_classified_as_skip():
 def test_result_helpers_preserve_resource_shapes():
     entries = [{"Resource": {"UUID": "nested"}}]
 
-    assert runner._entries(entries) is entries
-    assert runner._entries({"entries": entries}) is entries
-    assert runner._entries("invalid") == []
-    assert runner._resource(entries[0]) == {"UUID": "nested"}
-    assert runner._resource({"UUID": "flat"}) == {"UUID": "flat"}
+    assert results.entries(entries) is entries
+    assert results.entries({"entries": entries}) is entries
+    assert results.entries("invalid") == []
+    assert results.resource(entries[0]) == {"UUID": "nested"}
+    assert results.resource({"UUID": "flat"}) == {"UUID": "flat"}
 
 
 def test_restore_context_restores_identifiers_and_baseline(tmp_path):
@@ -348,11 +351,11 @@ def test_numeric_dispatch_uses_intent_revealing_workflow_names():
 async def test_lpar_inventory_calls_all_read_only_affinity_operations(monkeypatch):
     calls = []
 
-    async def scripted_call(_client, tool, **kwargs):
+    async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
         return "PASS", {}
 
-    monkeypatch.setattr(runner, "call", scripted_call)
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
     await runner.inventory_lpar_profiles(None, state)
 
@@ -426,7 +429,7 @@ def _dispatched_tool_names(source: str) -> set[str]:
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.Call):
             continue
-        if not (isinstance(node.func, ast.Name) and node.func.id == "call"):
+        if not (isinstance(node.func, ast.Attribute) and node.func.attr == "call"):
             continue
         tool = node.args[1] if len(node.args) > 1 else None
         if not (isinstance(tool, ast.Constant) and isinstance(tool.value, str)):
@@ -440,7 +443,12 @@ def _dispatched_tool_names(source: str) -> set[str]:
 
 def test_every_dispatched_tool_name_is_registered():
     """The runner is a mirror of the tool registry; a removed tool must not linger."""
-    dispatched = _dispatched_tool_names(_RUNNER_PATH.read_text(encoding="utf-8"))
+    dispatched = set().union(
+        *(
+            _dispatched_tool_names(Path(module.__file__).read_text(encoding="utf-8"))
+            for module in (inventory, lifecycle, vmedia)
+        )
+    )
 
     assert dispatched, "no dispatches found — the guard would pass vacuously"
     assert sorted(dispatched - set(TOOL_SECURITY)) == []
@@ -450,8 +458,8 @@ def test_dispatch_guard_reports_a_tool_missing_from_the_registry():
     """The guard bites: a dispatch of an unregistered name is reported, not ignored."""
     source = (
         "async def workflow(client):\n"
-        '    await call(client, "hmc_list_lpars")\n'
-        '    await call(client, "hmc_list_password_policies")\n'
+        '    await state.call(client, "hmc_list_lpars")\n'
+        '    await state.call(client, "hmc_list_password_policies")\n'
     )
 
     assert _dispatched_tool_names(source) - set(TOOL_SECURITY) == {
@@ -460,7 +468,7 @@ def test_dispatch_guard_reports_a_tool_missing_from_the_registry():
 
 
 def test_dispatch_guard_refuses_a_tool_name_it_cannot_read():
-    source = "async def workflow(client, tool):\n    await call(client, tool)\n"
+    source = "async def workflow(client, tool):\n    await state.call(client, tool)\n"
 
     with pytest.raises(AssertionError, match="cannot read"):
         _dispatched_tool_names(source)
@@ -476,7 +484,7 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
         seen_states.append(state)
         initial_system_uuids.append(state.context.system_uuid)
         state.context.system_uuid = "first-run-only"
-        runner.record(state, 0, "fake", "PASS", {})
+        state.record(0, "fake", "PASS", {})
 
     monkeypatch.setattr(runner, "SUBTASKS", {0: fake_subtask})
     first_path = tmp_path / "first.json"
@@ -500,7 +508,7 @@ async def test_main_returns_failure_and_persists_results(monkeypatch, tmp_path):
     _isolate_runner(monkeypatch)
 
     async def failing_subtask(_client, state):
-        runner.record(state, 0, "fake", "FAIL", "expected failure")
+        state.record(0, "fake", "FAIL", "expected failure")
 
     monkeypatch.setattr(runner, "SUBTASKS", {0: failing_subtask})
     results_path = tmp_path / "results.json"
@@ -526,7 +534,7 @@ async def test_main_rejects_unknown_numeric_workflow(monkeypatch, tmp_path):
 async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
     calls = []
 
-    async def scripted_call(_client, tool, **kwargs):
+    async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
         if tool == "hmc_list_virtual_switches":
             return "PASS", [{"Resource": {"SwitchID": "7"}}]
@@ -534,7 +542,7 @@ async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
             return "PASS", [{"Resource": {"NetworkVLANID": "3000"}}]
         return "PASS", {}
 
-    monkeypatch.setattr(runner, "call", scripted_call)
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
 
     await runner.inventory_network(None, state)
@@ -575,11 +583,11 @@ async def test_mutating_workflows_stop_when_inventory_context_is_missing(
 ):
     calls = []
 
-    async def unexpected_call(_client, tool, **kwargs):
+    async def unexpected_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
         return "PASS", {}
 
-    monkeypatch.setattr(runner, "call", unexpected_call)
+    monkeypatch.setattr(runner.RunState, "call", unexpected_call)
     state = runner.RunState()
     configure(state.context)
 
@@ -595,7 +603,7 @@ async def test_mutating_workflows_stop_when_inventory_context_is_missing(
 async def test_lpar_lifecycle_sequences_create_power_and_cleanup(monkeypatch):
     calls = []
 
-    async def scripted_call(_client, tool, **kwargs):
+    async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
         if tool == "hmc_create_lpar":
             return "PASS", {"UUID": "scratch-uuid"}
@@ -603,7 +611,7 @@ async def test_lpar_lifecycle_sequences_create_power_and_cleanup(monkeypatch):
             return "PASS", {"UUID": "job-uuid"}
         return "PASS", {}
 
-    monkeypatch.setattr(runner, "call", scripted_call)
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
     state.context.system_uuid = "system-uuid"
 
@@ -633,14 +641,14 @@ def test_unrestorable_description_names_the_reason(baseline):
     The runner defers to the server's validator, so the ``-i`` record grammar
     of ADR 0045 skips the restore instead of failing it.
     """
-    reason = runner._unrestorable_description(baseline)
+    reason = lifecycle._unrestorable_description(baseline)
     assert isinstance(reason, str) and reason
 
 
 @pytest.mark.parametrize("baseline", ["", "plain text", "[hmc-mcp owner:a created:x]"])
 def test_restorable_description_is_not_blocked(baseline):
     """An ordinary baseline description is restored, not skipped."""
-    assert runner._unrestorable_description(baseline) is None
+    assert lifecycle._unrestorable_description(baseline) is None
 
 
 @pytest.mark.asyncio
@@ -648,13 +656,13 @@ async def test_lpar_property_workflow_skips_an_unrestorable_description(monkeypa
     """A baseline carrying a record delimiter is skipped rather than rewritten."""
     calls = []
 
-    async def scripted_call(_client, tool, **kwargs):
+    async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
         if tool == "hmc_run_command":
             return "PASS", "aixlinux"
         return "PASS", {}
 
-    monkeypatch.setattr(runner, "call", scripted_call)
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
     state.context.lp3_baseline["description"] = "web tier, prod"
 
@@ -672,7 +680,7 @@ async def test_lpar_property_workflow_skips_an_unrestorable_description(monkeypa
 async def test_lpar_property_workflow_restores_description(monkeypatch):
     calls = []
 
-    async def scripted_call(_client, tool, **kwargs):
+    async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
         if tool == "hmc_run_command":
             return "PASS", "aixlinux"
@@ -682,7 +690,7 @@ async def test_lpar_property_workflow_restores_description(monkeypatch):
             return "PASS", {"desired": "POWER10"}
         return "PASS", {}
 
-    monkeypatch.setattr(runner, "call", scripted_call)
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
     state.context.lp3_baseline["description"] = "original description"
 
@@ -707,13 +715,13 @@ async def test_lpar_property_workflow_restores_description(monkeypatch):
 async def test_final_restore_replays_baseline_and_audits(monkeypatch):
     calls = []
 
-    async def scripted_call(_client, tool, **kwargs):
+    async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
         if tool == "hmc_get_lpar_proc_compat":
             return "PASS", {"curr": "POWER9"}
         return "PASS", {}
 
-    monkeypatch.setattr(runner, "call", scripted_call)
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
     state.context.lp3_baseline["description"] = "baseline"
 
