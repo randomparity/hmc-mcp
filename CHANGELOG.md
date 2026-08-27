@@ -360,6 +360,13 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: `add_network_adapter`, `add_vios_adapter`, `delete_adapter`,
+  `map_storage`, `attach_disk_to_lpar`, `mount_optical_media`,
+  `unmount_optical_media`, `migrate_lpar`, `migrate_lpar_with_affinity_preflight`,
+  `abort_lpar_migration`, `recover_lpar_migration`, and `remote_restart_lpar` now
+  accept `ownership_override` and enforce the shared LPAR ownership guard before
+  their first mutating submission. These changes move the frozen public signature
+  digest.
 - Added: `configure_lpar_msp`, `configure_lpar_processor_compatibility`, and
   `synchronize_lpar_profile`, together with their `ProcessorCompatibilityMode` input
   type; the guarded SSH-backed configuration operations now have supported reusable

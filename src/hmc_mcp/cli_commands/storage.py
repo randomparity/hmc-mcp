@@ -147,6 +147,7 @@ def storage_attach_disk(
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without mutation"),
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Create a virtual disk and attach it to an existing LPAR."""
     if (
@@ -167,6 +168,7 @@ def storage_attach_disk(
             vios_partition_id=vios_id,
             vios_slot=vios_slot,
             dry_run=dry_run,
+            ownership_override=ownership_override,
         )
     )
     if as_json:
@@ -208,6 +210,7 @@ def storage_map(
         None, "--target", help="Pin the vtscsi device name"
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Map backing storage to an LPAR via a vSCSI mapping on a VIOS."""
     if not yes and not typer.confirm(
@@ -226,6 +229,7 @@ def storage_map(
                 kind=kind,
                 storage_name=disk,
                 target=target,
+                ownership_override=ownership_override,
             )
             return lpar_uuid, result
 

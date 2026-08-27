@@ -151,18 +151,18 @@ only the transport boundary.
 | `set_lpar_processors` | `operations/lpar_dlpar.py:418` | guarded (`:405`, via `_apply_dlpar_document:397` → `_resolve_and_authorize_lpar:328`) | — |
 | `set_lpar_memory` | `operations/lpar_dlpar.py:454` | guarded (`:405`, via `_apply_dlpar_document`) | — |
 | `apply_lpar_pcie_assignments` | `operations/assignments.py:275` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
-| `add_network_adapter` | `operations/adapters.py:32` | **unguarded** | #372 |
-| `add_vios_adapter` | `operations/adapters.py:57` | **unguarded** | #372 |
-| `delete_adapter` | `operations/adapters.py:75` | **unguarded** | #372 |
-| `map_storage` | `operations/storage.py:112` | **unguarded** | #372 |
-| `attach_disk_to_lpar` | `operations/provision.py:331` | **unguarded** | #372 |
-| `mount_optical_media` | `operations/storage.py:686` | **unguarded** | #440 |
-| `unmount_optical_media` | `operations/storage.py:710` | **unguarded** | #440 |
-| `migrate_lpar` | `operations/lpm.py:317` | **unguarded**; the guard belongs on the `validate=False` branch (see below) | #373 |
-| `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:221` | **unguarded**; delegates to `migrate_lpar` unconditionally (`:238`), so #373's guard covers it | #373 |
-| `abort_lpar_migration` | `operations/lpm.py:370` | **unguarded** | #373 |
-| `recover_lpar_migration` | `operations/lpm.py:391` | **unguarded** | #373 |
-| `remote_restart_lpar` | `operations/lpm.py:412` | **unguarded** | #373 |
+| `add_network_adapter` | `operations/adapters.py:33` | guarded (`:45`) | #372 |
+| `add_vios_adapter` | `operations/adapters.py:62` | guarded (`:73`) | #372 |
+| `delete_adapter` | `operations/adapters.py:84` | guarded (`:94`) | #372 |
+| `map_storage` | `operations/storage.py:112` | guarded (`:124`) | #372 |
+| `attach_disk_to_lpar` | `operations/provision.py:323` | guarded before the storage workflow (`:355`) | #372 |
+| `mount_optical_media` | `operations/storage.py:690` | guarded (`:707`) | #440 |
+| `unmount_optical_media` | `operations/storage.py:718` | guarded (`:757`) | #440 |
+| `migrate_lpar` | `operations/lpm.py:320` | guarded after optional validation and before migration submission (`:360`) | #373 |
+| `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:222` | guarded by delegation to `migrate_lpar` | #373 |
+| `abort_lpar_migration` | `operations/lpm.py:380` | guarded (`:392`) | #373 |
+| `recover_lpar_migration` | `operations/lpm.py:405` | guarded (`:417`) | #373 |
+| `remote_restart_lpar` | `operations/lpm.py:430` | guarded (`:446`) | #373 |
 
 `mount_optical_media` and `unmount_optical_media` became facade exports in #363,
 so they are Domain A callables (§5) as well as MCP tools — the guard is the only
@@ -189,7 +189,7 @@ The remaining direct entry points and their guard state are:
 | `configure_lpar_processor_compatibility` | `operations/lpar_configuration.py:58` | guarded (`:25`) | — |
 | `hmc_modify_lpar` | `server_tools/lpars.py:166` | guarded by `operations/lpar_dlpar.py:35` before any write | #442 |
 | `hmc lpar modify` (CLI) | `cli_commands/lpars.py:596` | guarded by `operations/lpar_dlpar.py:35` before any write | #442 |
-| `detach_storage_mapping` | `operations/storage.py:167` | resolves the mapping's client LPAR and guards it before deletion (`:200`) | #448 |
+| `detach_storage_mapping` | `operations/storage.py:171` | resolves the mapping's client LPAR and guards it before deletion (`:204`) | #448 |
 
 `hmc_dlpar_proc` and `hmc_dlpar_mem` were rows in this table at `b41e658`. #365
 extracted `set_lpar_processors` and `set_lpar_memory` from those tool bodies and
@@ -230,7 +230,7 @@ exempt anyway.
 | `deploy_partition_template` (`operations/templates.py:93`) | Creates the partition and stamps it per ADR 0014. |
 | `hmc_capture_lpar_console` (`server_tools/console.py:24`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_backup_lpar_profiles` (`server_tools/profiles.py:35`) | Reads every profile and writes an HMC-side backup file; it does not mutate a partition or profile. |
-| `hmc_migrate_validate_lpar` (`server_tools/lpm.py:141`) | Calls `migrate_lpar(validate=True)`, which submits an LPM validation job and changes nothing. Once #373 guards the migrating branch, this tool reaches a guarded function on a branch that never mutates. |
+| `hmc_migrate_validate_lpar` (`server_tools/lpm.py:147`) | Calls `validate_lpar_migration`, which submits an LPM validation job and changes nothing. The mutating migration operation has its own guard. |
 | `install_lpar_os` (`operations/install.py:176`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation *can be handed* a `LogicalPartition` selector and does not check the type locally; `installios` refuses a non-VIOS `-p` on the HMC, and because submission is detached that refusal reaches only the install log. That honesty gap is tracked by #460; it does not create an ownership decision, because a refused install mutates nothing. |
 | `install_vios` (`operations/install.py:279`) | Added by #366. Same reason. Resolves its target through the `VirtualIOServer` feed, so a name selector cannot name a `LogicalPartition` at all; a UUID selector is passed through unchecked, with the same #460 caveat. |
 

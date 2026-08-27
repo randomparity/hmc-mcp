@@ -70,6 +70,7 @@ def lpars_migrate(
     timeout: int = typer.Option(300, "--timeout", help="Polling timeout seconds"),
     interval: int = typer.Option(5, "--interval", help="Polling interval seconds"),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Live-migrate (LPM) an LPAR to another managed system."""
 
@@ -86,6 +87,7 @@ def lpars_migrate(
             wait=wait,
             timeout_seconds=timeout,
             poll_interval=interval,
+            ownership_override=ownership_override,
         )
 
     _lpm_run(name_or_uuid, _fn, "Migrate", target, yes)
@@ -112,6 +114,7 @@ def lpars_migrate_affinity(
     timeout: int = typer.Option(300, "--timeout", help="Polling timeout seconds"),
     interval: int = typer.Option(5, "--interval", help="Polling interval seconds"),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Run explicit affinity preflight before validation-first LPM."""
     validate_wait_timing(True, timeout, interval)
@@ -135,6 +138,7 @@ def lpars_migrate_affinity(
             wait=wait,
             timeout_seconds=timeout,
             poll_interval=interval,
+            ownership_override=ownership_override,
         )
 
     _lpm_run(name_or_uuid, _fn, "affinity-aware Migrate", target, yes)
@@ -169,6 +173,7 @@ def lpars_migrate_abort(
         5, "--interval", help="Poll interval seconds (with --wait)"
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Abort an in-progress LPM migration."""
     validate_wait_timing(wait, timeout, interval)
@@ -180,6 +185,7 @@ def lpars_migrate_abort(
             wait=wait,
             timeout_seconds=timeout,
             poll_interval=interval,
+            ownership_override=ownership_override,
         )
 
     _lpm_run(name_or_uuid, _fn, "MigrateAbort", None, yes)
@@ -196,6 +202,7 @@ def lpars_migrate_recover(
         5, "--interval", help="Poll interval seconds (with --wait)"
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Recover an LPAR after a failed LPM migration."""
     validate_wait_timing(wait, timeout, interval)
@@ -207,6 +214,7 @@ def lpars_migrate_recover(
             wait=wait,
             timeout_seconds=timeout,
             poll_interval=interval,
+            ownership_override=ownership_override,
         )
 
     _lpm_run(name_or_uuid, _fn, "MigrateRecover", None, yes)
@@ -232,6 +240,7 @@ def lpars_remote_restart(
         5, "--interval", help="Poll interval seconds (with --wait)"
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Remote-restart a failed LPAR on another managed system."""
     validate_wait_timing(wait, timeout, interval)
@@ -252,6 +261,7 @@ def lpars_remote_restart(
             wait=wait,
             timeout_seconds=timeout,
             poll_interval=interval,
+            ownership_override=ownership_override,
         )
 
     _lpm_run(name_or_uuid, _fn, f"RemoteRestart {operation}", target, yes)

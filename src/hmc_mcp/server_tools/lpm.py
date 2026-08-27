@@ -41,6 +41,7 @@ def hmc_migrate_lpar(
     validate_first: bool = True,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> JobOutcome:
     """Live-migrate (LPM) an LPAR to another managed system.
 
@@ -62,6 +63,7 @@ def hmc_migrate_lpar(
         timeout_seconds: Maximum client-side wait in seconds.
         poll_interval: Seconds between job-status requests while waiting.
         validate_first: Validate successfully before submitting migration when true.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: Optional TOML profile name; uses environment defaults when omitted.
         system_name_or_uuid: Optional SystemName or UUID of the source system,
             disambiguating the partition name; when omitted the name is
@@ -81,6 +83,7 @@ def hmc_migrate_lpar(
                 poll_interval=poll_interval,
                 validate_first=validate_first,
                 system_name_or_uuid=system_name_or_uuid,
+                ownership_override=ownership_override,
             )
             return cast(JobOutcome, result.job)
 
@@ -99,6 +102,7 @@ def hmc_migrate_lpar_with_affinity_preflight(
     poll_interval: int = 5,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> LpmAffinityMigrationResult:
     """Run explicit affinity preflight before validation-first LPM.
 
@@ -115,6 +119,7 @@ def hmc_migrate_lpar_with_affinity_preflight(
         wait: Wait for the submitted migration job when true.
         timeout_seconds: Maximum seconds to wait for HMC validation and migration.
         poll_interval: Seconds between HMC job-status requests.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: Optional TOML connection profile.
         system_name_or_uuid: Optional source managed-system name or UUID.
     """
@@ -132,6 +137,7 @@ def hmc_migrate_lpar_with_affinity_preflight(
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
                 system_name_or_uuid=system_name_or_uuid,
+                ownership_override=ownership_override,
             )
 
     return run_sync(_go)
@@ -195,6 +201,7 @@ def hmc_migrate_abort_lpar(
     poll_interval: int = 5,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> JobOutcome:
     """Abort an in-progress LPM migration of an LPAR.
 
@@ -208,6 +215,7 @@ def hmc_migrate_abort_lpar(
         wait: Wait for the abort job's terminal outcome when true.
         timeout_seconds: Maximum client-side wait in seconds.
         poll_interval: Seconds between job-status requests while waiting.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: Optional TOML profile name; uses environment defaults when omitted.
         system_name_or_uuid: Optional SystemName or UUID of the source system,
             disambiguating the partition name; when omitted the name is
@@ -223,6 +231,7 @@ def hmc_migrate_abort_lpar(
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
                 system_name_or_uuid=system_name_or_uuid,
+                ownership_override=ownership_override,
             )
             return cast(JobOutcome, result.job)
 
@@ -236,6 +245,7 @@ def hmc_migrate_recover_lpar(
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
+    ownership_override: bool = False,
     system_name_or_uuid: str | None = None,
 ) -> JobOutcome:
     """Recover an LPAR after a failed LPM migration.
@@ -250,6 +260,7 @@ def hmc_migrate_recover_lpar(
         wait: Wait for the recovery job's terminal outcome when true.
         timeout_seconds: Maximum client-side wait in seconds.
         poll_interval: Seconds between job-status requests while waiting.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: Optional TOML profile name; uses environment defaults when omitted.
         system_name_or_uuid: Optional SystemName or UUID of the source system,
             disambiguating the partition name; when omitted the name is
@@ -264,6 +275,7 @@ def hmc_migrate_recover_lpar(
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
+                ownership_override=ownership_override,
                 system_name_or_uuid=system_name_or_uuid,
             )
             return cast(JobOutcome, result.job)
@@ -283,6 +295,7 @@ def hmc_remote_restart_lpar(
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
+    ownership_override: bool = False,
 ) -> JobOutcome:
     """Remote-restart a failed LPAR on another managed system.
 
@@ -298,6 +311,7 @@ def hmc_remote_restart_lpar(
         target_system_name_or_uuid: Target name or UUID; optional only for cleanup.
         use_current_data: Use current configuration data; restart only.
         retain_devices: Retain devices; cleanup only.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         wait: Wait for the remote-restart job's terminal outcome when true.
         timeout_seconds: Maximum client-side wait in seconds.
         poll_interval: Seconds between job-status requests while waiting.
@@ -317,6 +331,7 @@ def hmc_remote_restart_lpar(
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
+                ownership_override=ownership_override,
             )
             return cast(JobOutcome, result.job)
 

@@ -37,6 +37,19 @@ from hmc_mcp.server_tools.storage import hmc_detach_storage_mapping
 
 from conftest import JOB_ENTRY
 
+
+@pytest.fixture(autouse=True)
+def _authorize_lpar_mutations(monkeypatch):
+    async def authorize(_hmc, lpar, _system, **_kwargs):
+        return lpar
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations.adapters._resolve_and_authorize_lpar", authorize
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations.storage._resolve_and_authorize_lpar", authorize
+    )
+
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 VG_UUID = "vg-uuid-0001"

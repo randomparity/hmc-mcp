@@ -59,6 +59,7 @@ def adapters_add_network(
         False, "--tagged", help="VLAN-tagged (trunking) adapter"
     ),
     mac: str | None = typer.Option(None, "--mac", help="Pin the MAC address"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Add a Virtual Ethernet (network) adapter to an LPAR."""
@@ -77,6 +78,7 @@ def adapters_add_network(
                 virtual_switch_id=virtual_switch_id,
                 tagged=tagged,
                 mac_address=mac,
+                ownership_override=ownership_override,
             )
 
     _adapter_mutation(_go, lpar, "network")
@@ -91,6 +93,7 @@ def adapters_add_vscsi(
         None, "--slot", help="Client virtual slot (auto if omitted)"
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Add a Virtual SCSI client adapter, paired to a VIOS."""
 
@@ -102,7 +105,14 @@ def adapters_add_vscsi(
     async def _go():
         async with _client() as hmc:
             return await add_vios_adapter(
-                hmc, None, lpar, vios_id, vios_slot, slot, fibre_channel=False
+                hmc,
+                None,
+                lpar,
+                vios_id,
+                vios_slot,
+                slot,
+                fibre_channel=False,
+                ownership_override=ownership_override,
             )
 
     _adapter_mutation(_go, lpar, "vSCSI")
@@ -117,6 +127,7 @@ def adapters_add_vfc(
         None, "--slot", help="Client virtual slot (auto if omitted)"
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Add a Virtual Fibre Channel (NPIV) client adapter, paired to a VIOS."""
 
@@ -128,7 +139,14 @@ def adapters_add_vfc(
     async def _go():
         async with _client() as hmc:
             return await add_vios_adapter(
-                hmc, None, lpar, vios_id, vios_slot, slot, fibre_channel=True
+                hmc,
+                None,
+                lpar,
+                vios_id,
+                vios_slot,
+                slot,
+                fibre_channel=True,
+                ownership_override=ownership_override,
             )
 
     _adapter_mutation(_go, lpar, "vFC")
@@ -142,6 +160,7 @@ def adapters_delete(
         ..., "--uuid", help="Adapter UUID (from `adapters list`)"
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Remove a virtual adapter from an LPAR."""
 
@@ -152,7 +171,14 @@ def adapters_delete(
 
     async def _go():
         async with _client() as hmc:
-            return await delete_adapter(hmc, None, lpar, adapter_type, adapter_uuid)
+            return await delete_adapter(
+                hmc,
+                None,
+                lpar,
+                adapter_type,
+                adapter_uuid,
+                ownership_override=ownership_override,
+            )
 
     uuid = _run(_go)
 

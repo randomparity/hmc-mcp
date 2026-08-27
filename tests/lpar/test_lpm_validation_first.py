@@ -11,6 +11,18 @@ from hmc_mcp.jobs import JobOutcome
 from hmc_mcp.operations.lpm import migrate_lpar
 
 
+@pytest.fixture(autouse=True)
+def _authorize_lpar_mutations(monkeypatch):
+    async def authorize(hmc, lpar, system, **_kwargs):
+        from hmc_mcp.resource_identity import resolve_lpar_uuid
+
+        return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations.lpm._resolve_and_authorize_lpar", authorize
+    )
+
+
 def _job(status: str, *, error: str | None = None) -> dict:
     resource: dict[str, object] = {"JobID": status.lower(), "Status": status}
     if error is not None:

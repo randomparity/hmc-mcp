@@ -15,6 +15,18 @@ from hmc_mcp.operations.lpm import (
 from hmc_mcp.server_tools.lpm import hmc_migrate_lpar_with_affinity_preflight
 
 
+@pytest.fixture(autouse=True)
+def _authorize_lpar_mutations(monkeypatch):
+    async def authorize(hmc, lpar, system, **_kwargs):
+        from hmc_mcp.resource_identity import resolve_lpar_uuid
+
+        return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations.lpm._resolve_and_authorize_lpar", authorize
+    )
+
+
 class _ClientContext:
     def __init__(self, client: object) -> None:
         self.client = client

@@ -118,10 +118,14 @@ async def map_storage(
     kind: StorageKind,
     storage_name: str,
     target: str | None = None,
+    ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    lpar_uuid = await _resolve_and_authorize_lpar(
+        hmc,
+        lpar_name_or_uuid,
+        system_name_or_uuid,
+        ownership_override=ownership_override,
     )
     return await hmc.map_storage_to_lpar(
         vios_uuid, kind, storage_name, lpar_uuid, target
@@ -691,6 +695,7 @@ async def mount_optical_media(
     *,
     media_name: str,
     target_device: str | None = None,
+    ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Create a VirtualSCSIMapping for optical media (mount ISO to LPAR).
 
@@ -699,8 +704,11 @@ async def mount_optical_media(
     target_device optionally pins the vtscsi name. Returns the created mapping resource.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    lpar_uuid = await _resolve_and_authorize_lpar(
+        hmc,
+        lpar_name_or_uuid,
+        system_name_or_uuid,
+        ownership_override=ownership_override,
     )
     return await hmc.create_optical_mapping(
         vios_uuid, media_name, lpar_uuid, target_device
@@ -714,6 +722,7 @@ async def unmount_optical_media(
     lpar_name_or_uuid: str,
     *,
     media_name: str,
+    ownership_override: bool = False,
 ) -> None:
     """Remove the VirtualSCSIMapping for an optical device (unmount).
 
@@ -745,7 +754,10 @@ async def unmount_optical_media(
     the duty to serialize concurrent VIOS mapping changes on the caller.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    lpar_uuid = await _resolve_and_authorize_lpar(
+        hmc,
+        lpar_name_or_uuid,
+        system_name_or_uuid,
+        ownership_override=ownership_override,
     )
     await hmc.delete_optical_mapping(vios_uuid, lpar_uuid, media_name)

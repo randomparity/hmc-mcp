@@ -39,6 +39,18 @@ JOB_OUTCOME_KEYS = {
     "found",
     "job_href",
 }
+
+
+@pytest.fixture(autouse=True)
+def _authorize_lpar_mutations(monkeypatch):
+    async def authorize(hmc, lpar, system, **_kwargs):
+        from hmc_mcp.resource_identity import resolve_lpar_uuid
+
+        return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations.lpm._resolve_and_authorize_lpar", authorize
+    )
 LPM_RECOVERY_TOOL_CASES = [
     (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
     (hmc_migrate_recover_lpar, "MigrateRecover", (LPAR_UUID,)),

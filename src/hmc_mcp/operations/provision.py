@@ -21,17 +21,17 @@ from ..snapshots.affinity import (
     assess_post_activation_affinity,
     validate_affinity_request,
 )
-from .adapters import add_network_adapter, add_vios_adapter
 from .lpar import (
     LparCreation,
     LparCreationResult,
     create_and_stamp_lpar,
     power_lpar,
 )
+from .lpar_dlpar import _resolve_and_authorize_lpar
 from .ssh_network import set_minimum_affinity_policy
 from ..ssh.transport import HMCCLIError
 from ..ssh.selectors import resolve_ssh_names
-from .storage import create_virtual_disk, map_storage
+from .storage import create_virtual_disk
 from ..ssh.affinity import (
     MinimumAffinityPolicy,
     require_minimum_affinity_policy_capability,
@@ -199,8 +199,9 @@ async def _record_hmc_step(
 async def _add_network(
     hmc: HMCClient, lpar_uuid: str, port_vlan_id: int
 ) -> dict[str, Any] | None:
-    result = await add_network_adapter(hmc, None, lpar_uuid, port_vlan_id)
-    return result.resource
+    return await hmc.add_network_adapter(
+        lpar_uuid, port_vlan_id, None, None, False, None
+    )
 
 
 async def _add_vscsi(
@@ -209,15 +210,7 @@ async def _add_vscsi(
     vios_partition_id: int,
     vios_slot: int,
 ) -> dict[str, Any]:
-    await add_vios_adapter(
-        hmc,
-        None,
-        lpar_uuid,
-        vios_partition_id,
-        vios_slot,
-        None,
-        fibre_channel=False,
-    )
+    await hmc.add_vscsi_adapter(lpar_uuid, vios_partition_id, vios_slot, None)
     return {
         "lpar_uuid": lpar_uuid,
         "vios_partition_id": vios_partition_id,
@@ -228,13 +221,12 @@ async def _add_vscsi(
 async def _map_storage(
     hmc: HMCClient, storage: ProvisionStorage, lpar_uuid: str
 ) -> dict[str, Any]:
-    await map_storage(
-        hmc,
-        None,
+    await hmc.map_storage_to_lpar(
         storage.vios_uuid,
+        storage.kind,
+        storage.storage_name,
         lpar_uuid,
-        kind=storage.kind,
-        storage_name=storage.storage_name,
+        None,
     )
     return {
         "lpar_uuid": lpar_uuid,
@@ -338,6 +330,7 @@ async def attach_disk_to_lpar(
     vios_slot: int,
     dry_run: bool = False,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> AttachDiskResult:
     """Create and attach a virtual disk to an existing LPAR."""
     if capacity_mib <= 0:
@@ -358,6 +351,13 @@ async def attach_disk_to_lpar(
             tuple(_step(name, "dry_run") for name in step_names),
             (),
         )
+
+    lpar_uuid = await _resolve_and_authorize_lpar(
+        hmc,
+        lpar_name_or_uuid,
+        system_name_or_uuid,
+        ownership_override=ownership_override,
+    )
 
     steps, completed = await _run_storage_leg(
         hmc,

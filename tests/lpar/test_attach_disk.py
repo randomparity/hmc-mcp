@@ -18,6 +18,16 @@ VIOS_UUID = "22222222-2222-2222-2222-222222222222"
 VG_UUID = "33333333-3333-3333-3333-333333333333"
 
 
+@pytest.fixture(autouse=True)
+def _authorize_lpar_mutations(monkeypatch):
+    async def authorize(_hmc, lpar, _system, **_kwargs):
+        return lpar
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations.provision._resolve_and_authorize_lpar", authorize
+    )
+
+
 def _client() -> AsyncMock:
     client = AsyncMock()
     client.find_partition_by_name.return_value = {"UUID": LPAR_UUID}

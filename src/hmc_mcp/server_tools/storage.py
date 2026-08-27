@@ -126,6 +126,7 @@ def hmc_attach_disk_to_lpar(
     dry_run: bool = False,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> AttachDiskResult:
     """Create and attach a virtual disk to an existing LPAR.
 
@@ -143,6 +144,7 @@ def hmc_attach_disk_to_lpar(
         vios_partition_id: Numeric VIOS partition ID from ``hmc_list_vios``.
         vios_slot: Server-side virtual SCSI slot on the VIOS.
         dry_run: Validate all selectors and prerequisites without mutating the HMC.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
@@ -159,6 +161,7 @@ def hmc_attach_disk_to_lpar(
                 vios_slot=vios_slot,
                 dry_run=dry_run,
                 system_name_or_uuid=system_name_or_uuid,
+                ownership_override=ownership_override,
             )
 
     return run_sync(_go)
@@ -230,6 +233,7 @@ def hmc_map_storage_to_lpar(
     target_device: str | None = None,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Map backing storage to an LPAR via a Virtual SCSI mapping on a VIOS.
 
@@ -247,6 +251,7 @@ def hmc_map_storage_to_lpar(
         storage_kind: ``VirtualDisk`` for a logical volume or ``PhysicalVolume``
             for a whole disk.
         target_device: Optional VIOS virtual-target-device name.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
@@ -262,6 +267,7 @@ def hmc_map_storage_to_lpar(
                 kind=storage_kind,
                 storage_name=storage_name,
                 target=target_device,
+                ownership_override=ownership_override,
             )
 
     return run_sync(_go)
@@ -732,6 +738,7 @@ def hmc_mount_optical_media(
     target_device: str | None = None,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Create a VirtualSCSIMapping for optical media (mount ISO to LPAR).
 
@@ -743,6 +750,7 @@ def hmc_mount_optical_media(
         media_name: Name of the VirtualOpticalMedia (ISO) in the repository.
         lpar_name_or_uuid: LPAR name or UUID to mount the media to.
         target_device: Optional vtscsi target device name to pin the mapping.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
@@ -757,6 +765,7 @@ def hmc_mount_optical_media(
                 lpar_name_or_uuid,
                 media_name=media_name,
                 target_device=target_device,
+                ownership_override=ownership_override,
             )
 
     return run_sync(_go)
@@ -769,6 +778,7 @@ def hmc_unmount_optical_media(
     media_name: str,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> str:
     """Remove a VirtualSCSIMapping for optical media (unmount).
 
@@ -809,6 +819,7 @@ def hmc_unmount_optical_media(
             or partial name can remove the wrong mapping — including a
             non-optical one such as a boot disk (#439). Do not construct this
             value; copy it from the inventory.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
@@ -822,6 +833,7 @@ def hmc_unmount_optical_media(
                 vios_name_or_uuid,
                 lpar_name_or_uuid,
                 media_name=media_name,
+                ownership_override=ownership_override,
             )
             return f"Unmounted {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
 

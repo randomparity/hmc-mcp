@@ -62,6 +62,7 @@ def hmc_add_network_adapter(
     mac_address: str | None = None,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Add a virtual Ethernet adapter to an LPAR; active LPARs require RMC.
 
@@ -74,6 +75,7 @@ def hmc_add_network_adapter(
             or ``None`` to use the HMC default.
         tagged: Whether the adapter accepts IEEE 802.1Q tagged VLAN traffic.
         mac_address: Optional 12-hex-digit MAC address, with no separators.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
@@ -91,6 +93,7 @@ def hmc_add_network_adapter(
                     virtual_switch_id=virtual_switch_id,
                     tagged=tagged,
                     mac_address=mac_address,
+                    ownership_override=ownership_override,
                 )
             ).resource
 
@@ -114,6 +117,7 @@ def hmc_add_vscsi_adapter(
     slot_number: int | None = None,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Add a virtual SCSI client adapter paired to a VIOS server slot.
 
@@ -122,6 +126,7 @@ def hmc_add_vscsi_adapter(
         vios_partition_id: Numeric VIOS partition ID from ``hmc_list_vios``.
         vios_slot: Server-side virtual slot configured on that VIOS.
         slot_number: Client virtual slot, or ``None`` for HMC auto-assignment.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
@@ -138,6 +143,7 @@ def hmc_add_vscsi_adapter(
                     vios_slot,
                     slot_number,
                     fibre_channel=False,
+                    ownership_override=ownership_override,
                 )
             ).resource
 
@@ -161,6 +167,7 @@ def hmc_add_vfc_adapter(
     slot_number: int | None = None,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Add an NPIV virtual Fibre Channel client adapter to an LPAR.
 
@@ -169,6 +176,7 @@ def hmc_add_vfc_adapter(
         vios_partition_id: Numeric VIOS partition ID from ``hmc_list_vios``.
         vios_slot: Server-side NPIV virtual slot configured on that VIOS.
         slot_number: Client virtual slot, or ``None`` for HMC auto-assignment.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
@@ -185,6 +193,7 @@ def hmc_add_vfc_adapter(
                     vios_slot,
                     slot_number,
                     fibre_channel=True,
+                    ownership_override=ownership_override,
                 )
             ).resource
 
@@ -198,6 +207,7 @@ def hmc_delete_adapter(
     adapter_uuid: str,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> str:
     """Remove an adapter by UUID, detaching its network or storage path.
 
@@ -207,6 +217,7 @@ def hmc_delete_adapter(
         lpar_name_or_uuid: Partition name or UUID containing the adapter.
         adapter_type: Adapter resource type that owns ``adapter_uuid``.
         adapter_uuid: Adapter UUID returned by ``hmc_list_adapters``.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
@@ -221,6 +232,7 @@ def hmc_delete_adapter(
                 lpar_name_or_uuid,
                 adapter_type,
                 adapter_uuid,
+                ownership_override=ownership_override,
             )
         return f"Deleted {adapter_type} {adapter_uuid} from {lpar_name_or_uuid}"
 

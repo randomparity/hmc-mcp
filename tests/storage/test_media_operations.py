@@ -12,6 +12,18 @@ from hmc_mcp.operations.storage import (
     unmount_optical_media,
 )
 
+
+@pytest.fixture(autouse=True)
+def _authorize_lpar_mutations(monkeypatch):
+    async def authorize(hmc, lpar, system, **_kwargs):
+        from hmc_mcp.resource_identity import resolve_lpar_uuid
+
+        return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations.storage._resolve_and_authorize_lpar", authorize
+    )
+
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 VG_UUID = "vg-uuid-0001"
 
