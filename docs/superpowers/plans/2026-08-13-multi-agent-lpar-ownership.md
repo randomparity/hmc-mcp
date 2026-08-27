@@ -595,9 +595,9 @@ Expected: test fails — `hmc_create_lpar` does not yet return the new shape.
 
 Add to imports at top of file:
 ```python
-from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
+from .ssh import HMCCLIError, resolve_system_cli_name, create_lpar_via_cli, stamp_lpar_ownership
 ```
-(add `stamp_lpar_ownership` to existing import of `HMCCLIError, _ssh_system_name, create_lpar_via_cli`)
+(add `stamp_lpar_ownership` to existing import of `HMCCLIError, resolve_system_cli_name, create_lpar_via_cli`)
 
 Change the `_go` coroutine to wrap the result and call the stamp:
 
@@ -627,7 +627,7 @@ Change the `_go` coroutine to wrap the result and call the stamp:
                 # --- CLI fallback (HTTP 406) ---
                 cfg = hmc.config
                 try:
-                    lpar_sys_name = await _ssh_system_name(cfg, system_uuid)
+                    lpar_sys_name = await resolve_system_cli_name(cfg, system_uuid)
                 except HMCCLIError:
                     lpar_sys_name = system_name_or_uuid
                 await create_lpar_via_cli(
@@ -655,7 +655,7 @@ Change the `_go` coroutine to wrap the result and call the stamp:
             if lpar_sys_name is None:
                 # REST path: resolve system name for SSH
                 try:
-                    lpar_sys_name = await _ssh_system_name(cfg, system_uuid)
+                    lpar_sys_name = await resolve_system_cli_name(cfg, system_uuid)
                 except (HMCCLIError, Exception):
                     lpar_sys_name = system_name_or_uuid
             token = await stamp_lpar_ownership(
@@ -776,7 +776,7 @@ Expected: passes (dry_run path is unchanged).
 
 Add `stamp_lpar_ownership` to the ssh import:
 ```python
-from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
+from .ssh import HMCCLIError, resolve_system_cli_name, create_lpar_via_cli, stamp_lpar_ownership
 ```
 
 After the "create" step succeeds and `lpar_uuid` is set (after `steps.append(_step("create", "ok", created_lpar))`), add the stamp call. The stamp needs the system name, not just the UUID. Add the stamp after the create step, before network:
@@ -786,7 +786,7 @@ After the "create" step succeeds and `lpar_uuid` is set (after `steps.append(_st
             if not failed and lpar_uuid:
                 cfg = hmc.config
                 try:
-                    sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
+                    sys_name_for_stamp = await resolve_system_cli_name(cfg, system_uuid)
                 except (HMCCLIError, Exception):
                     sys_name_for_stamp = system_name_or_uuid
                 stamp_token = await stamp_lpar_ownership(

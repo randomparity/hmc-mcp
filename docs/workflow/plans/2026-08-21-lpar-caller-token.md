@@ -367,7 +367,7 @@ Run both files — ImportError/failure expected.
 
 ```python
 from .ssh_commands import (
-    _ssh_system_name,
+    resolve_system_cli_name,
     create_lpar_via_cli,
     stamp_lpar_ownership,
     validate_caller_token,

@@ -39,7 +39,7 @@ from .lpar_ownership import (
 from .lpar_dlpar import _resolve_and_authorize_lpar
 from ..ssh.transport import HMCCLIError
 from ..ssh.lpar import (
-    _ssh_system_name,
+    resolve_system_cli_name,
     create_lpar_via_cli,
     validate_caller_token,
 )
@@ -241,7 +241,7 @@ async def create_and_stamp_lpar(
         if exc.status_code != 406:
             raise
         try:
-            system_name = await _ssh_system_name(hmc.config, system_uuid)
+            system_name = await resolve_system_cli_name(hmc.config, system_uuid)
         except HMCCLIError:
             system_name = system_name_or_uuid
         resources = creation.resources

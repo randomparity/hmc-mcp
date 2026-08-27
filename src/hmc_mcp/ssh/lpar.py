@@ -208,7 +208,7 @@ async def create_lpar_via_cli(
 # ---------------------------------------------------------------------- #
 
 
-async def _ssh_system_name(config: HMCConfig, system_uuid: str) -> str:
+async def resolve_system_cli_name(config: HMCConfig, system_uuid: str) -> str:
     """Look up a managed-system UUID's CLI SystemName over SSH.
 
     Runs ``lssyscfg -r sys -F UUID,SystemName`` and returns the row whose

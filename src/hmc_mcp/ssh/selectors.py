@@ -8,7 +8,7 @@ from ..client import HMCClient
 from ..resource_identity import is_uuid
 from ..config import HMCConfig
 from ..errors import HMCTransportError
-from .lpar import _ssh_lpar_name, _ssh_system_name
+from .lpar import _ssh_lpar_name, resolve_system_cli_name
 
 
 async def _system_name_from_rest(hmc: HMCClient, system_uuid: str) -> str:
@@ -42,7 +42,7 @@ async def resolve_system_name(
         async with HMCClient(config) as hmc:
             return await _system_name_from_rest(hmc, system_name_or_uuid)
     except HMCTransportError:
-        return await _ssh_system_name(config, system_name_or_uuid)
+        return await resolve_system_cli_name(config, system_name_or_uuid)
 
 
 async def resolve_lpar_name(

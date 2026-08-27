@@ -21,7 +21,7 @@ import pytest
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.ssh.transport import HMCCLIError
-from hmc_mcp.ssh.lpar import _ssh_lpar_name, _ssh_system_name
+from hmc_mcp.ssh.lpar import _ssh_lpar_name, resolve_system_cli_name
 from hmc_mcp.ssh.selectors import resolve_lpar_name, resolve_system_name
 
 from conftest import make_config
@@ -55,11 +55,11 @@ def _make_ssh_mock(stdout: str = "") -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_ssh_system_name_parses_matching_row():
-    """_ssh_system_name returns the name on the matching UUID,SystemName row."""
+    """resolve_system_cli_name returns the name on the matching UUID,SystemName row."""
     conn = _make_ssh_mock(_SYS_ROWS)
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
-        name = await _ssh_system_name(make_config(), SYSTEM_UUID)
+        name = await resolve_system_cli_name(make_config(), SYSTEM_UUID)
 
     assert name == SYSTEM_NAME
     cmd = conn.run.call_args[0][0]
@@ -73,7 +73,7 @@ async def test_ssh_system_name_raises_when_uuid_missing():
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         with pytest.raises(HMCCLIError, match="Could not resolve system UUID"):
-            await _ssh_system_name(make_config(), SYSTEM_UUID)
+            await resolve_system_cli_name(make_config(), SYSTEM_UUID)
 
 
 @pytest.mark.asyncio

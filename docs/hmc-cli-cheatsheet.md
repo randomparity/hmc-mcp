@@ -102,7 +102,7 @@ object.  With `--header` the first output line is the field names (required by
 **`--filter`** narrows the result set.  Format: `"filter_name=value1,value2"`.
 Common filter names: `lpar_names`, `lpar_ids`, `profile_names`.
 
-**Repository use:** UUID→name resolution (`_ssh_system_name`, `_ssh_lpar_name`);
+**Repository use:** UUID→name resolution (`resolve_system_cli_name`, `_ssh_lpar_name`);
 LPAR description, MSP, proc-compat reads (`get_lpar_description`, `get_lpar_msp`,
 `get_lpar_proc_compat`); SR-IOV LPAR-state and profile reads
 (`read_sriov_lpar_state`, `read_sriov_profile_ports`); live-test baseline and

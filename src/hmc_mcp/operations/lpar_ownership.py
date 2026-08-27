@@ -11,7 +11,7 @@ from ..client import HMCClient
 from ..errors import HMCError
 from ..resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from ..ssh.transport import HMCCLIError
-from ..ssh.lpar import _ssh_system_name, stamp_lpar_ownership
+from ..ssh.lpar import resolve_system_cli_name, stamp_lpar_ownership
 from ..ssh.description_validation import validate_lpar_description
 from ..ssh.profiles import get_lpar_description, set_lpar_description
 
@@ -196,7 +196,7 @@ async def _resolve_system_name(hmc: HMCClient, system_uuid: str, fallback: str) 
             exc_info=exc,
         )
     try:
-        return await _ssh_system_name(hmc.config, system_uuid)
+        return await resolve_system_cli_name(hmc.config, system_uuid)
     except HMCCLIError as exc:
         _logger.warning(
             "SSH system-name lookup failed for %s; using fallback %r: %s",
