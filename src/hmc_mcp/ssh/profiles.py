@@ -151,9 +151,7 @@ async def set_lpar_msp(
     return await run_hmc_command(config, cmd)
 
 
-# ---------------------------------------------------------------------- #
 # Processor compatibility (lssyscfg / chsyscfg)
-# ---------------------------------------------------------------------- #
 
 
 async def get_proc_compat_modes(
@@ -231,9 +229,7 @@ async def set_lpar_proc_compat(
     return await run_hmc_command(config, cmd)
 
 
-# ---------------------------------------------------------------------- #
 # SR-IOV adapter mode and vNICs (chhwres)
-# ---------------------------------------------------------------------- #
 
 async def backup_lpar_profiles(
     config: HMCConfig,
@@ -369,9 +365,7 @@ async def read_lpar_profile_record(
     return records[0]
 
 
-# ---------------------------------------------------------------------- #
 # NIM install via the HMC CLI ``installios`` command (ADR 0070)
-# ---------------------------------------------------------------------- #
 
 _IPV4_OCTET = r"(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])"
 _IPV4_PATTERN = re.compile(rf"^{_IPV4_OCTET}(\.{_IPV4_OCTET}){{3}}$")

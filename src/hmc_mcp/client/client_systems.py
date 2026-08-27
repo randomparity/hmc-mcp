@@ -101,9 +101,7 @@ class SystemsMixin:
         entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
 
-    # ------------------------------------------------------------------ #
     # Managed-system / VIOS power jobs
-    # ------------------------------------------------------------------ #
     async def power_on_system(
         self: SystemsClient, system_uuid: str
     ) -> dict[str, Any] | None:

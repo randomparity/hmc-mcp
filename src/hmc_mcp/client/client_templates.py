@@ -15,9 +15,7 @@ from ..jobs import deploy_partition_template_job
 
 
 class TemplatesMixin:
-    # ------------------------------------------------------------------ #
     # Template Library (/rest/api/templates/, templates+xml media type)
-    # ------------------------------------------------------------------ #
     TEMPLATES_MEDIA = "application/vnd.ibm.powervm.templates+xml"
 
     async def _templates_get(self: TemplatesClient, path: str) -> str:

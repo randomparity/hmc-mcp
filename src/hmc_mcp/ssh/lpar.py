@@ -203,9 +203,7 @@ async def create_lpar_via_cli(
     return await run_hmc_command(config, cmd)
 
 
-# ---------------------------------------------------------------------- #
 # UUID -> CLI-name lookup (SSH fallback for the REST-based resolvers)
-# ---------------------------------------------------------------------- #
 
 
 async def resolve_system_cli_name(config: HMCConfig, system_uuid: str) -> str:

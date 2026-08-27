@@ -16,9 +16,7 @@ from ..pcm import build_pcm_preferences_document
 
 
 class PcmMixin:
-    # ------------------------------------------------------------------ #
     # Performance and Capacity Monitoring (PCM)
-    # ------------------------------------------------------------------ #
     async def get_pcm_preferences(
         self: PcmClient, category: str, resource_uuid: str
     ) -> dict[str, Any]:

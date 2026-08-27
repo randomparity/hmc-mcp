@@ -364,9 +364,7 @@ def validate_memopt_scenario(
         )
 
 
-# ---------------------------------------------------------------------- #
 # HMC CLI -i attribute record grammar (see ADR 0045)
-# ---------------------------------------------------------------------- #
 # `chsyscfg`/`mksyscfg` take their configuration as one `-i` argument holding
 # an attribute record: `name=lpar1,description=web tier`.  Three characters carry
 # that record's structure, and the HMC splits the record itself *after* the

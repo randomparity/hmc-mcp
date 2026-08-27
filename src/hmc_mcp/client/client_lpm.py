@@ -20,9 +20,7 @@ from ..jobs import (
 
 
 class LpmMixin:
-    # ------------------------------------------------------------------ #
     # Live Partition Mobility (LPM)
-    # ------------------------------------------------------------------ #
     async def _lpar_job(
         self: LpmClient, lpar_uuid: str, operation: str, job_xml: str
     ) -> dict[str, Any] | None:

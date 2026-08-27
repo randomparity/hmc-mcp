@@ -60,9 +60,7 @@ def localname(tag: str) -> str:
     return tag
 
 
-# ====================================================================== #
 # Outbound escaping (ADR 0042)
-# ====================================================================== #
 
 # The two metacharacters saxutils.escape does not handle by default. Escaping
 # all five means one escaped form is safe as character data and inside a

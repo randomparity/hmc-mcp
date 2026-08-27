@@ -14,9 +14,7 @@ from ..documents import build_virtual_network_document
 
 
 class NetworkMixin:
-    # ------------------------------------------------------------------ #
     # Virtual Network management (children of ManagedSystem)
-    # ------------------------------------------------------------------ #
     async def list_virtual_switches(
         self: NetworkClient, system_uuid: str
     ) -> list[dict[str, Any]]:

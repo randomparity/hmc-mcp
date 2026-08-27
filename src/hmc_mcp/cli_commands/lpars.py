@@ -1115,9 +1115,7 @@ def lpars_provision(
             console.print(f"[yellow]Warning: {w}[/yellow]")
 
 
-# ====================================================================== #
 # LPAR Boot Order Commands
-# ====================================================================== #
 
 
 @lpars_app.command("read-boot-order")

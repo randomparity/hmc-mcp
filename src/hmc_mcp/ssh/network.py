@@ -458,9 +458,7 @@ def validate_sriov_mode(mode: SriovMode) -> SriovMode:
     return mode
 
 
-# ---------------------------------------------------------------------- #
 # LPAR profile backup/restore/sync and I/O slot assignment (bkprofdata /
 # rstprofdata / chsyscfg — no REST equivalent)
-# ---------------------------------------------------------------------- #
 
 

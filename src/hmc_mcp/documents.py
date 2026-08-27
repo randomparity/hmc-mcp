@@ -553,7 +553,6 @@ def build_managed_system_document(
     return _document_envelope("ManagedSystem", body)
 
 
-# ====================================================================== #
 # Virtual adapters (children of LogicalPartition)
 #
 # Field names taken from IBM's HmcRestClient reference implementation and
@@ -564,7 +563,6 @@ def build_managed_system_document(
 #                                        ConnectingVirtualSlotNumber, VirtualSlotNumber
 #   ClientNetworkAdapter              -> PortVLANID, VirtualSlotNumber,
 #                                        VirtualSwitchID, IsTaggedVLAN, MACAddress
-# ====================================================================== #
 
 
 def _adapter_document(
@@ -668,7 +666,6 @@ def build_client_network_adapter_document(
     return _document_envelope("ClientNetworkAdapter", body)
 
 
-# ====================================================================== #
 # Virtual storage (children of VirtualIOServer)
 #
 # Model (from IBM's HmcRestClient reference + the HMC REST spec):
@@ -680,7 +677,6 @@ def build_client_network_adapter_document(
 #   VirtualSCSIMapping  POST to the VIOS document carrying a
 #                    VirtualSCSIMappings block; connects a backing storage
 #                    (PhysicalVolume or VirtualDisk) to an LPAR (Atom link).
-# ====================================================================== #
 
 
 @escapes_string_arguments
@@ -804,13 +800,11 @@ def build_virtual_optical_mapping_document(
 """
 
 
-# ====================================================================== #
 # Virtual Network (child of ManagedSystem)
 #
 # Create: PUT /rest/api/uom/ManagedSystem/{sys}/VirtualNetwork
 # Fields: NetworkName, NetworkVLANID, VswitchID, TaggedNetwork, and an
 # AssociatedSwitch Atom link to the backing VirtualSwitch.
-# ====================================================================== #
 
 
 @escapes_string_arguments
@@ -845,13 +839,11 @@ def build_virtual_network_document(
 """
 
 
-# ====================================================================== #
 # Virtual Media Repository / Virtual Optical Media
 #
 # Both are operations via POST on a VolumeGroup (the repository lives on the
 # "VMLibrary" volume group of a VIOS). The repository name is always
 # "VMLibrary"; only BLANK optical media can be created via this API.
-# ====================================================================== #
 
 
 @escapes_string_arguments
@@ -960,7 +952,6 @@ def build_virtual_disk_delete_document(disk_name: str) -> str:
     return _document_envelope("VolumeGroup", body)
 
 
-# ====================================================================== #
 # Brokered file upload / ISO import (ADR 0031)
 #
 # Create:  POST /rest/api/uom/VirtualIOServer/{uuid}/VolumeGroup/{uuid}
@@ -972,7 +963,6 @@ def build_virtual_disk_delete_document(disk_name: str) -> str:
 # Neither document carries schemaVersion, so they render their own envelope
 # rather than going through _document_envelope. Both are transport
 # primitives for #203's future public API and are not exposed today.
-# ====================================================================== #
 
 
 @escapes_string_arguments
@@ -1007,12 +997,10 @@ def build_linked_optical_media_document(media_name: str, broker_uri: str) -> str
 """
 
 
-# ====================================================================== #
 # Session logon (/rest/api/web/Logon)
 #
 # Authenticate: PUT /rest/api/web/Logon with a LogonRequest document; the
 # response carries the X-API-Session token.
-# ====================================================================== #
 
 
 @escapes_string_arguments
@@ -1032,9 +1020,7 @@ def build_logon_request_document(user: str, password: str) -> str:
     return _document_envelope("LogonRequest", body, WEB_NS)
 
 
-# ====================================================================== #
 # UOM UserProfile and ManagementConsole RemoteAccess documents
-# ====================================================================== #
 
 
 @escapes_string_arguments

@@ -81,8 +81,6 @@ async def remove_memory_pool(
     return await run_hmc_command(config, cmd)
 
 
-# ---------------------------------------------------------------------- #
 # LPAR description and MSP (lssyscfg / chsyscfg — no REST equivalent)
-# ---------------------------------------------------------------------- #
 
 

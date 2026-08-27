@@ -295,9 +295,7 @@ class HMCClient(
             },
         )
 
-    # ------------------------------------------------------------------ #
     # Session lifecycle
-    # ------------------------------------------------------------------ #
 
     async def __aenter__(self) -> "HMCClient":
         try:
@@ -427,9 +425,7 @@ class HMCClient(
             self._session_token = None
             self._http.headers.pop("X-API-Session", None)
 
-    # ------------------------------------------------------------------ #
     # Generic request helpers
-    # ------------------------------------------------------------------ #
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         """Send one REST request and normalize transport-layer failures.
@@ -539,9 +535,7 @@ class HMCClient(
         resp = await self._request("DELETE", path, headers=self._uom_headers(None))
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
-    # ------------------------------------------------------------------ #
     # Brokered file upload helpers (/rest/api/web/File/)
-    # ------------------------------------------------------------------ #
     #
     # HMC uses a two-step brokered file protocol to import ISOs:
     #   1. PUT /rest/api/web/File/ — register the file entry; returns FileUUID
@@ -550,7 +544,6 @@ class HMCClient(
     #   3. DELETE /rest/api/web/File/{file_uuid} — release the broker slot
     #
     # Reference: project-pim/cli/utils/iso_util.py (create_iso_path pattern)
-    # ------------------------------------------------------------------ #
 
     async def _broker_file_create(self, vios_uuid: str, vg_uuid: str, filename: str) -> str:
         """Create a brokered file handle for upload (verification primitive).
@@ -676,7 +669,6 @@ class HMCClient(
                 resp.text,
             )
 
-    # ------------------------------------------------------------------ #
     # Web endpoint helpers (/rest/api/web/)
     #
     # The HMC exposes non-UOM resources under /rest/api/web/ with the MEDIA_WEB
@@ -685,7 +677,6 @@ class HMCClient(
     #
     # The session token is set on the shared httpx client during logon and
     # therefore applies to documented web resources that use these helpers.
-    # ------------------------------------------------------------------ #
 
     def _web_headers(self, extra: dict[str, str]) -> dict[str, str]:
         """Build headers for a web-endpoint request.
@@ -749,9 +740,7 @@ class HMCClient(
             self._check_web_rest000e(path, resp.status_code, resp.text)
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
 
-    # ------------------------------------------------------------------ #
     # uom resources
-    # ------------------------------------------------------------------ #
 
     async def list_uom(
         self, resource_type: str, group: str | None = None
@@ -813,9 +802,7 @@ class HMCClient(
             return []
         return _parse_feed(xml, path)
 
-    # ------------------------------------------------------------------ #
     # Virtual adapters (children of LogicalPartition)
-    # ------------------------------------------------------------------ #
 
     async def list_child(
         self, parent_type: str, parent_uuid: str, child_type: str
@@ -857,9 +844,7 @@ class HMCClient(
         entries = _parse_feed(xml, path)
         return entries[0] if entries else None
 
-    # ------------------------------------------------------------------ #
     # Jobs (long-running operations)
-    # ------------------------------------------------------------------ #
 
     async def submit_job(
         self, job_path: str, job_request_xml: str
@@ -992,9 +977,7 @@ class HMCClient(
         _reject_non_job_path(path)
         await self._delete(path)
 
-    # ------------------------------------------------------------------ #
     # Raw escape hatch
-    # ------------------------------------------------------------------ #
 
     async def raw_get(
         self, path: str, accept: str = "*/*"

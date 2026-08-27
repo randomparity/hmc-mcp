@@ -91,9 +91,7 @@ def _extract_system_uuid_from_vios(vios_elem: ET.Element) -> str:
 
 
 class StorageMixin:
-    # ------------------------------------------------------------------ #
     # Virtual storage (children of VirtualIOServer)
-    # ------------------------------------------------------------------ #
     def get_lpar_link(self: StorageClient, lpar_uuid: str) -> str:
         """Atom SELF href for an LPAR (used when building mappings)."""
         return f"{self._rest_base_url}/rest/api/uom/LogicalPartition/{lpar_uuid}"
@@ -203,9 +201,7 @@ class StorageMixin:
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
-    # ------------------------------------------------------------------ #
     # Storage Mapping Inventory and Detach
-    # ------------------------------------------------------------------ #
     async def list_storage_mappings(
         self: StorageClient, vios_uuid: str, lpar_uuid: str | None = None
     ) -> list[dict[str, Any]]:
@@ -308,9 +304,7 @@ class StorageMixin:
                 f"POST {post_path} failed", response.status_code, response.text
             )
 
-    # ------------------------------------------------------------------ #
     # Virtual media repository (VolumeGroup read-modify-write operations)
-    # ------------------------------------------------------------------ #
 
     async def _get_vg_raw_xml(
         self: StorageClient, vios_uuid: str, vg_uuid: str
@@ -686,9 +680,7 @@ class StorageMixin:
                 optical_media.append(media_list)
 
         return optical_media
-    # ------------------------------------------------------------------ #
     # Virtual Optical Mapping (VirtualSCSIMapping for VirtualOpticalMedia)
-    # ------------------------------------------------------------------ #
     async def list_optical_mappings(
         self: StorageClient, vios_uuid: str, lpar_uuid: str | None = None
     ) -> list[dict[str, Any]]:

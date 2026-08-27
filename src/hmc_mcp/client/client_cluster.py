@@ -13,9 +13,7 @@ from ..jobs import DeviceType, LuType, create_logical_unit_job, delete_logical_u
 
 
 class ClusterMixin:
-    # ------------------------------------------------------------------ #
     # Cluster / Shared Storage Pool (SSP)
-    # ------------------------------------------------------------------ #
     async def list_clusters(self: ClusterClient) -> list[dict[str, Any]]:
         return await self.list_uom("Cluster")
 

@@ -385,9 +385,7 @@ def delete_logical_unit_job(lu_udid: str) -> str:
     )
 
 
-# ---------------------------------------------------------------------- #
 # Live Partition Mobility (LPM)
-# ---------------------------------------------------------------------- #
 
 
 def _lpm_params(target_system: str, extra: dict[str, str]) -> dict[str, str]:
@@ -507,9 +505,7 @@ def remote_restart_lpar_job(
     return build_job_request("RemoteRestart", "LogicalPartition", params)
 
 
-# ---------------------------------------------------------------------- #
 # Template Library
-# ---------------------------------------------------------------------- #
 
 
 def deploy_partition_template_job(

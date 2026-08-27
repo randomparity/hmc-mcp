@@ -619,9 +619,7 @@ def hmc_power_off_lpar(
     return run_sync(_go)
 
 
-# ====================================================================== #
 # LPAR Boot Order Tools
-# ====================================================================== #
 
 
 @tool(effect="read", operation="boot_order.read", target_kind="lpar")
