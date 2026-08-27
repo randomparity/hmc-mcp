@@ -51,15 +51,35 @@ class AuditMementoOverrideWarning(UserWarning):
     """
 
 
+#: Largest number of override states :data:`_reported_memento_overrides` retains
+#: before it starts over. Reached only on the library path, and generously above
+#: what the served path can produce: there the pair comes from the environment,
+#: from CLI flags, or from a named TOML profile, so the count is the operator's
+#: distinct profiles and an MCP client — which supplies only the profile selector
+#: — cannot push it. A ``hmc_mcp.api`` consumer *can*: ``HMCConfig`` is an
+#: exported facade type and both fields are ordinary constructor arguments, so a
+#: multi-agent host varying ``agent_id`` per agent mints a fresh state each time.
+#: ``audit_memento`` carries no length validation either, so an entry is unbounded
+#: in size as well, and the set is what keeps the string alive after its config is
+#: collected.
+_MAX_REPORTED_MEMENTO_OVERRIDES = 64
+
 #: Override states :meth:`HMCConfig._warn_audit_memento_override` has already
-#: reported, as ``(agent_id, audit_memento)`` pairs. Process-global and
-#: deliberately never pruned: it must outlive the individual ``HMCConfig``, since
-#: what it throttles is one warning per *config*, repeated once per construction.
+#: reported, as ``(agent_id, audit_memento)`` pairs. Process-global and outliving
+#: any individual ``HMCConfig``, since what it throttles is one warning per
+#: *config*, repeated once per construction.
 #:
-#: Growth is bounded by the operator's own configuration, not by the caller.
-#: The pair is read from the environment, from CLI flags, or from a named TOML
-#: profile; the profile selector an MCP tool accepts chooses among the profiles
-#: in that file, so a client cannot mint override states to fill this set.
+#: Cleared wholesale on reaching the cap rather than evicted one entry at a time:
+#: the failure it degrades to is re-reporting states already reported, which is
+#: the pre-throttle behaviour and is bounded by the cap, where an LRU would need
+#: ordering state to save nothing that matters at 64 entries.
+#:
+#: This throttle sits *above* the ``warnings`` filters — a consumer running
+#: ``simplefilter("always")`` or ``PYTHONWARNINGS=always`` still gets one warning
+#: per state, not one per construction. That is the point of it, but it means the
+#: filters are not the whole story for this category, and the only reset is this
+#: private name. Nothing supported exposes one; if a consumer ever needs to
+#: observe the warning again, that is the decision to make then.
 _reported_memento_overrides: set[tuple[str, str]] = set()
 
 
@@ -348,7 +368,11 @@ class HMCConfig(BaseSettings):
         The dedup key is the ``(agent_id, audit_memento)`` pair rather than this
         call site, so an operator who *changes* either value still gets a line for
         the new state; keying on the site would hide exactly the event worth
-        seeing. ``_log_unresolved`` in ``server_permissions`` throttles for the
+        seeing. The retained set is capped — see
+        :data:`_MAX_REPORTED_MEMENTO_OVERRIDES` — because on the library path the
+        pair is caller-supplied and a host varying ``agent_id`` per agent would
+        otherwise grow it without bound. ``_log_unresolved`` in
+        ``server_permissions`` throttles for the
         same reason but not by the same mechanism: it demotes the repeat to
         ``DEBUG``, where this drops it. Its repeat carries a *distinct* ``reason``
         worth recovering at a raised level; this one is a verbatim re-render of a
@@ -369,6 +393,8 @@ class HMCConfig(BaseSettings):
         override = (self.agent_id, self.audit_memento)
         if override in _reported_memento_overrides:
             return self
+        if len(_reported_memento_overrides) >= _MAX_REPORTED_MEMENTO_OVERRIDES:
+            _reported_memento_overrides.clear()
         msg = (
             f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
             f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "

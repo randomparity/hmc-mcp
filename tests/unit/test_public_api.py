@@ -728,6 +728,13 @@ def test_every_exported_owned_class_is_a_model_shape_or_declared_fieldless() -> 
     already reaches past dataclasses and Pydantic elsewhere (``jobs`` defines
     ``TypedDict`` sources), so pin what may legitimately carry no readable fields:
     ``HMCClient``, whose supported surface is a lifecycle allowlist, and the errors.
+
+    Warning categories are a third such kind since #546. ``Warning`` subclasses
+    ``Exception``, so the ``BaseException`` excuse written for the error types
+    admits them silently — a coincidence of the exception hierarchy standing in for
+    a decision. ADR 0029's amendment records the decision; the second half of this
+    test is what makes the suite express it, by pinning which warning categories
+    are exported and what is actually supported about one.
     """
     unreadable = sorted(
         name
@@ -743,6 +750,24 @@ def test_every_exported_owned_class_is_a_model_shape_or_declared_fieldless() -> 
         "either they are models in a shape `_model_field_hints` does not know, or "
         "the ADR must record why they expose no supported fields"
     )
+
+    exported_warnings = sorted(
+        name
+        for name in api.__all__
+        if inspect.isclass(exported := getattr(api, name))
+        and _is_owned(exported.__module__)
+        and issubclass(exported, Warning)
+    )
+    assert exported_warnings == ["AuditMementoOverrideWarning"]
+    for name in exported_warnings:
+        category = getattr(api, name)
+        # What the amendment says is supported about a warning category: the name,
+        # and that a consumer's existing broad `UserWarning` filter keeps catching
+        # it. Its inherited constructor promises nothing and is not frozen.
+        assert issubclass(category, UserWarning), (
+            f"{name} must subclass UserWarning: ADR 0029's amendment supports it as "
+            "a filter target a broad UserWarning filter still catches"
+        )
 
 
 def _supported_models(owned: dict[tuple[str, str], object]) -> list[type]:

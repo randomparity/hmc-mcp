@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
+from hmc_mcp import config as config_module
 from hmc_mcp.config import build_config
 from hmc_mcp.config import (
     AuditMementoOverrideWarning,
@@ -546,6 +547,26 @@ def test_audit_memento_override_warning_is_filterable_alone():
         )
 
     assert cfg.effective_audit_memento == "hmc-mcp:quiet-agent"
+
+
+def test_audit_memento_override_dedup_set_is_capped():
+    """The retained state cannot grow without bound on the library path.
+
+    ``HMCConfig`` is an `hmc_mcp.api` export and both fields are ordinary
+    constructor arguments, so a multi-agent host varying ``agent_id`` per agent
+    mints a fresh override state on every construction — and the set is what keeps
+    each ``audit_memento`` string alive after its config is collected. On reaching
+    the cap it starts over, which re-reports states already reported: the
+    pre-throttle behaviour, bounded, and never silence.
+    """
+    cap = config_module._MAX_REPORTED_MEMENTO_OVERRIDES
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", AuditMementoOverrideWarning)
+        for index in range(cap * 3):
+            HMCConfig.from_mapping(
+                {"agent_id": f"agent-{index}", "audit_memento": "mine"}
+            )
+            assert len(config_module._reported_memento_overrides) <= cap
 
 
 def test_audit_memento_override_warning_reaches_the_supported_facade():

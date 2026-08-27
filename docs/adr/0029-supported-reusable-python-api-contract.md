@@ -389,6 +389,40 @@ flexible across HMC firmware, so consumers must tolerate additional or missing r
 This ADR defines the contract only. Issues #189 through #192 own dependency extras, the facade and
 contract tests, installed-wheel proof, and user documentation respectively.
 
+## Amendment (#546): warning categories are a third fieldless exported class kind
+
+The Decision above says only two exported class kinds expose no field its transitive type clause
+can read — `HMCClient` and the exported error types — and that a contract test holds the facade to
+exactly that pair. `AuditMementoOverrideWarning` (#546) is a third, and the sentence is no longer
+exhaustive.
+
+It was admitted without being decided. The contract test
+(`test_every_exported_owned_class_is_a_model_shape_or_declared_fieldless`) excuses a fieldless
+export by `issubclass(exported, BaseException)`, and `Warning` subclasses `Exception`, so a warning
+category passes the gate written for the error types. That is a coincidence of the exception
+hierarchy, not a decision, and the sentence it slipped past is the one a maintainer would read to
+learn whether it belongs. The test now names the warning categories separately from the error
+types, so the third kind is admitted deliberately and a fourth still fails.
+
+**What is supported about a warning category is its identity, not its constructor.** The Decision
+gives the two original fieldless kinds a supported surface of `__init__`, which for a warning
+category is inherited from `Warning` and promises nothing worth freezing. What a consumer is told
+to rely on instead is that the name is stable, that it subclasses `UserWarning` — so an existing
+broad `filterwarnings` keeps catching it — and that it is the category the package actually passes
+to `warnings.warn` at the documented site. Renaming it, reparenting it away from `UserWarning`, or
+raising the site with a different category are each a manifest change under the rule above.
+
+**Why export one at all.** A filter target is useless to a consumer if the name may move: telling
+someone to `filterwarnings` on a category reachable only from `hmc_mcp.config` offers them an
+import this record calls an implementation detail. The category exists precisely so a consumer can
+silence one warning without silencing every `UserWarning` in their process, which is a supported
+use or it is nothing.
+
+**What this amendment does not settle.** The throttle behind the category is process-global state
+with no supported reset, so a consumer cannot make the warning fire twice through the `warnings`
+filters alone. That is a property of `hmc_mcp.config`, not of this contract, and no supported
+surface for it is added here.
+
 ## Considered & rejected
 
 **Continue without a supported reusable import boundary.** This preserves maximum internal

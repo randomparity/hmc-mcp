@@ -695,7 +695,12 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   cannot render, so it contributes no digest entry. It is exported because ADR 0029 makes
   `hmc_mcp.api` the only supported import path, and a filter target reachable only from
   `hmc_mcp.config` would be one this project may move without a compatibility release — a
-  consumer told to `filterwarnings` on the category needs a name that holds still.
+  consumer told to `filterwarnings` on the category needs a name that holds still. This is
+  the first exported warning category, a third fieldless class kind beyond `HMCClient` and
+  the error types, and ADR 0029's amendment records what is supported about one: the name,
+  and that it subclasses `UserWarning` so an existing broad filter keeps catching it. Its
+  inherited constructor is not part of that surface. Renaming it, reparenting it away from
+  `UserWarning`, or raising the site with a different category are each manifest changes.
 - Fixed: `set_sriov_adapter_mode` appeared twice in `hmc_mcp.api.__all__` (#446). The name is
   imported once, so the duplicate was inert at runtime, but ADR 0029 calls `__all__` an
   exhaustive manifest and a repeated entry makes it malformed. The export set is unchanged.
