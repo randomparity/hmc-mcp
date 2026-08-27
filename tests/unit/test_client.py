@@ -12,7 +12,7 @@ import pytest
 import respx
 from defusedxml import ElementTree as DET
 
-from hmc_mcp import audit
+from hmc_mcp import audit_sink
 from hmc_mcp.client import HMCClient, HMCError
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCTransportError
@@ -376,7 +376,7 @@ def _capture_audit() -> list[dict]:
         def emit(self, record: logging.LogRecord) -> None:
             events.append(json.loads(record.getMessage()))
 
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.addHandler(_Collect())
     logger.setLevel(logging.INFO)
     logger.propagate = False

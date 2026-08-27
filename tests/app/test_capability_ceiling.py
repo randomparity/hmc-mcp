@@ -11,6 +11,7 @@ import asyncio
 import pytest
 from fastmcp import FastMCP
 
+from hmc_mcp import audit_sink
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import (
@@ -911,11 +912,10 @@ def test_the_serve_path_counts_after_the_toggle_and_writes_only_to_stderr(capsys
     nothing at all.
     """
     import hmc_mcp.server as server_app
-    from hmc_mcp import audit
 
     policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
     application = server_app._serve_application(True, policy)
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink must settle, not stall"
 
     assert _names(application) == {"hmc_run_command"}
 
@@ -931,11 +931,10 @@ def test_the_serve_path_warns_once_on_a_genuinely_empty_surface(capsys):
     Drained before reading for the reason the test above gives.
     """
     import hmc_mcp.server as server_app
-    from hmc_mcp import audit
 
     policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
     application = server_app._serve_application(False, policy)
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink must settle, not stall"
 
     assert _names(application) == set()
 
@@ -987,13 +986,12 @@ def test_an_unusable_stderr_neither_fails_the_start_nor_reaches_stdout(
     import sys
 
     import hmc_mcp.server as server_app
-    from hmc_mcp import audit
 
     policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
     monkeypatch.setattr(sys, "stderr", _unusable_stderr(state, tmp_path))
 
     application = server_app._serve_application(False, policy)
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink must settle, not stall"
 
     assert _names(application) == set()
     assert capsys.readouterr().out == ""

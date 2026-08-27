@@ -15,7 +15,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp import server_command, server_lpars
+from hmc_mcp import audit_sink, server_command, server_lpars
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.dispatch_scope import dispatch_authorizer
@@ -640,9 +640,8 @@ def _stderr(capsys) -> str:
     width, so an assertion against the unnormalized text asserts against the
     terminal size of whoever ran it.
     """
-    from hmc_mcp import audit
 
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink must settle, not stall"
     return " ".join(capsys.readouterr().err.split())
 
 
@@ -1014,9 +1013,8 @@ def test_a_hostile_tool_error_cannot_forge_an_audit_record(denial_filter, capsys
     with pytest.raises(ToolError):
         _call(application, "hostile", {})
 
-    from hmc_mcp import audit
 
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink must settle, not stall"
     err = capsys.readouterr().err
     for line in err.splitlines():
         try:

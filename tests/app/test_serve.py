@@ -9,7 +9,7 @@ import logging
 import socket
 from unittest.mock import patch
 
-from hmc_mcp import audit
+from hmc_mcp import audit_sink
 
 import pytest
 from click import unstyle
@@ -252,7 +252,7 @@ def test_an_explicit_audit_level_is_set_before_the_sink_installs():
     Order is the whole feature: a level set after the install would be
     indistinguishable from the sink's own default.
     """
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.setLevel(logging.NOTSET)
     server_app._serve_application(False, _legacy(), audit_level=logging.WARNING)
 
@@ -262,7 +262,7 @@ def test_an_explicit_audit_level_is_set_before_the_sink_installs():
 
 def test_omitting_the_audit_level_leaves_the_documented_default():
     """No flag, no setLevel: the sink's own NOTSET rule picks INFO."""
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.setLevel(logging.NOTSET)
     with patch.object(FastMCP, "run"):
         server_app.main_stdio(_legacy())

@@ -17,7 +17,7 @@ import pytest
 
 from conftest import make_config
 
-from hmc_mcp import api, audit
+from hmc_mcp import api, audit_sink
 from hmc_mcp.operations_install import InstallHandle, install_lpar_os, install_vios
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_commands import INSTALLIOS_PID_PREFIX, build_installios_command
@@ -237,14 +237,14 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     the root's ``WARNING`` — dropped before formatting, and below
     ``logging.lastResort``'s threshold too.
     """
-    audit.install_audit_sink()
+    audit_sink.install_audit_sink()
     hmc = _hmc()
     hmc.config = make_config(host="hmc.test", agent_id="agent-7")
 
     with _patch_ssh(_Ssh()):
         result = await operation(hmc, "target1", "sys1", **_REQUEST)
 
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink did not settle"
+    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink did not settle"
     captured = capsys.readouterr()
     assert captured.out == "", "an audit record must never reach the JSON-RPC stream"
     record = _one_install_record(captured.err)
@@ -266,7 +266,7 @@ async def test_a_submission_is_recorded_for_a_bare_api_consumer(operation, capsy
     """
     # `audit` closes propagation at import (#272); the autouse isolation fixture
     # reopens it, so this restores the shipped state rather than configuring it.
-    logging.getLogger(audit.AUDIT_LOGGER_NAME).propagate = False
+    logging.getLogger(audit_sink.AUDIT_LOGGER_NAME).propagate = False
     saved_root = list(logging.root.handlers)
     logging.root.handlers.clear()
     hmc = _hmc()
@@ -292,7 +292,7 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
     needs the partition and the log path — and where a record written after a
     successful submit would not exist.
     """
-    audit.install_audit_sink()
+    audit_sink.install_audit_sink()
     hmc = _hmc()
 
     async def fail(config, command):
@@ -302,7 +302,7 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
         with pytest.raises(HMCCLIError):
             await operation(hmc, "target1", "sys1", **_REQUEST)
 
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink did not settle"
+    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink did not settle"
     record = _one_install_record(capsys.readouterr().err)
     assert (record["system"], record["partition"]) == ("sys1", "target1")
 
@@ -314,7 +314,7 @@ async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
 ):
     """A request refused by validation or name resolution submits nothing, so it
     is not an attempt against any partition's disks and leaves no record."""
-    audit.install_audit_sink()
+    audit_sink.install_audit_sink()
 
     with _patch_ssh(_Ssh()):
         with pytest.raises(ValueError, match="IPv4"):
@@ -329,7 +329,7 @@ async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
                 **_REQUEST,
             )
 
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink did not settle"
+    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink did not settle"
     assert _install_records(capsys.readouterr().err) == []
 
 

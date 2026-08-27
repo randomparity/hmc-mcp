@@ -12,8 +12,8 @@ import httpx
 import pytest
 import respx
 
-from hmc_mcp import audit
-from hmc_mcp.audit import AUDIT_LOGGER_NAME
+from hmc_mcp import audit_sink
+from hmc_mcp.audit_sink import AUDIT_LOGGER_NAME
 from hmc_mcp.config import HMCConfig
 
 
@@ -129,7 +129,7 @@ def _restore_third_party_loggers() -> None:
 def isolate_audit_logging():
     """Give every test a pristine ``hmc_mcp.audit`` logger, and restore it after.
 
-    ``audit.install_audit_sink`` mutates process-global state: it sets
+    ``audit_sink.install_audit_sink`` mutates process-global state: it sets
     ``propagate = False`` unconditionally, attaches a handler, and sets a level.
     Several tests call it directly, and ``server._serve_application`` calls it too
     — which ``tests/app/test_capability_ceiling.py`` and
@@ -189,11 +189,11 @@ def isolate_audit_logging():
         # `flush`/`drain`.
         stderr, sys.stderr = sys.stderr, io.StringIO()
         try:
-            audit._SINK.drain(audit._DRAIN_TIMEOUT)
+            audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT)
         finally:
             sys.stderr = stderr
-        with audit._SINK._state:
-            audit._SINK._dropped = 0
+        with audit_sink._SINK._state:
+            audit_sink._SINK._dropped = 0
 
 
 @dataclass
@@ -251,7 +251,7 @@ def full_stderr_pipe():
         yield FullPipe(stream=stream, read_fd=read_fd, capacity=capacity)
     finally:
         os.close(read_fd)
-        audit._SINK.drain(audit._DRAIN_TIMEOUT)
+        audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT)
         try:
             stream.close()
         except OSError:

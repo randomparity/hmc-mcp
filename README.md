@@ -947,7 +947,8 @@ src/hmc_mcp/
   dispatch_scope.py          # the dispatch-boundary authorization decision
   target_scope.py            # dispatch-time authorization of the targets a call names
   connection_scope.py        # dispatch-time authorization of the connection a call selects
-  audit.py       # one audit record per authorization decision: vocabulary, rendering, sink
+  audit.py       # audit event vocabulary and record construction
+  audit_sink.py  # non-blocking audit and diagnostic transport
   tool_registry.py           # local MCP tool collection, each tool carrying ToolSecurity
   _app.py        # shared FastMCP instance, sync-run and SSH helpers, entry points
   server.py      # thin aggregator importing every server_*.py tool module

@@ -22,7 +22,7 @@ import pytest
 
 from conftest import make_config
 
-from hmc_mcp import audit
+from hmc_mcp import audit_sink
 from hmc_mcp.client import HMCClient
 from hmc_mcp.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
 from hmc_mcp.documents import LparResources
@@ -412,7 +412,7 @@ async def test_an_override_audits_one_partition_and_the_caller_s_selector(
     records = [
         json.loads(record.getMessage())
         for record in caplog.records
-        if record.name == audit.AUDIT_LOGGER_NAME
+        if record.name == audit_sink.AUDIT_LOGGER_NAME
     ]
     assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
     assert records[0]["event"] == "ownership-override"

@@ -41,7 +41,7 @@ from pathlib import Path
 
 import pytest
 
-from hmc_mcp import audit, server as server_app
+from hmc_mcp import audit, audit_sink, server as server_app
 from hmc_mcp.access_policy import compile_access_policy
 from hmc_mcp.connection_scope import ConnectionScopeError
 from hmc_mcp.dispatch_scope import dispatch_authorizer
@@ -120,7 +120,7 @@ def records() -> list[dict]:
         def emit(self, record: logging.LogRecord) -> None:
             parsed.append(json.loads(record.getMessage()))
 
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.addHandler(_Collect())
     logger.setLevel(logging.INFO)
     logger.propagate = False
@@ -552,7 +552,7 @@ def test_a_wedged_stderr_does_not_block_a_dispatch(full_stderr_pipe):
     padding and nothing reading it — over more calls than the ADR's 120-170 figure
     needs to fill one, with the ADR 0038/0039 error still raised each time.
     """
-    audit.install_audit_sink()
+    audit_sink.install_audit_sink()
     saved, sys.stderr = sys.stderr, full_stderr_pipe.stream
     denials: list[object] = []
     try:
@@ -561,7 +561,7 @@ def test_a_wedged_stderr_does_not_block_a_dispatch(full_stderr_pipe):
         )
     finally:
         full_stderr_pipe.read_available()
-        audit._SINK.drain(audit._DRAIN_TIMEOUT)
+        audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT)
         sys.stderr = saved
 
     assert returned, "an undrained stderr pipe blocked the dispatch boundary (#269)"
@@ -585,7 +585,7 @@ def test_startup_warnings_do_not_block_a_start(full_stderr_pipe):
         )
     finally:
         full_stderr_pipe.read_available()
-        audit._SINK.drain(audit._DRAIN_TIMEOUT)
+        audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT)
         sys.stderr = saved
 
     assert returned, "an undrained stderr pipe blocked a server start (#269)"

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from hmc_mcp import audit, cli_lpars, operations_provision, server_lpars
+from hmc_mcp import audit_sink, cli_lpars, operations_provision, server_lpars
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations_lpar import power_lpar
 from hmc_mcp.ssh import HMCCLIError
@@ -226,7 +226,7 @@ async def test_ownership_override_submits_the_job_and_is_audited(caplog) -> None
     records = [
         json.loads(record.getMessage())
         for record in caplog.records
-        if record.name == audit.AUDIT_LOGGER_NAME
+        if record.name == audit_sink.AUDIT_LOGGER_NAME
     ]
     assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
     assert records[0]["event"] == "ownership-override"

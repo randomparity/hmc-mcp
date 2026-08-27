@@ -20,7 +20,7 @@ Spec test -> node id. This map is checked by
   6b  test_a_profile_named_unresolved_is_indistinguishable_from_the_sentinel
   7   test_attribution_is_unverified_and_sourced_when_the_env_is_unset
   8   test_reasons_matches_the_literal
-  8a  test_only_audit_resolves_the_audit_logger
+  8a  test_only_audit_sink_resolves_the_audit_logger
   9   test_a_record_reaches_stderr_and_not_stdout
   10  test_the_sink_does_not_propagate_to_an_ancestor_handler
   11,12,13 test_a_stream_that_cannot_be_written_drops_and_says_so
@@ -93,7 +93,7 @@ from typing import get_args
 
 import pytest
 
-from hmc_mcp import audit
+from hmc_mcp import audit, audit_sink
 
 SENTINEL = "SENTINEL-DO-NOT-LOG-9c1f"
 
@@ -106,7 +106,7 @@ def _capture() -> list[str]:
         def emit(self, record: logging.LogRecord) -> None:
             lines.append(record.getMessage())
 
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.addHandler(_Collect())
     logger.setLevel(logging.INFO)
     logger.propagate = False
@@ -120,7 +120,7 @@ def _flush() -> None:
     reached the logger — has to wait for the writer thread, and has to fail rather
     than time out silently if it never lands.
     """
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), (
+    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), (
         "the sink did not settle: a submitted line neither landed nor dropped"
     )
 
@@ -495,7 +495,7 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
         system="s", partition="p", log_path="/l", host="hmc.test", agent_id="a"
     )
     emitted.add(_one(lines)["event"])
-    emitted.add(json.loads(audit._drop_marker(1))["event"])
+    emitted.add(json.loads(audit_sink._drop_marker(1))["event"])
     assert emitted == audit.EVENTS, "every declared event must be reachable"
 
 
@@ -707,7 +707,7 @@ def test_the_install_record_is_emitted_at_warning():
         def emit(self, record: logging.LogRecord) -> None:
             levels.append(record.levelno)
 
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.addHandler(_Level())
     logger.setLevel(logging.INFO)
     audit.record_install_attempted(
@@ -763,31 +763,32 @@ def test_a_long_partition_records_a_log_path_that_does_not_exist(length, recover
     assert (recomposed == real) is recoverable
 
 
-def test_only_audit_resolves_the_audit_logger():
-    """Spec 8a. The logger is reserved, and `audit` imports nothing from us."""
+def test_only_audit_sink_resolves_the_audit_logger():
+    """Spec 8a. The sink owns the logger and has no package dependencies."""
     package = Path(audit.__file__).parent
     offenders = [
         path.name
         for path in package.glob("*.py")
-        if path.name != "audit.py" and audit.AUDIT_LOGGER_NAME in path.read_text()
+        if path.name != "audit_sink.py"
+        and audit_sink.AUDIT_LOGGER_NAME in path.read_text()
     ]
     assert offenders == [], f"{offenders} name the reserved audit logger"
 
-    source = Path(audit.__file__).read_text()
+    source = Path(audit_sink.__file__).read_text()
     assert "from ." not in source and "from hmc_mcp" not in source, (
-        "audit.py must import nothing from the package: target_scope imports "
-        "Reason from it, so any import back is a cycle"
+        "audit_sink.py must import nothing from the package so audit can depend "
+        "on its emission boundary without a cycle"
     )
 
 
 def test_a_record_reaches_stderr_and_not_stdout(capsys):
     """Spec 9."""
-    audit.install_audit_sink()
+    audit_sink.install_audit_sink()
     audit.record_ownership_override(system="sys-a", lpar="db-01", host="hmc.test", agent_id="agent-7")
     # Through the handler's own `flush`, which is what `logging.shutdown` calls at
     # interpreter exit — and the reason that call cannot become the hang #269 is
     # about, since it is the sink's bounded drain rather than an unbounded join.
-    logging.getLogger(audit.AUDIT_LOGGER_NAME).handlers[0].flush()
+    logging.getLogger(audit_sink.AUDIT_LOGGER_NAME).handlers[0].flush()
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err.strip())["event"] == "ownership-override"
@@ -804,8 +805,8 @@ def test_the_sink_does_not_propagate_to_an_ancestor_handler(capsys):
     collector = _Collect()
     logging.root.addHandler(collector)
     try:
-        audit.install_audit_sink()
-        assert logging.getLogger(audit.AUDIT_LOGGER_NAME).propagate is False
+        audit_sink.install_audit_sink()
+        assert logging.getLogger(audit_sink.AUDIT_LOGGER_NAME).propagate is False
         audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
         _flush()
         capsys.readouterr()
@@ -817,11 +818,11 @@ def test_the_sink_does_not_propagate_to_an_ancestor_handler(capsys):
 def _private_sink(capacity: int = 8, drain_timeout: float = 2.0):
     """A sink of this test's own, so nothing here depends on process-global state.
 
-    ``audit._SINK`` is shared with every other test in the session and carries a
+    ``audit_sink._SINK`` is shared with every other test in the session and carries a
     live daemon thread; a test that wants to observe a drop counter, a shutdown, or
     a blocked writer needs an instance it alone owns.
     """
-    sink = audit._StderrSink(capacity, drain_timeout)
+    sink = audit_sink._StderrSink(capacity, drain_timeout)
     try:
         yield sink
     finally:
@@ -889,7 +890,7 @@ def test_the_module_closes_propagation_at_import(tmp_path):
     fixture resets `propagate` to True for every test in this session — so an
     in-process assertion would read the fixture's value, not the shipped one."""
     probe = (
-        "import logging, hmc_mcp.audit as a; "
+        "import logging, hmc_mcp.audit_sink as a; "
         "print(logging.getLogger(a.AUDIT_LOGGER_NAME).propagate)"
     )
     result = subprocess.run(
@@ -904,7 +905,7 @@ def test_an_unconfigured_logger_still_reaches_last_resort(capsys):
     """The other half of #272's fix: closing propagation must not cost a CLI user
     the record. `callHandlers` consults `lastResort` when the walk finds zero
     handlers, which `propagate` does not affect."""
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.handlers.clear()
     logger.propagate = False
     saved = list(logging.root.handlers)
@@ -920,38 +921,38 @@ def test_an_unconfigured_logger_still_reaches_last_resort(capsys):
 def test_a_foreign_writers_bad_record_does_not_raise_into_them(capsys):
     """A stdlib handler never raises into its caller, and this is an attachment
     point the operator documentation invites others to use."""
-    audit.install_audit_sink()
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    audit_sink.install_audit_sink()
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
 
     class Hostile:
         def __str__(self) -> str:
             raise RuntimeError("this record cannot be rendered")
 
     # Raised while the handler renders the message, not while audit builds it, so
-    # audit._emit's guard is not what saves the caller here.
+    # audit_sink.emit's guard is not what saves the caller here.
     logger.warning("%s", Hostile())
     capsys.readouterr()
 
 
 def test_install_is_idempotent_and_defers_to_what_the_operator_set():
     """Spec 14. Configured wins; unconfigured gets a default."""
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
-    audit.install_audit_sink()
-    audit.install_audit_sink()
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
+    audit_sink.install_audit_sink()
+    audit_sink.install_audit_sink()
     assert len(logger.handlers) == 1
     assert logger.level == logging.INFO
 
     logger.handlers.clear()
     logger.setLevel(logging.WARNING)
-    audit.install_audit_sink()
+    audit_sink.install_audit_sink()
     assert logger.level == logging.WARNING, "an operator's level must survive"
 
 
 def test_a_preattached_stdout_handler_is_deferred_to(capsys):
     """Spec 14a. The deferral is a chosen behaviour, not an accident."""
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.addHandler(logging.StreamHandler(sys.stdout))
-    audit.install_audit_sink()
+    audit_sink.install_audit_sink()
     assert len(logger.handlers) == 1, "install must not add a second handler"
     logger.setLevel(logging.INFO)
     audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
@@ -1000,7 +1001,7 @@ def test_the_line_equals_the_message_and_records_do_not_share_a_line(capsys):
     assert not hasattr(logging.Handler, "terminator")
     assert logging.StreamHandler.terminator == "\n"
 
-    audit.install_audit_sink()
+    audit_sink.install_audit_sink()
     audit.record_ownership_override(system="one", lpar="l", host="hmc.test", agent_id="a")
     audit.record_ownership_override(system="two", lpar="l", host="hmc.test", agent_id="a")
     _flush()
@@ -1009,7 +1010,7 @@ def test_the_line_equals_the_message_and_records_do_not_share_a_line(capsys):
     assert len(lines) == 2, "two records must not share a physical line"
     assert [json.loads(line)["system"] for line in lines] == ["one", "two"]
 
-    handler = logging.getLogger(audit.AUDIT_LOGGER_NAME).handlers[0]
+    handler = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME).handlers[0]
     assert handler.formatter is None, "no Formatter may wrap the record"
 
 
@@ -1023,7 +1024,7 @@ def test_the_handler_issues_one_write_per_record(monkeypatch):
             writes.append(data)
             return len(data)
 
-    audit.install_audit_sink()
+    audit_sink.install_audit_sink()
     monkeypatch.setattr(sys, "stderr", _Counting())
     audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
     _flush()
@@ -1042,10 +1043,10 @@ def test_a_handler_without_a_formatter_renders_the_message_and_nothing_else(caps
     ``exc_info``. ``sink_handler`` must not take that fallback: the audit stream's
     contract is that the message *is* the record, one line of ASCII JSON.
     """
-    handler = audit.sink_handler()
+    handler = audit_sink.sink_handler()
     assert handler.formatter is None
 
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     try:
@@ -1061,10 +1062,10 @@ def test_a_handler_without_a_formatter_renders_the_message_and_nothing_else(caps
 
 def test_a_handler_with_a_formatter_carries_the_traceback_to_the_sink(capsys):
     """The other arm, which is what ADR 0051 attaches to the ``fastmcp`` logger."""
-    handler = audit.sink_handler()
+    handler = audit_sink.sink_handler()
     handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
 
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     try:
@@ -1106,9 +1107,9 @@ def test_a_foreign_rendering_cannot_forge_a_record_on_this_stream(capsys):
     column and hard-wrapped, so column 0 was unreachable by accident. This asserts
     the rule that replaces the accident.
     """
-    handler = audit.sink_handler()
-    handler.setFormatter(audit.StreamSafeFormatter("%(message)s", "fastmcp: "))
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    handler = audit_sink.sink_handler()
+    handler.setFormatter(audit_sink.StreamSafeFormatter("%(message)s", "fastmcp: "))
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
@@ -1133,7 +1134,7 @@ def test_the_audit_records_own_grammar_is_untouched_by_that_formatter(capsys):
     ``sink_handler`` installs no formatter, so ADR 0040's rendering is what lands
     — this fails if a later change gives the audit logger the marked one.
     """
-    audit.install_audit_sink()
+    audit_sink.install_audit_sink()
     audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
     _flush()
 
@@ -1157,9 +1158,9 @@ def test_a_multi_line_rendering_reaches_the_stream_in_one_write(monkeypatch):
             writes.append(data)
             return len(data)
 
-    handler = audit.sink_handler()
-    handler.setFormatter(audit.StreamSafeFormatter("%(message)s", "fastmcp: "))
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    handler = audit_sink.sink_handler()
+    handler.setFormatter(audit_sink.StreamSafeFormatter("%(message)s", "fastmcp: "))
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
@@ -1197,7 +1198,7 @@ def _wedged(pipe, capacity: int = 64):
     every line the writer still owes goes to the pipe under test instead of to the
     console — and to whatever a later test is capturing.
     """
-    sink = audit._StderrSink(capacity, 2.0)
+    sink = audit_sink._StderrSink(capacity, 2.0)
     saved, sys.stderr = sys.stderr, pipe.stream
     try:
         yield sink
@@ -1336,7 +1337,7 @@ def test_a_closed_sink_writes_nothing_more_and_still_counts_the_loss(monkeypatch
     """
     landed = io.StringIO()
     monkeypatch.setattr(sys, "stderr", landed)
-    sink = audit._StderrSink(4, 1.0)
+    sink = audit_sink._StderrSink(4, 1.0)
     sink.submit('{"n":0}\n')
     sink.close()
     assert landed.getvalue() == '{"n":0}\n', "close must deliver what was queued"
@@ -1358,7 +1359,7 @@ def test_a_marker_that_cannot_be_written_is_still_owed(monkeypatch):
     """
     hostile = _Hostile(OSError("broken pipe"))
     monkeypatch.setattr(sys, "stderr", hostile)
-    sink = audit._StderrSink(4, 1.0)
+    sink = audit_sink._StderrSink(4, 1.0)
     try:
         sink.submit("lost-one\n")
         assert sink.drain(1.0)
@@ -1385,7 +1386,7 @@ def test_a_marker_that_cannot_be_written_is_still_owed(monkeypatch):
 
 def test_the_drop_marker_is_one_ascii_line_of_the_same_grammar():
     """A consumer of the record stream must be able to parse this like any other."""
-    line = audit._drop_marker(7)
+    line = audit_sink._drop_marker(7)
     assert line.endswith("\n") and line.count("\n") == 1
     assert line.isascii()
     marker = json.loads(line)
@@ -1406,7 +1407,7 @@ def test_shutdown_delivers_everything_queued_when_the_destination_is_read(
     """
     landed = io.StringIO()
     monkeypatch.setattr(sys, "stderr", landed)
-    sink = audit._StderrSink(16, 2.0)
+    sink = audit_sink._StderrSink(16, 2.0)
     for index in range(16):
         sink.submit(f'{{"n":{index}}}\n')
     sink.close()

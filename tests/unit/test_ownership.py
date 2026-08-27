@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from hmc_mcp import audit, lpar_ownership, operations_lpar
+from hmc_mcp import audit, audit_sink, lpar_ownership, operations_lpar
 from hmc_mcp.config import validate_agent_id
 from hmc_mcp.operations_lpar import (
     authorize_decommission_lpar_ownership_snapshot,
@@ -205,7 +205,7 @@ def _override_records(caplog):
     return [
         json.loads(record.getMessage())
         for record in caplog.records
-        if record.name == audit.AUDIT_LOGGER_NAME
+        if record.name == audit_sink.AUDIT_LOGGER_NAME
     ]
 
 
@@ -274,7 +274,7 @@ def test_the_override_record_is_bounded_and_escaped(caplog):
             )
         )
     raw = [
-        r.getMessage() for r in caplog.records if r.name == audit.AUDIT_LOGGER_NAME
+        r.getMessage() for r in caplog.records if r.name == audit_sink.AUDIT_LOGGER_NAME
     ]
     assert len(raw) == 1
     assert raw[0].isascii() and "\n" not in raw[0]
@@ -285,7 +285,7 @@ def test_the_override_record_is_bounded_and_escaped(caplog):
 def test_operations_lpar_does_not_resolve_the_audit_logger():
     """Spec 26c. `audit` is the only module that names the reserved logger."""
     source = Path(operations_lpar.__file__).read_text()
-    assert audit.AUDIT_LOGGER_NAME not in source
+    assert audit_sink.AUDIT_LOGGER_NAME not in source
 
 
 def test_the_override_still_reaches_stderr_without_a_sink(caplog, capsys):
@@ -563,7 +563,7 @@ def test_the_denial_record_is_bounded_and_escaped(caplog):
         with pytest.raises(PermissionError):
             asyncio.run(authorize_lpar_mutation(hmc, "A" * 500, "x\ny‮z"))
 
-    raw = [r.getMessage() for r in caplog.records if r.name == audit.AUDIT_LOGGER_NAME]
+    raw = [r.getMessage() for r in caplog.records if r.name == audit_sink.AUDIT_LOGGER_NAME]
     assert len(raw) == 1
     assert raw[0].isascii() and "\n" not in raw[0]
     record = json.loads(raw[0])
