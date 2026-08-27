@@ -109,8 +109,8 @@ def _unsupported(
     )
 
 
-def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
-    """Classify affinity evidence without applying an HMC change."""
+def _validate_input(value: AffinityAssessmentInput) -> None:
+    """Reject malformed values and invalid caller-threshold combinations."""
     for name in (
         "captured_score",
         "current_score",
@@ -147,6 +147,11 @@ def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
             "caller thresholds are required when configured policy is absent"
         )
 
+
+def _admissible_scores(
+    value: AffinityAssessmentInput,
+) -> tuple[int, int, int] | AffinityAssessmentResult:
+    """Return normalized scores or the first reason evidence is inadmissible."""
     if value.policy_state == "unsupported":
         return _unsupported(
             value,
@@ -214,10 +219,19 @@ def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
             "Confirm which policy is current before acting on the assessment.",
         )
 
-    captured = value.captured_score
-    current = value.current_score
-    predicted = value.predicted_score
-    assert captured is not None and current is not None and predicted is not None
+    assert value.captured_score is not None
+    assert value.current_score is not None
+    assert value.predicted_score is not None
+    return value.captured_score, value.current_score, value.predicted_score
+
+
+def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
+    """Classify valid, admissible affinity evidence without changing the HMC."""
+    _validate_input(value)
+    scores = _admissible_scores(value)
+    if isinstance(scores, AffinityAssessmentResult):
+        return scores
+    captured, current, predicted = scores
     evidence = _evidence(value)
     prediction_caveat = (
         " IBM guidance warns that 100 may be unattainable." if predicted == 100 else ""
