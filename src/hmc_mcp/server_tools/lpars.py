@@ -31,19 +31,19 @@ from ..operations.lpar import (
     LparCreation,
     LparPowerOnOutcome,
     activation_allows_assessment,
-    translate_lpar_write_error,
     create_and_stamp_lpar,
-    clear_lpar_boot_order,
     delete_lpar,
-    modify_lpar,
     power_lpar,
     power_on_outcome,
-    read_lpar_boot_order,
     rename_lpar,
-    set_lpar_boot_order,
-    set_lpar_memory,
-    set_lpar_processors,
 )
+from ..operations.lpar_boot_order import (
+    clear_lpar_boot_order,
+    read_lpar_boot_order,
+    set_lpar_boot_order,
+)
+from ..operations.lpar_dlpar import modify_lpar, set_lpar_memory, set_lpar_processors
+from ..operations.lpar_errors import translate_lpar_write_error
 from ..operations.assignments import (
     AssignmentStep,
     LparPcieAssignments,

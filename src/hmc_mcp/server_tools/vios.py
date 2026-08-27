@@ -26,6 +26,7 @@ from ..operations.vios import (
     list_vios_backups,
     power_vios,
     restore_vios,
+    validate_vios_backup_name,
 )
 
 
@@ -403,6 +404,7 @@ def hmc_restore_vios(
         ValueError: If the restore type or catalog name is invalid, or a selector
             cannot be resolved to the required CLI identity.
     """
+    validate_vios_backup_name(backup_name)
 
     async def _go():
         async with client_from_env(profile) as hmc:

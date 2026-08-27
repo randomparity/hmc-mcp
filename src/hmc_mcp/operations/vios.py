@@ -174,7 +174,7 @@ async def list_vios_backups(
     return results
 
 
-def _validate_backup_name(backup_name: str) -> None:
+def validate_vios_backup_name(backup_name: str) -> None:
     """Refuse a name that could identify anything except one catalog entry.
 
     Catalog operations stay bounded by the VIOS selected with ``--uuid`` only
@@ -212,7 +212,7 @@ async def backup_vios(
             f"Invalid backup_type {backup_type!r}. "
             f"Must be one of: {', '.join(sorted(_VALID_BACKUP_TYPES))}"
         )
-    _validate_backup_name(backup_name)
+    validate_vios_backup_name(backup_name)
     system_name, vios_uuid = await _resolve_vios_backup_selectors(
         hmc, system_name_or_uuid, vios_name_or_uuid
     )
@@ -239,7 +239,7 @@ async def restore_vios(
             f"Invalid backup_type {backup_type!r}. "
             f"Must be one of: {', '.join(sorted(_VALID_RESTORE_BACKUP_TYPES))}"
         )
-    _validate_backup_name(backup_name)
+    validate_vios_backup_name(backup_name)
     system_name, vios_uuid = await _resolve_vios_backup_selectors(
         hmc, system_name_or_uuid, vios_name_or_uuid
     )

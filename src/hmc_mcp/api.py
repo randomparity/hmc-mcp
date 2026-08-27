@@ -52,15 +52,19 @@ from hmc_mcp.operations.install import InstallHandle, install_lpar_os, install_v
 from hmc_mcp.operations.lpar import (
     LparCreation,
     LparCreationResult,
-    clear_lpar_boot_order,
-    read_lpar_boot_order,
-    set_lpar_boot_order,
     LparPowerResult,
     create_and_stamp_lpar,
     delete_lpar,
-    modify_lpar,
     power_lpar,
     rename_lpar,
+)
+from hmc_mcp.operations.lpar_boot_order import (
+    clear_lpar_boot_order,
+    read_lpar_boot_order,
+    set_lpar_boot_order,
+)
+from hmc_mcp.operations.lpar_dlpar import (
+    modify_lpar,
     set_lpar_memory,
     set_lpar_processors,
 )

@@ -27,7 +27,7 @@ from hmc_mcp.client import HMCClient
 from hmc_mcp.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
 from hmc_mcp.documents import LparResources
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.lpar import set_lpar_memory, set_lpar_processors
+from hmc_mcp.operations.lpar_dlpar import set_lpar_memory, set_lpar_processors
 
 SYSTEM_UUID = "cccc0000-0000-0000-0000-000000000001"
 OTHER_SYSTEM_UUID = "cccc0000-0000-0000-0000-000000000002"
@@ -608,7 +608,7 @@ async def test_discovery_translates_its_own_timeout(mock_hmc, monkeypatch):
     """
     _mock_lpar_detail(mock_hmc)
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0.01
+        "hmc_mcp.operations.lpar_dlpar.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0.01
     )
 
     async def _slow_fleet(request):

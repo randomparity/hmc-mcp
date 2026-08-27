@@ -175,12 +175,15 @@ names are internal everywhere and are never inventoried.
     Domain A over exported *functions*, which a type is not.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
   none.
-- `operations.lpar` — operations: `clear_lpar_boot_order`, `create_and_stamp_lpar`,
-  `delete_lpar`, `modify_lpar`, `power_lpar`, `read_lpar_boot_order`, `rename_lpar`,
-  `set_lpar_boot_order`,
-  `set_lpar_memory`, `set_lpar_processors`; types: `LparCreation`, `LparCreationResult`,
-  `LparPowerResult`; excluded synchronous: `activation_allows_assessment`,
-  `power_on_outcome`, `translate_lpar_write_error`.
+- `operations.lpar` — operations: `create_and_stamp_lpar`, `delete_lpar`, `power_lpar`,
+  `rename_lpar`; types: `LparCreation`, `LparCreationResult`, `LparPowerResult`; excluded
+  synchronous: `activation_allows_assessment`, `power_on_outcome`.
+- `operations.lpar_boot_order` — operations: `clear_lpar_boot_order`,
+  `read_lpar_boot_order`, `set_lpar_boot_order`; types: none; excluded synchronous: none.
+- `operations.lpar_dlpar` — operations: `modify_lpar`, `set_lpar_memory`,
+  `set_lpar_processors`; types: none; excluded synchronous: none.
+- `operations.lpar_errors` — operations: none; types: none; excluded synchronous:
+  `translate_lpar_write_error`.
 - `operations.lpar_ownership` — operations:
   `authorize_decommission_lpar_ownership_snapshot`, `authorize_lpar_mutation`,
   `list_lpar_ownership`, `resolve_lpar_ownership_names`, `set_lpar_ownership_description`,
@@ -240,7 +243,7 @@ names are internal everywhere and are never inventoried.
   `modify_user`; types: none; excluded synchronous: none.
 - `operations.vios` — operations: `backup_vios`, `create_vios`, `delete_vios`,
   `list_vios_backups`, `power_vios`, `restore_vios`; types: `BackupType`, `RestoreBackupType`;
-  excluded synchronous: none.
+  excluded synchronous: `validate_vios_backup_name`.
 - `snapshot` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
   `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,
   `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotInspection`, `SnapshotObservations`,
