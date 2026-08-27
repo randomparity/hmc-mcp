@@ -71,7 +71,6 @@ async def delete_virtual_disk(
     """Delete a Virtual Disk from a Volume Group.
 
     Validates that the disk is not mapped to any LPAR before deletion.
-    Returns an error if the disk is in use; otherwise deletes the disk.
 
     Args:
         hmc: HMC client instance.
@@ -80,7 +79,8 @@ async def delete_virtual_disk(
         disk_name: Name of the Virtual Disk to delete.
 
     Returns:
-        The deleted disk metadata, or None if deletion failed.
+        Deleted disk metadata when supplied by the HMC, or ``None`` when a
+        successful deletion response contains no resource entry.
 
     Raises:
         HMCError: If the disk is mapped to an LPAR or deletion fails.
