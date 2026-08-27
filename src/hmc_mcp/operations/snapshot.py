@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict
 from datetime import UTC, datetime
 import math
@@ -103,7 +104,33 @@ async def assess_snapshot_affinity(
     stale_after_seconds: int = 86400,
     assessed_at: datetime | None = None,
 ) -> AffinityAssessmentResult:
-    """Assess explicit current evidence against one validated captured snapshot."""
+    """Assess explicit current evidence without blocking the caller's event loop."""
+    return await asyncio.to_thread(
+        _assess_snapshot_affinity,
+        document,
+        current_score=current_score,
+        predicted_score=predicted_score,
+        policy_state=policy_state,
+        configured_minimum=configured_minimum,
+        regression_threshold=regression_threshold,
+        optimization_threshold=optimization_threshold,
+        stale_after_seconds=stale_after_seconds,
+        assessed_at=assessed_at,
+    )
+
+
+def _assess_snapshot_affinity(
+    document: str,
+    *,
+    current_score: int | None,
+    predicted_score: int | None,
+    policy_state: PolicyState,
+    configured_minimum: int | None,
+    regression_threshold: int | None,
+    optimization_threshold: int | None,
+    stale_after_seconds: int,
+    assessed_at: datetime | None,
+) -> AffinityAssessmentResult:
     snapshot = parse_snapshot(document)
     captured_policy = snapshot.observations.minimum_affinity_policy
     policy_capability = next(
@@ -146,14 +173,14 @@ async def assess_snapshot_affinity(
 
 
 async def validate_lpar_snapshot(document: str) -> dict[str, object]:
-    """Validate local snapshot JSON through the supported async API contract."""
-    snapshot = parse_snapshot(document)
+    """Validate local snapshot JSON without blocking the caller's event loop."""
+    snapshot = await asyncio.to_thread(parse_snapshot, document)
     return {"valid": True, "format": snapshot.format, "version": snapshot.version}
 
 
 async def inspect_lpar_snapshot(document: str) -> SnapshotInspection:
-    """Inspect local snapshot identity through the supported async API contract."""
-    return inspect_snapshot(document)
+    """Inspect local snapshot identity without blocking the caller's event loop."""
+    return await asyncio.to_thread(inspect_snapshot, document)
 
 
 def _resource(entry: dict[str, Any] | None, label: str) -> dict[str, Any]:
