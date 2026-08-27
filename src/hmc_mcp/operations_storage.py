@@ -79,7 +79,6 @@ async def delete_virtual_disk(
     Raises:
         HMCError: If the disk is mapped to an LPAR or deletion fails.
     """
-    # Check if the disk is currently mapped before deletion
     mappings = await hmc.list_storage_mappings(await resolve_vios_uuid(hmc, vios))
     disk_link = f"/rest/api/uom/VirtualIOServer/{await resolve_vios_uuid(hmc, vios)}/VolumeGroup/{vg_uuid}/VirtualDisk/{disk_name}"
     
@@ -96,7 +95,6 @@ async def delete_virtual_disk(
                     "remove the mapping."
                 )
     
-    # Disk is not mapped, safe to delete
     return await hmc.delete_virtual_disk(
         await resolve_vios_uuid(hmc, vios), vg_uuid, disk_name
     )
@@ -356,13 +354,11 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
         httpx.TimeoutException: If connection or read timeout is exceeded.
         httpx.HTTPStatusError: If HTTP request fails (4xx/5xx).
     """
-    # Configure HTTP client with timeouts; redirects are refused, not followed.
     timeout = httpx.Timeout(CONNECT_TIMEOUT, read=READ_TIMEOUT)
     async with httpx.AsyncClient(
         timeout=timeout,
         follow_redirects=False,
     ) as client:
-        # Start streaming download
         async with client.stream("GET", url) as response:
             # Every 3xx, not just httpx's `is_redirect` (which additionally
             # requires a Location header): a 3xx without one is not a body to
@@ -377,7 +373,6 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
                 )
             response.raise_for_status()
 
-            # Create temp file for download
             import tempfile
             fd, temp_path = tempfile.mkstemp(suffix=".iso", prefix="hmc_upload_")
             temp_file = Path(temp_path)
@@ -388,7 +383,6 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
             try:
                 with os.fdopen(fd, "wb") as f:
                     async for chunk in response.aiter_bytes(chunk_size=DEFAULT_CHUNK_SIZE):
-                        # Enforce size limit
                         downloaded_size += len(chunk)
                         if downloaded_size > MAX_DOWNLOAD_SIZE_BYTES:
                             raise ValueError(
@@ -396,7 +390,6 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
                                 f"maximum allowed size of {MAX_DOWNLOAD_SIZE_BYTES} bytes"
                             )
 
-                        # Write chunk and update checksum
                         f.write(chunk)
                         sha256_hash.update(chunk)
 
@@ -491,7 +484,6 @@ async def upload_iso(
     )
     vios_uuid = await resolve_vios_uuid(hmc, vios)
 
-    # Validate media_name against HMC FileName.Pattern
     _HMC_FILENAME_RE = re.compile(r"^[A-Za-z0-9_.]{1,79}$")
     if not _HMC_FILENAME_RE.match(media_name):
         raise ValueError(
@@ -515,24 +507,13 @@ async def upload_iso(
 
     broker_uri: str | None = None
     try:
-        # Check for duplicate content (same SHA-256 under different name)
-        # Note: HMC does not expose trustworthy SHA-256 checksums in the API,
-        # so we cannot perform duplicate detection via server-side checksums.
-        # The client-side SHA-256 is computed for future deduplication features,
-        # but we cannot skip upload based on existing content without a server-side
-        # checksum to compare against.
-
-        # Create brokered file handle on HMC
         broker_uri = await hmc._broker_file_create(vios_uuid, vg_uuid, media_name)
 
-        # Stream ISO bytes to the broker URI
         with iso_path.open("rb") as f:
             await hmc._broker_file_upload(broker_uri, _aiter_file_chunks(f), file_size)
 
-        # Import into media repository
         await hmc._broker_iso_import(vios_uuid, vg_uuid, media_name, broker_uri)
 
-        # Retrieve the uploaded media entry
         updated_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
         uploaded_media_entry = None
         for media in updated_media:
@@ -556,7 +537,6 @@ async def upload_iso(
             except Exception:
                 pass
 
-        # Cleanup the temp file the download staged
         if iso_path.exists():
             try:
                 iso_path.unlink()
