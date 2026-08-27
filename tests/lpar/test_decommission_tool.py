@@ -534,7 +534,7 @@ async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
             "[hmc-mcp owner:bob created:2026-08-14]",
         )
     )
-    monkeypatch.setattr("hmc_mcp.operations_lpar.get_lpar_description", descriptions)
+    monkeypatch.setattr("hmc_mcp.lpar_ownership.get_lpar_description", descriptions)
 
     result = await decommission_lpar(
         hmc, "system-a", "aix-prod", ownership_override=True
@@ -568,7 +568,7 @@ async def test_decommission_revalidates_changed_owner_before_mutation(
             "[hmc-mcp owner:bob created:2026-08-15]",
         )
     )
-    monkeypatch.setattr("hmc_mcp.operations_lpar.get_lpar_description", descriptions)
+    monkeypatch.setattr("hmc_mcp.lpar_ownership.get_lpar_description", descriptions)
 
     with pytest.raises(PermissionError, match="owned by 'bob'"):
         await decommission_lpar(hmc, "system-a", "aix-prod")

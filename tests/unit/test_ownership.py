@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from hmc_mcp import audit, operations_lpar
+from hmc_mcp import audit, lpar_ownership, operations_lpar
 from hmc_mcp.config import validate_agent_id
 from hmc_mcp.operations_lpar import (
     authorize_decommission_lpar_ownership_snapshot,
@@ -182,7 +182,7 @@ def test_authorize_lpar_mutation(description, agent_id, allowed):
         "StubHMC", (), {"config": _config().model_copy(update={"agent_id": agent_id})}
     )()
     with patch(
-        "hmc_mcp.operations_lpar.get_lpar_description",
+        "hmc_mcp.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=description),
     ):
         if allowed:
@@ -215,7 +215,7 @@ def test_authorize_lpar_mutation_override_is_audited(caplog):
     hmc = type("StubHMC", (), {"config": _config()})()
     read = AsyncMock()
     with (
-        patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
+        patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read),
         caplog.at_level(logging.WARNING),
     ):
         asyncio.run(
@@ -249,7 +249,7 @@ def test_the_override_record_host_comes_from_the_client_config(caplog):
         {"config": _config().model_copy(update={"host": "", "agent_id": None})},
     )()
     with (
-        patch("hmc_mcp.operations_lpar.get_lpar_description", new=AsyncMock()),
+        patch("hmc_mcp.lpar_ownership.get_lpar_description", new=AsyncMock()),
         caplog.at_level(logging.WARNING),
     ):
         asyncio.run(
@@ -265,7 +265,7 @@ def test_the_override_record_is_bounded_and_escaped(caplog):
     hmc = type("StubHMC", (), {"config": _config()})()
     hostile = "A" * 500
     with (
-        patch("hmc_mcp.operations_lpar.get_lpar_description", new=AsyncMock()),
+        patch("hmc_mcp.lpar_ownership.get_lpar_description", new=AsyncMock()),
         caplog.at_level(logging.WARNING),
     ):
         asyncio.run(
@@ -300,7 +300,7 @@ def test_the_override_still_reaches_stderr_without_a_sink(caplog, capsys):
     saved = list(logging.root.handlers)
     logging.root.handlers.clear()
     try:
-        with patch("hmc_mcp.operations_lpar.get_lpar_description", new=AsyncMock()):
+        with patch("hmc_mcp.lpar_ownership.get_lpar_description", new=AsyncMock()):
             asyncio.run(
                 authorize_lpar_mutation(hmc, "sys1", "lpar1", ownership_override=True)
             )
@@ -318,7 +318,7 @@ def test_both_override_call_sites_emit_and_normal_access_does_not(caplog):
     # stub must return a real one; the mutation path never awaits it at all.
     read = AsyncMock(return_value="legacy partition")
     with (
-        patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
+        patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read),
         caplog.at_level(logging.WARNING),
     ):
         asyncio.run(
@@ -339,7 +339,7 @@ def test_authorize_lpar_mutation_normal_access_has_no_override_audit(caplog):
     hmc = type("StubHMC", (), {"config": _config()})()
     with (
         patch(
-            "hmc_mcp.operations_lpar.get_lpar_description",
+            "hmc_mcp.lpar_ownership.get_lpar_description",
             new=AsyncMock(return_value="legacy partition"),
         ),
         caplog.at_level(logging.WARNING),
@@ -358,7 +358,7 @@ def _denied(hmc, description, run, caplog):
     """Run *run* against a stubbed description, expect a refusal, return the records."""
     with (
         patch(
-            "hmc_mcp.operations_lpar.get_lpar_description",
+            "hmc_mcp.lpar_ownership.get_lpar_description",
             new=AsyncMock(return_value=description),
         ),
         caplog.at_level(logging.WARNING),
@@ -467,7 +467,7 @@ def test_a_new_guard_entry_point_cannot_omit_the_operation():
     rather than by calling, because the point is what a *checker* sees.
     """
     parameter = inspect.signature(
-        operations_lpar._authorize_lpar_ownership_description
+        lpar_ownership.authorize_lpar_ownership_description
     ).parameters["operation"]
 
     assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
@@ -481,7 +481,7 @@ def test_a_permitted_mutation_emits_no_denial_record(caplog):
     )()
     with (
         patch(
-            "hmc_mcp.operations_lpar.get_lpar_description",
+            "hmc_mcp.lpar_ownership.get_lpar_description",
             new=AsyncMock(return_value="[hmc-mcp owner:alice created:2026-08-14]"),
         ),
         caplog.at_level(logging.WARNING),
@@ -503,7 +503,7 @@ def test_an_override_emits_the_override_record_and_no_denial(caplog):
     )()
     with (
         patch(
-            "hmc_mcp.operations_lpar.get_lpar_description",
+            "hmc_mcp.lpar_ownership.get_lpar_description",
             new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
         ),
         caplog.at_level(logging.WARNING),
@@ -530,7 +530,7 @@ def test_the_denial_still_reaches_stderr_without_a_sink(capsys):
     logging.root.handlers.clear()
     try:
         with patch(
-            "hmc_mcp.operations_lpar.get_lpar_description",
+            "hmc_mcp.lpar_ownership.get_lpar_description",
             new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
         ):
             with pytest.raises(PermissionError):
@@ -555,7 +555,7 @@ def test_the_denial_record_is_bounded_and_escaped(caplog):
     hostile = "[hmc-mcp owner:" + "B" * 500 + " created:2026-08-14]"
     with (
         patch(
-            "hmc_mcp.operations_lpar.get_lpar_description",
+            "hmc_mcp.lpar_ownership.get_lpar_description",
             new=AsyncMock(return_value=hostile),
         ),
         caplog.at_level(logging.WARNING),
@@ -743,7 +743,7 @@ def _run_set_ownership_description(description, *, ownership_override=False):
             new=write,
         ),
         patch(
-            "hmc_mcp.operations_lpar.get_lpar_description",
+            "hmc_mcp.lpar_ownership.get_lpar_description",
             new=AsyncMock(return_value=description),
         ),
     )
@@ -784,7 +784,7 @@ def test_set_lpar_ownership_description_rejects_foreign_owned():
     write = AsyncMock()
     patches = (
         *(_p for _p in _patch_restamp_resolution()),
-        patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
+        patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read),
         patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
     )
     with patches[0], patches[1], patches[2], patches[3], patches[4]:
@@ -806,7 +806,7 @@ def test_set_lpar_ownership_description_writes_unowned_lpar():
     write = AsyncMock(return_value="ok")
     patches = (
         *(_p for _p in _patch_restamp_resolution()),
-        patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
+        patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read),
         patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
     )
     with patches[0], patches[1], patches[2], patches[3], patches[4]:
@@ -828,7 +828,7 @@ def test_set_lpar_ownership_description_override_bypasses_guard(caplog):
     write = AsyncMock(return_value="ok")
     patches = (
         *(_p for _p in _patch_restamp_resolution()),
-        patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
+        patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read),
         patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
     )
     with patches[0], patches[1], patches[2], patches[3], patches[4]:
@@ -879,7 +879,7 @@ def test_set_lpar_ownership_description_restamps_failed_create_stamp():
     write = AsyncMock(return_value="ok")
     patches = (
         *(_p for _p in _patch_restamp_resolution()),
-        patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
+        patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read),
         patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
     )
     with patches[0], patches[1], patches[2], patches[3], patches[4]:

@@ -112,7 +112,7 @@ def _partition_feed(*entries: str) -> str:
 def _unowned_partition():
     """Patch the SSH ownership read to report a partition with no ADR 0011 stamp."""
     return patch(
-        "hmc_mcp.operations_lpar.get_lpar_description",
+        "hmc_mcp.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=""),
     )
 

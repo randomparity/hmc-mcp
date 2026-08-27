@@ -96,7 +96,7 @@ def _partition_feed() -> str:
 def _unowned_partition():
     """Patch the SSH ownership read to report a partition with no ADR 0011 stamp."""
     return patch(
-        "hmc_mcp.operations_lpar.get_lpar_description",
+        "hmc_mcp.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value=""),
     )
 
@@ -202,7 +202,7 @@ def test_dlpar_without_a_system_selector_discovers_the_owner_and_writes(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     read = AsyncMock(return_value="")
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read):
         result = tool(LPAR_UUID, LparResources(desired_procs=1.0, desired_memory=2048))
 
     assert result["Resource"]["PartitionName"] == "lpar1"
@@ -224,7 +224,7 @@ def test_dlpar_without_a_system_selector_refuses_a_foreign_owner(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     with patch(
-        "hmc_mcp.operations_lpar.get_lpar_description",
+        "hmc_mcp.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
     ):
         with pytest.raises(PermissionError, match="ownership_override=true"):
@@ -251,7 +251,7 @@ def test_dlpar_override_without_a_selector_needs_no_discovery(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read):
         tool(
             LPAR_UUID,
             LparResources(desired_procs=1.0, desired_memory=2048),
@@ -270,7 +270,7 @@ def test_dlpar_proc_refuses_a_foreign_owned_partition(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     with patch(
-        "hmc_mcp.operations_lpar.get_lpar_description",
+        "hmc_mcp.lpar_ownership.get_lpar_description",
         new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
     ):
         with pytest.raises(PermissionError, match="ownership_override=true"):
@@ -291,7 +291,7 @@ def test_dlpar_mem_ownership_override_reaches_the_write(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.lpar_ownership.get_lpar_description", new=read):
         hmc_dlpar_mem(
             LPAR_UUID,
             LparResources(desired_memory=4096),

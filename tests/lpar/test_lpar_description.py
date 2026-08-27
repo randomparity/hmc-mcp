@@ -231,7 +231,7 @@ def test_foreign_owned_description_overwrite_issues_no_write(monkeypatch, mock_h
             new=AsyncMock(return_value=(SYSTEM_NAME, LPAR_NAME)),
         ),
         patch(
-            "hmc_mcp.operations_lpar.get_lpar_description",
+            "hmc_mcp.lpar_ownership.get_lpar_description",
             new=AsyncMock(
                 return_value="[hmc-mcp owner:other created:2026-08-14]"
             ),

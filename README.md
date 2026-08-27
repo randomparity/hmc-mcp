@@ -931,6 +931,7 @@ src/hmc_mcp/
   client_parse.py# defusedxml wrappers tagging failures with the HMC call
   client_factory.py         # construct clients from CLI, environment, and profiles
   resource_identity.py      # managed-system, partition, and VIOS name/UUID resolution
+  lpar_ownership.py         # ownership parsing, authorization, and CLI-name resolution
   operations_*.py# workflows and policies shared by MCP and CLI presentations
   affinity_assessment.py     # evidence-first, read-only LPAR NUMA-affinity assessment
   snapshot.py    # version-1 portable LPAR snapshot values and local I/O
