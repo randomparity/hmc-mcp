@@ -36,6 +36,11 @@ from ..operations.lpar import (
     power_lpar,
     rename_lpar,
 )
+from ..operations.lpar_boot_order import (
+    clear_lpar_boot_order,
+    read_lpar_boot_order,
+    set_lpar_boot_order,
+)
 from ..operations.assignments import (
     LparPcieAssignments,
     apply_validated_lpar_pcie_assignments,
@@ -53,6 +58,7 @@ from ..operations.ssh_network import (
     plan_resource_group_memopt_scores,
 )
 from ..documents import (
+    BOOT_DEVICE_SELECTORS,
     LparResources,
     PARTITION_TYPES,
     STORAGE_KINDS,
@@ -1179,8 +1185,6 @@ def lpars_read_boot_order(
     Example:
         lpars read-boot-order system1 aaaa0000-0000-0000-0000-000000000001
     """
-    from ..operations.lpar_boot_order import read_lpar_boot_order
-
     result = _with_client(
         lambda hmc: read_lpar_boot_order(
             hmc,
@@ -1219,9 +1223,6 @@ def lpars_set_boot_order(
     Example:
         lpars set-boot-order system1 lpar-uuid-123 "network,cd,disk"
     """
-    from ..documents import BOOT_DEVICE_SELECTORS
-    from ..operations.lpar_boot_order import set_lpar_boot_order
-
     # Parse and validate device list
     device_list = [d.strip() for d in devices.split(",") if d.strip()]
 
@@ -1266,8 +1267,6 @@ def lpars_clear_boot_order(
     Example:
         lpars clear-boot-order system1 aaaa0000-0000-0000-0000-000000000001
     """
-    from ..operations.lpar_boot_order import clear_lpar_boot_order
-
     result = _with_client(
         lambda hmc: clear_lpar_boot_order(
             hmc,
