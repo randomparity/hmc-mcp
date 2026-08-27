@@ -600,6 +600,46 @@ async def test_mutating_workflows_stop_when_inventory_context_is_missing(
 
 
 @pytest.mark.asyncio
+async def test_malformed_inventory_capacity_blocks_storage_mutation(monkeypatch):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_list_volume_groups":
+            return "PASS", [
+                {
+                    "UUID": "vg-uuid",
+                    "Resource": {
+                        "GroupName": "VG1",
+                        "VirtualDisks": {
+                            "VirtualDisk": {
+                                "DiskName": "VG1-lp3",
+                                "DiskCapacity": "not-a-capacity",
+                            }
+                        },
+                    },
+                }
+            ]
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.context.vios_uuid = "vios-uuid"
+
+    await runner.inventory_storage(None, state)
+    await runner.exercise_storage_provisioning(None, state)
+
+    failure = next(
+        result
+        for result in state.results
+        if result["tool"] == "parse virtual disk capacity"
+    )
+    assert failure["status"] == "FAIL"
+    assert state.context.vdisk_size_mb is None
+    assert not any(tool == "hmc_create_virtual_disk" for tool, _ in calls)
+
+
+@pytest.mark.asyncio
 async def test_lpar_lifecycle_sequences_create_power_and_cleanup(monkeypatch):
     calls = []
 

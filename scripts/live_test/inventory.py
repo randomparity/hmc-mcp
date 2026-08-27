@@ -376,13 +376,21 @@ async def inventory_storage(client: Client, state: RunState) -> None:
                         raw = virtual_disk_resource.get(
                             "DiskCapacity"
                         ) or virtual_disk_resource.get("disk_capacity")
-                        if raw is not None:
-                            try:
-                                # DiskCapacity is in GB — convert to MB
-                                gb = int(float(raw))
-                                context.vdisk_size_mb = gb * 1024
-                            except (TypeError, ValueError):
-                                pass
+                        try:
+                            # DiskCapacity is in GB — convert to MB.
+                            gb = int(float(raw))
+                            if gb <= 0:
+                                raise ValueError("capacity must be positive")
+                            context.vdisk_size_mb = gb * 1024
+                        except (TypeError, ValueError):
+                            context.vdisk_size_mb = None
+                            state.record(
+                                3,
+                                "parse virtual disk capacity",
+                                "FAIL",
+                                f"Disk {context.vdisk_name!r} has invalid "
+                                f"DiskCapacity {raw!r}; storage mutation will be skipped",
+                            )
                 if found_target_disk or not context.vg_uuid:
                     context.vg_uuid = uuid
                     context.vdisk_vg_name = vg_name

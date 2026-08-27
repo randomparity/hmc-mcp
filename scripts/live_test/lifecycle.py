@@ -681,7 +681,7 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
     baseline = context.lp3_baseline
     vios_uuid = context.vios_uuid
     vg_uuid = context.vg_uuid
-    vdisk_size_mb = context.vdisk_size_mb or 49152
+    vdisk_size_mb = context.vdisk_size_mb
     pvid = baseline.get("pvid")
     vios_slot = baseline.get("vios_slot")
     vios_pid = context.vios_partition_id or baseline.get("vios_partition_id")
@@ -694,6 +694,7 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
             "pvid": pvid,
             "vios_slot": vios_slot,
             "vios_pid": vios_pid,
+            "vdisk_size_mb": vdisk_size_mb,
         }.items()
         if not v
     ]
