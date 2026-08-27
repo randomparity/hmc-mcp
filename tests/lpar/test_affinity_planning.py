@@ -162,11 +162,16 @@ def test_affinity_mcp_adapters_delegate_to_shared_operations(
     adapter, operation, result
 ):
     config = _config()
+    client = HMCClient(config)
+    context = AsyncMock()
+    context.__aenter__.return_value = client
     selector = MemoptLparSelector(ids=(7,))
     delegated = AsyncMock(return_value=result)
 
     with (
-        patch.object(server_lpar_config, "build_config", return_value=config) as build,
+        patch.object(
+            server_lpar_config, "client_from_env", return_value=context
+        ) as client_factory,
         patch.object(server_lpar_config, operation, delegated),
     ):
         kwargs = (
@@ -177,10 +182,9 @@ def test_affinity_mcp_adapters_delegate_to_shared_operations(
         actual = getattr(server_lpar_config, adapter)(SYSTEM, profile="lab", **kwargs)
 
     assert actual == result
-    build.assert_called_once_with(profile="lab")
+    client_factory.assert_called_once_with("lab")
     actual_client = delegated.await_args.args[0]
-    assert isinstance(actual_client, HMCClient)
-    assert actual_client.config == config
+    assert actual_client is client
     expected = (SYSTEM, selector, None) if kwargs else (SYSTEM,)
     assert delegated.await_args.args[1:] == expected
 
@@ -206,7 +210,7 @@ def test_affinity_mcp_rejects_invalid_scenarios_before_system_resolution(
     resolve = AsyncMock()
 
     with (
-        patch.object(server_lpar_config, "build_config", return_value=_config()),
+        patch.object(server_lpar_config, "client_from_env") as client_factory,
         patch("hmc_mcp.operations.ssh_network.resolve_ssh_names", resolve),
     ):
         with pytest.raises(ValueError, match=diagnostic):
@@ -215,6 +219,7 @@ def test_affinity_mcp_rejects_invalid_scenarios_before_system_resolution(
             )
 
     resolve.assert_not_awaited()
+    client_factory.assert_not_called()
 
 
 def test_selector_accepts_one_representation_and_is_frozen():

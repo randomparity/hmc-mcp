@@ -8,8 +8,6 @@ from .._app import (
     run_sync,
     _ssh_with_client,
 )
-from ..config import build_config
-from ..client import HMCClient
 from ..client.client_factory import client_from_env
 from ..operations.ssh_network import (
     MinimumAffinityPolicyResult,
@@ -60,13 +58,13 @@ def hmc_get_minimum_affinity_policy(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return run_sync(
-        lambda: get_minimum_affinity_policy(
-            HMCClient(build_config(profile=profile)),
-            system_name_or_uuid,
-            lpar_name_or_uuid,
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await get_minimum_affinity_policy(
+                hmc, system_name_or_uuid, lpar_name_or_uuid
+            )
+
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="lpar.set_minimum_affinity_policy", target_kind="lpar")
@@ -114,13 +112,13 @@ def hmc_get_lpar_memopt_score(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return run_sync(
-        lambda: get_lpar_memopt_score(
-            HMCClient(build_config(profile=profile)),
-            system_name_or_uuid,
-            lpar_name_or_uuid,
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await get_lpar_memopt_score(
+                hmc, system_name_or_uuid, lpar_name_or_uuid
+            )
+
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="lpar.list_memopt_scores", target_kind="managed_system")
@@ -136,13 +134,13 @@ def hmc_list_lpar_memopt_scores(
         lpar_name_or_uuid: Optional partition name or UUID to filter to.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return run_sync(
-        lambda: list_lpar_memopt_scores(
-            HMCClient(build_config(profile=profile)),
-            system_name_or_uuid,
-            lpar_name_or_uuid,
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await list_lpar_memopt_scores(
+                hmc, system_name_or_uuid, lpar_name_or_uuid
+            )
+
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="system.get_memopt_score", target_kind="managed_system")
@@ -155,11 +153,11 @@ def hmc_get_system_memopt_score(
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return run_sync(
-        lambda: get_system_memopt_score(
-            HMCClient(build_config(profile=profile)), system_name_or_uuid
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await get_system_memopt_score(hmc, system_name_or_uuid)
+
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="lpar.plan_memopt_scores", target_kind="managed_system")
@@ -178,14 +176,13 @@ def hmc_plan_lpar_memopt_scores(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     validate_memopt_scenario(prioritized, excluded)
-    return run_sync(
-        lambda: plan_lpar_memopt_scores(
-            HMCClient(build_config(profile=profile)),
-            system_name_or_uuid,
-            prioritized,
-            excluded,
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await plan_lpar_memopt_scores(
+                hmc, system_name_or_uuid, prioritized, excluded
+            )
+
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="system.plan_memopt_score", target_kind="managed_system")
@@ -204,14 +201,13 @@ def hmc_plan_system_memopt_score(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     validate_memopt_scenario(prioritized, excluded)
-    return run_sync(
-        lambda: plan_system_memopt_score(
-            HMCClient(build_config(profile=profile)),
-            system_name_or_uuid,
-            prioritized,
-            excluded,
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await plan_system_memopt_score(
+                hmc, system_name_or_uuid, prioritized, excluded
+            )
+
+    return run_sync(_go)
 
 
 @tool(
@@ -231,11 +227,13 @@ def hmc_list_resource_group_memopt_scores(
         selector: Resource-group names, IDs, or all groups; all when omitted.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return run_sync(
-        lambda: list_resource_group_memopt_scores(
-            HMCClient(build_config(profile=profile)), system_name_or_uuid, selector
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await list_resource_group_memopt_scores(
+                hmc, system_name_or_uuid, selector
+            )
+
+    return run_sync(_go)
 
 
 @tool(
@@ -255,11 +253,13 @@ def hmc_plan_resource_group_memopt_scores(
         selector: Resource-group names, IDs, or all groups; all when omitted.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return run_sync(
-        lambda: plan_resource_group_memopt_scores(
-            HMCClient(build_config(profile=profile)), system_name_or_uuid, selector
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await plan_resource_group_memopt_scores(
+                hmc, system_name_or_uuid, selector
+            )
+
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="lpar.get_description", target_kind="lpar")

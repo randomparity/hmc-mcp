@@ -162,10 +162,19 @@ def test_mcp_logical_tool_forwards_every_selector(monkeypatch) -> None:
         [],
         "ADR 0053 admits selectors but no SR-IOV read projection",
     )
-    with patch(
-        "hmc_mcp.server_tools.system_resources.list_sriov_logical_ports",
-        AsyncMock(return_value=result),
-    ) as operation:
+    client = _client()
+    context = AsyncMock()
+    context.__aenter__.return_value = client
+    with (
+        patch(
+            "hmc_mcp.server_tools.system_resources.client_from_env",
+            return_value=context,
+        ),
+        patch(
+            "hmc_mcp.server_tools.system_resources.list_sriov_logical_ports",
+            AsyncMock(return_value=result),
+        ) as operation,
+    ):
         value = hmc_list_sriov_logical_ports("sys1", "a1", "p2", "l3")
 
     assert value == asdict(result)
@@ -190,9 +199,17 @@ def test_other_mcp_inventory_tools_return_serialized_results(monkeypatch) -> Non
         result = InventoryResult(
             resource_kind, "available", "sys1", InventorySelector(), [], None
         )
-        with patch(
-            f"hmc_mcp.server_tools.system_resources.{operation_name}",
-            AsyncMock(return_value=result),
+        context = AsyncMock()
+        context.__aenter__.return_value = _client()
+        with (
+            patch(
+                "hmc_mcp.server_tools.system_resources.client_from_env",
+                return_value=context,
+            ),
+            patch(
+                f"hmc_mcp.server_tools.system_resources.{operation_name}",
+                AsyncMock(return_value=result),
+            ),
         ):
             assert tool("sys1") == asdict(result)
 

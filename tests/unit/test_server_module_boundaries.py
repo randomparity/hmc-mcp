@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import hmc_mcp.server as server
 import hmc_mcp.ssh.transport as ssh
 
@@ -37,3 +40,16 @@ def test_ssh_transport_does_not_own_resource_commands() -> None:
     assert transport_api <= public_names
     assert "get_lpar_description" not in public_names
     assert "list_memory_pools" not in public_names
+
+
+def test_server_tools_do_not_construct_unmanaged_hmc_clients() -> None:
+    server_tools = Path(server.__file__).parent / "server_tools"
+    direct_constructors: list[str] = []
+    for path in server_tools.glob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name) and node.func.id == "HMCClient":
+                direct_constructors.append(f"{path.name}:{node.lineno}")
+
+    assert direct_constructors == []

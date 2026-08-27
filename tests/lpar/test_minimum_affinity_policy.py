@@ -230,14 +230,17 @@ def test_mcp_policy_adapter_delegates_to_shared_operation():
         "available", "system", "lpar", 75, "warn", None
     )
     operation = AsyncMock(return_value=expected)
+    client = _client()
+    context = AsyncMock()
+    context.__aenter__.return_value = client
     with (
-        patch.object(server_lpar_config, "build_config", return_value=_config()),
+        patch.object(server_lpar_config, "client_from_env", return_value=context),
         patch.object(server_lpar_config, "get_minimum_affinity_policy", operation),
     ):
         actual = server_lpar_config.hmc_get_minimum_affinity_policy("system", "lpar")
 
     assert actual == expected
-    operation.assert_awaited_once_with(ANY, "system", "lpar")
+    operation.assert_awaited_once_with(client, "system", "lpar")
 
 
 def test_mcp_registers_minimum_affinity_policy_as_lpar_read():

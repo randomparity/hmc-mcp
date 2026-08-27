@@ -14,8 +14,6 @@ from .._app import (
     _run_limited_collection,
 )
 
-from ..config import build_config
-from ..client import HMCClient
 from ..client.client_factory import client_from_env
 from ..operations.network import (
     create_virtual_network,
@@ -202,13 +200,11 @@ def hmc_list_fc_ports(
         lpar_name_or_uuid: Optional partition name or UUID to restrict results.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return run_sync(
-        lambda: list_fc_ports(
-            HMCClient(build_config(profile=profile)),
-            system_name_or_uuid,
-            lpar_name_or_uuid,
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await list_fc_ports(hmc, system_name_or_uuid, lpar_name_or_uuid)
+
+    return run_sync(_go)
 
 
 @tool(effect="read", operation="network.list_sea", target_kind="managed_system")
@@ -235,13 +231,13 @@ def hmc_list_sea_adapters(
         lpar_name_or_uuid: Optional partition name or UUID to restrict results.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return run_sync(
-        lambda: list_sea_adapters(
-            HMCClient(build_config(profile=profile)),
-            system_name_or_uuid,
-            lpar_name_or_uuid,
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await list_sea_adapters(
+                hmc, system_name_or_uuid, lpar_name_or_uuid
+            )
+
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="sriov.set_mode", target_kind="managed_system")
@@ -274,14 +270,13 @@ def hmc_set_sriov_adapter_mode(
             passthrough use.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return run_sync(
-        lambda: set_sriov_adapter_mode(
-            HMCClient(build_config(profile=profile)),
-            system_name_or_uuid,
-            adapter_id,
-            mode,
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await set_sriov_adapter_mode(
+                hmc, system_name_or_uuid, adapter_id, mode
+            )
+
+    return run_sync(_go)
 
 
 @tool(effect="mutate", operation="sriov.assign_logical_port", target_kind="lpar")

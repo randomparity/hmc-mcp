@@ -257,14 +257,18 @@ def test_mcp_adapter_delegates_to_shared_operation():
         "upgrade HMC",
     )
     operation = AsyncMock(return_value=expected)
+    client = HMCClient(_config())
+    context = AsyncMock()
+    context.__aenter__.return_value = client
     with (
-        patch.object(server_lpar_config, "build_config", return_value=_config()),
+        patch.object(server_lpar_config, "client_from_env", return_value=context),
         patch.object(
             server_lpar_config, "list_resource_group_memopt_scores", operation
         ),
     ):
         actual = server_lpar_config.hmc_list_resource_group_memopt_scores("system")
     assert actual == expected
+    operation.assert_awaited_once_with(client, "system", None)
 
 
 def test_mcp_registers_both_resource_group_affinity_tools():
