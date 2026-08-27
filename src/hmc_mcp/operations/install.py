@@ -70,7 +70,21 @@ class InstallHandle(TypedDict):
 
 @dataclass(frozen=True)
 class InstallRequest:
-    """Shared install source, network, and partition-profile settings."""
+    """Shared install source, network, and partition-profile settings.
+
+    Attributes:
+        install_source: Image source for ``installios -d``: a device path, an
+            absolute HMC path to a ``backupios`` tarball or VIOS ISO, or an NFS
+            ``server:/path``. The HMC serves the image under CLI semantics.
+        client_ip: IPv4 address assigned during installation (``-i``).
+        subnet_mask: IPv4 subnet mask for the install-time interface (``-S``).
+        gateway: IPv4 gateway used during installation (``-g``).
+        profile_name: Partition profile holding the install resources (``-r``).
+        vlan_id: Install-network VLAN identifier (``-V``); ``"0"`` means
+            untagged traffic.
+        mac_address: Optional client MAC address (``-m``). When omitted,
+            ``installios`` discovers it, which can time out on some networks.
+    """
 
     install_source: str
     client_ip: str
@@ -237,22 +251,9 @@ async def install_lpar_os(
         lpar_name_or_uuid: Powered-off partition name or UUID.
         system_name_or_uuid: Managed-system name or UUID hosting the
             partition; ``installios -s`` needs it explicitly.
-        install_source: Where the install image comes from (``installios
-            -d``): a device path such as ``/dev/cdrom`` or an ``lsmediadev``
-            USB device, an absolute path on the HMC to a ``backupios``
-            nim_resources tarball or VIOS ISO, or ``server:/path`` for an
-            NFS-served backup. Under CLI semantics the HMC itself serves the
-            image, so there is no external NIM-server address to prepare.
-        client_ip: IPv4 address assigned to the partition during installation
-            (``-i``).
-        subnet_mask: IPv4 subnet mask for the partition's install-time network
-            interface (``-S``).
-        gateway: IPv4 gateway used during installation (``-g``).
-        profile_name: Partition profile holding the install resources (``-r``).
-        vlan_id: Install-network VLAN tag identifier (``-V``); ``"0"`` for
-            untagged traffic.
-        mac_address: Optional client MAC address (``-m``). When omitted,
-            ``installios`` discovers it, which can time out on some networks.
+        request: Grouped :class:`InstallRequest` containing the install-image
+            source, install-time IPv4 network settings, partition profile,
+            optional VLAN identifier, and optional client MAC address.
 
     Raises:
         ValueError: If an argument cannot be part of an ``installios``
@@ -302,16 +303,9 @@ async def install_vios(
         system_name_or_uuid: Managed-system name or UUID hosting the VIOS;
             ``installios -s`` needs it explicitly.
         vios_name_or_uuid: Powered-off VIOS partition name or UUID.
-        install_source: Install-image source for ``installios -d``.
-        client_ip: IPv4 address assigned to the VIOS during installation
-            (``-i``).
-        subnet_mask: IPv4 subnet mask for the VIOS's install-time network
-            interface (``-S``).
-        gateway: IPv4 gateway used during installation (``-g``).
-        profile_name: Partition profile holding the install resources (``-r``).
-        vlan_id: Install-network VLAN tag identifier (``-V``); ``"0"`` for
-            untagged traffic.
-        mac_address: Optional client MAC address (``-m``).
+        request: Grouped :class:`InstallRequest` containing the install-image
+            source, install-time IPv4 network settings, partition profile,
+            optional VLAN identifier, and optional client MAC address.
 
     Raises:
         ValueError: If an argument cannot be part of an ``installios``
