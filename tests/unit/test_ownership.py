@@ -114,7 +114,7 @@ def _config():
 def test_stamp_returns_token_on_success():
     config = _config()
     with patch(
-        "hmc_mcp.ssh.profiles.set_lpar_description", new=AsyncMock(return_value="")
+        "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
     ) as mock_set:
         token = asyncio.run(
             stamp_lpar_ownership(config, "sys1", "lpar1", agent_id="alice")
@@ -130,7 +130,7 @@ def test_stamp_returns_token_on_success():
 def test_stamp_default_agent_id():
     config = _config()
     with patch(
-        "hmc_mcp.ssh.profiles.set_lpar_description", new=AsyncMock(return_value="")
+        "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
     ):
         token = asyncio.run(
             stamp_lpar_ownership(config, "sys1", "lpar1")  # no agent_id
@@ -144,7 +144,7 @@ def test_stamp_returns_none_on_ssh_error():
     from hmc_mcp.ssh.transport import HMCCLIError
 
     with patch(
-        "hmc_mcp.ssh.profiles.set_lpar_description",
+        "hmc_mcp.ssh.lpar.set_lpar_description",
         new=AsyncMock(side_effect=HMCCLIError("SSH failed")),
     ):
         token = asyncio.run(
@@ -157,7 +157,7 @@ def test_token_format():
     config = _config()
     today = datetime.date.today().isoformat()
     with patch(
-        "hmc_mcp.ssh.profiles.set_lpar_description", new=AsyncMock(return_value="")
+        "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
     ):
         token = asyncio.run(
             stamp_lpar_ownership(config, "sys1", "lpar1", agent_id="my-agent")
@@ -612,7 +612,7 @@ def test_stamp_composes_caller_segment():
     config = _config()
     today = datetime.date.today().isoformat()
     with patch(
-        "hmc_mcp.ssh.profiles.set_lpar_description", new=AsyncMock(return_value="")
+        "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
     ) as mock_set:
         token = asyncio.run(
             stamp_lpar_ownership(
@@ -631,7 +631,7 @@ def test_stamp_without_caller_token_unchanged():
     config = _config()
     today = datetime.date.today().isoformat()
     with patch(
-        "hmc_mcp.ssh.profiles.set_lpar_description", new=AsyncMock(return_value="")
+        "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
     ):
         token = asyncio.run(stamp_lpar_ownership(config, "sys1", "lpar1"))
     assert token == f"[hmc-mcp owner:hmc-mcp created:{today}]"
@@ -659,7 +659,7 @@ def test_agent_id_breaking_stamp_grammar_rejected_at_construction(character):
 def test_stamp_bad_caller_token_raises_unswallowed():
     config = _config()
     with patch(
-        "hmc_mcp.ssh.profiles.set_lpar_description", new=AsyncMock(return_value="")
+        "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
     ) as mock_set:
         with pytest.raises(ValueError, match="caller_token"):
             asyncio.run(
@@ -943,7 +943,7 @@ def _run_create(hmc, creation, *, set_description=None):
             return_value=f"[hmc-mcp owner:alice created:{today}]"
         )
     with (
-        patch("hmc_mcp.ssh.profiles.set_lpar_description", new=set_description),
+        patch("hmc_mcp.ssh.lpar.set_lpar_description", new=set_description),
         patch.object(
             operations_lpar,
             "resolve_system_uuid",

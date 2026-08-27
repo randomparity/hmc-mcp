@@ -13,9 +13,11 @@ import pytest
     [
         ("hmc_mcp.operations.lpar", "hmc_mcp.operations.ssh_network"),
         ("hmc_mcp.operations.ssh_network", "hmc_mcp.operations.lpar"),
+        ("hmc_mcp.ssh.lpar", "hmc_mcp.ssh.profiles"),
+        ("hmc_mcp.ssh.profiles", "hmc_mcp.ssh.lpar"),
     ],
 )
-def test_lpar_and_ssh_network_operations_import_in_either_order(
+def test_sibling_modules_import_in_either_order(
     modules: tuple[str, str],
 ) -> None:
     imports = "; ".join(f"import {module}" for module in modules)

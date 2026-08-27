@@ -7,54 +7,9 @@ import shlex
 from ..config import HMCConfig
 from ..documents import LparResources
 from .transport import HMCCLIError, run_hmc_command
-from .commands import _RECORD_DELIMITERS, build_attribute_record
-
-_DESCRIPTION_TARGET_UNSAFE: dict[str, tuple[str, str]] = {
-    " ": (
-        "a space",
-        "a space may make the HMC's internal -i parser tokenise incorrectly",
-    ),
-    ";": ("a semicolon", "a semicolon may corrupt the HMC CLI -i parser"),
-}
-
-def validate_lpar_description(description: str) -> None:
-    """Raise ``ValueError`` if *description* cannot be written to the HMC.
-
-    The HMC enforces printable ASCII-only partition descriptions (HSCLC63B).
-    Control characters (NUL, LF, CR, ESC, …) are also rejected because they
-    can corrupt the HMC CLI's CSV-like ``-i`` parser or be silently truncated
-    at the C-string layer.  Every character in :data:`_RECORD_DELIMITERS` is
-    rejected too, because the ``-i`` record's parser reads them as structure:
-    ``description=x,foo=bar`` sets a ``foo`` attribute the caller was never
-    given an argument for.  The message names the offending character, so this
-    docstring does not restate the table — it has grown once already.
-
-    Called at the MCP tool layer before UUID resolution and again inside
-    :func:`set_lpar_description` as a defensive check.  Both call sites are
-    intentional: the outer call provides fast rejection without REST
-    round-trips; the inner call guards callers that bypass the MCP tool.
-
-    The structural characters come from :data:`_RECORD_DELIMITERS`, the same
-    table :func:`build_attribute_record` enforces, so the two layers cannot
-    drift.  Only the exception type differs: this is the caller-facing
-    validator (``ValueError``); the builder refuses the record itself
-    (``HMCCLIError``).
-    """
-    if not description.isascii() or any(
-        ord(c) < 0x20 or ord(c) == 0x7F for c in description
-    ):
-        raise ValueError(
-            "description contains non-ASCII or non-printable characters; "
-            "the HMC only accepts printable ASCII partition descriptions (HSCLC63B)"
-        )
-    for character, (name, reason) in _RECORD_DELIMITERS.items():
-        if character in description:
-            raise ValueError(
-                f"description {description!r} contains {name} ({character!r}); "
-                f"{reason} in the HMC CLI -i attribute record, so the text "
-                f"would be read as further attributes rather than as the "
-                f"description. Remove {name} from the description."
-            )
+from .commands import build_attribute_record
+from .description_validation import validate_lpar_description
+from .profiles import set_lpar_description
 
 
 def validate_caller_token(token: str) -> None:
@@ -123,8 +78,6 @@ async def stamp_lpar_ownership(
     *agent_id* defaults to ``"hmc-mcp"`` when ``None`` or empty.
     """
     import datetime
-
-    from .profiles import set_lpar_description
 
     if caller_token is not None:
         validate_caller_token(caller_token)
@@ -308,4 +261,3 @@ def _match_uuid_name(raw: str, uuid: str, what: str) -> str:
         f"Could not resolve {what} UUID {uuid!r} to a CLI name over SSH. "
         "No matching row in the lssyscfg UUID,name output."
     )
-

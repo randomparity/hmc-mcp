@@ -9,7 +9,7 @@ import shlex
 from ..config import HMCConfig
 from .transport import HMCCLIError, run_hmc_command
 from .commands import build_attribute_record, build_filter
-from .lpar import _DESCRIPTION_TARGET_UNSAFE, validate_lpar_description
+from .description_validation import DESCRIPTION_TARGET_UNSAFE, validate_lpar_description
 
 async def get_lpar_description(
     config: HMCConfig,
@@ -66,7 +66,7 @@ async def set_lpar_description(
     than extending to the other records, where it would refuse HMC-legal names.
     """
     validate_lpar_description(description)
-    for character, (name, reason) in _DESCRIPTION_TARGET_UNSAFE.items():
+    for character, (name, reason) in DESCRIPTION_TARGET_UNSAFE.items():
         if character in lpar_name:
             raise HMCCLIError(
                 f"LPAR name {lpar_name!r} contains {name} ({character!r}); "
