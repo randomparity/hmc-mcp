@@ -293,9 +293,9 @@ async def inventory_network(client: Client, state: RunState) -> None:
     st, data = await state.call(
         client, "hmc_list_virtual_networks", system_name_or_uuid=context.system_name
     )
-    state.record(2, "hmc_list_virtual_networks", st, data)
     if st == "PASS":
         used_vlans: set[int] = set()
+        malformed_vlans: list[object] = []
         for e in entries(data):
             resource = get_resource(e)
             vlan = (
@@ -307,11 +307,19 @@ async def inventory_network(client: Client, state: RunState) -> None:
                 try:
                     used_vlans.add(int(vlan))
                 except (TypeError, ValueError):
-                    pass
-        for candidate in range(3000, 3100):
-            if candidate not in used_vlans:
-                context.test_vlan_id = candidate
-                break
+                    malformed_vlans.append(vlan)
+        if malformed_vlans:
+            st = "FAIL"
+            data = (
+                "Virtual-network inventory contains unparsable VLAN identifiers: "
+                + ", ".join(repr(value) for value in malformed_vlans)
+            )
+        else:
+            for candidate in range(3000, 3100):
+                if candidate not in used_vlans:
+                    context.test_vlan_id = candidate
+                    break
+    state.record(2, "hmc_list_virtual_networks", st, data)
     print(
         f"  Test VLAN ID: {context.test_vlan_id}  VSwitch ID: {context.test_vswitch_id}"
     )

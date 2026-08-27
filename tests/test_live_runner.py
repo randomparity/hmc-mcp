@@ -819,6 +819,31 @@ async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_malformed_vlan_inventory_blocks_network_mutation(monkeypatch):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_list_virtual_networks":
+            return "PASS", [{"Resource": {"NetworkVLANID": "not-a-vlan"}}]
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+
+    await runner.inventory_network(None, state)
+    await runner.mutate_virtual_networking(None, state)
+
+    assert state.context.test_vlan_id is None
+    assert not any(tool == "hmc_create_virtual_network" for tool, _ in calls)
+    result = next(
+        item for item in state.results if item["tool"] == "hmc_list_virtual_networks"
+    )
+    assert result["status"] == "FAIL"
+    assert "not-a-vlan" in result["data"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("workflow", "configure", "expected_tool"),
     [
