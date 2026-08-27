@@ -120,6 +120,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "list_lpar_ownership",
         "stamp_created_lpar_ownership",
         "create_and_stamp_lpar",
+        "create_lpar",
         "set_lpar_ownership_description",
         "delete_lpar",
         "modify_lpar",
@@ -1830,7 +1831,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "59defba75ff16d51e4ff1d72d8d183b46f08a6f07d03c26d3a7e9aeececfdd62"  # pragma: allowlist secret
+    expected_digest = "251e75b1ba6384f8183a219aa62ae214515335ac9b8e9f6ba349da1034869852"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

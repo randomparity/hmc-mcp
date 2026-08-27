@@ -1036,7 +1036,8 @@ def test_lpars_modify_procs_only_keeps_sharing_mode(fake_hmc):
     )
 
     assert result.exit_code == 0
-    body = fake_hmc.calls[0][1][1]
+    _, args, _ = next(call for call in fake_hmc.calls if call[0] == "modify_logical_partition")
+    body = args[1]
     assert "DesiredProcessingUnits" in body and ">0.5<" in body
     assert "HasDedicatedProcessors" not in body
     assert "SharingMode" not in body
@@ -1049,7 +1050,8 @@ def test_lpars_modify_dedicated_flag_sets_mode(fake_hmc):
     )
 
     assert result.exit_code == 0
-    body = fake_hmc.calls[0][1][1]
+    _, args, _ = next(call for call in fake_hmc.calls if call[0] == "modify_logical_partition")
+    body = args[1]
     assert "DedicatedProcessorConfiguration" in body
     assert "HasDedicatedProcessors" in body and ">true<" in body
 

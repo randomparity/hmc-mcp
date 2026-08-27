@@ -68,6 +68,7 @@ from hmc_mcp.operations.lpar_dlpar import (
     set_lpar_memory,
     set_lpar_processors,
 )
+from hmc_mcp.operations.lpar_workflows import create_lpar
 from hmc_mcp.operations.lpm import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightOutcome,
@@ -306,6 +307,7 @@ __all__ = [
     "list_lpar_ownership",
     "stamp_created_lpar_ownership",
     "create_and_stamp_lpar",
+    "create_lpar",
     "set_lpar_ownership_description",
     "delete_lpar",
     "modify_lpar",

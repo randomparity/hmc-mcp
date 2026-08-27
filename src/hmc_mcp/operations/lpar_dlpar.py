@@ -39,39 +39,54 @@ async def modify_lpar(
     system_name_or_uuid: str | None,
     assignments: LparPcieAssignments,
     *,
+    new_name: str | None = None,
     ownership_override: bool = False,
 ) -> LparPcieWorkflowResult:
-    """Apply resource and PCIe changes as one ordered LPAR workflow."""
-    if assignments != LparPcieAssignments() and system_name_or_uuid is None:
-        raise ValueError("system_name_or_uuid is required for PCIe assignments")
+    """Authorize and apply rename, resource, and PCIe changes in order."""
+    if (
+        assignments != LparPcieAssignments() or new_name is not None
+    ) and system_name_or_uuid is None:
+        raise ValueError("system_name_or_uuid is required for rename or PCIe assignments")
     if system_name_or_uuid is not None:
         await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
 
-    modified = None
+    lpar_uuid = await _resolve_and_authorize_lpar(
+        hmc,
+        lpar_name_or_uuid,
+        system_name_or_uuid,
+        ownership_override=ownership_override,
+    )
+    resource = None
     steps: list[AssignmentStep] = []
+    if new_name is not None:
+        resource = await hmc.modify_logical_partition(
+            lpar_uuid, build_lpar_document(name=new_name)
+        )
+        steps.append(AssignmentStep("rename", "ok", resource))
     if resources != LparResources():
-        lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
         try:
-            modified = await hmc.modify_logical_partition(
+            resource = await hmc.modify_logical_partition(
                 lpar_uuid, build_lpar_document(name=None, resources=resources)
             )
         except HMCError as exc:
             translate_lpar_write_error(exc)
             raise
-        steps.append(AssignmentStep("resources", "ok", modified))
+        steps.append(AssignmentStep("resources", "ok", resource))
 
     assignment_result = await apply_validated_lpar_pcie_assignments(
         hmc,
         system_name_or_uuid or "",
-        lpar_name_or_uuid,
+        lpar_uuid,
         assignments,
         ownership_override=ownership_override,
     )
     steps.extend(assignment_result.steps)
+    if resource is None:
+        resource = await hmc.get_logical_partition(lpar_uuid)
     return LparPcieWorkflowResult(
         False,
         assignment_result.workflow_completed,
-        modified,
+        resource,
         None,
         tuple(steps),
         (),
@@ -466,5 +481,4 @@ async def set_lpar_memory(
         system_name_or_uuid,
         ownership_override,
     )
-
 

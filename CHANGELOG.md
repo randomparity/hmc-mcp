@@ -357,6 +357,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `create_lpar`, the complete reusable creation workflow that validates PCIe requests,
+  creates and ownership-stamps the partition, applies assignments, and returns the existing
+  `LparPcieWorkflowResult`. `modify_lpar` now also accepts an optional ordered `new_name` step;
+  both changes move the frozen public signature digest.
 - Added: `apply_validated_lpar_pcie_assignments`, `modify_lpar`, `modify_system`, `create_vios`,
   and `delete_vios`. These established cross-module operation seams are now named public
   package entry points instead of being imported as private helpers. Their transitive input

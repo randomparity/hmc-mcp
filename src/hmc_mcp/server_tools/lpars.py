@@ -31,7 +31,6 @@ from ..operations.lpar import (
     LparCreation,
     LparPowerOnOutcome,
     activation_allows_assessment,
-    create_and_stamp_lpar,
     delete_lpar,
     power_lpar,
     power_on_outcome,
@@ -44,12 +43,10 @@ from ..operations.lpar_boot_order import (
 )
 from ..operations.lpar_dlpar import modify_lpar, set_lpar_memory, set_lpar_processors
 from ..operations.lpar_errors import translate_lpar_write_error
+from ..operations.lpar_workflows import create_lpar
 from ..operations.assignments import (
-    AssignmentStep,
     LparPcieAssignments,
     LparPcieWorkflowResult,
-    apply_validated_lpar_pcie_assignments,
-    prevalidate_lpar_pcie_assignments,
 )
 from ..ssh.lpar import validate_caller_token
 
@@ -140,49 +137,21 @@ def hmc_create_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            try:
-                await prevalidate_lpar_pcie_assignments(
-                    hmc, system_name_or_uuid, assignments
-                )
-                creation = await create_and_stamp_lpar(
-                    hmc,
-                    system_name_or_uuid,
-                    LparCreation(
-                        name,
-                        partition_type,
-                        resources,
-                        partition_id,
-                        os_type,
-                        keylock,
-                        max_virtual_slots,
-                        caller_token,
-                    ),
-                )
-                steps = [AssignmentStep("create", "ok", creation.lpar)]
-                if creation.lpar is None:
-                    return LparPcieWorkflowResult(
-                        True,
-                        False,
-                        None,
-                        creation.ownership_stamped,
-                        tuple(steps),
-                        creation.warnings,
-                    )
-                assignment_result = await apply_validated_lpar_pcie_assignments(
-                    hmc, system_name_or_uuid, name, assignments
-                )
-                steps.extend(assignment_result.steps)
-                return LparPcieWorkflowResult(
-                    True,
-                    assignment_result.workflow_completed,
-                    creation.lpar,
-                    creation.ownership_stamped,
-                    tuple(steps),
-                    creation.warnings,
-                )
-            except HMCError as exc:
-                translate_lpar_write_error(exc)
-                raise
+            return await create_lpar(
+                hmc,
+                system_name_or_uuid,
+                LparCreation(
+                    name,
+                    partition_type,
+                    resources,
+                    partition_id,
+                    os_type,
+                    keylock,
+                    max_virtual_slots,
+                    caller_token,
+                ),
+                assignments,
+            )
 
     return run_sync(_go)
 

@@ -190,6 +190,8 @@ names are internal everywhere and are never inventoried.
   `stamp_created_lpar_ownership`; types: none; excluded synchronous:
   `authorize_lpar_ownership_description`, `lpar_ownership_entry`,
   `parse_lpar_ownership_caller_token`, `parse_lpar_ownership_owner`.
+- `operations.lpar_workflows` — operations: `create_lpar`; types: none; excluded synchronous:
+  none.
 - `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
   `run_lpm_affinity_preflight`, `validate_lpar_migration`; types: `LpmAffinityMigrationResult`,

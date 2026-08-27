@@ -15,7 +15,6 @@ from .app import (
     _client,
     _partition_not_found,
     _print_json,
-    _resolve_partition_uuid,
     _run,
     _ssh_client,
     _ssh_config,
@@ -31,11 +30,11 @@ from ..operations.lpar_ownership import set_lpar_ownership_description
 from ..operations.lpar import ProcessorCompatibilityMode
 from ..operations.lpar import (
     LparCreation,
-    create_and_stamp_lpar,
     delete_lpar,
     power_lpar,
-    rename_lpar,
 )
+from ..operations.lpar_dlpar import modify_lpar
+from ..operations.lpar_workflows import create_lpar
 from ..operations.lpar_boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,
@@ -43,8 +42,6 @@ from ..operations.lpar_boot_order import (
 )
 from ..operations.assignments import (
     LparPcieAssignments,
-    apply_validated_lpar_pcie_assignments,
-    prevalidate_lpar_pcie_assignments,
 )
 from ..operations.decommission import decommission_lpar
 from ..operations.ssh_network import (
@@ -63,7 +60,6 @@ from ..documents import (
     PARTITION_TYPES,
     STORAGE_KINDS,
     StorageKind,
-    build_lpar_document,
 )
 from ..ssh.affinity import (
     MemoptLparSelector,
@@ -572,8 +568,7 @@ def lpars_create(
 
     async def _go():
         async with _client() as hmc:
-            await prevalidate_lpar_pcie_assignments(hmc, system, assignments)
-            creation = await create_and_stamp_lpar(
+            return await create_lpar(
                 hmc,
                 system,
                 LparCreation(
@@ -583,24 +578,19 @@ def lpars_create(
                     partition_id=partition_id,
                     caller_token=caller_token,
                 ),
+                assignments,
             )
-            if creation.lpar is None:
-                return creation, None
-            outcome = await apply_validated_lpar_pcie_assignments(
-                hmc, system, name, assignments
-            )
-            return creation, outcome
 
-    result, assignment_result = _run(_go)
+    result = _run(_go)
 
     console.print(f"[green]Created LPAR '{name}'[/green]")
     _print_json(result.lpar)
     for warning in result.warnings:
         err_console.print(f"[yellow]Warning: {warning}[/yellow]")
-    if assignment_result is not None and assignment_result.steps:
-        _print_json(asdict(assignment_result))
-        if not assignment_result.workflow_completed:
-            raise typer.Exit(1)
+    if result.steps:
+        _print_json(asdict(result))
+    if not result.workflow_completed:
+        raise typer.Exit(1)
 
 
 @lpars_app.command("modify")
@@ -688,70 +678,28 @@ def lpars_modify(
         max_vcpus=max_vcpus,
         uncapped=None if capped is None else not capped,
     )
-    has_resource_changes = any(
-        value is not None
-        for value in (
-            min_memory,
-            memory,
-            max_memory,
-            min_procs,
-            procs,
-            max_procs,
-            min_vcpus,
-            vcpus,
-            max_vcpus,
-            dedicated,
-            capped,
-        )
-    )
+    if not yes and not typer.confirm(f"Apply changes to '{name_or_uuid}'?"):
+        raise typer.Abort()
 
     async def _go():
         async with _client() as hmc:
-            if system is not None:
-                await prevalidate_lpar_pcie_assignments(hmc, system, assignments)
-            if not yes:
-                if not typer.confirm(f"Apply changes to '{name_or_uuid}'?"):
-                    raise typer.Abort()
-            if new_name is not None:
-                uuid, updated = await rename_lpar(
-                    hmc,
-                    cast(str, system),
-                    name_or_uuid,
-                    new_name,
-                    ownership_override=ownership_override,
-                )
-                if not has_resource_changes and assignments == LparPcieAssignments():
-                    return uuid, updated
-                selector = uuid
-            else:
-                selector = name_or_uuid
-            uuid = await _resolve_partition_uuid(hmc, selector)
-            if uuid is None:
-                return None, None
-            xml = build_lpar_document(name=None, resources=resources)
-            updated = (
-                await hmc.modify_logical_partition(uuid, xml)
-                if has_resource_changes
-                else None
-            )
-            assignment_result = await apply_validated_lpar_pcie_assignments(
+            return await modify_lpar(
                 hmc,
-                cast(str, system),
-                selector,
+                name_or_uuid,
+                resources,
+                system,
                 assignments,
+                new_name=new_name,
                 ownership_override=ownership_override,
             )
-            return uuid, {
-                "resources": updated,
-                "assignments": asdict(assignment_result),
-            }
 
-    uuid, updated = _run(_go)
+    result = _run(_go)
 
-    if uuid is None:
+    if result.lpar is None:
         _partition_not_found(name_or_uuid)
+    uuid = result.lpar.get("UUID", name_or_uuid)
     console.print(f"[green]Modified LPAR {uuid}[/green]")
-    _print_json(updated)
+    _print_json(asdict(result))
 
 
 @lpars_app.command("delete")

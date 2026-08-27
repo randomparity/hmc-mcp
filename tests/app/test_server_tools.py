@@ -377,10 +377,14 @@ def test_modify_lpar_builds_resource_xml(monkeypatch, mock_hmc):
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="owned-lpar"))
     )
-    result = hmc_modify_lpar(
-        LPAR_UUID,
-        resources=LparResources(desired_memory=8192),
-    )
+    with patch(
+        "hmc_mcp.operations.lpar_dlpar._resolve_and_authorize_lpar",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        result = hmc_modify_lpar(
+            LPAR_UUID,
+            resources=LparResources(desired_memory=8192),
+        )
     body = route.calls.last.request.content.decode()
     assert "PartitionName" not in body
     assert '<DesiredMemory kb="CUD" kxe="false">8192</DesiredMemory>' in body
