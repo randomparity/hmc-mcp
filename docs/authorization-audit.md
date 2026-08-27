@@ -243,8 +243,11 @@ directory is `/tmp`, which a reboot or a tmpfiles sweep may clear.
 `log_path` takes the shared 128-character bound like every other value, with no marker.
 The template's fixed part is 28 characters and nothing bounds a partition name, so a long
 enough one yields a path the bound then cuts — leaving a value that does not exist and
-looks well-formed. `partition` is truncated at the same bound beside it, so the real path
-cannot be recomposed from the record either. Such a name is one `installios` would refuse anyway, but the
+looks well-formed. Whether the record still tells you the real path depends on where the
+name falls: `partition` takes the same bound, so a name past 128 characters is cut too and
+the path is gone from both fields, while a name of 101 to 128 characters leaves `partition`
+whole and the path recoverable as `/tmp/hmc-mcp-installios-<partition>.log` — after applying
+the slug substitution yourself. Such a name is one `installios` would refuse anyway, but the
 record is written before the submit, so it exists.
 
 **This record names an attempt, never an outcome.** The submission is detached, so

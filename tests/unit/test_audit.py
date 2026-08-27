@@ -644,24 +644,29 @@ def test_the_install_record_is_bounded_and_escaped():
     assert len(record["attribution"]["claim"]) == audit.MAX_VALUE_LENGTH
 
 
-def test_a_long_partition_records_a_log_path_that_does_not_exist():
-    """The bound applies to `log_path` too, and the document says so.
+@pytest.mark.parametrize(("length", "recoverable"), [(110, True), (200, False)])
+def test_a_long_partition_records_a_log_path_that_does_not_exist(length, recoverable):
+    """The bound applies to `log_path` too, and the document states the boundary.
 
-    A partition name long enough to push `/tmp/hmc-mcp-installios-<slug>.log`
-    past the bound records a shortened path with no marker, and `partition` is cut
-    at the same bound — so the real path cannot be recomposed from the record. It
-    is a name `installios` would refuse, but the record precedes the submit.
+    The template's fixed part is 28 characters, so a partition name past 100
+    pushes `/tmp/hmc-mcp-installios-<slug>.log` over the bound and the record
+    carries a cut path with no marker. Whether the real path survives depends on
+    `partition` beside it, which takes the same bound: at 110 it is whole and the
+    path recomposes, at 200 it is cut too and nothing recovers it. Both are names
+    `installios` would refuse, but the record precedes the submit.
     """
-    real = f"/tmp/hmc-mcp-installios-{'p' * 200}.log"
+    partition = "p" * length
+    real = f"/tmp/hmc-mcp-installios-{partition}.log"
     lines = _capture()
     audit.record_install_attempted(
-        system="s", partition="p" * 200, log_path=real, host="h", agent_id="a"
+        system="s", partition=partition, log_path=real, host="h", agent_id="a"
     )
     record = _one(lines)
     assert len(real) > audit.MAX_VALUE_LENGTH
     assert record["log_path"] == real[: audit.MAX_VALUE_LENGTH]
     assert not record["log_path"].endswith(".log"), "a truncated path still looks whole"
-    assert record["log_path"] != f"/tmp/hmc-mcp-installios-{record['partition']}.log"
+    recomposed = f"/tmp/hmc-mcp-installios-{record['partition']}.log"
+    assert (recomposed == real) is recoverable
 
 
 def test_an_empty_install_host_renders_empty():
