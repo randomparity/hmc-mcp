@@ -109,10 +109,16 @@ frozen `InstallHandle` does not have, and both are more than this issue authoriz
   Python API path the record goes synchronously to stderr through `logging.lastResort` with
   no bound, exactly as the `ownership-override` record already does there. Reaching one
   costs a REST resolution round trip and, for a UUID target, an SSH one.
-- Absence of the record is not proof no install was submitted, and the reasons are in this
-  change's own delivery path: the serve-path sink drops under load with only a
+- Absence of the record is not proof no install was submitted, and several of the reasons
+  are in this change's own delivery path: the serve-path sink drops under load with only a
   `records-dropped` count to show for it, `--audit-level ERROR` silences the reserved logger
-  outright, and `_emit` swallows a failure to build or write rather than failing the call.
+  outright, `_emit` swallows a failure to build or write rather than failing the call, and
+  off the serve path the reserved logger stays at `NOTSET` — level resolution walks the
+  parent chain whatever `propagate` says, so an embedder calling
+  `logging.getLogger("hmc_mcp").setLevel(logging.ERROR)` silences it ahead of
+  `logging.lastResort`. That last one applies to the very caller §3 chose `WARNING` for, and
+  it is not this record's to fix: the reserved logger's inheritance is shared with every
+  other event.
   `docs/authorization-audit.md` carries this caveat for the record, as it does for its
   siblings.
 - No change to `hmc_mcp.api.__all__` and no movement of the frozen public signature digest:

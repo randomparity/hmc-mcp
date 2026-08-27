@@ -271,12 +271,16 @@ drops it, because it is a permit. An `hmc_mcp.api` consumer gets no `authorizati
 at all.
 
 **Absence of this record is not proof that no install was submitted**, for the reasons the
-lead section gives generally and three that apply here specifically: under `hmc-mcp serve`
+lead section gives generally and these, which apply here specifically. Under `hmc-mcp serve`
 it lands on the bounded sink, which drops under load and reports only a `records-dropped`
 count — a number, not an identity, so a reader cannot tell whether a dropped line was an
 install; `--audit-level ERROR` or `CRITICAL` silences the reserved logger outright; and a
 record that fails to build or write is swallowed rather than failing the call, because a
-diagnostic must not abort an operation. Alert on the records you have, not on their absence.
+diagnostic must not abort an operation. Off the serve path the reserved logger is left at
+`NOTSET`, and level resolution walks the parent chain whatever `propagate` says — so an
+embedder that quiets the package the ordinary way, `logging.getLogger("hmc_mcp").setLevel`,
+suppresses the record before `logging.lastResort` is ever consulted. Alert on the records
+you have, not on their absence.
 
 It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as
 nulls: the record is not an access-policy decision, and it is also emitted on the Python
