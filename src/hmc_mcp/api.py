@@ -142,7 +142,7 @@ from hmc_mcp.operations.pcie import (
 )
 from hmc_mcp.operations.assignments import (
     AssignmentResult,
-    AssignmentStep,
+    WorkflowStep,
     DedicatedPcieAssignment,
     LparPcieAssignments,
     LparPcieWorkflowResult,
@@ -437,7 +437,7 @@ __all__ = [
     "remove_vnic",
     "SriovMode",
     "AssignmentResult",
-    "AssignmentStep",
+    "WorkflowStep",
     "DedicatedPcieAssignment",
     "LparPcieAssignments",
     "LparPcieWorkflowResult",

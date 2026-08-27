@@ -5,7 +5,7 @@ from __future__ import annotations
 from ..client import HMCClient
 from ..errors import HMCError
 from .assignments import (
-    AssignmentStep,
+    WorkflowStep,
     LparPcieAssignments,
     LparPcieWorkflowResult,
     apply_validated_lpar_pcie_assignments,
@@ -27,7 +27,7 @@ async def create_lpar(
             hmc, system_name_or_uuid, assignments
         )
         created = await create_and_stamp_lpar(hmc, system_name_or_uuid, creation)
-        steps = [AssignmentStep("create", "ok", created.lpar)]
+        steps = [WorkflowStep("create", "ok", created.lpar)]
         if created.lpar is None:
             return LparPcieWorkflowResult(
                 True,

@@ -807,16 +807,16 @@ def lpars_decommission(
         table.add_column("Status", style="green")
         table.add_column("Result")
         for step in result.steps:
-            status = step.get("status", "-")
+            status = step.status
             style = (
                 "green"
                 if status == "ok"
                 else ("yellow" if status in ("dry_run", "skipped") else "red")
             )
             table.add_row(
-                step.get("step", "-"),
+                step.step,
                 f"[{style}]{status}[/{style}]",
-                "-" if "result" not in step else str(step["result"]),
+                "-" if step.result is None else str(step.result),
             )
         console.print(table)
 
@@ -1093,13 +1093,13 @@ def lpars_provision(
     table.add_column("Step", style="cyan")
     table.add_column("Status", style="green")
     for step in result.steps:
-        status = step.get("status", "-")
+        status = step.status
         style = (
             "green"
             if status == "ok"
             else ("yellow" if status in ("dry_run", "skipped") else "red")
         )
-        table.add_row(step.get("step", "-"), f"[{style}]{status}[/{style}]")
+        table.add_row(step.step, f"[{style}]{status}[/{style}]")
     console.print(table)
 
     if result.warnings:

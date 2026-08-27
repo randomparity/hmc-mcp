@@ -148,9 +148,9 @@ names are internal everywhere and are never inventoried.
   `list_adapters`; types: `AdapterResult`; excluded synchronous: none.
 - `operations.assignments` — operations: `apply_lpar_pcie_assignments`,
   `apply_validated_lpar_pcie_assignments`, `prevalidate_lpar_pcie_assignments`; types:
-  `AssignmentResult`, `AssignmentStep`,
-  `DedicatedPcieAssignment`, `LparPcieAssignments`, `LparPcieWorkflowResult`,
-  `SriovLogicalPortAssignment`, `VnicAssignment`; excluded synchronous:
+  `AssignmentResult`, `DedicatedPcieAssignment`, `LparPcieAssignments`,
+  `LparPcieWorkflowResult`, `SriovLogicalPortAssignment`, `VnicAssignment`,
+  `WorkflowStep`; excluded synchronous:
   `assignment_step_names`.
 - `operations.capacity` — operations: `capacity_report`, `find_placement`; types: `CapacitySummary`; excluded
   synchronous: `lpar_processing_units`, `system_capacity`.

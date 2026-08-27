@@ -78,8 +78,8 @@ class LparPcieAssignments:
 
 
 @dataclass(frozen=True)
-class AssignmentStep:
-    """Stable outcome for one ordered assignment request."""
+class WorkflowStep:
+    """Stable outcome for one ordered multi-stage workflow operation."""
 
     step: str
     status: Literal["ok", "error", "skipped", "dry_run"]
@@ -92,7 +92,7 @@ class AssignmentResult:
 
     workflow_completed: bool
     dry_run: bool
-    steps: tuple[AssignmentStep, ...]
+    steps: tuple[WorkflowStep, ...]
 
 
 @dataclass(frozen=True)
@@ -103,7 +103,7 @@ class LparPcieWorkflowResult:
     workflow_completed: bool
     lpar: dict[str, Any] | None
     ownership_stamped: bool | None
-    steps: tuple[AssignmentStep, ...]
+    steps: tuple[WorkflowStep, ...]
     warnings: tuple[str, ...]
 
     def __getitem__(self, key: str) -> Any:
@@ -306,7 +306,7 @@ async def apply_validated_lpar_pcie_assignments(
     names = assignment_step_names(assignments)
     if dry_run:
         return AssignmentResult(
-            False, True, tuple(AssignmentStep(n, "dry_run") for n in names)
+            False, True, tuple(WorkflowStep(n, "dry_run") for n in names)
         )
 
     operations: list[tuple[str, Any]] = []
@@ -355,15 +355,15 @@ async def apply_validated_lpar_pcie_assignments(
         )
         for index, item in enumerate(assignments.vnics)
     )
-    steps: list[AssignmentStep] = []
+    steps: list[WorkflowStep] = []
     for index, (name, operation) in enumerate(operations):
         try:
-            steps.append(AssignmentStep(name, "ok", await operation()))
+            steps.append(WorkflowStep(name, "ok", await operation()))
         except Exception as error:
             result = getattr(error, "result", str(error))
-            steps.append(AssignmentStep(name, "error", result))
+            steps.append(WorkflowStep(name, "error", result))
             steps.extend(
-                AssignmentStep(rest, "skipped") for rest, _ in operations[index + 1 :]
+                WorkflowStep(rest, "skipped") for rest, _ in operations[index + 1 :]
             )
             return AssignmentResult(False, False, tuple(steps))
     return AssignmentResult(True, False, tuple(steps))

@@ -6,6 +6,7 @@ import pytest
 
 from conftest import assert_only_these_client_methods_used
 
+from hmc_mcp.operations.assignments import WorkflowStep
 from hmc_mcp.operations.provision import (
     AttachDiskResult,
     ProvisionStorage,
@@ -57,10 +58,10 @@ async def test_attach_disk_dry_run_validates_without_mutating() -> None:
         workflow_completed=False,
         lpar_uuid=LPAR_UUID,
         dry_run=True,
-        steps=(
-            {"step": "create_disk", "status": "dry_run"},
-            {"step": "vscsi", "status": "dry_run"},
-            {"step": "storage", "status": "dry_run"},
+            steps=(
+                WorkflowStep("create_disk", "dry_run"),
+                WorkflowStep("vscsi", "dry_run"),
+                WorkflowStep("storage", "dry_run"),
         ),
         warnings=(),
     )
@@ -89,17 +90,17 @@ async def test_attach_disk_runs_shared_storage_leg_in_order() -> None:
 
     assert calls == ["create_disk", "vscsi", "storage"]
     assert result.workflow_completed is True
-    assert [step["status"] for step in result.steps] == ["ok", "ok", "ok"]
-    assert result.steps[0]["result"] == {
+    assert [step.status for step in result.steps] == ["ok", "ok", "ok"]
+    assert result.steps[0].result == {
         "disk_name": "disk01",
         "capacity_mb": 1024,
     }
-    assert result.steps[1]["result"] == {
+    assert result.steps[1].result == {
         "lpar_uuid": LPAR_UUID,
         "vios_partition_id": 2,
         "vios_slot": 10,
     }
-    assert result.steps[2]["result"] == {
+    assert result.steps[2].result == {
         "lpar_uuid": LPAR_UUID,
         "vios_uuid": VIOS_UUID,
         "storage_name": "disk01",
@@ -122,7 +123,7 @@ async def test_attach_disk_reports_partial_failure_and_skips_remainder() -> None
         vios_slot=10,
     )
 
-    assert [step["status"] for step in result.steps] == ["ok", "error", "skipped"]
+    assert [step.status for step in result.steps] == ["ok", "error", "skipped"]
     assert result.workflow_completed is False
     client.map_storage_to_lpar.assert_not_awaited()
 

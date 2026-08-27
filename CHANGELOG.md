@@ -585,7 +585,7 @@ Initial manifest of `hmc_mcp.api.__all__` (127 exports). This enumeration is the
 `[Unreleased]` manifest's delta is derived against, so it names the 0.1.0 export set and nothing
 added afterwards; every later addition is recorded above.
 
-`AdapterResult`, `AdapterType`, `AssignmentResult`, `AssignmentStep`, `AttachDiskResult`,
+`AdapterResult`, `AdapterType`, `AssignmentResult`, `WorkflowStep`, `AttachDiskResult`,
 `BootDeviceSelector`, `ConfigError`, `DecommissionResult`, `DedicatedPcieAssignment`,
 `DedicatedSlot`, `DeviceType`, `FleetHealthResult`, `HMCCLIError`, `HMCClient`, `HMCConfig`,
 `HMCError`, `HMCTransportError`, `InventoryResult`, `InventorySelector`, `LparCreation`,

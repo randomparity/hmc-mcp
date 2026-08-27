@@ -120,7 +120,7 @@ against that commit rather than maintained forward.
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
 | `delete_lpar` | `operations/lpar.py:298` | guarded (`:313`) | — |
-| `decommission_lpar` | `operations/decommission.py:612` | guarded (`:289`, `:643`, `:662`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
+| `decommission_lpar` | `operations/decommission.py:606` | guarded (`:283`, `:637`, `:656`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
 | `rename_lpar` | `operations/lpar.py:410` | guarded (`:426`) | — |
 | `set_lpar_ownership_description` | `operations/lpar_ownership.py:264` | guarded (`:281`) | — |
 | `synchronize_lpar_profile` | `operations/lpar_configuration.py:29` | guarded (`:25`) | — |
@@ -155,7 +155,7 @@ only the transport boundary.
 | `add_vios_adapter` | `operations/adapters.py:62` | guarded (`:73`) | #372 |
 | `delete_adapter` | `operations/adapters.py:84` | guarded (`:94`) | #372 |
 | `map_storage` | `operations/storage.py:112` | guarded (`:124`) | #372 |
-| `attach_disk_to_lpar` | `operations/provision.py:323` | guarded before the storage workflow (`:355`) | #372 |
+| `attach_disk_to_lpar` | `operations/provision.py:316` | guarded before the storage workflow (`:348`) | #372 |
 | `mount_optical_media` | `operations/storage.py:696` | guarded (`:713`) | #440 |
 | `unmount_optical_media` | `operations/storage.py:724` | guarded (`:763`) | #440 |
 | `migrate_lpar` | `operations/lpm.py:320` | guarded after optional validation and before migration submission (`:360`) | #373 |
@@ -226,7 +226,7 @@ exempt anyway.
 | Operation | Reason |
 |---|---|
 | `create_and_stamp_lpar` (`operations/lpar.py:189`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
-| `provision_lpar` (`operations/provision.py:490`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
+| `provision_lpar` (`operations/provision.py:483`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
 | `deploy_partition_template` (`operations/templates.py:93`) | Creates the partition and stamps it per ADR 0014. |
 | `hmc_capture_lpar_console` (`server_tools/console.py:24`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_backup_lpar_profiles` (`server_tools/profiles.py:35`) | Reads every profile and writes an HMC-side backup file; it does not mutate a partition or profile. |

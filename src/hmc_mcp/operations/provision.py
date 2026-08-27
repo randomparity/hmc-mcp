@@ -40,6 +40,7 @@ from ..ssh.affinity import (
 from ..ssh.lpar import validate_caller_token
 from .assignments import (
     LparPcieAssignments,
+    WorkflowStep,
     apply_validated_lpar_pcie_assignments,
     assignment_step_names,
     prevalidate_lpar_pcie_assignments,
@@ -105,7 +106,7 @@ class ProvisionResult:
             "description": "Ownership-token stamp result, or null when not attempted."
         }
     )
-    steps: tuple[dict[str, Any], ...] = field(
+    steps: tuple[WorkflowStep, ...] = field(
         metadata={"description": "Ordered per-step status and result records."}
     )
     warnings: tuple[str, ...] = field(
@@ -120,7 +121,7 @@ class AttachDiskResult:
     workflow_completed: bool
     lpar_uuid: str
     dry_run: bool
-    steps: tuple[dict[str, Any], ...]
+    steps: tuple[WorkflowStep, ...]
     warnings: tuple[str, ...]
 
 
@@ -175,24 +176,16 @@ async def _check_vg_exists(hmc, vios_uuid: str, vg_uuid: str) -> None:
         )
 
 
-def _step(name: str, status: str, result: Any = None) -> dict[str, Any]:
-    """Build a single step-result dict."""
-    entry: dict[str, Any] = {"step": name, "status": status}
-    if result is not None:
-        entry["result"] = result
-    return entry
-
-
 async def _record_hmc_step(
-    steps: list[dict[str, Any]], name: str, operation: Awaitable[Any]
+    steps: list[WorkflowStep], name: str, operation: Awaitable[Any]
 ) -> bool:
     """Record an expected HMC operation failure and propagate code defects."""
     try:
         result = await operation
     except HMCError as exc:
-        steps.append(_step(name, "error", str(exc)))
+        steps.append(WorkflowStep(name, "error", str(exc)))
         return False
-    steps.append(_step(name, "ok", result))
+    steps.append(WorkflowStep(name, "ok", result))
     return True
 
 
@@ -284,8 +277,8 @@ async def _power_on(
     return job_outcome("PowerOn", result.job)
 
 
-def _skip_steps(steps: list[dict[str, Any]], names: list[str]) -> None:
-    steps.extend(_step(name, "skipped") for name in names)
+def _skip_steps(steps: list[WorkflowStep], names: list[str]) -> None:
+    steps.extend(WorkflowStep(name, "skipped") for name in names)
 
 
 async def _run_storage_leg(
@@ -296,9 +289,9 @@ async def _run_storage_leg(
     vios_partition_id: int,
     vios_slot: int,
     disk_capacity_mib: int | None = None,
-) -> tuple[list[dict[str, Any]], bool]:
+) -> tuple[list[WorkflowStep], bool]:
     """Run the shared ordered vSCSI storage workflow."""
-    steps: list[dict[str, Any]] = []
+    steps: list[WorkflowStep] = []
     operations: list[tuple[str, Callable[[], Awaitable[Any]]]] = []
     if disk_capacity_mib is not None:
         operations.append(
@@ -348,7 +341,7 @@ async def attach_disk_to_lpar(
             False,
             lpar_uuid,
             True,
-            tuple(_step(name, "dry_run") for name in step_names),
+            tuple(WorkflowStep(name, "dry_run") for name in step_names),
             (),
         )
 
@@ -373,7 +366,7 @@ async def attach_disk_to_lpar(
 def _provision_result(
     creation: LparCreationResult | None,
     created_uuid: str | None,
-    steps: list[dict[str, Any]],
+    steps: list[WorkflowStep],
     workflow_completed: bool,
     warnings: tuple[str, ...] = (),
 ) -> ProvisionResult:
@@ -389,7 +382,7 @@ def _provision_result(
 
 
 async def _run_policy_leg(
-    steps: list[dict[str, Any]],
+    steps: list[WorkflowStep],
     hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name: str,
@@ -405,7 +398,7 @@ async def _run_policy_leg(
 
 
 async def _run_network_leg(
-    steps: list[dict[str, Any]], hmc: HMCClient, lpar_uuid: str, vlan_id: int
+    steps: list[WorkflowStep], hmc: HMCClient, lpar_uuid: str, vlan_id: int
 ) -> bool:
     return await _record_hmc_step(
         steps, "network", _add_network(hmc, lpar_uuid, vlan_id)
@@ -413,7 +406,7 @@ async def _run_network_leg(
 
 
 async def _run_assignment_leg(
-    steps: list[dict[str, Any]],
+    steps: list[WorkflowStep],
     hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name: str,
@@ -422,12 +415,12 @@ async def _run_assignment_leg(
     result = await apply_validated_lpar_pcie_assignments(
         hmc, system_name_or_uuid, lpar_name, assignments
     )
-    steps.extend(_step(item.step, item.status, item.result) for item in result.steps)
+    steps.extend(result.steps)
     return result.workflow_completed
 
 
 async def _run_power_leg(
-    steps: list[dict[str, Any]],
+    steps: list[WorkflowStep],
     hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_uuid: str,
@@ -436,23 +429,23 @@ async def _run_power_leg(
     try:
         result = await _power_on(hmc, system_name_or_uuid, lpar_uuid, assessment)
     except (HMCError, ValueError) as exc:
-        steps.append(_step("power_on", "error", str(exc)))
+        steps.append(WorkflowStep("power_on", "error", str(exc)))
         return False
     if isinstance(result, JobOutcome):
         if result.timed_out or result.error is not None:
             message = result.error or (
                 "PowerOn did not reach a successful terminal status before timeout"
             )
-            steps.append(_step("power_on", "error", message))
+            steps.append(WorkflowStep("power_on", "error", message))
             return False
-        steps.append(_step("power_on", "ok", asdict(result)))
+        steps.append(WorkflowStep("power_on", "ok", asdict(result)))
     else:
-        steps.append(_step("power_on", "ok", result))
+        steps.append(WorkflowStep("power_on", "ok", result))
     return True
 
 
 async def _run_affinity_leg(
-    steps: list[dict[str, Any]],
+    steps: list[WorkflowStep],
     hmc: HMCClient,
     assessment: ProvisionAffinityAssessment,
     policy: MinimumAffinityPolicy | None,
@@ -463,24 +456,24 @@ async def _run_affinity_leg(
             hmc, assessment, configured_minimum=configured_minimum
         )
     except (HMCError, HMCCLIError) as exc:
-        steps.append(_step("affinity_assessment", "error", str(exc)))
+        steps.append(WorkflowStep("affinity_assessment", "error", str(exc)))
         return False, ()
     classification = result.assessment.classification
     serialized_result = asdict(result)
     if classification == "none":
-        steps.append(_step("affinity_assessment", "ok", serialized_result))
+        steps.append(WorkflowStep("affinity_assessment", "ok", serialized_result))
         return True, ()
     if assessment.response == "fail":
-        steps.append(_step("affinity_assessment", "error", serialized_result))
+        steps.append(WorkflowStep("affinity_assessment", "error", serialized_result))
         return False, ()
-    steps.append(_step("affinity_assessment", "ok", serialized_result))
+    steps.append(WorkflowStep("affinity_assessment", "ok", serialized_result))
     return True, (f"Post-activation affinity assessment: {classification}",)
 
 
 def _failed_provision_result(
     creation: LparCreationResult,
     created_uuid: str,
-    steps: list[dict[str, Any]],
+    steps: list[WorkflowStep],
     step_names: list[str],
 ) -> ProvisionResult:
     _skip_steps(steps, step_names[len(steps) :])
@@ -575,11 +568,11 @@ async def provision_lpar(
             None,
             True,
             None,
-            tuple(_step(n, "dry_run") for n in step_names),
+            tuple(WorkflowStep(n, "dry_run") for n in step_names),
             (),
         )
 
-    steps: list[dict[str, Any]] = []
+    steps: list[WorkflowStep] = []
     try:
         creation = await create_and_stamp_lpar(
             hmc,
@@ -587,17 +580,17 @@ async def provision_lpar(
             LparCreation(name, partition_type, resources, caller_token=caller_token),
         )
     except HMCError as exc:
-        steps.append(_step("create", "error", str(exc)))
+        steps.append(WorkflowStep("create", "error", str(exc)))
         _skip_steps(steps, step_names[1:])
         return _provision_result(None, None, steps, False)
 
     created_lpar = creation.lpar
     created_uuid = (created_lpar or {}).get("UUID")
     if not isinstance(created_uuid, str) or not created_uuid:
-        steps.append(_step("create", "error", "LPAR creation returned no UUID"))
+        steps.append(WorkflowStep("create", "error", "LPAR creation returned no UUID"))
         _skip_steps(steps, step_names[1:])
         return _provision_result(creation, None, steps, False)
-    steps.append(_step("create", "ok", created_lpar))
+    steps.append(WorkflowStep("create", "ok", created_lpar))
 
     if not await _run_policy_leg(
         steps,
@@ -634,7 +627,7 @@ async def provision_lpar(
 
     if affinity_assessment is not None:
         if not power_on:
-            steps.append(_step("affinity_assessment", "skipped"))
+            steps.append(WorkflowStep("affinity_assessment", "skipped"))
             return _provision_result(creation, created_uuid, steps, False)
         completed, warnings = await _run_affinity_leg(
             steps, hmc, affinity_assessment, minimum_affinity_policy

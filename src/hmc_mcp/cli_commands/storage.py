@@ -191,9 +191,9 @@ def storage_attach_disk(
     table.add_column("Detail")
     for step in result.steps:
         table.add_row(
-            str(step.get("step", "-")),
-            str(step.get("status", "-")),
-            str(step.get("result", "")),
+            step.step,
+            step.status,
+            "" if step.result is None else str(step.result),
         )
     console.print(table)
     raise typer.Exit(1)

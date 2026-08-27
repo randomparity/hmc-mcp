@@ -21,7 +21,7 @@ from ..documents import (
 from ..errors import HMCError
 from ..resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
 from .assignments import (
-    AssignmentStep,
+    WorkflowStep,
     LparPcieAssignments,
     LparPcieWorkflowResult,
     apply_validated_lpar_pcie_assignments,
@@ -57,12 +57,12 @@ async def modify_lpar(
         ownership_override=ownership_override,
     )
     resource = None
-    steps: list[AssignmentStep] = []
+    steps: list[WorkflowStep] = []
     if new_name is not None:
         resource = await hmc.modify_logical_partition(
             lpar_uuid, build_lpar_document(name=new_name)
         )
-        steps.append(AssignmentStep("rename", "ok", resource))
+        steps.append(WorkflowStep("rename", "ok", resource))
     if resources != LparResources():
         try:
             resource = await hmc.modify_logical_partition(
@@ -71,7 +71,7 @@ async def modify_lpar(
         except HMCError as exc:
             translate_lpar_write_error(exc)
             raise
-        steps.append(AssignmentStep("resources", "ok", resource))
+        steps.append(WorkflowStep("resources", "ok", resource))
 
     assignment_result = await apply_validated_lpar_pcie_assignments(
         hmc,

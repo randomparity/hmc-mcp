@@ -18,6 +18,7 @@ from conftest import JOB_ENTRY, assert_no_mutating_requests
 
 from hmc_mcp.documents import LparResources
 from hmc_mcp.jobs import JobOutcome
+from hmc_mcp.operations.assignments import WorkflowStep
 from hmc_mcp.operations.lpar import LparPowerResult
 from hmc_mcp.operations.provision import (
     ProvisionAffinityAssessment,
@@ -438,7 +439,7 @@ def test_provision_affinity_dry_run_never_powers_on_or_assesses(monkeypatch, moc
         result = hmc_provision_lpar(
             **_provision_args(dry_run=True, affinity_assessment=_affinity_request())
         )
-    assert result.steps[-1] == {"step": "affinity_assessment", "status": "dry_run"}
+    assert result.steps[-1] == WorkflowStep("affinity_assessment", "dry_run")
     assess.assert_not_awaited()
     assert_no_mutating_requests(mock_hmc)
 
@@ -455,7 +456,7 @@ def test_provision_affinity_power_off_is_skipped(monkeypatch, mock_hmc):
             **_provision_args(power_on=False, affinity_assessment=_affinity_request())
         )
     assert result.workflow_completed is False
-    assert result.steps[-1] == {"step": "affinity_assessment", "status": "skipped"}
+    assert result.steps[-1] == WorkflowStep("affinity_assessment", "skipped")
     assess.assert_not_awaited()
 
 
@@ -488,10 +489,10 @@ def test_provision_affinity_response_is_explicit(
             **_provision_args(affinity_assessment=_affinity_request(response=response))
         )
     assert result.workflow_completed is completed
-    assert result.steps[-1]["status"] == status
-    assert result.steps[-1]["result"]["achieved_score"] == 82
-    assert result.steps[-1]["result"]["predicted_score"] == 90
-    assert result.steps[-1]["result"]["prediction_guaranteed"] is False
+    assert result.steps[-1].status == status
+    assert result.steps[-1].result["achieved_score"] == 82
+    assert result.steps[-1].result["predicted_score"] == 90
+    assert result.steps[-1].result["prediction_guaranteed"] is False
     assert bool(result.warnings) is warning
     assess.assert_awaited_once()
 
@@ -515,8 +516,8 @@ def test_provision_affinity_timeout_never_assesses(monkeypatch, mock_hmc):
             **_provision_args(affinity_assessment=_affinity_request())
         )
     assert result.workflow_completed is False
-    assert result.steps[-2]["status"] == "error"
-    assert result.steps[-1] == {"step": "affinity_assessment", "status": "skipped"}
+    assert result.steps[-2].status == "error"
+    assert result.steps[-1] == WorkflowStep("affinity_assessment", "skipped")
     assess.assert_not_awaited()
 
 
@@ -541,9 +542,9 @@ def test_provision_keeps_its_result_when_the_power_guard_fails(monkeypatch, mock
     assert result.workflow_completed is False
     assert result.resource_created is True
     assert result.lpar_uuid == LPAR_UUID
-    steps = {s["step"]: s for s in result.steps}
-    assert steps["power_on"]["status"] == "error"
-    assert "no partition name" in steps["power_on"]["result"]
+    steps = {s.step: s for s in result.steps}
+    assert steps["power_on"].status == "error"
+    assert "no partition name" in steps["power_on"].result
 
 
 # ---------------------------------------------------------------------- #
@@ -566,12 +567,12 @@ def test_provision_lpar_full_workflow(monkeypatch, mock_hmc):
     # The explicit uniqueness precondition and the create workflow's own
     # race-safe resolution each verify the name.
     assert name_lookup.call_count == 2
-    steps = {s["step"]: s for s in result.steps}
-    assert steps["create"]["status"] == "ok"
-    assert steps["network"]["status"] == "ok"
-    assert steps["vscsi"]["status"] == "ok"
-    assert steps["storage"]["status"] == "ok"
-    assert steps["power_on"]["status"] == "ok"
+    steps = {s.step: s for s in result.steps}
+    assert steps["create"].status == "ok"
+    assert steps["network"].status == "ok"
+    assert steps["vscsi"].status == "ok"
+    assert steps["storage"].status == "ok"
+    assert steps["power_on"].status == "ok"
     assert isinstance(result.warnings, tuple)
 
 
@@ -583,9 +584,9 @@ def test_provision_lpar_step_results_contain_data(monkeypatch, mock_hmc):
 
     result = hmc_provision_lpar(**_provision_args())
 
-    steps = {s["step"]: s for s in result.steps}
+    steps = {s.step: s for s in result.steps}
     # create step should contain partition data
-    create_result = steps["create"]["result"]
+    create_result = steps["create"].result
     assert create_result is not None
     assert create_result.get("Resource", {}).get("PartitionName") == "web01"
 
@@ -641,7 +642,7 @@ def test_provision_lpar_no_power_on(monkeypatch, mock_hmc):
     result = hmc_provision_lpar(**_provision_args(power_on=False))
 
     assert result.workflow_completed is True
-    step_names = [s["step"] for s in result.steps]
+    step_names = [s.step for s in result.steps]
     assert "power_on" not in step_names
 
 
@@ -669,7 +670,7 @@ def test_provision_lpar_dry_run_validates_only(monkeypatch, mock_hmc):
     assert not create_route.called
     # All steps report dry_run status
     for step in result.steps:
-        assert step["status"] == "dry_run"
+        assert step.status == "dry_run"
 
 
 def test_provision_lpar_dry_run_name_conflict(monkeypatch, mock_hmc):
@@ -774,12 +775,12 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
 
     result = hmc_provision_lpar(**_provision_args())
 
-    steps = {s["step"]: s for s in result.steps}
-    assert steps["create"]["status"] == "ok"
-    assert steps["network"]["status"] == "ok"
-    assert steps["vscsi"]["status"] == "error"
-    assert steps["storage"]["status"] == "skipped"
-    assert steps["power_on"]["status"] == "skipped"
+    steps = {s.step: s for s in result.steps}
+    assert steps["create"].status == "ok"
+    assert steps["network"].status == "ok"
+    assert steps["vscsi"].status == "error"
+    assert steps["storage"].status == "skipped"
+    assert steps["power_on"].status == "skipped"
     assert not storage_route.called
     assert not power_on_route.called
     assert result.resource_created is True
@@ -816,10 +817,10 @@ def test_policy_provision_network_failure_records_each_step_once(monkeypatch, mo
         result = hmc_provision_lpar(
             **_provision_args(minimum_affinity_policy=MinimumAffinityPolicy(90, "fail"))
         )
-    names = [step["step"] for step in result.steps]
+    names = [step.step for step in result.steps]
     assert names.count("network") == 1
     assert (
-        next(step for step in result.steps if step["step"] == "network")["status"]
+        next(step for step in result.steps if step.step == "network").status
         == "error"
     )
 
@@ -851,8 +852,8 @@ def test_provision_lpar_reports_created_resource_without_uuid(monkeypatch, mock_
     assert result.resource_created is True
     assert result.workflow_completed is False
     assert result.lpar_uuid is None
-    assert result.steps[0]["status"] == "error"
-    assert "no UUID" in result.steps[0]["result"]
+    assert result.steps[0].status == "error"
+    assert "no UUID" in result.steps[0].result
     assert result.ownership_stamped is None
     assert "no LPAR body" in result.warnings[0]
 
@@ -960,7 +961,7 @@ def test_provision_applies_explicit_fail_policy_before_network(monkeypatch, mock
             **_provision_args(minimum_affinity_policy=policy, power_on=False)
         )
     assert result.workflow_completed is True
-    assert [step["step"] for step in result.steps][:3] == [
+    assert [step.step for step in result.steps][:3] == [
         "create",
         "minimum_affinity_policy",
         "network",

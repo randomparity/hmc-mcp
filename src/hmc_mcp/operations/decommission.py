@@ -23,6 +23,7 @@ from .lpar_ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     resolve_lpar_ownership_names,
 )
+from .assignments import WorkflowStep
 
 _ADAPTER_ORDER: tuple[AdapterType, ...] = (
     "ClientNetworkAdapter",
@@ -52,7 +53,7 @@ class DecommissionResult:
     dry_run: bool = field(
         metadata={"description": "Whether the call only inventoried the blast radius."}
     )
-    steps: tuple[dict[str, Any], ...] = field(
+    steps: tuple[WorkflowStep, ...] = field(
         metadata={"description": "Ordered per-step status and curated result records."}
     )
     warnings: tuple[str, ...] = field(
@@ -94,15 +95,8 @@ class _Inventory:
         }
 
 
-def _step(name: str, status: str, result: Any = None) -> dict[str, Any]:
-    entry: dict[str, Any] = {"step": name, "status": status}
-    if result is not None:
-        entry["result"] = result
-    return entry
-
-
-def _skip_steps(steps: list[dict[str, Any]], *names: str) -> None:
-    steps.extend(_step(name, "skipped") for name in names)
+def _skip_steps(steps: list[WorkflowStep], *names: str) -> None:
+    steps.extend(WorkflowStep(name, "skipped") for name in names)
 
 
 def _resource(entry: dict[str, Any] | None) -> dict[str, Any]:
@@ -450,9 +444,9 @@ async def _power_off(
     immediate: bool,
     timeout_seconds: int,
     poll_interval: int,
-) -> dict[str, Any]:
+) -> WorkflowStep:
     if inventory.state == "not activated":
-        return _step(
+        return WorkflowStep(
             "power_off",
             "ok",
             {"already_off": True, "state": "not activated"},
@@ -467,7 +461,7 @@ async def _power_off(
     submitted_id = job_identifier(submitted_job) if submitted_job is not None else None
     outcome = job_outcome(submitted_id or "", completed_job)
     if outcome.timed_out:
-        return _step(
+        return WorkflowStep(
             "power_off",
             "error",
             f"PowerOff for LPAR {inventory.lpar_name!r} timed out before reaching "
@@ -475,13 +469,13 @@ async def _power_off(
         )
     if outcome.status not in SUCCESSFUL_JOB_STATUSES:
         detail = outcome.error or "no error detail returned"
-        return _step(
+        return WorkflowStep(
             "power_off",
             "error",
             f"PowerOff for LPAR {inventory.lpar_name!r} did not complete successfully "
             f"(status {outcome.status!r}: {detail}).",
         )
-    return _step(
+    return WorkflowStep(
         "power_off",
         "ok",
         {
@@ -492,7 +486,7 @@ async def _power_off(
     )
 
 
-async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> dict[str, Any]:
+async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> WorkflowStep:
     deleted: list[dict[str, str]] = []
     for adapter in inventory.adapters:
         try:
@@ -502,7 +496,7 @@ async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> dict[str, A
                 adapter["uuid"],
             )
         except HMCError as exc:
-            return _step(
+            return WorkflowStep(
                 "detach_adapters",
                 "error",
                 {
@@ -511,7 +505,7 @@ async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> dict[str, A
                 },
             )
         deleted.append(adapter)
-    return _step(
+    return WorkflowStep(
         "detach_adapters",
         "ok",
         {"adapters": inventory.adapters},
@@ -520,13 +514,13 @@ async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> dict[str, A
 
 async def _detach_state_error(
     hmc: HMCClient, inventory: _Inventory
-) -> dict[str, Any] | None:
+) -> WorkflowStep | None:
     try:
         state = await hmc.get_quick_property(
             "LogicalPartition", inventory.lpar_uuid, "PartitionState"
         )
     except HMCError as exc:
-        return _step(
+        return WorkflowStep(
             "detach_adapters",
             "error",
             f"Could not verify LPAR {inventory.lpar_name!r} state before "
@@ -534,7 +528,7 @@ async def _detach_state_error(
         )
     if state == "not activated":
         return None
-    return _step(
+    return WorkflowStep(
         "detach_adapters",
         "error",
         f"Cannot detach adapters from LPAR {inventory.lpar_name!r}: current state "
@@ -548,7 +542,7 @@ def _result(
     resource_deleted: bool,
     workflow_completed: bool,
     dry_run: bool,
-    steps: tuple[dict[str, Any], ...],
+    steps: tuple[WorkflowStep, ...],
 ) -> DecommissionResult:
     return DecommissionResult(
         resource_deleted=resource_deleted,
@@ -561,16 +555,16 @@ def _result(
     )
 
 
-def _dry_run_steps(inventory: _Inventory) -> tuple[dict[str, Any], ...]:
+def _dry_run_steps(inventory: _Inventory) -> tuple[WorkflowStep, ...]:
     return (
-        _step("power_off", "dry_run", {"state": inventory.state}),
-        _step("detach_adapters", "dry_run", {"adapters": inventory.adapters}),
-        _step("delete_lpar", "dry_run", {"lpar_uuid": inventory.lpar_uuid}),
+        WorkflowStep("power_off", "dry_run", {"state": inventory.state}),
+        WorkflowStep("detach_adapters", "dry_run", {"adapters": inventory.adapters}),
+        WorkflowStep("delete_lpar", "dry_run", {"lpar_uuid": inventory.lpar_uuid}),
     )
 
 
 def _incomplete_result(
-    inventory: _Inventory, steps: list[dict[str, Any]]
+    inventory: _Inventory, steps: list[WorkflowStep]
 ) -> DecommissionResult:
     return _result(
         inventory,
@@ -588,7 +582,7 @@ async def _power_step_with_errors(
     immediate: bool,
     timeout_seconds: int,
     poll_interval: int,
-) -> dict[str, Any]:
+) -> WorkflowStep:
     try:
         return await _power_off(
             hmc,
@@ -598,15 +592,15 @@ async def _power_step_with_errors(
             poll_interval=poll_interval,
         )
     except HMCError as exc:
-        return _step("power_off", "error", str(exc))
+        return WorkflowStep("power_off", "error", str(exc))
 
 
-async def _delete_lpar_step(hmc: HMCClient, lpar_uuid: str) -> dict[str, Any]:
+async def _delete_lpar_step(hmc: HMCClient, lpar_uuid: str) -> WorkflowStep:
     try:
         await hmc.delete_logical_partition(lpar_uuid)
     except HMCError as exc:
-        return _step("delete_lpar", "error", str(exc))
-    return _step("delete_lpar", "ok", {"lpar_uuid": lpar_uuid})
+        return WorkflowStep("delete_lpar", "error", str(exc))
+    return WorkflowStep("delete_lpar", "ok", {"lpar_uuid": lpar_uuid})
 
 
 async def decommission_lpar(
@@ -638,7 +632,7 @@ async def decommission_lpar(
             steps=_dry_run_steps(inventory),
         )
 
-    steps: list[dict[str, Any]] = []
+    steps: list[WorkflowStep] = []
     if inventory.state != "not activated":
         await authorize_decommission_lpar_ownership_snapshot(
             hmc,
@@ -654,7 +648,7 @@ async def decommission_lpar(
         poll_interval=poll_interval,
     )
     steps.append(power_step)
-    if power_step["status"] != "ok":
+    if power_step.status != "ok":
         _skip_steps(steps, "detach_adapters", "delete_lpar")
         return _incomplete_result(inventory, steps)
 
@@ -668,18 +662,18 @@ async def decommission_lpar(
     detach_state_error = await _detach_state_error(hmc, inventory)
     if detach_state_error is not None:
         steps.append(detach_state_error)
-        steps.append(_step("delete_lpar", "skipped"))
+        steps.append(WorkflowStep("delete_lpar", "skipped"))
         return _incomplete_result(inventory, steps)
 
     detach_step = await _detach_adapters(hmc, inventory)
     steps.append(detach_step)
-    if detach_step["status"] != "ok":
-        steps.append(_step("delete_lpar", "skipped"))
+    if detach_step.status != "ok":
+        steps.append(WorkflowStep("delete_lpar", "skipped"))
         return _incomplete_result(inventory, steps)
 
     delete_step = await _delete_lpar_step(hmc, inventory.lpar_uuid)
     steps.append(delete_step)
-    if delete_step["status"] != "ok":
+    if delete_step.status != "ok":
         return _incomplete_result(inventory, steps)
 
     return _result(
