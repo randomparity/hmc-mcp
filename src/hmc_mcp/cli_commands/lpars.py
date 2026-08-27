@@ -9,14 +9,10 @@ import json
 import typer
 from pydantic import TypeAdapter, ValidationError
 from rich.table import Table
-from typing import Literal, cast
+from typing import cast
 
-from ..resource_identity import is_uuid
-from ..jobs import REMOTE_RESTART_OPERATIONS, RemoteRestartOperation
 from .app import (
     _client,
-    _first_field,
-    _output,
     _partition_not_found,
     _print_json,
     _resolve_partition_uuid,
@@ -30,8 +26,8 @@ from .app import (
     lpars_app,
 )
 
-from ..jobs import JobOutcome, validate_wait_timing
-from ..operations.lpar import PartitionState, ProcessorCompatibilityMode
+from ..jobs import validate_wait_timing
+from ..operations.lpar import ProcessorCompatibilityMode
 from ..operations.lpar import (
     LparCreation,
     create_and_stamp_lpar,
@@ -46,16 +42,6 @@ from ..operations.assignments import (
     prevalidate_lpar_pcie_assignments,
 )
 from ..operations.decommission import decommission_lpar
-from ..operations.lpm import (
-    LpmAffinityMigrationResult,
-    LpmAffinityPreflightRequest,
-    abort_lpar_migration,
-    migrate_lpar,
-    migrate_lpar_with_affinity_preflight,
-    validate_lpar_migration,
-    recover_lpar_migration,
-    remote_restart_lpar,
-)
 from ..operations.ssh_network import (
     get_lpar_memopt_score,
     get_minimum_affinity_policy,
@@ -372,137 +358,6 @@ def lpars_plan_system_memopt_score(
     )
 
 
-@lpars_app.command("summary")
-def lpars_summary(
-    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
-) -> None:
-    """One-call summary: state, RMC, memory/CPU, OS details, adapter count, description."""
-    from ..operations.composite import lpar_summary
-
-    async def _go():
-        async with _client() as hmc:
-            return await lpar_summary(hmc, name_or_uuid)
-
-    summary = _run(_go)
-
-    if as_json:
-        _print_json(summary)
-        return
-
-    table = Table(title=f"LPAR Summary: {summary.get('name') or name_or_uuid}")
-    table.add_column("Property", style="cyan")
-    table.add_column("Value", style="green")
-
-    def value_or_missing(key: str) -> str:
-        value = summary.get(key)
-        return "-" if value is None else str(value)
-
-    rows = [
-        ("UUID", summary.get("uuid") or "-"),
-        ("Name", summary.get("name") or "-"),
-        ("State", summary.get("state") or "-"),
-        ("RMC State", summary.get("rmc_state") or "-"),
-        ("Type", summary.get("partition_type") or "-"),
-        ("Partition ID", value_or_missing("partition_id")),
-        ("Current Memory (MiB)", value_or_missing("current_memory_mb")),
-        ("Desired Memory (MiB)", value_or_missing("desired_memory_mb")),
-        ("Current Proc Units", value_or_missing("current_proc_units")),
-        ("Desired Proc Units", value_or_missing("desired_proc_units")),
-        ("Desired vCPUs", value_or_missing("desired_vcpus")),
-        ("Dedicated Procs", value_or_missing("dedicated_procs")),
-        ("OS Version", summary.get("os_version") or "-"),
-        ("OS Type", summary.get("os_type") or "-"),
-        (
-            "Client Network Adapters",
-            str(summary.get("client_network_adapter_count", 0)),
-        ),
-        ("Description", summary.get("description") or "-"),
-    ]
-    for prop, val in rows:
-        table.add_row(prop, val)
-    console.print(table)
-
-
-@lpars_app.command("list")
-def lpars_list(
-    system: str | None = typer.Option(
-        None, "--system", "-s", help="Restrict to this managed system UUID"
-    ),
-    state: PartitionState | None = typer.Option(
-        None, "--state", help="Filter by PartitionState (server-side search)"
-    ),
-    as_json: bool = typer.Option(False, "--json"),
-) -> None:
-    """List logical partitions."""
-
-    if state is not None:
-        lpars = _with_client(
-            lambda hmc: hmc.search_uom("LogicalPartition", "PartitionState", state)
-        )
-    else:
-        lpars = _with_client(lambda hmc: hmc.list_logical_partitions(system))
-
-    table = None
-    if not as_json:
-        table = Table(title="Logical Partitions")
-        for col in ("Name", "ID", "UUID", "State", "Type", "OS", "RMC"):
-            table.add_column(col)
-        for lpar in lpars:
-            table.add_row(
-                _first_field(lpar, "PartitionName"),
-                _first_field(lpar, "PartitionID"),
-                lpar.get("UUID") or "-",
-                _first_field(lpar, "PartitionState"),
-                _first_field(lpar, "PartitionType"),
-                _first_field(lpar, "OperatingSystemVersion", default="-"),
-                _first_field(lpar, "ResourceMonitoringControlState", "RMCState"),
-            )
-    _output(lpars, as_json, table, "No logical partitions found")
-
-
-@lpars_app.command("show")
-def lpars_show(
-    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    as_json: bool = typer.Option(True, "--json/--no-json"),
-) -> None:
-    """Show one LPAR, looked up by name (exact) or by UUID."""
-
-    lpar = _with_client(
-        lambda hmc: (
-            hmc.get_logical_partition(name_or_uuid)
-            if is_uuid(name_or_uuid)
-            else hmc.find_partition_by_name(name_or_uuid)
-        )
-    )
-
-    if lpar is None:
-        _partition_not_found(name_or_uuid)
-    _print_json(lpar)
-
-
-@lpars_app.command("state")
-def lpars_state(
-    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-) -> None:
-    """Print just the current state of an LPAR."""
-
-    async def _go():
-        async with _client() as hmc:
-            uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
-            if uuid is None:
-                return None
-            return await hmc.get_quick_property(
-                "LogicalPartition", uuid, "PartitionState"
-            )
-
-    state = _run(_go)
-
-    if state is None:
-        _partition_not_found(name_or_uuid)
-    console.print(state)
-
-
 @lpars_app.command("power-on")
 def lpars_power_on(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
@@ -579,234 +434,6 @@ def lpars_power_off(
         system=system,
         ownership_override=ownership_override,
     )
-
-
-def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) -> None:
-    """Confirm and present the result of a shared LPM operation."""
-
-    async def _go():
-        async with _client() as hmc:
-            if not yes:
-                dest = f" to '{target}'" if target else ""
-                if not typer.confirm(
-                    f"Really {action} partition '{name_or_uuid}'{dest}?"
-                ):
-                    raise typer.Abort()
-            return await fn(hmc)
-
-    result = _run(_go)
-    if isinstance(result, LpmAffinityMigrationResult):
-        status = "Submitted" if result.job is not None else "Stopped"
-        console.print(f"[green]{status} {action}[/green]")
-        _print_json(asdict(result))
-        return
-    console.print(f"[green]Submitted {action} for {result.lpar_uuid}[/green]")
-    job = asdict(result.job) if isinstance(result.job, JobOutcome) else result.job
-    _print_json(job)
-
-
-@lpars_app.command("migrate")
-def lpars_migrate(
-    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    target: str = typer.Option(..., "--target", help="Target managed system name"),
-    profile: str | None = typer.Option(None, "--profile", help="Target profile name"),
-    wait_time: int | None = typer.Option(
-        None, "--wait-time", help="Override operation wait time"
-    ),
-    validate_first: bool = typer.Option(
-        True,
-        "--validate-first/--no-validate-first",
-        help="Require successful terminal validation before migration",
-    ),
-    wait: bool = typer.Option(False, "--wait/--no-wait", help="Wait for migration"),
-    timeout: int = typer.Option(300, "--timeout", help="Polling timeout seconds"),
-    interval: int = typer.Option(5, "--interval", help="Polling interval seconds"),
-    yes: bool = typer.Option(False, "--yes", "-y"),
-) -> None:
-    """Live-migrate (LPM) an LPAR to another managed system."""
-
-    validate_wait_timing(wait or validate_first, timeout, interval)
-
-    async def _fn(hmc):
-        return await migrate_lpar(
-            hmc,
-            name_or_uuid,
-            target,
-            profile,
-            wait_time,
-            validate_first=validate_first,
-            wait=wait,
-            timeout_seconds=timeout,
-            poll_interval=interval,
-        )
-
-    _lpm_run(name_or_uuid, _fn, "Migrate", target, yes)
-
-
-@lpars_app.command("migrate-affinity")
-def lpars_migrate_affinity(
-    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    target: str = typer.Option(..., "--target", help="Target managed system name"),
-    source_score: int | None = typer.Option(None, "--source-score"),
-    destination_estimate: int | None = typer.Option(None, "--destination-estimate"),
-    check_basis: Literal["calculated", "migration-check"] = typer.Option(
-        "calculated", "--check-basis"
-    ),
-    configured_minimum: int | None = typer.Option(None, "--configured-minimum"),
-    capability: Literal["available", "unavailable"] = typer.Option(
-        "available", "--capability"
-    ),
-    response: Literal["warn", "fail"] = typer.Option("warn", "--response"),
-    preflight_timeout: float = typer.Option(
-        5.0, "--preflight-timeout", help="Affinity preflight timeout seconds"
-    ),
-    wait: bool = typer.Option(False, "--wait/--no-wait", help="Wait for migration"),
-    timeout: int = typer.Option(300, "--timeout", help="Polling timeout seconds"),
-    interval: int = typer.Option(5, "--interval", help="Polling interval seconds"),
-    yes: bool = typer.Option(False, "--yes", "-y"),
-) -> None:
-    """Run explicit affinity preflight before validation-first LPM."""
-    validate_wait_timing(True, timeout, interval)
-    request = LpmAffinityPreflightRequest(
-        source_current_score=source_score,
-        destination_estimated_score=destination_estimate,
-        destination_check_basis=check_basis,
-        configured_minimum=configured_minimum,
-        capability=capability,
-        capability_limits=("Destination affinity is estimated, not guaranteed.",),
-        response=response,
-        preflight_timeout_seconds=preflight_timeout,
-    )
-
-    async def _fn(hmc):
-        return await migrate_lpar_with_affinity_preflight(
-            hmc,
-            name_or_uuid,
-            target,
-            request,
-            wait=wait,
-            timeout_seconds=timeout,
-            poll_interval=interval,
-        )
-
-    _lpm_run(name_or_uuid, _fn, "affinity-aware Migrate", target, yes)
-
-
-@lpars_app.command("migrate-validate")
-def lpars_migrate_validate(
-    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    target: str = typer.Option(..., "--target", help="Target managed system name"),
-    profile: str | None = typer.Option(None, "--profile", help="Target profile name"),
-    wait_time: int | None = typer.Option(None, "--wait-time"),
-    yes: bool = typer.Option(False, "--yes", "-y"),
-) -> None:
-    """Validate whether an LPM migration would succeed."""
-
-    async def _fn(hmc):
-        return await validate_lpar_migration(
-            hmc, name_or_uuid, target, profile, wait_time
-        )
-
-    _lpm_run(name_or_uuid, _fn, "MigrateValidate", target, yes)
-
-
-@lpars_app.command("migrate-abort")
-def lpars_migrate_abort(
-    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    wait: bool = typer.Option(
-        False, "--wait/--no-wait", help="Wait for job completion"
-    ),
-    timeout: int = typer.Option(300, "--timeout", help="Seconds to wait (with --wait)"),
-    interval: int = typer.Option(
-        5, "--interval", help="Poll interval seconds (with --wait)"
-    ),
-    yes: bool = typer.Option(False, "--yes", "-y"),
-) -> None:
-    """Abort an in-progress LPM migration."""
-    validate_wait_timing(wait, timeout, interval)
-
-    async def _fn(hmc):
-        return await abort_lpar_migration(
-            hmc,
-            name_or_uuid,
-            wait=wait,
-            timeout_seconds=timeout,
-            poll_interval=interval,
-        )
-
-    _lpm_run(name_or_uuid, _fn, "MigrateAbort", None, yes)
-
-
-@lpars_app.command("migrate-recover")
-def lpars_migrate_recover(
-    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    wait: bool = typer.Option(
-        False, "--wait/--no-wait", help="Wait for job completion"
-    ),
-    timeout: int = typer.Option(300, "--timeout", help="Seconds to wait (with --wait)"),
-    interval: int = typer.Option(
-        5, "--interval", help="Poll interval seconds (with --wait)"
-    ),
-    yes: bool = typer.Option(False, "--yes", "-y"),
-) -> None:
-    """Recover an LPAR after a failed LPM migration."""
-    validate_wait_timing(wait, timeout, interval)
-
-    async def _fn(hmc):
-        return await recover_lpar_migration(
-            hmc,
-            name_or_uuid,
-            wait=wait,
-            timeout_seconds=timeout,
-            poll_interval=interval,
-        )
-
-    _lpm_run(name_or_uuid, _fn, "MigrateRecover", None, yes)
-
-
-@lpars_app.command("remote-restart")
-def lpars_remote_restart(
-    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    operation: str = typer.Option(..., "--operation", help="RemoteRestart operation"),
-    system: str = typer.Option(
-        ..., "--system", help="Source managed system name or UUID"
-    ),
-    target: str | None = typer.Option(
-        None, "--target", help="Target managed system name or UUID"
-    ),
-    use_current_data: bool = typer.Option(False, "--use-current-data"),
-    retain_devices: bool = typer.Option(False, "--retain-devices"),
-    wait: bool = typer.Option(
-        False, "--wait/--no-wait", help="Wait for job completion"
-    ),
-    timeout: int = typer.Option(300, "--timeout", help="Seconds to wait (with --wait)"),
-    interval: int = typer.Option(
-        5, "--interval", help="Poll interval seconds (with --wait)"
-    ),
-    yes: bool = typer.Option(False, "--yes", "-y"),
-) -> None:
-    """Remote-restart a failed LPAR on another managed system."""
-    validate_wait_timing(wait, timeout, interval)
-    if operation not in REMOTE_RESTART_OPERATIONS:
-        raise typer.BadParameter(
-            f"operation must be one of: {', '.join(sorted(REMOTE_RESTART_OPERATIONS))}"
-        )
-
-    async def _fn(hmc):
-        return await remote_restart_lpar(
-            hmc,
-            name_or_uuid,
-            cast(RemoteRestartOperation, operation),
-            system,
-            target_system_name_or_uuid=target,
-            use_current_data=use_current_data,
-            retain_devices=retain_devices,
-            wait=wait,
-            timeout_seconds=timeout,
-            poll_interval=interval,
-        )
-
-    _lpm_run(name_or_uuid, _fn, f"RemoteRestart {operation}", target, yes)
 
 
 def _power_lpar(
@@ -1441,7 +1068,11 @@ def lpars_provision(
     On partial failure the completed steps are reported as "ok", the failed step as "error",
     and remaining steps as "skipped". No automatic rollback is performed.
     """
-    from ..operations.provision import ProvisionNetwork, ProvisionStorage, provision_lpar
+    from ..operations.provision import (
+        ProvisionNetwork,
+        ProvisionStorage,
+        provision_lpar,
+    )
 
     assignments = _load_pcie_assignments(pcie_assignments)
 

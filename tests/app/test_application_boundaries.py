@@ -143,7 +143,10 @@ def test_lpar_summary_cli_delegates_to_neutral_operation():
     summary = AsyncMock(return_value={"name": "aix1"})
     with (
         patch("hmc_mcp.operations.composite.lpar_summary", summary),
-        patch("hmc_mcp.cli_commands.lpars._client", return_value=_ClientContext(client)),
+        patch(
+            "hmc_mcp.cli_commands.lpars_inventory._client",
+            return_value=_ClientContext(client),
+        ),
     ):
         result = CliRunner().invoke(app, ["lpars", "summary", "aix1", "--json"])
     assert result.exit_code == 0
