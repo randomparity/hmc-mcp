@@ -153,8 +153,6 @@ def _bootstrap_config() -> None:
         return
     except ConfigError as exc:
         print(f"  ⚠️  config.toml: {exc} — falling back to .env")
-    except Exception as exc:  # noqa: BLE001
-        print(f"  ⚠️  config.toml load failed: {exc} — falling back to .env")
 
     # Fallback: local .env
     _load_dotenv()

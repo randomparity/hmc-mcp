@@ -199,6 +199,19 @@ def test_a_dotenv_entry_never_outranks_a_case_variant_export(monkeypatch, tmp_pa
     assert config.schema_version == "V1_0"
 
 
+def test_bootstrap_propagates_unexpected_profile_loader_failure(monkeypatch):
+    """Only a configuration rejection authorizes the legacy dotenv fallback."""
+    def fail_to_load_profile():
+        raise RuntimeError("profile loader defect")
+
+    fallback = pytest.fail
+    monkeypatch.setattr("hmc_mcp.config.load_profile", fail_to_load_profile)
+    monkeypatch.setattr(runner, "_load_dotenv", fallback)
+
+    with pytest.raises(RuntimeError, match="profile loader defect"):
+        runner._bootstrap_config()
+
+
 def test_a_case_variant_of_an_exact_case_reader_does_not_suppress_its_dotenv_line(
     monkeypatch, tmp_path
 ):
