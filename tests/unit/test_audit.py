@@ -62,6 +62,10 @@ Not spec-numbered, each pinning something a review round found:
   test_a_malformed_token_denial_records_a_null_owner   (#467)
   test_the_denial_record_is_bounded_and_escaped        (#467)
   test_a_foreign_writers_bad_record_does_not_raise_into_them
+  test_the_install_record_names_the_target_and_the_log_path (#469, ADR 0102)
+  test_the_install_record_is_emitted_at_warning        (#469)
+  test_the_install_record_is_bounded_and_escaped       (#469)
+  test_a_long_partition_records_a_log_path_that_does_not_exist (#469)
   test_the_tls_record_carries_host_and_source          (#379)
   test_an_empty_tls_host_renders_empty_and_is_bounded  (#379)
   test_a_long_tls_source_stays_bounded                 (#379)
@@ -367,6 +371,7 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
     assert audit.EVENTS == frozenset(get_args(audit.Event))
     assert audit.EVENTS == {
         "authorization",
+        "install-attempted",
         "ownership-denied",
         "ownership-override",
         "records-dropped",
@@ -390,6 +395,11 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
     emitted.add(_one(lines)["event"])
     lines = _capture()
     audit.record_tls_verification_disabled(host="hmc.test", source="field-default")
+    emitted.add(_one(lines)["event"])
+    lines = _capture()
+    audit.record_install_attempted(
+        system="s", partition="p", log_path="/l", host="hmc.test", agent_id="a"
+    )
     emitted.add(_one(lines)["event"])
     emitted.add(json.loads(audit._drop_marker(1))["event"])
     assert emitted == audit.EVENTS, "every declared event must be reachable"
@@ -561,6 +571,102 @@ def test_a_long_tls_source_stays_bounded():
     lines = _capture()
     audit.record_tls_verification_disabled(host="hmc.test", source="s" * 500)
     assert len(_one(lines)["source"]) == audit.MAX_VALUE_LENGTH
+
+
+def test_the_install_record_names_the_target_and_the_log_path():
+    """#469, ADR 0102. The only record the detached install path produces.
+
+    `log_path` is the field a raised submission leaves an operator to read, and
+    `system` and `host` are what make it locatable: the path is keyed on the
+    partition name alone, so it collides across managed systems behind one HMC.
+    """
+    lines = _capture()
+    audit.record_install_attempted(
+        system="sys-a",
+        partition="vios-01",
+        log_path="/tmp/hmc-mcp-installios-vios-01.log",
+        host="hmc.test",
+        agent_id="agent-7",
+    )
+    record = _one(lines)
+    assert list(record) == [
+        "time", "event", "system", "partition", "log_path", "host", "attribution",
+    ]
+    assert record["event"] == "install-attempted"
+    assert record["system"] == "sys-a"
+    assert record["partition"] == "vios-01"
+    assert record["log_path"] == "/tmp/hmc-mcp-installios-vios-01.log"
+    assert record["host"] == "hmc.test"
+    assert record["attribution"] == {
+        "claim": "agent-7", "source": "config:agent_id", "verified": False
+    }
+
+
+def test_the_install_record_is_emitted_at_warning():
+    """ADR 0102 §3. `logging.lastResort` drops anything below `WARNING`, and on a
+    bare `hmc_mcp.api` consumer — which installs no sink — that is the whole
+    delivery path. `INFO` would silence the record exactly where it is the only
+    trace of an irreversible submission that exists."""
+    levels: list[int] = []
+
+    class _Level(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            levels.append(record.levelno)
+
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.addHandler(_Level())
+    logger.setLevel(logging.INFO)
+    audit.record_install_attempted(
+        system="s", partition="p", log_path="/l", host="hmc.test", agent_id="a"
+    )
+    assert levels == [logging.WARNING]
+
+
+def test_the_install_record_is_bounded_and_escaped():
+    """Every field is caller- or HMC-derived, so each takes the shared bound.
+
+    `partition` is the one worth pinning: it is an HMC CLI name that the log path
+    is composed from, and under ADR 0042's threat model it is not trusted text.
+    """
+    lines = _capture()
+    audit.record_install_attempted(
+        system="S" * 500,
+        partition="x\ny‮z",
+        log_path="L" * 500,
+        host="H" * 500,
+        agent_id="A" * 500,
+    )
+    assert len(lines) == 1
+    assert lines[0].isascii() and "\n" not in lines[0]
+    record = json.loads(lines[0])
+    for field in ("system", "log_path", "host"):
+        assert len(record[field]) == audit.MAX_VALUE_LENGTH, field
+    assert len(record["attribution"]["claim"]) == audit.MAX_VALUE_LENGTH
+
+
+@pytest.mark.parametrize(("length", "recoverable"), [(110, True), (200, False)])
+def test_a_long_partition_records_a_log_path_that_does_not_exist(length, recoverable):
+    """The bound applies to `log_path` too, and the document states the boundary.
+
+    The template's fixed part is 28 characters, so a partition name past 100
+    pushes `/tmp/hmc-mcp-installios-<slug>.log` over the bound and the record
+    carries a cut path with no marker. Whether the real path survives depends on
+    `partition` beside it, which takes the same bound: at 110 it is whole and the
+    path recomposes, at 200 it is cut too and nothing recovers it. Both are names
+    `installios` would refuse, but the record precedes the submit.
+    """
+    partition = "p" * length
+    real = f"/tmp/hmc-mcp-installios-{partition}.log"
+    lines = _capture()
+    audit.record_install_attempted(
+        system="s", partition=partition, log_path=real, host="h", agent_id="a"
+    )
+    record = _one(lines)
+    assert len(real) > audit.MAX_VALUE_LENGTH
+    assert record["log_path"] == real[: audit.MAX_VALUE_LENGTH]
+    assert not record["log_path"].endswith(".log"), "a truncated path still looks whole"
+    recomposed = f"/tmp/hmc-mcp-installios-{record['partition']}.log"
+    assert (recomposed == real) is recoverable
 
 
 def test_only_audit_resolves_the_audit_logger():

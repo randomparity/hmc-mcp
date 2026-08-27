@@ -22,6 +22,11 @@ unpolicied server can still produce those. For an `hmc_mcp.api` consumer that ch
 only authorization boundary that applies, which is why its refusals are recorded here
 rather than left to the `authorization` event ([ADR 0100](adr/0100-ownership-denial-audit-record.md)).
 
+**`install-attempted` records are not policy-gated either**, and for a stronger reason:
+the detached `installios` path has no ownership check to gate and no HMC job to poll, so
+for an `hmc_mcp.api` consumer this record is the only trace an irreversible install
+leaves in this process ([ADR 0102](adr/0102-install-submission-audit-record.md)).
+
 Other things produce no record, by design:
 
 - a call to a tool the policy's ceiling withheld — it is never registered, so nothing
@@ -208,6 +213,78 @@ deliberately left alone; the denial stream is complete without it.
 
 It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as
 nulls, for the reason the override record gives.
+
+### `event: "install-attempted"`
+
+Emitted immediately **before** `install_lpar_os` or `install_vios` submits a detached
+`installios` to the HMC. Always `WARNING`, so `--audit-level WARNING` keeps it. The
+decision is [ADR 0102](adr/0102-install-submission-audit-record.md).
+
+```json
+{"time":"2026-08-26T18:00:00+00:00","event":"install-attempted","system":"sys-a","partition":"vios-01","log_path":"/tmp/hmc-mcp-installios-vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+```
+
+`system` and `partition` are the resolved HMC CLI names the submission was composed
+with; `host` is the `HMCConfig.host` of the client that submitted, and an unset
+`HMC_HOST` renders as an empty string. `attribution.claim` is the acting agent —
+`HMC_AGENT_ID`, or `hmc-mcp` when unset — the same claim the ownership records carry,
+so an unconfigured deployment's records name one actor and can be joined.
+
+`log_path` is the HMC-side path the install writes to, and the field to read when a
+submission raises. It is `/tmp/hmc-mcp-installios-<slug>.log`, where `<slug>` is the
+partition name with every character outside `[A-Za-z0-9._-]` replaced by `_`
+([ADR 0070](adr/0070-installios-cli-bridge-for-install-tools.md)). Two things follow, and
+both are why `system` and `host` sit beside it here. The managed system is not part of the
+path, so same-named partitions on different managed systems behind one HMC share one file;
+and the slug collapses distinct names, so `vios 01` and `vios_01` do too. The redirect
+truncates, so each colliding install destroys the other's only diagnostic record — and the
+directory is `/tmp`, which a reboot or a tmpfiles sweep may clear.
+
+`log_path` takes the shared 128-character bound like every other value, with no marker.
+The template's fixed part is 28 characters and nothing bounds a partition name, so a long
+enough one yields a path the bound then cuts — leaving a value that does not exist and
+looks well-formed. Whether the record still tells you the real path depends on where the
+name falls: `partition` takes the same bound, so a name past 128 characters is cut too and
+the path is gone from both fields, while a name of 101 to 128 characters leaves `partition`
+whole and the path recoverable as `/tmp/hmc-mcp-installios-<partition>.log` — after applying
+the slug substitution yourself. Such a name is one `installios` would refuse anyway, but the
+record is written before the submit, so it exists.
+
+**This record names an attempt, never an outcome.** The submission is detached, so
+there is no HMC job to poll and nothing observes whether `installios` accepted the
+target. A record means the process reached the point of submitting against that
+partition's disks; whether anything started is in the log it names. It is emitted
+ahead of the submit deliberately, because a submission that raises cannot tell a
+resolution failure from a failed submit — the case where an operator most needs the
+partition and the path.
+
+**It is the only record naming the resolved partition and its log path.** There is no HMC
+job ([ADR 0069](adr/0069-installlpar-and-installvios-absent-from-hmc-rest.md)), and no
+[ADR 0011](adr/0011-multi-agent-lpar-ownership.md) ownership check and so no
+`ownership-denied` or `ownership-override`. A served deployment does write an
+`authorization` permit for the tool call, and `hmc_install_lpar_os` and `hmc_install_vios`
+each declare a partition and a managed-system selector — so that permit's `targets` already
+carry both, and at the default audit level the streams can be joined on them. What the
+permit cannot give you: it records the selector the caller passed, not the resolved name, so
+a UUID selector never names the partition; it has no `log_path`; and `--audit-level WARNING`
+drops it, because it is a permit. An `hmc_mcp.api` consumer gets no `authorization` record
+at all.
+
+**Absence of this record is not proof that no install was submitted**, for the reasons the
+lead section gives generally and these, which apply here specifically. Under `hmc-mcp serve`
+it lands on the bounded sink, which drops under load and reports only a `records-dropped`
+count — a number, not an identity, so a reader cannot tell whether a dropped line was an
+install; `--audit-level ERROR` or `CRITICAL` silences the reserved logger outright; and a
+record that fails to build or write is swallowed rather than failing the call, because a
+diagnostic must not abort an operation. Off the serve path the reserved logger is left at
+`NOTSET`, and level resolution walks the parent chain whatever `propagate` says — so an
+embedder that quiets the package the ordinary way, `logging.getLogger("hmc_mcp").setLevel`,
+suppresses the record before `logging.lastResort` is ever consulted. Alert on the records
+you have, not on their absence.
+
+It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as
+nulls: the record is not an access-policy decision, and it is also emitted on the Python
+API path, where no policy connection exists to name.
 
 <!-- The `source` values below are read by tests/test_authorization_audit_doc.py and held
      to `client.VERIFY_SSL_SOURCES`. Keep them a comma-and-`or` run introduced by the

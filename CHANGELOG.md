@@ -181,6 +181,21 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   bullet is amended to record the narrowed claim. `describe()` takes the resolved guards as
   a fourth argument and stays a pure function of its arguments; `EffectivePermissions` is not
   a `hmc_mcp.api` export, so the facade manifest is unaffected.
+- `install-attempted` audit record for a detached `installios` submission (#469, ADR 0102).
+  `install_lpar_os` and `install_vios` submit an irreversible install against a partition's
+  disks and detach; the path has no HMC job, no ADR 0011 ownership guard, and — for an
+  `hmc_mcp.api` consumer — no dispatch-boundary `authorization` record. The two `INFO` lines
+  it left instead went to the unconfigured `hmc_mcp.operations_install` logger, whose
+  effective level is the root's `WARNING`, so they were dropped before formatting. That left a
+  bare `hmc_mcp.api` consumer with no local trace at all, and a served deployment with only
+  the `authorization` permit for the tool call — which names the tool but never the resolved
+  system, partition, or log path, and which `--audit-level WARNING` drops. One `WARNING`
+  record now goes to the
+  reserved `hmc_mcp.audit` logger immediately **before** the submit — the ambiguous case,
+  since the raised exception cannot say whether anything was submitted — carrying the resolved
+  system and partition, the HMC-side `log_path`, the HMC, and the acting agent. The
+  post-submit "Detached" line stays on the module logger; the PID it adds is already in the
+  returned `InstallHandle`. No exported signature changes.
 
 ### Changed
 
@@ -368,6 +383,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `"tls-verification-disabled"` literal on `hmc_mcp.audit.Event`; that module is not part of the
   `hmc_mcp.api` facade, so it does not expand the manifest itself but is recorded here because it
   widens a public literal vocabulary.
+- Exported model/literal changes: the audit event vocabulary gained the `"install-attempted"`
+  literal on `hmc_mcp.audit.Event` (#469, ADR 0102). Recorded here on the same terms as
+  `"tls-verification-disabled"` above — `hmc_mcp.audit` is not part of the `hmc_mcp.api` facade,
+  so the manifest and the frozen public signature digest are unmoved, but the literal vocabulary
+  a consumer reading the audit stream matches against is wider.
 - Unchanged otherwise: #410 rebuilt `hmc_install_lpar_os` / `hmc_install_vios`
   on the HMC CLI `installios` bridge (ADR 0070). These are MCP tools, not
   `hmc_mcp.api` exports; their parameter changes do not move the frozen
