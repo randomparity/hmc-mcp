@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from unittest.mock import ANY, AsyncMock, patch
 
 from hmc_mcp.client.client_adapters import ADAPTER_TYPES
 from hmc_mcp.server import (
@@ -139,6 +140,18 @@ def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
         <VirtualSCSIMapping><UUID>map-2</UUID></VirtualSCSIMapping>
       </VirtualSCSIMappings>
     </VirtualIOServer>"""
+    inventory = f"""<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:uom="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <entry><content><VirtualIOServer><VirtualSCSIMappings>
+        <VirtualSCSIMapping><UUID>map-1</UUID>
+          <AssociatedLogicalPartition
+            href="/rest/api/uom/LogicalPartition/{LPAR_UUID}"/>
+        </VirtualSCSIMapping>
+      </VirtualSCSIMappings></VirtualIOServer></content></entry>
+    </feed>"""
+    mock_hmc.get(
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
+    ).mock(return_value=httpx.Response(200, text=inventory))
     mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
         return_value=httpx.Response(200, text=parent)
     )
@@ -146,7 +159,18 @@ def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer/{VIOS_UUID}"
     ).mock(return_value=httpx.Response(200, text=""))
 
-    assert hmc_detach_storage_mapping(VIOS_UUID, "map-1") == "map-1"
+    guard = AsyncMock(return_value=LPAR_UUID)
+    with patch(
+        "hmc_mcp.operations.storage._resolve_and_authorize_lpar", new=guard
+    ):
+        assert hmc_detach_storage_mapping(VIOS_UUID, "map-1") == "map-1"
+
+    guard.assert_awaited_once_with(
+        ANY,
+        LPAR_UUID,
+        None,
+        ownership_override=False,
+    )
     assert posted.called
     assert "map-1" not in posted.calls.last.request.content.decode()
     assert "map-2" in posted.calls.last.request.content.decode()

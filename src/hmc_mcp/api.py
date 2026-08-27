@@ -64,6 +64,7 @@ from hmc_mcp.operations.lpar import (
     LparCreation,
     LparCreationResult,
     LparPowerResult,
+    ProcessorCompatibilityMode,
     create_and_stamp_lpar,
     delete_lpar,
     power_lpar,
@@ -73,6 +74,11 @@ from hmc_mcp.operations.lpar_boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,
     set_lpar_boot_order,
+)
+from hmc_mcp.operations.lpar_configuration import (
+    configure_lpar_msp,
+    configure_lpar_processor_compatibility,
+    synchronize_lpar_profile,
 )
 from hmc_mcp.operations.lpar_dlpar import (
     modify_lpar,
@@ -334,9 +340,13 @@ __all__ = [
     "LparCreation",
     "LparCreationResult",
     "LparPowerResult",
+    "ProcessorCompatibilityMode",
     "read_lpar_boot_order",
     "set_lpar_boot_order",
     "clear_lpar_boot_order",
+    "configure_lpar_msp",
+    "configure_lpar_processor_compatibility",
+    "synchronize_lpar_profile",
     "BootDeviceSelector",
     "migrate_lpar",
     "migrate_lpar_with_affinity_preflight",

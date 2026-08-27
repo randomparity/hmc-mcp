@@ -28,6 +28,7 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
+from .lpar_dlpar import _resolve_and_authorize_lpar
 
 logger = logging.getLogger(__name__)
 
@@ -164,13 +165,44 @@ async def list_storage_mappings(
 
 
 async def detach_storage_mapping(
-    hmc: HMCClient, vios_name_or_uuid: str, mapping_uuid: str
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    vios_name_or_uuid: str,
+    mapping_uuid: str,
+    *,
+    ownership_override: bool = False,
 ) -> None:
-    """Detach a VirtualSCSIMapping while preserving its backing storage.
+    """Authorize the mapped LPAR, then detach its VirtualSCSIMapping.
 
     ``mapping_uuid`` is the exact UUID returned by ``list_storage_mappings``.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    mappings = await hmc.list_storage_mappings(vios_uuid)
+    mapping = next(
+        (item for item in mappings if item.get("UUID") == mapping_uuid), None
+    )
+    if mapping is None:
+        raise ValueError(
+            f"Storage mapping {mapping_uuid!r} was not found on VIOS {vios_name_or_uuid!r}"
+        )
+    href = (mapping.get("AssociatedLogicalPartition") or {}).get("href")
+    path = urlparse(href).path if isinstance(href, str) else ""
+    marker = "/rest/api/uom/LogicalPartition/"
+    if not path.startswith(marker) or not path[len(marker) :]:
+        raise ValueError(
+            f"Storage mapping {mapping_uuid!r} does not identify its client LPAR"
+        )
+    lpar_uuid = path[len(marker) :]
+    if "/" in lpar_uuid:
+        raise ValueError(
+            f"Storage mapping {mapping_uuid!r} has an invalid client LPAR link"
+        )
+    await _resolve_and_authorize_lpar(
+        hmc,
+        lpar_uuid,
+        system_name_or_uuid,
+        ownership_override=ownership_override,
+    )
     await hmc.delete_storage_mapping(vios_uuid, mapping_uuid)
 
 

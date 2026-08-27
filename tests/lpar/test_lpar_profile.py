@@ -133,7 +133,11 @@ def test_restore_lpar_profiles_runs_correct_command(monkeypatch, mock_hmc):
     conn_mock = _make_ssh_mock(RESTORE_OUTPUT)
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        result = hmc_restore_lpar_profiles(SYSTEM_UUID, "/tmp/lpar_profiles.bak")
+        result = hmc_restore_lpar_profiles(
+            SYSTEM_UUID,
+            "/tmp/lpar_profiles.bak",
+            system_wide_restore_approved=True,
+        )
 
     expected_cmd = f"rstprofdata -m {SYSTEM_NAME} -f /tmp/lpar_profiles.bak"
     conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
@@ -148,9 +152,20 @@ def test_restore_lpar_profiles_returns_cli_output(monkeypatch, mock_hmc):
     conn_mock = _make_ssh_mock(RAW_OUTPUT)
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        result = hmc_restore_lpar_profiles(SYSTEM_UUID, "/tmp/profiles.bak")
+        result = hmc_restore_lpar_profiles(
+            SYSTEM_UUID, "/tmp/profiles.bak", system_wide_restore_approved=True
+        )
 
     assert result == RAW_OUTPUT
+
+
+def test_restore_lpar_profiles_requires_system_wide_approval(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+
+    with pytest.raises(PermissionError, match="overwrites every profile"):
+        hmc_restore_lpar_profiles(SYSTEM_UUID, "/tmp/profiles.bak")
+
+    assert not mock_hmc.calls
 
 
 # ---------------------------------------------------------------------- #

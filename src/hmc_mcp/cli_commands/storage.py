@@ -415,6 +415,14 @@ def storage_detach_mapping(
     mapping_uuid: str = typer.Argument(
         ..., help="Exact UUID shown by storage list-mappings"
     ),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
+    ownership_override: bool = typer.Option(
+        False,
+        "--ownership-override",
+        help="Bypass LPAR ownership protection after operator approval",
+    ),
     confirm: bool = typer.Option(
         False, "--confirm", "-y", help="Skip confirmation prompt"
     ),
@@ -432,7 +440,13 @@ def storage_detach_mapping(
         async with HMCClient(config) as hmc:
             from hmc_mcp.operations.storage import detach_storage_mapping
 
-            await detach_storage_mapping(hmc, vios, mapping_uuid)
+            await detach_storage_mapping(
+                hmc,
+                system,
+                vios,
+                mapping_uuid,
+                ownership_override=ownership_override,
+            )
 
     _run(_go)
     console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")

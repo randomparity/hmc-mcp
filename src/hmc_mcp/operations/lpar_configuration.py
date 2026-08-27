@@ -5,7 +5,7 @@ from __future__ import annotations
 from ..client import HMCClient
 from ..resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from ..ssh.profiles import set_lpar_msp, set_lpar_proc_compat, sync_lpar_profile
-from .lpar import ProcessorCompatibilityMode
+from hmc_mcp.operations.lpar import ProcessorCompatibilityMode
 from .lpar_ownership import authorize_lpar_mutation, resolve_lpar_ownership_names
 
 

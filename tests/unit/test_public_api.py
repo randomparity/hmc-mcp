@@ -135,9 +135,13 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "LparCreation",
         "LparCreationResult",
         "LparPowerResult",
+        "ProcessorCompatibilityMode",
         "read_lpar_boot_order",
         "set_lpar_boot_order",
         "clear_lpar_boot_order",
+        "configure_lpar_msp",
+        "configure_lpar_processor_compatibility",
+        "synchronize_lpar_profile",
         "BootDeviceSelector",
         "migrate_lpar",
         "migrate_lpar_with_affinity_preflight",
@@ -1835,7 +1839,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "03160419347e1c3e467ad81e113a1d3bd6042ab82f518746aa2bda4a3299ad93"  # pragma: allowlist secret
+    expected_digest = "3510c5db0d0e76ab37095c024e0eecd405c3fb5a417dd0cc8c54dbc204099892"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -1987,6 +1991,18 @@ _FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[object, ...]] = {
     "PolicyState": ("configured", "absent", "unsupported"),
     "PowerOffPolicy": (0, 1),
     "PowerOnLparStartPolicy": ("autostart", "userinit", "autorecovery"),
+    "ProcessorCompatibilityMode": (
+        "default",
+        "POWER5",
+        "POWER6",
+        "POWER6+",
+        "POWER7",
+        "POWER8",
+        "POWER9_Base",
+        "POWER9",
+        "POWER10",
+        "POWER11",
+    ),
     "RemoteRestartOperation": (
         "validate",
         "recover",

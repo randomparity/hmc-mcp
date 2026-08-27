@@ -173,10 +173,14 @@ names are internal everywhere and are never inventoried.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
   none.
 - `operations.lpar` — operations: `create_and_stamp_lpar`, `delete_lpar`, `power_lpar`,
-  `rename_lpar`; types: `LparCreation`, `LparCreationResult`, `LparPowerResult`; excluded
-  synchronous: `activation_allows_assessment`, `power_on_outcome`.
+  `rename_lpar`; types: `LparCreation`, `LparCreationResult`, `LparPowerResult`,
+  `ProcessorCompatibilityMode`; excluded synchronous: `activation_allows_assessment`,
+  `power_on_outcome`.
 - `operations.lpar_boot_order` — operations: `clear_lpar_boot_order`,
   `read_lpar_boot_order`, `set_lpar_boot_order`; types: none; excluded synchronous: none.
+- `operations.lpar_configuration` — operations: `configure_lpar_msp`,
+  `configure_lpar_processor_compatibility`, `synchronize_lpar_profile`; types: none;
+  excluded synchronous: none.
 - `operations.lpar_dlpar` — operations: `modify_lpar`, `set_lpar_memory`,
   `set_lpar_processors`; types: none; excluded synchronous: none.
 - `operations.lpar_errors` — operations: none; types: none; excluded synchronous:

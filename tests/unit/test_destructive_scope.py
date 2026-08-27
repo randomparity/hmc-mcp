@@ -97,9 +97,9 @@ async def test_power_vios_forwards_optional_system_scope():
 
     await power_vios(
         hmc,
+        "system-name",
         "vios1",
         on=False,
-        system_name_or_uuid="system-name",
     )
 
     hmc.find_vios_by_name.assert_awaited_once_with(
@@ -168,4 +168,4 @@ def test_power_off_vios_tool_forwards_system_scope(monkeypatch):
         "vios1", system_name_or_uuid="system-name"
     )
 
-    assert operation.await_args.kwargs["system_name_or_uuid"] == "system-name"
+    assert operation.await_args.args[1] == "system-name"

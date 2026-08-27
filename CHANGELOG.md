@@ -360,6 +360,13 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `configure_lpar_msp`, `configure_lpar_processor_compatibility`, and
+  `synchronize_lpar_profile`, together with their `ProcessorCompatibilityMode` input
+  type; the guarded SSH-backed configuration operations now have supported reusable
+  import paths.
+- Changed: `detach_storage_mapping` now accepts a managed-system selector and
+  `ownership_override`, resolves the mapping's client LPAR, and authorizes it before
+  detachment. This moves the frozen public signature digest.
 - Added: `create_lpar`, the complete reusable creation workflow that validates PCIe requests,
   creates and ownership-stamps the partition, applies assignments, and returns the existing
   `LparPcieWorkflowResult`. `modify_lpar` now also accepts an optional ordered `new_name` step;

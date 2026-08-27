@@ -1998,8 +1998,15 @@ def test_storage_list_mappings_json(direct_client, monkeypatch):
 def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatch):
     seen = {}
 
-    async def fake_detach(_hmc, vios, mapping_uuid):
-        seen.update(vios=vios, mapping_uuid=mapping_uuid)
+    async def fake_detach(
+        _hmc, system, vios, mapping_uuid, *, ownership_override
+    ):
+        seen.update(
+            system=system,
+            vios=vios,
+            mapping_uuid=mapping_uuid,
+            ownership_override=ownership_override,
+        )
 
     monkeypatch.setattr(
         "hmc_mcp.operations.storage.detach_storage_mapping", fake_detach
@@ -2011,7 +2018,12 @@ def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatc
 
     assert result.exit_code == 0
     assert "Deleted storage mapping map-1" in result.stdout
-    assert seen == {"vios": VIOS_UUID, "mapping_uuid": "map-1"}
+    assert seen == {
+        "system": None,
+        "vios": VIOS_UUID,
+        "mapping_uuid": "map-1",
+        "ownership_override": False,
+    }
     assert direct_client.entered
 
 
@@ -2025,7 +2037,10 @@ def test_storage_detach_mapping_reports_one_failure_and_exits_1(
     ``RuntimeError`` -- and printed a second, information-free line on stdout.
     """
 
-    async def fake_detach(_hmc, vios, mapping_uuid):
+    async def fake_detach(
+        _hmc, _system, _vios, _mapping_uuid, *, ownership_override: bool
+    ):
+        assert not ownership_override
         raise HMCError("mapping is in use")
 
     monkeypatch.setattr(

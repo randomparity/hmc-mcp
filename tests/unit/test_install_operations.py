@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 from contextlib import contextmanager
+from dataclasses import asdict, replace
 from typing import get_type_hints
 from unittest.mock import AsyncMock, patch
 
@@ -19,20 +20,25 @@ import pytest
 from conftest import make_config
 
 from hmc_mcp import api, audit_sink
-from hmc_mcp.operations.install import InstallHandle, install_lpar_os, install_vios
+from hmc_mcp.operations.install import (
+    InstallHandle,
+    InstallRequest,
+    install_lpar_os,
+    install_vios,
+)
 from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.ssh.install import INSTALLIOS_PID_PREFIX, build_installios_command
 
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 
-_REQUEST = {
-    "install_source": "/extra/viosimages/VIOS_4.1/dvdimage.v1.iso",
-    "client_ip": "192.168.1.30",
-    "subnet_mask": "255.255.255.0",
-    "gateway": "192.168.1.1",
-    "vlan_id": "100",
-}
+_REQUEST = InstallRequest(
+    install_source="/extra/viosimages/VIOS_4.1/dvdimage.v1.iso",
+    client_ip="192.168.1.30",
+    subnet_mask="255.255.255.0",
+    gateway="192.168.1.1",
+    vlan_id="100",
+)
 
 
 def _operation_args(operation, target: str, system: str) -> tuple[str, str]:
@@ -88,14 +94,13 @@ async def test_operation_submits_the_composed_installios_command(operation, find
 
     with _patch_ssh(ssh):
         result = await operation(
-            hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST
+            hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
         )
 
     expected, log_path = build_installios_command(
         system_name="sys1",
         partition_name="target1",
-        profile_name="default",
-        **_REQUEST,
+        **asdict(_REQUEST),
     )
     assert ssh.commands == [expected]
     assert set(result) == set(get_type_hints(InstallHandle))
@@ -119,7 +124,7 @@ async def test_operation_returns_without_polling_for_completion(operation):
 
     with _patch_ssh(ssh):
         await asyncio.wait_for(
-            operation(hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST),
+            operation(hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST),
             5,
         )
 
@@ -137,7 +142,7 @@ async def test_operation_resolves_uuid_targets_to_cli_names(operation):
 
     with _patch_ssh(ssh):
         result = await operation(
-            hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), **_REQUEST
+            hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), _REQUEST
         )
 
     assert result["system"] == "sys1"
@@ -173,7 +178,7 @@ async def test_operation_rejects_invalid_input_before_any_io(
             await operation(
                 hmc,
                 *_operation_args(operation, "target1", "sys1"),
-                **{**_REQUEST, field: value},
+                replace(_REQUEST, **{field: value}),
             )
 
     assert ssh.commands == []
@@ -197,7 +202,7 @@ async def test_operation_fails_before_submission_for_an_unknown_target(
     with _patch_ssh(ssh):
         with pytest.raises(ValueError, match=message):
             await operation(
-                hmc, *_operation_args(operation, "nosuchtarget", "sys1"), **_REQUEST
+                hmc, *_operation_args(operation, "nosuchtarget", "sys1"), _REQUEST
             )
 
     assert ssh.commands == []
@@ -214,7 +219,7 @@ async def test_operation_surfaces_a_failed_submission(operation):
     with patch("hmc_mcp.ssh.install.run_hmc_command", new=fail):
         with pytest.raises(HMCCLIError, match="exit status 127"):
             await operation(
-                hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST
+                hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
             )
 
 
@@ -228,7 +233,7 @@ async def test_unresolvable_uuid_target_raises_before_submitting(operation):
     with _patch_ssh(ssh):
         with pytest.raises(HMCCLIError, match="Could not resolve"):
             await operation(
-                hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), **_REQUEST
+                hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), _REQUEST
             )
 
     assert ssh.commands == ["lssyscfg -r lpar -m sys1 -F UUID,PartitionName"]
@@ -274,7 +279,7 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
 
     with _patch_ssh(_Ssh()):
         result = await operation(
-            hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST
+            hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
         )
 
     assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink did not settle"
@@ -306,7 +311,7 @@ async def test_a_submission_is_recorded_for_a_bare_api_consumer(operation, capsy
     try:
         with _patch_ssh(_Ssh()):
             await operation(
-                hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST
+                hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
             )
         captured = capsys.readouterr()
     finally:
@@ -336,7 +341,7 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
     with patch("hmc_mcp.ssh.install.run_hmc_command", new=fail):
         with pytest.raises(HMCCLIError):
             await operation(
-                hmc, *_operation_args(operation, "target1", "sys1"), **_REQUEST
+                hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
             )
 
     assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink did not settle"
@@ -356,14 +361,14 @@ async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
     with _patch_ssh(_Ssh()):
         with pytest.raises(ValueError, match="IPv4"):
             await operation(
-                _hmc(), "target1", "sys1", **{**_REQUEST, "gateway": "not-an-ip"}
+                _hmc(), "sys1", "target1", replace(_REQUEST, gateway="not-an-ip")
             )
         with pytest.raises(ValueError, match="No "):
             await operation(
                 _hmc(find_partition_by_name=None, find_vios_by_name=None),
-                "nosuchtarget",
                 "sys1",
-                **_REQUEST,
+                "nosuchtarget",
+                _REQUEST,
             )
 
     assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink did not settle"

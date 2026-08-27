@@ -451,6 +451,8 @@ def hmc_list_storage_mappings(
 def hmc_detach_storage_mapping(
     vios_name_or_uuid: str,
     mapping_uuid: str,
+    system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
     profile: str | None = None,
 ) -> str:
     """Detach a VirtualSCSIMapping by its inventory UUID.
@@ -459,14 +461,23 @@ def hmc_detach_storage_mapping(
     VirtualDisk) is preserved.
 
     Args:
+        system_name_or_uuid: Optional managed-system selector used to authorize the
+            client LPAR; omit it to discover the owning system.
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
         mapping_uuid: Exact UUID returned by ``hmc_list_storage_mappings``.
+        ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go() -> str:
         async with client_from_env(profile) as hmc:
-            await detach_storage_mapping(hmc, vios_name_or_uuid, mapping_uuid)
+            await detach_storage_mapping(
+                hmc,
+                system_name_or_uuid,
+                vios_name_or_uuid,
+                mapping_uuid,
+                ownership_override=ownership_override,
+            )
             return mapping_uuid
 
     return run_sync(_go)

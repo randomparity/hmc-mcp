@@ -84,7 +84,10 @@ def hmc_backup_lpar_profiles(
     exhaustive_targets=False,
 )
 def hmc_restore_lpar_profiles(
-    system_name_or_uuid: str, file_path: str, profile: str | None = None
+    system_name_or_uuid: str,
+    file_path: str,
+    system_wide_restore_approved: bool = False,
+    profile: str | None = None,
 ) -> str:
     """Restore LPAR profiles from a backup file via the HMC CLI.
 
@@ -99,15 +102,26 @@ def hmc_restore_lpar_profiles(
     The backup file must already exist at that path on the HMC host.
 
     WARNING: Restoring overwrites the current LPAR profile configuration.
-    Confirm the system_name_or_uuid and file_path before calling.
+    Confirm the system_name_or_uuid and file_path before calling, then set
+    system_wide_restore_approved=True. The destructive managed-system tool grant and
+    its authorization audit record provide the administrative authorization boundary;
+    this explicit acknowledgement prevents an ordinary partition mutation workflow
+    from invoking the system-wide restore accidentally.
 
     Args:
         system_name_or_uuid: The name or UUID of the managed system (Power server).
         file_path: Path on the HMC filesystem where the backup file is located.
+        system_wide_restore_approved: Explicit operator approval to overwrite every
+            LPAR profile on the selected managed system.
         profile: optional TOML profile name; when omitted the env-default HMC is used.
 
     Returns:
         The raw HMC CLI output."""
+    if not system_wide_restore_approved:
+        raise PermissionError(
+            "restoring LPAR profiles overwrites every profile on the managed system; "
+            "retry with system_wide_restore_approved=true after operator approval"
+        )
     return ssh_with_client(
         lambda config, system_name, _: restore_lpar_profiles(
             config, system_name, file_path
