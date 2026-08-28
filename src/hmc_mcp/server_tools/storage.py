@@ -203,7 +203,7 @@ def hmc_create_virtual_disk(
             vios_name_or_uuid,
             vg_uuid,
             disk_name,
-            capacity_mib,
+            capacity_mib=capacity_mib,
         ),
         profile=profile,
     )

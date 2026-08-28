@@ -108,16 +108,16 @@ async def create_virtual_disk(
     vios_name_or_uuid: str,
     vg_uuid: str,
     name: str,
-    size_mib: int,
+    capacity_mib: int,
 ) -> dict[str, Any] | None:
-    """Create a virtual disk of ``size_mib`` in a volume group."""
+    """Create a virtual disk of ``capacity_mib`` in a volume group."""
     return await hmc.create_virtual_disk(
         await resolve_vios_uuid(
             hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
         ),
         vg_uuid,
         name,
-        size_mib,
+        capacity_mib,
     )
 
 

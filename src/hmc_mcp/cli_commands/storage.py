@@ -104,7 +104,9 @@ def storage_create_disk(
         raise typer.Abort()
 
     disk = _with_client(
-        lambda hmc: create_virtual_disk(hmc, system, vios, vg, name, capacity_mib)
+        lambda hmc: create_virtual_disk(
+            hmc, system, vios, vg, name, capacity_mib=capacity_mib
+        )
     )
 
     console.print(f"[green]Created virtual disk '{name}' ({capacity_mib} MiB)[/green]")

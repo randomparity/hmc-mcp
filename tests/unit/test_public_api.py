@@ -1922,6 +1922,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     assert list(get_vios_parameters)[:2] == ["hmc", "vios_name_or_uuid"]
     assert get_vios_parameters["system_name_or_uuid"].kind is inspect.Parameter.KEYWORD_ONLY
     assert get_vios_parameters["system_name_or_uuid"].default is None
+    assert "capacity_mib" in inspect.signature(api.create_virtual_disk).parameters
+    assert "size_mib" not in inspect.signature(api.create_virtual_disk).parameters
     provision_parameters = inspect.signature(api.provision_lpar).parameters
     for control in (
         "partition_type",
@@ -1967,6 +1969,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # System and VIOS power operations now use power_on like the LPAR operation.
     # VIOS mutations share system-before-partition selector order; get_vios
     # makes its optional system scope keyword-only after the required selector.
+    # Virtual-disk creation now uses capacity_mib at every public layer.
     # Boot-order operations now accept a system-scoped LPAR name or UUID.
     # PCIe inventory operations now name their system selector explicitly.
     # Cluster and shared-storage-pool inventory joined the reusable facade.
@@ -1976,7 +1979,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Capacity and summary memory contracts now use the accurate MiB suffix.
     # DecommissionResult now exposes its blast-radius record types.
     # PartitionState now lives at the shared operations layer used by LPAR and VIOS.
-    expected_digest = "1c11fffe6f1b96b8bb23e4b23da09f912a234b8f1ea933a3222606a83b6e721f"  # pragma: allowlist secret
+    expected_digest = "3f09b9f208c10e29770b8790a3e50c73fe347d5efc7b5ee72c7e421cd0a6164e"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
