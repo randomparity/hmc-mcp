@@ -46,21 +46,35 @@ CONTENTION = (
 class FakeStdout:
     """Replays scripted reads; a final ``None`` means 'never returns'."""
 
-    def __init__(self, *chunks: bytes | None):
+    def __init__(
+        self,
+        *chunks: bytes | None,
+        blocked_read_started: asyncio.Event | None = None,
+    ):
         self._chunks = list(chunks)
+        self._blocked_read_started = blocked_read_started
 
     async def read(self, size: int) -> bytes:
         if not self._chunks:
             return b""
         chunk = self._chunks.pop(0)
         if chunk is None:
+            if self._blocked_read_started is not None:
+                self._blocked_read_started.set()
             await asyncio.Event().wait()  # cancelled by the caller's timeout
         return chunk
 
 
 class FakeProcess:
-    def __init__(self, *chunks: bytes | None):
-        self.stdout = FakeStdout(*chunks)
+    def __init__(
+        self,
+        *chunks: bytes | None,
+        blocked_read_started: asyncio.Event | None = None,
+    ):
+        self.stdout = FakeStdout(
+            *chunks,
+            blocked_read_started=blocked_read_started,
+        )
 
 
 class FakeConnection:
@@ -384,7 +398,10 @@ async def test_release_probe_timeout_without_output_does_not_issue_rmvterm():
 async def test_cancellation_still_runs_release_to_completion():
     # P4: cancelling the task mid-stream must not leak the vterm; the shielded
     # release runs to completion before the cancellation propagates.
-    connection = FakeConnection([FakeProcess(BANNER, None)])
+    capture_started = asyncio.Event()
+    connection = FakeConnection(
+        [FakeProcess(BANNER, None, blocked_read_started=capture_started)]
+    )
     seen_commands: list[str] = []
 
     async def fake_run_command(config, cmd):
@@ -409,7 +426,7 @@ async def test_cancellation_still_runs_release_to_completion():
                 **_capture_kwargs(duration_seconds=30.0, idle_timeout_seconds=30.0),
             )
         )
-        await asyncio.sleep(0.05)
+        await capture_started.wait()
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
