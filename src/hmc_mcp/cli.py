@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from .cli_commands.app import (
     GlobalOpts as GlobalOpts,
-    _ssh_config as _ssh_config,
     app as app,
     console as console,
     main as main,

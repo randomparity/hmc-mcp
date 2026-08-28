@@ -9,7 +9,6 @@ explicit init arg would otherwise shadow the environment).
 
 from __future__ import annotations
 
-from hmc_mcp import cli
 from hmc_mcp.cli_commands import app as cli_app
 from hmc_mcp.resource_identity import is_uuid
 
@@ -21,7 +20,7 @@ def test_ssh_config_uses_global_overrides(monkeypatch):
     )
     monkeypatch.setattr(cli_app, "_current_options", lambda: options)
 
-    cfg = cli._ssh_config()
+    cfg = cli_app._ssh_config()
 
     assert cfg.host == "flag-host"
     assert cfg.user == "flag-user"
@@ -36,7 +35,7 @@ def test_ssh_config_keeps_false_verify_ssl(monkeypatch):
     )
     monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
 
-    cfg = cli._ssh_config()
+    cfg = cli_app._ssh_config()
 
     assert cfg.verify_ssl is False
 
@@ -49,7 +48,7 @@ def test_ssh_config_falls_back_to_env(monkeypatch):
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
     monkeypatch.setattr(cli_app, "_current_options", cli_app.GlobalOpts)
 
-    cfg = cli._ssh_config()
+    cfg = cli_app._ssh_config()
 
     assert cfg.host == "env-host"
     assert cfg.user == "env-user"
