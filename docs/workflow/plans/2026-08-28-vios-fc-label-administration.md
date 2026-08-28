@@ -37,8 +37,12 @@ pytest, Ruff, ty, and repository `just` recipes. No dependency is added.
 - Modify `src/hmc_mcp/server_tools/catalog.py`: register the new tool module.
 - Create `src/hmc_mcp/cli_commands/vios_labels.py`: matching Typer commands and confirmations.
 - Modify `src/hmc_mcp/cli.py`: register the CLI module under `vios_app`.
-- Create `tests/vios/test_vios_labels.py`: SSH, operation, MCP, validation, parsing, and receipt
-  behavior.
+- Create `tests/fixtures/vios_labels/hmc-v11r2-power10-fcport.csv` and
+  `tests/fixtures/vios_labels/hmc-v11r2-power11-fcport.csv`: sanitized version-labelled FC-port
+  rows using #559's confirmed five-field schema; the separate files intentionally retain the same
+  grammar observed on both managed-system generations.
+- Create `tests/vios/test_vios_labels.py`: SSH, operation, MCP, validation, parsing, fixture, and
+  receipt behavior.
 - Modify `tests/app/test_cli_commands.py`: CLI registration, output, option, and confirmation behavior.
 - Modify `tests/app/test_tool_security.py`: pin the seven new tool classifications and selector use
   where the existing exhaustive tables require explicit expected names.
@@ -156,6 +160,13 @@ comma-bearing list pair and `+`/`-` suffixes. `shlex.quote` owns only the remote
 
    Invalid output raises `HMCCLIError` naming the list operation and malformed condition; it never
    returns partial rows.
+
+   Load both `tests/fixtures/vios_labels/hmc-v11r2-power10-fcport.csv` and
+   `hmc-v11r2-power11-fcport.csv` through parametrized cases whose IDs name the HMC release and
+   managed-system generation. Assert both execute and produce the confirmed keys
+   `name,lpar_id,port_name,port_phys_loc,port_label`, including an empty `port_label`. These are
+   sanitized fixtures grounded in #559's read-only survey; no vFC-group or mutation fixture is
+   fabricated while that evidence remains unavailable.
 
 3. Add table-driven validation tests covering whitespace-only `system_name`, `label`, `port_name`,
    `new_name`, and VIOS names; neither/singly selected FC-port list filters and refusal of both;
@@ -304,15 +315,18 @@ List commands accept `--json`. Mutation commands accept `--yes`; group member in
    preservation, list JSON, mutation receipt JSON, confirmation refusal without dispatch, `--yes`
    dispatch, payload-complete confirmation text, and prompts/confirmation echoes on stderr rather
    than JSON stdout. Confirmation assertions cover FC port plus selected VIOS identity and label,
-   group label plus complete member family/list, old plus new label for rename, and the named group
-   removal target. Run only the new tests by their node IDs and expect import/command failures.
+   FC-port set with port, selected VIOS identity, and new label; FC-port removal with port and
+   selected VIOS identity only; group label plus complete member family/list; old plus new label
+   for rename; and the named group removal target. Run only the new tests by their node IDs and
+   expect import/command failures.
 
 2. Implement `src/hmc_mcp/cli_commands/vios_labels.py`. Reuse the established `run`, `ssh_config`,
    `output`, `print_json`, and stderr confirmation pattern from `cli_commands/vnic.py`; do not add a
    second validator. Each mutation prompt names the system and complete operation-relevant payload:
-   FC port, selected VIOS identity, and label for set/remove; group label and full member family/list
-   for create/member changes; old and new labels for rename; and the group label for removal. It
-   never echoes credentials. `register_commands(vios_app)` installs exactly the seven names.
+   FC-port set shows port, selected VIOS identity, and new label; FC-port removal shows port and
+   selected VIOS identity only; group create/member changes show group label and full member
+   family/list; rename shows old and new labels; and group removal shows its label. It never echoes
+   credentials. `register_commands(vios_app)` installs exactly the seven names.
 
 3. Modify `src/hmc_mcp/cli.py` to import `vios_labels` and register it once with `vios_app`.
    Re-run the new CLI node IDs and `uv run --no-sync pytest tests/scripts/test_smoke_cli_groups.py

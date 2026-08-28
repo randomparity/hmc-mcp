@@ -32,6 +32,13 @@ tracked by [#559](https://github.com/randomparity/hmc-mcp/issues/559). This chan
 those unavailable facts or wait for them: it keeps list columns version-transparent and mutation
 receipts limited to dispatch evidence.
 
+A read-only #559 survey on HMC V11R2 SP1120 confirmed the FC-port header
+`name,lpar_id,port_name,port_phys_loc,port_label` and exit-0 `No results were found.` behavior on
+managed POWER10 and POWER11 systems. It observed no configured vFC groups, non-empty FC-port
+labels, or mutations and does not establish compatibility across HMC versions. Tests retain this
+confirmed schema as version-labelled evidence while the public parser stays dynamic and the
+remaining capture work stays open in #559.
+
 ## Public contract
 
 The MCP surface adds seven explicit tools:
