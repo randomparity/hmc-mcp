@@ -116,6 +116,7 @@ from hmc_mcp.operations.lpm import (
     validate_lpar_migration,
 )
 from hmc_mcp.operations.network import (
+    VirtualNetworkResult,
     create_virtual_network,
     delete_virtual_network,
     list_network_bridges,
@@ -397,6 +398,7 @@ __all__ = [
     "LpmAffinityPreflightRequest",
     "LpmAffinityPreflightOutcome",
     "LpmAffinityMigrationResult",
+    "VirtualNetworkResult",
     "list_virtual_switches",
     "list_virtual_networks",
     "create_virtual_network",

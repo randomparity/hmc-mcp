@@ -170,6 +170,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "LpmAffinityPreflightRequest",
         "LpmAffinityPreflightOutcome",
         "LpmAffinityMigrationResult",
+        "VirtualNetworkResult",
         "list_virtual_switches",
         "list_virtual_networks",
         "create_virtual_network",
@@ -1981,7 +1982,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Capacity and summary memory contracts now use the accurate MiB suffix.
     # DecommissionResult now exposes its blast-radius record types.
     # PartitionState now lives at the shared operations layer used by LPAR and VIOS.
-    expected_digest = "0958fb5d299d2fa41530ed3fb230f23cb075c35872a67b35433d2beaa7170061"  # pragma: allowlist secret
+    # Virtual-network creation now records its resolved parent system UUID.
+    expected_digest = "680439b3adfb6526bbac64fdfdbf36e1871d14753ef0ed672e1e6a203d961b40"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

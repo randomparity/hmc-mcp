@@ -8,6 +8,10 @@ from conftest import make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.documents import build_virtual_network_document
+from hmc_mcp.operations.network import (
+    VirtualNetworkResult,
+    create_virtual_network,
+)
 from hmc_mcp.server_tools.network import (
     hmc_create_virtual_network as hmc_create_virtual_network,
 )
@@ -99,6 +103,24 @@ def _call_tool_with_resolved_system(monkeypatch, tool, *args, **kwargs):
         result = tool("system-name", *args, **kwargs)
     resolver.assert_awaited_once_with(ANY, "system-name")
     return result
+
+
+@pytest.mark.asyncio
+async def test_create_virtual_network_operation_returns_parent_and_resource(
+    monkeypatch,
+):
+    resource = {"UUID": "vnet-uuid-1"}
+    hmc = AsyncMock()
+    hmc.create_virtual_network.return_value = resource
+    resolver = AsyncMock(return_value="sys-uuid")
+    monkeypatch.setattr("hmc_mcp.operations.network.resolve_system_uuid", resolver)
+
+    result = await create_virtual_network(hmc, "system-name", "prod", 100, 3)
+
+    assert result == VirtualNetworkResult("sys-uuid", resource)
+    hmc.create_virtual_network.assert_awaited_once_with(
+        "sys-uuid", "prod", 100, 3, tagged=False
+    )
 
 
 def test_virtual_network_document():

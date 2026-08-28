@@ -135,3 +135,23 @@ async def test_foreign_owner_stops_reconfiguration_before_first_write(
         "lpar_remote_restart",
     ):
         getattr(hmc, method).assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_adapter_returns_deleted_adapter_uuid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    guard = AsyncMock(return_value=LPAR)
+    monkeypatch.setattr(
+        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar_mutation", guard
+    )
+    hmc = AsyncMock()
+
+    result = await delete_adapter(
+        hmc, None, LPAR, "ClientNetworkAdapter", "adapter-uuid"
+    )
+
+    assert result == "adapter-uuid"
+    hmc.delete_adapter.assert_awaited_once_with(
+        LPAR, "ClientNetworkAdapter", "adapter-uuid"
+    )

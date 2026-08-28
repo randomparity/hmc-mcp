@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from ..client import HMCClient
+from ..errors import HMCError
 from ..resource_identity import resolve_system_uuid
 from .error_translation import translate_virtual_network_create_error
-from ..errors import HMCError
+
+
+@dataclass(frozen=True)
+class VirtualNetworkResult:
+    system_uuid: str
+    resource: dict[str, Any] | None
 
 
 async def list_virtual_switches(
@@ -34,7 +41,7 @@ async def create_virtual_network(
     virtual_switch_id: int,
     *,
     tagged: bool = False,
-) -> dict[str, Any] | None:
+) -> VirtualNetworkResult:
     """Create a virtual network on a managed system.
 
     Raises:
@@ -42,12 +49,13 @@ async def create_virtual_network(
     """
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     try:
-        return await hmc.create_virtual_network(
+        resource = await hmc.create_virtual_network(
             system_uuid, name, vlan_id, virtual_switch_id, tagged=tagged
         )
     except HMCError as exc:
         translate_virtual_network_create_error(exc)
         raise
+    return VirtualNetworkResult(system_uuid, resource)
 
 
 async def delete_virtual_network(

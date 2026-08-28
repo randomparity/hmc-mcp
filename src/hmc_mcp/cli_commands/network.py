@@ -280,14 +280,14 @@ def network_create(
     ):
         raise typer.Abort()
 
-    net = _with_client(
+    result = _with_client(
         lambda hmc: create_virtual_network(
             hmc, system, name, vlan, virtual_switch_id, tagged=tagged
         )
     )
 
     console.print(f"[green]Created virtual network '{name}'[/green]")
-    _print_json(net)
+    _print_json(result.resource)
 
 
 def network_delete(

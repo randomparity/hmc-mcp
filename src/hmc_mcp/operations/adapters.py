@@ -133,4 +133,4 @@ async def delete_adapter(
         ownership_override=ownership_override,
     )
     await hmc.delete_adapter(lpar_uuid, adapter_type, adapter_uuid)
-    return lpar_uuid
+    return adapter_uuid

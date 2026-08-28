@@ -168,9 +168,9 @@ def adapters_delete(
                 ownership_override=ownership_override,
             )
 
-    uuid = _run(_go)
+    deleted_uuid = _run(_go)
 
-    console.print(f"[green]Deleted {adapter_type} {adapter_uuid}[/green] from {uuid}")
+    console.print(f"[green]Deleted {adapter_type} {deleted_uuid}[/green] from {lpar}")
 
 
 def _adapter_mutation(go_coro, lpar: str, kind: str) -> None:

@@ -204,8 +204,8 @@ names are internal everywhere and are never inventoried.
   `LpmAffinityPreflightOutcome`, `LpmAffinityPreflightRequest`, `LpmResult`; excluded synchronous:
   `evaluate_lpm_affinity_preflight`.
 - `operations.network` — operations: `create_virtual_network`, `delete_virtual_network`,
-  `list_network_bridges`, `list_virtual_networks`, `list_virtual_switches`; types: none; excluded
-  synchronous: none.
+  `list_network_bridges`, `list_virtual_networks`, `list_virtual_switches`; types:
+  `VirtualNetworkResult`; excluded synchronous: none.
 - `operations.ownership` — operations: `authorize_decommission_lpar_ownership_snapshot`,
   `authorize_lpar_mutation`, `list_lpar_ownership`, `resolve_and_authorize_lpar_mutation`,
   `resolve_and_authorize_lpar_names`, `resolve_lpar_ownership_names`,

@@ -29,6 +29,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- Mutation results now identify the affected resource consistently: `delete_adapter`
+  returns the deleted adapter UUID, and `create_virtual_network` returns a
+  `VirtualNetworkResult` containing the resolved system UUID and HMC resource.
 - `hmc_create_volume_group` now declares its actual HMC resource payload return
   (`dict | None`) instead of the unrelated storage-mapping workflow result.
 - Capacity and summary contracts now name mebibyte values explicitly:
@@ -50,6 +53,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Added
 
+- `VirtualNetworkResult` exposes the resolved managed-system UUID beside the
+  resource returned by `create_virtual_network`.
 - `DecommissionBlastRadius` and `DecommissionAdapterRecord` expose the fixed
   `DecommissionResult.blast_radius` inventory schema to reusable Python callers.
 - `StorageMapResult` records the authorized LPAR UUID beside the resource returned by
@@ -411,6 +416,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `VirtualNetworkResult` records the resolved managed-system UUID beside
+  the HMC resource returned by `create_virtual_network`.
+- Changed: `delete_adapter` returns the deleted adapter UUID instead of its
+  parent LPAR UUID.
 - Changed: SSH-only PCIe, vNIC inventory, and affinity read operations now
   accept `HMCConfig` directly instead of constructing an unused REST client.
 - Changed: `ProvisionNetwork` is replaced by `ProvisionAdapters`, reflecting that

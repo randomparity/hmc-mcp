@@ -111,17 +111,18 @@ def hmc_create_virtual_network(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_client(
-        lambda hmc: create_virtual_network(
+    async def operation(hmc):
+        result = await create_virtual_network(
             hmc,
             system_name_or_uuid,
             name,
             vlan_id,
             virtual_switch_id,
             tagged=tagged,
-        ),
-        profile=profile,
-    )
+        )
+        return result.resource
+
+    return with_client(operation, profile=profile)
 
 
 @tool(
