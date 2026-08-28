@@ -294,16 +294,6 @@ def test_get_lpar_state_returns_string(monkeypatch, mock_hmc):
     assert result == "running"
 
 
-def test_lpars_rejects_conflicting_selectors():
-    with pytest.raises(ValueError, match="at most one"):
-        hmc_list_lpars(system_name_or_uuid=SYSTEM_UUID, state="running")
-
-
-def test_systems_rejects_conflicting_selectors():
-    with pytest.raises(ValueError, match="at most one"):
-        hmc_list_lpars(system_name_or_uuid=SYSTEM_UUID, state="running")
-
-
 # ---------------------------------------------------------------------- #
 # hmc_list_vios
 # ---------------------------------------------------------------------- #
@@ -335,11 +325,6 @@ def test_vios_with_uuid_returns_storage_detail(monkeypatch, mock_hmc):
     result = hmc_get_vios(VIOS_UUID)
     assert route.called
     assert result["UUID"] == VIOS_UUID
-
-
-def test_vios_rejects_vios_and_system_selectors():
-    with pytest.raises(ValueError, match="at most one"):
-        hmc_list_vios(system_name_or_uuid=SYSTEM_UUID, state="running")
 
 
 # ---------------------------------------------------------------------- #
@@ -636,11 +621,6 @@ def test_lpars_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
     assert result == []
 
 
-def test_lpars_rejects_state_with_lpar_selector():
-    with pytest.raises(ValueError, match="at most one"):
-        hmc_list_lpars(system_name_or_uuid=SYSTEM_UUID, state="running")
-
-
 def test_vios_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
     """hmc_list_vios(state='running') GETs the VirtualIOServer PartitionState search endpoint."""
     _hmc_env(monkeypatch)
@@ -674,8 +654,3 @@ def test_vios_state_filter_rejects_unknown_state(monkeypatch, mock_hmc):
         hmc_list_vios(state="no-match")
 
     assert not route.called
-
-
-def test_vios_rejects_conflicting_selectors():
-    with pytest.raises(ValueError, match="at most one"):
-        hmc_list_vios(system_name_or_uuid=SYSTEM_UUID, state="running")

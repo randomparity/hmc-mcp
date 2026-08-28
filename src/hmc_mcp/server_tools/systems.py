@@ -123,9 +123,6 @@ def hmc_list_lpars(
             and parsed; omitted returns all entries. This client-side cap does not
             reduce HMC work or network transfer.
     """
-    if system_name_or_uuid is not None and state is not None:
-        raise ValueError("Provide at most one of system_name_or_uuid or state")
-
     async def _go():
         async with client_from_env(profile) as hmc:
             return await list_lpars(hmc, system_name_or_uuid, state)
@@ -210,9 +207,6 @@ def hmc_list_vios(
             and parsed; omitted returns all entries. This client-side cap does not
             reduce HMC work or network transfer.
     """
-    if system_name_or_uuid is not None and state is not None:
-        raise ValueError("Provide at most one of system_name_or_uuid or state")
-
     async def _go():
         async with client_from_env(profile) as hmc:
             return await list_vios(hmc, system_name_or_uuid, state)
