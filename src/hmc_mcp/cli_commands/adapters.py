@@ -107,7 +107,7 @@ def adapters_add_vscsi(
                 lpar,
                 vios_id,
                 vios_slot,
-                slot,
+                slot_number=slot,
                 ownership_override=ownership_override,
             )
 
@@ -139,7 +139,7 @@ def adapters_add_vfc(
                 lpar,
                 vios_id,
                 vios_slot,
-                slot,
+                slot_number=slot,
                 ownership_override=ownership_override,
             )
 

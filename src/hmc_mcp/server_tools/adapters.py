@@ -142,7 +142,7 @@ def hmc_add_vscsi_adapter(
                     lpar_name_or_uuid,
                     vios_partition_id,
                     vios_slot,
-                    slot_number,
+                    slot_number=slot_number,
                     ownership_override=ownership_override,
                 )
             ).resource
@@ -191,7 +191,7 @@ def hmc_add_vfc_adapter(
                     lpar_name_or_uuid,
                     vios_partition_id,
                     vios_slot,
-                    slot_number,
+                    slot_number=slot_number,
                     ownership_override=ownership_override,
                 )
             ).resource

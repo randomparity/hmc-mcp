@@ -29,6 +29,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- Exported vSCSI and vFC adapter creation operations now match network adapter
+  creation by accepting the optional client slot as keyword-only
+  `slot_number=None`.
 - Provisioning workflow results now report virtual-disk capacity as
   `capacity_mib`, matching the value's mebibyte unit.
 - Exported LPAR operations now place `system_name_or_uuid` before

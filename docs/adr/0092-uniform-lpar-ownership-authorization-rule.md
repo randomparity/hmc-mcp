@@ -153,8 +153,8 @@ only the transport boundary.
 | `apply_lpar_pcie_assignments` | `operations/lpar/assignments.py:275` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
 | `add_network_adapter` | `operations/adapters.py:33` | guarded (`:45`) | #372 |
 | `add_vscsi_adapter` | `operations/adapters.py:62` | guarded (`:72`) | #372 |
-| `add_vfc_adapter` | `operations/adapters.py:82` | guarded (`:92`) | #372 |
-| `delete_adapter` | `operations/adapters.py:102` | guarded (`:112`) | #372 |
+| `add_vfc_adapter` | `operations/adapters.py:84` | guarded (`:92`) | #372 |
+| `delete_adapter` | `operations/adapters.py:106` | guarded (`:112`) | #372 |
 | `map_storage` | `operations/storage.py:138` | guarded (`:124`) | #372 |
 | `attach_disk_to_lpar` | `operations/lpar/provision.py:316` | guarded before the storage workflow (`:348`) | #372 |
 | `mount_optical_media` | `operations/storage.py:723` | guarded (`:713`) | #440 |

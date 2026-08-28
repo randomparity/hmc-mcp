@@ -40,11 +40,11 @@ CASES: tuple[tuple[str, Operation], ...] = (
     ),
     (
         "hmc_mcp.operations.adapters.resolve_and_authorize_lpar_mutation",
-        lambda hmc: add_vscsi_adapter(hmc, None, LPAR, 2, 10, None),
+        lambda hmc: add_vscsi_adapter(hmc, None, LPAR, 2, 10),
     ),
     (
         "hmc_mcp.operations.adapters.resolve_and_authorize_lpar_mutation",
-        lambda hmc: add_vfc_adapter(hmc, None, LPAR, 2, 10, None),
+        lambda hmc: add_vfc_adapter(hmc, None, LPAR, 2, 10),
     ),
     (
         "hmc_mcp.operations.adapters.resolve_and_authorize_lpar_mutation",

@@ -1852,6 +1852,10 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         parameters = inspect.signature(getattr(api, operation_name)).parameters
         assert "lpar_name_or_uuid" in parameters
         assert "lpar_uuid" not in parameters
+    for operation_name in ("add_vscsi_adapter", "add_vfc_adapter"):
+        slot = inspect.signature(getattr(api, operation_name)).parameters["slot_number"]
+        assert slot.kind is inspect.Parameter.KEYWORD_ONLY
+        assert slot.default is None
     for operation_name in (
         "list_dedicated_slots",
         "set_sriov_adapter_mode",
@@ -1943,7 +1947,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Boot-order operations now accept a system-scoped LPAR name or UUID.
     # PCIe inventory operations now name their system selector explicitly.
     # Cluster and shared-storage-pool inventory joined the reusable facade.
-    expected_digest = "8b45098dd4d4d3c991081ff2379ef0a4ec77b8dca7244239767438d141721490"  # pragma: allowlist secret
+    expected_digest = "d8168d002c73850999ffae2250878cfbd03d61495b5336a5932a875f58101392"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

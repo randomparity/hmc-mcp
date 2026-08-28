@@ -65,8 +65,8 @@ async def add_vscsi_adapter(
     lpar_name_or_uuid: str,
     vios_partition_id: int,
     vios_slot: int,
-    slot: int | None,
     *,
+    slot_number: int | None = None,
     ownership_override: bool = False,
 ) -> AdapterResult:
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
@@ -75,7 +75,9 @@ async def add_vscsi_adapter(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
-    resource = await hmc.add_vscsi_adapter(lpar_uuid, vios_partition_id, vios_slot, slot)
+    resource = await hmc.add_vscsi_adapter(
+        lpar_uuid, vios_partition_id, vios_slot, slot_number
+    )
     return AdapterResult(lpar_uuid, resource)
 
 
@@ -85,8 +87,8 @@ async def add_vfc_adapter(
     lpar_name_or_uuid: str,
     vios_partition_id: int,
     vios_slot: int,
-    slot: int | None,
     *,
+    slot_number: int | None = None,
     ownership_override: bool = False,
 ) -> AdapterResult:
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
@@ -95,7 +97,9 @@ async def add_vfc_adapter(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
-    resource = await hmc.add_vfc_adapter(lpar_uuid, vios_partition_id, vios_slot, slot)
+    resource = await hmc.add_vfc_adapter(
+        lpar_uuid, vios_partition_id, vios_slot, slot_number
+    )
     return AdapterResult(lpar_uuid, resource)
 
 
