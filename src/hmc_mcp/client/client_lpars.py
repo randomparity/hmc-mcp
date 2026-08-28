@@ -6,15 +6,13 @@ domain mixin; this module only defines methods for lpars.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from .client_contracts import LparsClient
 from .client_parse import _parse_feed
 from .client_resolution import (
-    PARENT_DISCOVERY_TIMEOUT_SECONDS,
     ambiguity_candidate_ids,
-    bounded_parent_systems,
+    ambiguous_parent_details,
 )
 
 
@@ -63,48 +61,12 @@ class LparsMixin:
         if len(results) <= 1:
             return results[0] if results else None
 
-        candidate_ids = ambiguity_candidate_ids(results, "LPAR", name)
-        parents: dict[str, list[tuple[str, str]]] = {uuid: [] for uuid in candidate_ids}
-        systems = bounded_parent_systems(
-            await self.list_managed_systems(), "LPAR", name
-        )
-        try:
-            async with asyncio.timeout(PARENT_DISCOVERY_TIMEOUT_SECONDS):
-                for system in systems:
-                    system_uuid = system.get("UUID")
-                    system_name = (system.get("Resource") or {}).get("SystemName")
-                    if (
-                        not isinstance(system_uuid, str)
-                        or not system_uuid
-                        or not isinstance(system_name, str)
-                        or not system_name
-                    ):
-                        raise ValueError(
-                            f"Cannot resolve ambiguous LPAR name {name!r}: cannot "
-                            "identify managed system from incomplete inventory metadata"
-                        )
-                    for entry in await self.list_logical_partitions(system_uuid):
-                        entry_uuid = str(entry.get("UUID"))
-                        if entry_uuid in parents:
-                            parents[entry_uuid].append((system_name, system_uuid))
-        except TimeoutError as exc:
-            raise ValueError(
-                f"Cannot resolve ambiguous LPAR name {name!r}: parent discovery "
-                "timed out; supply managed-system scope"
-            ) from exc
-        invalid = sorted(uuid for uuid, matches in parents.items() if len(matches) != 1)
-        if invalid:
-            raise ValueError(
-                "Cannot resolve ambiguous LPAR name "
-                f"{name!r}: candidates {', '.join(invalid)} must each belong to "
-                "exactly one managed system"
-            )
-        details = ", ".join(
-            f"{uuid} on {parents[uuid][0][0]!r} ({parents[uuid][0][1]})"
-            for uuid in sorted(
-                candidate_ids,
-                key=lambda value: (parents[value][0][0], parents[value][0][1], value),
-            )
+        details = await ambiguous_parent_details(
+            results,
+            await self.list_managed_systems(),
+            "LPAR",
+            name,
+            self.list_logical_partitions,
         )
         raise ValueError(f"Ambiguous LPAR name {name!r}: {details}")
 
@@ -144,7 +106,10 @@ class LparsMixin:
         """
         path = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
         xml = await self._post(
-            path, lpar_xml, resource_type="LogicalPartition", include_schema_version=False
+            path,
+            lpar_xml,
+            resource_type="LogicalPartition",
+            include_schema_version=False,
         )
         entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None

@@ -6,15 +6,13 @@ domain mixin; this module only defines methods for systems.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from .client_contracts import SystemsClient
 from .client_parse import _parse_feed
 from .client_resolution import (
-    PARENT_DISCOVERY_TIMEOUT_SECONDS,
     ambiguity_candidate_ids,
-    bounded_parent_systems,
+    ambiguous_parent_details,
 )
 from ..errors import HMCError
 from ..jobs import (
@@ -159,48 +157,12 @@ class SystemsMixin:
         if len(results) <= 1:
             return results[0] if results else None
 
-        candidate_ids = ambiguity_candidate_ids(results, "VIOS", name)
-        parents: dict[str, list[tuple[str, str]]] = {uuid: [] for uuid in candidate_ids}
-        systems = bounded_parent_systems(
-            await self.list_managed_systems(), "VIOS", name
-        )
-        try:
-            async with asyncio.timeout(PARENT_DISCOVERY_TIMEOUT_SECONDS):
-                for system in systems:
-                    parent_uuid = system.get("UUID")
-                    parent_name = (system.get("Resource") or {}).get("SystemName")
-                    if (
-                        not isinstance(parent_uuid, str)
-                        or not parent_uuid
-                        or not isinstance(parent_name, str)
-                        or not parent_name
-                    ):
-                        raise ValueError(
-                            f"Cannot resolve ambiguous VIOS name {name!r}: cannot "
-                            "identify managed system from incomplete inventory metadata"
-                        )
-                    for entry in await self.list_vios(parent_uuid):
-                        entry_uuid = str(entry.get("UUID"))
-                        if entry_uuid in parents:
-                            parents[entry_uuid].append((parent_name, parent_uuid))
-        except TimeoutError as exc:
-            raise ValueError(
-                f"Cannot resolve ambiguous VIOS name {name!r}: parent discovery "
-                "timed out; supply managed-system scope"
-            ) from exc
-        invalid = sorted(uuid for uuid, matches in parents.items() if len(matches) != 1)
-        if invalid:
-            raise ValueError(
-                "Cannot resolve ambiguous VIOS name "
-                f"{name!r}: candidates {', '.join(invalid)} must each belong to "
-                "exactly one managed system"
-            )
-        details = ", ".join(
-            f"{uuid} on {parents[uuid][0][0]!r} ({parents[uuid][0][1]})"
-            for uuid in sorted(
-                candidate_ids,
-                key=lambda value: (parents[value][0][0], parents[value][0][1], value),
-            )
+        details = await ambiguous_parent_details(
+            results,
+            await self.list_managed_systems(),
+            "VIOS",
+            name,
+            self.list_vios,
         )
         raise ValueError(f"Ambiguous VIOS name {name!r}: {details}")
 
