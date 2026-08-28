@@ -129,185 +129,208 @@ def _unrestorable_description(text: str) -> str | None:
     return None
 
 
-async def mutate_lpar_properties(client: Client, state: RunState) -> None:
+def _baseline_description(state: RunState) -> str:
+    """Return the captured description in the writable string form."""
+    description = state.context.lp3_baseline.get("description", "")
+    if isinstance(description, dict):
+        description = description.get("description") or ""
+    return str(description) if description else ""
+
+
+async def _restore_description(
+    client: Client, state: RunState, scenario: int
+) -> None:
+    """Restore the captured description when the CLI can represent it."""
+    description = _baseline_description(state)
+    blocked = _unrestorable_description(description)
+    if blocked:
+        state.skip(
+            scenario,
+            "hmc_set_lpar_description (restore)",
+            f"original description cannot be restored via CLI: {blocked}",
+        )
+        return
     context = state.context
-    print("\n=== ST10: LPAR Properties Mutations ===")
-
-    orig_desc = context.lp3_baseline.get("description", "")
-    if isinstance(orig_desc, dict):
-        orig_desc = orig_desc.get("description") or ""
-
-    # Description set/verify/restore — ASCII-only test string (fix #100)
-    test_desc = "MCP live-test probe R2 safe to clear"
-    st, data = await state.call(
+    status, data = await state.call(
         client,
         "hmc_set_lpar_description",
         system_name_or_uuid=context.system_name,
         lpar_name_or_uuid=context.lp3_name,
-        description=test_desc,
+        description=description,
     )
-    state.record(10, "hmc_set_lpar_description", st, data)
+    state.record(scenario, "hmc_set_lpar_description (restore)", status, data)
 
-    st, data = await state.call(
+
+async def _exercise_description_round_trip(client: Client, state: RunState) -> None:
+    """Set, read, and restore an ASCII-safe LPAR description."""
+    context = state.context
+    status, data = await state.call(
+        client,
+        "hmc_set_lpar_description",
+        system_name_or_uuid=context.system_name,
+        lpar_name_or_uuid=context.lp3_name,
+        description="MCP live-test probe R2 safe to clear",
+    )
+    state.record(10, "hmc_set_lpar_description", status, data)
+    status, data = await state.call(
         client,
         "hmc_get_lpar_description",
         system_name_or_uuid=context.system_name,
         lpar_name_or_uuid=context.lp3_name,
     )
-    state.record(10, "hmc_get_lpar_description (verify)", st, data)
+    state.record(10, "hmc_get_lpar_description (verify)", status, data)
+    await _restore_description(client, state, 10)
 
-    # Restore only if the original description can survive the CLI set command.
-    _restore_desc = str(orig_desc) if orig_desc else ""
-    _blocked = _unrestorable_description(_restore_desc)
-    if _blocked:
-        state.skip(
-            10,
-            "hmc_set_lpar_description (restore)",
-            f"original description cannot be restored via CLI: {_blocked}",
-        )
-    else:
-        st, data = await state.call(
-            client,
-            "hmc_set_lpar_description",
-            system_name_or_uuid=context.system_name,
-            lpar_name_or_uuid=context.lp3_name,
-            description=_restore_desc,
-        )
-        state.record(10, "hmc_set_lpar_description (restore)", st, data)
 
-    # Determine lp3 partition environment
-    st_env, data_env = await state.call(
+async def _lpar_environment(client: Client, state: RunState) -> str:
+    """Read the target partition environment through the HMC CLI."""
+    context = state.context
+    status, data = await state.call(
         client,
         "hmc_run_command",
         cmd=f"lssyscfg -r lpar -m {shlex.quote(context.system_name)}"
         f" --filter {shlex.quote(build_filter([('lpar_names', context.lp3_name)]))} -F lpar_env",
     )
-    state.record(10, "lssyscfg lpar_env check", st_env, data_env)
-    lp3_env = (data_env or "").strip() if st_env == "PASS" else ""
+    state.record(10, "lssyscfg lpar_env check", status, data)
+    return (data or "").strip() if status == "PASS" else ""
 
-    if lp3_env == "vioserver":
-        # Full toggle/verify/restore (only valid on VIOS partitions)
-        orig_msp = context.lp3_baseline.get("msp")
-        if isinstance(orig_msp, dict):
-            orig_msp = orig_msp.get("msp") or orig_msp.get("enabled")
-        new_msp = not bool(orig_msp)
 
-        st, data = await state.call(
-            client,
-            "hmc_set_lpar_msp",
-            system_name_or_uuid=context.system_name,
-            lpar_name_or_uuid=context.lp3_name,
-            enabled=new_msp,
-        )
-        state.record(10, "hmc_set_lpar_msp (toggle)", st, data)
-
-        st, data = await state.call(
-            client,
-            "hmc_get_lpar_msp",
-            system_name_or_uuid=context.system_name,
-            lpar_name_or_uuid=context.lp3_name,
-        )
-        state.record(10, "hmc_get_lpar_msp (verify)", st, data)
-
-        st, data = await state.call(
-            client,
-            "hmc_set_lpar_msp",
-            system_name_or_uuid=context.system_name,
-            lpar_name_or_uuid=context.lp3_name,
-            enabled=bool(orig_msp),
-        )
-        state.record(10, "hmc_set_lpar_msp (restore)", st, data)
-    else:
-        # AIX/Linux partition — fix #102 should reject cleanly before SSH
-        st_bad, data_bad = await state.call(
-            client,
-            "hmc_set_lpar_msp",
-            system_name_or_uuid=context.system_name,
-            lpar_name_or_uuid=context.lp3_name,
-            enabled=True,
-        )
-        rejection_text = str(data_bad).lower()
-        if st_bad == "FAIL" and (
-            "only valid for a vios" in rejection_text
-            or "vioserver" in rejection_text
-            or "not found" in rejection_text
+async def _exercise_msp_behavior(client: Client, state: RunState) -> None:
+    """Round-trip MSP on VIOS, or verify clean rejection on other LPARs."""
+    context = state.context
+    environment = await _lpar_environment(client, state)
+    if environment == "vioserver":
+        original = context.lp3_baseline.get("msp")
+        if isinstance(original, dict):
+            original = original.get("msp") or original.get("enabled")
+        for label, enabled in (
+            ("toggle", not bool(original)),
+            ("restore", bool(original)),
         ):
-            state.record(
-                10,
-                "hmc_set_lpar_msp (non-VIOS rejection — expected)",
-                "PASS",
-                f"correctly rejected: {str(data_bad)[:200]}",
+            status, data = await state.call(
+                client,
+                "hmc_set_lpar_msp",
+                system_name_or_uuid=context.system_name,
+                lpar_name_or_uuid=context.lp3_name,
+                enabled=enabled,
             )
-        else:
-            state.record(
-                10,
-                "hmc_set_lpar_msp (non-VIOS rejection)",
-                st_bad,
-                data_bad,
-                f"lpar_env={lp3_env!r}",
-            )
-        state.skip(
-            10,
-            "hmc_set_lpar_msp (toggle/verify/restore)",
-            f"lp3 is not a VIOS (lpar_env={lp3_env!r})",
-        )
+            state.record(10, f"hmc_set_lpar_msp ({label})", status, data)
+            if label == "toggle":
+                status, data = await state.call(
+                    client,
+                    "hmc_get_lpar_msp",
+                    system_name_or_uuid=context.system_name,
+                    lpar_name_or_uuid=context.lp3_name,
+                )
+                state.record(10, "hmc_get_lpar_msp (verify)", status, data)
+        return
 
-    # Proc compat — fetch actual current mode and set idempotently.
-    # Use hmc_get_lpar_proc_compat to get the live value; fall back to
-    # "default" only if the fetch fails. Skip if we can't get a real mode.
-    st_pc, data_pc = await state.call(
+    status, data = await state.call(
+        client,
+        "hmc_set_lpar_msp",
+        system_name_or_uuid=context.system_name,
+        lpar_name_or_uuid=context.lp3_name,
+        enabled=True,
+    )
+    rejection = str(data).lower()
+    expected = status == "FAIL" and any(
+        text in rejection for text in ("only valid for a vios", "vioserver", "not found")
+    )
+    if expected:
+        state.record(
+            10,
+            "hmc_set_lpar_msp (non-VIOS rejection — expected)",
+            "PASS",
+            f"correctly rejected: {str(data)[:200]}",
+        )
+    else:
+        state.record(
+            10,
+            "hmc_set_lpar_msp (non-VIOS rejection)",
+            status,
+            data,
+            f"lpar_env={environment!r}",
+        )
+    state.skip(
+        10,
+        "hmc_set_lpar_msp (toggle/verify/restore)",
+        f"lp3 is not a VIOS (lpar_env={environment!r})",
+    )
+
+
+async def _set_current_proc_compat(
+    client: Client, state: RunState, scenario: int, action: str
+) -> None:
+    """Read and idempotently set the live non-default processor mode."""
+    context = state.context
+    status, data = await state.call(
         client,
         "hmc_get_lpar_proc_compat",
         system_name_or_uuid=context.system_name,
         lpar_name_or_uuid=context.lp3_name,
     )
-    if st_pc == "PASS" and isinstance(data_pc, dict):
-        mode = (data_pc.get("desired") or data_pc.get("curr") or "").strip()
-    else:
-        mode = ""
-
-    if mode and mode.lower() not in ("default", ""):
-        st, data = await state.call(
+    mode = (
+        (data.get("desired") or data.get("curr") or "").strip()
+        if status == "PASS" and isinstance(data, dict)
+        else ""
+    )
+    if mode and mode.lower() != "default":
+        status, data = await state.call(
             client,
             "hmc_set_lpar_proc_compat",
             system_name_or_uuid=context.system_name,
             lpar_name_or_uuid=context.lp3_name,
             mode=mode,
         )
-        state.record(10, "hmc_set_lpar_proc_compat", st, data)
+        state.record(scenario, action, status, data)
     else:
         state.skip(
-            10,
-            "hmc_set_lpar_proc_compat",
-            f"proc compat mode is {mode!r} — skipping idempotent set (chsyscfg rejects 'default' as invalid attribute value)",
+            scenario,
+            action,
+            f"proc compat mode is {mode!r} — skipping idempotent set (chsyscfg rejects 'default')",
         )
 
-    st, data = await state.call(
+
+async def _exercise_proc_compat(client: Client, state: RunState) -> None:
+    """Set the current processor mode and verify the resulting value."""
+    await _set_current_proc_compat(client, state, 10, "hmc_set_lpar_proc_compat")
+    context = state.context
+    status, data = await state.call(
         client,
         "hmc_get_lpar_proc_compat",
         system_name_or_uuid=context.system_name,
         lpar_name_or_uuid=context.lp3_name,
     )
-    state.record(10, "hmc_get_lpar_proc_compat (verify)", st, data)
+    state.record(10, "hmc_get_lpar_proc_compat (verify)", status, data)
 
-    # Profile sync
-    st, data = await state.call(
+
+async def _maintain_lpar_profile(client: Client, state: RunState) -> None:
+    """Synchronize the active profile and exercise forced profile backup."""
+    context = state.context
+    status, data = await state.call(
         client,
         "hmc_sync_lpar_profile",
         system_name_or_uuid=context.system_name,
         lpar_name_or_uuid=context.lp3_name,
     )
-    state.record(10, "hmc_sync_lpar_profile", st, data)
-
-    # Profile backup with force=True (fix #103)
-    st, data = await state.call(
+    state.record(10, "hmc_sync_lpar_profile", status, data)
+    status, data = await state.call(
         client,
         "hmc_backup_lpar_profiles",
         system_name_or_uuid=context.system_name,
         file_path=str(Path(tempfile.gettempdir()) / "mcp-lp3-profiles-r2"),
         force=True,
     )
-    state.record(10, "hmc_backup_lpar_profiles (force=True)", st, data)
+    state.record(10, "hmc_backup_lpar_profiles (force=True)", status, data)
+
+
+async def mutate_lpar_properties(client: Client, state: RunState) -> None:
+    """Run the ordered ST10 property checks against the baseline LPAR."""
+    print("\n=== ST10: LPAR Properties Mutations ===")
+    await _exercise_description_round_trip(client, state)
+    await _exercise_msp_behavior(client, state)
+    await _exercise_proc_compat(client, state)
+    await _maintain_lpar_profile(client, state)
 
 
 # ---------------------------------------------------------------------------
@@ -325,57 +348,10 @@ async def restore_lpar_baseline(client: Client, state: RunState) -> None:
     )
     state.record(15, "hmc_lpar_summary (post-test)", st, data)
 
-    baseline = context.lp3_baseline
-
-    # Restore description — only if the original survives the CLI (same guard as ST10)
-    orig_desc = baseline.get("description", "")
-    if isinstance(orig_desc, dict):
-        orig_desc = orig_desc.get("description") or ""
-    _restore_desc = str(orig_desc) if orig_desc else ""
-    _blocked = _unrestorable_description(_restore_desc)
-    if _blocked:
-        state.skip(
-            15,
-            "hmc_set_lpar_description (restore)",
-            f"original description cannot be restored via CLI: {_blocked}",
-        )
-    else:
-        st, data = await state.call(
-            client,
-            "hmc_set_lpar_description",
-            system_name_or_uuid=context.system_name,
-            lpar_name_or_uuid=context.lp3_name,
-            description=_restore_desc,
-        )
-        state.record(15, "hmc_set_lpar_description (restore)", st, data)
-
-    # Restore proc compat — fetch live mode; skip if "default" (same guard as ST10)
-    st_pc, data_pc = await state.call(
-        client,
-        "hmc_get_lpar_proc_compat",
-        system_name_or_uuid=context.system_name,
-        lpar_name_or_uuid=context.lp3_name,
+    await _restore_description(client, state, 15)
+    await _set_current_proc_compat(
+        client, state, 15, "hmc_set_lpar_proc_compat (restore)"
     )
-    if st_pc == "PASS" and isinstance(data_pc, dict):
-        mode = (data_pc.get("desired") or data_pc.get("curr") or "").strip()
-    else:
-        mode = ""
-
-    if mode and mode.lower() not in ("default", ""):
-        st, data = await state.call(
-            client,
-            "hmc_set_lpar_proc_compat",
-            system_name_or_uuid=context.system_name,
-            lpar_name_or_uuid=context.lp3_name,
-            mode=mode,
-        )
-        state.record(15, "hmc_set_lpar_proc_compat (restore)", st, data)
-    else:
-        state.skip(
-            15,
-            "hmc_set_lpar_proc_compat (restore)",
-            f"proc compat mode is {mode!r} — skipping restore (chsyscfg rejects 'default')",
-        )
 
     # Final adapter audit
     st, data = await state.call(
