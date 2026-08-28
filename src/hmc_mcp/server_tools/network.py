@@ -327,10 +327,10 @@ def hmc_assign_sriov_logical_port(
 def hmc_unassign_sriov_logical_port(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    profile_name: str,
     adapter_id: str,
     physical_port_id: str,
     logical_port_id: str,
+    profile_name: str,
     ownership_override: bool = False,
     profile: str | None = None,
 ) -> dict[str, Any]:
@@ -353,10 +353,10 @@ def hmc_unassign_sriov_logical_port(
                     hmc,
                     system_name_or_uuid,
                     lpar_name_or_uuid,
-                    profile_name,
                     adapter_id,
                     physical_port_id,
                     logical_port_id,
+                    profile_name=profile_name,
                     ownership_override=ownership_override,
                 )
             )

@@ -1834,7 +1834,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         "list_adapters",
         "list_fc_ports",
         "list_lpar_memopt_scores",
-        "list_sea_adapters",
+            "list_sea_adapters",
             "list_vnics",
             "get_lpar_memopt_score",
             "get_minimum_affinity_policy",
@@ -1877,6 +1877,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         "affinity_assessment",
     ):
         assert provision_parameters[control].kind is inspect.Parameter.KEYWORD_ONLY
+    unassign_parameters = inspect.signature(api.unassign_sriov_logical_port).parameters
+    assert unassign_parameters["profile_name"].kind is inspect.Parameter.KEYWORD_ONLY
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
         # Moved when AssignmentStep became the shared WorkflowStep contract.
         # Before that, provision_lpar made its workflow controls keyword-only.
@@ -1903,7 +1905,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # User mutation operations now name every supported document field instead
     # of accepting an untyped keyword bag.
     # PCM metric controls are keyword-only after the resource selector.
-    expected_digest = "b066137dd64c250e5748081b27b25009689d2e6a20deedfdd47b7e7b74fcc0c6"  # pragma: allowlist secret
+    expected_digest = "e710fdd7767c3e184cc20715faa656c3e863f8121b4552047843d340a7cbf114"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

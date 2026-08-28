@@ -584,11 +584,11 @@ async def unassign_sriov_logical_port(
     hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    profile_name: str,
     adapter_id: str,
     physical_port_id: str,
     logical_port_id: str,
     *,
+    profile_name: str,
     ownership_override: bool = False,
 ) -> SriovLogicalPortChangeResult:
     selector = InventorySelector(

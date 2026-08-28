@@ -173,7 +173,7 @@ async def test_profile_unassign_is_idempotent_and_verified(monkeypatch):
         "hmc_mcp.operations.pcie.unassign_sriov_logical_port_profile", mutate
     )
     unchanged = await unassign_sriov_logical_port(
-        _hmc(), "sys", "lpar", "prof", "1", "0", "3"
+        _hmc(), "sys", "lpar", "1", "0", "3", profile_name="prof"
     )
     assert unchanged.changed is False
 
@@ -186,7 +186,7 @@ async def test_profile_unassign_is_idempotent_and_verified(monkeypatch):
     )
     monkeypatch.setattr("hmc_mcp.operations.pcie.read_sriov_profile_ports", reads)
     changed = await unassign_sriov_logical_port(
-        _hmc(), "sys", "lpar", "prof", "1", "0", "3"
+        _hmc(), "sys", "lpar", "1", "0", "3", profile_name="prof"
     )
     assert changed.changed is True
     mutate.assert_awaited_once()
@@ -205,7 +205,9 @@ async def test_unassign_rejects_multiple_profile_records_before_dispatch(monkeyp
         AsyncMock(return_value={"name": "prof", "sriov_eth_logical_ports": record}),
     )
     with pytest.raises(ValueError, match="exactly the selected"):
-        await unassign_sriov_logical_port(_hmc(), "sys", "lpar", "prof", "1", "0", "3")
+        await unassign_sriov_logical_port(
+            _hmc(), "sys", "lpar", "1", "0", "3", profile_name="prof"
+        )
     mutate.assert_not_awaited()
 
 

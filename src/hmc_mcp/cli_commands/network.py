@@ -212,10 +212,10 @@ def network_assign_sriov_logical_port(
 def network_unassign_sriov_logical_port(
     system_name: str,
     lpar_name: str,
-    profile_name: str,
     adapter_id: str,
     physical_port_id: str,
     logical_port_id: str,
+    profile_name: str = typer.Option(..., "--profile-name"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Unassign a profile logical port on a Not Activated LPAR."""
@@ -224,10 +224,10 @@ def network_unassign_sriov_logical_port(
             hmc,
             system_name,
             lpar_name,
-            profile_name,
             adapter_id,
             physical_port_id,
             logical_port_id,
+            profile_name=profile_name,
             ownership_override=ownership_override,
         )
     )
