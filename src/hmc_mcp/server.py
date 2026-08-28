@@ -47,7 +47,7 @@ import asyncio
 import ipaddress
 import logging
 import socket
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Final
 
 from fastmcp import FastMCP
@@ -72,72 +72,14 @@ from .audit.sink import (
 from .authorization.connection_scope import ConnectionScopeError
 from .authorization.dispatch_scope import dispatch_authorizer
 from .authorization.target_scope import TargetScopeError
-from .tool_registry import Authorize, ToolSecurity, build_tool_security
-from .server_tools import (
-    adapters as server_adapters,
-    capacity as server_capacity,
-    composite as server_composite,
-    console as server_console,
-    health as server_health,
-    jobs as server_jobs,
-    lpar_config as server_lpar_config,
-    lpars as server_lpars,
-    lpm as server_lpm,
-    metrics as server_metrics,
-    network as server_network,
-    profiles as server_profiles,
-    provision as server_provision,
-    snapshot as server_snapshot,
-    storage as server_storage,
-    system_resources as server_system_resources,
-    systems as server_systems,
-    templates as server_templates,
-    updates as server_updates,
-    users as server_users,
-    vios as server_vios,
-)
+from .tool_catalog import TOOL_MODULES, TOOL_SECURITY
+from .tool_registry import Authorize
 from .server_tools.command import (
-    HMC_RUN_COMMAND_SECURITY,
     configure_arbitrary_command_tool,
 )
 from .server_tools.permissions import (
-    EFFECTIVE_PERMISSIONS_SECURITY,
     TOOL_NAME as PERMISSIONS_TOOL_NAME,
     register_permissions_tool,
-)
-
-
-TOOL_MODULES = (
-    server_systems,
-    server_capacity,
-    server_jobs,
-    server_health,
-    server_lpars,
-    server_vios,
-    server_adapters,
-    server_storage,
-    server_network,
-    server_lpm,
-    server_templates,
-    server_metrics,
-    server_users,
-    server_updates,
-    server_profiles,
-    server_snapshot,
-    server_lpar_config,
-    server_system_resources,
-    server_composite,
-    server_provision,
-    server_console,
-)
-
-
-TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
-    [module.tool_security() for module in TOOL_MODULES],
-    {
-        "hmc_run_command": HMC_RUN_COMMAND_SECURITY,
-        "hmc_effective_permissions": EFFECTIVE_PERMISSIONS_SECURITY,
-    },
 )
 
 

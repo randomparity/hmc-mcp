@@ -4,7 +4,7 @@ Every collected tool carries a :class:`ToolSecurity` record — effect class,
 operation identity, target kind, and the public arguments from which connection
 and target selectors are read. It is the single authoritative classification:
 the MCP ``ToolAnnotations`` shipped to clients are derived from ``effect``, and
-``server.TOOL_SECURITY`` indexes the records for the access-policy layers built
+``tool_catalog.TOOL_SECURITY`` indexes the records for the access-policy layers built
 on top of them. See docs/adr/0035-enforceable-tool-security-metadata.md.
 """
 

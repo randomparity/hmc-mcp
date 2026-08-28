@@ -126,6 +126,19 @@ def test_operations_do_not_import_application_modules():
         assert not imports & forbidden, path
 
 
+def test_config_commands_do_not_import_the_server_composition_root():
+    path = Path(__file__).parents[2] / "src" / "hmc_mcp" / "cli_commands" / "config.py"
+    tree = ast.parse(path.read_text(), filename=str(path))
+    imports = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+
+    assert "server" not in imports
+    assert "hmc_mcp.server" not in imports
+
+
 def test_tool_registry_does_not_import_the_policy_modules():
     """The dependency runs one way, which is why both gates travel as callables.
 

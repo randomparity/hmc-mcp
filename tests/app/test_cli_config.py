@@ -784,18 +784,18 @@ def test_diff_access_policy_is_green_when_the_deployed_policy_is_current(
 def test_diff_access_policy_shows_a_tool_a_later_release_added(tmp_path, monkeypatch):
     """#276 drift arm 1: TOOL_SECURITY grew after generation; the diff names the tool.
 
-    Patching `server.TOOL_SECURITY` works because the command imports it inside the
+    Patching `tool_catalog.TOOL_SECURITY` works because the command imports it inside the
     handler, at call time — the same attribute `init-access-policy` renders from.
     """
     from dataclasses import replace
 
-    import hmc_mcp.server as server_mod
+    import hmc_mcp.tool_catalog as catalog
 
     deployed = _generate_and_deploy(tmp_path, monkeypatch)
-    drifted = dict(server_mod.TOOL_SECURITY)
+    drifted = dict(catalog.TOOL_SECURITY)
     drifted["hmc_hypothetical_tool"] = replace(next(iter(drifted.values())))
 
-    with patch.object(server_mod, "TOOL_SECURITY", drifted):
+    with patch.object(catalog, "TOOL_SECURITY", drifted):
         result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
 
     assert result.exit_code == 1, result.output
