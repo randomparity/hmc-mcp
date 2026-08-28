@@ -547,9 +547,10 @@ async def inspect_metrics_jobs(client: Client, state: RunState) -> None:
     )
     current_ltm = None
     if st == "PASS" and isinstance(data, dict):
-        current_ltm = data.get("long_term_monitor") or data.get(
-            "LongTermMonitorEnabled"
-        )
+        if "long_term_monitor" in data:
+            current_ltm = data["long_term_monitor"]
+        else:
+            current_ltm = data.get("LongTermMonitorEnabled")
 
     if current_ltm is not None:
         new_ltm = not bool(current_ltm)

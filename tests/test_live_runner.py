@@ -850,6 +850,202 @@ async def test_main_rejects_unknown_numeric_workflow(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_connectivity_inventory_forwards_selectors_and_captures_context(
+    monkeypatch,
+):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        responses = {
+            "hmc_console_info": {"uuid": "console-uuid"},
+            "hmc_list_systems": [
+                {"UUID": "system-uuid", "Resource": {"SystemName": "ltczz386"}}
+            ],
+            "hmc_get_lpar": {"UUID": "lpar-uuid"},
+            "hmc_list_vios": [
+                {"UUID": "vios-uuid", "Resource": {"PartitionID": "7"}}
+            ],
+            "hmc_list_recent_jobs": [{"UUID": "job-uuid"}],
+        }
+        return "PASS", responses.get(tool, {})
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+
+    await inventory.inventory_connectivity(None, state)
+
+    assert [tool for tool, _ in calls] == [
+        "hmc_console_info",
+        "hmc_list_systems",
+        "hmc_get_system",
+        "hmc_list_lpars",
+        "hmc_get_lpar",
+        "hmc_list_vios",
+        "hmc_capacity_report",
+        "hmc_find_placement",
+        "hmc_get_system",
+        "hmc_list_resources",
+        "hmc_list_recent_jobs",
+        "hmc_system_summary",
+        "hmc_lpar_summary",
+    ]
+    assert calls[2][1] == {"system_name_or_uuid": "ltczz386"}
+    assert calls[4][1] == {"lpar_name_or_uuid": "ltczz386-lp3"}
+    assert calls[7][1] == {"desired_memory_mb": 1024}
+    assert calls[9][1] == {"resource_type": "LogicalPartition"}
+    assert calls[10][1] == {"limit": 10}
+    assert state.context.console_uuid == "console-uuid"
+    assert state.context.system_uuid == "system-uuid"
+    assert state.context.lp3_uuid == "lpar-uuid"
+    assert state.context.vios_uuid == "vios-uuid"
+    assert state.context.vios_partition_id == 7
+    assert state.context.job_uuid_sample == "job-uuid"
+
+
+@pytest.mark.asyncio
+async def test_metrics_template_inventory_records_expected_limitation_and_continues(
+    monkeypatch,
+):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_get_pcm_preferences":
+            return "PASS", {"long_term_monitor": True}
+        if tool == "hmc_processed_metric_links":
+            return "FAIL", "PCM is not licensed"
+        return "PASS", []
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+
+    await inventory.inspect_metrics_templates(None, state)
+
+    assert [tool for tool, _ in calls] == [
+        "hmc_get_pcm_preferences",
+        "hmc_processed_metric_links",
+        "hmc_aggregated_metric_links",
+        "hmc_list_partition_templates",
+    ]
+    assert calls[0][1] == {
+        "category": "ManagedSystem",
+        "resource_name_or_uuid": state.context.system_name,
+    }
+    assert calls[1][1]["start_ts"] == "2026-01-01T00:00:00.000Z"
+    assert state.context.lp3_baseline["pcm_prefs"] == {"long_term_monitor": True}
+    assert state.results[1]["status"] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_user_inventory_classifies_unsupported_endpoint(monkeypatch):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        return "FAIL", "REST000E: endpoint unavailable"
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+
+    await inventory.inventory_users(None, state)
+
+    assert calls == [("hmc_list_users", {})]
+    assert state.results[0]["status"] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_cli_escape_hatch_runs_both_bounded_commands_after_failure(monkeypatch):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if len(calls) == 1:
+            return "FAIL", "first command failed"
+        return "PASS", "systems"
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+
+    await inventory.exercise_cli_escape_hatch(None, state)
+
+    assert calls == [
+        ("hmc_run_command", {"cmd": "lshmc -V"}),
+        ("hmc_run_command", {"cmd": "lssyscfg -r sys"}),
+    ]
+    assert [result["status"] for result in state.results] == ["FAIL", "PASS"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("create_status", ["PASS", "FAIL"])
+async def test_user_administration_cleans_up_only_a_created_user(
+    monkeypatch, create_status
+):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_create_user":
+            return create_status, {} if create_status == "PASS" else "REST000E"
+        return "PASS", []
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+
+    await lifecycle.administer_test_user(None, state)
+
+    expected = ["hmc_create_user", "hmc_list_users"]
+    if create_status == "PASS":
+        expected.extend(["hmc_modify_user", "hmc_delete_user"])
+    expected.append("hmc_list_users")
+    assert [tool for tool, _ in calls] == expected
+    assert calls[0][1]["name"] == state.context.test_user
+    if create_status == "PASS":
+        assert calls[2][1]["description"].endswith("updated")
+        assert calls[3][1] == {"name": state.context.test_user}
+    else:
+        skipped = [result["tool"] for result in state.results if result["status"] == "SKIP"]
+        assert skipped == ["hmc_create_user", "hmc_modify_user", "hmc_delete_user"]
+
+
+@pytest.mark.asyncio
+async def test_metrics_jobs_restores_disabled_preference_and_forwards_job_options(
+    monkeypatch,
+):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_get_pcm_preferences":
+            return "PASS", {"long_term_monitor": False}
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.context.job_uuid_sample = "job-uuid"
+
+    await lifecycle.inspect_metrics_jobs(None, state)
+
+    assert [tool for tool, _ in calls] == [
+        "hmc_get_pcm_preferences",
+        "hmc_set_pcm_preferences",
+        "hmc_get_pcm_preferences",
+        "hmc_set_pcm_preferences",
+        "hmc_get_job",
+        "hmc_wait_for_job",
+        "hmc_list_recent_jobs",
+    ]
+    set_calls = [kwargs for tool, kwargs in calls if tool == "hmc_set_pcm_preferences"]
+    assert [kwargs["long_term_monitor"] for kwargs in set_calls] == [True, False]
+    wait_call = next(kwargs for tool, kwargs in calls if tool == "hmc_wait_for_job")
+    assert wait_call == {
+        "job_uuid": "job-uuid",
+        "timeout_seconds": 10,
+        "poll_interval": 2,
+    }
+
+
+@pytest.mark.asyncio
 async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
     calls = []
 
