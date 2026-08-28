@@ -192,8 +192,6 @@ def network_assign_sriov_logical_port(
     ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Assign an evidence-backed Ethernet SR-IOV logical port."""
-    from decimal import Decimal
-
     result = _with_client(
         lambda hmc: assign_sriov_logical_port(
             hmc,

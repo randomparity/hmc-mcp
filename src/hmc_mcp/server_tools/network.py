@@ -304,9 +304,6 @@ def hmc_assign_sriov_logical_port(
         ownership_override: Permit a separately approved ADR 0011 ownership override.
         profile: TOML connection profile name.
     """
-    from dataclasses import asdict
-    from decimal import Decimal
-
     async def _go():
         async with client_from_env(profile) as hmc:
             return asdict(
@@ -349,8 +346,6 @@ def hmc_unassign_sriov_logical_port(
         ownership_override: Permit a separately approved ADR 0011 ownership override.
         profile: TOML connection profile name.
     """
-    from dataclasses import asdict
-
     async def _go():
         async with client_from_env(profile) as hmc:
             return asdict(
