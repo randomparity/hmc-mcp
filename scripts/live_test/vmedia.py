@@ -327,7 +327,7 @@ def _allow_iso_host() -> None:
     print(f"  ℹ  {name}={os.environ[name]}")
 
 
-async def _prepare_iso_upload(state: RunState, skip_names: list[str]) -> bool:
+def _prepare_iso_upload(state: RunState, skip_names: list[str]) -> bool:
     """Validate ST18 prerequisites and start its invocation-owned HTTP server."""
     context = state.context
     if not context.vmedia_repo_created:
@@ -485,7 +485,7 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
         "hmc_list_optical_media (confirm empty)",
         "hmc_upload_iso (re-upload for ST19)",
     ]
-    if not await _prepare_iso_upload(state, skip_names):
+    if not _prepare_iso_upload(state, skip_names):
         return
 
     await _upload_and_discover_iso(client, state)
