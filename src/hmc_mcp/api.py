@@ -152,7 +152,6 @@ from hmc_mcp.operations.lpar.assignments import (
     SriovLogicalPortAssignment,
     VnicAssignment,
     apply_lpar_pcie_assignments,
-    apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
 from hmc_mcp.operations.lpar.provision import (
@@ -460,7 +459,6 @@ __all__ = [
     "SriovLogicalPortAssignment",
     "VnicAssignment",
     "apply_lpar_pcie_assignments",
-    "apply_validated_lpar_pcie_assignments",
     "prevalidate_lpar_pcie_assignments",
     "list_volume_groups",
     "create_volume_group",

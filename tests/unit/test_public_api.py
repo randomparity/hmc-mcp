@@ -247,7 +247,6 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "SriovLogicalPortAssignment",
         "VnicAssignment",
         "apply_lpar_pcie_assignments",
-        "apply_validated_lpar_pcie_assignments",
         "prevalidate_lpar_pcie_assignments",
         "list_volume_groups",
         "create_volume_group",
@@ -1833,7 +1832,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         "install_lpar_os",
         "list_adapters",
         "list_fc_ports",
-        "list_lpar_memopt_scores",
+            "list_lpar_memopt_scores",
             "list_sea_adapters",
             "list_vnics",
             "get_lpar_memopt_score",
@@ -1905,7 +1904,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # User mutation operations now name every supported document field instead
     # of accepting an untyped keyword bag.
     # PCM metric controls are keyword-only after the resource selector.
-    expected_digest = "e710fdd7767c3e184cc20715faa656c3e863f8121b4552047843d340a7cbf114"  # pragma: allowlist secret
+    expected_digest = "6bc8dda8931e16aa98e26f4c58588e653bdb28b9d83d09111fcba7ee3f0241db"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

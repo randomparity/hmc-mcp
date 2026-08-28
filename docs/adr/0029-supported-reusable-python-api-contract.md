@@ -183,7 +183,7 @@ names are internal everywhere and are never inventoried.
 - `operations.lpar.assignments` — exports: `AssignmentResult`, `DedicatedPcieAssignment`,
   `LparPcieAssignments`, `LparPcieWorkflowResult`, `SriovLogicalPortAssignment`,
   `VnicAssignment`, `WorkflowStep`, `apply_lpar_pcie_assignments`,
-  `apply_validated_lpar_pcie_assignments`, `prevalidate_lpar_pcie_assignments`.
+  `prevalidate_lpar_pcie_assignments`.
 - `operations.lpar.boot_order` — exports: `clear_lpar_boot_order`,
   `read_lpar_boot_order`, `set_lpar_boot_order`.
 - `operations.lpar.configuration` — exports: `configure_lpar_msp`,

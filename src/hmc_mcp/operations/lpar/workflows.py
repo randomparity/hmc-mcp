@@ -8,7 +8,7 @@ from .assignments import (
     WorkflowStep,
     LparPcieAssignments,
     LparPcieWorkflowResult,
-    apply_validated_lpar_pcie_assignments,
+    _apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
 from .core import LparCreation, create_and_stamp_lpar
@@ -37,7 +37,7 @@ async def create_lpar(
                 tuple(steps),
                 created.warnings,
             )
-        assignment_result = await apply_validated_lpar_pcie_assignments(
+        assignment_result = await _apply_validated_lpar_pcie_assignments(
             hmc, system_name_or_uuid, creation.name, assignments
         )
         steps.extend(assignment_result.steps)
