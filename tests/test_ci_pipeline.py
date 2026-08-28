@@ -596,7 +596,7 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "name: release-wheel-amd64-py3.13" in body
     assert "uv pip install --python .library-wheel-venv/bin/python" in body
     assert '            "${wheels[0]}"' in body
-    assert "from hmc_mcp.api import capacity_report" in body
+    assert "from hmc_mcp.api import CapacitySummary, capacity_report" in body
     assert "import hmc_mcp.api" not in body
     for package in ("fastmcp", "mcp", "rich", "typer"):
         assert f'assert find_spec("{package}") is None' in body
@@ -614,11 +614,12 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "async def list_managed_systems(" in body
     assert "async def list_logical_partitions(" in body
     assert "asyncio.run(capacity_report(FakeHMC()))" in body
-    assert '"system_name": "p10"' in body
+    assert "CapacitySummary(" in body
+    assert 'system_name="p10"' in body
     assert "assert report ==" in body
     for field in ("total_memory_mib", "assigned_memory_mib", "free_memory_mib"):
-        assert f'"{field}"' in body
-        assert f'"{field.replace("_mib", "_mb")}"' not in body
+        assert f"{field}=" in body
+        assert field.replace("_mib", "_mb") not in body
     assert "[app]" not in body
     assert "uv export" not in body
     assert "--no-deps" not in body
@@ -641,10 +642,11 @@ def test_github_ci_exercises_each_declared_range_floor() -> None:
     assert '            "${wheels[0]}"' in body
     assert "uv venv" in body
     # The exercised surface is the bare installed API, not the app extra.
-    assert "from hmc_mcp.api import capacity_report" in body
+    assert "from hmc_mcp.api import CapacitySummary, capacity_report" in body
+    assert "CapacitySummary(" in body
     for field in ("total_memory_mib", "assigned_memory_mib", "free_memory_mib"):
-        assert f'"{field}"' in body
-        assert f'"{field.replace("_mib", "_mb")}"' not in body
+        assert f"{field}=" in body
+        assert field.replace("_mib", "_mb") not in body
     assert "[app]" not in body
     assert "scripts/smoke_mcp.py" not in body
     # Held here since narrowing the library-wheel-smoke match stopped its body
