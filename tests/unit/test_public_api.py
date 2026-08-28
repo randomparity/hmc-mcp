@@ -168,6 +168,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "RemoteRestartOperation",
         "LpmResult",
         "LpmAffinityPreflightRequest",
+        "LpmMigrationRequest",
         "LpmAffinityPreflightOutcome",
         "LpmAffinityMigrationResult",
         "VirtualNetworkResult",
@@ -291,6 +292,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "modify_user",
         "modify_system",
         "get_system",
+        "ManagedSystemPatch",
         "list_systems",
         "power_system",
         "list_partition_templates",
@@ -1983,7 +1985,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # DecommissionResult now exposes its blast-radius record types.
     # PartitionState now lives at the shared operations layer used by LPAR and VIOS.
     # Virtual-network creation now records its resolved parent system UUID.
-    expected_digest = "680439b3adfb6526bbac64fdfdbf36e1871d14753ef0ed672e1e6a203d961b40"  # pragma: allowlist secret
+    # Cohesive managed-system patch and LPM destination request values replace
+    # their recurring scalar parameter groups.
+    expected_digest = "d93d8b0934b8c409916394a81e728cb2a1d0c8844aa88630a37a36d877505a3d"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

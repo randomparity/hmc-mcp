@@ -15,6 +15,7 @@ from ...jobs import JobOutcome, validate_wait_timing
 from ...operations.lpm import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightRequest,
+    LpmMigrationRequest,
     abort_lpar_migration,
     migrate_lpar,
     migrate_lpar_with_affinity_preflight,
@@ -75,9 +76,7 @@ def lpars_migrate(
             hmc,
             None,
             name_or_uuid,
-            target,
-            profile,
-            wait_time,
+            LpmMigrationRequest(target, profile, wait_time),
             validate_first=validate_first,
             wait=wait,
             timeout_seconds=timeout,
@@ -128,7 +127,7 @@ def lpars_migrate_affinity(
             hmc,
             None,
             name_or_uuid,
-            target,
+            LpmMigrationRequest(target),
             request,
             wait=wait,
             timeout_seconds=timeout,
@@ -150,7 +149,7 @@ def lpars_migrate_validate(
 
     async def _fn(hmc):
         return await validate_lpar_migration(
-            hmc, None, name_or_uuid, target, profile, wait_time
+            hmc, None, name_or_uuid, LpmMigrationRequest(target, profile, wait_time)
         )
 
     _lpm_run(name_or_uuid, _fn, "MigrateValidate", target, yes)

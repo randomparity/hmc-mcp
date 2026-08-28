@@ -159,11 +159,11 @@ only the transport boundary.
 | `attach_disk_to_lpar` | `operations/lpar/provision.py:317` | guarded before the storage workflow (`:349`) | #372 |
 | `mount_optical_media` | `operations/storage.py:826` | guarded (`:845`) | #440 |
 | `unmount_optical_media` | `operations/storage.py:856` | guarded (`:897`) | #440 |
-| `migrate_lpar` | `operations/lpm.py:333` | guarded after optional validation and before migration submission (`:378`) | #373 |
-| `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:226` | guarded by delegation to `migrate_lpar` | #373 |
-| `abort_lpar_migration` | `operations/lpm.py:398` | guarded (`:414`) | #373 |
-| `recover_lpar_migration` | `operations/lpm.py:427` | guarded (`:443`) | #373 |
-| `remote_restart_lpar` | `operations/lpm.py:456` | guarded (`:476`) | #373 |
+| `migrate_lpar` | `operations/lpm.py:338` | guarded after optional validation and before migration submission (`:383`) | #373 |
+| `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:235` | guarded by delegation to `migrate_lpar` | #373 |
+| `abort_lpar_migration` | `operations/lpm.py:403` | guarded (`:419`) | #373 |
+| `recover_lpar_migration` | `operations/lpm.py:432` | guarded (`:448`) | #373 |
+| `remote_restart_lpar` | `operations/lpm.py:461` | guarded (`:481`) | #373 |
 
 `mount_optical_media` and `unmount_optical_media` became facade exports in #363,
 so they are Domain A callables (§5) as well as MCP tools — the guard is the only
@@ -231,7 +231,7 @@ exempt anyway.
 | `deploy_partition_template` (`operations/templates.py:93`) | Creates the partition and stamps it per ADR 0014. |
 | `hmc_capture_lpar_console` (`server_tools/console.py:23`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_backup_lpar_profiles` (`server_tools/lpar/profiles.py:34`) | Reads every profile and writes an HMC-side backup file; it does not mutate a partition or profile. |
-| `hmc_migrate_validate_lpar` (`server_tools/lpm.py:142`) | Calls `validate_lpar_migration`, which submits an LPM validation job and changes nothing. The mutating migration operation has its own guard. |
+| `hmc_migrate_validate_lpar` (`server_tools/lpm.py:147`) | Calls `validate_lpar_migration`, which submits an LPM validation job and changes nothing. The mutating migration operation has its own guard. |
 | `install_lpar_os` (`operations/install.py:198`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation *can be handed* a `LogicalPartition` selector and does not check the type locally; `installios` refuses a non-VIOS `-p` on the HMC, and because submission is detached that refusal reaches only the install log. That honesty gap is tracked by #460; it does not create an ownership decision, because a refused install mutates nothing. |
 | `install_vios` (`operations/install.py:288`) | Added by #366. Same reason. Resolves its target through the `VirtualIOServer` feed, so a name selector cannot name a `LogicalPartition` at all; a UUID selector is passed through unchecked, with the same #460 caveat. |
 

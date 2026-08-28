@@ -14,6 +14,7 @@ from hmc_mcp.operations.adapters import (
     delete_adapter,
 )
 from hmc_mcp.operations.lpm import (
+    LpmMigrationRequest,
     abort_lpar_migration,
     migrate_lpar,
     recover_lpar_migration,
@@ -89,7 +90,9 @@ CASES: tuple[tuple[str, Operation], ...] = (
     ),
     (
         "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
-        lambda hmc: migrate_lpar(hmc, None, LPAR, "target", validate_first=False),
+        lambda hmc: migrate_lpar(
+            hmc, None, LPAR, LpmMigrationRequest("target"), validate_first=False
+        ),
     ),
     (
         "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",

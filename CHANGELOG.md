@@ -29,6 +29,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- `modify_system` now accepts a cohesive `ManagedSystemPatch`, and the LPM
+  validation and migration operations accept `LpmMigrationRequest` for their
+  destination-specific inputs. Shared wait and authorization controls remain
+  explicit keyword-only arguments.
 - Mutation results now identify the affected resource consistently: `delete_adapter`
   returns the deleted adapter UUID, and `create_virtual_network` returns a
   `VirtualNetworkResult` containing the resolved system UUID and HMC resource.
@@ -53,6 +57,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Added
 
+- `ManagedSystemPatch` and `LpmMigrationRequest` provide reusable typed request
+  values for managed-system configuration and LPM destination inputs.
 - `VirtualNetworkResult` exposes the resolved managed-system UUID beside the
   resource returned by `create_virtual_network`.
 - `DecommissionBlastRadius` and `DecommissionAdapterRecord` expose the fixed
@@ -416,6 +422,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `ManagedSystemPatch` and `LpmMigrationRequest` replace recurring scalar
+  option groups in `modify_system`, `validate_lpar_migration`, `migrate_lpar`,
+  and `migrate_lpar_with_affinity_preflight`.
 - Added: `VirtualNetworkResult` records the resolved managed-system UUID beside
   the HMC resource returned by `create_virtual_network`.
 - Changed: `delete_adapter` returns the deleted adapter UUID instead of its

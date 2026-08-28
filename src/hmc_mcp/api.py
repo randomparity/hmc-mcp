@@ -106,6 +106,7 @@ from hmc_mcp.operations.lpm import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightOutcome,
     LpmAffinityPreflightRequest,
+    LpmMigrationRequest,
     LpmResult,
     abort_lpar_migration,
     migrate_lpar,
@@ -231,6 +232,7 @@ from .operations.storage import (
     upload_iso,
 )
 from hmc_mcp.operations.systems import (
+    ManagedSystemPatch,
     get_system,
     list_systems,
     modify_system,
@@ -396,6 +398,7 @@ __all__ = [
     "RemoteRestartOperation",
     "LpmResult",
     "LpmAffinityPreflightRequest",
+    "LpmMigrationRequest",
     "LpmAffinityPreflightOutcome",
     "LpmAffinityMigrationResult",
     "VirtualNetworkResult",
@@ -519,6 +522,7 @@ __all__ = [
     "modify_user",
     "modify_system",
     "get_system",
+    "ManagedSystemPatch",
     "list_systems",
     "power_system",
     "list_partition_templates",

@@ -36,6 +36,15 @@ class LpmResult:
 
 
 @dataclass(frozen=True)
+class LpmMigrationRequest:
+    """Destination-specific inputs shared by LPM validation and migration."""
+
+    target_system_name_or_uuid: str
+    target_profile_name: str | None = None
+    wait_time: int | None = None
+
+
+@dataclass(frozen=True)
 class LpmAffinityPreflightRequest:
     """Explicit affinity evidence and caller-owned migration response."""
 
@@ -227,10 +236,8 @@ async def migrate_lpar_with_affinity_preflight(
     hmc: HMCClient,
     system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
-    target_system_name_or_uuid: str,
+    migration: LpmMigrationRequest,
     affinity_preflight: LpmAffinityPreflightRequest,
-    target_profile_name: str | None = None,
-    wait_time: int | None = None,
     *,
     wait: bool = False,
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
@@ -250,9 +257,7 @@ async def migrate_lpar_with_affinity_preflight(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
-        target_system_name_or_uuid,
-        target_profile_name,
-        wait_time,
+        migration,
         wait=wait,
         timeout_seconds=timeout_seconds,
         poll_interval=poll_interval,
@@ -298,9 +303,7 @@ async def validate_lpar_migration(
     hmc: HMCClient,
     system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
-    target_system_name_or_uuid: str,
-    target_profile_name: str | None = None,
-    wait_time: int | None = None,
+    migration: LpmMigrationRequest,
     *,
     wait: bool = False,
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
@@ -315,13 +318,15 @@ async def validate_lpar_migration(
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
-    target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
+    target_system = await resolve_system_name(
+        hmc, migration.target_system_name_or_uuid
+    )
     job = await _submit_migration_job(
         hmc,
         lpar_uuid,
         target_system,
-        target_profile_name,
-        wait_time,
+        migration.target_profile_name,
+        migration.wait_time,
         validate=True,
     )
     return LpmResult(
@@ -334,9 +339,7 @@ async def migrate_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
-    target_system_name_or_uuid: str,
-    target_profile_name: str | None = None,
-    wait_time: int | None = None,
+    migration: LpmMigrationRequest,
     *,
     validate_first: bool = True,
     wait: bool = False,
@@ -355,14 +358,16 @@ async def migrate_lpar(
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
-    target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
+    target_system = await resolve_system_name(
+        hmc, migration.target_system_name_or_uuid
+    )
     if validate_first:
         validation_job = await _submit_migration_job(
             hmc,
             lpar_uuid,
             target_system,
-            target_profile_name,
-            wait_time,
+            migration.target_profile_name,
+            migration.wait_time,
             validate=True,
         )
         validation = await _finish_job(
@@ -385,8 +390,8 @@ async def migrate_lpar(
         hmc,
         lpar_uuid,
         target_system,
-        target_profile_name,
-        wait_time,
+        migration.target_profile_name,
+        migration.wait_time,
         validate=False,
     )
     return LpmResult(

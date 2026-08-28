@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from ..client import HMCClient
@@ -18,6 +19,17 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
+
+
+@dataclass(frozen=True)
+class ManagedSystemPatch:
+    new_name: str | None = None
+    power_off_policy: PowerOffPolicy | None = None
+    power_on_lpar_start_policy: PowerOnLparStartPolicy | None = None
+    pend_mem_region_size: int | None = None
+    requested_num_sys_huge_pages: int | None = None
+    mem_mirroring_mode: MemoryMirroringMode | None = None
+
 
 async def list_systems(
     hmc: HMCClient, state: str | None = None
@@ -38,23 +50,17 @@ async def get_system(hmc: HMCClient, system_name_or_uuid: str) -> dict[str, Any]
 async def modify_system(
     hmc: HMCClient,
     system_name_or_uuid: str,
-    *,
-    new_name: str | None = None,
-    power_off_policy: PowerOffPolicy | None = None,
-    power_on_lpar_start_policy: PowerOnLparStartPolicy | None = None,
-    pend_mem_region_size: int | None = None,
-    requested_num_sys_huge_pages: int | None = None,
-    mem_mirroring_mode: MemoryMirroringMode | None = None,
+    patch: ManagedSystemPatch,
 ) -> dict[str, Any] | None:
     """Apply the supplied configuration fields to a managed system."""
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     document = build_managed_system_document(
-        new_name=new_name,
-        power_off_policy=power_off_policy,
-        power_on_lpar_start_policy=power_on_lpar_start_policy,
-        pend_mem_region_size=pend_mem_region_size,
-        requested_num_sys_huge_pages=requested_num_sys_huge_pages,
-        mem_mirroring_mode=mem_mirroring_mode,
+        new_name=patch.new_name,
+        power_off_policy=patch.power_off_policy,
+        power_on_lpar_start_policy=patch.power_on_lpar_start_policy,
+        pend_mem_region_size=patch.pend_mem_region_size,
+        requested_num_sys_huge_pages=patch.requested_num_sys_huge_pages,
+        mem_mirroring_mode=patch.mem_mirroring_mode,
     )
     return await hmc.modify_managed_system(system_uuid, document)
 

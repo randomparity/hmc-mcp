@@ -201,8 +201,8 @@ names are internal everywhere and are never inventoried.
 - `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
   `run_lpm_affinity_preflight`, `validate_lpar_migration`; types: `LpmAffinityMigrationResult`,
-  `LpmAffinityPreflightOutcome`, `LpmAffinityPreflightRequest`, `LpmResult`; excluded synchronous:
-  `evaluate_lpm_affinity_preflight`.
+  `LpmAffinityPreflightOutcome`, `LpmAffinityPreflightRequest`, `LpmMigrationRequest`,
+  `LpmResult`; excluded synchronous: `evaluate_lpm_affinity_preflight`.
 - `operations.network` — operations: `create_virtual_network`, `delete_virtual_network`,
   `list_network_bridges`, `list_virtual_networks`, `list_virtual_switches`; types:
   `VirtualNetworkResult`; excluded synchronous: none.
@@ -244,7 +244,7 @@ names are internal everywhere and are never inventoried.
   `unmount_optical_media`, `upload_iso`; types: `StorageMapResult`; excluded synchronous:
   `validate_logical_unit_create`, `validate_logical_unit_wait`.
 - `operations.systems` — operations: `get_system`, `list_systems`, `modify_system`,
-  `power_system`; types: none; excluded synchronous: none.
+  `power_system`; types: `ManagedSystemPatch`; excluded synchronous: none.
 - `operations.templates` — operations: `deploy_partition_template`, `get_partition_template`,
   `list_partition_templates`; types: none; excluded synchronous: none.
 - `operations.update_models` — operations: none; types: `ConsoleUpdateMediaType`,

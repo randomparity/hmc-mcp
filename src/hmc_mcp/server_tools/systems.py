@@ -19,6 +19,7 @@ from ..documents import (
     PowerOnLparStartPolicy,
 )
 from ..operations.systems import (
+    ManagedSystemPatch,
     get_system,
     list_systems,
     modify_system,
@@ -303,12 +304,14 @@ def hmc_modify_system(
         lambda hmc: modify_system(
             hmc,
             system_name_or_uuid,
-            new_name=new_name,
-            power_off_policy=power_off_policy,
-            power_on_lpar_start_policy=power_on_lpar_start_policy,
-            pend_mem_region_size=pend_mem_region_size,
-            requested_num_sys_huge_pages=requested_num_sys_huge_pages,
-            mem_mirroring_mode=mem_mirroring_mode,
+            ManagedSystemPatch(
+                new_name=new_name,
+                power_off_policy=power_off_policy,
+                power_on_lpar_start_policy=power_on_lpar_start_policy,
+                pend_mem_region_size=pend_mem_region_size,
+                requested_num_sys_huge_pages=requested_num_sys_huge_pages,
+                mem_mirroring_mode=mem_mirroring_mode,
+            ),
         ),
         profile=profile,
     )

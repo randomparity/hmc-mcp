@@ -8,7 +8,7 @@ import pytest
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import JobOutcome
-from hmc_mcp.operations.lpm import migrate_lpar
+from hmc_mcp.operations.lpm import LpmMigrationRequest, migrate_lpar
 
 
 @pytest.fixture(autouse=True)
@@ -63,7 +63,9 @@ async def test_default_waits_for_validation_then_submits_migration(status: str) 
     client.wait_for_job.side_effect = wait_for_validation
     client.lpar_migrate.side_effect = submit_migration
 
-    result = await migrate_lpar(client, None, "lpar", "target", wait=False)
+    result = await migrate_lpar(
+        client, None, "lpar", LpmMigrationRequest("target"), wait=False
+    )
 
     assert isinstance(result.job, JobOutcome)
     assert result.job.status == "RUNNING"
@@ -87,7 +89,7 @@ async def test_failed_validation_blocks_migration_and_surfaces_detail(
     client = _client(_job(status, error="validation detail"))
 
     with pytest.raises(HMCError, match=f"status={status!r}.*validation detail"):
-        await migrate_lpar(client, None, "lpar", "target")
+        await migrate_lpar(client, None, "lpar", LpmMigrationRequest("target"))
 
     client.lpar_migrate.assert_not_awaited()
 
@@ -97,7 +99,7 @@ async def test_canceled_validation_blocks_migration() -> None:
     client = _client(_job("CANCELED_WHILE_RUNNING"))
 
     with pytest.raises(HMCError, match=r"status='CANCELED_WHILE_RUNNING'"):
-        await migrate_lpar(client, None, "lpar", "target")
+        await migrate_lpar(client, None, "lpar", LpmMigrationRequest("target"))
 
     client.lpar_migrate.assert_not_awaited()
 
@@ -107,7 +109,7 @@ async def test_timed_out_validation_blocks_migration() -> None:
     client = _client(_job("RUNNING"))
 
     with pytest.raises(HMCError, match="status='RUNNING'"):
-        await migrate_lpar(client, None, "lpar", "target")
+        await migrate_lpar(client, None, "lpar", LpmMigrationRequest("target"))
 
     client.lpar_migrate.assert_not_awaited()
 
@@ -123,7 +125,7 @@ async def test_validation_exception_blocks_migration(failure_point: str) -> None
         client.wait_for_job.side_effect = error
 
     with pytest.raises(HMCError) as exc_info:
-        await migrate_lpar(client, None, "lpar", "target")
+        await migrate_lpar(client, None, "lpar", LpmMigrationRequest("target"))
 
     assert exc_info.value is error
     client.lpar_migrate.assert_not_awaited()
@@ -133,7 +135,9 @@ async def test_validation_exception_blocks_migration(failure_point: str) -> None
 async def test_validate_first_false_preserves_direct_submission() -> None:
     client = _client(_job("FAILED"))
 
-    result = await migrate_lpar(client, None, "lpar", "target", validate_first=False)
+    result = await migrate_lpar(
+        client, None, "lpar", LpmMigrationRequest("target"), validate_first=False
+    )
 
     assert isinstance(result.job, JobOutcome)
     client.lpar_migrate_validate.assert_not_awaited()
@@ -146,7 +150,9 @@ async def test_effective_validation_timing_fails_before_resolution() -> None:
     client = _client(_job("COMPLETED"))
 
     with pytest.raises(ValueError, match="poll_interval"):
-        await migrate_lpar(client, None, "lpar", "target", poll_interval=0)
+        await migrate_lpar(
+            client, None, "lpar", LpmMigrationRequest("target"), poll_interval=0
+        )
 
     client.find_partition_by_name.assert_not_awaited()
 
@@ -158,7 +164,7 @@ async def test_failed_validation_message_is_repr_quoted() -> None:
     client = _client(_job("FAILED", error=hostile))
 
     with pytest.raises(HMCError) as exc_info:
-        await migrate_lpar(client, None, "lpar", "target")
+        await migrate_lpar(client, None, "lpar", LpmMigrationRequest("target"))
 
     message = str(exc_info.value)
     assert repr(hostile) in message
