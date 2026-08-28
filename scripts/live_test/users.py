@@ -79,3 +79,21 @@ async def administer_test_user(client: Client, state: RunState) -> None:
         expected_fail_substrings=_REST000E_SKIP,
         skip_reason="HmcUser REST not supported (expected)",
     )
+
+# ---------------------------------------------------------------------------
+# ST6 — User Inventory
+# ---------------------------------------------------------------------------
+
+
+async def inventory_users(client: Client, state: RunState) -> None:
+    print("\n=== ST6: User Inventory ===")
+
+    st, data = await state.call(client, "hmc_list_users")
+    state.record_expected_or_real(
+        6,
+        "hmc_list_users",
+        st,
+        data,
+        expected_fail_substrings=["REST000E", "400"],
+        skip_reason="HmcUser REST endpoint not supported on this HMC (expected)",
+    )

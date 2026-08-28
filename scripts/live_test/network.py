@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
@@ -151,3 +151,106 @@ async def mutate_virtual_networking(client: Client, state: RunState) -> None:
             context.nettest_uuid = None
     else:
         state.skip(9, "hmc_delete_lpar (nettest)", "nettest LPAR not created")
+
+# ---------------------------------------------------------------------------
+# ST2 — Network Inventory
+# ---------------------------------------------------------------------------
+
+
+async def _discover_virtual_switch(client: Client, state: RunState) -> None:
+    context = state.context
+    st, data = await state.call(
+        client, "hmc_list_virtual_switches", system_name_or_uuid=context.system_name
+    )
+    state.record(2, "hmc_list_virtual_switches", st, data)
+    if st == "PASS":
+        for e in entries(data):
+            resource = get_resource(e)
+            sid = resource.get("SwitchID") or resource.get("switch_id")
+            if sid is not None:
+                context.test_vswitch_id = int(sid)
+                break
+        if context.test_vswitch_id is None:
+            context.test_vswitch_id = 0
+
+
+def _unused_vlan(data: Any) -> tuple[int | None, list[object]]:
+    used_vlans: set[int] = set()
+    malformed_vlans: list[object] = []
+    for entry in entries(data):
+        resource = get_resource(entry)
+        vlan = (
+            resource.get("NetworkVLANID")
+            or resource.get("VLANId")
+            or resource.get("vlan_id")
+        )
+        if vlan is not None:
+            try:
+                used_vlans.add(int(vlan))
+            except (TypeError, ValueError):
+                malformed_vlans.append(vlan)
+    available = None
+    if not malformed_vlans:
+        available = next(
+            (
+                candidate
+                for candidate in range(3000, 3100)
+                if candidate not in used_vlans
+            ),
+            None,
+        )
+    return available, malformed_vlans
+
+
+async def _select_unused_vlan(client: Client, state: RunState) -> None:
+    context = state.context
+
+    st, data = await state.call(
+        client, "hmc_list_virtual_networks", system_name_or_uuid=context.system_name
+    )
+    if st == "PASS":
+        context.test_vlan_id, malformed_vlans = _unused_vlan(data)
+        if malformed_vlans:
+            st = "FAIL"
+            data = (
+                "Virtual-network inventory contains unparsable VLAN identifiers: "
+                + ", ".join(repr(value) for value in malformed_vlans)
+            )
+    state.record(2, "hmc_list_virtual_networks", st, data)
+
+
+async def _record_network_adapters(client: Client, state: RunState) -> None:
+    context = state.context
+    st, data = await state.call(
+        client, "hmc_list_network_bridges", system_name_or_uuid=context.system_name
+    )
+    state.record(2, "hmc_list_network_bridges", st, data)
+
+    st, data = await state.call(
+        client, "hmc_list_fc_ports", system_name_or_uuid=context.system_name
+    )
+    state.record(2, "hmc_list_fc_ports", st, data)
+
+    st, data = await state.call(
+        client, "hmc_list_sea_adapters", system_name_or_uuid=context.system_name
+    )
+    state.record(2, "hmc_list_sea_adapters", st, data)
+
+    st, data = await state.call(
+        client,
+        "hmc_list_adapters",
+        lpar_name_or_uuid=context.lp3_name,
+        adapter_type="ClientNetworkAdapter",
+    )
+    state.record(2, "hmc_list_adapters (CNA lp3)", st, data)
+
+
+async def inventory_network(client: Client, state: RunState) -> None:
+    context = state.context
+    print("\n=== ST2: Network Inventory ===")
+    await _discover_virtual_switch(client, state)
+    await _select_unused_vlan(client, state)
+    print(
+        f"  Test VLAN ID: {context.test_vlan_id}  VSwitch ID: {context.test_vswitch_id}"
+    )
+    await _record_network_adapters(client, state)

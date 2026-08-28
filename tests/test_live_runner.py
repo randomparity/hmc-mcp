@@ -20,22 +20,30 @@ from hmc_mcp.server import TOOL_SECURITY
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
 from live_test import (  # noqa: E402
+    connectivity,
+    escape_hatch,
     inventory,
     lpar,
     metrics,
     network,
+    profiles,
     provisioning,
     results,
+    storage,
     users,
     vmedia,
 )
 
 LIVE_WORKFLOW_MODULES = (
+    connectivity,
+    escape_hatch,
     inventory,
     lpar,
     metrics,
     network,
+    profiles,
     provisioning,
+    storage,
     users,
     vmedia,
 )
@@ -973,7 +981,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
 
-    await inventory.inventory_connectivity(None, state)
+    await connectivity.inventory_connectivity(None, state)
 
     assert [tool for tool, _ in calls] == [
         "hmc_console_info",
@@ -1020,7 +1028,7 @@ async def test_metrics_template_inventory_records_expected_limitation_and_contin
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
 
-    await inventory.inspect_metrics_templates(None, state)
+    await metrics.inspect_metrics_templates(None, state)
 
     assert [tool for tool, _ in calls] == [
         "hmc_get_pcm_preferences",
@@ -1048,7 +1056,7 @@ async def test_user_inventory_classifies_unsupported_endpoint(monkeypatch):
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
 
-    await inventory.inventory_users(None, state)
+    await users.inventory_users(None, state)
 
     assert calls == [("hmc_list_users", {})]
     assert state.results[0]["status"] == "SKIP"
@@ -1067,7 +1075,7 @@ async def test_cli_escape_hatch_runs_both_bounded_commands_after_failure(monkeyp
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
 
-    await inventory.exercise_cli_escape_hatch(None, state)
+    await escape_hatch.exercise_cli_escape_hatch(None, state)
 
     assert calls == [
         ("hmc_run_command", {"cmd": "lshmc -V"}),

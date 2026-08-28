@@ -36,28 +36,23 @@ from hmc_mcp.config import HMCConfig, env_var_value
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
 from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
-from live_test.inventory import (
-    capture_lpar_baseline,
-    exercise_cli_escape_hatch,
-    inspect_metrics_templates,
-    inventory_connectivity,
-    inventory_lpar_profiles,
-    inventory_network,
-    inventory_storage,
-    inventory_users,
-)
+from live_test.connectivity import inventory_connectivity
+from live_test.escape_hatch import exercise_cli_escape_hatch
+from live_test.inventory import capture_lpar_baseline
+from live_test.metrics import inspect_metrics_jobs, inspect_metrics_templates
+from live_test.network import inventory_network, mutate_virtual_networking
+from live_test.profiles import inventory_lpar_profiles
+from live_test.storage import inventory_storage
+from live_test.users import administer_test_user, inventory_users
 from live_test.lpar import (
     exercise_lpar_lifecycle,
     mutate_lpar_properties,
     restore_lpar_baseline,
 )
-from live_test.metrics import inspect_metrics_jobs
-from live_test.network import mutate_virtual_networking
 from live_test.provisioning import (
     exercise_storage_provisioning,
     validate_provisioning_dry_run,
 )
-from live_test.users import administer_test_user
 from live_test.vmedia import (
     IsoHttpServer,
     vmedia_boot_verification,

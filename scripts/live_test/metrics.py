@@ -115,3 +115,71 @@ async def inspect_metrics_jobs(client: Client, state: RunState) -> None:
             if isinstance(e, dict) and e.get("type") != "error":
                 context.job_uuid_sample = e.get("UUID") or e.get("uuid")
                 break
+
+# ---------------------------------------------------------------------------
+# ST5 — Metrics & Templates
+# ---------------------------------------------------------------------------
+
+
+async def inspect_metrics_templates(client: Client, state: RunState) -> None:
+    context = state.context
+    print("\n=== ST5: Metrics & Templates ===")
+
+    st, data = await state.call(
+        client,
+        "hmc_get_pcm_preferences",
+        category="ManagedSystem",
+        resource_name_or_uuid=context.system_name,
+    )
+    state.record_expected_or_real(
+        5,
+        "hmc_get_pcm_preferences",
+        st,
+        data,
+        expected_fail_substrings=["PCM", "406", "403"],
+        skip_reason="PCM not licensed on this HMC (expected)",
+    )
+    if st == "PASS":
+        context.lp3_baseline["pcm_prefs"] = data
+
+    st, data = await state.call(
+        client,
+        "hmc_processed_metric_links",
+        category="ManagedSystem",
+        resource_name_or_uuid=context.system_name,
+        start_ts="2026-01-01T00:00:00.000Z",
+    )
+    state.record_expected_or_real(
+        5,
+        "hmc_processed_metrics (links)",
+        st,
+        data,
+        expected_fail_substrings=["PCM", "406", "403"],
+        skip_reason="PCM not licensed on this HMC (expected)",
+    )
+
+    st, data = await state.call(
+        client,
+        "hmc_aggregated_metric_links",
+        category="ManagedSystem",
+        resource_name_or_uuid=context.system_name,
+        start_ts="2026-01-01T00:00:00.000Z",
+    )
+    state.record_expected_or_real(
+        5,
+        "hmc_aggregated_metrics (links)",
+        st,
+        data,
+        expected_fail_substrings=["PCM", "406", "403"],
+        skip_reason="PCM not licensed on this HMC (expected)",
+    )
+
+    st, data = await state.call(client, "hmc_list_partition_templates")
+    state.record_expected_or_real(
+        5,
+        "hmc_list_partition_templates",
+        st,
+        data,
+        expected_fail_substrings=["406", "template"],
+        skip_reason="Partition templates not licensed on this HMC (expected)",
+    )
