@@ -31,8 +31,8 @@ class SystemsMixin:
         """ManagementConsole: HMC version, network info, links to systems."""
         # Some HMC firmware builds return HTTP 500 on the unfiltered
         # ManagementConsole feed due to a null SessionId in the response XML.
-        # Only that known HTTP 500 means "reachable but unavailable". Auth,
-        # transport, parsing, and other HMC errors retain their normal contract.
+        # Translate that known response into an actionable error rather than
+        # making a firmware failure indistinguishable from an empty feed.
         try:
             entries = await self.list_uom("ManagementConsole")
             return entries[0] if entries else None
@@ -42,7 +42,13 @@ class SystemsMixin:
                 and exc.body is not None
                 and "null SessionId" in exc.body
             ):
-                return None
+                raise HMCError(
+                    "Management-console inventory is unavailable because this HMC "
+                    "firmware could not serialize a null SessionId; update the HMC "
+                    "firmware and retry",
+                    status_code=500,
+                    body=exc.body,
+                ) from exc
             raise
 
     async def list_managed_systems(self: SystemsClient) -> list[dict[str, Any]]:

@@ -118,12 +118,16 @@ def test_console_info_returns_management_console(monkeypatch, mock_hmc):
     assert result["Resource"]["Version"] == "V10R1M1040"
 
 
-def test_console_info_returns_none_for_known_firmware_500(monkeypatch, mock_hmc):
+def test_console_info_translates_known_firmware_500(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
         return_value=httpx.Response(500, text="null SessionId")
     )
-    assert hmc_console_info() is None
+    with pytest.raises(HMCError, match="null SessionId") as exc_info:
+        hmc_console_info()
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.body == "null SessionId"
+    assert isinstance(exc_info.value.__cause__, HMCError)
 
 
 def test_console_info_propagates_unrelated_hmc_error(monkeypatch, mock_hmc):
@@ -167,9 +171,7 @@ def test_systems_no_arg_lists_all(monkeypatch, mock_hmc):
 def test_find_system_gets_one_by_name(monkeypatch, mock_hmc):
     """hmc_get_system returns one system dict by exact name."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(
-        "/rest/api/uom/ManagedSystem/search/(SystemName==p10-e1080)"
-    ).mock(
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==p10-e1080)").mock(
         return_value=httpx.Response(
             200,
             text=_feed(
@@ -208,9 +210,7 @@ def test_get_system_gets_one_by_uuid(monkeypatch, mock_hmc):
 def test_find_system_list_error_propagates(monkeypatch, mock_hmc):
     """An inventory error during a system lookup preserves its status code."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(
-        "/rest/api/uom/ManagedSystem/search/(SystemName==p10-e1080)"
-    ).mock(
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==p10-e1080)").mock(
         return_value=httpx.Response(404, text="<error>not found</error>")
     )
     with pytest.raises(HMCError) as exc_info:
