@@ -134,6 +134,8 @@ async def delete_virtual_disk(
 
     Args:
         hmc: HMC client instance.
+        system_name_or_uuid: Optional managed-system name or UUID used to scope
+            a VIOS name.
         vios_name_or_uuid: VIOS partition name or UUID.
         vg_uuid: Volume Group UUID containing the disk.
         disk_name: Name of the Virtual Disk to delete.
@@ -653,6 +655,8 @@ async def upload_iso(
 
     Args:
         hmc: HMC client instance.
+        system_name_or_uuid: Optional managed-system name or UUID used to scope
+            a VIOS name.
         vios_name_or_uuid: VIOS name or UUID.
         vg_uuid: Volume Group UUID containing the media repository.
         media_name: Target name for the ISO in the repository.
