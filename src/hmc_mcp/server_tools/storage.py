@@ -372,13 +372,13 @@ def hmc_delete_media_repository(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go(hmc):
+    async def delete_repository_and_confirm(hmc):
         await delete_media_repository(
             hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid
         )
         return f"Deleted media repository from VolumeGroup {vg_uuid}"
 
-    return with_client(_go, profile=profile)
+    return with_client(delete_repository_and_confirm, profile=profile)
 
 
 @tool(effect="destructive", operation="media.delete", target_kind="vios")
@@ -402,13 +402,13 @@ def hmc_delete_optical_media(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go(hmc):
+    async def delete_media_and_confirm(hmc):
         await delete_optical_media(
             hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid, media_name
         )
         return f"Deleted optical media '{media_name}' from VolumeGroup {vg_uuid}"
 
-    return with_client(_go, profile=profile)
+    return with_client(delete_media_and_confirm, profile=profile)
 
 
 @tool(effect="read", operation="media.get_repository", target_kind="vios")
@@ -517,7 +517,7 @@ def hmc_detach_storage_mapping(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go(hmc) -> str:
+    async def detach_mapping(hmc) -> str:
         await detach_storage_mapping(
             hmc,
             system_name_or_uuid,
@@ -527,7 +527,7 @@ def hmc_detach_storage_mapping(
         )
         return mapping_uuid
 
-    return with_client(_go, profile=profile)
+    return with_client(detach_mapping, profile=profile)
 
 
 @tool(effect="read", operation="cluster.list", target_kind="console")
@@ -751,13 +751,13 @@ def hmc_list_optical_mappings(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def _go(hmc):
+    async def limited_optical_mappings(hmc):
         mappings = await list_optical_mappings(
             hmc, system_name_or_uuid, vios_name_or_uuid, lpar_name_or_uuid
         )
         return mappings if limit is None else mappings[:limit]
 
-    return with_client(_go, profile=profile)
+    return with_client(limited_optical_mappings, profile=profile)
 
 
 @tool(effect="mutate", operation="media.mount", target_kind="vios")
@@ -854,7 +854,7 @@ def hmc_unmount_optical_media(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def _go(hmc):
+    async def unmount_media_and_confirm(hmc):
         await unmount_optical_media(
             hmc,
             system_name_or_uuid,
@@ -865,4 +865,4 @@ def hmc_unmount_optical_media(
         )
         return f"Unmounted {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
 
-    return with_client(_go, profile=profile)
+    return with_client(unmount_media_and_confirm, profile=profile)

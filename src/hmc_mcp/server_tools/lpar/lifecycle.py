@@ -351,7 +351,7 @@ def hmc_delete_lpar(
         HMCError: If the partition state is not 'not activated' (HTTP 409).
     """
 
-    async def _go(hmc):
+    async def delete_lpar_and_confirm(hmc):
         lpar_uuid = await delete_lpar(
             hmc,
             system_name_or_uuid,
@@ -360,7 +360,7 @@ def hmc_delete_lpar(
         )
         return f"Deleted LPAR {lpar_uuid}"
 
-    return with_client(_go, profile=profile)
+    return with_client(delete_lpar_and_confirm, profile=profile)
 
 
 @tool(effect="destructive", operation="lpar.decommission", target_kind="lpar")
@@ -524,7 +524,7 @@ def hmc_power_off_lpar(
             approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
     """
 
-    async def _go(hmc):
+    async def power_off_job(hmc):
         result = await power_lpar(
             hmc,
             system_name_or_uuid,
@@ -538,7 +538,7 @@ def hmc_power_off_lpar(
         )
         return result.job
 
-    return with_client(_go, profile=profile)
+    return with_client(power_off_job, profile=profile)
 
 
 # LPAR Boot Order Tools
@@ -558,7 +558,7 @@ def hmc_read_lpar_boot_order(
         profile: Configured HMC profile, or the default when omitted.
     """
 
-    async def _go(hmc) -> dict[str, Any]:
+    async def read_boot_order(hmc) -> dict[str, Any]:
         result = await read_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name_or_uuid,
@@ -566,7 +566,7 @@ def hmc_read_lpar_boot_order(
         )
         return result
 
-    return with_client(_go, profile=profile)
+    return with_client(read_boot_order, profile=profile)
 
 
 @tool(effect="mutate", operation="boot_order.set", target_kind="lpar")
@@ -588,7 +588,7 @@ def hmc_set_lpar_boot_order(
         profile: Configured HMC profile, or the default when omitted.
     """
 
-    async def _go(hmc) -> dict[str, Any] | None:
+    async def set_boot_order(hmc) -> dict[str, Any] | None:
         result = await set_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name_or_uuid,
@@ -598,7 +598,7 @@ def hmc_set_lpar_boot_order(
         )
         return result
 
-    return with_client(_go, profile=profile)
+    return with_client(set_boot_order, profile=profile)
 
 
 @tool(effect="mutate", operation="boot_order.clear", target_kind="lpar")
@@ -618,7 +618,7 @@ def hmc_clear_lpar_boot_order(
         profile: Configured HMC profile, or the default when omitted.
     """
 
-    async def _go(hmc) -> dict[str, Any] | None:
+    async def clear_boot_order(hmc) -> dict[str, Any] | None:
         result = await clear_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name_or_uuid,
@@ -627,7 +627,7 @@ def hmc_clear_lpar_boot_order(
         )
         return result
 
-    return with_client(_go, profile=profile)
+    return with_client(clear_boot_order, profile=profile)
 
 
 @tool(effect="read", operation="lpar.list_ownership", target_kind="managed_system")

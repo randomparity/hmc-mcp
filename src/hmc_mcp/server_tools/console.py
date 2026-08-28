@@ -70,7 +70,7 @@ def hmc_capture_lpar_console(
             omitted.
     """
 
-    async def _go(hmc) -> dict[str, Any]:
+    async def capture_console_result(hmc) -> dict[str, Any]:
         system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
         lpar_uuid = await resolve_lpar_uuid(
             hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
@@ -103,4 +103,4 @@ def hmc_capture_lpar_console(
             "data_base64": base64.b64encode(capture.data).decode("ascii"),
         }
 
-    return with_client(_go, profile=profile)
+    return with_client(capture_console_result, profile=profile)
