@@ -29,6 +29,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- `hmc_create_volume_group` now declares its actual HMC resource payload return
+  (`dict | None`) instead of the unrelated storage-mapping workflow result.
 - Capacity and summary contracts now name mebibyte values explicitly:
   `desired_memory_mib`, `current_memory_mib`, `total_memory_mib`,
   `assigned_memory_mib`, and `free_memory_mib` replace their misleading

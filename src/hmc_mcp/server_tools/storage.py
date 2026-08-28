@@ -40,7 +40,6 @@ from ..operations.storage import (
     list_storage_mappings,
     list_volume_groups,
     map_storage,
-    StorageMapResult,
     upload_iso,
 )
 from ..operations.lpar.provision import (
@@ -88,7 +87,7 @@ def hmc_create_volume_group(
     physical_volumes: list[str],
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
-) -> StorageMapResult:
+) -> dict[str, Any] | None:
     """Create a Volume Group on a VIOS from one or more physical volumes.
 
     ``physical_volumes`` is a list of free PV device names (e.g. ['hdisk10']). Use

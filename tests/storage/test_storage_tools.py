@@ -9,6 +9,7 @@ tool bodies is exercised — the layer the client tests skip.  This mirrors
 
 from __future__ import annotations
 
+import inspect
 from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
@@ -334,6 +335,12 @@ def test_create_volume_group_builds_xml(monkeypatch, mock_hmc):
     assert '<GroupName kb="CUD" kxe="false">vg_data</GroupName>' in body
     assert body.count("<PhysicalVolume ") == 2
     assert "hdisk10" in body and "hdisk11" in body
+
+
+def test_create_volume_group_declares_hmc_resource_result() -> None:
+    assert inspect.signature(hmc_create_volume_group).return_annotation == (
+        "dict[str, Any] | None"
+    )
 
 
 def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
