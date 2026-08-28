@@ -579,6 +579,16 @@ def test_truncation_handles_bare_esc_and_string_sequences():
     assert _truncate(dcs, len(dcs)) == dcs  # terminated: no backtrack
 
 
+@pytest.mark.parametrize("introducer", [b"P", b"X", b"^", b"_"])
+def test_truncation_keeps_string_sequence_terminated_at_limit(
+    introducer: bytes,
+) -> None:
+    complete = b"ab\x1b" + introducer + b"payload\x1b\\"
+    data = complete + b"tail"
+
+    assert _truncate(data, len(complete)) == complete
+
+
 @pytest.mark.asyncio
 async def test_max_bytes_bound_truncates_to_a_safe_boundary():
     payload = BANNER * 2000  # ~48k of pure ASCII
