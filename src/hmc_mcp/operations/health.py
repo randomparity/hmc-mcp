@@ -51,9 +51,8 @@ def _resource(entry: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _sort(records: list[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
-    records.sort(key=lambda record: (record["name"], record["uuid"]))
-    return tuple(records)
+def _sorted_records(records: list[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
+    return tuple(sorted(records, key=lambda record: (record["name"], record["uuid"])))
 
 
 def _check_exception_budget(*categories: Collection[object]) -> None:
@@ -158,7 +157,7 @@ async def _recent_failed_jobs(
         for job in jobs[:_RECENT_JOB_LIMIT]
         if (failure := _failed_job(job)) is not None
     ]
-    return _sort(failures), ()
+    return _sorted_records(failures), ()
 
 
 async def _system_inventory(
@@ -254,9 +253,9 @@ async def fleet_health(hmc: HMCClient) -> FleetHealthResult:
         system_exceptions, vios_exceptions, lpar_exceptions, failed_jobs
     )
     return FleetHealthResult(
-        _sort(system_exceptions),
-        _sort(vios_exceptions),
-        _sort(lpar_exceptions),
+        _sorted_records(system_exceptions),
+        _sorted_records(vios_exceptions),
+        _sorted_records(lpar_exceptions),
         failed_jobs,
         warnings,
     )
