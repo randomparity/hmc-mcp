@@ -53,6 +53,10 @@ overrides by migration jobs but provide no general label-management resource. La
 does not make adapter add/delete label-aware. A separately authorized HMC operator may race a
 request, and this change does not add transactions or rollback around HMC state.
 
+Issue [#559](https://github.com/randomparity/hmc-mcp/issues/559) owns live POWER10 and POWER11
+capture of output fields, diagnostics, and read-after-write behavior. Until that evidence lands,
+the list contract preserves HMC-supplied columns and mutation receipts claim dispatch only.
+
 ## Considered & rejected
 
 - **Use labels as selectors for existing adapter add/delete operations.** verified: the POWER10

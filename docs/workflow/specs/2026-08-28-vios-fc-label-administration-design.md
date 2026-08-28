@@ -27,6 +27,11 @@ through the amd64 alias. No dependency, schema migration, persisted format, or r
 `hmc_mcp.api` export is added. The base branch is `main`; final local guardrails are `just verify`
 and `uv run --no-sync prek run --all-files`.
 
+Live POWER10 and POWER11 capture of output fields, diagnostics, and read-after-write behavior is
+tracked by [#559](https://github.com/randomparity/hmc-mcp/issues/559). This change does not invent
+those unavailable facts or wait for them: it keeps list columns version-transparent and mutation
+receipts limited to dispatch evidence.
+
 ## Public contract
 
 The MCP surface adds seven explicit tools:
