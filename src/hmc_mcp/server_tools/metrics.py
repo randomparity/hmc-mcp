@@ -275,11 +275,11 @@ def _metrics_links(
                 hmc,
                 category,
                 resource_name_or_uuid,
-                kind,
-                start_ts,
-                end_ts,
-                no_of_samples,
-                system_name_or_uuid,
+                kind=kind,
+                start_ts=start_ts,
+                end_ts=end_ts,
+                no_of_samples=no_of_samples,
+                system_name_or_uuid=system_name_or_uuid,
             )
 
     return run_sync(_go)
@@ -303,11 +303,11 @@ def _metrics_fetch(
                 hmc,
                 category,
                 resource_name_or_uuid,
-                kind,
-                start_ts,
-                end_ts,
-                no_of_samples,
-                system_name_or_uuid,
+                kind=kind,
+                start_ts=start_ts,
+                end_ts=end_ts,
+                no_of_samples=no_of_samples,
+                system_name_or_uuid=system_name_or_uuid,
             )
 
     return run_sync(_go)

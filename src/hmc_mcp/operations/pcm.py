@@ -120,6 +120,7 @@ async def metric_links(
     hmc: HMCClient,
     category: PcmCategory,
     resource: str,
+    *,
     kind: MetricKind,
     start_ts: str,
     end_ts: str | None,
@@ -153,6 +154,7 @@ async def metric_data(
     hmc: HMCClient,
     category: PcmCategory,
     resource: str,
+    *,
     kind: MetricKind,
     start_ts: str,
     end_ts: str | None,
@@ -163,11 +165,11 @@ async def metric_data(
         hmc,
         category,
         resource,
-        kind,
-        start_ts,
-        end_ts,
-        no_of_samples,
-        system_name_or_uuid,
+        kind=kind,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        no_of_samples=no_of_samples,
+        system_name_or_uuid=system_name_or_uuid,
     )
     if not links:
         return {}

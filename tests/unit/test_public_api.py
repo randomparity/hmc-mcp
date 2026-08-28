@@ -1877,7 +1877,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # selector and added the explicit operation to the facade.
     # User mutation operations now name every supported document field instead
     # of accepting an untyped keyword bag.
-    expected_digest = "69baf43b6d7e3902ab32aac95c31e12ec53ad65164c70bc3d6c40a5b1249b8fb"  # pragma: allowlist secret
+    # PCM metric controls are keyword-only after the resource selector.
+    expected_digest = "c41cebe4324cbcc1abec267faefcb2a49f10a35b843c595a8d9525ea680b9754"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

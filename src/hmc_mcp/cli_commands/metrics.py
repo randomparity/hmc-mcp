@@ -114,11 +114,11 @@ def metrics_show(
                 hmc,
                 category,
                 resource_uuid,
-                kind,
-                start,
-                end,
-                samples,
-                system_name_or_uuid,
+                kind=kind,
+                start_ts=start,
+                end_ts=end,
+                no_of_samples=samples,
+                system_name_or_uuid=system_name_or_uuid,
             )
 
     result = _run(_go)
