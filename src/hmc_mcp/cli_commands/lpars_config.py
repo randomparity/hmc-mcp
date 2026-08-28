@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
+from pathlib import Path
 
 import typer
+from pydantic import TypeAdapter, ValidationError
 from rich.table import Table
 
 from ..operations.lpar.core import (
     ProcessorCompatibilityMode,
 )
+from ..operations.lpar.assignments import LparPcieAssignments
 from hmc_mcp.operations.ownership import set_lpar_ownership_description
 from ..operations.ssh_affinity import (
     get_lpar_memopt_score,
@@ -43,6 +47,18 @@ from .app import (
     _usage_error,
     console,
 )
+
+
+def _load_pcie_assignments(path: Path | None) -> LparPcieAssignments:
+    """Load the shared assignment schema from a JSON document."""
+    if path is None:
+        return LparPcieAssignments()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return TypeAdapter(LparPcieAssignments).validate_python(payload)
+    except (OSError, json.JSONDecodeError, ValidationError) as error:
+        _usage_error(f"Cannot load --pcie-assignments {path}: {error}")
+        raise AssertionError("_usage_error must raise") from error
 
 
 def _memopt_selectors(

@@ -2,30 +2,17 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict
 from pathlib import Path
 
 import typer
-from pydantic import TypeAdapter, ValidationError
 
 from ..documents import PARTITION_TYPES, LparResources
-from ..operations.lpar.assignments import LparPcieAssignments
 from ..operations.lpar.core import LparCreation
 from ..operations.lpar.workflows import create_lpar
 from ..ssh.lpar import validate_caller_token
 from .app import _client, _print_json, _run, _usage_error, console, err_console
-
-def _load_pcie_assignments(path: Path | None) -> LparPcieAssignments:
-    """Load the shared assignment schema from a JSON document."""
-    if path is None:
-        return LparPcieAssignments()
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return TypeAdapter(LparPcieAssignments).validate_python(payload)
-    except (OSError, json.JSONDecodeError, ValidationError) as error:
-        _usage_error(f"Cannot load --pcie-assignments {path}: {error}")
-        raise AssertionError("_usage_error must raise") from error
+from .lpars_config import _load_pcie_assignments
 
 
 def lpars_create(
