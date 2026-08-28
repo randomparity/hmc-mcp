@@ -11,8 +11,12 @@ from ..jobs import validate_wait_timing
 from ..operations.capacity import capacity_report, find_placement
 from ..operations.composite import system_summary
 from ..operations.health import fleet_health
-from ..operations.systems import ManagedSystemState, power_system
-from ..resource_identity import is_uuid
+from ..operations.systems import (
+    ManagedSystemState,
+    get_system,
+    list_systems,
+    power_system,
+)
 from .app import (
     _client,
     _first_field,
@@ -66,12 +70,7 @@ def systems_list(
 ) -> None:
     """List managed systems."""
 
-    if state is not None:
-        systems = _with_client(
-            lambda hmc: hmc.search_uom("ManagedSystem", "State", state)
-        )
-    else:
-        systems = _with_client(lambda hmc: hmc.list_managed_systems())
+    systems = _with_client(lambda hmc: list_systems(hmc, state))
 
     table = None
     if not as_json:
@@ -95,13 +94,7 @@ def systems_show(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Show full details of one managed system (accepts name or UUID)."""
-    system = _with_client(
-        lambda hmc: (
-            hmc.get_managed_system(name_or_uuid)
-            if is_uuid(name_or_uuid)
-            else hmc.find_system_by_name(name_or_uuid)
-        )
-    )
+    system = _with_client(lambda hmc: get_system(hmc, name_or_uuid))
 
     if system is None:
         err_console.print(f"[yellow]System '{name_or_uuid}' not found[/yellow]")
@@ -186,6 +179,7 @@ def systems_summary(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """One-call summary: state, MTMS, firmware, LPAR counts, free memory/CPU, VIOS count."""
+
     async def _go():
         async with _client() as hmc:
             return await system_summary(hmc, name_or_uuid)
@@ -218,6 +212,7 @@ def systems_capacity(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Capacity report: memory/CPU totals and free resources per managed system."""
+
     async def _go():
         async with _client() as hmc:
             return await capacity_report(hmc)
@@ -266,6 +261,7 @@ def systems_find_placement(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Find managed systems with enough free resources for a new LPAR."""
+
     async def _go():
         async with _client() as hmc:
             return await find_placement(hmc, memory, procs)

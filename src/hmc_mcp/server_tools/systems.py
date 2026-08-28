@@ -25,7 +25,13 @@ from ..documents import (
     PowerOffPolicy,
     PowerOnLparStartPolicy,
 )
-from ..operations.systems import ManagedSystemState, modify_system, power_system
+from ..operations.systems import (
+    ManagedSystemState,
+    get_system,
+    list_systems,
+    modify_system,
+    power_system,
+)
 from ..operations.lpar.core import PartitionState
 
 
@@ -95,9 +101,7 @@ def hmc_list_systems(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            if state is not None:
-                return await hmc.search_uom("ManagedSystem", "State", state)
-            return await hmc.list_managed_systems()
+            return await list_systems(hmc, state)
 
     return run_limited_collection(_go, limit)
 
@@ -297,9 +301,7 @@ def hmc_get_system(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            if is_uuid(system_name_or_uuid):
-                return await hmc.get_managed_system(system_name_or_uuid)
-            return await hmc.find_system_by_name(system_name_or_uuid)
+            return await get_system(hmc, system_name_or_uuid)
 
     return run_sync(_go)
 

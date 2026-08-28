@@ -279,8 +279,11 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "create_user",
         "delete_user",
         "modify_user",
-        "modify_system",
-        "power_system",
+            "modify_system",
+            "ManagedSystemState",
+            "get_system",
+            "list_systems",
+            "power_system",
         "list_partition_templates",
         "get_partition_template",
         "deploy_partition_template",
@@ -1899,7 +1902,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # User mutation operations now name every supported document field instead
     # of accepting an untyped keyword bag.
     # PCM metric controls are keyword-only after the resource selector.
-    expected_digest = "539a421c3618b90cf8c05043bb70f95a5dfcd7622d7e4ee40c80e068fd0022d4"  # pragma: allowlist secret
+    expected_digest = "dd2838d09ef24aa104de0a5190749c68071edc5c99edf54f91ccc04b0b6e44b1"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -2045,6 +2048,21 @@ _FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[object, ...]] = {
     "LuType": ("THIN", "THICK"),
     "MetricKind": ("processed", "aggregated"),
     "MemoryMirroringMode": ("none", "sys_firmware_only"),
+    "ManagedSystemState": (
+        "operating",
+        "power off",
+        "standby",
+        "initializing",
+        "error",
+        "error - dump in progress",
+        "error - terminated",
+        "incomplete",
+        "pending authentication - password updates required",
+        "failed authentication",
+        "recovery",
+        "no connection",
+        "on demand recovery",
+    ),
     "OsType": ("aix", "linux", "ibmi"),
     "PartitionType": ("AIX/Linux", "OS400", "Virtual IO Server"),
     "PcmCategory": ("ManagedSystem", "LogicalPartition"),

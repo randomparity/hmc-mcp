@@ -212,7 +212,13 @@ from .operations.storage import (
     unmount_optical_media,
     upload_iso,
 )
-from hmc_mcp.operations.systems import modify_system, power_system
+from hmc_mcp.operations.systems import (
+    ManagedSystemState,
+    get_system,
+    list_systems,
+    modify_system,
+    power_system,
+)
 from hmc_mcp.operations.templates import (
     deploy_partition_template,
     get_partition_template,
@@ -487,6 +493,9 @@ __all__ = [
     "delete_user",
     "modify_user",
     "modify_system",
+    "ManagedSystemState",
+    "get_system",
+    "list_systems",
     "power_system",
     "list_partition_templates",
     "get_partition_template",

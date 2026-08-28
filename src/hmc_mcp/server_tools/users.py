@@ -11,7 +11,9 @@ from ..documents import AuthenticationType
 from ..operations.users import (
     CreateUserRequest,
     ModifyUserPatch,
+    configure_remote_access,
     create_user,
+    delete_user,
     modify_user,
 )
 from ..tool_registry import tool_module
@@ -244,7 +246,7 @@ def hmc_delete_user(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            await hmc.delete_hmc_user(console_uuid, user_profile_uuid)
+            await delete_user(hmc, console_uuid, user_profile_uuid)
             return f"Deleted HMC user profile {user_profile_uuid}"
 
     return run_sync(_go)
@@ -326,6 +328,8 @@ def hmc_configure_remote_access(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.configure_remote_access(console_uuid, values, clear_fields)
+            return await configure_remote_access(
+                hmc, console_uuid, values, clear_fields
+            )
 
     return run_sync(_go)

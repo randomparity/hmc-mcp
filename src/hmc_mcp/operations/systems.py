@@ -11,7 +11,7 @@ from ..documents import (
     PowerOnLparStartPolicy,
     build_managed_system_document,
 )
-from ..resource_identity import resolve_system_uuid
+from ..resource_identity import is_uuid, resolve_system_uuid
 from ..jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
     DEFAULT_JOB_TIMEOUT_SECONDS,
@@ -51,6 +51,22 @@ MANAGED_SYSTEM_STATES: frozenset[ManagedSystemState] = frozenset(
         "on demand recovery",
     }
 )
+
+
+async def list_systems(
+    hmc: HMCClient, state: ManagedSystemState | None = None
+) -> list[dict[str, Any]]:
+    """List managed systems, using server-side state filtering when requested."""
+    if state is not None:
+        return await hmc.search_uom("ManagedSystem", "State", state)
+    return await hmc.list_managed_systems()
+
+
+async def get_system(hmc: HMCClient, system_name_or_uuid: str) -> dict[str, Any] | None:
+    """Return a managed system selected by exact name or UUID."""
+    if is_uuid(system_name_or_uuid):
+        return await hmc.get_managed_system(system_name_or_uuid)
+    return await hmc.find_system_by_name(system_name_or_uuid)
 
 
 async def modify_system(
@@ -93,6 +109,4 @@ async def power_system(
         job = await hmc.power_on_system(system_uuid)
     else:
         job = await hmc.power_off_system(system_uuid, immediate=immediate)
-    return await wait_for_submitted_job(
-        hmc, job, wait, timeout_seconds, poll_interval
-    )
+    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)

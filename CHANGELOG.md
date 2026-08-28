@@ -388,6 +388,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `get_system`, `list_systems`, and their `ManagedSystemState` selector type as
+  the shared managed-system read boundary used by both presentation layers.
 - Added: `CreateUserRequest` and `ModifyUserPatch`; `create_user` and `modify_user`
   now accept these typed profile payloads instead of duplicated wide parameter lists.
 - Changed: SSH-backed network and affinity operations now consistently name their
