@@ -178,11 +178,13 @@ def test_resolve_and_authorize_lpar_names_forwards_resolution_and_override(
     hmc = AsyncMock()
     resolve_system = AsyncMock(return_value="system-uuid")
     resolve_lpar = AsyncMock(return_value="lpar-uuid")
+    verify_membership = AsyncMock()
     resolve_names = AsyncMock(return_value=("system-name", "lpar-name"))
     authorize = AsyncMock()
     with (
         patch.object(lpar_ownership, "resolve_system_uuid", resolve_system),
         patch.object(lpar_ownership, "resolve_lpar_uuid", resolve_lpar),
+        patch.object(lpar_ownership, "_verify_partition_on_system", verify_membership),
         patch.object(lpar_ownership, "resolve_lpar_ownership_names", resolve_names),
         patch.object(lpar_ownership, "authorize_lpar_mutation", authorize),
     ):
@@ -200,6 +202,9 @@ def test_resolve_and_authorize_lpar_names_forwards_resolution_and_override(
     resolve_lpar.assert_awaited_once_with(
         hmc, "lpar-selector", system_name_or_uuid="system-uuid"
     )
+    verify_membership.assert_awaited_once_with(
+        hmc, "system-uuid", "lpar-uuid", "lpar-selector"
+    )
     resolve_names.assert_awaited_once_with(
         hmc, "system-uuid", "system-selector", "lpar-uuid"
     )
@@ -209,6 +214,33 @@ def test_resolve_and_authorize_lpar_names_forwards_resolution_and_override(
         "lpar-name",
         ownership_override=ownership_override,
     )
+
+
+def test_required_system_rejects_partition_uuid_from_another_system():
+    hmc = AsyncMock()
+    hmc.list_logical_partitions.return_value = [{"UUID": "different-lpar-uuid"}]
+    resolve_system = AsyncMock(return_value="selected-system-uuid")
+    resolve_lpar = AsyncMock(return_value="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    resolve_names = AsyncMock()
+    authorize = AsyncMock()
+    with (
+        patch.object(lpar_ownership, "resolve_system_uuid", resolve_system),
+        patch.object(lpar_ownership, "resolve_lpar_uuid", resolve_lpar),
+        patch.object(lpar_ownership, "resolve_lpar_ownership_names", resolve_names),
+        patch.object(lpar_ownership, "authorize_lpar_mutation", authorize),
+    ):
+        with pytest.raises(ValueError, match="does not belong to managed system"):
+            asyncio.run(
+                resolve_and_authorize_lpar_names(
+                    hmc,
+                    "selected-system",
+                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                )
+            )
+
+    hmc.list_logical_partitions.assert_awaited_once_with("selected-system-uuid")
+    resolve_names.assert_not_awaited()
+    authorize.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

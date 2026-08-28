@@ -501,6 +501,9 @@ async def resolve_and_authorize_lpar_names(
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
     )
+    await _verify_partition_on_system(
+        hmc, system_uuid, lpar_uuid, lpar_name_or_uuid
+    )
     names = await resolve_lpar_ownership_names(
         hmc, system_uuid, system_name_or_uuid, lpar_uuid
     )

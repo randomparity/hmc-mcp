@@ -325,9 +325,23 @@ def mock_uuid_resolution(
         )
     )
     if lpar_uuid is not None:
+        lpar_entry = LPAR_ENTRY.format(uuid=lpar_uuid, name=lpar_name)
         router.get(f"/rest/api/uom/LogicalPartition/{lpar_uuid}").mock(
+            return_value=httpx.Response(200, text=lpar_entry)
+        )
+        feed_entry = lpar_entry.split("?>", 1)[1].strip().replace(
+            ' xmlns="http://www.w3.org/2005/Atom"', "", 1
+        )
+        router.get(
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition"
+        ).mock(
             return_value=httpx.Response(
-                200, text=LPAR_ENTRY.format(uuid=lpar_uuid, name=lpar_name)
+                200,
+                text=(
+                    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                    '<feed xmlns="http://www.w3.org/2005/Atom">'
+                    f"{feed_entry}</feed>"
+                ),
             )
         )
 
