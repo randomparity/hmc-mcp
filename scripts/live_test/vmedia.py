@@ -19,13 +19,9 @@ if TYPE_CHECKING:
     from live_test_runner import RunState
 
 
-async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> None:
+async def _discover_vmedia_prerequisites(client: Client, state: RunState) -> bool:
+    """Resolve the VIOS and test-partition identities required by ST16."""
     context = state.context
-    print("\n=== ST16: VG Free-Space Check + Repository Create ===")
-
-    _REPO_SIZE_MIB = 7000
-
-    # Step 1 — VIOS discovery (skip if already seeded)
     if not context.vios_uuid:
         st, data = await state.call(
             client, "hmc_list_vios", system_name_or_uuid=context.system_name
@@ -61,7 +57,16 @@ async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> N
             "hmc_get_media_repository",
         ]:
             state.skip(16, name, "no VIOS UUID resolved")
-        return
+        return False
+
+    return True
+
+
+async def _select_vmedia_volume_group(
+    client: Client, state: RunState, repo_size_mib: int
+) -> bool:
+    """Select a VIOS volume group with enough space for the repository."""
+    context = state.context
 
     # Step 2 — VG discovery + free-space check
     st, data = await state.call(
@@ -87,7 +92,7 @@ async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> N
                 except (TypeError, ValueError):
                     free_mib = None
                 print(f"  VG UUID: {context.vg_uuid}  free space: {free_mib} MiB")
-                if free_mib is not None and free_mib < _REPO_SIZE_MIB:
+                if free_mib is not None and free_mib < repo_size_mib:
                     for name in [
                         "hmc_create_media_repository",
                         "hmc_get_media_repository",
@@ -95,15 +100,24 @@ async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> N
                         state.skip(
                             16,
                             name,
-                            f"insufficient free space: {free_mib} MiB < {_REPO_SIZE_MIB} MiB",
+                            f"insufficient free space: {free_mib} MiB < {repo_size_mib} MiB",
                         )
-                    return
+                    return False
                 break
 
     if not context.vg_uuid:
         for name in ["hmc_create_media_repository", "hmc_get_media_repository"]:
             state.skip(16, name, "no VG UUID resolved")
-        return
+        return False
+
+    return True
+
+
+async def _create_and_confirm_vmedia_repository(
+    client: Client, state: RunState, repo_size_mib: int
+) -> None:
+    """Create the ST16 repository and confirm that the HMC reports it."""
+    context = state.context
 
     # Step 4 — Create repository
     st, data = await state.call(
@@ -111,7 +125,7 @@ async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> N
         "hmc_create_media_repository",
         vios_name_or_uuid=context.vios_uuid,
         vg_uuid=context.vg_uuid,
-        size_mib=_REPO_SIZE_MIB,
+        size_mib=repo_size_mib,
     )
     state.record(16, "hmc_create_media_repository", st, data)
     if st != "PASS":
@@ -129,6 +143,17 @@ async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> N
     if st == "PASS" and data:
         context.vmedia_repo_created = True
         print("  ✅ Repository created — vmedia_repo_created=True")
+
+
+async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> None:
+    print("\n=== ST16: VG Free-Space Check + Repository Create ===")
+    repo_size_mib = 7000
+
+    if not await _discover_vmedia_prerequisites(client, state):
+        return
+    if not await _select_vmedia_volume_group(client, state, repo_size_mib):
+        return
+    await _create_and_confirm_vmedia_repository(client, state, repo_size_mib)
 
 
 # ---------------------------------------------------------------------------
@@ -302,29 +327,14 @@ def _allow_iso_host() -> None:
     print(f"  ℹ  {name}={os.environ[name]}")
 
 
-async def vmedia_upload_iso(client: Client, state: RunState) -> None:
+async def _prepare_iso_upload(state: RunState, skip_names: list[str]) -> bool:
+    """Validate ST18 prerequisites and start its invocation-owned HTTP server."""
     context = state.context
-    print("\n=== ST18: ISO Upload via HTTP ===")
-
-    _skip_names = [
-        "hmc_upload_iso (http)",
-        "hmc_list_optical_media (post-upload)",
-        "hmc_upload_iso (http dedup)",
-        "hmc_list_optical_media (post-http)",
-        "hmc_delete_optical_media",
-        "hmc_list_optical_media (confirm empty)",
-        "hmc_upload_iso (re-upload for ST19)",
-    ]
-
     if not context.vmedia_repo_created:
-        for name in _skip_names:
+        for name in skip_names:
             state.skip(18, name, "vmedia_repo_created=False (ST16/ST17 failed)")
-        return
+        return False
 
-    vios = context.vios_uuid
-    vg = context.vg_uuid
-
-    # Step 2 — Verify ISO file exists
     if not Path(_ISO_PATH).is_file():
         state.record(
             18,
@@ -332,9 +342,9 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
             "FAIL",
             f"ISO not found: {_ISO_PATH}",
         )
-        for name in _skip_names:
+        for name in skip_names:
             state.skip(18, name, f"ISO file missing: {_ISO_PATH}")
-        return
+        return False
 
     state.record(18, "iso_file_check", "PASS", f"ISO found: {_ISO_PATH}")
 
@@ -348,49 +358,55 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
             str(exc),
             f"HTTP server could not bind to port {_HTTP_PORT}",
         )
-        for name in _skip_names:
+        for name in skip_names:
             state.skip(18, name, f"no HTTP server on port {_HTTP_PORT}")
-        return
+        return False
 
     state.record(18, "iso_http_server", "PASS", f"serving {_ISO_URL}")
+    return True
 
-    # Step 3 — Upload via HTTP
+
+async def _upload_and_discover_iso(client: Client, state: RunState) -> None:
+    """Upload the ST18 ISO and capture the media name returned by the HMC."""
+    context = state.context
     print(f"  ⏳ Uploading ISO via HTTP ({_ISO_URL}) — may take several minutes…")
     st, data = await state.call(
         client,
         "hmc_upload_iso",
-        vios_name_or_uuid=vios,
-        vg_uuid=vg,
+        vios_name_or_uuid=context.vios_uuid,
+        vg_uuid=context.vg_uuid,
         media_name=_ISO_MEDIA_NAME,
         iso_source=_ISO_URL,
     )
     state.record(18, "hmc_upload_iso (http)", st, data)
 
-    # Step 4 — Confirm entry in media list
     st, data = await state.call(
         client,
         "hmc_list_optical_media",
-        vios_name_or_uuid=vios,
-        vg_uuid=vg,
+        vios_name_or_uuid=context.vios_uuid,
+        vg_uuid=context.vg_uuid,
     )
     state.record(18, "hmc_list_optical_media (post-upload)", st, data)
-    if st == "PASS":
-        for entry in entries(data) if isinstance(data, list) else []:
-            name = get_resource(entry).get("MediaName") or entry.get("MediaName")
-            if name:
-                context.vmedia_iso_name = name
-                break
-        if not context.vmedia_iso_name and isinstance(data, list) and data:
-            # Flat list of dicts without Atom envelope
-            context.vmedia_iso_name = data[0].get("MediaName") or _ISO_MEDIA_NAME
+    if st != "PASS":
+        return
+    for entry in entries(data) if isinstance(data, list) else []:
+        name = get_resource(entry).get("MediaName") or entry.get("MediaName")
+        if name:
+            context.vmedia_iso_name = name
+            break
+    if not context.vmedia_iso_name and isinstance(data, list) and data:
+        context.vmedia_iso_name = data[0].get("MediaName") or _ISO_MEDIA_NAME
 
-    # Step 5 — Re-upload the same content under a second name (dedup check)
+
+async def _verify_iso_deduplication(client: Client, state: RunState) -> None:
+    """Re-upload the ST18 content and verify the broker deduplicates it."""
+    context = state.context
     print(f"  ⏳ Uploading ISO via HTTP ({_ISO_URL}) again — expect dedup hit…")
     st_http, data_http = await state.call(
         client,
         "hmc_upload_iso",
-        vios_name_or_uuid=vios,
-        vg_uuid=vg,
+        vios_name_or_uuid=context.vios_uuid,
+        vg_uuid=context.vg_uuid,
         media_name="ubuntu-26.04-http-test.iso",
         iso_source=_ISO_URL,
     )
@@ -412,43 +428,43 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
             f"expected status=existing, got status={http_status!r}",
         )
 
-    # Step 6 — Confirm still exactly one media entry
     st, data = await state.call(
         client,
         "hmc_list_optical_media",
-        vios_name_or_uuid=vios,
-        vg_uuid=vg,
+        vios_name_or_uuid=context.vios_uuid,
+        vg_uuid=context.vg_uuid,
     )
     state.record(18, "hmc_list_optical_media (post-http)", st, data)
 
-    # Step 7 — Delete the media (unmounted, so safe-delete allows it)
+
+async def _reset_iso_for_mount_scenario(client: Client, state: RunState) -> None:
+    """Delete the ST18 media, confirm absence, then re-upload it for ST19."""
+    context = state.context
     st, data = await state.call(
         client,
         "hmc_delete_optical_media",
-        vios_name_or_uuid=vios,
-        vg_uuid=vg,
+        vios_name_or_uuid=context.vios_uuid,
+        vg_uuid=context.vg_uuid,
         media_name=_ISO_MEDIA_NAME,
     )
     state.record(18, "hmc_delete_optical_media", st, data)
     if st == "PASS":
         context.vmedia_iso_name = None
 
-    # Step 8 — Confirm empty
     st, data = await state.call(
         client,
         "hmc_list_optical_media",
-        vios_name_or_uuid=vios,
-        vg_uuid=vg,
+        vios_name_or_uuid=context.vios_uuid,
+        vg_uuid=context.vg_uuid,
     )
     state.record(18, "hmc_list_optical_media (confirm empty)", st, data)
 
-    # Step 9 — Re-upload for ST19
     print("  ⏳ Re-uploading ISO for ST19 (may take several minutes)…")
     st, data = await state.call(
         client,
         "hmc_upload_iso",
-        vios_name_or_uuid=vios,
-        vg_uuid=vg,
+        vios_name_or_uuid=context.vios_uuid,
+        vg_uuid=context.vg_uuid,
         media_name=_ISO_MEDIA_NAME,
         iso_source=_ISO_URL,
     )
@@ -458,34 +474,35 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
     print(f"  vmedia_iso_name: {context.vmedia_iso_name}")
 
 
+async def vmedia_upload_iso(client: Client, state: RunState) -> None:
+    print("\n=== ST18: ISO Upload via HTTP ===")
+    skip_names = [
+        "hmc_upload_iso (http)",
+        "hmc_list_optical_media (post-upload)",
+        "hmc_upload_iso (http dedup)",
+        "hmc_list_optical_media (post-http)",
+        "hmc_delete_optical_media",
+        "hmc_list_optical_media (confirm empty)",
+        "hmc_upload_iso (re-upload for ST19)",
+    ]
+    if not await _prepare_iso_upload(state, skip_names):
+        return
+
+    await _upload_and_discover_iso(client, state)
+
+    await _verify_iso_deduplication(client, state)
+    await _reset_iso_for_mount_scenario(client, state)
+
+
 # ---------------------------------------------------------------------------
 # ST19 — Mount / Unmount + Safe-Delete Validation
 # ---------------------------------------------------------------------------
 
 
-async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
+async def _mount_vmedia_and_confirm(client: Client, state: RunState) -> None:
+    """Mount the ST19 ISO and verify that its mapping is visible."""
     context = state.context
-    print("\n=== ST19: Mount / Unmount + Safe-Delete Validation ===")
-
-    _skip_names = [
-        "hmc_mount_optical_media",
-        "hmc_list_optical_mappings (confirm mounted)",
-        "hmc_delete_optical_media (blocked — expected)",
-        "hmc_unmount_optical_media",
-        "hmc_list_optical_mappings (confirm unmounted)",
-        "hmc_delete_optical_media (post-unmount)",
-        "hmc_list_optical_media (confirm empty)",
-    ]
-
-    if not context.vmedia_iso_name:
-        for name in _skip_names:
-            state.skip(19, name, "vmedia_iso_name not set (ST18 failed)")
-        return
-
     vios = context.vios_uuid
-    vg = context.vg_uuid
-
-    # Step 2 — Mount ISO to lp3
     st, data = await state.call(
         client,
         "hmc_mount_optical_media",
@@ -518,12 +535,17 @@ async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
     )
     state.record(19, "hmc_list_optical_mappings (confirm mounted)", st, data)
 
-    # Step 4 — Attempt delete while mounted (safe-delete guard)
+
+async def _verify_mounted_media_delete_is_blocked(
+    client: Client, state: RunState
+) -> None:
+    """Exercise and record the safe-delete guard while the ISO is mounted."""
+    context = state.context
     st_del, data_del = await state.call(
         client,
         "hmc_delete_optical_media",
-        vios_name_or_uuid=vios,
-        vg_uuid=vg,
+        vios_name_or_uuid=context.vios_uuid,
+        vg_uuid=context.vg_uuid,
         media_name=context.vmedia_iso_name,
     )
     rejection_text = str(data_del).lower()
@@ -546,7 +568,12 @@ async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
             f"expected rejection, got st={st_del}",
         )
 
-    # Step 5 — Unmount
+
+async def _unmount_and_delete_vmedia(client: Client, state: RunState) -> None:
+    """Unmount the ST19 ISO, delete it, and confirm the repository is empty."""
+    context = state.context
+    vios = context.vios_uuid
+    vg = context.vg_uuid
     if context.vmedia_mapping_uuid:
         st, data = await state.call(
             client,
@@ -589,6 +616,28 @@ async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
         vg_uuid=vg,
     )
     state.record(19, "hmc_list_optical_media (confirm empty)", st, data)
+
+
+async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
+    context = state.context
+    print("\n=== ST19: Mount / Unmount + Safe-Delete Validation ===")
+    skip_names = [
+        "hmc_mount_optical_media",
+        "hmc_list_optical_mappings (confirm mounted)",
+        "hmc_delete_optical_media (blocked — expected)",
+        "hmc_unmount_optical_media",
+        "hmc_list_optical_mappings (confirm unmounted)",
+        "hmc_delete_optical_media (post-unmount)",
+        "hmc_list_optical_media (confirm empty)",
+    ]
+    if not context.vmedia_iso_name:
+        for name in skip_names:
+            state.skip(19, name, "vmedia_iso_name not set (ST18 failed)")
+        return
+
+    await _mount_vmedia_and_confirm(client, state)
+    await _verify_mounted_media_delete_is_blocked(client, state)
+    await _unmount_and_delete_vmedia(client, state)
 
 
 # ---------------------------------------------------------------------------
