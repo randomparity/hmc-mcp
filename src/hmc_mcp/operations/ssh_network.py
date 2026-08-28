@@ -324,7 +324,9 @@ def _decimal(value: str, field: str) -> Decimal:
     return result
 
 
-def _validated(selector: VnicBackingSelector) -> VnicBackingSelector:
+def _validate_vnic_backing_selector(
+    selector: VnicBackingSelector,
+) -> VnicBackingSelector:
     return VnicBackingSelector(
         require_command_safe_text(selector.vios_name, "vios_name"),
         require_command_safe_text(selector.vios_lpar_id, "vios_lpar_id"),
@@ -397,7 +399,9 @@ def _parse_vnic_snapshots(rows: list[dict[str, str]]) -> tuple[VnicSnapshot, ...
     return result
 
 
-def _matches(item: VnicBackingSnapshot, selector: VnicBackingSelector) -> bool:
+def _backing_matches_selector(
+    item: VnicBackingSnapshot, selector: VnicBackingSelector
+) -> bool:
     return (
         item.vios_name,
         item.vios_lpar_id,
@@ -413,7 +417,9 @@ def _matches(item: VnicBackingSnapshot, selector: VnicBackingSelector) -> bool:
     )
 
 
-def _correlated(vnic: VnicSnapshot, backing: VnicBackingSnapshot) -> bool:
+def _vnic_contains_backing_identity(
+    vnic: VnicSnapshot, backing: VnicBackingSnapshot
+) -> bool:
     return any(_same_backing_identity(item, backing) for item in vnic.backing_devices)
 
 
@@ -450,8 +456,8 @@ def _active_matching_backing_pairs(
         for vnic in vnics
         if vnic.port_vlan_id == vlan
         for backing in backings
-        if _matches(backing, selector)
-        and _correlated(vnic, backing)
+        if _backing_matches_selector(backing, selector)
+        and _vnic_contains_backing_identity(vnic, backing)
         and backing.is_active
         and backing.status == "Operational"
     ]
@@ -464,7 +470,9 @@ def _matching_vnics(
         vnic
         for vnic in vnics
         if vnic.port_vlan_id == vlan
-        and any(_matches(item, selector) for item in vnic.backing_devices)
+        and any(
+            _backing_matches_selector(item, selector) for item in vnic.backing_devices
+        )
     )
 
 
@@ -476,7 +484,8 @@ def _correlated_matching_backings(
     return tuple(
         item
         for item in backings
-        if _matches(item, selector) and any(_correlated(vnic, item) for vnic in vnics)
+        if _backing_matches_selector(item, selector)
+        and any(_vnic_contains_backing_identity(vnic, item) for vnic in vnics)
     )
 
 
@@ -741,7 +750,7 @@ async def add_vnic(
     *,
     ownership_override: bool = False,
 ) -> VnicChangeResult:
-    selector = _validated(selector)
+    selector = _validate_vnic_backing_selector(selector)
     if type(port_vlan_id) is not int or not 0 <= port_vlan_id <= 4094:
         raise ValueError("port_vlan_id must be an integer between 0 and 4094")
     context = await _preflight_add(
@@ -827,7 +836,11 @@ async def remove_vnic(
         raise VnicCapabilityError(
             "selected vNIC does not have exactly one embedded backing"
         )
-    correlated = tuple(item for item in all_backings if _correlated(selected[0], item))
+    correlated = tuple(
+        item
+        for item in all_backings
+        if _vnic_contains_backing_identity(selected[0], item)
+    )
     if (
         len(correlated) != 1
         or not correlated[0].is_active

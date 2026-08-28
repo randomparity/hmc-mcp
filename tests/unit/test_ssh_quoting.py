@@ -23,7 +23,10 @@ from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.pcie_validation import require_command_safe_text
-from hmc_mcp.operations.ssh_network import VnicBackingSelector, _validated
+from hmc_mcp.operations.ssh_network import (
+    VnicBackingSelector,
+    _validate_vnic_backing_selector,
+)
 from hmc_mcp.server_tools.lpar_config import (
     hmc_set_lpar_description as hmc_set_lpar_description,
 )
@@ -124,7 +127,9 @@ async def test_list_io_slots_quotes_hostile_system_name():
 def test_add_vnic_rejects_structural_selector_characters():
     """Typed vNIC selectors reject characters that alter HMC payload structure."""
     with pytest.raises(ValueError, match="alter HMC command structure"):
-        _validated(VnicBackingSelector(f"vios,{HOSTILE}", "2", "1", "0", Decimal("2")))
+        _validate_vnic_backing_selector(
+            VnicBackingSelector(f"vios,{HOSTILE}", "2", "1", "0", Decimal("2"))
+        )
 
 
 def test_remove_vnic_rejects_structural_slot_characters():
