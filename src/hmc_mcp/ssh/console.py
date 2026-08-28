@@ -327,8 +327,8 @@ async def _probe_released(
     - the probe's ``mkvterm`` starts and stays alive → slot proven free →
       ``True``; the probe then tears its own session down — connection closed
       plus an ``rmvterm``, since the HMC does not auto-release (P3);
-    - timeout with no output → state unknown → ``False``, with ``rmvterm``
-      still issued (biasing against leaking our own possibly-acquired vterm);
+    - timeout with no output → state unknown → ``False``; no destructive cleanup
+      is attempted because ownership of the slot was never established;
     - clean EOF without the sentinel → the remote ``mkvterm`` exited without
       acquiring → ``False`` (unproven, nothing of ours to release).
     """
@@ -409,9 +409,9 @@ async def _probe_released(
                 )
                 return False
             return True
-        # Timeout with no output: unknown state. Issue rmvterm anyway — if
-        # the probe's slow-starting mkvterm actually acquired the slot, this
-        # releases ours instead of leaking it (P3) — but report unproven.
+        # Timeout with no output: ownership is unknown. Another caller may have
+        # acquired the slot after this probe disconnected, so rmvterm would race
+        # with and terminate a session we do not own.
         logger.warning(
             "release probe for %s/%s produced no output within %ss; "
             "'released' is unproven",
@@ -419,15 +419,6 @@ async def _probe_released(
             lpar_name,
             _RELEASE_PROBE_SECONDS,
         )
-        try:
-            await run_hmc_command(config, rmvterm_command)
-        except HMCCLIError as exc:
-            logger.error(
-                "probe cleanup rmvterm for %s/%s failed: %s",
-                system_name,
-                lpar_name,
-                exc,
-            )
         return False
     finally:
         stdin.close()

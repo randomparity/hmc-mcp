@@ -362,6 +362,25 @@ async def test_release_probe_closes_connection_when_process_start_fails():
 
 
 @pytest.mark.asyncio
+async def test_release_probe_timeout_without_output_does_not_issue_rmvterm():
+    connection = FakeConnection([FakeProcess(None)])
+    release = AsyncMock()
+    with (
+        patch(
+            "hmc_mcp.ssh.console.open_hmc_connection",
+            AsyncMock(return_value=connection),
+        ),
+        patch("hmc_mcp.ssh.console.run_hmc_command", release),
+        patch("hmc_mcp.ssh.console._RELEASE_PROBE_SECONDS", 0.01),
+    ):
+        released = await _probe_released(make_config(), "sys1", "lp1")
+
+    assert released is False
+    assert connection.closed is True
+    release.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_cancellation_still_runs_release_to_completion():
     # P4: cancelling the task mid-stream must not leak the vterm; the shielded
     # release runs to completion before the cancellation propagates.
