@@ -12,7 +12,7 @@ import typer
 
 from hmc_mcp.cli_commands.app import _client, _print_json, _run, snapshot_app
 from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
-from hmc_mcp.snapshots.affinity import PolicyState
+from hmc_mcp.operations.affinity import PolicyState
 from hmc_mcp.snapshots import (
     SnapshotValidationError,
     inspect_snapshot,

@@ -33,7 +33,7 @@ from hmc_mcp.server_tools.lpars import (
     hmc_delete_lpar as hmc_delete_lpar,
 )
 from hmc_mcp.server_tools.vios import hmc_delete_vios as hmc_delete_vios
-from hmc_mcp.snapshots.affinity import ProvisionAffinityAssessment
+from hmc_mcp.operations.affinity import ProvisionAffinityAssessment
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
 # every consumer builds its own. The legacy-equivalent policy registers exactly the

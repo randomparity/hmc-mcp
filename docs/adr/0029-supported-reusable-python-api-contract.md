@@ -147,6 +147,12 @@ names are internal everywhere and are never inventoried.
 - `operations.adapters` — operations: `add_network_adapter`, `add_vfc_adapter`,
   `add_vscsi_adapter`, `delete_adapter`, `list_adapters`; types: `AdapterResult`; excluded
   synchronous: none.
+- `operations.affinity` — operations: `assess_post_activation_affinity`; types:
+  `AffinityAssessmentInput`, `AffinityAssessmentResult`, `AffinityClassification`,
+  `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`,
+  `PostActivationAffinityAssessment`, `ProvisionAffinityAssessment`; excluded synchronous:
+  `affinity_not_measured`, `assess_affinity`, `classify_affinity_outcome`,
+  `validate_affinity_request`.
 - `operations.capacity` — operations: `capacity_report`, `find_placement`; types: `CapacitySummary`; excluded
   synchronous: `lpar_processing_units`, `system_capacity`.
 - `operations.composite` — operations: `lpar_summary`, `system_summary`; types: `LparSummary`, `SystemSummary`; excluded
@@ -259,10 +265,6 @@ names are internal everywhere and are never inventoried.
     `LparSnapshot`, selected by the Decision's transitive type clause rather than by appearing
     in an operation's signature. `SnapshotInspection` reaches none of them: its own fields are
     strings, booleans, and opaque mappings.
-- `snapshots.affinity` — exports: `AffinityAssessmentInput`, `AffinityAssessmentResult`,
-  `AffinityClassification`, `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`,
-  `PostActivationAffinityAssessment`, `ProvisionAffinityAssessment`,
-  `assess_post_activation_affinity`.
 - `snapshots.operations` — exports: `assess_snapshot_affinity`, `capture_lpar_snapshot`,
   `inspect_lpar_snapshot`, `validate_lpar_snapshot`.
 - `ssh.affinity` — exports: `MinimumAffinityPolicy`.

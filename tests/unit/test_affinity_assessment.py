@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from hmc_mcp.snapshots.affinity import (
+from hmc_mcp.operations.affinity import (
     AffinityAssessmentInput,
     assess_affinity,
 )

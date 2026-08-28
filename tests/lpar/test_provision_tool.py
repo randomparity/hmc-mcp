@@ -27,7 +27,7 @@ from hmc_mcp.operations.lpar.provision import (
     _power_on,
 )
 from hmc_mcp.server_tools.provision import hmc_provision_lpar as hmc_provision_lpar
-from hmc_mcp.snapshots.affinity import (
+from hmc_mcp.operations.affinity import (
     AffinityAssessmentResult,
     AffinityEvidence,
     PostActivationAffinityAssessment,

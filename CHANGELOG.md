@@ -211,6 +211,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   remote-access validation and document merging have one owner in the client layer.
 - `metric_links` and `metric_data` require metric kind, time range, sample count, and
   managed-system scope as named arguments after the resource selector.
+- Affinity assessment models, pure evaluation, and live orchestration now live together
+  in `operations.affinity`; snapshot modules consume that boundary without a reverse
+  dependency from operations into the snapshot package.
 
 - `provision_lpar` now requires `partition_type` and all subsequent workflow
   controls as keyword arguments. The HMC client, system/name selectors, network,

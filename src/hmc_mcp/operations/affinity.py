@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from ..client import HMCClient
-from ..operations.ssh_network import (
+from .ssh_network import (
     get_lpar_memopt_score,
     get_minimum_affinity_policy,
     plan_lpar_memopt_scores,

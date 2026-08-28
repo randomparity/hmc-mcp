@@ -11,7 +11,7 @@ from .._app import (
 )
 from ..errors import HMCError
 from ..operations.lpar.ownership import list_lpar_ownership
-from ..snapshots.affinity import (
+from ..operations.affinity import (
     ProvisionAffinityAssessment,
     affinity_not_measured,
     assess_post_activation_affinity,

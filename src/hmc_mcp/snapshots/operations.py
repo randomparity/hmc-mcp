@@ -9,7 +9,7 @@ import math
 import re
 from typing import Any
 
-from hmc_mcp.snapshots.affinity import (
+from hmc_mcp.operations.affinity import (
     AffinityAssessmentInput,
     AffinityAssessmentResult,
     PolicyState,

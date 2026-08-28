@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from hmc_mcp import cli
-from hmc_mcp.snapshots.affinity import (
+from hmc_mcp.operations.affinity import (
     AffinityAssessmentInput,
     assess_affinity,
 )
