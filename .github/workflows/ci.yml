@@ -163,9 +163,9 @@ jobs:
           assert report == [{
               "system_uuid": "system-1",
               "system_name": "p10",
-              "total_memory_mb": 32768,
-              "assigned_memory_mb": 8192,
-              "free_memory_mb": 24576,
+              "total_memory_mib": 32768,
+              "assigned_memory_mib": 8192,
+              "free_memory_mib": 24576,
               "total_proc_units": 8.0,
               "assigned_proc_units": 2.0,
               "free_proc_units": 6.0,
@@ -305,9 +305,9 @@ jobs:
           assert report == [{
               "system_uuid": "system-1",
               "system_name": "p10",
-              "total_memory_mb": 32768,
-              "assigned_memory_mb": 8192,
-              "free_memory_mb": 24576,
+              "total_memory_mib": 32768,
+              "assigned_memory_mib": 8192,
+              "free_memory_mib": 24576,
               "total_proc_units": 8.0,
               "assigned_proc_units": 2.0,
               "free_proc_units": 6.0,
@@ -383,19 +383,19 @@ jobs:
           uv pip install --python .wheel-venv/bin/python \
             --requirements .wheel-requirements.txt
           uv pip install --no-deps --python .wheel-venv/bin/python "${wheels[0]}"
-      - name: Exercise presentation-neutral core imports
+      - name: Exercise the supported library facade
         run: |
           .wheel-venv/bin/python - <<'PY'
           from importlib.util import find_spec
           from pathlib import Path
 
           import hmc_mcp
-          from hmc_mcp.client import HMCClient
+          from hmc_mcp.api import HMCClient
 
           package_path = Path(hmc_mcp.__file__).resolve()
           environment = Path(".wheel-venv").resolve()
           assert package_path.is_relative_to(environment), package_path
-          assert HMCClient.__module__ == "hmc_mcp.client"
+          assert HMCClient.__module__ == "hmc_mcp.client.core"
           for package in ("fastmcp", "mcp", "rich", "typer"):
               assert find_spec(package) is None, package
           PY

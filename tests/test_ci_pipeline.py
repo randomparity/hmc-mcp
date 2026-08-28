@@ -565,6 +565,9 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     assert "uv pip install --no-deps --python .wheel-venv/bin/python" in body
     assert '"${wheels[0]}[app]"' in body
     assert "import hmc_mcp" in body
+    assert "from hmc_mcp.api import HMCClient" in body
+    assert "from hmc_mcp.client import HMCClient" not in body
+    assert 'HMCClient.__module__ == "hmc_mcp.client.core"' in body
     assert "is_relative_to(environment)" in body
     assert ".wheel-venv/bin/hmc-mcp --help" in body
     # Group help pages are rendered off the tree the installed wheel builds, so
@@ -613,6 +616,9 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "asyncio.run(capacity_report(FakeHMC()))" in body
     assert '"system_name": "p10"' in body
     assert "assert report ==" in body
+    for field in ("total_memory_mib", "assigned_memory_mib", "free_memory_mib"):
+        assert f'"{field}"' in body
+        assert f'"{field.replace("_mib", "_mb")}"' not in body
     assert "[app]" not in body
     assert "uv export" not in body
     assert "--no-deps" not in body
@@ -636,6 +642,9 @@ def test_github_ci_exercises_each_declared_range_floor() -> None:
     assert "uv venv" in body
     # The exercised surface is the bare installed API, not the app extra.
     assert "from hmc_mcp.api import capacity_report" in body
+    for field in ("total_memory_mib", "assigned_memory_mib", "free_memory_mib"):
+        assert f'"{field}"' in body
+        assert f'"{field.replace("_mib", "_mb")}"' not in body
     assert "[app]" not in body
     assert "scripts/smoke_mcp.py" not in body
     # Held here since narrowing the library-wheel-smoke match stopped its body
