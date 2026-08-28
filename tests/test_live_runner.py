@@ -298,6 +298,21 @@ async def test_call_returns_traceable_failure():
     assert "Traceback" in data
 
 
+@pytest.mark.asyncio
+async def test_call_reports_unexpected_result_parser_failure(monkeypatch):
+    def fail_to_parse(_text):
+        raise TypeError("parser bug")
+
+    monkeypatch.setattr(runner.json, "loads", fail_to_parse)
+
+    status, data = await runner.RunState().call(
+        _ScriptedClient(result=_ToolResult(content=[_TextBlock("plain text")])), "tool"
+    )
+
+    assert status == "FAIL"
+    assert "TypeError: parser bug" in data
+
+
 def test_expected_hmc_limitation_is_classified_as_skip():
     state = runner.RunState()
 

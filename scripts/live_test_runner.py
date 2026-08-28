@@ -248,7 +248,7 @@ class RunState:
                 text = str(result)
             try:
                 data = json.loads(text)
-            except Exception:
+            except json.JSONDecodeError:
                 data = text
             return "PASS", data
         except Exception as exc:
