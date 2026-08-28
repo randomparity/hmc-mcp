@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, TypedDict
 
 from ...client.client_adapters import AdapterType
 from ...client import HMCClient
@@ -75,7 +75,7 @@ class _Inventory:
     partition_id: int | None
     state: str | None
     owner: str | None
-    adapters: tuple[dict[str, str], ...]
+    adapters: tuple[_AdapterRecord, ...]
     storage_mappings: tuple[dict[str, str], ...]
     unresolved_storage_mapping_count: int
     unavailable_storage_source_count: int
@@ -93,6 +93,11 @@ class _Inventory:
             "unresolved_storage_mapping_count": self.unresolved_storage_mapping_count,
             "unavailable_storage_source_count": self.unavailable_storage_source_count,
         }
+
+
+class _AdapterRecord(TypedDict):
+    type: AdapterType
+    uuid: str
 
 
 def _skip_steps(steps: list[WorkflowStep], *names: str) -> None:
@@ -299,8 +304,8 @@ async def _partition_snapshot(
 
 async def _inventory_adapters(
     hmc: HMCClient, lpar_uuid: str
-) -> tuple[dict[str, str], ...]:
-    adapters: list[dict[str, str]] = []
+) -> tuple[_AdapterRecord, ...]:
+    adapters: list[_AdapterRecord] = []
     for adapter_type in _ADAPTER_ORDER:
         entries = await hmc.list_adapters(lpar_uuid, adapter_type)
         for entry in sorted(entries, key=lambda item: str(item.get("UUID") or "")):
@@ -487,12 +492,12 @@ async def _power_off(
 
 
 async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> WorkflowStep:
-    deleted: list[dict[str, str]] = []
+    deleted: list[_AdapterRecord] = []
     for adapter in inventory.adapters:
         try:
             await hmc.delete_adapter(
                 inventory.lpar_uuid,
-                cast(AdapterType, adapter["type"]),
+                adapter["type"],
                 adapter["uuid"],
             )
         except HMCError as exc:
