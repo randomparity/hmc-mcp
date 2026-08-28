@@ -46,7 +46,7 @@ async def test_power_system_operation_rejects_invalid_wait_timing():
     hmc = AsyncMock()
     with pytest.raises(ValueError, match="timeout_seconds"):
         await power_system(
-            hmc, SYSTEM_UUID, on=False, wait=True, timeout_seconds=-1
+            hmc, SYSTEM_UUID, power_on=False, wait=True, timeout_seconds=-1
         )
     hmc.power_off_system.assert_not_awaited()
 

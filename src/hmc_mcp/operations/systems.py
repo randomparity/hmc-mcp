@@ -96,7 +96,7 @@ async def power_system(
     hmc: HMCClient,
     system_name_or_uuid: str,
     *,
-    on: bool,
+    power_on: bool,
     immediate: bool = False,
     wait: bool = False,
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
@@ -105,7 +105,7 @@ async def power_system(
     """Resolve a system selector, submit its power job, and optionally wait."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    if on:
+    if power_on:
         job = await hmc.power_on_system(system_uuid)
     else:
         job = await hmc.power_off_system(system_uuid, immediate=immediate)

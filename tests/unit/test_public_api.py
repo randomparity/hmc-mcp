@@ -1857,6 +1857,10 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         for name in vios_install_parameters
         if name in {"system_name_or_uuid", "vios_name_or_uuid"}
     ] == ["system_name_or_uuid", "vios_name_or_uuid"]
+    for operation_name in ("power_lpar", "power_system", "power_vios"):
+        parameters = inspect.signature(getattr(api, operation_name)).parameters
+        assert "power_on" in parameters
+        assert "on" not in parameters
     provision_parameters = inspect.signature(api.provision_lpar).parameters
     for control in (
         "partition_type",
@@ -1899,7 +1903,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # PCIe assignment selectors now state their accepted name-or-UUID vocabulary.
     # Every LPAR operation now places the system selector before the LPAR selector.
     # VIOS inventory operations and their PartitionState selector joined the facade.
-    expected_digest = "470b1883ccc0fe78a0322a95b359d80ed2cb4b4150cd8598d922d82d4242c0d4"  # pragma: allowlist secret
+    # System and VIOS power operations now use power_on like the LPAR operation.
+    expected_digest = "bea89cf712d473d99b7e9a7df635067830d58498805bb24013140fa15cce9ac3"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

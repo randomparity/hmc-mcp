@@ -362,7 +362,7 @@ def hmc_power_on_system(
             return await power_system(
                 hmc,
                 system_name_or_uuid,
-                on=True,
+                power_on=True,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
@@ -399,7 +399,7 @@ def hmc_power_off_system(
             return await power_system(
                 hmc,
                 system_name_or_uuid,
-                on=False,
+                power_on=False,
                 immediate=immediate,
                 wait=wait,
                 timeout_seconds=timeout_seconds,

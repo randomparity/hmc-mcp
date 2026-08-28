@@ -96,7 +96,7 @@ async def power_vios(
     system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     *,
-    on: bool,
+    power_on: bool,
     immediate: bool = False,
     wait: bool = False,
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
@@ -106,7 +106,7 @@ async def power_vios(
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
-    if on:
+    if power_on:
         job = await hmc.power_on_vios(vios_uuid)
     else:
         job = await hmc.power_off_vios(vios_uuid, immediate=immediate)

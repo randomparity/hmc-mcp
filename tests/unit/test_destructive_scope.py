@@ -99,7 +99,7 @@ async def test_power_vios_forwards_optional_system_scope():
         hmc,
         "system-name",
         "vios1",
-        on=False,
+        power_on=False,
     )
 
     hmc.find_vios_by_name.assert_awaited_once_with(
