@@ -18,9 +18,9 @@ from conftest import JOB_ENTRY, assert_no_mutating_requests
 
 from hmc_mcp.documents import LparResources
 from hmc_mcp.jobs import JobOutcome
-from hmc_mcp.operations.assignments import WorkflowStep
+from hmc_mcp.operations.lpar.assignments import WorkflowStep
 from hmc_mcp.operations.lpar import LparPowerResult
-from hmc_mcp.operations.provision import (
+from hmc_mcp.operations.lpar.provision import (
     ProvisionAffinityAssessment,
     ProvisionNetwork,
     ProvisionStorage,
@@ -409,7 +409,7 @@ def test_provision_affinity_power_on_waits_for_terminal_result():
     terminal_job = {"Resource": {"Status": "COMPLETED_OK"}}
     hmc = object()
     with patch(
-        "hmc_mcp.operations.provision.power_lpar",
+        "hmc_mcp.operations.lpar.provision.power_lpar",
         new=AsyncMock(return_value=LparPowerResult(LPAR_UUID, terminal_job)),
     ) as power:
         result = asyncio.run(_power_on(hmc, SYSTEM_UUID, LPAR_UUID, _affinity_request()))  # type: ignore[arg-type]
@@ -433,7 +433,7 @@ def test_provision_affinity_dry_run_never_powers_on_or_assesses(monkeypatch, moc
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
     with patch(
-        "hmc_mcp.operations.provision.assess_post_activation_affinity",
+        "hmc_mcp.operations.lpar.provision.assess_post_activation_affinity",
         new=AsyncMock(),
     ) as assess:
         result = hmc_provision_lpar(
@@ -449,7 +449,7 @@ def test_provision_affinity_power_off_is_skipped(monkeypatch, mock_hmc):
     _mock_preconditions(mock_hmc)
     _mock_execution_steps(mock_hmc)
     with patch(
-        "hmc_mcp.operations.provision.assess_post_activation_affinity",
+        "hmc_mcp.operations.lpar.provision.assess_post_activation_affinity",
         new=AsyncMock(),
     ) as assess:
         result = hmc_provision_lpar(
@@ -477,11 +477,11 @@ def test_provision_affinity_response_is_explicit(
     _mock_execution_steps(mock_hmc)
     with (
         patch(
-            "hmc_mcp.operations.provision._power_on",
+            "hmc_mcp.operations.lpar.provision._power_on",
             new=AsyncMock(return_value=_successful_power_outcome()),
         ),
         patch(
-            "hmc_mcp.operations.provision.assess_post_activation_affinity",
+            "hmc_mcp.operations.lpar.provision.assess_post_activation_affinity",
             new=AsyncMock(return_value=_assessment_result(classification)),
         ) as assess,
     ):
@@ -504,11 +504,11 @@ def test_provision_affinity_timeout_never_assesses(monkeypatch, mock_hmc):
     timed_out = JobOutcome("job-1", "RUNNING", True, None, {"Resource": {}}, True, None)
     with (
         patch(
-            "hmc_mcp.operations.provision._power_on",
+            "hmc_mcp.operations.lpar.provision._power_on",
             new=AsyncMock(return_value=timed_out),
         ),
         patch(
-            "hmc_mcp.operations.provision.assess_post_activation_affinity",
+            "hmc_mcp.operations.lpar.provision.assess_post_activation_affinity",
             new=AsyncMock(),
         ) as assess,
     ):
@@ -534,7 +534,7 @@ def test_provision_keeps_its_result_when_the_power_guard_fails(monkeypatch, mock
     _mock_preconditions(mock_hmc)
     _mock_execution_steps(mock_hmc)
     with patch(
-        "hmc_mcp.operations.provision._power_on",
+        "hmc_mcp.operations.lpar.provision._power_on",
         new=AsyncMock(side_effect=ValueError("LPAR 'x' has no partition name")),
     ):
         result = hmc_provision_lpar(**_provision_args())
@@ -802,15 +802,15 @@ def test_policy_provision_network_failure_records_each_step_once(monkeypatch, mo
     ).mock(return_value=httpx.Response(500, text="<error>network failed</error>"))
     with (
         patch(
-            "hmc_mcp.operations.provision.resolve_ssh_names",
+            "hmc_mcp.operations.lpar.provision.resolve_ssh_names",
             AsyncMock(return_value=("system", None)),
         ),
         patch(
-            "hmc_mcp.operations.provision.require_minimum_affinity_policy_capability",
+            "hmc_mcp.operations.lpar.provision.require_minimum_affinity_policy_capability",
             AsyncMock(),
         ),
         patch(
-            "hmc_mcp.operations.provision.set_minimum_affinity_policy",
+            "hmc_mcp.operations.lpar.provision.set_minimum_affinity_policy",
             AsyncMock(return_value="changed"),
         ),
     ):
@@ -898,7 +898,7 @@ def test_provision_operation_rejects_bad_token_before_any_round_trip(monkeypatch
     """Direct provision_lpar callers bypass hmc_provision_lpar's entry check,
     so the operation validates first, before any HMC round trip."""
     _hmc_env(monkeypatch)
-    from hmc_mcp.operations.provision import provision_lpar
+    from hmc_mcp.operations.lpar.provision import provision_lpar
 
     with pytest.raises(ValueError, match="caller_token"):
         asyncio.run(
@@ -923,11 +923,11 @@ def test_provision_policy_rejects_unsupported_system_before_mutation(
     _hmc_env(monkeypatch)
     with (
         patch(
-            "hmc_mcp.operations.provision.resolve_ssh_names",
+            "hmc_mcp.operations.lpar.provision.resolve_ssh_names",
             AsyncMock(return_value=("system", None)),
         ),
         patch(
-            "hmc_mcp.operations.provision.require_minimum_affinity_policy_capability",
+            "hmc_mcp.operations.lpar.provision.require_minimum_affinity_policy_capability",
             AsyncMock(side_effect=HMCCLIError("POWER11 required")),
         ),
     ):
@@ -948,14 +948,14 @@ def test_provision_applies_explicit_fail_policy_before_network(monkeypatch, mock
     setter = AsyncMock(return_value="changed")
     with (
         patch(
-            "hmc_mcp.operations.provision.resolve_ssh_names",
+            "hmc_mcp.operations.lpar.provision.resolve_ssh_names",
             AsyncMock(return_value=("system", None)),
         ),
         patch(
-            "hmc_mcp.operations.provision.require_minimum_affinity_policy_capability",
+            "hmc_mcp.operations.lpar.provision.require_minimum_affinity_policy_capability",
             AsyncMock(),
         ),
-        patch("hmc_mcp.operations.provision.set_minimum_affinity_policy", setter),
+        patch("hmc_mcp.operations.lpar.provision.set_minimum_affinity_policy", setter),
     ):
         result = hmc_provision_lpar(
             **_provision_args(minimum_affinity_policy=policy, power_on=False)

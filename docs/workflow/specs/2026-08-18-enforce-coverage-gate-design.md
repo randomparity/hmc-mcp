@@ -105,7 +105,7 @@ requiring at least 44 currently-missed statements to be covered.
 
 The primary vehicle is `src/hmc_mcp/cli_commands/storage.py`, the largest single gap at 110 missed
 statements of 199 (45%). It is a thin Typer layer over `operations.storage` and
-`operations.provision`, and `tests/app/test_cli_commands.py` already provides the harness for
+`operations.lpar.provision`, and `tests/app/test_cli_commands.py` already provides the harness for
 exercising it: a `FakeHMC` scripted stand-in installed over `cli_commands.app.client_from_env`, driven
 through `typer.testing.CliRunner`. New tests follow that established pattern rather than
 introducing a second CLI-testing idiom.

@@ -147,18 +147,10 @@ names are internal everywhere and are never inventoried.
 - `operations.adapters` — operations: `add_network_adapter`, `add_vfc_adapter`,
   `add_vscsi_adapter`, `delete_adapter`, `list_adapters`; types: `AdapterResult`; excluded
   synchronous: none.
-- `operations.assignments` — operations: `apply_lpar_pcie_assignments`,
-  `apply_validated_lpar_pcie_assignments`, `prevalidate_lpar_pcie_assignments`; types:
-  `AssignmentResult`, `DedicatedPcieAssignment`, `LparPcieAssignments`,
-  `LparPcieWorkflowResult`, `SriovLogicalPortAssignment`, `VnicAssignment`,
-  `WorkflowStep`; excluded synchronous:
-  `assignment_step_names`.
 - `operations.capacity` — operations: `capacity_report`, `find_placement`; types: `CapacitySummary`; excluded
   synchronous: `lpar_processing_units`, `system_capacity`.
 - `operations.composite` — operations: `lpar_summary`, `system_summary`; types: `LparSummary`, `SystemSummary`; excluded
   synchronous: none.
-- `operations.decommission` — operations: `decommission_lpar`; types: `DecommissionResult`;
-  excluded synchronous: none.
 - `operations.error_translation` — operations: none; types: none; excluded synchronous:
   `translate_pcm_error`, `translate_template_error`, `translate_virtual_network_create_error`.
 - `operations.health` — operations: `fleet_health`; types: `FleetHealthResult`; excluded
@@ -181,7 +173,13 @@ names are internal everywhere and are never inventoried.
     Domain A over exported *functions*, which a type is not.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
   none.
-- `operations.lpar` — operations: none; types: none; excluded synchronous: none.
+- `operations.lpar` — operations: none; types: `AssignmentResult`, `AttachDiskResult`,
+  `DecommissionResult`, `DedicatedPcieAssignment`, `LparPcieAssignments`,
+  `LparPcieWorkflowResult`, `ProvisionNetwork`, `ProvisionResult`, `ProvisionStorage`,
+  `SriovLogicalPortAssignment`, `VnicAssignment`, `WorkflowStep`,
+  `apply_lpar_pcie_assignments`, `apply_validated_lpar_pcie_assignments`,
+  `attach_disk_to_lpar`, `decommission_lpar`, `prevalidate_lpar_pcie_assignments`,
+  `provision_lpar`; excluded synchronous: none.
 - `operations.lpar.boot_order` — exports: `clear_lpar_boot_order`,
   `read_lpar_boot_order`, `set_lpar_boot_order`.
 - `operations.lpar.configuration` — exports: `configure_lpar_msp`,
@@ -218,9 +216,6 @@ names are internal everywhere and are never inventoried.
   `resolve_pcm_resource`, `set_pcm_preferences`; types: `MetricKind`, `PcmCategory`,
   `PcmResource`; excluded synchronous: `preference_flags`, `validate_pcm_metric_target`,
   `validate_pcm_preferences_category`.
-- `operations.provision` — operations: `attach_disk_to_lpar`, `provision_lpar`; types:
-  `AttachDiskResult`, `ProvisionNetwork`, `ProvisionResult`, `ProvisionStorage`; excluded
-  synchronous: none.
 - `operations.ssh_network` — operations: `add_vnic`, `get_lpar_memopt_score`,
   `get_minimum_affinity_policy`, `get_system_memopt_score`, `list_fc_ports`,
   `list_lpar_memopt_scores`, `list_resource_group_memopt_scores`, `list_sea_adapters`,

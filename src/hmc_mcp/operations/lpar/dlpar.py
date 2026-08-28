@@ -12,7 +12,7 @@ from ...documents import (
     build_lpar_document,
 )
 from ...errors import HMCError
-from ..assignments import (
+from .assignments import (
     WorkflowStep,
     LparPcieAssignments,
     LparPcieWorkflowResult,

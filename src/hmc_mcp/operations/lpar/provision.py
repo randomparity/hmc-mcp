@@ -11,33 +11,33 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from ..client import HMCClient
-from ..resource_identity import resolve_lpar_uuid, resolve_system_uuid
-from ..documents import LparResources, PartitionType, StorageKind
-from ..errors import HMCError
-from ..jobs import JobOutcome, job_outcome
-from ..snapshots.affinity import (
+from ...client import HMCClient
+from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
+from ...documents import LparResources, PartitionType, StorageKind
+from ...errors import HMCError
+from ...jobs import JobOutcome, job_outcome
+from ...snapshots.affinity import (
     ProvisionAffinityAssessment,
     assess_post_activation_affinity,
     validate_affinity_request,
 )
-from .lpar import (
+from . import (
     LparCreation,
     LparCreationResult,
     create_and_stamp_lpar,
     power_lpar,
 )
-from .lpar.ownership import resolve_and_authorize_lpar_mutation
-from .ssh_network import set_minimum_affinity_policy
-from ..ssh.transport import HMCCLIError
-from ..ssh.selectors import resolve_ssh_names
-from .storage import create_virtual_disk
-from ..ssh.affinity import (
+from .ownership import resolve_and_authorize_lpar_mutation
+from ..ssh_network import set_minimum_affinity_policy
+from ...ssh.transport import HMCCLIError
+from ...ssh.selectors import resolve_ssh_names
+from ..storage import create_virtual_disk
+from ...ssh.affinity import (
     MinimumAffinityPolicy,
     require_minimum_affinity_policy_capability,
     validate_minimum_affinity_policy,
 )
-from ..ssh.lpar import validate_caller_token
+from ...ssh.lpar import validate_caller_token
 from .assignments import (
     LparPcieAssignments,
     WorkflowStep,

@@ -21,7 +21,7 @@ from hmc_mcp.access_policy import AccessPolicyError
 from hmc_mcp.config import config_dir
 from hmc_mcp.connection_scope import ConnectionScopeError
 from hmc_mcp.dispatch_scope import dispatch_authorizer
-from hmc_mcp.operations.provision import ProvisionNetwork, ProvisionStorage
+from hmc_mcp.operations.lpar.provision import ProvisionNetwork, ProvisionStorage
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.target_scope import TargetScopeError
 

@@ -41,7 +41,7 @@ from ..operations.storage import (
     upload_iso,
     validate_logical_unit_wait,
 )
-from ..operations.provision import (
+from ..operations.lpar.provision import (
     AttachDiskResult,
     ProvisionStorage,
     attach_disk_to_lpar,

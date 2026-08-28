@@ -6,8 +6,8 @@ import pytest
 
 from conftest import assert_only_these_client_methods_used
 
-from hmc_mcp.operations.assignments import WorkflowStep
-from hmc_mcp.operations.provision import (
+from hmc_mcp.operations.lpar.assignments import WorkflowStep
+from hmc_mcp.operations.lpar.provision import (
     AttachDiskResult,
     ProvisionStorage,
     attach_disk_to_lpar,
@@ -25,7 +25,7 @@ def _authorize_lpar_mutations(monkeypatch):
         return lpar
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.provision.resolve_and_authorize_lpar_mutation", authorize
+        "hmc_mcp.operations.lpar.provision.resolve_and_authorize_lpar_mutation", authorize
     )
 
 

@@ -11,7 +11,7 @@ from rich.table import Table
 from ..client import HMCClient
 from ..config import load_profile
 from ..documents import StorageKind
-from ..operations.provision import ProvisionStorage, attach_disk_to_lpar
+from ..operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
 from ..operations.storage import (
     create_media_repository,
     create_optical_media,

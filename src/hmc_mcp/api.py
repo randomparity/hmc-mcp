@@ -53,7 +53,7 @@ from hmc_mcp.operations.composite import (
     lpar_summary,
     system_summary,
 )
-from hmc_mcp.operations.decommission import DecommissionResult, decommission_lpar
+from hmc_mcp.operations.lpar import DecommissionResult, decommission_lpar
 from hmc_mcp.operations.health import FleetHealthResult, fleet_health
 from hmc_mcp.operations.install import (
     InstallHandle,
@@ -141,7 +141,7 @@ from hmc_mcp.operations.pcie import (
     set_sriov_adapter_mode,
     unassign_sriov_logical_port,
 )
-from hmc_mcp.operations.assignments import (
+from hmc_mcp.operations.lpar import (
     AssignmentResult,
     WorkflowStep,
     DedicatedPcieAssignment,
@@ -153,7 +153,7 @@ from hmc_mcp.operations.assignments import (
     apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
-from hmc_mcp.operations.provision import (
+from hmc_mcp.operations.lpar import (
     AttachDiskResult,
     ProvisionNetwork,
     ProvisionResult,

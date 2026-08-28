@@ -5,11 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from ..client.client_adapters import AdapterType
-from ..client import HMCClient
-from ..resource_identity import is_uuid, resolve_system_uuid
-from ..errors import HMCError
-from ..jobs import (
+from ...client.client_adapters import AdapterType
+from ...client import HMCClient
+from ...resource_identity import is_uuid, resolve_system_uuid
+from ...errors import HMCError
+from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
     DEFAULT_JOB_TIMEOUT_SECONDS,
     SUCCESSFUL_JOB_STATUSES,
@@ -19,7 +19,7 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from .lpar.ownership import (
+from .ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     resolve_lpar_ownership_names,
 )

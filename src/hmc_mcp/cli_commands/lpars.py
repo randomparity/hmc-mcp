@@ -19,10 +19,10 @@ from ..documents import (
     StorageKind,
 )
 from ..jobs import validate_wait_timing
-from ..operations.assignments import (
+from ..operations.lpar.assignments import (
     LparPcieAssignments,
 )
-from ..operations.decommission import decommission_lpar
+from ..operations.lpar.decommission import decommission_lpar
 from ..operations.lpar import (
     LparCreation,
     ProcessorCompatibilityMode,
@@ -37,7 +37,7 @@ from ..operations.lpar.boot_order import (
 from ..operations.lpar.dlpar import modify_lpar
 from ..operations.lpar.ownership import set_lpar_ownership_description
 from ..operations.lpar.workflows import create_lpar
-from ..operations.provision import ProvisionNetwork, ProvisionStorage, provision_lpar
+from ..operations.lpar.provision import ProvisionNetwork, ProvisionStorage, provision_lpar
 from ..operations.ssh_network import (
     get_lpar_memopt_score,
     get_minimum_affinity_policy,

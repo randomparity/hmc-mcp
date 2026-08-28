@@ -19,7 +19,7 @@ from hmc_mcp.operations.lpm import (
     recover_lpar_migration,
     remote_restart_lpar,
 )
-from hmc_mcp.operations.provision import ProvisionStorage, attach_disk_to_lpar
+from hmc_mcp.operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
 from hmc_mcp.operations.storage import (
     map_storage,
     mount_optical_media,
@@ -76,7 +76,7 @@ CASES: tuple[tuple[str, Operation], ...] = (
         ),
     ),
     (
-        "hmc_mcp.operations.provision.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.lpar.provision.resolve_and_authorize_lpar_mutation",
         lambda hmc: attach_disk_to_lpar(
             hmc,
             LPAR,

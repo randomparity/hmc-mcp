@@ -26,7 +26,7 @@ from ..documents import (
     OsType,
     PartitionType,
 )
-from ..operations.decommission import DecommissionResult, decommission_lpar
+from ..operations.lpar.decommission import DecommissionResult, decommission_lpar
 from ..operations.lpar import (
     LparCreation,
     LparPowerOnOutcome,
@@ -44,7 +44,7 @@ from ..operations.lpar.boot_order import (
 from ..operations.lpar.dlpar import modify_lpar, set_lpar_memory, set_lpar_processors
 from ..operations.lpar.errors import translate_lpar_write_error
 from ..operations.lpar.workflows import create_lpar
-from ..operations.assignments import (
+from ..operations.lpar.assignments import (
     LparPcieAssignments,
     LparPcieWorkflowResult,
 )

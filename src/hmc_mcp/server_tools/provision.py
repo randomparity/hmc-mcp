@@ -8,13 +8,13 @@ from .._app import run_sync
 from ..client.client_factory import client_from_env
 from ..documents import LparResources, PartitionType
 from ..snapshots.affinity import ProvisionAffinityAssessment
-from ..operations.provision import (
+from ..operations.lpar.provision import (
     ProvisionNetwork,
     ProvisionResult,
     ProvisionStorage,
     provision_lpar,
 )
-from ..operations.assignments import LparPcieAssignments
+from ..operations.lpar.assignments import LparPcieAssignments
 from ..ssh.affinity import MinimumAffinityPolicy
 from ..ssh.lpar import validate_caller_token
 

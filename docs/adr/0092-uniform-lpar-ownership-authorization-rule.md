@@ -119,11 +119,11 @@ against that commit rather than maintained forward.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `delete_lpar` | `operations/lpar/core.py:298` | guarded (`:313`) | — |
-| `decommission_lpar` | `operations/decommission.py:606` | guarded (`:283`, `:637`, `:656`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
-| `rename_lpar` | `operations/lpar/core.py:410` | guarded (`:426`) | — |
-| `set_lpar_ownership_description` | `operations/lpar/ownership.py:264` | guarded (`:281`) | — |
-| `synchronize_lpar_profile` | `operations/lpar/configuration.py:29` | guarded (`:25`) | — |
+| `delete_lpar` | `operations/lpar/core.py:294` | guarded (`:313`) | — |
+| `decommission_lpar` | `operations/lpar/decommission.py:606` | guarded (`:283`, `:637`, `:656`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
+| `rename_lpar` | `operations/lpar/core.py:399` | guarded (`:426`) | — |
+| `set_lpar_ownership_description` | `operations/lpar/ownership.py:593` | guarded (`:281`) | — |
+| `synchronize_lpar_profile` | `operations/lpar/configuration.py:11` | guarded (`:25`) | — |
 
 `rename_lpar` is Destructive rather than Reconfiguring because the partition name
 is the identity every consumer addresses, and the ownership token itself is keyed
@@ -139,26 +139,26 @@ only the transport boundary.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `set_lpar_boot_order` | `operations/lpar/boot_order.py:43` | guarded (`:66`) | — |
-| `clear_lpar_boot_order` | `operations/lpar/boot_order.py:87` | guarded (`:99`) | — |
-| `assign_dedicated_pcie_slot` | `operations/pcie.py:183` | guarded (`:223`, via `_authorize_pcie_profile_request`) | — |
-| `unassign_dedicated_pcie_slot` | `operations/pcie.py:203` | guarded (`:223`) | — |
-| `assign_sriov_logical_port` | `operations/pcie.py:520` | guarded (`:371`, via `_resolve_lpar`) | — |
-| `unassign_sriov_logical_port` | `operations/pcie.py:604` | guarded (`:371`) | — |
-| `add_vnic` | `operations/ssh_network.py:748` | guarded (`:411`, via `_preflight_add:536` → `_resolve:405`) | — |
-| `remove_vnic` | `operations/ssh_network.py:814` | guarded (`:411`, via `_resolve`) | — |
-| `set_minimum_affinity_policy` | `operations/ssh_network.py:305` | guarded (`:318`) | — |
-| `set_lpar_processors` | `operations/lpar/dlpar.py:418` | guarded (`:405`, via `_apply_dlpar_document:397` → `_resolve_and_authorize_lpar:328`) | — |
-| `set_lpar_memory` | `operations/lpar/dlpar.py:454` | guarded (`:405`, via `_apply_dlpar_document`) | — |
-| `apply_lpar_pcie_assignments` | `operations/assignments.py:275` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
+| `set_lpar_boot_order` | `operations/lpar/boot_order.py:42` | guarded (`:66`) | — |
+| `clear_lpar_boot_order` | `operations/lpar/boot_order.py:85` | guarded (`:99`) | — |
+| `assign_dedicated_pcie_slot` | `operations/pcie.py:179` | guarded (`:223`, via `_authorize_pcie_profile_request`) | — |
+| `unassign_dedicated_pcie_slot` | `operations/pcie.py:199` | guarded (`:223`) | — |
+| `assign_sriov_logical_port` | `operations/pcie.py:495` | guarded (`:371`, via `_resolve_lpar`) | — |
+| `unassign_sriov_logical_port` | `operations/pcie.py:579` | guarded (`:371`) | — |
+| `add_vnic` | `operations/ssh_network.py:744` | guarded (`:411`, via `_preflight_add:536` → `_resolve:405`) | — |
+| `remove_vnic` | `operations/ssh_network.py:810` | guarded (`:411`, via `_resolve`) | — |
+| `set_minimum_affinity_policy` | `operations/ssh_network.py:301` | guarded (`:318`) | — |
+| `set_lpar_processors` | `operations/lpar/dlpar.py:107` | guarded (`:405`, via `_apply_dlpar_document:397` → `_resolve_and_authorize_lpar:328`) | — |
+| `set_lpar_memory` | `operations/lpar/dlpar.py:143` | guarded (`:405`, via `_apply_dlpar_document`) | — |
+| `apply_lpar_pcie_assignments` | `operations/lpar/assignments.py:275` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
 | `add_network_adapter` | `operations/adapters.py:33` | guarded (`:45`) | #372 |
 | `add_vscsi_adapter` | `operations/adapters.py:62` | guarded (`:72`) | #372 |
 | `add_vfc_adapter` | `operations/adapters.py:82` | guarded (`:92`) | #372 |
 | `delete_adapter` | `operations/adapters.py:102` | guarded (`:112`) | #372 |
-| `map_storage` | `operations/storage.py:112` | guarded (`:124`) | #372 |
-| `attach_disk_to_lpar` | `operations/provision.py:316` | guarded before the storage workflow (`:348`) | #372 |
-| `mount_optical_media` | `operations/storage.py:696` | guarded (`:713`) | #440 |
-| `unmount_optical_media` | `operations/storage.py:724` | guarded (`:763`) | #440 |
+| `map_storage` | `operations/storage.py:121` | guarded (`:124`) | #372 |
+| `attach_disk_to_lpar` | `operations/lpar/provision.py:316` | guarded before the storage workflow (`:348`) | #372 |
+| `mount_optical_media` | `operations/storage.py:706` | guarded (`:713`) | #440 |
+| `unmount_optical_media` | `operations/storage.py:734` | guarded (`:763`) | #440 |
 | `migrate_lpar` | `operations/lpm.py:320` | guarded after optional validation and before migration submission (`:360`) | #373 |
 | `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:222` | guarded by delegation to `migrate_lpar` | #373 |
 | `abort_lpar_migration` | `operations/lpm.py:380` | guarded (`:392`) | #373 |
@@ -186,11 +186,11 @@ The remaining direct entry points and their guard state are:
 
 | Entry point | Location | Status | Tracking |
 |---|---|---|---|
-| `configure_lpar_msp` | `operations/lpar/configuration.py:43` | guarded (`:25`) | — |
-| `configure_lpar_processor_compatibility` | `operations/lpar/configuration.py:58` | guarded (`:25`) | — |
+| `configure_lpar_msp` | `operations/lpar/configuration.py:28` | guarded (`:25`) | — |
+| `configure_lpar_processor_compatibility` | `operations/lpar/configuration.py:46` | guarded (`:25`) | — |
 | `hmc_modify_lpar` | `server_tools/lpars.py:166` | guarded by `operations/lpar/dlpar.py:35` before any write | #442 |
 | `hmc lpar modify` (CLI) | `cli_commands/lpars.py:596` | guarded by `operations/lpar/dlpar.py:35` before any write | #442 |
-| `detach_storage_mapping` | `operations/storage.py:171` | resolves the mapping's client LPAR and guards it before deletion (`:204`) | #448 |
+| `detach_storage_mapping` | `operations/storage.py:181` | resolves the mapping's client LPAR and guards it before deletion (`:204`) | #448 |
 
 `hmc_dlpar_proc` and `hmc_dlpar_mem` were rows in this table at `b41e658`. #365
 extracted `set_lpar_processors` and `set_lpar_memory` from those tool bodies and
@@ -209,7 +209,7 @@ kind of modification on the other side of the authorization boundary.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `power_lpar` | `operations/lpar/core.py:333` | guarded when opted in (`:372`, via `_resolve_and_authorize_lpar`); §4 | #371 |
+| `power_lpar` | `operations/lpar/core.py:322` | guarded when opted in (`:372`, via `_resolve_and_authorize_lpar`); §4 | #371 |
 
 `power_lpar` is the whole class. Both `hmc_power_on_lpar` (`server_tools/lpars.py:504`)
 and `hmc_power_off_lpar` (`server_tools/lpars.py:615`) delegate to it, and so does the
@@ -226,8 +226,8 @@ exempt anyway.
 
 | Operation | Reason |
 |---|---|
-| `create_and_stamp_lpar` (`operations/lpar/core.py:189`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
-| `provision_lpar` (`operations/provision.py:483`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
+| `create_and_stamp_lpar` (`operations/lpar/core.py:185`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
+| `provision_lpar` (`operations/lpar/provision.py:552`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
 | `deploy_partition_template` (`operations/templates.py:93`) | Creates the partition and stamps it per ADR 0014. |
 | `hmc_capture_lpar_console` (`server_tools/console.py:24`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_backup_lpar_profiles` (`server_tools/profiles.py:35`) | Reads every profile and writes an HMC-side backup file; it does not mutate a partition or profile. |

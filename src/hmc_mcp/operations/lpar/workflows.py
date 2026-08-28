@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...client import HMCClient
 from ...errors import HMCError
-from ..assignments import (
+from .assignments import (
     WorkflowStep,
     LparPcieAssignments,
     LparPcieWorkflowResult,
