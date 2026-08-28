@@ -194,7 +194,11 @@ def evaluate_lpm_affinity_preflight(
 async def run_lpm_affinity_preflight(
     request: LpmAffinityPreflightRequest,
 ) -> LpmAffinityPreflightOutcome:
-    """Evaluate preflight within the caller's explicit time bound."""
+    """Evaluate preflight within the caller's explicit time bound.
+
+    Invalid request controls raise ``ValueError``. Threshold failures and timeouts
+    are returned as outcomes whose ``proceed`` value reflects the requested policy.
+    """
     if request.response not in {"warn", "fail"}:
         raise ValueError("affinity preflight response must be warn or fail")
     timeout = request.preflight_timeout_seconds
@@ -233,7 +237,12 @@ async def migrate_lpar_with_affinity_preflight(
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> LpmAffinityMigrationResult:
-    """Run affinity preflight before canonical validation-first migration."""
+    """Run affinity preflight before canonical validation-first migration.
+
+    A rejected preflight is returned without a migration result. Selector,
+    authorization, submission, and validation failures raise before migration;
+    waited migration timeouts and job failures remain in the returned job outcome.
+    """
     preflight = await run_lpm_affinity_preflight(affinity_preflight)
     if not preflight.proceed:
         return LpmAffinityMigrationResult(None, preflight, None)
@@ -297,7 +306,11 @@ async def validate_lpar_migration(
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
     system_name_or_uuid: str | None = None,
 ) -> LpmResult:
-    """Resolve selectors and submit standalone LPM validation."""
+    """Resolve selectors and submit standalone LPM validation.
+
+    Invalid controls, unresolved selectors, and submission failures raise. When
+    waiting, timeout and terminal job failure are represented by ``result.job``.
+    """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
@@ -331,7 +344,12 @@ async def migrate_lpar(
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> LpmResult:
-    """Resolve selectors and submit a migration, optionally validating first."""
+    """Resolve selectors and submit a migration, optionally validating first.
+
+    Invalid controls, resolution, authorization, and submission failures raise.
+    With ``validate_first``, an unsuccessful validation raises before migration is
+    submitted. Waited migration timeout or job failure remains in ``result.job``.
+    """
     effective_wait = wait or validate_first
     validate_wait_timing(effective_wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_lpar_uuid(
@@ -387,7 +405,11 @@ async def abort_lpar_migration(
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> LpmResult:
-    """Resolve and abort an in-progress migration."""
+    """Resolve and abort an in-progress migration.
+
+    Invalid controls, resolution, authorization, and submission failures raise.
+    Waited timeout or terminal job failure is represented by ``result.job``.
+    """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
@@ -412,7 +434,11 @@ async def recover_lpar_migration(
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> LpmResult:
-    """Resolve and recover a failed migration."""
+    """Resolve and recover a failed migration.
+
+    Invalid controls, resolution, authorization, and submission failures raise.
+    Waited timeout or terminal job failure is represented by ``result.job``.
+    """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
@@ -441,7 +467,11 @@ async def remote_restart_lpar(
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
     ownership_override: bool = False,
 ) -> LpmResult:
-    """Resolve selectors and submit an explicit RemoteRestart operation."""
+    """Resolve selectors and submit an explicit RemoteRestart operation.
+
+    Invalid controls, resolution, authorization, and submission failures raise.
+    Waited timeout or terminal job failure is represented by ``result.job``.
+    """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
