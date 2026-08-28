@@ -35,7 +35,8 @@ def hmc_capture_lpar_console(
     returning the raw console bytes base64-encoded in ``data_base64`` (the
     stream is binary — escape sequences, partial UTF-8 — so no decoding is
     imposed), plus ``stop_reason`` (``duration`` / ``max_bytes`` / ``idle`` /
-    ``remote-close`` / ``error``) and an honest ``released`` flag.
+    ``remote-close`` / ``error``), a bounded ``error`` diagnostic populated
+    only for error stops, and an honest ``released`` flag.
 
     This is a capture, not a terminal: stdin is sealed by construction, so no
     byte can reach the partition — a partition at an SMS menu, firmware
@@ -99,6 +100,7 @@ def hmc_capture_lpar_console(
             "partition": capture.lpar,
             "stop_reason": capture.stop_reason,
             "released": capture.released,
+            "error": capture.error,
             "bytes_captured": len(capture.data),
             "data_base64": base64.b64encode(capture.data).decode("ascii"),
         }

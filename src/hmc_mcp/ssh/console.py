@@ -79,6 +79,7 @@ MAX_CAPTURE_BYTES = 1_048_576
 MAX_CAPTURE_SECONDS = 3600.0
 
 _CHUNK = 65_536
+_ERROR_DETAIL_MAX_CHARS = 256
 
 
 class ConsoleHeldError(HMCError):
@@ -106,6 +107,7 @@ class ConsoleCapture:
     data: bytes
     stop_reason: StopReason
     released: bool
+    error: str | None = None
 
 
 def _validate_bounds(
@@ -236,7 +238,7 @@ async def _collect_output(
     max_bytes: int,
     idle_timeout_seconds: float,
     initial_data: bytes = b"",
-) -> tuple[bytes, StopReason]:
+) -> tuple[bytes, StopReason, str | None]:
     """Read the stream until one of the three client-side bounds fires (P8).
 
     Read errors (transport drops included) end the collection with
@@ -249,12 +251,12 @@ async def _collect_output(
     idle_deadline = loop.time() + idle_timeout_seconds
     while True:
         if len(buf) >= max_bytes:
-            return bytes(buf), "max_bytes"
+            return bytes(buf), "max_bytes", None
         now = loop.time()
         if now >= deadline:
-            return bytes(buf), "duration"
+            return bytes(buf), "duration", None
         if now >= idle_deadline:
-            return bytes(buf), "idle"
+            return bytes(buf), "idle", None
         try:
             chunk = await asyncio.wait_for(
                 process.stdout.read(_CHUNK),
@@ -266,11 +268,26 @@ async def _collect_output(
             raise
         except Exception as exc:
             logger.error("console stream read failed mid-capture: %s", exc)
-            return bytes(buf), "error"
+            return bytes(buf), "error", _error_detail(exc)
         if not chunk:
-            return bytes(buf), "remote-close"
+            return bytes(buf), "remote-close", None
         buf += chunk
         idle_deadline = loop.time() + idle_timeout_seconds
+
+
+def _error_detail(error: Exception) -> str:
+    """Return a bounded, single-line diagnostic safe for tool responses."""
+    message = " ".join(
+        "".join(
+            character if character.isprintable() else " " for character in str(error)
+        ).split()
+    )
+    detail = type(error).__name__
+    if message:
+        detail = f"{detail}: {message}"
+    if len(detail) <= _ERROR_DETAIL_MAX_CHARS:
+        return detail
+    return detail[: _ERROR_DETAIL_MAX_CHARS - 1] + "…"
 
 
 async def _release_uncancellable(
@@ -299,9 +316,7 @@ async def _release_and_verify(
     ``rmvterm``'s exit code is not proof; only an independent-session
     ``mkvterm`` starting without the contention sentinel is.
     """
-    quoted = (
-        f"rmvterm -m {shlex.quote(system_name)} -p {shlex.quote(lpar_name)}"
-    )
+    quoted = f"rmvterm -m {shlex.quote(system_name)} -p {shlex.quote(lpar_name)}"
     try:
         await run_hmc_command(config, quoted)
     except HMCCLIError as exc:
@@ -315,9 +330,7 @@ async def _release_and_verify(
     return await _probe_released(config, system_name, lpar_name)
 
 
-async def _probe_released(
-    config: HMCConfig, system_name: str, lpar_name: str
-) -> bool:
+async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -> bool:
     """Prove the vterm slot is free by opening a fresh ``mkvterm`` (P2).
 
     Outcomes:
@@ -550,7 +563,7 @@ async def capture_lpar_console(
             )
             raise asyncio.CancelledError
         try:
-            data, stop_reason = await _collect_output(
+            data, stop_reason, error = await _collect_output(
                 process,
                 duration_seconds,
                 max_bytes,
@@ -581,6 +594,7 @@ async def capture_lpar_console(
             data=_truncate(data, max_bytes),
             stop_reason=stop_reason,
             released=released,
+            error=error,
         )
         connection.close()
         return result

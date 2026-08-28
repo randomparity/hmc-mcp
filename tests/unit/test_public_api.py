@@ -1967,7 +1967,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Cluster and shared-storage-pool inventory joined the reusable facade.
     # VIOS storage operations now accept managed-system scope before the
     # VIOS selector, making duplicate names unambiguous.
-    expected_digest = "b7c7cb4eab12f56d445513ab3bb54bfcb88dd312c6324f7043341bb66eb1c54b"  # pragma: allowlist secret
+    # ConsoleCapture now exposes bounded stream-failure context.
+    expected_digest = "e25440cf560bc3fd1ec02e0c793bab126525bde604da9ac95807270f34ea6547"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

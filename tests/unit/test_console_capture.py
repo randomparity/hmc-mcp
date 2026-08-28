@@ -36,6 +36,7 @@ BANNER = b"\r\n Open in progress  \r\n "
 def _client() -> HMCClient:
     return HMCClient(make_config())
 
+
 # The exact recorded P1 contention output, quirks included.
 CONTENTION = (
     b"\r\n A terminal session is already open for this partition. \r\n"
@@ -148,9 +149,7 @@ async def _run_capture(connection: FakeConnection, **overrides) -> ConsoleCaptur
 async def test_out_of_range_bounds_are_rejected_before_any_ssh(field, value):
     kwargs = _capture_kwargs()
     kwargs[field] = value
-    with patch(
-        "hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()
-    ) as connect_mock:
+    with patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()) as connect_mock:
         with pytest.raises(ValueError, match=field):
             await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
     connect_mock.assert_not_awaited()
@@ -161,9 +160,7 @@ async def test_out_of_range_bounds_are_rejected_before_any_ssh(field, value):
 async def test_nan_time_bounds_are_rejected_before_any_ssh(field):
     kwargs = _capture_kwargs()
     kwargs[field] = float("nan")
-    with patch(
-        "hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()
-    ) as connect_mock:
+    with patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()) as connect_mock:
         with pytest.raises(ValueError, match=field):
             await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
     connect_mock.assert_not_awaited()
@@ -182,9 +179,7 @@ async def test_contention_sentinel_raises_distinct_error_and_never_releases():
             "hmc_mcp.ssh.console.open_hmc_connection",
             AsyncMock(return_value=connection),
         ),
-        patch(
-            "hmc_mcp.ssh.console.run_hmc_command", AsyncMock()
-        ) as release_mock,
+        patch("hmc_mcp.ssh.console.run_hmc_command", AsyncMock()) as release_mock,
     ):
         with pytest.raises(ConsoleHeldError) as excinfo:
             await capture_lpar_console(
@@ -246,10 +241,11 @@ async def test_idle_bound_fires_after_silence_since_last_byte():
 
 @pytest.mark.asyncio
 async def test_remote_close_stops_the_capture():
-    connection = FakeConnection([FakeProcess(BANNER, B"tail")])
+    connection = FakeConnection([FakeProcess(BANNER, b"tail")])
     capture = await _run_capture(connection, duration_seconds=10.0)
     assert capture.stop_reason == "remote-close"
-    assert capture.data == BANNER + B"tail"
+    assert capture.data == BANNER + b"tail"
+    assert capture.error is None
 
 
 @pytest.mark.asyncio
@@ -268,8 +264,32 @@ async def test_transport_failure_yields_error_stop_reason_and_still_releases():
     capture = await _run_capture(connection)
     assert capture.stop_reason == "error"
     assert capture.data == BANNER
+    assert capture.error == "ConnectionResetError: TCP dropped"
     # P3: the HMC does not auto-release after a transport failure.
     assert len(capture.release_calls) >= 1
+
+
+@pytest.mark.asyncio
+async def test_transport_error_detail_is_single_line_and_bounded():
+    class ExplodingStdout(FakeStdout):
+        def __init__(self):
+            super().__init__(BANNER)
+
+        async def read(self, size: int) -> bytes:
+            if self._chunks:
+                return await super().read(size)
+            raise ConnectionResetError("TCP dropped\n\x1b[31m" + "x" * 400)
+
+    connection = FakeConnection([FakeProcess()])
+    connection._processes[0].stdout = ExplodingStdout()
+
+    capture = await _run_capture(connection)
+
+    assert capture.error is not None
+    assert capture.error.startswith("ConnectionResetError: TCP dropped")
+    assert len(capture.error) == 256
+    assert "\n" not in capture.error
+    assert "\x1b" not in capture.error
 
 
 # ---------------------------------------------------------------------------
@@ -330,9 +350,7 @@ async def test_fragmented_probe_contention_sentinel_is_not_acquisition():
         b"\r\n " + HELD_SENTINEL[:split],
         HELD_SENTINEL[split:] + b" \r\n Exiting.... ",
     )
-    connection = FakeConnection(
-        [FakeProcess(BANNER), FakeProcess(*contention_chunks)]
-    )
+    connection = FakeConnection([FakeProcess(BANNER), FakeProcess(*contention_chunks)])
 
     capture = await _run_capture(connection)
 
@@ -659,7 +677,9 @@ def test_capture_tool_resolves_identity_and_forwards_bounds(
     )
 
     with (
-        patch.object(server_console, "client_from_env", return_value=context) as factory,
+        patch.object(
+            server_console, "client_from_env", return_value=context
+        ) as factory,
         patch.object(server_console, "resolve_system_uuid", resolve_system_uuid),
         patch.object(server_console, "resolve_lpar_uuid", resolve_lpar_uuid),
         patch.object(server_console, "resolve_system_name", resolve_system_name),
@@ -696,6 +716,7 @@ def test_capture_tool_resolves_identity_and_forwards_bounds(
         "partition": lpar_name,
         "stop_reason": "idle",
         "released": True,
+        "error": None,
         "bytes_captured": 9,
         "data_base64": base64.b64encode(b"\x00console\xff").decode("ascii"),
     }

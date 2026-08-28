@@ -29,6 +29,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- `ConsoleCapture` now preserves a bounded, single-line transport diagnostic in
+  `error` when `stop_reason` is `"error"`. Partial console bytes and mandatory
+  vterm release behavior are unchanged; non-error captures report `error=None`.
 - Exported vSCSI and vFC adapter creation operations now match network adapter
   creation by accepting the optional client slot as keyword-only
   `slot_number=None`.
