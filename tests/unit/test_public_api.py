@@ -44,10 +44,6 @@ from hmc_mcp.client.client_contracts import PcmClient, TemplatesClient
 # so neither mapping can silently accumulate dead excuses.
 ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {
     (
-        "hmc_mcp.operations.error_translation",
-        "run_with_error_translation",
-    ): "ADR 0029 excludes this shared error-translation wrapper from domain operations",
-    (
         "hmc_mcp.operations.pcie",
         "require_admitted_environment",
     ): "ADR 0029 excludes this shared admission-policy guard from domain operations",

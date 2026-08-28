@@ -2,23 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import TypeVar
-
 from ..errors import HMCError
-
-_T = TypeVar("_T")
-
-
-async def run_with_error_translation(
-    operation: Callable[[], Awaitable[_T]], translator: Callable[[HMCError], None]
-) -> _T:
-    """Run one client operation and apply a narrowly scoped HMC translator."""
-    try:
-        return await operation()
-    except HMCError as exc:
-        translator(exc)
-        raise
 
 
 def translate_pcm_error(exc: HMCError) -> None:
