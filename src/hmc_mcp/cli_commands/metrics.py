@@ -12,7 +12,6 @@ from .app import (
     _usage_error,
     _with_client,
     console,
-    metrics_app,
 )
 from ..operations.pcm import (
     PcmCategory,
@@ -26,7 +25,6 @@ from ..operations.pcm import (
 )
 
 
-@metrics_app.command("prefs")
 def metrics_prefs(
     category: PcmCategory = typer.Argument(
         ..., help="ManagedSystem (LogicalPartition preferences are unavailable)"
@@ -41,7 +39,6 @@ def metrics_prefs(
     _print_json(prefs)
 
 
-@metrics_app.command("set-prefs")
 def metrics_set_prefs(
     category: PcmCategory = typer.Argument(
         ..., help="ManagedSystem (LogicalPartition preferences are unavailable)"
@@ -82,7 +79,6 @@ def metrics_set_prefs(
     console.print(f"[green]Updated {category} {resource_uuid}: {flags}[/green]")
 
 
-@metrics_app.command("show")
 def metrics_show(
     category: PcmCategory = typer.Argument(
         ..., help="ManagedSystem or LogicalPartition"
@@ -124,3 +120,10 @@ def metrics_show(
     result = _run(_go)
 
     _print_json(result)
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("prefs")(metrics_prefs)
+    group.command("set-prefs")(metrics_set_prefs)
+    group.command("show")(metrics_show)

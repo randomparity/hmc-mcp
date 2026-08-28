@@ -11,7 +11,6 @@ from .app import (
     _output,
     _print_json,
     _with_client,
-    cluster_app,
     console,
 )
 from ..jobs import DeviceType, LuType
@@ -23,7 +22,6 @@ from ..operations.storage import (
 )
 
 
-@cluster_app.command("list")
 def cluster_list(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
@@ -41,7 +39,6 @@ def cluster_list(
     _output(clusters, as_json, table, "No clusters found")
 
 
-@cluster_app.command("list-ssps")
 def cluster_list_ssps(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
@@ -64,7 +61,6 @@ def cluster_list_ssps(
     _output(ssps, as_json, table, "No shared storage pools found")
 
 
-@cluster_app.command("create-lu")
 def cluster_create_lu(
     cluster: str = typer.Argument(..., help="Cluster UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Logical unit name"),
@@ -115,7 +111,6 @@ def cluster_create_lu(
     _print_json(job)
 
 
-@cluster_app.command("delete-lu")
 def cluster_delete_lu(
     cluster: str = typer.Argument(..., help="Cluster UUID"),
     udid: str = typer.Option(..., "--udid", help="Logical unit UDID to delete"),
@@ -148,3 +143,11 @@ def cluster_delete_lu(
 
     console.print(f"[green]Submitted DeleteLogicalUnit job for {udid}[/green]")
     _print_json(job)
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("list")(cluster_list)
+    group.command("list-ssps")(cluster_list_ssps)
+    group.command("create-lu")(cluster_create_lu)
+    group.command("delete-lu")(cluster_delete_lu)

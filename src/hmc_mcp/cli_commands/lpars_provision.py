@@ -29,7 +29,6 @@ from .app import (
     _run,
     _usage_error,
     console,
-    lpars_app,
 )
 
 
@@ -45,7 +44,6 @@ def _load_pcie_assignments(path: Path | None) -> LparPcieAssignments:
         raise AssertionError("_usage_error must raise") from error
 
 
-@lpars_app.command("provision")
 def lpars_provision(
     system: str = typer.Option(
         ..., "--system", "-s", help="Target managed system name or UUID"
@@ -187,3 +185,8 @@ def lpars_provision(
 
 
 # LPAR Boot Order Commands
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("provision")(lpars_provision)

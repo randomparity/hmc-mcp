@@ -19,7 +19,6 @@ from .app import (
     _ssh_config,
     _with_client,
     console,
-    network_app,
 )
 
 from ..operations.network import (
@@ -80,7 +79,6 @@ def _print_pcie_inventory(result, as_json: bool) -> None:
     console.print(table)
 
 
-@network_app.command("list-dedicated-pcie-slots")
 def network_list_dedicated_pcie_slots(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     as_json: bool = typer.Option(False, "--json"),
@@ -90,7 +88,6 @@ def network_list_dedicated_pcie_slots(
     _print_pcie_inventory(result, as_json)
 
 
-@network_app.command("assign-dedicated-pcie-slot")
 def network_assign_dedicated_pcie_slot(
     system_name: str,
     lpar_name: str,
@@ -111,7 +108,6 @@ def network_assign_dedicated_pcie_slot(
     )
 
 
-@network_app.command("unassign-dedicated-pcie-slot")
 def network_unassign_dedicated_pcie_slot(
     system_name: str,
     lpar_name: str,
@@ -132,7 +128,6 @@ def network_unassign_dedicated_pcie_slot(
     )
 
 
-@network_app.command("list-sriov-adapters")
 def network_list_sriov_adapters(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     adapter_id: str | None = typer.Option(None, "--adapter-id"),
@@ -143,7 +138,6 @@ def network_list_sriov_adapters(
     _print_pcie_inventory(result, as_json)
 
 
-@network_app.command("list-sriov-physical-ports")
 def network_list_sriov_physical_ports(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     adapter_id: str | None = typer.Option(None, "--adapter-id"),
@@ -159,7 +153,6 @@ def network_list_sriov_physical_ports(
     _print_pcie_inventory(result, as_json)
 
 
-@network_app.command("list-sriov-logical-ports")
 def network_list_sriov_logical_ports(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     adapter_id: str | None = typer.Option(None, "--adapter-id"),
@@ -180,7 +173,6 @@ def network_list_sriov_logical_ports(
     _print_pcie_inventory(result, as_json)
 
 
-@network_app.command("assign-sriov-logical-port")
 def network_assign_sriov_logical_port(
     system_name: str,
     lpar_name: str,
@@ -208,7 +200,6 @@ def network_assign_sriov_logical_port(
     _print_json(asdict(result))
 
 
-@network_app.command("unassign-sriov-logical-port")
 def network_unassign_sriov_logical_port(
     system_name: str,
     lpar_name: str,
@@ -234,7 +225,6 @@ def network_unassign_sriov_logical_port(
     _print_json(asdict(result))
 
 
-@network_app.command("list-switches")
 def network_list_switches(
     system: str = typer.Argument(..., help="Managed system UUID"),
     as_json: bool = typer.Option(False, "--json"),
@@ -258,7 +248,6 @@ def network_list_switches(
     _output(switches, as_json, table, "No virtual switches found")
 
 
-@network_app.command("list-networks")
 def network_list_networks(
     system: str = typer.Argument(..., help="Managed system UUID"),
     as_json: bool = typer.Option(False, "--json"),
@@ -283,7 +272,6 @@ def network_list_networks(
     _output(nets, as_json, table, "No virtual networks found")
 
 
-@network_app.command("create")
 def network_create(
     system: str = typer.Argument(..., help="Managed system UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Network name"),
@@ -310,7 +298,6 @@ def network_create(
     _print_json(net)
 
 
-@network_app.command("delete")
 def network_delete(
     system: str = typer.Argument(..., help="Managed system UUID"),
     uuid: str = typer.Option(..., "--uuid", help="Virtual Network UUID to delete"),
@@ -325,7 +312,6 @@ def network_delete(
     console.print(f"[green]Deleted virtual network {uuid}[/green]")
 
 
-@network_app.command("list-bridges")
 def network_list_bridges(
     system: str = typer.Argument(..., help="Managed system UUID"),
     as_json: bool = typer.Option(False, "--json"),
@@ -337,7 +323,6 @@ def network_list_bridges(
     _output(bridges, as_json, None, "No network bridges found")
 
 
-@network_app.command("list-fc-ports")
 def network_list_fc_ports(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     lpar_name: str | None = typer.Option(
@@ -352,7 +337,6 @@ def network_list_fc_ports(
     _output(ports, as_json, None, "No FC ports found")
 
 
-@network_app.command("list-sea-adapters")
 def network_list_sea_adapters(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     lpar_name: str | None = typer.Option(
@@ -367,7 +351,6 @@ def network_list_sea_adapters(
     _output(adapters, as_json, None, "No SEA adapters found")
 
 
-@network_app.command("list-io-slots")
 def network_list_io_slots(
     system_name: str = typer.Argument(..., help="Managed system name"),
     pci_class: PciClass = typer.Option(
@@ -382,7 +365,6 @@ def network_list_io_slots(
     _output(slots, as_json, None, "No I/O slots found")
 
 
-@network_app.command("set-sriov-mode")
 def network_set_sriov_mode(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     adapter_id: str = typer.Argument(
@@ -402,7 +384,6 @@ def network_set_sriov_mode(
         console.print(result.strip())
 
 
-@network_app.command("list-vnics")
 def network_list_vnics(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
@@ -413,7 +394,6 @@ def network_list_vnics(
     _output(vnics, as_json, None, "No vNICs found")
 
 
-@network_app.command("add-vnic")
 def network_add_vnic(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
@@ -460,7 +440,6 @@ def network_add_vnic(
         raise typer.Exit(1)
 
 
-@network_app.command("remove-vnic")
 def network_remove_vnic(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
@@ -491,3 +470,27 @@ def network_remove_vnic(
     _print_json(asdict(result))
     if isinstance(outcome, VnicPartialError):
         raise typer.Exit(1)
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("list-dedicated-pcie-slots")(network_list_dedicated_pcie_slots)
+    group.command("assign-dedicated-pcie-slot")(network_assign_dedicated_pcie_slot)
+    group.command("unassign-dedicated-pcie-slot")(network_unassign_dedicated_pcie_slot)
+    group.command("list-sriov-adapters")(network_list_sriov_adapters)
+    group.command("list-sriov-physical-ports")(network_list_sriov_physical_ports)
+    group.command("list-sriov-logical-ports")(network_list_sriov_logical_ports)
+    group.command("assign-sriov-logical-port")(network_assign_sriov_logical_port)
+    group.command("unassign-sriov-logical-port")(network_unassign_sriov_logical_port)
+    group.command("list-switches")(network_list_switches)
+    group.command("list-networks")(network_list_networks)
+    group.command("create")(network_create)
+    group.command("delete")(network_delete)
+    group.command("list-bridges")(network_list_bridges)
+    group.command("list-fc-ports")(network_list_fc_ports)
+    group.command("list-sea-adapters")(network_list_sea_adapters)
+    group.command("list-io-slots")(network_list_io_slots)
+    group.command("set-sriov-mode")(network_set_sriov_mode)
+    group.command("list-vnics")(network_list_vnics)
+    group.command("add-vnic")(network_add_vnic)
+    group.command("remove-vnic")(network_remove_vnic)

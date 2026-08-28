@@ -12,7 +12,6 @@ from .app import (
     _output,
     _print_json,
     _run,
-    adapters_app,
     console,
 )
 from ..operations.adapters import (
@@ -27,7 +26,6 @@ from ..operations.adapters import (
 _ADAPTER_TYPES = " | ".join(sorted(ADAPTER_TYPES))
 
 
-@adapters_app.command("list")
 def adapters_list(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     adapter_type: AdapterType = typer.Option(
@@ -46,7 +44,6 @@ def adapters_list(
     _output(adapters, as_json, None, f"No {adapter_type} adapters on {lpar}")
 
 
-@adapters_app.command("add-network")
 def adapters_add_network(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     vlan: int = typer.Option(..., "--vlan", help="Port VLAN ID (PVID)"),
@@ -85,7 +82,6 @@ def adapters_add_network(
     _adapter_mutation(_go, lpar, "network")
 
 
-@adapters_app.command("add-vscsi")
 def adapters_add_vscsi(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     vios_id: int = typer.Option(..., "--vios-id", help="VIOS PartitionID (integer)"),
@@ -118,7 +114,6 @@ def adapters_add_vscsi(
     _adapter_mutation(_go, lpar, "vSCSI")
 
 
-@adapters_app.command("add-vfc")
 def adapters_add_vfc(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     vios_id: int = typer.Option(..., "--vios-id", help="VIOS PartitionID (integer)"),
@@ -151,7 +146,6 @@ def adapters_add_vfc(
     _adapter_mutation(_go, lpar, "vFC")
 
 
-@adapters_app.command("delete")
 def adapters_delete(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     adapter_type: AdapterType = typer.Option(..., "--type", "-t", help=_ADAPTER_TYPES),
@@ -188,3 +182,12 @@ def _adapter_mutation(go_coro, lpar: str, kind: str) -> None:
     result = _run(go_coro)
     console.print(f"[green]Added {kind} adapter[/green] to {result.lpar_uuid}")
     _print_json(result.resource)
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("list")(adapters_list)
+    group.command("add-network")(adapters_add_network)
+    group.command("add-vscsi")(adapters_add_vscsi)
+    group.command("add-vfc")(adapters_add_vfc)
+    group.command("delete")(adapters_delete)

@@ -16,6 +16,7 @@ import pytest
 from typer.testing import CliRunner
 
 from hmc_mcp import audit_sink
+from hmc_mcp.cli import app as cli_app
 from hmc_mcp.cli_commands import lpars as cli_lpars
 from hmc_mcp.operations.lpar import provision as operations_provision
 from hmc_mcp.server_tools import lpars as server_lpars
@@ -408,8 +409,16 @@ def test_power_cli_forwards_the_system_selector_and_override(
     monkeypatch.setattr(cli_lpars, "power_lpar", operation)
 
     result = CliRunner().invoke(
-        cli_lpars.lpars_app,
-        [command, "aix1", "--system", "sys1", "--ownership-override", "--yes"],
+        cli_app,
+        [
+            "lpars",
+            command,
+            "aix1",
+            "--system",
+            "sys1",
+            "--ownership-override",
+            "--yes",
+        ],
     )
 
     assert result.exit_code == 0, result.output

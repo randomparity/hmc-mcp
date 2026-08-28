@@ -42,7 +42,6 @@ from .app import (
     _ssh_config,
     _usage_error,
     console,
-    lpars_app,
 )
 
 
@@ -75,7 +74,6 @@ def _memopt_selectors(
         raise AssertionError("_usage_error must raise") from error
 
 
-@lpars_app.command("memopt-score")
 def lpars_memopt_score(
     lpar_name: str = typer.Argument(..., help="LPAR name or UUID"),
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
@@ -92,7 +90,6 @@ def lpars_memopt_score(
         )
 
 
-@lpars_app.command("get-minimum-affinity-policy")
 def lpars_get_minimum_affinity_policy(
     lpar_name: str = typer.Argument(..., help="LPAR name or UUID"),
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
@@ -114,7 +111,6 @@ def lpars_get_minimum_affinity_policy(
     )
 
 
-@lpars_app.command("memopt-scores")
 def lpars_memopt_scores(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     lpar_name: str | None = typer.Option(
@@ -144,7 +140,6 @@ def lpars_memopt_scores(
     console.print(table)
 
 
-@lpars_app.command("system-memopt-score")
 def lpars_system_memopt_score(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
@@ -221,7 +216,6 @@ def _run_resource_group_memopt(
         console.print(line)
 
 
-@lpars_app.command("resource-group-memopt-scores")
 def lpars_resource_group_memopt_scores(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     resource_group_name: list[str] | None = typer.Option(None, "--resource-group-name"),
@@ -240,7 +234,6 @@ def lpars_resource_group_memopt_scores(
     )
 
 
-@lpars_app.command("plan-resource-group-memopt-scores")
 def lpars_plan_resource_group_memopt_scores(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     resource_group_name: list[str] | None = typer.Option(None, "--resource-group-name"),
@@ -259,7 +252,6 @@ def lpars_plan_resource_group_memopt_scores(
     )
 
 
-@lpars_app.command("plan-memopt-scores")
 def lpars_plan_memopt_scores(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     prioritize_name: list[str] | None = typer.Option(None, "--prioritize-name"),
@@ -289,7 +281,6 @@ def lpars_plan_memopt_scores(
         )
 
 
-@lpars_app.command("plan-system-memopt-score")
 def lpars_plan_system_memopt_score(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     prioritize_name: list[str] | None = typer.Option(None, "--prioritize-name"),
@@ -317,7 +308,6 @@ def lpars_plan_system_memopt_score(
     )
 
 
-@lpars_app.command("get-description")
 def lpars_get_description(
     lpar_name: str = typer.Argument(..., help="LPAR name"),
     system_name: str = typer.Argument(..., help="Managed system name"),
@@ -328,7 +318,6 @@ def lpars_get_description(
     console.print(result.strip() or "(no description set)")
 
 
-@lpars_app.command("set-description")
 def lpars_set_description(
     lpar_name: str = typer.Argument(..., help="LPAR name"),
     system_name: str = typer.Argument(..., help="Managed system name"),
@@ -367,7 +356,6 @@ def lpars_set_description(
         console.print(result.strip())
 
 
-@lpars_app.command("get-msp")
 def lpars_get_msp(
     lpar_name: str = typer.Argument(..., help="LPAR name"),
     system_name: str = typer.Argument(..., help="Managed system name"),
@@ -378,7 +366,6 @@ def lpars_get_msp(
     console.print("enabled" if enabled else "disabled")
 
 
-@lpars_app.command("set-msp")
 def lpars_set_msp(
     lpar_name: str = typer.Argument(..., help="LPAR name"),
     system_name: str = typer.Argument(..., help="Managed system name"),
@@ -397,7 +384,6 @@ def lpars_set_msp(
         console.print(result.strip())
 
 
-@lpars_app.command("get-proc-compat-modes")
 def lpars_get_proc_compat_modes(
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
@@ -407,7 +393,6 @@ def lpars_get_proc_compat_modes(
     console.print(",".join(modes) or "(no modes returned)")
 
 
-@lpars_app.command("get-proc-compat")
 def lpars_get_proc_compat(
     lpar_name: str = typer.Argument(..., help="LPAR name"),
     system_name: str = typer.Argument(..., help="Managed system name"),
@@ -430,7 +415,6 @@ def lpars_get_proc_compat(
         console.print(table)
 
 
-@lpars_app.command("set-proc-compat")
 def lpars_set_proc_compat(
     lpar_name: str = typer.Argument(..., help="LPAR name"),
     system_name: str = typer.Argument(..., help="Managed system name"),
@@ -453,3 +437,24 @@ def lpars_set_proc_compat(
     )
     if result.strip():
         console.print(result.strip())
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("memopt-score")(lpars_memopt_score)
+    group.command("get-minimum-affinity-policy")(lpars_get_minimum_affinity_policy)
+    group.command("memopt-scores")(lpars_memopt_scores)
+    group.command("system-memopt-score")(lpars_system_memopt_score)
+    group.command("resource-group-memopt-scores")(lpars_resource_group_memopt_scores)
+    group.command("plan-resource-group-memopt-scores")(
+        lpars_plan_resource_group_memopt_scores
+    )
+    group.command("plan-memopt-scores")(lpars_plan_memopt_scores)
+    group.command("plan-system-memopt-score")(lpars_plan_system_memopt_score)
+    group.command("get-description")(lpars_get_description)
+    group.command("set-description")(lpars_set_description)
+    group.command("get-msp")(lpars_get_msp)
+    group.command("set-msp")(lpars_set_msp)
+    group.command("get-proc-compat-modes")(lpars_get_proc_compat_modes)
+    group.command("get-proc-compat")(lpars_get_proc_compat)
+    group.command("set-proc-compat")(lpars_set_proc_compat)

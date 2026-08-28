@@ -17,11 +17,9 @@ from .app import (
     _print_json,
     _with_client,
     console,
-    lpars_app,
 )
 
 
-@lpars_app.command("read-boot-order")
 def lpars_read_boot_order(
     system_name: str = typer.Argument(..., help="Managed system name"),
     lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
@@ -42,7 +40,6 @@ def lpars_read_boot_order(
     _print_json(result)
 
 
-@lpars_app.command("set-boot-order")
 def lpars_set_boot_order(
     system_name: str = typer.Argument(..., help="Managed system name"),
     lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
@@ -85,7 +82,6 @@ def lpars_set_boot_order(
     _print_json(result)
 
 
-@lpars_app.command("clear-boot-order")
 def lpars_clear_boot_order(
     system_name: str = typer.Argument(..., help="Managed system name"),
     lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
@@ -110,3 +106,10 @@ def lpars_clear_boot_order(
 
     console.print("[green]Boot order cleared (restored defaults)[/green]")
     _print_json(result)
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("read-boot-order")(lpars_read_boot_order)
+    group.command("set-boot-order")(lpars_set_boot_order)
+    group.command("clear-boot-order")(lpars_clear_boot_order)

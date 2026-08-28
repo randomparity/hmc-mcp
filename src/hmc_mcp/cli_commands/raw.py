@@ -1,5 +1,4 @@
-"""CLI commands for the raw REST escape hatch.
-"""
+"""CLI commands for the raw REST escape hatch."""
 
 from __future__ import annotations
 
@@ -11,20 +10,20 @@ from .app import (
     _fail,
     _with_client,
     console,
-    raw_app,
 )
 
 
-
-@raw_app.command("get")
-def raw_get(path: str = typer.Argument(..., help="Path under the HMC, e.g. /rest/api/uom/VirtualSwitch")) -> None:
+def raw_get(
+    path: str = typer.Argument(
+        ..., help="Path under the HMC, e.g. /rest/api/uom/VirtualSwitch"
+    ),
+) -> None:
     """Raw GET against the HMC; prints the XML response body."""
 
     body, _headers = _with_client(lambda hmc: hmc.raw_get(path))
     console.print(body)
 
 
-@raw_app.command("post")
 def raw_post(
     path: str = typer.Argument(..., help="Path to POST to"),
     body: str = typer.Argument(..., help="XML request body (string) or @file.xml"),
@@ -47,6 +46,12 @@ def raw_post(
     if not yes and not typer.confirm(f"POST {path} to the HMC?"):
         raise typer.Abort()
 
-    console.print(_with_client(lambda hmc: hmc.raw_post(path, body, content_type=content_type)))
+    console.print(
+        _with_client(lambda hmc: hmc.raw_post(path, body, content_type=content_type))
+    )
 
 
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("get")(raw_get)
+    group.command("post")(raw_post)

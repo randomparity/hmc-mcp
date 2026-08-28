@@ -1,5 +1,4 @@
-"""CLI commands for shared memory pools (HMC CLI via SSH).
-"""
+"""CLI commands for shared memory pools (HMC CLI via SSH)."""
 
 from __future__ import annotations
 
@@ -13,13 +12,11 @@ from .app import (
     _ssh_config,
     console,
     err_console,
-    memory_pools_app,
 )
 
 from ..ssh.memory import list_memory_pools, remove_memory_pool
 
 
-@memory_pools_app.command("list")
 def memory_pools_list(
     system_name: str = typer.Argument(..., help="Managed system name"),
     as_json: bool = typer.Option(False, "--json"),
@@ -43,7 +40,6 @@ def memory_pools_list(
     console.print(table)
 
 
-@memory_pools_app.command("remove")
 def memory_pools_remove(
     system_name: str = typer.Argument(..., help="Managed system name"),
     pool_name: str = typer.Argument(..., help="Memory pool name"),
@@ -63,6 +59,14 @@ def memory_pools_remove(
     config = _ssh_config()
     result = _run(lambda: remove_memory_pool(config, system_name, pool_name))
 
-    console.print(f"[green]Memory pool '{pool_name}' removed from '{system_name}'[/green]")
+    console.print(
+        f"[green]Memory pool '{pool_name}' removed from '{system_name}'[/green]"
+    )
     if result.strip():
         console.print(result.strip())
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("list")(memory_pools_list)
+    group.command("remove")(memory_pools_remove)

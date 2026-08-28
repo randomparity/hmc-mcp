@@ -13,7 +13,6 @@ from .app import (
     _print_json,
     _run,
     console,
-    lpars_app,
 )
 
 from ..jobs import JobOutcome, validate_wait_timing
@@ -53,7 +52,6 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) 
     _print_json(job)
 
 
-@lpars_app.command("migrate")
 def lpars_migrate(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     target: str = typer.Option(..., "--target", help="Target managed system name"),
@@ -93,7 +91,6 @@ def lpars_migrate(
     _lpm_run(name_or_uuid, _fn, "Migrate", target, yes)
 
 
-@lpars_app.command("migrate-affinity")
 def lpars_migrate_affinity(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     target: str = typer.Option(..., "--target", help="Target managed system name"),
@@ -144,7 +141,6 @@ def lpars_migrate_affinity(
     _lpm_run(name_or_uuid, _fn, "affinity-aware Migrate", target, yes)
 
 
-@lpars_app.command("migrate-validate")
 def lpars_migrate_validate(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     target: str = typer.Option(..., "--target", help="Target managed system name"),
@@ -162,7 +158,6 @@ def lpars_migrate_validate(
     _lpm_run(name_or_uuid, _fn, "MigrateValidate", target, yes)
 
 
-@lpars_app.command("migrate-abort")
 def lpars_migrate_abort(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     wait: bool = typer.Option(
@@ -191,7 +186,6 @@ def lpars_migrate_abort(
     _lpm_run(name_or_uuid, _fn, "MigrateAbort", None, yes)
 
 
-@lpars_app.command("migrate-recover")
 def lpars_migrate_recover(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     wait: bool = typer.Option(
@@ -220,7 +214,6 @@ def lpars_migrate_recover(
     _lpm_run(name_or_uuid, _fn, "MigrateRecover", None, yes)
 
 
-@lpars_app.command("remote-restart")
 def lpars_remote_restart(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     operation: str = typer.Option(..., "--operation", help="RemoteRestart operation"),
@@ -265,3 +258,13 @@ def lpars_remote_restart(
         )
 
     _lpm_run(name_or_uuid, _fn, f"RemoteRestart {operation}", target, yes)
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("migrate")(lpars_migrate)
+    group.command("migrate-affinity")(lpars_migrate_affinity)
+    group.command("migrate-validate")(lpars_migrate_validate)
+    group.command("migrate-abort")(lpars_migrate_abort)
+    group.command("migrate-recover")(lpars_migrate_recover)
+    group.command("remote-restart")(lpars_remote_restart)

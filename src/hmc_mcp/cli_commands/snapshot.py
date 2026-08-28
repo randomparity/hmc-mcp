@@ -10,7 +10,7 @@ from typing import NoReturn
 
 import typer
 
-from hmc_mcp.cli_commands.app import _client, _print_json, _run, snapshot_app
+from hmc_mcp.cli_commands.app import _client, _print_json, _run
 from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
 from hmc_mcp.operations.affinity import PolicyState
 from hmc_mcp.snapshots import (
@@ -44,7 +44,6 @@ def _publish(path: Path, text: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
-@snapshot_app.command("capture")
 def snapshot_capture(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -70,7 +69,6 @@ def snapshot_capture(
     _print_json({"path": str(output), "format": snapshot.format, "version": 1})
 
 
-@snapshot_app.command("validate")
 def snapshot_validate(path: Path) -> None:
     """Validate a local portable LPAR snapshot without HMC I/O."""
     try:
@@ -80,7 +78,6 @@ def snapshot_validate(path: Path) -> None:
     _print_json({"valid": True, "format": snapshot.format, "version": snapshot.version})
 
 
-@snapshot_app.command("inspect")
 def snapshot_inspect(path: Path) -> None:
     """Inspect a local snapshot discriminator and version without HMC I/O."""
     try:
@@ -90,7 +87,6 @@ def snapshot_inspect(path: Path) -> None:
     _print_json(result.model_dump(mode="json"))
 
 
-@snapshot_app.command("assess-affinity")
 def snapshot_assess_affinity(
     path: Path,
     current_score: int = typer.Option(..., "--current-score"),
@@ -118,3 +114,11 @@ def snapshot_assess_affinity(
     except (SnapshotValidationError, OSError, ValueError) as exc:
         _fail(exc)
     _print_json(asdict(result))
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("capture")(snapshot_capture)
+    group.command("validate")(snapshot_validate)
+    group.command("inspect")(snapshot_inspect)
+    group.command("assess-affinity")(snapshot_assess_affinity)

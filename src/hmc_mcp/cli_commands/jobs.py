@@ -15,11 +15,9 @@ from .app import (
     _with_client,
     console,
     err_console,
-    jobs_app,
 )
 
 
-@jobs_app.command("show")
 def jobs_show(
     job_id: str = typer.Argument(..., help="Job UUID or JobID"),
     job_href: str | None = typer.Option(
@@ -38,7 +36,6 @@ def jobs_show(
     _print_json(asdict(outcome))
 
 
-@jobs_app.command("list")
 def jobs_list(
     limit: int = typer.Option(
         20, "--limit", "-n", help="Maximum number of jobs to return"
@@ -54,7 +51,6 @@ def jobs_list(
     _output(jobs, as_json, empty_msg="No jobs found")
 
 
-@jobs_app.command("wait")
 def jobs_wait(
     job_id: str = typer.Argument(..., help="Job UUID or JobID to wait on"),
     timeout: int = typer.Option(300, "--timeout", "-t", help="Maximum seconds to wait"),
@@ -87,3 +83,10 @@ def jobs_wait(
     status = outcome.status or "unknown"
     console.print(f"[green]Job {job_id} status: {status}[/green]")
     _print_json(asdict(outcome))
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("show")(jobs_show)
+    group.command("list")(jobs_list)
+    group.command("wait")(jobs_wait)

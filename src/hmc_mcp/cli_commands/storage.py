@@ -38,11 +38,9 @@ from .app import (
     _usage_error,
     _with_client,
     console,
-    storage_app,
 )
 
 
-@storage_app.command("list-vgs")
 def storage_list_vgs(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     as_json: bool = typer.Option(False, "--json"),
@@ -66,7 +64,6 @@ def storage_list_vgs(
     _output(vgs, as_json, table, "No volume groups found")
 
 
-@storage_app.command("create-vg")
 def storage_create_vg(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Volume Group name"),
@@ -90,7 +87,6 @@ def storage_create_vg(
     _print_json(vg)
 
 
-@storage_app.command("create-disk")
 def storage_create_disk(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
@@ -114,7 +110,6 @@ def storage_create_disk(
     _print_json(disk)
 
 
-@storage_app.command("delete-disk")
 def storage_delete_disk(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
@@ -134,7 +129,6 @@ def storage_delete_disk(
     _print_json(disk)
 
 
-@storage_app.command("attach-disk")
 def storage_attach_disk(
     lpar: str = typer.Argument(..., help="Target LPAR name or UUID"),
     vios: str = typer.Option(..., "--vios", help="VIOS UUID"),
@@ -199,7 +193,6 @@ def storage_attach_disk(
     raise typer.Exit(1)
 
 
-@storage_app.command("map")
 def storage_map(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     lpar: str = typer.Option(..., "--lpar", help="Target LPAR name or UUID"),
@@ -238,7 +231,6 @@ def storage_map(
     _print_json(asdict(result))
 
 
-@storage_app.command("create-media-repo")
 def storage_create_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
@@ -257,7 +249,6 @@ def storage_create_media_repo(
     _print_json(result)
 
 
-@storage_app.command("create-media")
 def storage_create_media(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
@@ -281,7 +272,6 @@ def storage_create_media(
     _print_json(result)
 
 
-@storage_app.command("delete-media-repo")
 def storage_delete_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
@@ -297,7 +287,6 @@ def storage_delete_media_repo(
     console.print(f"[green]Deleted media repository on {vg}[/green]")
 
 
-@storage_app.command("delete-media")
 def storage_delete_media(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
@@ -314,7 +303,6 @@ def storage_delete_media(
     console.print(f"[green]Deleted media '{media_name}' on {vg}[/green]")
 
 
-@storage_app.command("get-media-repo")
 def storage_get_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
@@ -336,7 +324,6 @@ def storage_get_media_repo(
         console.print("[yellow]No media repository found[/yellow]")
 
 
-@storage_app.command("list-optical-media")
 def storage_list_optical_media(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
@@ -366,7 +353,6 @@ def storage_list_optical_media(
         console.print("[yellow]No optical media found[/yellow]")
 
 
-@storage_app.command("list-mappings")
 def storage_list_mappings(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     lpar: str | None = typer.Option(
@@ -410,7 +396,6 @@ def storage_list_mappings(
         console.print(table)
 
 
-@storage_app.command("detach-mapping")
 def storage_detach_mapping(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     mapping_uuid: str = typer.Argument(
@@ -451,7 +436,6 @@ def storage_detach_mapping(
     console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")
 
 
-@storage_app.command("upload-iso")
 def storage_upload_iso(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
@@ -484,9 +468,30 @@ def storage_upload_iso(
     if as_json:
         _print_json(result)
     else:
-        console.print(f"[green]Upload status: {result.get('status', 'unknown')}[/green]")
+        console.print(
+            f"[green]Upload status: {result.get('status', 'unknown')}[/green]"
+        )
         console.print(f"  Media name: {result.get('media_name', 'N/A')}")
         console.print(f"  Size: {result.get('media_size_bytes', 0):,} bytes")
         console.print(f"  SHA-256: {result.get('sha256', 'N/A')}")
         if result.get("media"):
             console.print(f"  Media entry: {result['media'].get('MediaName', 'N/A')}")
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("list-vgs")(storage_list_vgs)
+    group.command("create-vg")(storage_create_vg)
+    group.command("create-disk")(storage_create_disk)
+    group.command("delete-disk")(storage_delete_disk)
+    group.command("attach-disk")(storage_attach_disk)
+    group.command("map")(storage_map)
+    group.command("create-media-repo")(storage_create_media_repo)
+    group.command("create-media")(storage_create_media)
+    group.command("delete-media-repo")(storage_delete_media_repo)
+    group.command("delete-media")(storage_delete_media)
+    group.command("get-media-repo")(storage_get_media_repo)
+    group.command("list-optical-media")(storage_list_optical_media)
+    group.command("list-mappings")(storage_list_mappings)
+    group.command("detach-mapping")(storage_detach_mapping)
+    group.command("upload-iso")(storage_upload_iso)

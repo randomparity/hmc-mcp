@@ -8,10 +8,9 @@ resolver (``_resolve_partition_uuid``). The ``is_uuid`` predicate itself lives
 in :mod:`hmc_mcp.resource_identity` so the server (``_app``) and CLI share one
 definition.
 
-The per-domain command modules (``cli_commands.systems``, ``cli_commands.lpars``, ...) import
-the group and helpers they need from here and register their commands via
-``@<group>.command(...)``. ``cli.py`` imports this module and every domain
-module so the command tree is fully built on import.
+The per-domain command modules expose ``register_commands(group)`` functions.
+``cli.py`` is the single composition entry point: it imports those modules and
+registers every command on the groups defined here before exposing the root app.
 """
 
 from __future__ import annotations
@@ -234,6 +233,7 @@ def _with_client(fn: Callable[[HMCClient], Awaitable[_T]]) -> _T:
     Control-flow signals pass through untouched, as in :func:`_run`.
     """
     try:
+
         async def _run() -> _T:
             async with _client() as hmc:
                 return await fn(hmc)

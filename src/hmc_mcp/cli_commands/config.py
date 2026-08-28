@@ -27,7 +27,7 @@ from rich.markup import escape
 
 from . import app as cli_app
 from ..authorization.access_policy import AccessPolicyError
-from .app import _fail, _policy_file, config_app, console, err_console
+from .app import _fail, _policy_file, console, err_console
 from ..config import (
     ConfigError,
     config_inventory,
@@ -54,7 +54,6 @@ password_env = "HMC_PASSWORD"  # preferred: secret stays out of the file  # prag
 """
 
 
-@config_app.command("init")
 def config_init() -> None:
     """Create the platform-native config file with a starter profile.
 
@@ -94,7 +93,6 @@ def config_init() -> None:
     console.print(escape(str(target)), soft_wrap=True)
 
 
-@config_app.command("list")
 def config_list() -> None:
     """List configured profile names and indicate the default profile."""
     config_path = resolve_config_path()
@@ -132,7 +130,6 @@ def config_list() -> None:
         console.print(f"{entry['name']} -> {entry['target']}{status}")
 
 
-@config_app.command("show")
 def config_show(
     profile: str | None = typer.Option(
         None,
@@ -222,7 +219,6 @@ def _write_exclusive(target: Path, text: str) -> None:
             raise
 
 
-@config_app.command("init-access-policy")
 def config_init_access_policy(
     output: str | None = typer.Option(
         None,
@@ -348,13 +344,14 @@ def config_init_access_policy(
             "file is not the one it will load. Diff it against the deployed policy and "
             "merge by hand."
         )
+
+
 DIFF_IDENTICAL: Final = 0
 DIFF_DIFFERS: Final = 1
 DEPLOYED_UNREADABLE: Final = 3
 GENERATION_FAILED: Final = 4
 
 
-@config_app.command("diff-access-policy")
 def config_diff_access_policy(
     deployed: str = typer.Argument(
         metavar="PATH",
@@ -469,3 +466,12 @@ def config_diff_access_policy(
     for line in diff:
         console.print(escape(line.rstrip("\n")), soft_wrap=True, highlight=False)
     raise typer.Exit(code=DIFF_DIFFERS)
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("init")(config_init)
+    group.command("list")(config_list)
+    group.command("show")(config_show)
+    group.command("init-access-policy")(config_init_access_policy)
+    group.command("diff-access-policy")(config_diff_access_policy)

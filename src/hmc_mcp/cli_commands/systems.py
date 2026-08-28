@@ -26,11 +26,9 @@ from .app import (
     _with_client,
     console,
     err_console,
-    systems_app,
 )
 
 
-@systems_app.command("health")
 def systems_health(
     as_json: bool = typer.Option(False, "--json", help="Output JSON"),
 ) -> None:
@@ -61,7 +59,6 @@ def systems_health(
         err_console.print(f"[yellow]{warning}[/yellow]")
 
 
-@systems_app.command("list")
 def systems_list(
     state: ManagedSystemState | None = typer.Option(
         None, "--state", help="Filter by State (server-side search)"
@@ -88,7 +85,6 @@ def systems_list(
     _output(systems, as_json, table, "No managed systems found")
 
 
-@systems_app.command("show")
 def systems_show(
     name_or_uuid: str = typer.Argument(..., help="Managed system name or UUID"),
     as_json: bool = typer.Option(False, "--json"),
@@ -102,7 +98,6 @@ def systems_show(
     _print_json(system)
 
 
-@systems_app.command("power-on")
 def systems_power_on(
     name_or_uuid: str = typer.Argument(..., help="Managed system name or UUID"),
     wait: bool = typer.Option(
@@ -136,7 +131,6 @@ def systems_power_on(
     _print_json(job)
 
 
-@systems_app.command("power-off")
 def systems_power_off(
     name_or_uuid: str = typer.Argument(..., help="Managed system name or UUID"),
     immediate: bool = typer.Option(False, "--immediate"),
@@ -173,7 +167,6 @@ def systems_power_off(
     _print_json(job)
 
 
-@systems_app.command("summary")
 def systems_summary(
     name_or_uuid: str = typer.Argument(..., help="Managed system name or UUID"),
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
@@ -207,7 +200,6 @@ def systems_summary(
     console.print(table)
 
 
-@systems_app.command("capacity")
 def systems_capacity(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
@@ -254,7 +246,6 @@ def systems_capacity(
     _output(report, as_json=False, table=table, empty_msg="No managed systems found")
 
 
-@systems_app.command("find-placement")
 def systems_find_placement(
     memory: int = typer.Argument(..., help="Desired memory in MiB"),
     procs: float = typer.Option(0.5, "--procs", help="Desired processor units"),
@@ -285,3 +276,15 @@ def systems_find_placement(
             str(r.get("running_lpars", 0)),
         )
     _output(candidates, as_json=False, table=table, empty_msg="No placement candidates")
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("health")(systems_health)
+    group.command("list")(systems_list)
+    group.command("show")(systems_show)
+    group.command("power-on")(systems_power_on)
+    group.command("power-off")(systems_power_off)
+    group.command("summary")(systems_summary)
+    group.command("capacity")(systems_capacity)
+    group.command("find-placement")(systems_find_placement)

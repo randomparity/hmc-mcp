@@ -7,37 +7,85 @@ Usage examples:
     hmc-mcp lpars show mylpar         # find an LPAR by name and show it
     hmc-mcp console info              # HMC version / connectivity check
 
-This module is a thin aggregator: the command groups live in
-domain modules in :mod:`hmc_mcp.cli_commands` that register themselves on the
-shared :class:`typer.Typer` in :mod:`hmc_mcp.cli_commands.app`.
+This module is the explicit composition root: command groups and shared plumbing
+live in :mod:`hmc_mcp.cli_commands.app`, while domain modules expose registration
+functions called here to build the complete tree.
 """
 
 from __future__ import annotations
 
 from .cli_commands.app import (
     GlobalOpts as GlobalOpts,
+    adapters_app,
     app as app,
+    cluster_app,
+    config_app,
     console as console,
+    console_app,
+    jobs_app,
+    lpars_app,
     main as main,
+    memory_pools_app,
+    metrics_app,
+    network_app,
+    raw_app,
+    snapshot_app,
+    storage_app,
+    systems_app,
+    templates_app,
+    vios_app,
 )
 
-from .cli_commands import adapters  # noqa: F401  (registers commands)
-from .cli_commands import cluster  # noqa: F401  (registers commands)
-from .cli_commands import config  # noqa: F401  (registers commands)
-from .cli_commands import console as _console_commands  # noqa: F401
-from .cli_commands import jobs  # noqa: F401  (registers commands)
-from .cli_commands import lpars  # noqa: F401  (registers commands)
-from .cli_commands import lpars_config  # noqa: F401  (registers commands)
-from .cli_commands import lpars_inventory  # noqa: F401  (registers commands)
-from .cli_commands import lpars_migration  # noqa: F401  (registers commands)
-from .cli_commands import lpars_profiles  # noqa: F401  (registers commands)
-from .cli_commands import lpars_provision  # noqa: F401  (registers commands)
-from .cli_commands import memory_pools  # noqa: F401  (registers commands)
-from .cli_commands import metrics  # noqa: F401  (registers commands)
-from .cli_commands import network  # noqa: F401  (registers commands)
-from .cli_commands import raw  # noqa: F401  (registers commands)
-from .cli_commands import snapshot  # noqa: F401  (registers commands)
-from .cli_commands import storage  # noqa: F401  (registers commands)
-from .cli_commands import systems  # noqa: F401  (registers commands)
-from .cli_commands import templates  # noqa: F401  (registers commands)
-from .cli_commands import vios  # noqa: F401  (registers commands)
+from .cli_commands import (
+    adapters,
+    cluster,
+    config,
+    console as console_commands,
+    jobs,
+    lpars,
+    lpars_config,
+    lpars_inventory,
+    lpars_migration,
+    lpars_profiles,
+    lpars_provision,
+    memory_pools,
+    metrics,
+    network,
+    raw,
+    snapshot,
+    storage,
+    systems,
+    templates,
+    vios,
+)
+
+
+def _register_commands() -> None:
+    """Compose the complete command tree from explicit domain registrations."""
+    registrations = (
+        (adapters, adapters_app),
+        (cluster, cluster_app),
+        (config, config_app),
+        (console_commands, console_app),
+        (jobs, jobs_app),
+        (lpars, lpars_app),
+        (lpars_config, lpars_app),
+        (lpars_inventory, lpars_app),
+        (lpars_migration, lpars_app),
+        (lpars_profiles, lpars_app),
+        (lpars_provision, lpars_app),
+        (memory_pools, memory_pools_app),
+        (metrics, metrics_app),
+        (network, network_app),
+        (raw, raw_app),
+        (snapshot, snapshot_app),
+        (storage, storage_app),
+        (systems, systems_app),
+        (templates, templates_app),
+        (vios, vios_app),
+    )
+    for module, group in registrations:
+        module.register_commands(group)
+
+
+_register_commands()

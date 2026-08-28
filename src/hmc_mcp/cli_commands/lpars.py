@@ -35,7 +35,6 @@ from .app import (
     _usage_error,
     console,
     err_console,
-    lpars_app,
 )
 
 
@@ -51,7 +50,6 @@ def _load_pcie_assignments(path: Path | None) -> LparPcieAssignments:
         raise AssertionError("_usage_error must raise") from error
 
 
-@lpars_app.command("power-on")
 def lpars_power_on(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     wait: bool = typer.Option(
@@ -89,7 +87,6 @@ def lpars_power_on(
     )
 
 
-@lpars_app.command("power-off")
 def lpars_power_off(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     immediate: bool = typer.Option(
@@ -173,7 +170,6 @@ def _power_lpar(
     _print_json(job)
 
 
-@lpars_app.command("create")
 def lpars_create(
     name: str = typer.Argument(..., help="Name for the new partition"),
     system: str = typer.Option(
@@ -284,7 +280,6 @@ def lpars_create(
         raise typer.Exit(1)
 
 
-@lpars_app.command("modify")
 def lpars_modify(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     system: str | None = typer.Option(
@@ -393,7 +388,6 @@ def lpars_modify(
     _print_json(asdict(result))
 
 
-@lpars_app.command("delete")
 def lpars_delete(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     system: str = typer.Option(
@@ -426,7 +420,6 @@ def lpars_delete(
     console.print(f"[green]Deleted LPAR {uuid}[/green]")
 
 
-@lpars_app.command("decommission")
 def lpars_decommission(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     system: str = typer.Option(
@@ -517,3 +510,13 @@ def lpars_decommission(
 
     if not result.dry_run and not result.workflow_completed:
         raise typer.Exit(1)
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("power-on")(lpars_power_on)
+    group.command("power-off")(lpars_power_off)
+    group.command("create")(lpars_create)
+    group.command("modify")(lpars_modify)
+    group.command("delete")(lpars_delete)
+    group.command("decommission")(lpars_decommission)

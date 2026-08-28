@@ -14,14 +14,12 @@ from .app import (
     _client,
     _with_client,
     console,
-    vios_app,
 )
 from ..jobs import validate_wait_timing
 from ..operations.vios import power_vios
 from ..operations.lpar.core import PartitionState
 
 
-@vios_app.command("list")
 def vios_list(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Restrict to this managed system UUID"
@@ -56,7 +54,6 @@ def vios_list(
     _output(vios, as_json, table, "No VIOS found")
 
 
-@vios_app.command("power-on")
 def vios_power_on(
     name_or_uuid: str = typer.Argument(..., help="VIOS name or UUID"),
     wait: bool = typer.Option(
@@ -91,7 +88,6 @@ def vios_power_on(
     _print_json(job)
 
 
-@vios_app.command("power-off")
 def vios_power_off(
     name_or_uuid: str = typer.Argument(..., help="VIOS name or UUID"),
     immediate: bool = typer.Option(False, "--immediate"),
@@ -127,3 +123,10 @@ def vios_power_off(
 
     console.print(f"[green]Submitted {op} for {name_or_uuid}[/green]")
     _print_json(job)
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("list")(vios_list)
+    group.command("power-on")(vios_power_on)
+    group.command("power-off")(vios_power_off)

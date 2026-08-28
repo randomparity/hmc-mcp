@@ -39,6 +39,18 @@ raise SystemExit(0 if before is not after and counts == (0, 0) else 1)
     subprocess.run([sys.executable, "-c", script], check=True)
 
 
+def test_cli_domain_import_does_not_mutate_shared_command_groups():
+    script = """
+from hmc_mcp.cli_commands.app import lpars_app
+before = len(lpars_app.registered_commands)
+import hmc_mcp.cli_commands.lpars
+import hmc_mcp.cli_commands.lpars_config
+after = len(lpars_app.registered_commands)
+raise SystemExit(0 if before == after == 0 else 1)
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)
+
+
 def test_domain_import_does_not_register_tools_on_base_application():
     script = """
 import asyncio

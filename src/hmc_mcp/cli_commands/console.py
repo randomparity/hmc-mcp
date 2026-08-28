@@ -1,5 +1,4 @@
-"""CLI commands for the HMC itself (console info).
-"""
+"""CLI commands for the HMC itself (console info)."""
 
 from __future__ import annotations
 
@@ -12,13 +11,10 @@ from .app import (
     _resource,
     _with_client,
     console,
-    console_app,
     err_console,
 )
 
 
-
-@console_app.command("info")
 def console_info(as_json: bool = typer.Option(False, "--json")) -> None:
     """Show HMC version and network info (connectivity check)."""
 
@@ -32,8 +28,16 @@ def console_info(as_json: bool = typer.Option(False, "--json")) -> None:
         return
     res = _resource(info)
     console.print(f"[bold]HMC[/bold] {info.get('link') or ''}")
-    for key in ("VersionInfo", "ManagementConsoleName", "MachineTypeModelSerialNumber", "NetworkInfo"):
+    for key in (
+        "VersionInfo",
+        "ManagementConsoleName",
+        "MachineTypeModelSerialNumber",
+        "NetworkInfo",
+    ):
         if key in res:
             console.print(f"  {key}: {json.dumps(res[key], default=str)}")
 
 
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("info")(console_info)

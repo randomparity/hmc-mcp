@@ -20,16 +20,15 @@ from .app import (
     _run,
     _with_client,
     console,
-    lpars_app,
 )
 
 
-@lpars_app.command("summary")
 def lpars_summary(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """One-call summary: state, RMC, memory/CPU, OS details, adapter count, description."""
+
     async def _go():
         async with _client() as hmc:
             return await lpar_summary(hmc, name_or_uuid)
@@ -74,7 +73,6 @@ def lpars_summary(
     console.print(table)
 
 
-@lpars_app.command("list")
 def lpars_list(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Restrict to this managed system UUID"
@@ -111,7 +109,6 @@ def lpars_list(
     _output(lpars, as_json, table, "No logical partitions found")
 
 
-@lpars_app.command("show")
 def lpars_show(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     as_json: bool = typer.Option(True, "--json/--no-json"),
@@ -131,7 +128,6 @@ def lpars_show(
     _print_json(lpar)
 
 
-@lpars_app.command("state")
 def lpars_state(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
 ) -> None:
@@ -151,3 +147,11 @@ def lpars_state(
     if state is None:
         _partition_not_found(name_or_uuid)
     console.print(state)
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("summary")(lpars_summary)
+    group.command("list")(lpars_list)
+    group.command("show")(lpars_show)
+    group.command("state")(lpars_state)

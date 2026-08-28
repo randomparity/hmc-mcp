@@ -13,7 +13,6 @@ from .app import (
     _usage_error,
     _with_client,
     console,
-    templates_app,
 )
 from ..jobs import validate_wait_timing
 from ..operations.templates import (
@@ -23,7 +22,6 @@ from ..operations.templates import (
 )
 
 
-@templates_app.command("list")
 def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
     """List partition templates in the template library."""
 
@@ -41,7 +39,6 @@ def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
     _output(templates, as_json, table, "No partition templates found")
 
 
-@templates_app.command("show")
 def templates_show(uuid: str = typer.Argument(..., help="Template UUID")) -> None:
     """Show one partition template."""
 
@@ -50,7 +47,6 @@ def templates_show(uuid: str = typer.Argument(..., help="Template UUID")) -> Non
     _print_json(t)
 
 
-@templates_app.command("deploy")
 def templates_deploy(
     draft_uuid: str = typer.Argument(..., help="Draft (transformed) template UUID"),
     system: str = typer.Option(
@@ -84,3 +80,10 @@ def templates_deploy(
 
     console.print(f"[green]Deploy job for template {draft_uuid}[/green]")
     _print_json(result)
+
+
+def register_commands(group: typer.Typer) -> None:
+    """Register this module’s commands on *group*."""
+    group.command("list")(templates_list)
+    group.command("show")(templates_show)
+    group.command("deploy")(templates_deploy)
