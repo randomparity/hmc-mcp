@@ -16,7 +16,7 @@ from hmc_mcp.operations.lpar.assignments import (
     prevalidate_lpar_pcie_assignments,
 )
 from hmc_mcp.operations.pcie import PcieAssignmentUnavailableError
-from hmc_mcp.operations.ssh_network import VnicBackingSelector
+from hmc_mcp.operations.vnic import VnicBackingSelector
 
 
 def _sriov(logical: str = "27004001") -> SriovLogicalPortAssignment:

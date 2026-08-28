@@ -405,8 +405,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 - Changed: `read_lpar_boot_order`, `set_lpar_boot_order`, and
   `clear_lpar_boot_order` now accept a system-scoped LPAR name or UUID.
 - Changed: SSH affinity result types and workflows now live in
-  `operations.ssh_affinity`; `operations.ssh_network` is limited to network inventory
-  and vNIC mutation.
+  `operations.ssh_affinity`; network inventory and vNIC mutation now live in
+  `operations.vnic`.
 - Changed: `get_vios`, `delete_vios`, `update_vios`, and `upgrade_vios` now place the
   optional managed-system selector before the VIOS selector, matching sibling VIOS
   operations and allowing update and upgrade names to be disambiguated.

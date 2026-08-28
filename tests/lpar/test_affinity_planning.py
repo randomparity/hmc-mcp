@@ -139,7 +139,7 @@ def test_shared_planning_rejects_invalid_scenarios_before_system_resolution(
 ):
     resolve = AsyncMock()
 
-    with patch("hmc_mcp.operations.ssh_network.resolve_ssh_names", resolve):
+    with patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve):
         with pytest.raises(ValueError, match=diagnostic):
             asyncio.run(
                 plan_lpar_memopt_scores_operation(
@@ -211,7 +211,7 @@ def test_affinity_mcp_rejects_invalid_scenarios_before_system_resolution(
 
     with (
         patch.object(server_lpar_config, "client_from_env") as client_factory,
-        patch("hmc_mcp.operations.ssh_network.resolve_ssh_names", resolve),
+        patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve),
     ):
         with pytest.raises(ValueError, match=diagnostic):
             server_lpar_config.hmc_plan_system_memopt_score(
@@ -253,7 +253,7 @@ def test_oversized_selector_is_rejected_before_resolution_or_transport():
     resolve = AsyncMock()
     prioritized, excluded, package = _quote_heavy_dual_selector_package(extra_byte=True)
 
-    with patch("hmc_mcp.operations.ssh_network.resolve_ssh_names", resolve):
+    with patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve):
         with pytest.raises(ValueError, match="option package exceeds 4096 UTF-8 bytes"):
             asyncio.run(
                 plan_lpar_memopt_scores_operation(

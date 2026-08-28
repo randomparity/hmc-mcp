@@ -23,7 +23,7 @@ from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.pcie_validation import require_command_safe_text
-from hmc_mcp.operations.ssh_network import (
+from hmc_mcp.operations.vnic import (
     VnicBackingSelector,
     _validate_vnic_backing_selector,
 )

@@ -22,7 +22,7 @@ from ..operations.network import (
     list_virtual_networks,
     list_virtual_switches,
 )
-from ..operations.ssh_network import (
+from ..operations.vnic import (
     VnicBackingSelector,
     VnicPartialError,
     add_vnic,

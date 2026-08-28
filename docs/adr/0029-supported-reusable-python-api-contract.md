@@ -232,11 +232,6 @@ names are internal everywhere and are never inventoried.
   `plan_system_memopt_score`, `set_minimum_affinity_policy`; types:
   `MemoptLparSelector`, `MemoptResourceGroupSelector`, `MinimumAffinityPolicyResult`,
   `ResourceGroupAffinityResult`; excluded synchronous: none.
-- `operations.ssh_network` — operations: `add_vnic`, `list_fc_ports`,
-  `list_sea_adapters`, `list_vnics`, `remove_vnic`; types:
-  `VnicBackingSelector`, `VnicBackingSnapshot`,
-  `VnicCapabilityError`, `VnicChangeResult`, `VnicPartialError`, `VnicSnapshot`; excluded
-  synchronous: none.
 - `operations.storage` — operations: `create_logical_unit`, `create_media_repository`,
   `create_optical_media`, `create_virtual_disk`, `create_volume_group`, `delete_logical_unit`,
   `delete_media_repository`, `delete_optical_media`, `delete_virtual_disk`,
@@ -265,6 +260,11 @@ names are internal everywhere and are never inventoried.
   `get_vios`, `list_vios`, `list_vios_backups`, `power_vios`, `restore_vios`; types:
   `BackupType`, `RestoreBackupType`;
   excluded synchronous: `validate_vios_backup_name`.
+- `operations.vnic` — operations: `add_vnic`, `list_fc_ports`,
+  `list_sea_adapters`, `list_vnics`, `remove_vnic`; types:
+  `VnicBackingSelector`, `VnicBackingSnapshot`,
+  `VnicCapabilityError`, `VnicChangeResult`, `VnicPartialError`, `VnicSnapshot`; excluded
+  synchronous: none.
 - `snapshots` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
   `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,
   `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotInspection`, `SnapshotObservations`,

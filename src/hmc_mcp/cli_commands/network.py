@@ -39,7 +39,7 @@ from ..operations.pcie import (
     set_sriov_adapter_mode,
     unassign_sriov_logical_port,
 )
-from ..operations.ssh_network import (
+from ..operations.vnic import (
     VnicBackingSelector,
     VnicPartialError,
     add_vnic,

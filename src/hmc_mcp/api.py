@@ -178,7 +178,7 @@ from hmc_mcp.operations.ssh_affinity import (
     plan_system_memopt_score,
     set_minimum_affinity_policy,
 )
-from hmc_mcp.operations.ssh_network import (
+from hmc_mcp.operations.vnic import (
     VnicBackingSelector,
     VnicBackingSnapshot,
     VnicCapabilityError,

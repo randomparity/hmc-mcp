@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from hmc_mcp.operations.ssh_network import (
+from hmc_mcp.operations.vnic import (
     VnicBackingSelector,
     VnicChangeResult,
     VnicPartialError,

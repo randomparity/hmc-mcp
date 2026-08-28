@@ -35,7 +35,7 @@ from hmc_mcp.operations import ownership as lpar_ownership
 from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.ssh_network import VnicChangeResult, VnicPartialError
+from hmc_mcp.operations.vnic import VnicChangeResult, VnicPartialError
 
 LPAR_NAME = "lpar1"
 
