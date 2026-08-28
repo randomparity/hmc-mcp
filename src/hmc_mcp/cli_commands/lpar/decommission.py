@@ -7,9 +7,9 @@ from dataclasses import asdict
 import typer
 from rich.table import Table
 
-from ..operations.lpar.decommission import decommission_lpar
-from .runtime import _client, _run
-from .output import _print_json, console
+from ...operations.lpar.decommission import decommission_lpar
+from ..runtime import _client, _run
+from ..output import _print_json, console
 
 
 def lpars_decommission(

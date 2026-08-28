@@ -7,13 +7,13 @@ from pathlib import Path
 
 import typer
 
-from ..documents import PARTITION_TYPES, LparResources
-from ..operations.lpar.core import LparCreation
-from ..operations.lpar.workflows import create_lpar
-from ..ssh.lpar import validate_caller_token
-from .runtime import _client, _run
-from .output import _print_json, _usage_error, console, err_console
-from .lpars_config import _load_pcie_assignments
+from ...documents import PARTITION_TYPES, LparResources
+from ...operations.lpar.core import LparCreation
+from ...operations.lpar.workflows import create_lpar
+from ...ssh.lpar import validate_caller_token
+from ..runtime import _client, _run
+from ..output import _print_json, _usage_error, console, err_console
+from .config import _load_pcie_assignments
 
 
 def lpars_create(

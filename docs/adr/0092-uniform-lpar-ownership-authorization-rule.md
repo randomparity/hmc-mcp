@@ -145,8 +145,8 @@ only the transport boundary.
 | `unassign_dedicated_pcie_slot` | `operations/pcie.py:199` | guarded (`:223`) | — |
 | `assign_sriov_logical_port` | `operations/pcie.py:495` | guarded (`:371`, via `_resolve_lpar`) | — |
 | `unassign_sriov_logical_port` | `operations/pcie.py:583` | guarded (`:371`) | — |
-| `add_vnic` | `operations/vnic.py:581` | guarded (via `_preflight_add:556` → `resolve_and_authorize_lpar_names:563`) | — |
-| `remove_vnic` | `operations/vnic.py:653` | guarded (`:854`) | — |
+| `add_vnic` | `operations/vnic.py:584` | guarded (via `_preflight_add:556` → `resolve_and_authorize_lpar_names:563`) | — |
+| `remove_vnic` | `operations/vnic.py:656` | guarded (`:854`) | — |
 | `set_minimum_affinity_policy` | `operations/ssh_affinity.py:187` | guarded (`:334`) | — |
 | `set_lpar_processors` | `operations/lpar/dlpar.py:107` | guarded (`:405`, via `_apply_dlpar_document:397` → `_resolve_and_authorize_lpar:328`) | — |
 | `set_lpar_memory` | `operations/lpar/dlpar.py:143` | guarded (`:405`, via `_apply_dlpar_document`) | — |

@@ -30,7 +30,7 @@ def test_cli_import_does_not_register_mcp_tools():
 import asyncio
 from hmc_mcp._app import create_mcp
 before = create_mcp()
-import hmc_mcp.cli_commands.lpars_lifecycle
+import hmc_mcp.cli_commands.lpar.lifecycle
 import hmc_mcp.cli_commands.systems
 after = create_mcp()
 counts = (len(asyncio.run(before.list_tools())), len(asyncio.run(after.list_tools())))
@@ -43,11 +43,11 @@ def test_cli_domain_import_does_not_mutate_shared_command_groups():
     script = """
 from hmc_mcp.cli_commands.app import lpars_app
 before = len(lpars_app.registered_commands)
-import hmc_mcp.cli_commands.lpars_config
-import hmc_mcp.cli_commands.lpars_create
-import hmc_mcp.cli_commands.lpars_decommission
-import hmc_mcp.cli_commands.lpars_lifecycle
-import hmc_mcp.cli_commands.lpars_modify
+import hmc_mcp.cli_commands.lpar.config
+import hmc_mcp.cli_commands.lpar.create
+import hmc_mcp.cli_commands.lpar.decommission
+import hmc_mcp.cli_commands.lpar.lifecycle
+import hmc_mcp.cli_commands.lpar.modify
 after = len(lpars_app.registered_commands)
 raise SystemExit(0 if before == after == 0 else 1)
 """
@@ -163,9 +163,9 @@ def test_lpar_summary_cli_delegates_to_neutral_operation():
         return_value=_lpar_summary({"Resource": {"PartitionName": "aix1"}}, [])
     )
     with (
-        patch("hmc_mcp.cli_commands.lpars_inventory.lpar_summary", summary),
+        patch("hmc_mcp.cli_commands.lpar.inventory.lpar_summary", summary),
         patch(
-            "hmc_mcp.cli_commands.lpars_inventory._client",
+            "hmc_mcp.cli_commands.lpar.inventory._client",
             return_value=_ClientContext(client),
         ),
     ):
@@ -312,9 +312,9 @@ def test_provision_cli_delegates_to_neutral_operation():
         "--json",
     ]
     with (
-        patch("hmc_mcp.cli_commands.lpars_provision.provision_lpar", provision),
+        patch("hmc_mcp.cli_commands.lpar.provision.provision_lpar", provision),
         patch(
-            "hmc_mcp.cli_commands.lpars_provision._client",
+            "hmc_mcp.cli_commands.lpar.provision._client",
             return_value=_ClientContext(client),
         ),
     ):

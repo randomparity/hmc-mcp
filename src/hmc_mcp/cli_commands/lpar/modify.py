@@ -7,12 +7,12 @@ from pathlib import Path
 
 import typer
 
-from ..documents import LparResources
-from ..operations.lpar.assignments import LparPcieAssignments
-from ..operations.lpar.dlpar import modify_lpar
-from .runtime import _client, _run
-from .output import _partition_not_found, _print_json, _usage_error, console
-from .lpars_config import _load_pcie_assignments
+from ...documents import LparResources
+from ...operations.lpar.assignments import LparPcieAssignments
+from ...operations.lpar.dlpar import modify_lpar
+from ..runtime import _client, _run
+from ..output import _partition_not_found, _print_json, _usage_error, console
+from .config import _load_pcie_assignments
 
 
 def lpars_modify(

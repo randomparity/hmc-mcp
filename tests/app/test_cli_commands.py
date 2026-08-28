@@ -29,7 +29,7 @@ from hmc_mcp.ssh import lpar as ssh_lpar
 from hmc_mcp.ssh import network as ssh_network
 from hmc_mcp.ssh import profiles as ssh_profiles
 from hmc_mcp.cli_commands import runtime as cli_runtime
-from hmc_mcp.cli_commands import lpars_config as cli_lpars
+from hmc_mcp.cli_commands.lpar import config as cli_lpars
 from hmc_mcp.cli_commands import network as cli_network
 from hmc_mcp.operations import ownership as lpar_ownership
 from hmc_mcp.client import HMCClient
@@ -753,7 +753,7 @@ def test_lpars_summary_renders_numeric_zero(monkeypatch):
         [],
     )
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.lpars_inventory._run", lambda _operation: summary
+        "hmc_mcp.cli_commands.lpar.inventory._run", lambda _operation: summary
     )
 
     result = RUNNER.invoke(cli.app, ["lpars", "summary", "zero-lpar"])

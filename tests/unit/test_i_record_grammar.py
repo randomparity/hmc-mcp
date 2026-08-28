@@ -880,7 +880,7 @@ def test_the_scan_finds_every_known_site():
         "query_minimum_affinity_policy",
         "list_vios_backups",
         "_capture_lpar_cli_dump",
-        "mutate_lpar_properties",
+            "_lpar_environment",
         "restore_lpar_baseline",
     }
 

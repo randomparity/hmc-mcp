@@ -17,7 +17,7 @@ from typer.testing import CliRunner
 
 from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.cli import app as cli_app
-from hmc_mcp.cli_commands import lpars_lifecycle as cli_lpars
+from hmc_mcp.cli_commands.lpar import lifecycle as cli_lpars
 from hmc_mcp.operations.lpar import provision as operations_provision
 from hmc_mcp.server_tools import lpars as server_lpars
 from hmc_mcp.config import HMCConfig

@@ -5,16 +5,16 @@ from __future__ import annotations
 
 import typer
 
-from ..documents import (
+from ...documents import (
     BOOT_DEVICE_SELECTORS,
 )
-from ..operations.lpar.boot_order import (
+from ...operations.lpar.boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,
     set_lpar_boot_order,
 )
-from .runtime import _with_client
-from .output import _print_json, console
+from ..runtime import _with_client
+from ..output import _print_json, console
 
 
 def lpars_read_boot_order(

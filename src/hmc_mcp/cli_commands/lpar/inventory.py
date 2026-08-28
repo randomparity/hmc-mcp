@@ -7,15 +7,15 @@ from dataclasses import asdict
 import typer
 from rich.table import Table
 
-from ..operations.composite import lpar_summary
-from ..operations.lpar.core import (
+from ...operations.composite import lpar_summary
+from ...operations.lpar.core import (
     PartitionState,
     get_lpar,
     get_lpar_state,
     list_lpars,
 )
-from .runtime import _client, _run, _with_client
-from .output import _first_field, _output, _partition_not_found, _print_json, console
+from ..runtime import _client, _run, _with_client
+from ..output import _first_field, _output, _partition_not_found, _print_json, console
 
 
 def lpars_summary(

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import typer
 
-from ..jobs import validate_wait_timing
-from ..operations.lpar.core import delete_lpar, power_lpar
-from .runtime import _client, _run
-from .output import _print_json, console, err_console
+from ...jobs import validate_wait_timing
+from ...operations.lpar.core import delete_lpar, power_lpar
+from ..runtime import _client, _run
+from ..output import _print_json, console, err_console
 
 
 def lpars_power_on(

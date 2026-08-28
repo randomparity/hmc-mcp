@@ -9,20 +9,20 @@ from typing import cast
 import typer
 from rich.table import Table
 
-from ..documents import (
+from ...documents import (
     PARTITION_TYPES,
     STORAGE_KINDS,
     LparResources,
     StorageKind,
 )
-from ..operations.lpar.provision import (
+from ...operations.lpar.provision import (
     ProvisionNetwork,
     ProvisionStorage,
     provision_lpar,
 )
-from .runtime import _client, _run
-from .output import _print_json, _usage_error, console
-from .lpars_config import _load_pcie_assignments
+from ..runtime import _client, _run
+from ..output import _print_json, _usage_error, console
+from .config import _load_pcie_assignments
 
 
 def lpars_provision(

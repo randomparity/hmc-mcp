@@ -7,12 +7,12 @@ from dataclasses import asdict
 import typer
 from typing import Literal, cast
 
-from ..jobs import REMOTE_RESTART_OPERATIONS, RemoteRestartOperation
-from .runtime import _client, _run
-from .output import _print_json, console
+from ...jobs import REMOTE_RESTART_OPERATIONS, RemoteRestartOperation
+from ..runtime import _client, _run
+from ..output import _print_json, console
 
-from ..jobs import JobOutcome, validate_wait_timing
-from ..operations.lpm import (
+from ...jobs import JobOutcome, validate_wait_timing
+from ...operations.lpm import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightRequest,
     abort_lpar_migration,
