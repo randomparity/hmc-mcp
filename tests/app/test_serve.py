@@ -9,7 +9,7 @@ import logging
 import socket
 from unittest.mock import patch
 
-from hmc_mcp import audit
+from hmc_mcp.audit import sink as audit_sink
 
 import pytest
 from click import unstyle
@@ -17,9 +17,9 @@ from fastmcp import FastMCP
 from typer.testing import CliRunner
 
 from hmc_mcp import server as server_app
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy
 from hmc_mcp.cli import app
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, _is_loopback
 
 # ADR 0041 made --access-policy required, so every invocation below that expects a
@@ -47,7 +47,7 @@ def selectable_policy(tmp_path, monkeypatch):
     invocation that quietly read the developer's own `access-policy.toml` would be a
     test whose result depends on the machine it runs on.
     """
-    import hmc_mcp.access_policy as access_policy_module
+    import hmc_mcp.authorization.access_policy as access_policy_module
 
     path = tmp_path / "access-policy.toml"
     path.write_text(POLICY_FILE, encoding="utf-8")
@@ -252,7 +252,7 @@ def test_an_explicit_audit_level_is_set_before_the_sink_installs():
     Order is the whole feature: a level set after the install would be
     indistinguishable from the sink's own default.
     """
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.setLevel(logging.NOTSET)
     server_app._serve_application(False, _legacy(), audit_level=logging.WARNING)
 
@@ -262,7 +262,7 @@ def test_an_explicit_audit_level_is_set_before_the_sink_installs():
 
 def test_omitting_the_audit_level_leaves_the_documented_default():
     """No flag, no setLevel: the sink's own NOTSET rule picks INFO."""
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.setLevel(logging.NOTSET)
     with patch.object(FastMCP, "run"):
         server_app.main_stdio(_legacy())

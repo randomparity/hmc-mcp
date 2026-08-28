@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from defusedxml import ElementTree as DET
+
 from .xmlutil import find_text
 
 
@@ -25,7 +27,7 @@ class HMCError(Exception):
             # Fall back to raw body text if it is not valid XML.
             try:
                 msg = find_text(body, "Message", "msg", "error") or body[:500]
-            except Exception:
+            except DET.ParseError:
                 msg = body[:500]
             detail = f"{detail}: {msg}"
         super().__init__(detail)

@@ -98,8 +98,8 @@ mutations can still do so; an operator cannot recover a record that was never wr
 
 ### The ownership override is converged onto the same logger
 
-`operations_lpar._audit_lpar_ownership_override` is the package's only other audit emitter: it
-logs an approved ADR 0011 override through `extra=` on `hmc_mcp.operations_lpar`. Leaving it there
+`operations.lpar._audit_lpar_ownership_override` is the package's only other audit emitter: it
+logs an approved ADR 0011 override through `extra=` on `hmc_mcp.operations.lpar`. Leaving it there
 would make this record incoherent — it rejects `extra=` emission in *Considered & rejected* while
 the one live instance keeps running, and it tells operators to attach a handler to
 `hmc_mcp.audit` while the higher-consequence event does not arrive there. So it moves.
@@ -140,7 +140,7 @@ effective value the ownership check actually compared, including its `"hmc-mcp"`
 sources are named `environment:HMC_AGENT_ID` and `config:agent_id` rather than conflated.
 `verified` is `false` for both, because neither is authenticated.
 
-Emitted at `WARNING`, which is what it is today. `operations_lpar` calls `audit`; it does not
+Emitted at `WARNING`, which is what it is today. `operations.lpar` calls `audit`; it does not
 reach the logger itself, so the reservation below stays an invariant of one module.
 
 This path is reachable from the CLI and the reusable Python API, where `install_audit_sink` was
@@ -405,7 +405,7 @@ is #270.
   raises nor returns is a different case; see the residuals below.
 - Because `propagate` is set unconditionally, and from import, an operator who collected audit
   output off the root logger must attach to `hmc_mcp.audit` instead. **One case in the field does
-  change, and it is the ownership override.** It previously logged on `hmc_mcp.operations_lpar`,
+  change, and it is the ownership override.** It previously logged on `hmc_mcp.operations.lpar`,
   which propagates through `hmc_mcp` to the root, so a process that had configured root logging —
   a CLI wrapper, or an ADR 0029 embedder that called `basicConfig` — received it at whatever
   destination they had set. It now reaches `logging.lastResort` on stderr instead. The record is
@@ -488,7 +488,7 @@ operator; it carries no policy name in the target case, no effect class, no attr
 record whatsoever of a permitted call. An access-control layer whose only output is what it tells
 the party it denied has no observability at all.
 
-**Emit through `extra=` on a normal log record**, as `operations_lpar._audit_lpar_ownership_override`
+**Emit through `extra=` on a normal log record**, as `operations.lpar._audit_lpar_ownership_override`
 did. Fields passed through `extra` are invisible unless the operator's formatter names each one,
 so under this checkout's default configuration — no handler, no formatter — the record would
 reach a sink carrying only its message and would silently lose every field that makes it an audit

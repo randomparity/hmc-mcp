@@ -6,7 +6,7 @@ MCP dispatch boundary, and converge the package's second audit emitter onto the 
 **Architecture.** A new `src/hmc_mcp/audit.py` owns the record vocabulary, its rendering, and its
 sink. `dispatch_scope.authorize` — the only place in the package that reaches an authorization
 decision — emits exactly one record per decision. `target_scope` gains `denial_reason` so the
-message and the reason code have one owner. `operations_lpar`'s ADR 0011 override record moves
+message and the reason code have one owner. `operations.lpar`'s ADR 0011 override record moves
 onto the same logger. `server._serve_application` installs the sink.
 
 **Tech stack.** Python 3.11+, stdlib `logging` and `json` only. No new dependency (epic #218
@@ -55,9 +55,9 @@ the plan is the one that was verified.
 | path | action | answerable for |
 |---|---|---|
 | `src/hmc_mcp/audit.py` | create | record vocabulary, rendering, truncation, the two emitters, the sink |
-| `src/hmc_mcp/target_scope.py` | modify | `denial_reason` added; `target_denial` refactored to read it |
-| `src/hmc_mcp/dispatch_scope.py` | modify | assemble and emit one record per decision |
-| `src/hmc_mcp/operations_lpar.py` | modify | `_audit_lpar_ownership_override` body calls `audit` |
+| `src/hmc_mcp/authorization/target_scope.py` | modify | `denial_reason` added; `target_denial` refactored to read it |
+| `src/hmc_mcp/authorization/dispatch_scope.py` | modify | assemble and emit one record per decision |
+| `src/hmc_mcp/operations/ownership.py` | modify | `_audit_lpar_ownership_override` body calls `audit` |
 | `src/hmc_mcp/server.py` | modify | `_serve_application` installs the sink |
 | `tests/unit/test_audit.py` | create | rendering, truncation, sink, totality |
 | `tests/unit/test_target_scope.py` | modify | `denial_reason` case order |
@@ -282,7 +282,7 @@ items is how this task's list was wrong the first time.
 
 ## Task 2 — `target_scope.denial_reason`
 
-Modifies `src/hmc_mcp/target_scope.py` and `tests/unit/test_target_scope.py`. Behaviour-preserving:
+Modifies `src/hmc_mcp/authorization/target_scope.py` and `tests/unit/test_target_scope.py`. Behaviour-preserving:
 the four-case selection moves into one function that both the message and the reason code read.
 
 ### Steps
@@ -292,7 +292,7 @@ the four-case selection moves into one function that both the message and the re
    `targets_permitted` agreeing arm by arm, with no application involved. The spec files them under
    its Boundary heading, which is where the ambiguity came from. Run
    `uv run --no-sync pytest --no-cov tests/unit/test_target_scope.py -q`. **Expect: `AttributeError: module
-   'hmc_mcp.target_scope' has no attribute 'denial_reason'`.**
+   'hmc_mcp.authorization.target_scope' has no attribute 'denial_reason'`.**
 2. Add `from .audit import Reason, State` to `target_scope`'s imports, then two functions.
    First `audit_state(value: str | _Unresolved) -> State`, beside `_value` where the two singletons
    already live: `"present"` for a `str`, `"absent"` for `ABSENT`, `"unreadable"` for `UNREADABLE`.
@@ -321,7 +321,7 @@ behaviour-preserving rather than a rewrite.
 
 ## Task 3 — emit from `dispatch_scope.authorize`
 
-Modifies `src/hmc_mcp/dispatch_scope.py`; creates `tests/app/test_authorization_audit.py`.
+Modifies `src/hmc_mcp/authorization/dispatch_scope.py`; creates `tests/app/test_authorization_audit.py`.
 
 ### Steps
 
@@ -345,11 +345,11 @@ Modifies `src/hmc_mcp/dispatch_scope.py`; creates `tests/app/test_authorization_
 
    ```python
    from . import audit
-   from .access_policy import AccessPolicy
-   from .connection_scope import (
+   from .authorization.access_policy import AccessPolicy
+   from .authorization.connection_scope import (
        ConnectionScopeError, connection_denial, connection_permitted, selected_connection,
    )
-   from .target_scope import (
+   from .authorization.target_scope import (
        audit_state, denial_reason, selected_targets, target_denial, targets_permitted,
    )
    from .tool_registry import Authorize, ToolSecurity
@@ -430,7 +430,7 @@ passes. Re-run the Task 1 inventory check now that three tests have moved betwee
 
 ## Task 4 — converge the ownership override
 
-Modifies `src/hmc_mcp/operations_lpar.py` and `tests/unit/test_ownership.py`.
+Modifies `src/hmc_mcp/operations/ownership.py` and `tests/unit/test_ownership.py`.
 
 **`Refs #268`, deliberately not `Closes #268`.** The convergence does discharge #268's substance,
 and the natural instinct is a closing keyword. The campaign orchestrator ruled otherwise:
@@ -446,12 +446,12 @@ which HMC it applied to.
    otherwise inherit whatever `_serve_application` left behind once Task 5 lands. Then rewrite
    `tests/unit/test_ownership.py::test_authorize_lpar_mutation_override_is_audited` as
    spec test 26a, asserting a JSON record on `hmc_mcp.audit` and **no** record on
-   `hmc_mcp.operations_lpar`, first asserting the capture is non-empty — an "absent" assertion is
+   `hmc_mcp.operations.lpar`, first asserting the capture is non-empty — an "absent" assertion is
    trivially true of an empty capture. Repoint its sibling
    `…_normal_access_has_no_override_audit` at the new logger — against the old name it would pass
    vacuously. Add 26b–26e. Run `uv run --no-sync pytest --no-cov tests/unit/test_ownership.py -q`. **Expect: the
    rewritten tests fail; the record is still on the old logger.**
-2. Add `from . import audit` to `operations_lpar`'s imports, then replace
+2. Add `from . import audit` to `operations.lpar`'s imports, then replace
    `_audit_lpar_ownership_override`'s body:
 
    ```python

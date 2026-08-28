@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations_pcie import (
+from hmc_mcp.operations.pcie import (
     SriovLogicalPortCapabilityError,
     SriovLogicalPortPartialError,
     assign_sriov_logical_port,
@@ -20,22 +20,15 @@ def _hmc() -> AsyncMock:
 
 def _common(monkeypatch, *, state="Not Activated", rmc="inactive", configured=()):
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.resolve_system_uuid", AsyncMock(return_value="su")
-    )
-    monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.resolve_lpar_uuid", AsyncMock(return_value="lu")
-    )
-    monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.resolve_lpar_ownership_names",
+        "hmc_mcp.operations.pcie.resolve_and_authorize_lpar_names",
         AsyncMock(return_value=("sys", "lpar")),
     )
-    monkeypatch.setattr("hmc_mcp.operations_pcie.authorize_lpar_mutation", AsyncMock())
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.read_sriov_environment",
+        "hmc_mcp.operations.pcie.read_sriov_environment",
         AsyncMock(return_value=("V10R3 M1060 build 2408210051", "8375-42A")),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.list_sriov_adapter_rows",
+        "hmc_mcp.operations.pcie.list_sriov_adapter_rows",
         AsyncMock(
             return_value=[
                 {
@@ -48,7 +41,7 @@ def _common(monkeypatch, *, state="Not Activated", rmc="inactive", configured=()
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.list_sriov_physical_port_rows",
+        "hmc_mcp.operations.pcie.list_sriov_physical_port_rows",
         AsyncMock(
             return_value=[
                 {
@@ -61,11 +54,11 @@ def _common(monkeypatch, *, state="Not Activated", rmc="inactive", configured=()
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.list_sriov_configured_logical_port_rows",
+        "hmc_mcp.operations.pcie.list_sriov_configured_logical_port_rows",
         AsyncMock(return_value=list(configured)),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.list_sriov_unconfigured_logical_port_rows",
+        "hmc_mcp.operations.pcie.list_sriov_unconfigured_logical_port_rows",
         AsyncMock(
             return_value=[
                 {
@@ -78,7 +71,7 @@ def _common(monkeypatch, *, state="Not Activated", rmc="inactive", configured=()
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.read_sriov_lpar_state",
+        "hmc_mcp.operations.pcie.read_sriov_lpar_state",
         AsyncMock(
             return_value={
                 "name": "lpar",
@@ -89,7 +82,7 @@ def _common(monkeypatch, *, state="Not Activated", rmc="inactive", configured=()
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.read_sriov_profile_ports",
+        "hmc_mcp.operations.pcie.read_sriov_profile_ports",
         AsyncMock(return_value={"name": "prof", "sriov_eth_logical_ports": "none"}),
     )
 
@@ -99,7 +92,7 @@ async def test_assign_mutates_and_verifies_effective_readback(monkeypatch):
     _common(monkeypatch)
     mutate = AsyncMock(return_value="")
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.assign_sriov_logical_port_dynamic", mutate
+        "hmc_mcp.operations.pcie.assign_sriov_logical_port_dynamic", mutate
     )
     after = {
         "config_id": "0",
@@ -115,7 +108,7 @@ async def test_assign_mutates_and_verifies_effective_readback(monkeypatch):
     }
     rows = AsyncMock(side_effect=[[], [after]])
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.list_sriov_configured_logical_port_rows", rows
+        "hmc_mcp.operations.pcie.list_sriov_configured_logical_port_rows", rows
     )
 
     result = await assign_sriov_logical_port(
@@ -144,7 +137,7 @@ async def test_assign_is_idempotent_and_refuses_foreign_owner(monkeypatch):
     _common(monkeypatch, configured=[owned])
     mutate = AsyncMock()
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.assign_sriov_logical_port_dynamic", mutate
+        "hmc_mcp.operations.pcie.assign_sriov_logical_port_dynamic", mutate
     )
     unchanged = await assign_sriov_logical_port(
         _hmc(), "sys", "lpar", "1", "0", "3", Decimal("2.0"), profile_name="prof"
@@ -177,10 +170,10 @@ async def test_profile_unassign_is_idempotent_and_verified(monkeypatch):
     _common(monkeypatch)
     mutate = AsyncMock(return_value="")
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.unassign_sriov_logical_port_profile", mutate
+        "hmc_mcp.operations.pcie.unassign_sriov_logical_port_profile", mutate
     )
     unchanged = await unassign_sriov_logical_port(
-        _hmc(), "sys", "lpar", "prof", "1", "0", "3"
+        _hmc(), "sys", "lpar", "1", "0", "3", profile_name="prof"
     )
     assert unchanged.changed is False
 
@@ -191,9 +184,9 @@ async def test_profile_unassign_is_idempotent_and_verified(monkeypatch):
             {"name": "prof", "sriov_eth_logical_ports": "none"},
         ]
     )
-    monkeypatch.setattr("hmc_mcp.operations_pcie.read_sriov_profile_ports", reads)
+    monkeypatch.setattr("hmc_mcp.operations.pcie.read_sriov_profile_ports", reads)
     changed = await unassign_sriov_logical_port(
-        _hmc(), "sys", "lpar", "prof", "1", "0", "3"
+        _hmc(), "sys", "lpar", "1", "0", "3", profile_name="prof"
     )
     assert changed.changed is True
     mutate.assert_awaited_once()
@@ -204,15 +197,17 @@ async def test_unassign_rejects_multiple_profile_records_before_dispatch(monkeyp
     _common(monkeypatch)
     mutate = AsyncMock()
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.unassign_sriov_logical_port_profile", mutate
+        "hmc_mcp.operations.pcie.unassign_sriov_logical_port_profile", mutate
     )
     record = "0:1:0:3:0:0:0:all::all:0:0:2.0:100.0,0:1:0:4:0:0:0:all::all:0:0:2.0:100.0"
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.read_sriov_profile_ports",
+        "hmc_mcp.operations.pcie.read_sriov_profile_ports",
         AsyncMock(return_value={"name": "prof", "sriov_eth_logical_ports": record}),
     )
     with pytest.raises(ValueError, match="exactly the selected"):
-        await unassign_sriov_logical_port(_hmc(), "sys", "lpar", "prof", "1", "0", "3")
+        await unassign_sriov_logical_port(
+            _hmc(), "sys", "lpar", "1", "0", "3", profile_name="prof"
+        )
     mutate.assert_not_awaited()
 
 
@@ -220,11 +215,11 @@ async def test_unassign_rejects_multiple_profile_records_before_dispatch(monkeyp
 async def test_assign_wraps_post_dispatch_read_failure(monkeypatch):
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.assign_sriov_logical_port_dynamic",
+        "hmc_mcp.operations.pcie.assign_sriov_logical_port_dynamic",
         AsyncMock(return_value=""),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_pcie.list_sriov_configured_logical_port_rows",
+        "hmc_mcp.operations.pcie.list_sriov_configured_logical_port_rows",
         AsyncMock(side_effect=[[], RuntimeError("read failed")]),
     )
     with pytest.raises(SriovLogicalPortPartialError) as caught:
@@ -240,3 +235,5 @@ async def test_assign_wraps_post_dispatch_read_failure(monkeypatch):
         )
     assert caught.value.result.changed is True
     assert caught.value.result.effective_after is None
+    assert isinstance(caught.value.__cause__, RuntimeError)
+    assert str(caught.value.__cause__) == "read failed"

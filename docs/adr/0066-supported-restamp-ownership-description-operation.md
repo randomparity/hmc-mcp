@@ -18,8 +18,8 @@ had no supported call at all:
 3. **Any guarded description write from the facade.** The validate-guard-write
    composition (`validate_lpar_description` → `authorize_lpar_mutation` →
    `set_lpar_description`) existed only as duplicated copies inside two
-   presentation modules: the MCP tool body (`server_lpar_config.py`) and the
-   CLI command body (`cli_lpars.py`). This is the layering problem ADR 0013
+   presentation modules: the MCP tool body (`server_tools/lpar_config.py`) and the
+   CLI command body (`cli_commands/lpars.py`). This is the layering problem ADR 0013
    assigns to operation modules; the copies could drift.
 
 Issue #358 (ADR 0064) settled the create-time token format this operation must
@@ -27,7 +27,7 @@ be able to write.
 
 ## Decision
 
-`operations_lpar` gains one presentation-neutral async operation:
+`operations.lpar` gains one presentation-neutral async operation:
 
 ```python
 async def set_lpar_ownership_description(
@@ -49,7 +49,7 @@ is format-agnostic and writes whatever text passes validation and the guard.
 
 The operation is exported from `hmc_mcp.api`, expanding the manifest, so per
 ADR 0029's release policy this addition requires a minor release. The ADR 0029
-`operations_lpar` inventory is updated accordingly, and the frozen signature
+`operations.lpar` inventory is updated accordingly, and the frozen signature
 digest in `tests/unit/test_public_api.py` is recomputed.
 
 The MCP tool `hmc_set_lpar_description` and the CLI `lpars set-description`

@@ -177,7 +177,7 @@ fails closed when it is wrong.
 **Requiring the ISO by content rather than by reference.**
 
 Rejected. *Verified:* `upload_iso` already reads the whole staged file into
-memory (`content = f.read()`, `operations_storage.py:485`) before the broker
+memory (`content = f.read()`, `operations/storage.py:485`) before the broker
 upload, which is its own defect (#308); passing multi-GB bytes inline over MCP
 is worse than the fetch, not better.
 

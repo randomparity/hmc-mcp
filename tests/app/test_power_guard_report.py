@@ -16,10 +16,9 @@ import logging
 import pytest
 from fastmcp import Client
 
-from hmc_mcp import server_permissions
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.server_permissions import describe, resolve_power_guards
+from hmc_mcp.server_tools.permissions import build_effective_permissions, resolve_power_guards
 
 ALL_TOOLS_GRANT = [
     {"effects": ["read"], "connections": ["<default>"], "targets": "all-targets"}
@@ -45,9 +44,6 @@ def no_native_config(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     monkeypatch.delenv("HMC_HOST", raising=False)
-    # The unresolved-connection log deduplicates process-wide, so a pair another
-    # test already reported would arrive here at DEBUG and vanish from caplog.
-    server_permissions._reported_unresolved.clear()
 
 
 def _write_config(tmp_path, body: str) -> None:
@@ -65,7 +61,7 @@ def test_the_value_is_readable_with_no_config_file_present():
     """#470's acceptance: the env-var-only shape `config show` cannot answer for.
 
     `config_show` exits 1 before it builds any config when the platform-native
-    path is absent (`src/hmc_mcp/cli_config.py:159-161`), which is exactly the
+    path is absent (`src/hmc_mcp/cli_commands/config.py:159-161`), which is exactly the
     deployment `docs/environment-variables.md` opens by describing.
     """
     guards = resolve_power_guards(None)
@@ -76,29 +72,22 @@ def test_the_value_is_readable_with_no_config_file_present():
     assert guards[0].detail is None
 
 
-def test_an_unreadable_config_file_reads_as_default_on_the_default_connection(
+def test_a_malformed_config_file_is_reported_as_unresolved(
     tmp_path, caplog
 ):
-    """Characterization: `build_config` swallows this, so the report cannot see it.
-
-    With no profile named, `build_config` catches the `ConfigError` itself and
-    falls through to env-only construction, so `_power_guard` is handed a valid
-    config and `source` reads `default` — the label
-    `docs/environment-variables.md` otherwise glosses as "nothing you wrote
-    arrived". The boolean is right; the operator instruction that paragraph gives
-    rests entirely on this behaviour. Pinned here so a change to
-    `common.build_config`'s swallow reddens a test rather than rotting a doc.
-    """
+    """Authored configuration failures remain visible to the operator."""
     _write_config(tmp_path, "[profiles.a\nhost = 'h'\n")
     policy = _policy(ALL_TOOLS_GRANT)
 
-    with caplog.at_level(logging.DEBUG, logger="hmc_mcp.server_permissions"):
+    with caplog.at_level(logging.DEBUG, logger="hmc_mcp.server_tools.permissions"):
         (guard,) = resolve_power_guards(policy)
 
     assert guard.connection == DEFAULT_CONNECTION_TOKEN
-    assert guard.authorize_power_operations is False
-    assert guard.source == "default"
-    assert caplog.records == []
+    assert guard.authorize_power_operations is None
+    assert guard.source == "unresolved"
+    assert guard.detail == "ConfigError"
+    assert len(caplog.records) == 1
+    assert "TOML parse error" in caplog.records[0].message
 
 
 def test_an_environment_variable_is_reported_as_such(monkeypatch):
@@ -296,7 +285,7 @@ def test_a_connection_that_cannot_be_resolved_is_reported_not_raised(tmp_path, c
         {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
     ])
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_permissions"):
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_tools.permissions"):
         guards = _by_connection(resolve_power_guards(policy))
 
     assert guards["absent"].authorize_power_operations is None
@@ -350,11 +339,45 @@ def test_the_unresolved_warning_is_said_once_not_once_per_call(tmp_path, caplog)
         {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
     ])
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_permissions"):
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_tools.permissions"):
+        reported: set[tuple[str, str]] = set()
         for _ in range(3):
-            resolve_power_guards(policy)
+            resolve_power_guards(policy, reported)
 
     assert len(caplog.records) == 1
+
+
+@pytest.mark.asyncio
+async def test_each_application_has_its_own_unresolved_warning_history(
+    tmp_path, caplog
+):
+    """A fresh application emits its own startup-generation diagnostics."""
+    _write_config(
+        tmp_path,
+        """
+        default_profile = "present"
+
+        [profiles.present]
+        host = "hmc-a.example.com"
+        user = "admin"
+        """,
+    )
+    policy = _policy([
+        {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
+    ])
+    applications = (create_mcp(policy), create_mcp(policy))
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_tools.permissions"):
+        for application in applications:
+            async with Client(application) as client:
+                await client.call_tool("hmc_effective_permissions", {})
+
+    unresolved = [
+        record
+        for record in caplog.records
+        if "reported as unresolved" in record.getMessage()
+    ]
+    assert len(unresolved) == 2
 
 
 def test_one_malformed_profile_does_not_take_down_the_whole_report(tmp_path):
@@ -473,12 +496,12 @@ def test_a_connection_no_grant_names_is_not_reported():
 def test_describe_carries_the_guards_it_is_given():
     """The report is assembled from a resolved value, not resolved inside it.
 
-    `describe` stays a pure function of its arguments: the filesystem and
+    `build_effective_permissions` stays a pure function of its arguments: the filesystem and
     environment reads happen at the one call site that owns them.
     """
     guards = resolve_power_guards(None)
 
-    result = describe({}, None, TOOL_SECURITY, guards)
+    result = build_effective_permissions({}, None, TOOL_SECURITY, guards)
 
     assert result.power_ownership_guards == guards
 

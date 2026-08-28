@@ -25,6 +25,7 @@ import sys
 import tomllib
 import warnings
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlsplit
@@ -351,6 +352,10 @@ class ConfigError(ValueError):
     """Raised when hmc-mcp/config.toml is invalid or a profile cannot be selected."""
 
 
+class NoProfileSelectedError(ConfigError):
+    """Raised when no argument, environment variable, or default selects a profile."""
+
+
 def resolve_config_path() -> Path | None:
     """Return the platform-native config.toml path, or None when absent.
 
@@ -469,6 +474,13 @@ def _coerce_profiles(raw: Any, path: str | Path | None) -> dict[str, Any]:
     return {str(name): entry for name, entry in raw.items()}
 
 
+def _coerce_default_profile(raw: Any, path: str | Path | None) -> str | None:
+    """Validate and return the optional default profile name."""
+    if raw is not None and not isinstance(raw, str):
+        raise ConfigError(f"{path}: 'default_profile' must be a profile-name string")
+    return raw
+
+
 def list_profiles_with_default(
     config_path: Path | None = None,
 ) -> tuple[list[str], str | None]:
@@ -482,8 +494,8 @@ def list_profiles_with_default(
     if path is None:
         return [], None
     doc = _read_config_document(path)
-    return list(_coerce_profiles(doc.get("profiles"), path)), doc.get(
-        "default_profile"
+    return list(_coerce_profiles(doc.get("profiles"), path)), _coerce_default_profile(
+        doc.get("default_profile"), path
     )
 
 
@@ -607,6 +619,49 @@ def env_var_value(name: str) -> str | None:
     return found
 
 
+@dataclass(frozen=True)
+class _ProfileSelection:
+    name: str
+    nickname: str | None = None
+
+
+def _select_profile(
+    profiles: Mapping[str, Any],
+    nicknames: Mapping[str, str],
+    default_profile: Any,
+    path: Path | None,
+    requested_profile: str | None,
+) -> _ProfileSelection:
+    """Select one profile and record the nickname that resolved to it."""
+    default_profile = _coerce_default_profile(default_profile, path)
+    requested = requested_profile or os.environ.get("HMC_PROFILE") or default_profile
+    if requested is None:
+        raise NoProfileSelectedError(
+            f"{path or 'config.toml'}: no default_profile set and no "
+            "--profile / HMC_PROFILE supplied"
+        )
+    if requested in profiles:
+        return _ProfileSelection(requested)
+    if requested in nicknames:
+        target = nicknames[requested]
+        if target in profiles:
+            return _ProfileSelection(target, requested)
+        profile_names = ", ".join(sorted(profiles)) or "(none)"
+        nickname_names = ", ".join(sorted(nicknames)) or "(none)"
+        raise ConfigError(
+            f"nickname {requested!r} targets missing profile {target!r} "
+            f"in {path}; available profiles: {profile_names}; "
+            f"available nicknames: {nickname_names}"
+        )
+    profile_names = ", ".join(sorted(profiles)) or "(none)"
+    nickname_names = ", ".join(sorted(nicknames)) or "(none)"
+    raise ConfigError(
+        f"profile {requested!r} not found in {path}; "
+        f"available profiles: {profile_names}; "
+        f"available nicknames: {nickname_names}"
+    )
+
+
 def _load_profile_from_document(
     doc: dict[str, Any],
     path: Path | None,
@@ -621,16 +676,6 @@ def _load_profile_from_document(
     second time to also select a profile (issue #295). *path* is used only for
     error messages; it is not re-read here.
     """
-    name = profile or os.environ.get("HMC_PROFILE")
-    if name is None:
-        name = doc.get("default_profile")
-
-    if name is None:
-        raise ConfigError(
-            f"{path or 'config.toml'}: no default_profile set and no "
-            "--profile / HMC_PROFILE supplied"
-        )
-
     profiles = _coerce_profiles(doc.get("profiles"), path)
 
     # Validate the nicknames table structure whenever the key is
@@ -638,31 +683,10 @@ def _load_profile_from_document(
     # which profile is selected (ADR 0030). No existing config
     # carries a nicknames key, so this cannot break current users.
     nicknames = _coerce_nicknames(doc.get("nicknames"), path)
-
-    # Nickname resolution: one level deep, case-sensitive. A profile
-    # key always wins over a same-named nickname because the branch
-    # below only runs when the name is not already a profile key.
-    if name not in profiles:
-        if name in nicknames:
-            target = nicknames[name]
-            if target in profiles:
-                name = target
-            else:
-                profile_names = ", ".join(sorted(profiles)) or "(none)"
-                nickname_names = ", ".join(sorted(nicknames)) or "(none)"
-                raise ConfigError(
-                    f"nickname {name!r} targets missing profile {target!r} "
-                    f"in {path}; available profiles: {profile_names}; "
-                    f"available nicknames: {nickname_names}"
-                  )
-        else:
-            profile_names = ", ".join(sorted(profiles)) or "(none)"
-            nickname_names = ", ".join(sorted(nicknames)) or "(none)"
-            raise ConfigError(
-                f"profile {name!r} not found in {path}; "
-                f"available profiles: {profile_names}; "
-                f"available nicknames: {nickname_names}"
-              )
+    selection = _select_profile(
+        profiles, nicknames, doc.get("default_profile"), path, profile
+    )
+    name = selection.name
 
     selected = profiles[name]
     if not isinstance(selected, dict):
@@ -713,6 +737,89 @@ def _load_profile_from_document(
     return HMCConfig(_env_file=None, **filtered_entry)  # ty: ignore[unknown-argument]
 
 
+def config_inventory(
+    config_path: Path | None = None,
+    *,
+    selected_profile: str | None = None,
+    include_selected: bool = False,
+) -> dict[str, Any]:
+    """Read validated, secret-free profile metadata from one TOML snapshot.
+
+    ``include_selected`` adds the effective non-secret configuration for
+    ``selected_profile`` (or the normal environment/default selection). Raw
+    passwords, password environment-variable names, and SSH key paths are
+    never returned.
+    """
+    path = _selected_config_path(config_path)
+    if path is None:
+        return {"profiles": [], "config_file": None}
+    doc = _read_config_document(path)
+    profiles = _coerce_profiles(doc.get("profiles"), path)
+    nicknames = _coerce_nicknames(doc.get("nicknames"), path)
+    default_profile = doc.get("default_profile")
+
+    fields = HMCConfig.model_fields
+    default_port = int(fields["port"].default)
+    default_verify_ssl = bool(fields["verify_ssl"].default)
+    profile_entries: list[dict[str, Any]] = []
+    for name, entry in profiles.items():
+        if not isinstance(entry, dict):
+            raise ConfigError(
+                f"{path}: profile {name!r} must be a TOML table, "
+                f"got {type(entry).__name__}"
+            )
+        profile_entries.append(
+            {
+                "name": name,
+                "host": entry.get("host", ""),
+                "user": entry.get("user", ""),
+                "port": int(entry.get("port", default_port)),
+                "verify_ssl": bool(entry.get("verify_ssl", default_verify_ssl)),
+                "is_default": name == default_profile,
+                "has_password": "password" in entry  # pragma: allowlist secret
+                or "password_env" in entry,  # pragma: allowlist secret
+                "has_ssh_key": "ssh_key_file" in entry,
+            }
+        )
+    profile_names = set(profiles)
+    result: dict[str, Any] = {
+        "profiles": profile_entries,
+        "nicknames": [
+            {"name": name, "target": target, "target_exists": target in profile_names}
+            for name, target in nicknames.items()
+        ],
+        "config_file": str(path),
+    }
+    if not include_selected:
+        return result
+
+    selection = _select_profile(
+        profiles, nicknames, default_profile, path, selected_profile
+    )
+    raw_profile = profiles[selection.name]
+    cfg = _load_profile_from_document(doc, path, selected_profile)
+    result["selected"] = {
+        "profile": selection.name,
+        "resolved_from": selection.nickname,
+        "host": cfg.host,
+        "port": cfg.port,
+        "user": cfg.user,
+        "verify_ssl": cfg.verify_ssl,
+        "timeout": cfg.timeout,
+        "audit_memento": cfg.audit_memento,
+        "schema_version": cfg.schema_version or "(not set)",
+        "authorize_power_operations": cfg.authorize_power_operations,
+        "password_configured": bool(
+            isinstance(raw_profile, dict)
+            and (raw_profile.get("password") or raw_profile.get("password_env"))
+        ),
+        "ssh_key_configured": bool(
+            isinstance(raw_profile, dict) and raw_profile.get("ssh_key_file")
+        ),
+    }
+    return result
+
+
 def load_profile(
     profile: str | None = None,
     config_path: Path | None = None,
@@ -745,3 +852,30 @@ def load_profile(
     path = _selected_config_path(config_path)
     doc: dict[str, Any] = {} if path is None else _read_config_document(path)
     return _load_profile_from_document(doc, path, profile)
+
+
+def build_config(profile: str | None = None, **overrides: Any) -> HMCConfig:
+    """Build configuration from CLI options, environment, and a TOML profile.
+
+    Environment-only construction is used when nothing selects a profile. Errors
+    reading or validating an authored configuration are propagated unchanged.
+    """
+    filtered = {key: value for key, value in overrides.items() if value is not None}
+
+    explicit_host = filtered.get("host")
+    if not explicit_host and not env_var_value("HMC_HOST"):
+        config_path = resolve_config_path()
+        if config_path is not None or profile or os.environ.get("HMC_PROFILE"):
+            try:
+                base = load_profile(profile=profile)
+                if filtered:
+                    merged = {
+                        key: getattr(base, key) for key in base.model_fields_set
+                    }
+                    merged.update(filtered)
+                    base = HMCConfig(**merged)
+                return base
+            except NoProfileSelectedError:
+                pass
+
+    return HMCConfig(**filtered)

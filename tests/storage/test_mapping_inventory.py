@@ -10,10 +10,12 @@ import xml.etree.ElementTree as ET
 
 import httpx
 import pytest
+from defusedxml.common import EntitiesForbidden
 
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient, HMCError
+from hmc_mcp.client.core import HMCClient
+from hmc_mcp.errors import HMCError
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000004"
@@ -241,6 +243,18 @@ async def test_delete_storage_mapping_rejects_malformed_parent(mock_hmc):
     mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text="<broken>"))
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="not valid XML"):
+            await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
+
+
+@pytest.mark.asyncio
+async def test_delete_storage_mapping_rejects_xml_entities(mock_hmc):
+    document = '<!DOCTYPE x [<!ENTITY payload "expanded">]><x>&payload;</x>'
+    mock_hmc.get(VIOS_PARENT_PATH).mock(
+        return_value=httpx.Response(200, text=document)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(EntitiesForbidden):
             await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
 
 

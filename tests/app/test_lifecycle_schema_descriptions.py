@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so

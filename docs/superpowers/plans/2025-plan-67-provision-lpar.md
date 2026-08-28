@@ -19,12 +19,12 @@
     - `test_provision_lpar_vg_not_found` — VG UUID not found → precondition error
     - `test_provision_lpar_partial_failure_skips_remaining` — step 3 fails → step 3 "error", steps 4-5 "skipped"
     - `test_provision_lpar_power_on_step_skipped_when_off` — power_on=False → power_on step absent
-### 3. [ ] Implement `src/hmc_mcp/server_provision.py`
+### 3. [ ] Implement `src/hmc_mcp/server_tools/provision.py`
   - `hmc_provision_lpar(...)` function registered with `@mcp.tool`
   - Precondition helpers (name check, VLAN check, VG check)
   - Step runner: executes steps sequentially; stops on failure; records skips
 ### 4. [ ] Wire into `server.py` re-exports
-### 5. [ ] Add `lpars provision` CLI command in `cli_lpars.py`
+### 5. [ ] Add `lpars provision` CLI command in `cli_commands/lpars.py`
 ### 6. [ ] Update README (tool table row + six-step example replacement)
 ### 7. [ ] Run guardrails (just verify) — all green
 ### 8. [ ] Commit and ship PR

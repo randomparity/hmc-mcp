@@ -9,19 +9,19 @@ import pytest
 from fastmcp import Client
 from typer.testing import CliRunner
 
-from hmc_mcp import server_lpar_config
-from hmc_mcp import cli_lpars
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.cli_commands.lpar import config as cli_lpars
+from hmc_mcp.server_tools.lpar import configuration as server_lpar_config
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.legacy_policy import compile_legacy_policy
-from hmc_mcp.operations_ssh_network import (
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.operations.ssh_affinity import (
     ResourceGroupAffinityResult,
     list_resource_group_memopt_scores,
 )
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.cli import app
-from hmc_mcp.ssh import HMCCLIError
-from hmc_mcp.ssh_commands import (
+from hmc_mcp.ssh.transport import HMCCLIError
+from hmc_mcp.ssh.affinity import (
     MemoptResourceGroupSelector,
     query_resource_group_memopt_scores,
 )
@@ -81,7 +81,7 @@ def test_current_query_uses_exact_projection_and_selector(selector, fragment):
         commands.append(command)
         return V11 if command == "lshmc -V" else CURRENT
 
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", run):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", run):
         result = asyncio.run(
             query_resource_group_memopt_scores(
                 _config(), "system", selector, calculated=False
@@ -102,7 +102,7 @@ def test_current_query_uses_exact_projection_and_selector(selector, fragment):
 
 def test_calculated_query_preserves_sentinel_and_marks_prediction():
     runner = AsyncMock(side_effect=[V11, CALCULATED])
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner):
         result = asyncio.run(
             query_resource_group_memopt_scores(
                 _config(),
@@ -118,7 +118,7 @@ def test_calculated_query_preserves_sentinel_and_marks_prediction():
 @pytest.mark.parametrize("version", ["", "Version: eleven", "V10R3M1060"])
 def test_unadmitted_hmc_returns_capability_without_score_query(version):
     runner = AsyncMock(return_value=version)
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner):
         result = asyncio.run(
             query_resource_group_memopt_scores(
                 _config(),
@@ -134,7 +134,7 @@ def test_unadmitted_hmc_returns_capability_without_score_query(version):
 
 def test_hsclca00_returns_managed_system_capability_result():
     runner = AsyncMock(side_effect=[V11, HMCCLIError("HSCLCA00 unsupported")])
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner):
         result = asyncio.run(
             query_resource_group_memopt_scores(
                 _config(),
@@ -149,7 +149,7 @@ def test_hsclca00_returns_managed_system_capability_result():
 
 def test_noncapability_failure_propagates():
     runner = AsyncMock(side_effect=[V11, HMCCLIError("permission denied")])
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner):
         with pytest.raises(HMCCLIError, match="permission denied"):
             asyncio.run(
                 query_resource_group_memopt_scores(
@@ -165,7 +165,7 @@ def test_error_that_only_mentions_hsclca00_propagates():
     runner = AsyncMock(
         side_effect=[V11, HMCCLIError("diagnostic says HSCLCA00 was not returned")]
     )
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner):
         with pytest.raises(HMCCLIError, match="was not returned"):
             asyncio.run(
                 query_resource_group_memopt_scores(
@@ -182,7 +182,7 @@ def test_error_that_only_mentions_hsclca00_propagates():
 )
 def test_blank_output_fails_but_header_only_is_empty(output):
     runner = AsyncMock(side_effect=[V11, output])
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner):
         call = query_resource_group_memopt_scores(
             _config(), "system", MemoptResourceGroupSelector(all=True), calculated=False
         )
@@ -203,7 +203,7 @@ def test_blank_output_fails_but_header_only_is_empty(output):
 )
 def test_malformed_resource_group_output_is_actionable(output):
     runner = AsyncMock(side_effect=[V11, output])
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):
+    with patch("hmc_mcp.ssh.affinity.run_hmc_command", runner):
         with pytest.raises(HMCCLIError):
             asyncio.run(
                 query_resource_group_memopt_scores(
@@ -221,11 +221,11 @@ def test_shared_operation_resolves_system_and_defaults_to_all():
     )
     with (
         patch(
-            "hmc_mcp.operations_ssh_network.resolve_ssh_names",
+                "hmc_mcp.operations.ssh_affinity.resolve_ssh_names",
             AsyncMock(return_value=("resolved-system", None)),
         ) as resolve,
         patch(
-            "hmc_mcp.operations_ssh_network.query_resource_group_memopt_scores", query
+                "hmc_mcp.operations.ssh_affinity.query_resource_group_memopt_scores", query
         ),
     ):
         result = asyncio.run(
@@ -252,14 +252,16 @@ def test_mcp_adapter_delegates_to_shared_operation():
         "upgrade HMC",
     )
     operation = AsyncMock(return_value=expected)
+    config = _config()
     with (
-        patch.object(server_lpar_config, "build_config", return_value=_config()),
+        patch("hmc_mcp._app.build_config", return_value=config),
         patch.object(
             server_lpar_config, "list_resource_group_memopt_scores", operation
         ),
     ):
         actual = server_lpar_config.hmc_list_resource_group_memopt_scores("system")
     assert actual == expected
+    operation.assert_awaited_once_with(config, "system", None)
 
 
 def test_mcp_registers_both_resource_group_affinity_tools():
@@ -285,7 +287,10 @@ def test_resource_group_cli_delegates_id_zero_and_prints_json():
         None,
     )
     operation = AsyncMock(return_value=expected)
-    with patch.object(cli_lpars, "list_resource_group_memopt_scores", operation):
+    with (
+        patch.object(cli_lpars, "ssh_config", return_value=_config()),
+        patch.object(cli_lpars, "list_resource_group_memopt_scores", operation),
+    ):
         result = CliRunner().invoke(
             app,
             [

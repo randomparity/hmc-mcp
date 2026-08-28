@@ -85,7 +85,7 @@ goes.
 **The rendering is marked, not merely formatted.** A `logging.Formatter` alone would have made
 this change a *forgery* vector, and that was verified rather than reasoned about. A rendered
 exception carries whatever the exception's `str()` carries; under ADR 0042's threat model
-HMC-returned text is not trusted, and it reaches this boundary — `operations_lpm` interpolates a
+HMC-returned text is not trusted, and it reaches this boundary — `operations.lpm` interpolates a
 `validation.error` into a message that ends up as a tool error. Through the `RichHandler` being
 replaced, such text was indented into the message column and hard-wrapped, so **column 0 was
 unreachable**; through a plain formatter, a newline followed by `{"time": …, "event":
@@ -327,7 +327,7 @@ the access log is worth one slot per request even under the crowding quantified 
 
 ### Residual: the startup banner is not a log record and is not on the sink
 
-`FastMCP.run` calls `log_server_banner`, which builds its own `Console(stderr=True)` and
+`FastMCP.run` calls `log_server_tools.banner`, which builds its own `Console(stderr=True)` and
 `print`s to it (`fastmcp/utilities/cli.py:246`, `:268`). Nothing about it goes through the
 `fastmcp` logger, so nothing here touches it: fd 2 still takes one unbounded `rich` write per
 start. Observed on a real `hmc-mcp serve` subprocess at this branch's HEAD, where the banner

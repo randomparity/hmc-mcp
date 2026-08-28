@@ -21,9 +21,9 @@ supports `--json`.
 
 ## Architecture and data flow
 
-Presentation-neutral orchestration lives in `operations_decommission.py`. The MCP wrapper
-lives with LPAR lifecycle tools in `server_lpars.py`; the CLI wrapper lives in
-`cli_lpars.py`. Both construct one client and call the same coroutine.
+Presentation-neutral orchestration lives in `operations/decommission.py`. The MCP wrapper
+lives with LPAR lifecycle tools in `server_tools/lpars.py`; the CLI wrapper lives in
+`cli_commands/lpars.py`. Both construct one client and call the same coroutine.
 
 Preconditions always execute before a result is returned:
 

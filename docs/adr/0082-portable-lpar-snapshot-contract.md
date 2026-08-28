@@ -69,12 +69,12 @@ disagreement treated as malformed input.
 
 ## Considered & rejected
 
-- **Persist only HMC-native backup files.** verified: `server_profiles.py` documents that backup
+- **Persist only HMC-native backup files.** verified: `server_tools/profiles.py` documents that backup
   paths are on the HMC filesystem, so the result is neither a local portable artifact nor a
   carrier for observations and capability context.
 - **Persist only normalized hmc-mcp fields.** judgment: normalization cannot preserve HMC fields
   unknown to the installed hmc-mcp release and therefore cannot be lossless replay authority.
-- **Wrap the system-wide `bkprofdata` file.** verified: `server_profiles.py` exposes backup and
+- **Wrap the system-wide `bkprofdata` file.** verified: `server_tools/profiles.py` exposes backup and
   restore for every LPAR profile on a managed system, so using that artifact as one LPAR snapshot
   would create an unsafe system-wide replay boundary.
 - **Mix placement and scores into configuration.** verified: issue #313 explicitly classifies

@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
-from hmc_mcp.error_translation import (
-    run_with_error_translation,
+from hmc_mcp.operations.error_translation import (
     translate_pcm_error,
     translate_template_error,
     translate_virtual_network_create_error,
@@ -22,16 +19,11 @@ from hmc_mcp.errors import HMCError
         (translate_virtual_network_create_error, 406, "virtual network create"),
     ],
 )
-def test_shared_error_translation_preserves_body_and_chains_cause(
-    translator, status, message
-):
+def test_error_translators_preserve_body_and_chain_cause(translator, status, message):
     original = HMCError("raw failure", status, "sensitive response body")
 
-    async def fail():
-        raise original
-
     with pytest.raises(HMCError, match=message) as exc_info:
-        asyncio.run(run_with_error_translation(fail, translator))
+        translator(original)
 
     assert exc_info.value.status_code == status
     assert exc_info.value.body == "sensitive response body"

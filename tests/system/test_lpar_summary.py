@@ -1,7 +1,7 @@
 """Tests for the hmc_lpar_summary composite tool.
 
 Exercises the tool against a mocked HMC (respx) so the URL mapping and
-field-extraction logic in server_composite.py is verified without a live HMC.
+field-extraction logic in server_tools/composite.py is verified without a live HMC.
 """
 
 from __future__ import annotations
@@ -9,8 +9,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from hmc_mcp.server import hmc_lpar_summary
-from hmc_mcp.operations_composite import _lpar_summary
+from hmc_mcp.operations.composite import _lpar_summary
+from hmc_mcp.server_tools.composite import hmc_lpar_summary as hmc_lpar_summary
 
 LPAR_UUID = "aabbccdd-1234-5678-abcd-000000000001"
 ADAPTER1_UUID = "aabbccdd-1234-5678-abcd-000000000002"
@@ -102,8 +102,8 @@ def test_lpar_summary_preserves_zero_and_falls_back_only_when_missing(
     resource, expected_memory, expected_processors
 ):
     summary = _lpar_summary({"Resource": resource}, [])
-    assert summary["current_memory_mb"] == expected_memory
-    assert summary["current_proc_units"] == expected_processors
+    assert summary.current_memory_mib == expected_memory
+    assert summary.current_proc_units == expected_processors
 
 
 # ---------------------------------------------------------------------- #
@@ -148,7 +148,7 @@ def test_lpar_summary_by_uuid_returns_flat_dict(monkeypatch, mock_hmc):
     assert result["rmc_state"] == "active"
     assert result["partition_type"] == "AIX/Linux"
     assert result["partition_id"] == "3"
-    assert result["desired_memory_mb"] == "8192"
+    assert result["desired_memory_mib"] == "8192"
     assert result["desired_proc_units"] == "1.0"
     assert result["desired_vcpus"] == "2"
     assert result["os_version"] == "AIX 7.2"

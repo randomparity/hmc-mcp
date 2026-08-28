@@ -553,7 +553,6 @@ def build_managed_system_document(
     return _document_envelope("ManagedSystem", body)
 
 
-# ====================================================================== #
 # Virtual adapters (children of LogicalPartition)
 #
 # Field names taken from IBM's HmcRestClient reference implementation and
@@ -564,7 +563,6 @@ def build_managed_system_document(
 #                                        ConnectingVirtualSlotNumber, VirtualSlotNumber
 #   ClientNetworkAdapter              -> PortVLANID, VirtualSlotNumber,
 #                                        VirtualSwitchID, IsTaggedVLAN, MACAddress
-# ====================================================================== #
 
 
 def _adapter_document(
@@ -668,7 +666,6 @@ def build_client_network_adapter_document(
     return _document_envelope("ClientNetworkAdapter", body)
 
 
-# ====================================================================== #
 # Virtual storage (children of VirtualIOServer)
 #
 # Model (from IBM's HmcRestClient reference + the HMC REST spec):
@@ -680,7 +677,6 @@ def build_client_network_adapter_document(
 #   VirtualSCSIMapping  POST to the VIOS document carrying a
 #                    VirtualSCSIMappings block; connects a backing storage
 #                    (PhysicalVolume or VirtualDisk) to an LPAR (Atom link).
-# ====================================================================== #
 
 
 @escapes_string_arguments
@@ -804,13 +800,11 @@ def build_virtual_optical_mapping_document(
 """
 
 
-# ====================================================================== #
 # Virtual Network (child of ManagedSystem)
 #
 # Create: PUT /rest/api/uom/ManagedSystem/{sys}/VirtualNetwork
 # Fields: NetworkName, NetworkVLANID, VswitchID, TaggedNetwork, and an
 # AssociatedSwitch Atom link to the backing VirtualSwitch.
-# ====================================================================== #
 
 
 @escapes_string_arguments
@@ -845,62 +839,11 @@ def build_virtual_network_document(
 """
 
 
-# ====================================================================== #
 # Virtual Media Repository / Virtual Optical Media
 #
 # Both are operations via POST on a VolumeGroup (the repository lives on the
 # "VMLibrary" volume group of a VIOS). The repository name is always
 # "VMLibrary"; only BLANK optical media can be created via this API.
-# ====================================================================== #
-
-
-@escapes_string_arguments
-def build_media_repository_document(size_mib: int, vg_name: str = "") -> str:
-    """VolumeGroup document carrying a VirtualMediaRepository (create POST).
-
-    The repository is always named VMLibrary; size_mib is RepositorySize.
-    vg_name is the GroupName of the target VolumeGroup (required by HMC V10R3+).
-    VirtualMediaRepository must be wrapped in MediaRepositories per the HMC schema.
-    """
-    group_name_element = f"\n  <GroupName>{vg_name}</GroupName>" if vg_name else ""
-    body = f"""  <Metadata><Atom/></Metadata>{group_name_element}
-  <MediaRepositories schemaVersion="V1_0">
-    <Metadata><Atom/></Metadata>
-    <VirtualMediaRepository schemaVersion="V1_0">
-      <Metadata><Atom/></Metadata>
-      <RepositoryName>VMLibrary</RepositoryName>
-      <RepositorySize>{size_mib}</RepositorySize>
-    </VirtualMediaRepository>
-  </MediaRepositories>"""
-    return _document_envelope("VolumeGroup", body)
-
-
-@escapes_string_arguments
-def build_virtual_optical_media_document(
-    media_name: str, size_mib: int, vg_name: str = ""
-) -> str:
-    """VolumeGroup document carrying a blank VirtualOpticalMedia (create POST).
-
-    Only blank optical media can be created via the API; media_name is the
-    file name (e.g. 'aix.iso'), size_mib is MediaSize.
-    vg_name is the GroupName of the target VolumeGroup (required by HMC V10R3+).
-    VirtualMediaRepository must be wrapped in MediaRepositories per the HMC schema.
-    """
-    group_name_element = f"\n  <GroupName>{vg_name}</GroupName>" if vg_name else ""
-    body = f"""  <Metadata><Atom/></Metadata>{group_name_element}
-  <MediaRepositories schemaVersion="V1_0">
-    <Metadata><Atom/></Metadata>
-    <VirtualMediaRepository schemaVersion="V1_0">
-      <Metadata><Atom/></Metadata>
-      <VirtualOpticalMedia schemaVersion="V1_0">
-        <Metadata><Atom/></Metadata>
-        <MediaName>{media_name}</MediaName>
-        <MediaSize>{size_mib}</MediaSize>
-        <MediaType>BLANK</MediaType>
-      </VirtualOpticalMedia>
-    </VirtualMediaRepository>
-  </MediaRepositories>"""
-    return _document_envelope("VolumeGroup", body)
 
 
 @escapes_string_arguments
@@ -960,7 +903,6 @@ def build_virtual_disk_delete_document(disk_name: str) -> str:
     return _document_envelope("VolumeGroup", body)
 
 
-# ====================================================================== #
 # Brokered file upload / ISO import (ADR 0031)
 #
 # Create:  POST /rest/api/uom/VirtualIOServer/{uuid}/VolumeGroup/{uuid}
@@ -972,7 +914,6 @@ def build_virtual_disk_delete_document(disk_name: str) -> str:
 # Neither document carries schemaVersion, so they render their own envelope
 # rather than going through _document_envelope. Both are transport
 # primitives for #203's future public API and are not exposed today.
-# ====================================================================== #
 
 
 @escapes_string_arguments
@@ -1007,12 +948,10 @@ def build_linked_optical_media_document(media_name: str, broker_uri: str) -> str
 """
 
 
-# ====================================================================== #
 # Session logon (/rest/api/web/Logon)
 #
 # Authenticate: PUT /rest/api/web/Logon with a LogonRequest document; the
 # response carries the X-API-Session token.
-# ====================================================================== #
 
 
 @escapes_string_arguments
@@ -1032,9 +971,7 @@ def build_logon_request_document(user: str, password: str) -> str:
     return _document_envelope("LogonRequest", body, WEB_NS)
 
 
-# ====================================================================== #
 # UOM UserProfile and ManagementConsole RemoteAccess documents
-# ====================================================================== #
 
 
 @escapes_string_arguments
@@ -1199,33 +1136,11 @@ def merge_remote_access_document(
     return ET.tostring(console, encoding="unicode")
 
 
-# ====================================================================== #
-# LPAR Boot Order (PendingBootString / BootListInformation)
-#
-# PendingBootString controls the boot device order for an LPAR's next boot.
-# It's a space-separated list of boot device selectors (cd, disk, network)
-# that determines the priority order. The HMC stores this in the
-# BootListInformation element of a LogicalPartition.
-#
-# Operations:
-# - build_boot_order_document: Set a custom boot order
-# - build_clear_boot_order_document: Clear the boot order (restore defaults)
-# ====================================================================== #
-
-
 def _build_pending_boot_string(devices: list[str]) -> str:
-    """Build a PendingBootString from validated boot device selectors.
-
-    Args:
-        devices: Ordered list of boot device selectors (cd, disk, network). Validated against BOOT_DEVICE_SELECTORS.
-
-    Returns:
-        Space-separated string of device selectors.
-    """
+    """Join validated boot device selectors for ``PendingBootString``."""
     if not devices:
         raise ValueError("Boot order must contain at least one device")
 
-    # Validate all selectors
     for device in devices:
         if device not in BOOT_DEVICE_SELECTORS:
             raise ValueError(
@@ -1238,24 +1153,7 @@ def _build_pending_boot_string(devices: list[str]) -> str:
 
 @escapes_string_arguments
 def build_boot_order_document(devices: list[str]) -> str:
-    """Build a LogicalPartition document to set LPAR boot order.
-
-    This document sets the PendingBootString which controls the boot device
-    priority for the next LPAR boot. Changes take effect on the next activation
-    (no reboot is required - this is a profile-only change).
-
-    Args:
-        devices: Ordered list of boot device selectors (cd, disk, network). Validated against BOOT_DEVICE_SELECTORS.
-                 The first device is tried first, then the second, etc.
-
-    Returns:
-        XML document for POST to /rest/api/uom/LogicalPartition/{uuid}.
-
-    Example:
-        >>> xml = build_boot_order_document(["network", "cd", "disk"])
-        >>> "PendingBootString" in xml
-        True
-    """
+    """Set boot-device priority for the LPAR's next activation."""
     pending_boot_string = _build_pending_boot_string(devices)
 
     body = f"""  <PendingBootString kb="CUR" kxe="false">{pending_boot_string}</PendingBootString>"""
@@ -1265,14 +1163,7 @@ def build_boot_order_document(devices: list[str]) -> str:
 
 @escapes_string_arguments
 def build_clear_boot_order_document() -> str:
-    """Build a LogicalPartition document to clear LPAR boot order.
-
-    This document clears the PendingBootString, restoring the HMC default
-    boot behavior. Changes take effect on the next activation.
-
-    Returns:
-        XML document for POST to /rest/api/uom/LogicalPartition/{uuid}.
-    """
+    """Restore the HMC's default boot order on the LPAR's next activation."""
     body = """  <PendingBootString kb="CUR" kxe="false"></PendingBootString>"""
 
     return _lpar_envelope(body)

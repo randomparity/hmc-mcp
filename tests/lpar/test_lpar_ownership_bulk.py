@@ -13,8 +13,10 @@ import asyncio
 
 import httpx
 
-from hmc_mcp import operations_lpar
-from hmc_mcp.server import hmc_list_lpar_ownership
+from hmc_mcp.operations import ownership as lpar_ownership
+from hmc_mcp.server_tools.lpar.lifecycle import (
+    hmc_list_lpar_ownership as hmc_list_lpar_ownership,
+)
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN123456"
@@ -213,19 +215,19 @@ def test_operation_reuses_the_shared_ownership_parser(monkeypatch, mock_hmc):
     mock_hmc.get(LIST_ROUTE).mock(return_value=httpx.Response(200, text=MIXED_FEED))
 
     calls: list[str] = []
-    real_parse = operations_lpar.parse_lpar_ownership_owner
+    real_parse = lpar_ownership.parse_lpar_ownership_owner
 
     def spy(description: str):
         calls.append(description)
         return real_parse(description)
 
-    monkeypatch.setattr(operations_lpar, "parse_lpar_ownership_owner", spy)
+    monkeypatch.setattr(lpar_ownership, "parse_lpar_ownership_owner", spy)
 
-    from hmc_mcp.common import client_from_env
+    from hmc_mcp.client.client_factory import client_from_env
 
     async def _run_op():
         async with client_from_env() as hmc:
-            return await operations_lpar.list_lpar_ownership(hmc, SYSTEM_UUID)
+            return await lpar_ownership.list_lpar_ownership(hmc, SYSTEM_UUID)
 
     result = asyncio.run(_run_op())
 

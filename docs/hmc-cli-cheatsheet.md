@@ -102,7 +102,7 @@ object.  With `--header` the first output line is the field names (required by
 **`--filter`** narrows the result set.  Format: `"filter_name=value1,value2"`.
 Common filter names: `lpar_names`, `lpar_ids`, `profile_names`.
 
-**Repository use:** UUID→name resolution (`_ssh_system_name`, `_ssh_lpar_name`);
+**Repository use:** UUID→name resolution (`resolve_system_cli_name`, `_ssh_lpar_name`);
 LPAR description, MSP, proc-compat reads (`get_lpar_description`, `get_lpar_msp`,
 `get_lpar_proc_compat`); SR-IOV LPAR-state and profile reads
 (`read_sriov_lpar_state`, `read_sriov_profile_ports`); live-test baseline and
@@ -623,5 +623,5 @@ Validated against live P9, P10, and P11 managed systems on HMC V10R3M1060 and HM
 
 - [IBM HMC commands reference (Power10)](https://www.ibm.com/docs/en/power10/7063-CR1?topic=hmc-commands)
 - [`src/hmc_mcp/ssh_commands.py`](../src/hmc_mcp/ssh_commands.py) — all SSH command construction
-- [`src/hmc_mcp/server_vios.py`](../src/hmc_mcp/server_vios.py) — VIOS backup commands
+- [`src/hmc_mcp/server_tools/vios.py`](../src/hmc_mcp/server_tools/vios.py) — VIOS backup commands
 - [`scripts/live_test_runner.py`](../scripts/live_test_runner.py) — live-test uses of HMC CLI

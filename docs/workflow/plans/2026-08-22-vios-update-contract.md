@@ -5,7 +5,7 @@
 Correct `hmc_vios_update` to build and submit IBM's documented VIOS operations,
 validate the selected request contract before I/O, and expose waited `stdOut`
 without discarding the raw HMC job. `jobs.py` owns typed input contracts, XML
-builders, and result parsing; `server_updates.py` owns operation selection,
+builders, and result parsing; `server_tools/updates.py` owns operation selection,
 path construction, submission, and the public tool result.
 
 Tech stack: Python 3.11–3.14, `TypedDict`, Pydantic/FastMCP schema generation,
@@ -42,7 +42,7 @@ pytest/respx, ruff, ty, and uv.
 
 - `src/hmc_mcp/jobs.py`: VIOS request types, validation/builders, `stdOut`
   extraction.
-- `src/hmc_mcp/server_updates.py`: public annotation/docs, fail-fast selection,
+- `src/hmc_mcp/server_tools/updates.py`: public annotation/docs, fail-fast selection,
   encoded path, wait-only result projection.
 - `tests/system/test_update_upgrade.py`: XML builders and HTTP paths.
 - `tests/app/test_server_tools.py`: tool validation, path encoding, async/waited
@@ -60,7 +60,7 @@ pytest/respx, ruff, ty, and uv.
   `update_vios_job(VIOSUpdateSource) -> str`, and
   `upgrade_vios_job(VIOSUpgradeSource) -> str` in `hmc_mcp.jobs`.
 - Produces the public `hmc_vios_update(..., repository: VIOSSource, ...)`
-  signature and exact operation selection/path in `server_updates.py`.
+  signature and exact operation selection/path in `server_tools/updates.py`.
 - Task 2 consumes the corrected public path and adds only result projection.
 - Existing `RepositorySource` remains the input to `update_firmware_job`.
 
@@ -100,13 +100,13 @@ pytest/respx, ruff, ty, and uv.
    unknown or missing parameters with operation-named actionable messages,
    stringifies non-`None` values, and is called by the two builders. Render
    `UpdateVIOS` and `UpgradeVIOS` respectively.
-6. In `src/hmc_mcp/server_updates.py`, annotate `repository: VIOSSource`,
+6. In `src/hmc_mcp/server_tools/updates.py`, annotate `repository: VIOSSource`,
    select `operation = "UpdateVIOS" | "UpgradeVIOS"`, build and validate before
    `client_from_env`, encode `quote(vios_uuid, safe="")`, and submit to the
    fixed operation suffix.
 7. Run the builder, application, lifecycle, and capabilities tests with
    `--no-cov`; expect all selected tests to pass. Run
-   `uv run --no-sync ruff check src/hmc_mcp/jobs.py src/hmc_mcp/server_updates.py`
+   `uv run --no-sync ruff check src/hmc_mcp/jobs.py src/hmc_mcp/server_tools/updates.py`
    and the full configured `uv run --no-sync ty check`; expect exit 0.
 8. Commit the explicit source and test paths with subject
    `fix: use documented VIOS update job requests`.
@@ -168,7 +168,7 @@ public schema contains both precise request types; firmware remains unchanged.
        return None
    ```
 
-5. In `server_updates.py`, after `_update_op` add a top-level `stdOut` only when
+5. In `server_tools/updates.py`, after `_update_op` add a top-level `stdOut` only when
    `wait is True`, the result is a mapping, its nested `Resource.Status` is in
    `TERMINAL_JOB_STATUSES`, no top-level `stdOut` exists, and
    `vios_stdout(result)` returns a value. Copy the mapping before augmentation.

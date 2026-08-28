@@ -6,6 +6,6 @@
 
 | Tool | Effect | Operation | Target | Summary |
 | --- | --- | --- | --- | --- |
-| `hmc_clear_lpar_boot_order` | `mutate` | `boot_order.clear` | `lpar` | Clear an LPAR's boot order (restore HMC defaults). |
-| `hmc_read_lpar_boot_order` | `read` | `boot_order.read` | `lpar` | Read an LPAR's boot order state (pending and current). |
-| `hmc_set_lpar_boot_order` | `mutate` | `boot_order.set` | `lpar` | Set an LPAR's boot order to a validated device selector list. |
+| `hmc_clear_lpar_boot_order` | `mutate` | `boot_order.clear` | `lpar` | Restore the HMC default boot order on the LPAR's next activation. |
+| `hmc_read_lpar_boot_order` | `read` | `boot_order.read` | `lpar` | Read current, pending, and last-used boot-device state for an LPAR. |
+| `hmc_set_lpar_boot_order` | `mutate` | `boot_order.set` | `lpar` | Set the pending boot order used on the LPAR's next activation. |

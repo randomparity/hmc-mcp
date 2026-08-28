@@ -43,7 +43,7 @@ carries a server access policy today.
 
 ## 3. Design
 
-One new module, `src/hmc_mcp/access_policy.py`. It imports `tomllib`, `pydantic`, and
+One new module, `src/hmc_mcp/authorization/access_policy.py`. It imports `tomllib`, `pydantic`, and
 `hmc_mcp.tool_registry`, and `config_dir` from `hmc_mcp.config`. It does **not** import
 `hmc_mcp.server`: #221 will make `server.py` policy-aware, and the dependency must run
 one way only. The tool index is a parameter.
@@ -416,7 +416,7 @@ Each is a test in `tests/unit/test_access_policy.py` unless stated otherwise.
 | A10 | `resolve_access_policy_path()` equals `config_dir() / ACCESS_POLICY_FILENAME`, and `load_access_policy(name, index)` with `path` omitted reads that file — driven with a monkeypatched `HOME` / `XDG_CONFIG_HOME` / `APPDATA` as the existing config tests do. Nothing else pins the "beside `config.toml`" claim §3.1 and §4 both rest on: `config_dir()` duplicates `resolve_config_path()`'s platform branching rather than sharing it, and the package-wide 90% coverage floor (ADR 0034) would not notice a two-line resolver no test calls. |
 | A11 | `load_access_policy` on a missing file, on a file whose bytes are not valid UTF-8, on a file with a TOML syntax error, and on an absent policy name each raise `AccessPolicyError` naming the resolved path; the absent-name message lists the available names. Round-trip: a written temp file loads to the same `AccessPolicy` as `compile_access_policy` over the parsed document. |
 | A12 | `grants = []` compiles to a policy that permits no tool at all. |
-| A13 | A subprocess that imports `hmc_mcp.access_policy` and then calls `load_access_policy` finds `hmc_mcp.server` absent from `sys.modules` throughout — the module never imports `server`, deferred or otherwise. Asserted over the module's parsed source rather than `sys.modules`: its own `import` statements reference no third-party package other than `pydantic` and no `hmc_mcp` module other than `tool_registry` and `config` (stdlib unrestricted). `fastmcp` and `mcp` do appear in `sys.modules` — they arrive transitively through `tool_registry`, which is why the module inherits the `app`-extra requirement rather than adding one; it is deliberately **not** added to `tests/test_optional_dependencies.py`'s core-only import contract. `api.__all__` is unchanged. |
+| A13 | A subprocess that imports `hmc_mcp.authorization.access_policy` and then calls `load_access_policy` finds `hmc_mcp.server` absent from `sys.modules` throughout — the module never imports `server`, deferred or otherwise. Asserted over the module's parsed source rather than `sys.modules`: its own `import` statements reference no third-party package other than `pydantic` and no `hmc_mcp` module other than `tool_registry` and `config` (stdlib unrestricted). `fastmcp` and `mcp` do appear in `sys.modules` — they arrive transitively through `tool_registry`, which is why the module inherits the `app`-extra requirement rather than adding one; it is deliberately **not** added to `tests/test_optional_dependencies.py`'s core-only import contract. `api.__all__` is unchanged. |
 | A14 | P9 binds explicit tools only: `tools = ["hmc_delete_lpar"]` with `targets = { managed_system = ["S1"] }` is rejected with a message naming `hmc_delete_lpar` and the uncovered `lpar` kind — that tool declares required `managed_system` and `lpar` selectors, so P8 is satisfied and P9 alone fires — while `effects = ["destructive"]` with the same `targets` table validates. This pins that P9 binds explicitly named tools only, so adding a tool to a granted *effect class* cannot make an unedited file stop loading. It narrows the index fragility recorded in §4; it does not remove it — P8, P10, and a `required` flag flipping on an explicitly named tool all remain. |
 | A15 | Validation scope: a two-policy document whose *unselected* policy carries an unknown grant key fails the load (P1 binds every policy), while a two-policy document whose unselected policy names an unknown tool loads successfully when the other policy is selected (P7 binds the selected policy only). |
 | A16 | `grants_for` returns whole grants, not merged dimensions: for a policy whose first grant is `effects = ["read"]` on connection `prod` with `all-targets` and whose second is `tools = ["hmc_delete_lpar"]` on connection `lab` with `targets = { managed_system = ["S1"], lpar = ["scratch-01"] }` — both required kinds, so P9 passes — `grants_for("hmc_delete_lpar")` returns only the second grant, and no `Grant` in the result carries `prod` or `ALL_TARGETS`. |
@@ -427,7 +427,7 @@ Each is a test in `tests/unit/test_access_policy.py` unless stated otherwise.
 
 | file | change |
 |---|---|
-| `src/hmc_mcp/access_policy.py` | new — models, validation P1–P12, compiled `AccessPolicy`/`Grant`, `load_access_policy` |
+| `src/hmc_mcp/authorization/access_policy.py` | new — models, validation P1–P12, compiled `AccessPolicy`/`Grant`, `load_access_policy` |
 | `tests/unit/test_access_policy.py` | new — A1–A16 |
 | `docs/adr/0036-server-access-policy-model.md` | new |
 | `docs/workflow/specs/2026-08-18-server-access-policy-design.md` | new — this file |

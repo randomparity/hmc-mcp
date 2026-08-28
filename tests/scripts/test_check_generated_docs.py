@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -90,6 +91,19 @@ def _run(root: Path) -> int:
     """Stage the tree as a developer would, then check it."""
     _stage(root)
     return check_generated_docs.main(["--repo-root", str(root)])
+
+
+def _wait_for_pid_exit(pid: int, timeout_seconds: float = 5) -> None:
+    """Poll until *pid* no longer exists, with a bounded diagnostic deadline."""
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        if time.monotonic() >= deadline:
+            pytest.fail(f"descendant process {pid} outlived its process group")
+        time.sleep(0.01)
 
 
 def _tool_reference_only(tmp_path: Path, justfile: str) -> Path:
@@ -392,21 +406,21 @@ def test_hung_regeneration_command_is_killed_with_its_children(
 ) -> None:
     """A generator that never returns is killed promptly, descendants included.
 
-    Two properties, because the message alone proves neither. The marker is the
-    leak: the backgrounded subshell writes it three seconds in, so it appears
-    unless the whole process group died at one second -- which is what
+    Two properties, because the message alone proves neither. The child PID is
+    recorded before the recipe waits, then polled after timeout, proving the
+    descendant died with its process group -- which is what
     `subprocess.run`'s own timeout handling does *not* do, and what `process.kill()`
     on its own does not do either. The wall clock is the ceiling: with nothing
     killed at all, `Popen.__exit__` waits on a live child for the command's full
     sixty seconds.
     """
     monkeypatch.setattr(check_generated_docs, "_TIMEOUT_SECONDS", 1)
-    marker = tmp_path / "descendant-survived"
-    monkeypatch.setenv("DOC_FRESHNESS_MARKER", str(marker))
+    pid_file = tmp_path / "descendant.pid"
+    monkeypatch.setenv("DOC_FRESHNESS_DESCENDANT_PID", str(pid_file))
     root = _tree(
         tmp_path,
         justfile=(
-            'demo-docs:\n    (sleep 3; touch "$DOC_FRESHNESS_MARKER") &\n    sleep 60\n'
+            'demo-docs:\n    sleep 60 & echo $! > "$DOC_FRESHNESS_DESCENDANT_PID"; wait\n'
         ),
     )
 
@@ -414,8 +428,8 @@ def test_hung_regeneration_command_is_killed_with_its_children(
     assert _run(root) == 1
     assert time.monotonic() - started < 15
     assert "`just demo-docs` did not finish within 1s" in capsys.readouterr().err
-    time.sleep(5)
-    assert not marker.exists(), "a descendant of the timed-out command outlived it"
+    assert pid_file.is_file(), "the recipe did not record its descendant PID"
+    _wait_for_pid_exit(int(pid_file.read_text(encoding="utf-8")))
 
 
 

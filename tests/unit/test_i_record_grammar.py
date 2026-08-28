@@ -6,7 +6,7 @@ shell *word*; the HMC splits the record itself afterwards, so quoting does
 nothing about the record's own delimiters.  A caller value containing ``,`` or
 ``=`` therefore used to add or override attributes the caller was never given.
 
-:func:`hmc_mcp.ssh_commands.build_attribute_record` owns the record grammar.
+:func:`hmc_mcp.ssh.commands.build_attribute_record` owns the record grammar.
 These tests pin three things: the grammar itself, a per-site refusal for every
 function that builds a record, and the coupling — a new ``-i`` site that skips
 the builder fails here rather than waiting for a reviewer.
@@ -22,18 +22,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.ssh import HMCCLIError
-from hmc_mcp.ssh_commands import (
-    assign_profile_io_slot,
+from hmc_mcp.ssh import memory as ssh_memory
+from hmc_mcp.ssh import network as ssh_network
+from hmc_mcp.ssh import profiles as ssh_profiles
+from hmc_mcp.ssh.transport import HMCCLIError
+from hmc_mcp.ssh.commands import (
     build_attribute_record,
     build_filter,
-    list_fc_ports,
-    create_lpar_via_cli,
+)
+from hmc_mcp.ssh.lpar import create_lpar_via_cli, validate_lpar_description
+from hmc_mcp.ssh.network import list_fc_ports
+from hmc_mcp.ssh.profiles import (
+    assign_profile_io_slot,
     set_lpar_description,
     set_lpar_msp,
     set_lpar_proc_compat,
     sync_lpar_profile,
-    validate_lpar_description,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -212,13 +216,19 @@ def test_build_attribute_record_accepts_a_trailing_quoted_pair():
         quoted=("backing_devices",),
     )
     assert record == 'port_vlan_id=7,"backing_devices=dev1,dev2"'
-    assert build_attribute_record(
-        [("backing_devices", "dev1,dev2")], quoted=("backing_devices",)
-    ) == '"backing_devices=dev1,dev2"'
-    assert build_attribute_record(
-        [("backing_devices", "dev1"), ("port_vlan_id", 7)],
-        quoted=("backing_devices",),
-    ) == "backing_devices=dev1,port_vlan_id=7"
+    assert (
+        build_attribute_record(
+            [("backing_devices", "dev1,dev2")], quoted=("backing_devices",)
+        )
+        == '"backing_devices=dev1,dev2"'
+    )
+    assert (
+        build_attribute_record(
+            [("backing_devices", "dev1"), ("port_vlan_id", 7)],
+            quoted=("backing_devices",),
+        )
+        == "backing_devices=dev1,port_vlan_id=7"
+    )
 
 
 def test_build_attribute_record_refuses_a_duplicate_across_marked_and_unmarked():
@@ -289,9 +299,10 @@ HOSTILE_FILTER = "x,injected=1"
 )
 def test_filter_site_refuses_a_hostile_name(fn_name, extra_args):
     """A delimiter-carrying name is refused before any command is built."""
-    import hmc_mcp.ssh_commands as mod
-
-    fn = getattr(mod, fn_name)
+    modules = (ssh_network, ssh_profiles)
+    fn = next(
+        getattr(module, fn_name) for module in modules if hasattr(module, fn_name)
+    )
     with pytest.raises(HMCCLIError, match="comma"):
         asyncio.run(fn(_config(), "sys-a", HOSTILE_FILTER, *extra_args))
 
@@ -304,17 +315,15 @@ def test_list_fc_ports_renders_the_whole_expression_quoted():
         sent.append(command)
         return ""
 
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", side_effect=fake_run):
+    with patch("hmc_mcp.ssh.network.run_hmc_command", side_effect=fake_run):
         asyncio.run(list_fc_ports(_config(), "system-a", "my name"))
     assert "--filter 'lpar_names=my name'" in sent[0]
 
 
 def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
     """The mempool bare-value form validates against the same table."""
-    from hmc_mcp.ssh_commands import remove_memory_pool
-
     with pytest.raises(HMCCLIError, match="comma"):
-        asyncio.run(remove_memory_pool(_config(), "sys-a", "pool,extra=1"))
+        asyncio.run(ssh_memory.remove_memory_pool(_config(), "sys-a", "pool,extra=1"))
 
 
 @pytest.mark.parametrize(("bad", "wording"), [(" ", "space"), (";", "semicolon")])
@@ -380,7 +389,7 @@ def test_set_lpar_msp_rejects_a_hostile_lpar_name():
     """The msp record refuses a hostile name after the lpar_env probe."""
     conn = _ssh_mock("vioserver\n")
     with (
-        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn),
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(HMCCLIError, match="comma"),
     ):
         asyncio.run(set_lpar_msp(_config(), "sys", HOSTILE, True))
@@ -398,9 +407,7 @@ def test_sync_lpar_profile_rejects_a_hostile_lpar_name():
 
 def test_assign_profile_io_slot_rejects_a_hostile_drc_index():
     with pytest.raises(HMCCLIError, match="comma"):
-        asyncio.run(
-            assign_profile_io_slot(_config(), "sys", "lpar1", "prof1", HOSTILE)
-        )
+        asyncio.run(assign_profile_io_slot(_config(), "sys", "lpar1", "prof1", HOSTILE))
 
 
 def test_assign_profile_io_slot_rejects_a_hostile_profile_name():
@@ -423,7 +430,6 @@ def test_assign_profile_io_slot_rejects_a_hostile_lpar_name():
 
 BUILDER_NAME = "build_attribute_record"
 FILTER_BUILDER_NAME = "build_filter"
-
 
 
 # The one value-form `-a` site: `chhwres -r mempool -o r -a <pool_name>`
@@ -677,9 +683,7 @@ def _selected_literals(node: ast.AST, predicate) -> list[ast.AST]:
         | _keyword_value_constants(node)
     )
     return [
-        child
-        for child in ast.walk(node)
-        if id(child) not in skip and predicate(child)
+        child for child in ast.walk(node) if id(child) not in skip and predicate(child)
     ]
 
 
@@ -735,9 +739,7 @@ def _unguarded_a_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[st
                 ):
                     problems.append(ast.unparse(literal))
         return problems
-    return _unguarded_payloads_for(
-        func, _is_an_a_record_literal, "-a", BUILDER_NAME
-    )
+    return _unguarded_payloads_for(func, _is_an_a_record_literal, "-a", BUILDER_NAME)
 
 
 def _unguarded_filter_values(
@@ -790,15 +792,11 @@ def test_every_site_is_built_by_its_shared_builder(label, predicate, checker):
     sites = _selected_functions(predicate)
     assert sites, f"no {label} sites found — the AST scan stopped working"
 
-    skipping = {
-        name: unguarded
-        for name, node in sites
-        if (unguarded := checker(node))
-    }
+    skipping = {name: unguarded for name, node in sites if (unguarded := checker(node))}
     assert not skipping, (
         f"these {label} payloads are not built by their shared builder: "
         f"{skipping}. shlex.quote protects the shell word only; the "
-        'grammar\'s own ",", "=" and "\"" structure needs the builder.'
+        'grammar\'s own ",", "=" and """ structure needs the builder.'
     )
 
 
@@ -880,9 +878,9 @@ def test_the_scan_finds_every_known_site():
         "set_lpar_msp",
         "get_lpar_proc_compat",
         "query_minimum_affinity_policy",
-        "hmc_list_vios_backups",
-        "capture_lpar_baseline",
-        "mutate_lpar_properties",
+        "list_vios_backups",
+        "_capture_lpar_cli_dump",
+            "_lpar_environment",
         "restore_lpar_baseline",
     }
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted; entry-point decision superseded by [ADR 0103](0103-explicit-vios-update-and-upgrade-operations.md)
 
 ## Context
 

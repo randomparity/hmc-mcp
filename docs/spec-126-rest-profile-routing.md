@@ -31,8 +31,8 @@ sites; no other behavior changes.
 
 Two tools bypass `client_from_env` in their CLI-fallback branches:
 
-- `server_power.py` `hmc_create_lpar`: CLI fallback after HTTP 406
-- `server_provision.py` `hmc_provision_lpar`: CLI fallback after HTTP 406
+- `server_tools/power.py` `hmc_create_lpar`: CLI fallback after HTTP 406
+- `server_tools/provision.py` `hmc_provision_lpar`: CLI fallback after HTTP 406
 
 Both construct `HMCConfig()` directly. They are changed to derive the config
 from the already-open client: `hmc.config`. Since the outer async-with block
@@ -66,7 +66,7 @@ Two focused tests:
 
 ## Scope boundary
 
-- SSH tools (`_ssh_with_client` path, `run_hmc_cli`) → #127
+- SSH tools (`ssh_with_client` path, `run_hmc_cli`) → #127
 - `hmc_list_configured_hosts` → #128
 - CLI `--profile` → done in #125
 - TOML loader → done in #124

@@ -17,29 +17,53 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-
-from hmc_mcp.errors import HMCError
-from hmc_mcp.jobs import PlatformUpdateParameter, SystemFirmwareUpdate
-from hmc_mcp.documents import LparResources
-from hmc_mcp.server import (
-    hmc_create_lpar,
-    hmc_delete_lpar,
-    hmc_get_lpar,
-    hmc_get_job,
-    hmc_get_available_hmc_ptfs,
-    hmc_update_console_software,
-    hmc_modify_lpar,
-    hmc_rename_lpar,
-    hmc_power_off_lpar,
-    hmc_power_on_lpar,
-    hmc_list_recent_jobs,
-    hmc_run_command,
-    hmc_update_firmware,
-    hmc_vios_update,
-    hmc_wait_for_job,
-)
-
 from conftest import JOB_ENTRY
+
+from hmc_mcp.documents import LparResources
+from hmc_mcp.errors import HMCError
+from hmc_mcp.server_tools.command import hmc_run_command as hmc_run_command
+from hmc_mcp.server_tools.jobs import (
+    hmc_get_job as hmc_get_job,
+)
+from hmc_mcp.server_tools.jobs import (
+    hmc_list_recent_jobs as hmc_list_recent_jobs,
+)
+from hmc_mcp.server_tools.jobs import (
+    hmc_wait_for_job as hmc_wait_for_job,
+)
+from hmc_mcp.server_tools.lpar.lifecycle import (
+    hmc_create_lpar as hmc_create_lpar,
+)
+from hmc_mcp.server_tools.lpar.lifecycle import (
+    hmc_delete_lpar as hmc_delete_lpar,
+)
+from hmc_mcp.server_tools.lpar.lifecycle import (
+    hmc_modify_lpar as hmc_modify_lpar,
+)
+from hmc_mcp.server_tools.lpar.lifecycle import (
+    hmc_power_off_lpar as hmc_power_off_lpar,
+)
+from hmc_mcp.server_tools.lpar.lifecycle import (
+    hmc_power_on_lpar as hmc_power_on_lpar,
+)
+from hmc_mcp.server_tools.lpar.lifecycle import (
+    hmc_rename_lpar as hmc_rename_lpar,
+)
+from hmc_mcp.server_tools.systems import hmc_get_lpar as hmc_get_lpar
+from hmc_mcp.server_tools.updates import (
+    hmc_get_available_hmc_ptfs as hmc_get_available_hmc_ptfs,
+)
+from hmc_mcp.server_tools.updates import (
+    hmc_update_console_software as hmc_update_console_software,
+)
+from hmc_mcp.server_tools.updates import (
+    hmc_update_firmware as hmc_update_firmware,
+)
+from hmc_mcp.server_tools.updates import (
+    hmc_vios_update as hmc_vios_update,
+)
+from hmc_mcp.server_tools.updates import hmc_vios_upgrade as hmc_vios_upgrade
+from hmc_mcp.operations.update_models import PlatformUpdateParameter, SystemFirmwareUpdateModel
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
@@ -63,7 +87,7 @@ VIOS_UPGRADE_SOURCE = {
     "Disks": "hdisk1",
 }
 PLATFORM_UPDATE = PlatformUpdateParameter(
-    SystemFirmwareUpdate=SystemFirmwareUpdate(UpdateType="Update", UpdateOrder=1)
+    SystemFirmwareUpdate=SystemFirmwareUpdateModel(UpdateType="Update", UpdateOrder=1)
 )
 
 
@@ -134,7 +158,7 @@ def test_run_command_passes_cmd_through(monkeypatch):
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock("lpar1  running\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_run_command("lssyscfg -r lpar -m server1")
 
     called_cmd = conn_mock.run.call_args[0][0]
@@ -197,7 +221,7 @@ def test_get_job_rejects_identifier_addressing_something_else(monkeypatch, mock_
 def test_get_job_requires_identifier_even_with_href(monkeypatch, mock_hmc):
     """The identifier is now checked even when job_href would decide the path.
 
-    The client ignored ``job_uuid`` entirely when a link was supplied, so this is
+    The client ignored ``job_id`` entirely when a link was supplied, so this is
     the one rejection that changes behaviour rather than moving an error (#474).
     """
     _hmc_env(monkeypatch)
@@ -304,7 +328,7 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     # stamp_lpar_ownership calls set_lpar_description over SSH;
     # patch stamp to avoid needing a live SSH server in this XML-building test.
     with patch(
-        "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+        "hmc_mcp.operations.ownership.stamp_lpar_ownership",
         new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-01-01]"),
     ):
         result = hmc_create_lpar(
@@ -349,11 +373,11 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(201, text=LPAR_FEED.format(name="ded")))
     with (
         patch(
-            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            "hmc_mcp.operations.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
         patch(
-            "hmc_mcp.operations_lpar._system_name",
+            "hmc_mcp.operations.ownership._resolve_system_name",
             new=AsyncMock(return_value="sys1"),
         ),
     ):
@@ -377,10 +401,14 @@ def test_modify_lpar_builds_resource_xml(monkeypatch, mock_hmc):
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="owned-lpar"))
     )
-    result = hmc_modify_lpar(
-        LPAR_UUID,
-        resources=LparResources(desired_memory=8192),
-    )
+    with patch(
+        "hmc_mcp.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        result = hmc_modify_lpar(
+            LPAR_UUID,
+            resources=LparResources(desired_memory=8192),
+        )
     body = route.calls.last.request.content.decode()
     assert "PartitionName" not in body
     assert '<DesiredMemory kb="CUD" kxe="false">8192</DesiredMemory>' in body
@@ -395,13 +423,10 @@ def test_rename_lpar_authorizes_and_writes_name(monkeypatch, mock_hmc):
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="renamed"))
     )
-    guard = AsyncMock()
-    with (
-        patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
-            new=AsyncMock(return_value=("system-1", "owned-lpar")),
-        ),
-        patch("hmc_mcp.operations_lpar.authorize_lpar_mutation", new=guard),
+    guard = AsyncMock(return_value=LPAR_UUID)
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_and_authorize_lpar_mutation",
+        new=guard,
     ):
         result = hmc_rename_lpar(
             SYSTEM_UUID,
@@ -412,9 +437,7 @@ def test_rename_lpar_authorizes_and_writes_name(monkeypatch, mock_hmc):
 
     body = route.calls.last.request.content.decode()
     assert "renamed</PartitionName>" in body
-    guard.assert_awaited_once_with(
-        ANY, "system-1", "owned-lpar", ownership_override=True
-    )
+    guard.assert_awaited_once_with(ANY, SYSTEM_UUID, LPAR_UUID, ownership_override=True)
     assert result["Resource"]["PartitionName"] == "renamed"
 
 
@@ -426,11 +449,7 @@ def test_foreign_owned_rename_issues_no_write(monkeypatch, mock_hmc):
     write = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}")
     with (
         patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
-            new=AsyncMock(return_value=("system-1", "owned-lpar")),
-        ),
-        patch(
-            "hmc_mcp.operations_lpar.authorize_lpar_mutation",
+            "hmc_mcp.operations.lpar.core.resolve_and_authorize_lpar_mutation",
             new=AsyncMock(side_effect=PermissionError("foreign owner")),
         ),
         pytest.raises(PermissionError, match="foreign owner"),
@@ -447,11 +466,7 @@ def test_foreign_owned_delete_issues_no_write(monkeypatch, mock_hmc):
     write = mock_hmc.delete(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}")
     with (
         patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
-            new=AsyncMock(return_value=("system-1", "owned-lpar")),
-        ),
-        patch(
-            "hmc_mcp.operations_lpar.authorize_lpar_mutation",
+            "hmc_mcp.operations.lpar.core.resolve_and_authorize_lpar_mutation",
             new=AsyncMock(side_effect=PermissionError("foreign owner")),
         ),
         pytest.raises(PermissionError, match="foreign owner"),
@@ -471,7 +486,7 @@ def test_hmc_update_kind_update(monkeypatch, mock_hmc):
     route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/UpdateManagementConsole"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    hmc_update_console_software(MC_UUID, CONSOLE_SOURCE, kind="update")
+    hmc_update_console_software(MC_UUID, CONSOLE_SOURCE)
     body = route.calls.last.request.content.decode()
     assert "UpdateManagementConsole</OperationName>" in body
     assert "MediaType</ParameterName>" in body
@@ -480,19 +495,8 @@ def test_hmc_update_kind_update(monkeypatch, mock_hmc):
     assert "/images/hmc" in body
 
 
-def test_hmc_update_kind_upgrade(monkeypatch, mock_hmc):
-    """A nonexistent single-job console upgrade is refused before I/O."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Upgrade").mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
-    with pytest.raises(ValueError, match="SaveUpgradeData"):
-        hmc_update_console_software(MC_UUID, CONSOLE_SOURCE, kind="upgrade")
-    assert not route.called
-
-
-def test_hmc_update_default_kind_is_update(monkeypatch, mock_hmc):
-    """hmc_update_console_software defaults to kind='update' when kind is omitted."""
+def test_hmc_update_submits_documented_operation(monkeypatch, mock_hmc):
+    """hmc_update_console_software has one supported update operation."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/UpdateManagementConsole"
@@ -515,45 +519,33 @@ def test_hmc_update_encodes_console_uuid_as_one_path_segment(monkeypatch, mock_h
     assert route.called
 
 
-def test_vios_update_kind_update(monkeypatch, mock_hmc):
-    """The update kind submits the documented UpdateVIOS job."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.put(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpdateVIOS"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, kind="update")
-    body = route.calls.last.request.content.decode()
-    assert "UpdateVIOS</OperationName>" in body
-    assert "repo.example.com" in body
-
-
-def test_vios_update_kind_upgrade(monkeypatch, mock_hmc):
-    """The upgrade kind submits the documented UpgradeVIOS job."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.put(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpgradeVIOS"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    hmc_vios_update(VIOS_UUID, VIOS_UPGRADE_SOURCE, kind="upgrade")
-    body = route.calls.last.request.content.decode()
-    assert "UpgradeVIOS</OperationName>" in body
-    assert "repo.example.com" in body
-
-
-def test_vios_update_default_kind_is_update(monkeypatch, mock_hmc):
-    """hmc_vios_update defaults to kind='update' when kind is omitted."""
+def test_vios_update_submits_documented_job(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpdateVIOS"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE)
-    assert route.calls.last.request.url.path.endswith("/do/UpdateVIOS")
+    body = route.calls.last.request.content.decode()
+    assert "UpdateVIOS</OperationName>" in body
+    assert "repo.example.com" in body
+
+
+def test_vios_upgrade_submits_documented_job(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpgradeVIOS"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    hmc_vios_upgrade(VIOS_UUID, VIOS_UPGRADE_SOURCE)
+    body = route.calls.last.request.content.decode()
+    assert "UpgradeVIOS</OperationName>" in body
+    assert "repo.example.com" in body
 
 
 def test_vios_update_encodes_uuid_as_one_path_segment(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     hostile_uuid = "allowed/do/Shutdown?ignored="
     monkeypatch.setattr(
-        "hmc_mcp.server_updates.resolve_vios_uuid",
+        "hmc_mcp.operations.updates.resolve_vios_uuid",
         AsyncMock(return_value=hostile_uuid),
     )
     route = mock_hmc.put(
@@ -567,25 +559,26 @@ def test_vios_update_encodes_uuid_as_one_path_segment(monkeypatch, mock_hmc):
 
 
 @pytest.mark.parametrize(
-    ("source", "kind", "message"),
+    ("tool", "source", "message"),
     [
-        ({"Name": "image"}, "update", "ResourceType"),
-        ({"ResourceType": "NFS", "unknown": "x"}, "update", "unknown"),
-        ({"ResourceType": "NFS", "Disks": "hdisk1"}, "update", "Disks"),
-        ({"ResourceType": "NFS", "RestartVIOS": "false"}, "upgrade", "RestartVIOS"),
-        ({"ResourceType": "IBMWebsite"}, "upgrade", "IBMWebsite"),
-        ({"ResourceType": "NFS"}, "update", "RemoteDirectory"),
-        ({"ResourceType": "HMC", "Name": "image"}, "upgrade", "Disks"),
+        (hmc_vios_update, {"Name": "image"}, "ResourceType"),
+        (hmc_vios_update, {"ResourceType": "NFS", "unknown": "x"}, "unknown"),
+        (hmc_vios_update, {"ResourceType": "NFS", "Disks": "hdisk1"}, "Disks"),
+        (hmc_vios_upgrade, {"ResourceType": "NFS", "RestartVIOS": "false"}, "RestartVIOS"),
+        (hmc_vios_upgrade, {"ResourceType": "IBMWebsite"}, "IBMWebsite"),
+        (hmc_vios_update, {"ResourceType": "NFS"}, "RemoteDirectory"),
+        (hmc_vios_upgrade, {"ResourceType": "HMC", "Name": "image"}, "Disks"),
     ],
 )
-def test_vios_invalid_source_fails_before_client(monkeypatch, source, kind, message):
-    def fail_client(_profile):
-        raise AssertionError("client created")
-
-    monkeypatch.setattr("hmc_mcp.server_updates.client_from_env", fail_client)
+def test_vios_invalid_source_fails_before_submission(
+    monkeypatch, mock_hmc, tool, source, message
+):
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(url__regex=r".*/VirtualIOServer/.*/do/.*")
 
     with pytest.raises(ValueError, match=message):
-        hmc_vios_update(VIOS_UUID, source, kind=kind)
+        tool(VIOS_UUID, source)
+    assert not route.called
 
 
 def _vios_job_with_stdout(status="COMPLETED", top_level=None):
@@ -605,11 +598,19 @@ def _vios_job_with_stdout(status="COMPLETED", top_level=None):
     return job
 
 
+def _mock_vios_submission(mock_hmc):
+    return mock_hmc.put(
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpdateVIOS"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+
 def test_vios_waited_terminal_result_projects_stdout(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
+    _mock_vios_submission(mock_hmc)
     raw = _vios_job_with_stdout()
     monkeypatch.setattr(
-        "hmc_mcp.server_updates._update_op", AsyncMock(return_value=raw)
+        "hmc_mcp.operations.updates.wait_for_submitted_job",
+        AsyncMock(return_value=raw),
     )
 
     result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=True)
@@ -631,8 +632,10 @@ def test_vios_stdout_is_not_projected_without_terminal_wait(
     monkeypatch, mock_hmc, wait, job
 ):
     _hmc_env(monkeypatch)
+    _mock_vios_submission(mock_hmc)
     monkeypatch.setattr(
-        "hmc_mcp.server_updates._update_op", AsyncMock(return_value=job)
+        "hmc_mcp.operations.updates.wait_for_submitted_job",
+        AsyncMock(return_value=job),
     )
 
     result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=wait)
@@ -643,33 +646,17 @@ def test_vios_stdout_is_not_projected_without_terminal_wait(
 
 def test_vios_stdout_does_not_overwrite_raw_top_level_value(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
+    _mock_vios_submission(mock_hmc)
     raw = _vios_job_with_stdout(top_level="raw value")
     monkeypatch.setattr(
-        "hmc_mcp.server_updates._update_op", AsyncMock(return_value=raw)
+        "hmc_mcp.operations.updates.wait_for_submitted_job",
+        AsyncMock(return_value=raw),
     )
 
     result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=True)
 
     assert result is raw
     assert result["stdOut"] == "raw value"
-
-
-def test_hmc_update_invalid_kind_raises(monkeypatch, mock_hmc):
-    """hmc_update_console_software raises ValueError for an unknown kind, never reaching the HMC."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Invalid")
-    with pytest.raises(ValueError, match="Unknown kind"):
-        hmc_update_console_software(MC_UUID, REPO, kind="invalid")  # type: ignore[arg-type]
-    assert not route.called
-
-
-def test_vios_update_invalid_kind_raises(monkeypatch, mock_hmc):
-    """hmc_vios_update raises ValueError for an unknown kind, never reaching the HMC."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Invalid")
-    with pytest.raises(ValueError, match="Unknown kind"):
-        hmc_vios_update(VIOS_UUID, REPO, kind="invalid")  # type: ignore[arg-type]
-    assert not route.called
 
 
 def test_update_firmware_submits_platform_update(monkeypatch, mock_hmc):
@@ -913,6 +900,9 @@ def test_list_available_hmc_ptfs_validates_wait_timing_before_io(
     monkeypatch, mock_hmc, timeout_seconds, poll_interval, message
 ):
     _hmc_env(monkeypatch)
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
+    )
 
     with pytest.raises(ValueError, match=message):
         hmc_get_available_hmc_ptfs(
@@ -922,7 +912,7 @@ def test_list_available_hmc_ptfs_validates_wait_timing_before_io(
             poll_interval=poll_interval,
         )
 
-    assert not mock_hmc.calls
+    assert not route.called
 
 
 # ---------------------------------------------------------------------- #
@@ -1294,7 +1284,7 @@ def test_job_href_cannot_forge_a_log_record(monkeypatch, mock_hmc, caplog):
         return_value=httpx.Response(404, text="gone")
     )
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
         assert hmc_get_job("job-uuid-999", job_href=forged) is None
 
     assert caplog.records, "the found=False translation is expected to warn"

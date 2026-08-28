@@ -13,7 +13,7 @@
 - `tests/app/test_capabilities.py`: recursive schema-description assertion and both registry modes.
 - `src/hmc_mcp/server_{network,storage,adapters,users,metrics,updates,lpar_config,system_resources,templates,profiles}.py`:
   rendered top-level parameter descriptions.
-- `src/hmc_mcp/server_health.py` and `src/hmc_mcp/server_command.py`: description-only fixes
+- `src/hmc_mcp/server_tools/health.py` and `src/hmc_mcp/server_tools/command.py`: description-only fixes
   required by the current default and conditional live registries.
 - `src/hmc_mcp/documents.py`: descriptions for nested public input fields not already covered.
 - `src/hmc_mcp/jobs.py`: description metadata for nested update-repository fields.

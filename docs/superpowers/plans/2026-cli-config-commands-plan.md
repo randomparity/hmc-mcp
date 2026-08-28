@@ -4,7 +4,7 @@
 
 **Goal:** Add `hmc-mcp config init/list/show` subcommands and wire the existing `--profile` global flag into them, exposing the platform-native TOML profile loader safely without revealing secrets.
 
-**Architecture:** New `cli_config.py` domain module registers on a `config_app` Typer wired into the root CLI. The three commands delegate to the existing `config.py` API (`resolve_config_path`, `list_profiles`, `load_profile`). `config show` reads the raw TOML dict before calling `load_profile` so credential-presence booleans can be reported without resolving `password_env`.
+**Architecture:** New `cli_commands/config.py` domain module registers on a `config_app` Typer wired into the root CLI. The three commands delegate to the existing `config.py` API (`resolve_config_path`, `list_profiles`, `load_profile`). `config show` reads the raw TOML dict before calling `load_profile` so credential-presence booleans can be reported without resolving `password_env`.
 
 **Tech Stack:** Python 3.12+, typer, pydantic-settings, tomllib (stdlib), typer.testing.CliRunner, pytest, `just verify`
 
@@ -191,21 +191,21 @@ git commit -m "feat(config): add config_dir() and list_profiles_with_default() (
 
 ---
 
-### Task 2: Register `config_app` in `cli_app.py` and `cli.py`
+### Task 2: Register `config_app` in `cli_commands/app.py` and `cli.py`
 
 **Files:**
-- Modify: `src/hmc_mcp/cli_app.py` — add `config_app` Typer and register it
-- Modify: `src/hmc_mcp/cli.py` — add `from . import cli_config` import
+- Modify: `src/hmc_mcp/cli_commands/app.py` — add `config_app` Typer and register it
+- Modify: `src/hmc_mcp/cli.py` — add `from . import cli_commands.config` import
 
 **Interfaces:**
-- Consumes: `typer.Typer` (already imported in cli_app.py)
-- Produces: `config_app` Typer instance (used by `cli_config.py` Task 3)
+- Consumes: `typer.Typer` (already imported in cli_commands/app.py)
+- Produces: `config_app` Typer instance (used by `cli_commands/config.py` Task 3)
 
-This task only adds the wiring — no command bodies yet. **All three steps below (cli_app.py, the stub, and cli.py) must be completed before committing — do not commit after Step 1 or Step 2 alone, as cli.py will not import without the stub in place.**
+This task only adds the wiring — no command bodies yet. **All three steps below (cli_commands/app.py, the stub, and cli.py) must be completed before committing — do not commit after Step 1 or Step 2 alone, as cli.py will not import without the stub in place.**
 
-- [ ] **Step 1: Add `config_app` to `cli_app.py`**
+- [ ] **Step 1: Add `config_app` to `cli_commands/app.py`**
 
-In `src/hmc_mcp/cli_app.py`, after the `raw_app` and `memory_pools_app` lines and their `app.add_typer(...)` calls, add:
+In `src/hmc_mcp/cli_commands/app.py`, after the `raw_app` and `memory_pools_app` lines and their `app.add_typer(...)` calls, add:
 
 ```python
 config_app = typer.Typer(help="Profile configuration commands.", no_args_is_help=True)
@@ -217,24 +217,24 @@ And immediately after `app.add_typer(memory_pools_app, name="memory-pools")`:
 app.add_typer(config_app, name="config")
 ```
 
-- [ ] **Step 2: Create an empty `cli_config.py` stub** *(must exist before adding the import)*
+- [ ] **Step 2: Create an empty `cli_commands/config.py` stub** *(must exist before adding the import)*
 
-Create `src/hmc_mcp/cli_config.py` with just:
+Create `src/hmc_mcp/cli_commands/config.py` with just:
 
 ```python
 """Configuration subgroup commands for hmc-mcp."""
 
 from __future__ import annotations
 
-from .cli_app import config_app  # noqa: F401  (import required; commands registered below)
+from .cli_commands.app import config_app  # noqa: F401  (import required; commands registered below)
 ```
 
-- [ ] **Step 3: Add `cli_config` import to `cli.py`**
+- [ ] **Step 3: Add `cli_commands.config` import to `cli.py`**
 
-In `src/hmc_mcp/cli.py`, after the last `from . import cli_vios` line, add:
+In `src/hmc_mcp/cli.py`, after the last `from . import cli_commands.vios` line, add:
 
 ```python
-from . import cli_config  # noqa: F401  (side-effect: registers commands)
+from . import cli_commands.config  # noqa: F401  (side-effect: registers commands)
 ```
 
 - [ ] **Step 4: Verify the CLI loads cleanly**
@@ -254,10 +254,10 @@ just static
 
 Expected: passes
 
-- [ ] **Step 6: Commit** *(all three files together — cli_app.py, cli_config.py, cli.py)*
+- [ ] **Step 6: Commit** *(all three files together — cli_commands/app.py, cli_commands/config.py, cli.py)*
 
 ```bash
-git add src/hmc_mcp/cli_app.py src/hmc_mcp/cli_config.py src/hmc_mcp/cli.py
+git add src/hmc_mcp/cli_commands/app.py src/hmc_mcp/cli_commands/config.py src/hmc_mcp/cli.py
 git commit -m "feat(cli): register config_app subgroup (#125)"
 ```
 
@@ -266,13 +266,13 @@ git commit -m "feat(cli): register config_app subgroup (#125)"
 ### Task 3: Implement `config init`, `config list`, `config show` with tests
 
 **Files:**
-- Create/Modify: `src/hmc_mcp/cli_config.py` (expand the stub from Task 2)
+- Create/Modify: `src/hmc_mcp/cli_commands/config.py` (expand the stub from Task 2)
 - Create: `tests/app/test_cli_config.py`
 
 **Interfaces:**
 - Consumes from Task 1: `config_dir()`, `list_profiles_with_default()`, `resolve_config_path()`, `load_profile()`, `ConfigError` from `hmc_mcp.config`
-- Consumes from Task 2: `config_app` from `hmc_mcp.cli_app`
-- Consumes: `GLOBALS` from `hmc_mcp.cli_app`, `_fail` from `hmc_mcp.cli_app`, `console` from `hmc_mcp.cli_app`, `err_console` from `hmc_mcp.cli_app`
+- Consumes from Task 2: `config_app` from `hmc_mcp.cli_commands.app`
+- Consumes: `GLOBALS` from `hmc_mcp.cli_commands.app`, `_fail` from `hmc_mcp.cli_commands.app`, `console` from `hmc_mcp.cli_commands.app`, `err_console` from `hmc_mcp.cli_commands.app`
 - Consumes: `app` from `hmc_mcp.cli` (for CliRunner tests)
 
 #### Step 1 — Write ALL failing tests first
@@ -523,13 +523,13 @@ def test_error_message_goes_to_stderr(tmp_path, monkeypatch):
 uv run pytest tests/app/test_cli_config.py -v 2>&1 | head -40
 ```
 
-Expected: most tests fail with errors because `cli_config.py` is a stub with no commands.
+Expected: most tests fail with errors because `cli_commands/config.py` is a stub with no commands.
 
-#### Step 3 — Implement `cli_config.py`
+#### Step 3 — Implement `cli_commands/config.py`
 
-- [ ] **Step 3: Write the full `cli_config.py` implementation**
+- [ ] **Step 3: Write the full `cli_commands/config.py` implementation**
 
-Replace the stub `src/hmc_mcp/cli_config.py` with:
+Replace the stub `src/hmc_mcp/cli_commands/config.py` with:
 
 ```python
 """Configuration subgroup commands for hmc-mcp.
@@ -550,7 +550,7 @@ from typing import Any
 
 import typer
 
-from .cli_app import GLOBALS, _fail, config_app, console, err_console
+from .cli_commands.app import GLOBALS, _fail, config_app, console, err_console
 from .config import (
     ConfigError,
     config_dir,
@@ -714,12 +714,12 @@ Expected: all 14 tests pass.
 just verify
 ```
 
-Expected: all checks pass. If detect-secrets fires on the starter TOML constant in `cli_config.py`, add `# pragma: allowlist secret` to the `password_env` line (already present in the constant string above).
+Expected: all checks pass. If detect-secrets fires on the starter TOML constant in `cli_commands/config.py`, add `# pragma: allowlist secret` to the `password_env` line (already present in the constant string above).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/hmc_mcp/cli_config.py tests/app/test_cli_config.py
+git add src/hmc_mcp/cli_commands/config.py tests/app/test_cli_config.py
 git commit -m "feat(cli): implement config init/list/show commands (#125)"
 ```
 
@@ -736,13 +736,13 @@ git commit -m "feat(cli): implement config init/list/show commands (#125)"
 just verify
 ```
 
-If detect-secrets fails on `cli_config.py`, run:
+If detect-secrets fails on `cli_commands/config.py`, run:
 
 ```bash
 git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline --no-verify --
 ```
 
-If it still fails, the `# pragma: allowlist secret` comment on the `password_env` line in `_STARTER_TOML` in `cli_config.py` should silence it. Verify the line reads exactly:
+If it still fails, the `# pragma: allowlist secret` comment on the `password_env` line in `_STARTER_TOML` in `cli_commands/config.py` should silence it. Verify the line reads exactly:
 
 ```python
 password_env = "HMC_PASSWORD"  # preferred: secret stays out of the file  # pragma: allowlist secret
@@ -758,7 +758,7 @@ Then stage and commit:
 
 ```bash
 git add .secrets.baseline
-git commit -m "chore: update secrets baseline for cli_config starter TOML (#125)"
+git commit -m "chore: update secrets baseline for cli_commands.config starter TOML (#125)"
 ```
 
 - [ ] **Step 2: Confirm `hmc-mcp config --help` renders correctly**
@@ -805,5 +805,5 @@ Expected: green across all checks.
 **Type consistency:**
 - `config_dir()` → `Path` — used as such in Task 3
 - `list_profiles_with_default()` → `tuple[list[str], str | None]` — destructured as `names, default` in Task 3
-- `config_app` — imported from `cli_app` in Task 3's `cli_config.py`
-- `GLOBALS`, `_fail`, `console`, `err_console` — all from `cli_app`, already present there
+- `config_app` — imported from `cli_commands.app` in Task 3's `cli_commands/config.py`
+- `GLOBALS`, `_fail`, `console`, `err_console` — all from `cli_commands.app`, already present there

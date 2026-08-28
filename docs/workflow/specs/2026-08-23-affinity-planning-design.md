@@ -18,7 +18,7 @@ resource-group planning, and any guarantee of achieved placement are excluded.
 ## Public contract
 
 The existing `get_lpar_memopt_score` and `list_lpar_memopt_scores` remain the current LPAR API.
-Add these shared operations to `operations_ssh_network` and `hmc_mcp.api`:
+Add these shared operations to `operations.ssh_network` and `hmc_mcp.api`:
 
 ```python
 @dataclass(frozen=True)

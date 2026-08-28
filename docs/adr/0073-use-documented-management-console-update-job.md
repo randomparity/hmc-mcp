@@ -14,13 +14,13 @@ HMC upgrade as a sequence of jobs, not one `Upgrade` operation.
 ## Decision
 
 Console updates use `UpdateManagementConsole` and a console-specific `TypedDict` whose
-keys are the documented job parameter names. The existing `kind` argument remains so
-callers receive an actionable error for `kind="upgrade"`; the tool rejects that value
-before opening an HMC connection and names the documented multi-job workflow. This PR
-does not automate that workflow.
+keys are the documented job parameter names. The console-update operation exposes no
+mode selector: it performs the one supported update job. A future console-upgrade
+workflow requires a separately named operation after the documented multi-job sequence
+is implemented; a permanently refused selector is not an API contract.
 
 ## Consequences
 
 Update callers must provide the documented console parameter names. Upgrade calls no
-longer submit a request that cannot succeed. VIOS and firmware jobs retain their existing
-repository contract.
+longer have a phantom entry point. VIOS and firmware jobs retain their existing repository
+contract.

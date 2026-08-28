@@ -2,8 +2,8 @@
 
 **Goal:** ship a system-scoped, ownership-enforced, previewable LPAR teardown workflow.
 
-**Architecture:** `operations_decommission.py` owns inventory and ordered orchestration.
-`server_lpars.py` and `cli_lpars.py` are thin public adapters. Existing resolvers,
+**Architecture:** `operations/decommission.py` owns inventory and ordered orchestration.
+`server_tools/lpars.py` and `cli_commands/lpars.py` are thin public adapters. Existing resolvers,
 ownership authorization, job normalization, and HMC client methods remain the policy
 sources.
 
@@ -21,7 +21,7 @@ sources.
 ## Task 1: Prove and implement the orchestration contract
 
 **Files:** create `tests/lpar/test_decommission_tool.py` and
-`src/hmc_mcp/operations_decommission.py`; modify `src/hmc_mcp/operations_lpar.py` only
+`src/hmc_mcp/operations/decommission.py`; modify `src/hmc_mcp/operations/lpar/core.py` only
 if a read-only ownership-details helper is needed.
 
 **Interfaces:** define `DecommissionResult(resource_deleted, workflow_completed,
@@ -52,7 +52,7 @@ Later tasks consume that exact coroutine and dataclass.
 
 ## Task 2: Expose MCP contract and registration
 
-**Files:** modify `src/hmc_mcp/server_lpars.py`, `src/hmc_mcp/server.py`,
+**Files:** modify `src/hmc_mcp/server_tools/lpars.py`, `src/hmc_mcp/server.py`,
 `src/hmc_mcp/_app.py`, `tests/lpar/test_decommission_tool.py`, and
 `tests/test_capabilities.py` or the existing schema-contract test.
 
@@ -73,7 +73,7 @@ export it from `server.py`, and add its exact name to `DESTRUCTIVE_TOOLS`.
 
 ## Task 3: Mirror the workflow in the CLI and README
 
-**Files:** modify `src/hmc_mcp/cli_lpars.py`, the existing CLI tests, and `README.md`.
+**Files:** modify `src/hmc_mcp/cli_commands/lpars.py`, the existing CLI tests, and `README.md`.
 
 **Interfaces:** add `hmc-mcp lpars decommission LPAR --system SYSTEM
 [--dry-run] [--ownership-override] [--immediate] [--timeout-seconds N]

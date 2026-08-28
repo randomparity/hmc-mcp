@@ -30,11 +30,11 @@ boundary.
 
 ## Components and data flow
 
-`operations_health.py` owns pure record curation and the asynchronous fleet operation. It fetches
+`operations/health.py` owns pure record curation and the asynchronous fleet operation. It fetches
 the managed-system feed once. At most eight fixed workers consume a shared system queue, so both
 active inspections and scheduled system-worker tasks remain bounded; each inspection fetches LPAR
 and VIOS collections concurrently. A separate global Job-feed request runs alongside core
-inventory. `server_health.py` adapts the operation to FastMCP with `_READ_ONLY`. `cli_systems.py`
+inventory. `server_tools/health.py` adapts the operation to FastMCP with `_READ_ONLY`. `cli_commands/systems.py`
 provides `systems health`, using the same operation and printing JSON or exception tables.
 
 The operation calls `HMCClient.list_uom("Job")` directly so it can distinguish the exact known

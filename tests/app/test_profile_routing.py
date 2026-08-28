@@ -18,8 +18,8 @@ import httpx
 import pytest
 import respx
 
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
@@ -121,8 +121,8 @@ def _toml_two_profiles(tmp_path: Path) -> Path:
 
 def test_sequential_profile_routing(tmp_path, monkeypatch):
     """Two sequential calls with different profiles each hit the correct HMC host."""
-    from hmc_mcp.server import hmc_console_info
     from hmc_mcp.config import load_profile as real_load_profile
+    from hmc_mcp.server_tools.systems import hmc_console_info as hmc_console_info
 
     cfg_path = _toml_two_profiles(tmp_path)
 
@@ -130,8 +130,8 @@ def test_sequential_profile_routing(tmp_path, monkeypatch):
         return real_load_profile(profile=profile, config_path=cfg_path)
 
     with (
-        patch("hmc_mcp.common.load_profile", side_effect=_load_profile_with_path),
-        patch("hmc_mcp.common.resolve_config_path", return_value=cfg_path),
+        patch("hmc_mcp.config.load_profile", side_effect=_load_profile_with_path),
+        patch("hmc_mcp.config.resolve_config_path", return_value=cfg_path),
         respx.mock(assert_all_called=False) as router_a,
     ):
         # Alpha profile → hmc-a.test
@@ -148,8 +148,8 @@ def test_sequential_profile_routing(tmp_path, monkeypatch):
         result_a = hmc_console_info(profile="alpha")
 
     with (
-        patch("hmc_mcp.common.load_profile", side_effect=_load_profile_with_path),
-        patch("hmc_mcp.common.resolve_config_path", return_value=cfg_path),
+        patch("hmc_mcp.config.load_profile", side_effect=_load_profile_with_path),
+        patch("hmc_mcp.config.resolve_config_path", return_value=cfg_path),
         respx.mock(assert_all_called=False) as router_b,
     ):
         # Beta profile → hmc-b.test
@@ -183,7 +183,7 @@ def test_two_profile_strings_produce_distinct_clients(tmp_path, monkeypatch):
     (no shared cached instance).  For thread/coroutine interleaving coverage
     see the sequential routing test.
     """
-    from hmc_mcp.client import HMCClient
+    from hmc_mcp.client.core import HMCClient
 
     cfg_path = _toml_two_profiles(tmp_path)
 
@@ -205,7 +205,7 @@ def test_two_profile_strings_produce_distinct_clients(tmp_path, monkeypatch):
             return cfg_path
 
         with (
-            patch("hmc_mcp.common.resolve_config_path", side_effect=patched_resolve),
+            patch("hmc_mcp.config.resolve_config_path", side_effect=patched_resolve),
             patch("hmc_mcp.config.resolve_config_path", side_effect=patched_resolve),
         ):
             with (
@@ -213,7 +213,7 @@ def test_two_profile_strings_produce_distinct_clients(tmp_path, monkeypatch):
                 patch.object(HMCClient, "__aexit__", fake_context_exit),
                 patch.object(HMCClient, "get_console_info", fake_get_console),
             ):
-                from hmc_mcp.common import client_from_env
+                from hmc_mcp.client.client_factory import client_from_env
 
                 async def call_a():
                     async with client_from_env("alpha") as hmc:
@@ -268,10 +268,10 @@ def test_nickname_reaches_client_from_env(tmp_path, monkeypatch):
     resolving a nickname here proves the nickname works on both surfaces without
     a per-tool change.
     """
-    from hmc_mcp.common import client_from_env
+    from hmc_mcp.client.client_factory import client_from_env
 
     cfg_path = _toml_with_nickname(tmp_path)
-    monkeypatch.setattr("hmc_mcp.common.resolve_config_path", lambda: cfg_path)
+    monkeypatch.setattr("hmc_mcp.config.resolve_config_path", lambda: cfg_path)
     monkeypatch.setattr("hmc_mcp.config.resolve_config_path", lambda: cfg_path)
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     monkeypatch.delenv("HMC_HOST", raising=False)
@@ -293,7 +293,7 @@ def test_nickname_reaches_client_from_env(tmp_path, monkeypatch):
             "hmc_set_lpar_boot_order",
             {
                 "system_name_or_uuid": "sys-1",
-                "lpar_uuid": "11111111-2222-3333-4444-555555555555",
+                "lpar_name_or_uuid": "11111111-2222-3333-4444-555555555555",
                 "devices": ["network"],
             },
         ),
@@ -301,7 +301,7 @@ def test_nickname_reaches_client_from_env(tmp_path, monkeypatch):
             "hmc_clear_lpar_boot_order",
             {
                 "system_name_or_uuid": "sys-1",
-                "lpar_uuid": "11111111-2222-3333-4444-555555555555",
+                "lpar_name_or_uuid": "11111111-2222-3333-4444-555555555555",
             },
         ),
     ],
@@ -314,7 +314,7 @@ def test_boot_order_tools_route_the_profile_they_declare(
     Authorization in #222 decides on the declared argument, so a handler that
     discards it authorizes one connection and reaches another.
     """
-    from hmc_mcp import server_lpars
+    from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
 
     seen: list[str | None] = []
 
@@ -329,7 +329,7 @@ def test_boot_order_tools_route_the_profile_they_declare(
         seen.append(profile)
         return _Recorder()
 
-    monkeypatch.setattr(server_lpars, "client_from_env", _capture)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _capture)
 
     with pytest.raises(AssertionError, match="stops before any HMC request"):
         getattr(server_lpars, tool_name)(**arguments, profile="beta")

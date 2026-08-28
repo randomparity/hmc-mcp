@@ -5,13 +5,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from hmc_mcp.snapshot import (
+from hmc_mcp.snapshots.models import (
     SnapshotValidationError,
     inspect_snapshot,
     parse_snapshot,
     serialize_snapshot,
 )
-from hmc_mcp.operations_snapshot import assess_snapshot_affinity
+from hmc_mcp.snapshots.operations import assess_snapshot_affinity
 
 
 def _document() -> dict:
@@ -129,8 +129,8 @@ async def test_snapshot_affinity_assessment_composes_captured_evidence() -> None
     )
 
     assert result.classification == "regression"
-    assert result.evidence["captured_score"] == 90
-    assert result.evidence["assessed_at"] == "2026-08-24T21:00:00+00:00"
+    assert result.evidence.captured_score == 90
+    assert result.evidence.assessed_at == "2026-08-24T21:00:00+00:00"
 
 
 @pytest.mark.asyncio
@@ -261,7 +261,7 @@ async def test_snapshot_affinity_uses_thresholds_when_policy_is_unsupported() ->
     )
 
     assert result.classification == "regression"
-    assert result.evidence["captured_policy_state"] == "unsupported"
+    assert result.evidence.captured_policy_state == "unsupported"
 
 
 def test_minimum_affinity_policy_observation_round_trips() -> None:

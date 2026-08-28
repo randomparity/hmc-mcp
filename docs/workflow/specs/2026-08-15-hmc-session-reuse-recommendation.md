@@ -102,7 +102,7 @@ import statistics
 import sys
 import time
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.api import HMCClient
 from hmc_mcp.common import build_config
 
 

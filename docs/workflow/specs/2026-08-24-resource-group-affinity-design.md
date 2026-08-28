@@ -82,8 +82,8 @@ permission, timeout, and transport failures propagate unchanged.
 
 - `ssh_commands.py` owns selector validation, HMC-version parsing, command construction, strict
   delimited parsing, and capability-error recognition.
-- `operations_ssh_network.py` resolves system UUID/name selectors and returns the stable result.
-- `server_lpar_config.py` and `cli_lpars.py` adapt the shared operations without duplicating logic.
+- `operations/ssh_network.py` resolves system UUID/name selectors and returns the stable result.
+- `server_tools/lpar_config.py` and `cli_commands/lpars.py` adapt the shared operations without duplicating logic.
 - `_app.py`, `server.py`, and `api.py` register/export the MCP and supported Python contracts.
 - Focused tests cover validation, command strings, capability paths, schemas, malformed rows,
   adapters, CLI, API inventory, and security metadata. ID-selector tests include the observed

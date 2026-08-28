@@ -1,7 +1,7 @@
 """Tool-layer tests for the consolidated read-only inventory MCP tools.
 
 The client methods are covered in the domain test dirs; these tests call the
-actual ``@mcp.tool`` functions in ``server_systems`` against the respx
+actual ``@mcp.tool`` functions in ``server_tools.systems`` against the respx
 ``mock_hmc`` router so the argument->URL mapping in the tool bodies is
 exercised. hmc_get_job is covered in ``tests/app/test_server_tools.py``;
 hmc_run_command (SSH) is covered there too.
@@ -10,19 +10,39 @@ hmc_run_command (SSH) is covered there too.
 import httpx
 import pytest
 
-from hmc_mcp.client import HMCError
-from hmc_mcp.server import (
-    hmc_capacity_report,
-    hmc_console_info,
-    hmc_find_placement,
-    hmc_get_system,
-    hmc_get_lpar,
-    hmc_get_lpar_state,
-    hmc_get_vios,
-    hmc_list_lpars,
-    hmc_list_resources,
-    hmc_list_systems,
-    hmc_list_vios,
+from hmc_mcp.errors import HMCError
+from hmc_mcp.server_tools.capacity import (
+    hmc_capacity_report as hmc_capacity_report,
+)
+from hmc_mcp.server_tools.capacity import (
+    hmc_find_placement as hmc_find_placement,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_console_info as hmc_console_info,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_get_lpar as hmc_get_lpar,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_get_lpar_state as hmc_get_lpar_state,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_get_system as hmc_get_system,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_get_vios as hmc_get_vios,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_list_lpars as hmc_list_lpars,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_list_resources as hmc_list_resources,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_list_systems as hmc_list_systems,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_list_vios as hmc_list_vios,
 )
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
@@ -98,12 +118,16 @@ def test_console_info_returns_management_console(monkeypatch, mock_hmc):
     assert result["Resource"]["Version"] == "V10R1M1040"
 
 
-def test_console_info_returns_none_for_known_firmware_500(monkeypatch, mock_hmc):
+def test_console_info_translates_known_firmware_500(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
         return_value=httpx.Response(500, text="null SessionId")
     )
-    assert hmc_console_info() is None
+    with pytest.raises(HMCError, match="null SessionId") as exc_info:
+        hmc_console_info()
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.body == "null SessionId"
+    assert isinstance(exc_info.value.__cause__, HMCError)
 
 
 def test_console_info_propagates_unrelated_hmc_error(monkeypatch, mock_hmc):
@@ -147,9 +171,7 @@ def test_systems_no_arg_lists_all(monkeypatch, mock_hmc):
 def test_find_system_gets_one_by_name(monkeypatch, mock_hmc):
     """hmc_get_system returns one system dict by exact name."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(
-        "/rest/api/uom/ManagedSystem/search/(SystemName==p10-e1080)"
-    ).mock(
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==p10-e1080)").mock(
         return_value=httpx.Response(
             200,
             text=_feed(
@@ -188,9 +210,7 @@ def test_get_system_gets_one_by_uuid(monkeypatch, mock_hmc):
 def test_find_system_list_error_propagates(monkeypatch, mock_hmc):
     """An inventory error during a system lookup preserves its status code."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(
-        "/rest/api/uom/ManagedSystem/search/(SystemName==p10-e1080)"
-    ).mock(
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==p10-e1080)").mock(
         return_value=httpx.Response(404, text="<error>not found</error>")
     )
     with pytest.raises(HMCError) as exc_info:
@@ -274,16 +294,6 @@ def test_get_lpar_state_returns_string(monkeypatch, mock_hmc):
     assert result == "running"
 
 
-def test_lpars_rejects_conflicting_selectors():
-    with pytest.raises(ValueError, match="at most one"):
-        hmc_list_lpars(system_name_or_uuid=SYSTEM_UUID, state="running")
-
-
-def test_systems_rejects_conflicting_selectors():
-    with pytest.raises(ValueError, match="at most one"):
-        hmc_list_lpars(system_name_or_uuid=SYSTEM_UUID, state="running")
-
-
 # ---------------------------------------------------------------------- #
 # hmc_list_vios
 # ---------------------------------------------------------------------- #
@@ -315,11 +325,6 @@ def test_vios_with_uuid_returns_storage_detail(monkeypatch, mock_hmc):
     result = hmc_get_vios(VIOS_UUID)
     assert route.called
     assert result["UUID"] == VIOS_UUID
-
-
-def test_vios_rejects_vios_and_system_selectors():
-    with pytest.raises(ValueError, match="at most one"):
-        hmc_list_vios(system_name_or_uuid=SYSTEM_UUID, state="running")
 
 
 # ---------------------------------------------------------------------- #
@@ -454,9 +459,9 @@ def test_capacity_report_computes_per_system(monkeypatch, mock_hmc):
     by_name = {r["system_name"]: r for r in result}
 
     a = by_name["p9-01"]
-    assert a["total_memory_mb"] == 131072
-    assert a["assigned_memory_mb"] == 16384
-    assert a["free_memory_mb"] == 131072 - 16384
+    assert a["total_memory_mib"] == 131072
+    assert a["assigned_memory_mib"] == 16384
+    assert a["free_memory_mib"] == 131072 - 16384
     assert a["total_proc_units"] == 16.0
     assert a["assigned_proc_units"] == 2.0
     assert a["free_proc_units"] == pytest.approx(14.0)
@@ -464,8 +469,8 @@ def test_capacity_report_computes_per_system(monkeypatch, mock_hmc):
     assert a["running_lpars"] == 1  # only "running" counts
 
     b = by_name["p9-02"]
-    assert b["assigned_memory_mb"] == 4096
-    assert b["free_memory_mb"] == 65536 - 4096
+    assert b["assigned_memory_mib"] == 4096
+    assert b["free_memory_mib"] == 65536 - 4096
 
 
 def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
@@ -484,8 +489,8 @@ def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
     )
 
     result = hmc_capacity_report()
-    assert result[0]["assigned_memory_mb"] == 0
-    assert result[0]["free_memory_mb"] == 65536
+    assert result[0]["assigned_memory_mib"] == 0
+    assert result[0]["free_memory_mib"] == 65536
     assert result[0]["running_lpars"] == 0
     assert result[0]["total_lpars"] == 0
 
@@ -522,10 +527,10 @@ def test_find_placement_returns_candidates(monkeypatch, mock_hmc):
     )
 
     # Request 4096 MiB and 0.5 procs → only big-sys qualifies (small-sys has 2048 MiB free)
-    result = hmc_find_placement(desired_memory_mb=4096, desired_proc_units=0.5)
+    result = hmc_find_placement(desired_memory_mib=4096, desired_proc_units=0.5)
     assert len(result) == 1
     assert result[0]["system_name"] == "big-sys"
-    assert result[0]["free_memory_mb"] == 131072 - 8192
+    assert result[0]["free_memory_mib"] == 131072 - 8192
 
 
 def test_find_placement_no_candidates(monkeypatch, mock_hmc):
@@ -548,7 +553,7 @@ def test_find_placement_no_candidates(monkeypatch, mock_hmc):
         )
     )
 
-    result = hmc_find_placement(desired_memory_mb=512)
+    result = hmc_find_placement(desired_memory_mib=512)
     assert result == []
 
 
@@ -616,11 +621,6 @@ def test_lpars_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
     assert result == []
 
 
-def test_lpars_rejects_state_with_lpar_selector():
-    with pytest.raises(ValueError, match="at most one"):
-        hmc_list_lpars(system_name_or_uuid=SYSTEM_UUID, state="running")
-
-
 def test_vios_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
     """hmc_list_vios(state='running') GETs the VirtualIOServer PartitionState search endpoint."""
     _hmc_env(monkeypatch)
@@ -643,16 +643,14 @@ def test_vios_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
     assert result[0]["Resource"]["PartitionState"] == "running"
 
 
-def test_vios_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
-    """hmc_list_vios(state='no-match') returns [] when the search matches nothing."""
+def test_vios_state_filter_rejects_unknown_state(monkeypatch, mock_hmc):
+    """The shared inventory boundary rejects values outside PartitionState."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(
+    route = mock_hmc.get(
         "/rest/api/uom/VirtualIOServer/search/(PartitionState==no-match)"
-    ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
-    result = hmc_list_vios(state="no-match")
-    assert result == []
+    )
 
+    with pytest.raises(ValueError, match="state must be one of"):
+        hmc_list_vios(state="no-match")
 
-def test_vios_rejects_conflicting_selectors():
-    with pytest.raises(ValueError, match="at most one"):
-        hmc_list_vios(system_name_or_uuid=SYSTEM_UUID, state="running")
+    assert not route.called

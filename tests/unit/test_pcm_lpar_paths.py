@@ -5,22 +5,27 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from conftest import make_config
 
-from hmc_mcp import server_metrics
-from hmc_mcp.client import HMCClient
-from hmc_mcp.operations_pcm import (
+from hmc_mcp.client.core import HMCClient
+from hmc_mcp.operations.pcm import (
     get_pcm_preferences,
     resolve_pcm_resource,
     set_pcm_preferences,
 )
-from hmc_mcp.server import (
-    hmc_aggregated_metric_links,
-    hmc_aggregated_metrics,
-    hmc_processed_metric_links,
-    hmc_processed_metrics,
+from hmc_mcp.server_tools import metrics as server_metrics
+from hmc_mcp.server_tools.metrics import (
+    hmc_aggregated_metric_links as hmc_aggregated_metric_links,
 )
-
-from conftest import make_config
+from hmc_mcp.server_tools.metrics import (
+    hmc_aggregated_metrics as hmc_aggregated_metrics,
+)
+from hmc_mcp.server_tools.metrics import (
+    hmc_processed_metric_links as hmc_processed_metric_links,
+)
+from hmc_mcp.server_tools.metrics import (
+    hmc_processed_metrics as hmc_processed_metrics,
+)
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
@@ -142,7 +147,7 @@ def test_metric_tools_reject_missing_lpar_owner_before_client(monkeypatch, tool,
     def fail_client_entry(_profile):
         pytest.fail("invalid metric target entered the HMC client")
 
-    monkeypatch.setattr(server_metrics, "client_from_env", fail_client_entry)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", fail_client_entry)
 
     with pytest.raises(ValueError, match="system_name_or_uuid"):
         tool(*args)
@@ -152,7 +157,7 @@ def test_preferences_tool_rejects_lpar_before_client(monkeypatch):
     def fail_client_entry(_profile):
         pytest.fail("unsupported preference target entered the HMC client")
 
-    monkeypatch.setattr(server_metrics, "client_from_env", fail_client_entry)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", fail_client_entry)
 
     with pytest.raises(ValueError, match="ManagedSystem"):
         server_metrics.hmc_get_pcm_preferences("LogicalPartition", LPAR_UUID)

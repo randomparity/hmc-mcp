@@ -9,7 +9,7 @@ nested provisioning and LPAR resource objects.
 ## Contract
 
 - Every top-level input property has a nonempty string ``description``.
-- Every property of ``LparResources``, ``ProvisionNetwork``, and
+- Every property of ``LparResources``, ``ProvisionAdapters``, and
   ``ProvisionStorage`` has a nonempty string ``description``.
 - Descriptions preserve current #141, #144, #150, and #151 behavior.
 - Job submitters identify submission versus waiting and normalized outcomes.

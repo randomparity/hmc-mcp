@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from hmc_mcp.operations_composite import _fetch_lpar_data
+from hmc_mcp.operations.composite import _fetch_lpar_data
 
 
 class _FailingCompositeClient:

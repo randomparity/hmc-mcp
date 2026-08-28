@@ -1,66 +1,112 @@
-"""Supported reusable-library facade for hmc-mcp."""
+"""Supported reusable-library facade for hmc-mcp.
 
-from hmc_mcp.client import HMCClient
-from hmc_mcp.client_adapters import AdapterType
+Operations propagate :class:`HMCError` and :class:`HMCTransportError` when the
+HMC rejects a request or communication fails. Operations can additionally raise
+``ValueError`` or a documented domain exception when local validation,
+authorization, capability checks, or post-mutation reconciliation fail; consult
+an operation's docstring when it defines a narrower failure contract.
+"""
+
+from hmc_mcp.client.core import HMCClient
+from hmc_mcp.client.client_adapters import AdapterType
 from hmc_mcp.config import ConfigError, HMCConfig, load_profile
-from hmc_mcp.affinity_assessment import (
+from hmc_mcp.operations.affinity import (
     AffinityAssessmentInput,
     AffinityAssessmentResult,
     AffinityClassification,
     AffinityEvidence,
     CapturedPolicyState,
+    PostActivationAffinityAssessment,
+    ProvisionAffinityAssessment,
     PolicyState,
+    assess_post_activation_affinity,
 )
 from hmc_mcp.documents import (
+    AuthenticationType,
     BootDeviceSelector,
     Keylock,
     LparResources,
+    MemoryMirroringMode,
     OsType,
     PartitionType,
+    PowerOffPolicy,
+    PowerOnLparStartPolicy,
     SharingMode,
     StorageKind,
 )
 from hmc_mcp.errors import HMCError, HMCTransportError
 from hmc_mcp.jobs import DeviceType, JobOutcome, LuType, RemoteRestartOperation
-from hmc_mcp.operations_jobs import get_job, wait_for_job
-from hmc_mcp.operations_adapters import (
+from hmc_mcp.operations.ownership import (
+    authorize_decommission_lpar_ownership_snapshot,
+    authorize_lpar_mutation,
+    list_lpar_ownership,
+    resolve_and_authorize_lpar_mutation,
+    resolve_and_authorize_lpar_names,
+    resolve_lpar_ownership_names,
+    set_lpar_ownership_description,
+    stamp_created_lpar_ownership,
+)
+from hmc_mcp.operations.jobs import get_job, wait_for_job
+from hmc_mcp.operations.adapters import (
     AdapterResult,
     add_network_adapter,
-    add_vios_adapter,
+    add_vfc_adapter,
+    add_vscsi_adapter,
     delete_adapter,
     list_adapters,
 )
-from hmc_mcp.operations_capacity import capacity_report, find_placement
-from hmc_mcp.operations_composite import lpar_summary, system_summary
-from hmc_mcp.operations_decommission import DecommissionResult, decommission_lpar
-from hmc_mcp.operations_health import FleetHealthResult, fleet_health
-from hmc_mcp.operations_install import InstallHandle, install_lpar_os, install_vios
-from hmc_mcp.operations_lpar import (
+from hmc_mcp.operations.capacity import CapacitySummary, capacity_report, find_placement
+from hmc_mcp.operations.composite import (
+    LparSummary,
+    SystemSummary,
+    lpar_summary,
+    system_summary,
+)
+from hmc_mcp.operations.lpar.decommission import (
+    DecommissionAdapterRecord,
+    DecommissionBlastRadius,
+    DecommissionResult,
+    decommission_lpar,
+)
+from hmc_mcp.operations.health import FleetHealthResult, fleet_health
+from hmc_mcp.operations.install import (
+    InstallHandle,
+    InstallRequest,
+    install_lpar_os,
+    install_vios,
+)
+from hmc_mcp.operations.lpar.core import (
     LparCreation,
     LparCreationResult,
-    ProvisionAffinityAssessment,
-    clear_lpar_boot_order,
-    read_lpar_boot_order,
-    set_lpar_boot_order,
     LparPowerResult,
-    assess_post_activation_affinity,
-    authorize_decommission_lpar_ownership_snapshot,
-    authorize_lpar_mutation,
+    ProcessorCompatibilityMode,
     create_and_stamp_lpar,
     delete_lpar,
     power_lpar,
     rename_lpar,
-    resolve_lpar_ownership_names,
-    list_lpar_ownership,
-    set_lpar_memory,
-    set_lpar_ownership_description,
-    set_lpar_processors,
-    stamp_created_lpar_ownership,
 )
-from hmc_mcp.operations_lpm import (
+from hmc_mcp.operations.partition_state import PartitionState
+from hmc_mcp.operations.lpar.boot_order import (
+    clear_lpar_boot_order,
+    read_lpar_boot_order,
+    set_lpar_boot_order,
+)
+from hmc_mcp.operations.lpar.configuration import (
+    configure_lpar_msp,
+    configure_lpar_processor_compatibility,
+    synchronize_lpar_profile,
+)
+from hmc_mcp.operations.lpar.dlpar import (
+    modify_lpar,
+    set_lpar_memory,
+    set_lpar_processors,
+)
+from hmc_mcp.operations.lpar.workflows import create_lpar
+from hmc_mcp.operations.lpm import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightOutcome,
     LpmAffinityPreflightRequest,
+    LpmMigrationRequest,
     LpmResult,
     abort_lpar_migration,
     migrate_lpar,
@@ -68,15 +114,17 @@ from hmc_mcp.operations_lpm import (
     run_lpm_affinity_preflight,
     recover_lpar_migration,
     remote_restart_lpar,
+    validate_lpar_migration,
 )
-from hmc_mcp.operations_network import (
+from hmc_mcp.operations.network import (
+    VirtualNetworkResult,
     create_virtual_network,
     delete_virtual_network,
     list_network_bridges,
     list_virtual_networks,
     list_virtual_switches,
 )
-from hmc_mcp.operations_pcm import (
+from hmc_mcp.operations.pcm import (
     MetricKind,
     PcmCategory,
     PcmResource,
@@ -86,7 +134,7 @@ from hmc_mcp.operations_pcm import (
     resolve_pcm_resource,
     set_pcm_preferences,
 )
-from hmc_mcp.operations_pcie import (
+from hmc_mcp.operations.pcie import (
     CapabilityState,
     DedicatedSlot,
     InventoryResult,
@@ -110,9 +158,9 @@ from hmc_mcp.operations_pcie import (
     set_sriov_adapter_mode,
     unassign_sriov_logical_port,
 )
-from hmc_mcp.operations_assignments import (
+from hmc_mcp.operations.lpar.assignments import (
     AssignmentResult,
-    AssignmentStep,
+    WorkflowStep,
     DedicatedPcieAssignment,
     LparPcieAssignments,
     LparPcieWorkflowResult,
@@ -121,19 +169,30 @@ from hmc_mcp.operations_assignments import (
     apply_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
-from hmc_mcp.operations_provision import (
+from hmc_mcp.operations.lpar.provision import (
     AttachDiskResult,
-    ProvisionNetwork,
+    ProvisionAdapters,
     ProvisionResult,
     ProvisionStorage,
     attach_disk_to_lpar,
     provision_lpar,
 )
-from hmc_mcp.operations_ssh_network import (
+from hmc_mcp.operations.ssh_affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
+    get_lpar_memopt_score,
+    get_minimum_affinity_policy,
+    get_system_memopt_score,
+    list_lpar_memopt_scores,
+    list_resource_group_memopt_scores,
+    plan_lpar_memopt_scores,
+    plan_resource_group_memopt_scores,
+    plan_system_memopt_score,
+    set_minimum_affinity_policy,
+)
+from hmc_mcp.operations.vnic import (
     VnicBackingSelector,
     VnicBackingSnapshot,
     VnicCapabilityError,
@@ -141,22 +200,13 @@ from hmc_mcp.operations_ssh_network import (
     VnicPartialError,
     VnicSnapshot,
     add_vnic,
-    get_lpar_memopt_score,
-    get_minimum_affinity_policy,
-    set_minimum_affinity_policy,
-    get_system_memopt_score,
     list_fc_ports,
-    list_lpar_memopt_scores,
     list_sea_adapters,
     list_vnics,
-    plan_lpar_memopt_scores,
-    plan_system_memopt_score,
-    list_resource_group_memopt_scores,
-    plan_resource_group_memopt_scores,
     remove_vnic,
 )
-from hmc_mcp.ssh_commands import MinimumAffinityPolicy
-from .operations_storage import (
+from hmc_mcp.ssh.affinity import MinimumAffinityPolicy
+from .operations.storage import (
     create_logical_unit,
     create_media_repository,
     create_optical_media,
@@ -167,39 +217,75 @@ from .operations_storage import (
     delete_optical_media,
     delete_virtual_disk,
     detach_storage_mapping,
+    get_shared_storage_pool,
     get_media_repository,
     list_optical_mappings,
     list_optical_media,
+    list_clusters,
+    list_shared_storage_pools,
     list_storage_mappings,
     list_volume_groups,
     map_storage,
+    StorageMapResult,
     mount_optical_media,
     unmount_optical_media,
     upload_iso,
 )
-from hmc_mcp.operations_systems import power_system
-from hmc_mcp.operations_templates import (
+from hmc_mcp.operations.systems import (
+    ManagedSystemPatch,
+    get_system,
+    list_systems,
+    modify_system,
+    power_system,
+)
+from hmc_mcp.operations.templates import (
     deploy_partition_template,
     get_partition_template,
     list_partition_templates,
 )
-from hmc_mcp.operations_vios import power_vios
-from hmc_mcp.ssh import HMCCLIError
-from hmc_mcp.ssh_commands import SriovMode
-from hmc_mcp.console_capture import (
+from hmc_mcp.operations.updates import (
+    list_available_hmc_ptfs,
+    update_console_software,
+    update_firmware,
+    update_vios,
+    upgrade_vios,
+)
+from hmc_mcp.operations.vios import (
+    BackupType,
+    RestoreBackupType,
+    backup_vios,
+    create_vios,
+    delete_vios,
+    get_vios,
+    list_vios,
+    list_vios_backups,
+    power_vios,
+    restore_vios,
+)
+from hmc_mcp.operations.users import (
+    CreateUserRequest,
+    ModifyUserPatch,
+    configure_remote_access,
+    create_user,
+    delete_user,
+    modify_user,
+)
+from hmc_mcp.ssh.transport import HMCCLIError
+from hmc_mcp.ssh.network import SriovMode
+from hmc_mcp.ssh.console import (
     ConsoleCapture,
     ConsoleHeldError,
     StopReason,
     capture_lpar_console,
 )
-from hmc_mcp.operations_snapshot import (
+from hmc_mcp.snapshots.operations import (
     assess_snapshot_affinity,
     capture_lpar_snapshot,
     inspect_lpar_snapshot,
     validate_lpar_snapshot,
 )
-from hmc_mcp.snapshot import (
-    HmcIdentity,
+from hmc_mcp.snapshots.models import (
+    HMCIdentity,
     LparIdentity,
     LparSnapshot,
     MemoryProjection,
@@ -215,6 +301,24 @@ from hmc_mcp.snapshot import (
     SnapshotValidationError,
     SystemIdentity,
 )
+from hmc_mcp.operations.update_models import (
+    ConsoleUpdateMediaType,
+    ConsoleUpdateSource,
+    IOAdapterUpdateModel,
+    PlatformUpdateParameter,
+    SriovAdapterUpdate,
+    SystemFirmwareUpdateModel,
+    VIOSPlatformUpdate,
+    VIOSUpdateHMCSource,
+    VIOSUpdateIBMWebsiteSource,
+    VIOSUpdateNFSSource,
+    VIOSUpdateSFTPSource,
+    VIOSUpdateUSBSource,
+    VIOSUpgradeHMCSource,
+    VIOSUpgradeNFSSource,
+    VIOSUpgradeSFTPSource,
+    VIOSUpgradeUSBSource,
+)
 
 __all__ = [
     "HMCClient",
@@ -223,6 +327,7 @@ __all__ = [
     "AffinityClassification",
     "AffinityEvidence",
     "CapturedPolicyState",
+    "PostActivationAffinityAssessment",
     "PolicyState",
     "HMCConfig",
     "ConfigError",
@@ -232,30 +337,41 @@ __all__ = [
     "HMCCLIError",
     "list_adapters",
     "add_network_adapter",
-    "add_vios_adapter",
+    "add_vfc_adapter",
+    "add_vscsi_adapter",
     "delete_adapter",
     "AdapterResult",
     "AdapterType",
+    "CapacitySummary",
     "capacity_report",
     "find_placement",
     "lpar_summary",
+    "LparSummary",
     "system_summary",
+    "SystemSummary",
     "decommission_lpar",
+    "DecommissionAdapterRecord",
+    "DecommissionBlastRadius",
     "DecommissionResult",
     "fleet_health",
     "FleetHealthResult",
     "install_lpar_os",
     "install_vios",
     "InstallHandle",
+    "InstallRequest",
     "assess_post_activation_affinity",
     "authorize_decommission_lpar_ownership_snapshot",
     "authorize_lpar_mutation",
+    "resolve_and_authorize_lpar_mutation",
+    "resolve_and_authorize_lpar_names",
     "resolve_lpar_ownership_names",
     "list_lpar_ownership",
     "stamp_created_lpar_ownership",
     "create_and_stamp_lpar",
+    "create_lpar",
     "set_lpar_ownership_description",
     "delete_lpar",
+    "modify_lpar",
     "power_lpar",
     "rename_lpar",
     "set_lpar_processors",
@@ -263,9 +379,14 @@ __all__ = [
     "LparCreation",
     "LparCreationResult",
     "LparPowerResult",
+    "PartitionState",
+    "ProcessorCompatibilityMode",
     "read_lpar_boot_order",
     "set_lpar_boot_order",
     "clear_lpar_boot_order",
+    "configure_lpar_msp",
+    "configure_lpar_processor_compatibility",
+    "synchronize_lpar_profile",
     "BootDeviceSelector",
     "migrate_lpar",
     "migrate_lpar_with_affinity_preflight",
@@ -273,11 +394,14 @@ __all__ = [
     "abort_lpar_migration",
     "recover_lpar_migration",
     "remote_restart_lpar",
+    "validate_lpar_migration",
     "RemoteRestartOperation",
     "LpmResult",
     "LpmAffinityPreflightRequest",
+    "LpmMigrationRequest",
     "LpmAffinityPreflightOutcome",
     "LpmAffinityMigrationResult",
+    "VirtualNetworkResult",
     "list_virtual_switches",
     "list_virtual_networks",
     "create_virtual_network",
@@ -316,14 +440,17 @@ __all__ = [
     "attach_disk_to_lpar",
     "provision_lpar",
     "ProvisionAffinityAssessment",
-    "ProvisionNetwork",
+    "ProvisionAdapters",
     "ProvisionStorage",
     "ProvisionResult",
     "AttachDiskResult",
     "LparResources",
+    "MemoryMirroringMode",
     "PartitionType",
     "OsType",
     "Keylock",
+    "PowerOffPolicy",
+    "PowerOnLparStartPolicy",
     "SharingMode",
     "list_fc_ports",
     "get_lpar_memopt_score",
@@ -352,7 +479,7 @@ __all__ = [
     "remove_vnic",
     "SriovMode",
     "AssignmentResult",
-    "AssignmentStep",
+    "WorkflowStep",
     "DedicatedPcieAssignment",
     "LparPcieAssignments",
     "LparPcieWorkflowResult",
@@ -361,10 +488,14 @@ __all__ = [
     "apply_lpar_pcie_assignments",
     "prevalidate_lpar_pcie_assignments",
     "list_volume_groups",
+    "list_clusters",
+    "list_shared_storage_pools",
+    "get_shared_storage_pool",
     "create_volume_group",
     "create_virtual_disk",
     "delete_virtual_disk",
     "map_storage",
+    "StorageMapResult",
     "upload_iso",
     "create_media_repository",
     "create_optical_media",
@@ -382,11 +513,52 @@ __all__ = [
     "StorageKind",
     "LuType",
     "DeviceType",
+    "AuthenticationType",
+    "CreateUserRequest",
+    "ModifyUserPatch",
+    "configure_remote_access",
+    "create_user",
+    "delete_user",
+    "modify_user",
+    "modify_system",
+    "get_system",
+    "ManagedSystemPatch",
+    "list_systems",
     "power_system",
     "list_partition_templates",
     "get_partition_template",
     "deploy_partition_template",
+    "list_vios_backups",
+    "list_vios",
+    "get_vios",
+    "backup_vios",
+    "create_vios",
+    "delete_vios",
+    "restore_vios",
     "power_vios",
+    "BackupType",
+    "RestoreBackupType",
+    "list_available_hmc_ptfs",
+    "update_console_software",
+    "update_firmware",
+    "update_vios",
+    "upgrade_vios",
+    "ConsoleUpdateMediaType",
+    "ConsoleUpdateSource",
+    "IOAdapterUpdateModel",
+    "PlatformUpdateParameter",
+    "SriovAdapterUpdate",
+    "SystemFirmwareUpdateModel",
+    "VIOSPlatformUpdate",
+    "VIOSUpdateHMCSource",
+    "VIOSUpdateIBMWebsiteSource",
+    "VIOSUpdateNFSSource",
+    "VIOSUpdateSFTPSource",
+    "VIOSUpdateUSBSource",
+    "VIOSUpgradeHMCSource",
+    "VIOSUpgradeNFSSource",
+    "VIOSUpgradeSFTPSource",
+    "VIOSUpgradeUSBSource",
     "capture_lpar_console",
     "ConsoleCapture",
     "ConsoleHeldError",
@@ -394,7 +566,7 @@ __all__ = [
     "LparSnapshot",
     "SnapshotInspection",
     "SnapshotValidationError",
-    "HmcIdentity",
+    "HMCIdentity",
     "SystemIdentity",
     "LparIdentity",
     "SnapshotSource",

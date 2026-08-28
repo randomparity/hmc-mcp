@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from hmc_mcp.affinity_assessment import (
+from hmc_mcp.operations.affinity import (
     AffinityAssessmentInput,
     assess_affinity,
 )
@@ -52,7 +52,7 @@ def test_classifies_supported_evidence(changes, classification) -> None:
     result = assess_affinity(_input(**changes))
 
     assert result.classification == classification
-    assert result.evidence["captured_score"] == 90
+    assert result.evidence.captured_score == 90
     assert result.explanation
     assert all("apply" not in action.lower() for action in result.recommended_actions)
 

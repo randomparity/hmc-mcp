@@ -163,8 +163,8 @@ chained exception text. Proven by a sentinel-secret test on the real user path.
 **R17 — `dry_run` is never read by the authorizer.** The decision is identical for
 `dry_run=True` and `dry_run=False` on all three tools that accept it, under both a matching
 and a non-matching grant. The three modules that make the decision —
-`src/hmc_mcp/dispatch_scope.py`, `src/hmc_mcp/target_scope.py`, and
-`src/hmc_mcp/connection_scope.py` — contain no reference to `dry_run`.
+`src/hmc_mcp/authorization/dispatch_scope.py`, `src/hmc_mcp/authorization/target_scope.py`, and
+`src/hmc_mcp/authorization/connection_scope.py` — contain no reference to `dry_run`.
 
 **R18 — The three dry-run paths are classified by test.** For `hmc_provision_lpar`,
 `hmc_decommission_lpar`, and `hmc_attach_disk_to_lpar`, a test proves the `dry_run=True`
@@ -175,7 +175,7 @@ path issues zero mutating HMC requests (no `POST`, `PUT`, or `DELETE`).
 `DECLARED_ONLY_DIMENSIONS == ()`. `ToolPermission` gains `exhaustive_targets: bool`.
 
 **R20 — No behaviour change without a policy.** `create_mcp(None)` registers every handler
-unwrapped, exactly as before. Nothing in this change touches `cli_app.py` or `create_mcp`'s
+unwrapped, exactly as before. Nothing in this change touches `cli_commands/app.py` or `create_mcp`'s
 default.
 
 ## Design
@@ -326,7 +326,7 @@ for tool in model.tools:
 
 The existing rule rejecting a `targets` kind no granted tool declares is unchanged.
 
-### `server_permissions.py`
+### `server_tools/permissions.py`
 
 `ENFORCED_DIMENSIONS = ("tools", "connections", "targets")`,
 `DECLARED_ONLY_DIMENSIONS: tuple[str, ...] = ()`. `ToolPermission` gains
@@ -349,7 +349,7 @@ R12/R13) and then denies every console read, `hmc_list_systems`, and every unpin
 now implies: every declared selector must be supplied and matched, comparison is exact so a
 name does not cover its UUID, and a table never covers a tool it cannot bound.
 
-### `server_provision.py`, `server_profiles.py`
+### `server_tools/provision.py`, `server_tools/profiles.py`
 
 One decorator keyword each: `exhaustive_targets=False`, with a comment naming the identity
 that escapes (`ProvisionStorage.vios_uuid` / the HMC-side `file_path`).

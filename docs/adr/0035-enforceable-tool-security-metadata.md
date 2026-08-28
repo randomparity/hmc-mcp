@@ -185,7 +185,7 @@ asserting coverage.
   domain modules, plus the escape hatch, and every future tool pays the same
   cost — which is the point: the collector has no bare `@tool` form left to forget the
   declaration in. The collector is not the only way in, though: `mcp.tool(...)` can be called
-  directly, as `server_command.py` does, and `register_tools` can be pointed at any
+  directly, as `server_tools/command.py` does, and `register_tools` can be pointed at any
   application outside `create_mcp()`. Those holes are closed by the exhaustive contract test,
   which enumerates the live application — with the arbitrary-command toggle on, so 129 tools
   — rather than the collector. FastMCP silently replaces a duplicate tool name with a log
@@ -224,7 +224,7 @@ asserting coverage.
   > existing firmware or system software it did not create — the boundary criterion of
   > this record verbatim — which places them beside `hmc_install_vios` and
   > `hmc_install_lpar_os`, not beside routine configuration changes. The declarations in
-  > `src/hmc_mcp/server_updates.py` carry `effect="destructive"` now; on the wire this
+  > `src/hmc_mcp/server_tools/updates.py` carry `effect="destructive"` now; on the wire this
   > only makes `destructiveHint=True` explicit, which cautious MCP clients already
   > defaulted to for `mutate` tools, so the operative change is server-side: a policy
   > granting only the `mutate` effect class no longer reaches a firmware flash.
@@ -292,7 +292,7 @@ asserting coverage.
   a destination system. #223 must constrain both independently.
 - **Hand-declare `targets` on every tool, and validate each declaration against
   `REQUIRED_TARGET_ARGUMENTS`.** More explicit at each call site: a reader of
-  `server_lpars.py` sees the targets without knowing the table. Rejected because the check
+  `server_tools/lpars.py` sees the targets without knowing the table. Rejected because the check
   and the declaration draw on the same table, so the rule verifies a hand-copy of its own
   output across roughly 250 literal lines — and it still cannot catch an argument name the
   table does not know, so it buys no coverage over deriving. The inspectable result is

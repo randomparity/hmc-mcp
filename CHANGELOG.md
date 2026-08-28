@@ -27,8 +27,45 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ## [Unreleased]
 
+### Changed
+
+- `modify_system` now accepts a cohesive `ManagedSystemPatch`, and the LPM
+  validation and migration operations accept `LpmMigrationRequest` for their
+  destination-specific inputs. Shared wait and authorization controls remain
+  explicit keyword-only arguments.
+- Mutation results now identify the affected resource consistently: `delete_adapter`
+  returns the deleted adapter UUID, and `create_virtual_network` returns a
+  `VirtualNetworkResult` containing the resolved system UUID and HMC resource.
+- `hmc_create_volume_group` now declares its actual HMC resource payload return
+  (`dict | None`) instead of the unrelated storage-mapping workflow result.
+- Capacity and summary contracts now name mebibyte values explicitly:
+  `desired_memory_mib`, `current_memory_mib`, `total_memory_mib`,
+  `assigned_memory_mib`, and `free_memory_mib` replace their misleading
+  `*_mb` names across the facade, MCP tools, CLI adapters, and live-test state.
+- `ConsoleCapture` now preserves a bounded, single-line transport diagnostic in
+  `error` when `stop_reason` is `"error"`. Partial console bytes and mandatory
+  vterm release behavior are unchanged; non-error captures report `error=None`.
+- Exported vSCSI and vFC adapter creation operations now match network adapter
+  creation by accepting the optional client slot as keyword-only
+  `slot_number=None`.
+- Provisioning workflow results now report virtual-disk capacity as
+  `capacity_mib`, matching the value's mebibyte unit.
+- Exported LPAR operations now place `system_name_or_uuid` before
+  `lpar_name_or_uuid`, including LPM, disk attachment, summaries, ownership
+  authorization, and PCIe assignment workflows. Presentation adapters pass
+  `None` when they intentionally request fleet-wide LPAR-name resolution.
+
 ### Added
 
+- `ManagedSystemPatch` and `LpmMigrationRequest` provide reusable typed request
+  values for managed-system configuration and LPM destination inputs.
+- `VirtualNetworkResult` exposes the resolved managed-system UUID beside the
+  resource returned by `create_virtual_network`.
+- `DecommissionBlastRadius` and `DecommissionAdapterRecord` expose the fixed
+  `DecommissionResult.blast_radius` inventory schema to reusable Python callers.
+- `StorageMapResult` records the authorized LPAR UUID beside the resource returned by
+  `map_storage`, so library and CLI callers no longer resolve the partition independently
+  before the guarded storage operation (ADR 0104).
 - Opt-in ADR 0011 ownership guard on LPAR power operations (#371, ADR 0092 §4): the new
   `authorize_power_operations` setting (`HMC_AUTHORIZE_POWER_OPERATIONS`, TOML profile key
   `authorize_power_operations`) defaults to `false`, leaving the `power_lpar` call path
@@ -202,7 +239,41 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- `create_user` and `modify_user` now expose the documented user-profile fields as
+  explicit typed keyword parameters instead of accepting an untyped `**fields` bag.
+- User deletion and remote-access MCP tools now call the client boundary directly;
+  remote-access validation and document merging have one owner in the client layer.
+- `metric_links` and `metric_data` require metric kind, time range, sample count, and
+  managed-system scope as named arguments after the resource selector.
+- Affinity assessment models, pure evaluation, and live orchestration now live together
+  in `operations.affinity`; snapshot modules consume that boundary without a reverse
+  dependency from operations into the snapshot package.
 
+- `provision_lpar` now requires `partition_type` and all subsequent workflow
+  controls as keyword arguments. The HMC client, system/name selectors, network,
+  storage, and resource payload remain positional; boolean and policy controls can
+  no longer be silently misbound by position.
+
+- `update_console_software` and `hmc_update_console_software` no longer expose a
+  `kind` selector whose `"upgrade"` branch always failed. The operation now models
+  only the supported `UpdateManagementConsole` job; any future multi-job console
+  upgrade will require a separately named workflow.
+
+- `upload_iso` now documents and returns its sole successful status, `"uploaded"`;
+  removed the always-`None` `existing_name` result field and the CLI's unreachable
+  duplicate-content output branch. Name collisions continue to raise
+  `FileExistsError` before transfer.
+
+- Public VIOS and storage operations now use `*_name_or_uuid` selector names, place
+  `system_name_or_uuid` before the resource selector, and require non-selector controls by
+  keyword.
+- LPAR ownership operations now live with the ownership policy in `lpar_ownership`, and
+  post-activation affinity orchestration now lives with the shared affinity assessment models.
+  The facade names and signatures are unchanged.
+- `create_media_repository` no longer removes and recreates an existing virtual media
+  repository. A repeated request for the same size returns the existing repository without a
+  write; a different requested size raises an actionable conflict and leaves the repository
+  untouched. Resizing or replacement requires a separately explicit destructive operation.
 - `hmc_wait_for_job` and `hmc_get_job` now read through `operations_jobs` instead of calling
   `HMCClient` directly, so an MCP caller can tell a reaped job from a running one (#474, ADR 0093
   amendment). **Tool behaviour changes:** a job the HMC no longer has returns `found: false`
@@ -351,6 +422,133 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `ManagedSystemPatch` and `LpmMigrationRequest` replace recurring scalar
+  option groups in `modify_system`, `validate_lpar_migration`, `migrate_lpar`,
+  and `migrate_lpar_with_affinity_preflight`.
+- Added: `VirtualNetworkResult` records the resolved managed-system UUID beside
+  the HMC resource returned by `create_virtual_network`.
+- Changed: `delete_adapter` returns the deleted adapter UUID instead of its
+  parent LPAR UUID.
+- Changed: SSH-only PCIe, vNIC inventory, and affinity read operations now
+  accept `HMCConfig` directly instead of constructing an unused REST client.
+- Changed: `ProvisionNetwork` is replaced by `ProvisionAdapters`, reflecting that
+  the model configures both virtual Ethernet and the VIOS-side vSCSI adapter.
+- Changed: `create_virtual_disk` now names its mebibyte value `capacity_mib`,
+  matching the CLI and MCP tool boundary.
+- Changed: `list_systems` accepts any exact HMC state string; removed the
+  misleading finite `ManagedSystemState` facade type and tool-schema enum.
+- Changed: `get_vios` now accepts the required VIOS selector first and makes its
+  optional managed-system scope keyword-only.
+- Added: `DecommissionBlastRadius` and `DecommissionAdapterRecord` type the
+  stable inventory returned through `DecommissionResult.blast_radius`.
+- Added: `list_clusters`, `list_shared_storage_pools`, and
+  `get_shared_storage_pool` provide shared presentation-neutral cluster inventory
+  operations for CLI, MCP, and reusable Python callers.
+- Changed: PCIe and SR-IOV inventory operations now consistently name their
+  managed-system selector `system_name_or_uuid`.
+- Changed: `read_lpar_boot_order`, `set_lpar_boot_order`, and
+  `clear_lpar_boot_order` now accept a system-scoped LPAR name or UUID.
+- Changed: SSH affinity result types and workflows now live in
+  `operations.ssh_affinity`; network inventory and vNIC mutation now live in
+  `operations.vnic`.
+- Changed: `get_vios`, `delete_vios`, `update_vios`, and `upgrade_vios` now place the
+  optional managed-system selector before the VIOS selector, matching sibling VIOS
+  operations and allowing update and upgrade names to be disambiguated.
+
+- Added: `get_vios`, `list_vios`, and the latter's `PartitionState` selector
+  type as the shared VIOS inventory boundary used by both presentation layers.
+- Changed: `power_system` and `power_vios` now name their action flag
+  `power_on`, matching `power_lpar`.
+- Added: `get_system`, `list_systems`, and their `ManagedSystemState` selector type as
+  the shared managed-system read boundary used by both presentation layers.
+- Added: `CreateUserRequest` and `ModifyUserPatch`; `create_user` and `modify_user`
+  now accept these typed profile payloads instead of duplicated wide parameter lists.
+- Changed: SSH-backed network and affinity operations now consistently name their
+  selectors `system_name_or_uuid` and `lpar_name_or_uuid`.
+- Added: `resolve_and_authorize_lpar_mutation` and `resolve_and_authorize_lpar_names` after
+  ownership authorization moved to the cross-cutting `operations.ownership` module.
+- Added: `StorageMapResult`; `map_storage` now returns this concrete result instead of the
+  mapped resource alone.
+- Added: `upgrade_vios`, splitting VIOS upgrades from `update_vios`; `update_vios` now accepts
+  only `VIOSUpdateSource` and has no `kind` mode selector.
+- Removed: `add_vios_adapter`; use the explicit `add_vscsi_adapter` or `add_vfc_adapter`
+  operation instead.
+- Added: `add_vscsi_adapter` and `add_vfc_adapter`, replacing the boolean mode selector on
+  `add_vios_adapter` with operation-specific names.
+- Changed: `add_network_adapter`, `add_vios_adapter`, `delete_adapter`,
+  `map_storage`, `attach_disk_to_lpar`, `mount_optical_media`,
+  `unmount_optical_media`, `migrate_lpar`, `migrate_lpar_with_affinity_preflight`,
+  `abort_lpar_migration`, `recover_lpar_migration`, and `remote_restart_lpar` now
+  accept `ownership_override` and enforce the shared LPAR ownership guard before
+  their first mutating submission. These changes move the frozen public signature
+  digest.
+- Added: `configure_lpar_msp`, `configure_lpar_processor_compatibility`, and
+  `synchronize_lpar_profile`, together with their `ProcessorCompatibilityMode` input
+  type; the guarded SSH-backed configuration operations now have supported reusable
+  import paths.
+- Changed: `detach_storage_mapping` now accepts a managed-system selector and
+  `ownership_override`, resolves the mapping's client LPAR, and authorizes it before
+  detachment. This moves the frozen public signature digest.
+- Added: `create_lpar`, the complete reusable creation workflow that validates PCIe requests,
+  creates and ownership-stamps the partition, applies assignments, and returns the existing
+  `LparPcieWorkflowResult`. `modify_lpar` now also accepts an optional ordered `new_name` step;
+  both changes move the frozen public signature digest.
+- Changed: `modify_lpar` now orders its selectors as managed system then LPAR, matching the
+  reusable LPAR operation contract. This moves the frozen public signature digest.
+- Changed: `unassign_sriov_logical_port` now shares the assignment operation's positional
+  identity prefix and accepts `profile_name` as a keyword-only control. This moves the frozen
+  public signature digest.
+- Added: `modify_lpar`, `modify_system`, `create_vios`,
+  and `delete_vios`. These established cross-module operation seams are now named public
+  package entry points instead of being imported as private helpers. Their transitive input
+  types `MemoryMirroringMode`, `PowerOffPolicy`, and `PowerOnLparStartPolicy` are exported too;
+  all eight names join the frozen public signature digest.
+- Removed: `apply_validated_lpar_pcie_assignments`; reusable callers use
+  `apply_lpar_pcie_assignments`, which enforces prevalidation before mutation.
+- Added: `backup_vios`, `list_vios_backups`, and `restore_vios`, together with their
+  `BackupType` and `RestoreBackupType` input types. The reusable operations now own VIOS backup
+  validation, catalog parsing, selector resolution, and concrete HMC CLI command construction.
+  All three operations now accept the facade's shared `HMCClient` and read its configuration at
+  the SSH boundary; this moves the frozen public signature digest.
+- Added: the presentation-neutral update operations `list_available_hmc_ptfs`,
+  `update_console_software`, `update_firmware`, and `update_vios`, together with
+  `ConsoleUpdateMediaType`, `ConsoleUpdateSource`, `IOAdapterUpdateModel`,
+  `PlatformUpdateParameter`, `SriovAdapterUpdate`, `SystemFirmwareUpdateModel`,
+  `VIOSPlatformUpdate`, `VIOSUpdateHMCSource`, `VIOSUpdateIBMWebsiteSource`,
+  `VIOSUpdateNFSSource`, `VIOSUpdateSFTPSource`, `VIOSUpdateUSBSource`,
+  `VIOSUpgradeHMCSource`, `VIOSUpgradeNFSSource`, `VIOSUpgradeSFTPSource`, and
+  `VIOSUpgradeUSBSource`. MCP handlers now only manage the configured client boundary and
+  delegate the complete workflow.
+- Added: `configure_remote_access`, `create_user`, `delete_user`, and `modify_user`, plus their
+  `AuthenticationType` input type. These presentation-neutral operations already back the user
+  MCP tools and now satisfy ADR 0029's selection rule.
+- Changed: `install_vios` now places `system_name_or_uuid` before `vios_name_or_uuid`,
+  matching `install_lpar_os` and the other system-scoped partition operations. This moves the
+  frozen public signature digest.
+- Changed: `capture_lpar_snapshot` now reads the SSH configuration from its `HMCClient`
+  instead of requiring callers to pass the same client's configuration separately. This removes
+  the redundant `config` parameter and moves the frozen public signature digest.
+- Changed: LPAR-targeting facade operations now consistently place the managed-system selector
+  before the partition selector. This reorders `install_lpar_os`, `power_lpar`,
+  `set_lpar_processors`, `set_lpar_memory`, and all four virtual-adapter operations; callers
+  that want fleet discovery pass `None` explicitly for the system selector. Operation-specific
+  controls remain after the two selectors and the frozen signature digest moves.
+- Changed: public job operations now expose `wait`, `timeout_seconds`, and `poll_interval` as
+  keyword-only controls with shared defaults of `false`, 300 seconds, and 5 seconds.
+  `create_logical_unit` also defaults its keyword-only `cloned_from` selector to `None`.
+  This aligns `create_logical_unit`, `delete_logical_unit`, and `deploy_partition_template`
+  with the existing LPAR, LPM, system, VIOS, and persisted-job operations and moves the frozen
+  signature digest.
+- Changed: the first parameter of all SSH-backed public operations now consistently accepts
+  `HMCClient` instead of `HMCConfig`: `capture_lpar_console`, the normalized PCIe inventory and
+  SR-IOV mode operations, the FC/SEA/vNIC inventory operations, and the LPAR, system, and
+  resource-group affinity read and planning operations. Implementations read `hmc.config` at
+  the SSH boundary, matching every other supported operation and moving the frozen signature
+  digest.
+- Added: `validate_lpar_migration`, the standalone LPM validation operation already used by the
+  MCP and CLI adapters. ADR 0029's selection rule requires it in the reusable facade.
+- Added: `HMCIdentity`, replacing the inconsistently capitalized `HmcIdentity` export. This is a
+  breaking public rename and moves the frozen signature digest; no compatibility alias remains.
 - Added: `InstallHandle` (#468), the `TypedDict` `install_lpar_os` and `install_vios` now return
   in place of `dict[str, Any]`. Runtime behaviour and both MCP tool responses are unchanged — a
   `TypedDict` is a plain `dict` — but the five keys `system`, `partition`, `pid`, `log_path`, and
@@ -360,6 +558,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   an upgrade**: holding the handle in a `dict[str, Any]`, passing it where `dict[str, Any]` is
   expected, or adding or deleting a key are all errors against a `TypedDict`. Annotate with
   `InstallHandle`, or with `Mapping[str, object]` where the consumer only reads.
+- Added: `InstallRequest`, the shared source, network, and profile value object accepted by
+  `install_lpar_os` and `install_vios`.
 - Added: the exports below landed between the `[0.1.0]` entry's enumerated manifest and this
   cycle with no manifest bullet of their own (#479). Each is an entry in `hmc_mcp.api.__all__`,
   so each contributes to the frozen public signature digest. This records the manifest catching
@@ -383,6 +583,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
     assessment over a captured snapshot and the evidence and policy-state models it reports.
   - `ProvisionAffinityAssessment` (#318): the assessment `provision_lpar` reports from the
     activation leg of the workflow.
+  - `PostActivationAffinityAssessment`: the typed result returned by
+    `assess_post_activation_affinity`.
+  - `CapacitySummary`, `LparSummary`, `SystemSummary`: typed results for the public
+    capacity and inventory-summary operations.
   - `LpmAffinityMigrationResult`, `LpmAffinityPreflightOutcome`, `LpmAffinityPreflightRequest`,
     `migrate_lpar_with_affinity_preflight`, `run_lpm_affinity_preflight` (#320): the
     affinity-aware LPM preflight and the migration that runs it first.
@@ -417,7 +621,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   not a new capability.
 - Added: nineteen types ADR 0029's type clause now reaches through the fields of an exported
   model (#482); this moves the frozen public signature digest. Twelve `hmc_mcp.snapshot` models
-  behind `LparSnapshot` — `HmcIdentity`, `LparIdentity`,
+  behind `LparSnapshot` — `HMCIdentity`, `LparIdentity`,
   `MemoryProjection`, `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`,
   `ProcessorProjection`, `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotObservations`,
   `SnapshotSource`, `SystemIdentity` — and seven literal aliases: `AffinityClassification`
@@ -488,7 +692,7 @@ Initial manifest of `hmc_mcp.api.__all__` (127 exports). This enumeration is the
 `[Unreleased]` manifest's delta is derived against, so it names the 0.1.0 export set and nothing
 added afterwards; every later addition is recorded above.
 
-`AdapterResult`, `AdapterType`, `AssignmentResult`, `AssignmentStep`, `AttachDiskResult`,
+`AdapterResult`, `AdapterType`, `AssignmentResult`, `WorkflowStep`, `AttachDiskResult`,
 `BootDeviceSelector`, `ConfigError`, `DecommissionResult`, `DedicatedPcieAssignment`,
 `DedicatedSlot`, `DeviceType`, `FleetHealthResult`, `HMCCLIError`, `HMCClient`, `HMCConfig`,
 `HMCError`, `HMCTransportError`, `InventoryResult`, `InventorySelector`, `LparCreation`,

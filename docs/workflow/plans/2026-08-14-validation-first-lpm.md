@@ -9,7 +9,7 @@ raised `HMCError` and zero migration submissions. Separately test propagation of
 submission and polling exceptions. Add boundary tests proving invalid timing with
 `validate_first=True, wait=False` fails before selector resolution or either HMC submission, while
 unused invalid timing remains accepted with `validate_first=False, wait=False`. Implement
-sequencing in `operations_lpm.py` using `JobOutcome`, `wait_for_submitted_job`, `job_outcome`, and
+sequencing in `operations/lpm.py` using `JobOutcome`, `wait_for_submitted_job`, `job_outcome`, and
 effective preflight validation equivalent to `validate_wait_timing(validate_first or wait, ...)`.
 
 ## Task 2 — MCP and CLI

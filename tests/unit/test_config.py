@@ -15,11 +15,12 @@ from unittest.mock import patch
 
 import pytest
 
-from hmc_mcp.common import build_config
+from hmc_mcp.config import build_config
 from hmc_mcp.config import (
     ConfigError,
     HMCConfig,
     config_dir,
+    config_inventory,
     env_var_value,
     list_nicknames,
     list_profiles,
@@ -389,6 +390,17 @@ def test_list_profiles_with_default_no_default(tmp_path, monkeypatch):
     assert default is None
 
 
+@pytest.mark.parametrize("value", ["42", '["prod"]', "true"])
+def test_list_profiles_with_default_rejects_non_string_default(tmp_path, value):
+    cfg = _write_toml(
+        tmp_path / "config.toml",
+        f"default_profile = {value}\n\n[profiles.prod]\nhost = 'h'\n",
+    )
+
+    with pytest.raises(ConfigError, match="'default_profile' must be a profile-name string"):
+        list_profiles_with_default(config_path=cfg)
+
+
 def test_list_profiles_with_default_absent(tmp_path):
     """Returns ([], None) when file absent."""
     names, default = list_profiles_with_default(config_path=tmp_path / "nonexistent.toml")
@@ -707,7 +719,7 @@ def test_list_profiles_and_nicknames_rejects_malformed_nicknames(tmp_path):
 #
 # Each reader documents ConfigError as its failure type, so a
 # ``try/except ConfigError`` around any of them must actually catch. These cases
-# are parametrized over all five rather than written per reader: before #257
+# are parametrized over every reader rather than written per reader: before #257
 # only list_profiles_and_nicknames converted them, and the other four leaked a
 # PermissionError, an IsADirectoryError, a UnicodeDecodeError, a RecursionError,
 # or an AttributeError naming the absolute config path.
@@ -718,6 +730,7 @@ _READERS = {
     "list_profiles": lambda p: list_profiles(config_path=p),
     "list_nicknames": lambda p: list_nicknames(config_path=p),
     "list_profiles_and_nicknames": lambda p: list_profiles_and_nicknames(config_path=p),
+    "config_inventory": lambda p: config_inventory(config_path=p),
     "load_profile": lambda p: load_profile("prod", config_path=p),
 }
 
@@ -820,6 +833,7 @@ def test_reader_reports_an_unresolvable_home(reader, monkeypatch):
         ("list_profiles", []),
         ("list_nicknames", {}),
         ("list_profiles_and_nicknames", ([], {})),
+        ("config_inventory", {"profiles": [], "config_file": None}),
     ],
 )
 def test_listing_reader_with_no_platform_config_file(name, empty, tmp_path, monkeypatch):
@@ -1046,7 +1060,7 @@ def test_from_mapping_keeps_the_tls_audit_provenance_accurate(monkeypatch):
     ``explicit-argument`` for a value nobody supplied, pointing an operator at
     an argument that does not exist.
     """
-    from hmc_mcp.client import _verify_ssl_source
+    from hmc_mcp.client.core import _verify_ssl_source
 
     monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
 

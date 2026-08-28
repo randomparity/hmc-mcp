@@ -6,14 +6,14 @@ detached ``installios`` command and submits it over SSH.
 
 from __future__ import annotations
 
-import httpx
-import pytest
 from unittest.mock import patch
 
+import httpx
+import pytest
 from conftest import make_config
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.ssh_commands import (
+from hmc_mcp.ssh.install import (
     INSTALLIOS_PID_PREFIX,
     build_installios_command,
     parse_installios_pid,
@@ -59,7 +59,8 @@ def test_valid_ipv4_addresses_pass(value):
 
 
 @pytest.mark.parametrize(
-    "value", ["999.1.1.1", "10.0.0", "10.0.0.0.1", "a.b.c.d", "", "10.0.0.1 ", "-1.2.3.4"]
+    "value",
+    ["999.1.1.1", "10.0.0", "10.0.0.0.1", "a.b.c.d", "", "10.0.0.1 ", "-1.2.3.4"],
 )
 def test_invalid_ipv4_addresses_rejected(value):
     with pytest.raises(ValueError, match="IPv4"):
@@ -214,15 +215,15 @@ def test_parse_installios_pid_without_tag_raises_hmccli_error():
 
 @pytest.mark.asyncio
 async def test_run_installios_ssh_failure_surfaces_as_cli_error():
-    from hmc_mcp.ssh_commands import run_installios
-    from hmc_mcp.ssh import HMCCLIError
+    from hmc_mcp.ssh.install import run_installios
+    from hmc_mcp.ssh.transport import HMCCLIError
 
     config = make_config()
 
     async def fail(config, cmd):
         raise HMCCLIError(f"SSH command {cmd!r} failed with exit status 127")
 
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", new=fail):
+    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fail):
         with pytest.raises(HMCCLIError, match="exit status 127"):
             await run_installios(config, "nohup installios ... & echo pid=$!")
 
@@ -249,7 +250,7 @@ _INSTALL_KWARGS = {
 
 def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc):
     """The tool resolves the target then runs the composed installios command."""
-    from hmc_mcp.server import hmc_install_lpar_os
+    from hmc_mcp.server_tools.vios import hmc_install_lpar_os as hmc_install_lpar_os
 
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
@@ -269,7 +270,7 @@ def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc)
         submitted["cmd"] = cmd
         return f"{INSTALLIOS_PID_PREFIX}4242\n"
 
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", new=fake_run_hmc_command):
+    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fake_run_hmc_command):
         result = hmc_install_lpar_os("aixprod", "sys1", **_INSTALL_KWARGS)
 
     assert result["pid"] == 4242
@@ -291,9 +292,11 @@ def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc)
     assert submitted["cmd"] == expected
 
 
-def test_install_lpar_os_tool_rejects_invalid_arguments_before_any_io(monkeypatch):
-    """Validator failures raise before an SSH session is opened."""
-    from hmc_mcp.server import hmc_install_lpar_os
+def test_install_lpar_os_tool_rejects_invalid_arguments_before_ssh(
+    monkeypatch, mock_hmc
+):
+    """Operations-layer validation rejects input before SSH submission."""
+    from hmc_mcp.server_tools.vios import hmc_install_lpar_os as hmc_install_lpar_os
 
     _hmc_env(monkeypatch)
     with pytest.raises(ValueError, match="IPv4"):
@@ -305,10 +308,11 @@ def test_install_lpar_os_tool_rejects_invalid_arguments_before_any_io(monkeypatc
             nim_subnetmask="255.255.255.0",
             nim_gateway="192.168.1.1",
         )
+    assert {call.request.url.path for call in mock_hmc.calls} == {"/rest/api/web/Logon"}
 
 
 def test_install_lpar_os_unknown_name_fails_before_submission(monkeypatch, mock_hmc):
-    from hmc_mcp.server import hmc_install_lpar_os
+    from hmc_mcp.server_tools.vios import hmc_install_lpar_os as hmc_install_lpar_os
 
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
@@ -324,10 +328,9 @@ def test_install_lpar_os_unknown_name_fails_before_submission(monkeypatch, mock_
     async def fail(config, cmd):  # pragma: no cover — must never be reached
         raise AssertionError("run_installios must not be called")
 
-    with patch("hmc_mcp.operations_install.run_installios", new=fail):
+    with patch("hmc_mcp.operations.install.run_installios", new=fail):
         with pytest.raises(ValueError, match="No LPAR named"):
             hmc_install_lpar_os("nosuchlpar", "sys1", **_INSTALL_KWARGS)
-
 
 
 def _system_feed(name: str) -> str:

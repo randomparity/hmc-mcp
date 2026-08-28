@@ -41,14 +41,17 @@ from pathlib import Path
 
 import pytest
 
-from hmc_mcp import audit, server as server_app
-from hmc_mcp.access_policy import compile_access_policy
-from hmc_mcp.connection_scope import ConnectionScopeError
-from hmc_mcp.dispatch_scope import dispatch_authorizer
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp import server as server_app
+from hmc_mcp.audit import records as audit
+from hmc_mcp.audit import sink as audit_sink
+from hmc_mcp.authorization import dispatch_scope as authorization_dispatch_scope
+from hmc_mcp.authorization.access_policy import compile_access_policy
+from hmc_mcp.authorization.connection_scope import ConnectionScopeError
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY
-from hmc_mcp.target_scope import TargetScopeError
+from hmc_mcp.authorization.target_scope import TargetScopeError
 from hmc_mcp.tool_registry import authorized
 
 SOURCE = "test-access-policy.toml"
@@ -120,7 +123,7 @@ def records() -> list[dict]:
         def emit(self, record: logging.LogRecord) -> None:
             parsed.append(json.loads(record.getMessage()))
 
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.addHandler(_Collect())
     logger.setLevel(logging.INFO)
     logger.propagate = False
@@ -130,12 +133,17 @@ def records() -> list[dict]:
 def _authorize(grants=None, tool="hmc_power_off_lpar", **arguments):
     """Run one authorization, returning any error it raised."""
     security = TOOL_SECURITY[tool]
-    call = {"lpar_name_or_uuid": "db-01", "system_name_or_uuid": "sys-a",
-            "profile": "lab"}
+    call = {
+        "lpar_name_or_uuid": "db-01",
+        "system_name_or_uuid": "sys-a",
+        "profile": "lab",
+    }
     call.update(arguments)
-    bound = {key: call.get(key) for key in
-             {selector.argument for selector in security.targets}
-             | {security.connection_argument} - {None}}
+    bound = {
+        key: call.get(key)
+        for key in {selector.argument for selector in security.targets}
+        | {security.connection_argument} - {None}
+    }
     try:
         dispatch_authorizer(_policy(grants or LAB_TARGETS))(tool, security, bound)
     except (ConnectionScopeError, TargetScopeError) as error:
@@ -155,7 +163,9 @@ def test_a_permitted_call_emits_one_record_describing_it(records):
     assert record["tool"] == "hmc_power_off_lpar"
     assert record["effect"] == "destructive"
     assert record["connection"] == {
-        "state": "present", "selector": "lab", "resolved": "lab"
+        "state": "present",
+        "selector": "lab",
+        "resolved": "lab",
     }
     named = {entry["argument"]: entry for entry in record["targets"]}
     assert named["lpar_name_or_uuid"]["value"] == "db-01"
@@ -331,11 +341,13 @@ def test_a_non_selector_argument_never_appears(records):
     """Spec 23. `name` is deliberately excluded from REQUIRED_TARGET_ARGUMENTS."""
     security = TOOL_SECURITY["hmc_create_lpar"]
     assert "name" not in {selector.argument for selector in security.targets}
-    grant = [{
-        "tools": ["hmc_create_lpar"],
-        "connections": ["lab"],
-        "targets": "all-targets",
-    }]
+    grant = [
+        {
+            "tools": ["hmc_create_lpar"],
+            "connections": ["lab"],
+            "targets": "all-targets",
+        }
+    ]
     dispatch_authorizer(_policy(grant))(
         "hmc_create_lpar",
         security,
@@ -370,7 +382,9 @@ def test_a_response_body_never_appears(records):
 
     security = TOOL_SECURITY["hmc_power_off_lpar"]
     guarded = authorized(
-        "hmc_power_off_lpar", security, handler,
+        "hmc_power_off_lpar",
+        security,
+        handler,
         dispatch_authorizer(_policy(LAB_TARGETS)),
     )
     assert guarded("db-01", system_name_or_uuid="sys-a", profile="lab") == {
@@ -423,12 +437,13 @@ def test_the_outcome_is_invariant_under_agent_id(records, monkeypatch, value):
 def test_no_module_on_the_decision_path_reads_the_agent_identity():
     """Spec 8b. The invariant behind A4, and bounded: a textual scan catches a
     literal read, not an identity threaded in as a parameter."""
-    package = Path(audit.__file__).parent
-    for module in (
-        "dispatch_scope", "connection_scope", "target_scope", "access_policy",
-        "tool_registry",
-    ):
-        source = (package / f"{module}.py").read_text()
+    package = Path(authorization_dispatch_scope.__file__).parent
+    modules = tuple(package.glob("*.py")) + (
+        Path(server_app.__file__).parent / "tool_registry.py",
+    )
+    for path in modules:
+        module = path.stem
+        source = path.read_text()
         assert audit.ATTRIBUTION_ENV not in source, f"{module} names HMC_AGENT_ID"
         assert "agent_id" not in source, f"{module} reads an agent identity"
 
@@ -445,9 +460,14 @@ def test_an_info_record_does_not_reach_stderr_without_a_sink(capsys):
     logging.root.handlers.clear()
     try:
         audit.record_authorization(
-            policy="p", tool="t", effect="read", decision="allow",
-            reason="permitted", token="lab",
-            resolved=audit.resolved_connection("lab"), targets=(),
+            policy="p",
+            tool="t",
+            effect="read",
+            decision="allow",
+            reason="permitted",
+            token="lab",
+            resolved=audit.resolved_connection("lab"),
+            targets=(),
         )
         assert capsys.readouterr().err == ""
     finally:
@@ -508,7 +528,8 @@ def test_a_declared_selector_is_recorded_but_bounded(records):
     """Spec 3's boundary half, and L4's in-suite twin."""
     _authorize(lpar_name_or_uuid="Z" * 500)
     entry = next(
-        item for item in records[0]["targets"]
+        item
+        for item in records[0]["targets"]
         if item["argument"] == "lpar_name_or_uuid"
     )
     assert len(entry["value"]) == audit.MAX_VALUE_LENGTH
@@ -552,7 +573,7 @@ def test_a_wedged_stderr_does_not_block_a_dispatch(full_stderr_pipe):
     padding and nothing reading it — over more calls than the ADR's 120-170 figure
     needs to fill one, with the ADR 0038/0039 error still raised each time.
     """
-    audit.install_audit_sink()
+    audit_sink.install_audit_sink()
     saved, sys.stderr = sys.stderr, full_stderr_pipe.stream
     denials: list[object] = []
     try:
@@ -561,7 +582,7 @@ def test_a_wedged_stderr_does_not_block_a_dispatch(full_stderr_pipe):
         )
     finally:
         full_stderr_pipe.read_available()
-        audit._SINK.drain(audit._DRAIN_TIMEOUT)
+        audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT)
         sys.stderr = saved
 
     assert returned, "an undrained stderr pipe blocked the dispatch boundary (#269)"
@@ -585,7 +606,7 @@ def test_startup_warnings_do_not_block_a_start(full_stderr_pipe):
         )
     finally:
         full_stderr_pipe.read_available()
-        audit._SINK.drain(audit._DRAIN_TIMEOUT)
+        audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT)
         sys.stderr = saved
 
     assert returned, "an undrained stderr pipe blocked a server start (#269)"

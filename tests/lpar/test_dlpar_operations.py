@@ -22,12 +22,12 @@ import pytest
 
 from conftest import make_config
 
-from hmc_mcp import audit
-from hmc_mcp.client import HMCClient
-from hmc_mcp.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
+from hmc_mcp.audit import sink as audit_sink
+from hmc_mcp.client.core import HMCClient
+from hmc_mcp.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
 from hmc_mcp.documents import LparResources
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations_lpar import set_lpar_memory, set_lpar_processors
+from hmc_mcp.operations.lpar.dlpar import set_lpar_memory, set_lpar_processors
 
 SYSTEM_UUID = "cccc0000-0000-0000-0000-000000000001"
 OTHER_SYSTEM_UUID = "cccc0000-0000-0000-0000-000000000002"
@@ -161,14 +161,14 @@ async def test_set_lpar_processors_runs_inside_a_running_event_loop(mock_hmc):
     route = _mock_modify(mock_hmc)
 
     with patch(
-        "hmc_mcp.operations_lpar.get_lpar_description", new=_owned_by("hmc-mcp")
+        "hmc_mcp.operations.ownership.get_lpar_description", new=_owned_by("hmc-mcp")
     ):
         async with HMCClient(make_config()) as hmc:
             result = await set_lpar_processors(
                 hmc,
+                SYSTEM_UUID,
                 LPAR_UUID,
                 LparResources(desired_procs=1.5, desired_vcpus=3),
-                system_name_or_uuid=SYSTEM_UUID,
             )
 
     assert result["Resource"]["PartitionName"] == LPAR_NAME
@@ -186,14 +186,14 @@ async def test_set_lpar_memory_runs_inside_a_running_event_loop(mock_hmc):
     route = _mock_modify(mock_hmc)
 
     with patch(
-        "hmc_mcp.operations_lpar.get_lpar_description", new=_owned_by("hmc-mcp")
+        "hmc_mcp.operations.ownership.get_lpar_description", new=_owned_by("hmc-mcp")
     ):
         async with HMCClient(make_config()) as hmc:
             result = await set_lpar_memory(
                 hmc,
+                SYSTEM_UUID,
                 LPAR_UUID,
                 LparResources(desired_memory=8192, min_memory=1024, max_memory=16384),
-                system_name_or_uuid=SYSTEM_UUID,
             )
 
     assert result["Resource"]["PartitionName"] == LPAR_NAME
@@ -216,14 +216,14 @@ async def test_foreign_owner_is_rejected_before_any_mutation(mock_hmc, operation
     _mock_system_detail(mock_hmc)
     route = _mock_modify(mock_hmc)
 
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=_owned_by("bob")):
+    with patch("hmc_mcp.operations.ownership.get_lpar_description", new=_owned_by("bob")):
         async with HMCClient(make_config(agent_id="alice")) as hmc:
             with pytest.raises(PermissionError, match="ownership_override=true"):
                 await operation(
                     hmc,
+                    SYSTEM_UUID,
                     LPAR_UUID,
                     LparResources(desired_procs=1.0, desired_memory=1024),
-                    system_name_or_uuid=SYSTEM_UUID,
                 )
 
     assert not route.called
@@ -238,16 +238,16 @@ async def test_malformed_ownership_token_is_rejected(mock_hmc, operation):
     route = _mock_modify(mock_hmc)
 
     with patch(
-        "hmc_mcp.operations_lpar.get_lpar_description",
+        "hmc_mcp.operations.ownership.get_lpar_description",
         new=_description("[hmc-mcp owner:broken]"),
     ):
         async with HMCClient(make_config(agent_id="alice")) as hmc:
             with pytest.raises(PermissionError, match="ownership_override=true"):
                 await operation(
                     hmc,
+                    SYSTEM_UUID,
                     LPAR_UUID,
                     LparResources(desired_procs=1.0, desired_memory=1024),
-                    system_name_or_uuid=SYSTEM_UUID,
                 )
 
     assert not route.called
@@ -264,13 +264,13 @@ async def test_ownership_override_bypasses_the_guard_without_reading(
     route = _mock_modify(mock_hmc)
     read = _owned_by("bob")
 
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.operations.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config(agent_id="alice")) as hmc:
             await operation(
                 hmc,
+                SYSTEM_UUID,
                 LPAR_UUID,
                 LparResources(desired_procs=1.0, desired_memory=1024),
-                system_name_or_uuid=SYSTEM_UUID,
                 ownership_override=True,
             )
 
@@ -287,15 +287,15 @@ async def test_an_unstamped_partition_is_allowed(mock_hmc, operation):
     route = _mock_modify(mock_hmc)
 
     with patch(
-        "hmc_mcp.operations_lpar.get_lpar_description",
+        "hmc_mcp.operations.ownership.get_lpar_description",
         new=_description("legacy partition"),
     ):
         async with HMCClient(make_config(agent_id="alice")) as hmc:
             await operation(
                 hmc,
+                SYSTEM_UUID,
                 LPAR_UUID,
                 LparResources(desired_procs=1.0, desired_memory=1024),
-                system_name_or_uuid=SYSTEM_UUID,
             )
 
     assert route.called
@@ -315,10 +315,10 @@ async def test_omitted_system_is_discovered_and_named_to_the_guard(mock_hmc):
     route = _mock_modify(mock_hmc)
     read = _owned_by("hmc-mcp")
 
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.operations.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config()) as hmc:
             await set_lpar_processors(
-                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+                hmc, None, LPAR_UUID, LparResources(desired_procs=1.0)
             )
 
     assert route.called
@@ -336,14 +336,14 @@ async def test_a_supplied_system_skips_fleet_discovery(mock_hmc):
     _mock_modify(mock_hmc)
 
     with patch(
-        "hmc_mcp.operations_lpar.get_lpar_description", new=_owned_by("hmc-mcp")
+        "hmc_mcp.operations.ownership.get_lpar_description", new=_owned_by("hmc-mcp")
     ):
         async with HMCClient(make_config()) as hmc:
             await set_lpar_processors(
                 hmc,
+                SYSTEM_UUID,
                 LPAR_UUID,
                 LparResources(desired_procs=1.0),
-                system_name_or_uuid=SYSTEM_UUID,
             )
 
     paths = [call.request.url.path for call in mock_hmc.calls]
@@ -366,10 +366,11 @@ async def test_an_override_without_a_selector_skips_discovery_entirely(
     route = _mock_modify(mock_hmc)
     read = _owned_by("bob")
 
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.operations.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config(agent_id="alice")) as hmc:
             await operation(
                 hmc,
+                None,
                 LPAR_UUID,
                 LparResources(desired_procs=1.0, desired_memory=1024),
                 ownership_override=True,
@@ -398,12 +399,13 @@ async def test_an_override_audits_one_partition_and_the_caller_s_selector(
     _mock_modify(mock_hmc)
 
     with (
-        patch("hmc_mcp.operations_lpar.get_lpar_description", new=AsyncMock()),
+        patch("hmc_mcp.operations.ownership.get_lpar_description", new=AsyncMock()),
         caplog.at_level(logging.WARNING),
     ):
         async with HMCClient(make_config(agent_id="alice")) as hmc:
             await set_lpar_processors(
                 hmc,
+                None,
                 LPAR_UUID,
                 LparResources(desired_procs=1.0),
                 ownership_override=True,
@@ -412,7 +414,7 @@ async def test_an_override_audits_one_partition_and_the_caller_s_selector(
     records = [
         json.loads(record.getMessage())
         for record in caplog.records
-        if record.name == audit.AUDIT_LOGGER_NAME
+        if record.name == audit_sink.AUDIT_LOGGER_NAME
     ]
     assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
     assert records[0]["event"] == "ownership-override"
@@ -436,13 +438,13 @@ async def test_a_blank_system_selector_is_read_as_absent(mock_hmc, blank):
     route = _mock_modify(mock_hmc)
     read = _owned_by("hmc-mcp")
 
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.operations.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config()) as hmc:
             await set_lpar_processors(
                 hmc,
+                blank,
                 LPAR_UUID,
                 LparResources(desired_procs=1.0),
-                system_name_or_uuid=blank,
             )
 
     assert route.called
@@ -462,13 +464,13 @@ async def test_an_upper_case_partition_uuid_still_matches_the_hmc_feed(mock_hmc)
     route = _mock_modify(mock_hmc, LPAR_UUID.upper())
     read = _owned_by("hmc-mcp")
 
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.operations.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config()) as hmc:
             await set_lpar_processors(
                 hmc,
+                SYSTEM_UUID,
                 LPAR_UUID.upper(),
                 LparResources(desired_procs=1.0),
-                system_name_or_uuid=SYSTEM_UUID,
             )
 
     assert route.called
@@ -483,10 +485,10 @@ async def test_an_upper_case_partition_uuid_is_discoverable(mock_hmc):
     route = _mock_modify(mock_hmc, LPAR_UUID.upper())
     read = _owned_by("hmc-mcp")
 
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.operations.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config()) as hmc:
             await set_lpar_processors(
-                hmc, LPAR_UUID.upper(), LparResources(desired_procs=1.0)
+                hmc, None, LPAR_UUID.upper(), LparResources(desired_procs=1.0)
             )
 
     assert route.called
@@ -521,7 +523,7 @@ async def test_discovery_reports_frames_it_could_not_read(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(ValueError, match="2 could not be read") as exc_info:
             await set_lpar_processors(
-                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+                hmc, None, LPAR_UUID, LparResources(desired_procs=1.0)
             )
 
     message = str(exc_info.value)
@@ -556,10 +558,10 @@ async def test_an_unhealthy_frame_does_not_block_a_healthy_one(mock_hmc):
     route = _mock_modify(mock_hmc)
     read = _owned_by("hmc-mcp")
 
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.operations.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config()) as hmc:
             await set_lpar_processors(
-                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+                hmc, None, LPAR_UUID, LparResources(desired_procs=1.0)
             )
 
     assert route.called
@@ -589,7 +591,7 @@ async def test_discovery_rejects_an_oversized_fleet(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(ValueError, match="discovery exceeds") as exc_info:
             await set_lpar_processors(
-                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+                hmc, None, LPAR_UUID, LparResources(desired_procs=1.0)
             )
 
     assert "ambiguous" not in str(exc_info.value)
@@ -606,7 +608,7 @@ async def test_discovery_translates_its_own_timeout(mock_hmc, monkeypatch):
     """
     _mock_lpar_detail(mock_hmc)
     monkeypatch.setattr(
-        "hmc_mcp.operations_lpar.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0.01
+        "hmc_mcp.operations.ownership.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0.01
     )
 
     async def _slow_fleet(request):
@@ -619,7 +621,7 @@ async def test_discovery_translates_its_own_timeout(mock_hmc, monkeypatch):
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(ValueError, match="parent discovery timed out"):
             await set_lpar_processors(
-                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+                hmc, None, LPAR_UUID, LparResources(desired_procs=1.0)
             )
 
     assert not route.called
@@ -648,14 +650,14 @@ async def test_a_partition_uuid_off_the_selected_system_is_rejected(
     route = _mock_modify(mock_hmc)
     read = _owned_by("hmc-mcp")
 
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.operations.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config()) as hmc:
             with pytest.raises(ValueError, match="does not belong to managed system"):
                 await operation(
                     hmc,
+                    OTHER_SYSTEM_UUID,
                     LPAR_UUID,
                     LparResources(desired_procs=1.0, desired_memory=1024),
-                    system_name_or_uuid=OTHER_SYSTEM_UUID,
                 )
 
     read.assert_not_awaited()
@@ -679,7 +681,7 @@ async def test_an_unknown_partition_uuid_never_reaches_the_fleet_walk(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError) as info:
             await set_lpar_processors(
-                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+                hmc, None, LPAR_UUID, LparResources(desired_procs=1.0)
             )
 
     # The 404 names the partition the caller got wrong. Accepting any of several
@@ -717,7 +719,7 @@ async def test_a_nameless_partition_is_rejected_before_the_fleet_walk(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(ValueError, match="No LPAR"):
             await set_lpar_processors(
-                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+                hmc, None, LPAR_UUID, LparResources(desired_procs=1.0)
             )
 
     assert not route.called
@@ -748,14 +750,14 @@ async def test_a_partition_name_is_not_re_read_for_containment(mock_hmc, operati
     route = _mock_modify(mock_hmc)
 
     with patch(
-        "hmc_mcp.operations_lpar.get_lpar_description", new=_owned_by("hmc-mcp")
+        "hmc_mcp.operations.ownership.get_lpar_description", new=_owned_by("hmc-mcp")
     ):
         async with HMCClient(make_config()) as hmc:
             await operation(
                 hmc,
+                SYSTEM_UUID,
                 LPAR_NAME,
                 LparResources(desired_procs=1.0, desired_memory=1024),
-                system_name_or_uuid=SYSTEM_UUID,
             )
 
     assert route.called
@@ -781,9 +783,9 @@ async def test_an_unreadable_containment_feed_names_the_retry(mock_hmc, operatio
         with pytest.raises(ValueError, match="Cannot confirm LPAR") as info:
             await operation(
                 hmc,
+                SYSTEM_UUID,
                 LPAR_UUID,
                 LparResources(desired_procs=1.0, desired_memory=1024),
-                system_name_or_uuid=SYSTEM_UUID,
             )
 
     assert "retry" in str(info.value)
@@ -809,7 +811,7 @@ async def test_an_unavailable_fleet_inventory_names_the_operator_remedy(mock_hmc
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(ValueError, match="supply managed-system scope") as info:
             await set_lpar_processors(
-                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+                hmc, None, LPAR_UUID, LparResources(desired_procs=1.0)
             )
 
     assert "managed-system inventory is unavailable" in str(info.value)
@@ -834,7 +836,7 @@ async def test_undiscoverable_system_names_the_operator_remedy(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(ValueError, match="supply managed-system scope"):
             await set_lpar_processors(
-                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+                hmc, None, LPAR_UUID, LparResources(desired_procs=1.0)
             )
 
     assert not route.called
@@ -856,13 +858,13 @@ async def test_http_406_is_translated_to_an_actionable_error(mock_hmc, operation
     )
 
     with patch(
-        "hmc_mcp.operations_lpar.get_lpar_description", new=_owned_by("hmc-mcp")
+        "hmc_mcp.operations.ownership.get_lpar_description", new=_owned_by("hmc-mcp")
     ):
         async with HMCClient(make_config()) as hmc:
             with pytest.raises(HMCError, match="HMC_SCHEMA_VERSION"):
                 await operation(
                     hmc,
+                    SYSTEM_UUID,
                     LPAR_UUID,
                     LparResources(desired_procs=1.0, desired_memory=1024),
-                    system_name_or_uuid=SYSTEM_UUID,
                 )

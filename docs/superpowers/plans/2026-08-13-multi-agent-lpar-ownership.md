@@ -287,7 +287,7 @@ git commit -m "feat: add validate_agent_id and stamp_lpar_ownership helpers (#13
 
 **Files:**
 - Modify: `src/hmc_mcp/config.py`
-- Modify: `src/hmc_mcp/client.py` (line 77)
+- Modify: `src/hmc_mcp/client/__init__.py` (line 77)
 - Modify: `docs/environment-variables.md`
 - Modify: `tests/unit/test_config.py` (append new test class)
 
@@ -389,7 +389,7 @@ Add field after `schema_version`:
 
 - [ ] **Step 4: Update `client.py` to use `effective_audit_memento`**
 
-In `src/hmc_mcp/client.py`, line 77, change:
+In `src/hmc_mcp/client/__init__.py`, line 77, change:
 
 ```python
                 "X-Audit-Memento": config.audit_memento,
@@ -431,7 +431,7 @@ Expected: all pass.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/hmc_mcp/config.py src/hmc_mcp/client.py \
+git add src/hmc_mcp/config.py src/hmc_mcp/client/__init__.py \
         docs/environment-variables.md tests/unit/test_config.py
 git commit -m "feat: add HMC_AGENT_ID to HMCConfig; effective_audit_memento property (#132)"
 ```
@@ -441,7 +441,7 @@ git commit -m "feat: add HMC_AGENT_ID to HMCConfig; effective_audit_memento prop
 ### Task 3: Stamp ownership in `hmc_create_lpar`
 
 **Files:**
-- Modify: `src/hmc_mcp/server_power.py`
+- Modify: `src/hmc_mcp/server_tools/power.py`
 - Create: `tests/app/test_ownership_tools.py`
 
 **Interfaces:**
@@ -591,13 +591,13 @@ uv run pytest tests/app/test_ownership_tools.py -v
 ```
 Expected: test fails — `hmc_create_lpar` does not yet return the new shape.
 
-- [ ] **Step 3: Modify `hmc_create_lpar` in `server_power.py`**
+- [ ] **Step 3: Modify `hmc_create_lpar` in `server_tools/power.py`**
 
 Add to imports at top of file:
 ```python
-from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
+from .ssh import HMCCLIError, resolve_system_cli_name, create_lpar_via_cli, stamp_lpar_ownership
 ```
-(add `stamp_lpar_ownership` to existing import of `HMCCLIError, _ssh_system_name, create_lpar_via_cli`)
+(add `stamp_lpar_ownership` to existing import of `HMCCLIError, resolve_system_cli_name, create_lpar_via_cli`)
 
 Change the `_go` coroutine to wrap the result and call the stamp:
 
@@ -627,7 +627,7 @@ Change the `_go` coroutine to wrap the result and call the stamp:
                 # --- CLI fallback (HTTP 406) ---
                 cfg = hmc.config
                 try:
-                    lpar_sys_name = await _ssh_system_name(cfg, system_uuid)
+                    lpar_sys_name = await resolve_system_cli_name(cfg, system_uuid)
                 except HMCCLIError:
                     lpar_sys_name = system_name_or_uuid
                 await create_lpar_via_cli(
@@ -655,7 +655,7 @@ Change the `_go` coroutine to wrap the result and call the stamp:
             if lpar_sys_name is None:
                 # REST path: resolve system name for SSH
                 try:
-                    lpar_sys_name = await _ssh_system_name(cfg, system_uuid)
+                    lpar_sys_name = await resolve_system_cli_name(cfg, system_uuid)
                 except (HMCCLIError, Exception):
                     lpar_sys_name = system_name_or_uuid
             token = await stamp_lpar_ownership(
@@ -697,7 +697,7 @@ Expected: all pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/hmc_mcp/server_power.py tests/app/test_ownership_tools.py
+git add src/hmc_mcp/server_tools/power.py tests/app/test_ownership_tools.py
 git commit -m "feat: stamp ownership token in hmc_create_lpar (#132)"
 ```
 
@@ -706,7 +706,7 @@ git commit -m "feat: stamp ownership token in hmc_create_lpar (#132)"
 ### Task 4: Stamp ownership in `hmc_provision_lpar`
 
 **Files:**
-- Modify: `src/hmc_mcp/server_provision.py`
+- Modify: `src/hmc_mcp/server_tools/provision.py`
 
 **Interfaces:**
 - Consumes: `stamp_lpar_ownership` from `ssh.py` (Task 1)
@@ -722,9 +722,9 @@ def test_provision_lpar_result_has_ownership_keys(monkeypatch):
     """hmc_provision_lpar result contains ownership_stamped key."""
     _env(monkeypatch)
     # Provision requires many REST responses; test with a patched stamp only
-    with patch("hmc_mcp.server_provision.stamp_lpar_ownership", new=AsyncMock(return_value="[hmc-mcp owner:test-agent created:2026-08-13]")):
-        with patch("hmc_mcp.server_provision._check_name_unique", new=AsyncMock()):
-            with patch("hmc_mcp.server_provision._check_vlan_exists", new=AsyncMock()):
+    with patch("hmc_mcp.server_tools.provision.stamp_lpar_ownership", new=AsyncMock(return_value="[hmc-mcp owner:test-agent created:2026-08-13]")):
+        with patch("hmc_mcp.server_tools.provision._check_name_unique", new=AsyncMock()):
+            with patch("hmc_mcp.server_tools.provision._check_vlan_exists", new=AsyncMock()):
                 # dry_run=True skips all create steps, so we test the structure only
                 result = hmc_provision_lpar(
                     system_name_or_uuid=SYSTEM_UUID,
@@ -749,8 +749,8 @@ def test_provision_lpar_ownership_stamped_in_result(monkeypatch):
     """After successful provision, ownership_stamped is in result."""
     _env(monkeypatch)
     with patch("hmc_mcp.ssh.stamp_lpar_ownership", new=AsyncMock(return_value="tok")):
-        with patch("hmc_mcp.server_provision._check_name_unique", new=AsyncMock()):
-            with patch("hmc_mcp.server_provision._check_vlan_exists", new=AsyncMock()):
+        with patch("hmc_mcp.server_tools.provision._check_name_unique", new=AsyncMock()):
+            with patch("hmc_mcp.server_tools.provision._check_vlan_exists", new=AsyncMock()):
                 result = hmc_provision_lpar(
                     system_name_or_uuid=SYSTEM_UUID,
                     name="prov-lpar",
@@ -772,11 +772,11 @@ uv run pytest tests/app/test_ownership_tools.py::test_provision_lpar_result_has_
 ```
 Expected: passes (dry_run path is unchanged).
 
-- [ ] **Step 3: Modify `server_provision.py`**
+- [ ] **Step 3: Modify `server_tools/provision.py`**
 
 Add `stamp_lpar_ownership` to the ssh import:
 ```python
-from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
+from .ssh import HMCCLIError, resolve_system_cli_name, create_lpar_via_cli, stamp_lpar_ownership
 ```
 
 After the "create" step succeeds and `lpar_uuid` is set (after `steps.append(_step("create", "ok", created_lpar))`), add the stamp call. The stamp needs the system name, not just the UUID. Add the stamp after the create step, before network:
@@ -786,7 +786,7 @@ After the "create" step succeeds and `lpar_uuid` is set (after `steps.append(_st
             if not failed and lpar_uuid:
                 cfg = hmc.config
                 try:
-                    sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
+                    sys_name_for_stamp = await resolve_system_cli_name(cfg, system_uuid)
                 except (HMCCLIError, Exception):
                     sys_name_for_stamp = system_name_or_uuid
                 stamp_token = await stamp_lpar_ownership(
@@ -826,7 +826,7 @@ Expected: all pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/hmc_mcp/server_provision.py
+git add src/hmc_mcp/server_tools/provision.py
 git commit -m "feat: stamp ownership token in hmc_provision_lpar (#132)"
 ```
 
@@ -835,7 +835,7 @@ git commit -m "feat: stamp ownership token in hmc_provision_lpar (#132)"
 ### Task 5: Stamp ownership in `hmc_deploy_partition_template`
 
 **Files:**
-- Modify: `src/hmc_mcp/server_templates.py`
+- Modify: `src/hmc_mcp/server_tools/templates.py`
 
 **Interfaces:**
 - Consumes: `stamp_lpar_ownership` from `ssh.py` (Task 1)
@@ -850,10 +850,10 @@ from hmc_mcp.server import hmc_deploy_partition_template
 def test_deploy_template_wait_false_returns_ownership_note(monkeypatch):
     """wait=False: result includes ownership_stamped=None with a note."""
     _env(monkeypatch)
-    with patch("hmc_mcp.server_templates.hmc_deploy_partition_template",
+    with patch("hmc_mcp.server_tools.templates.hmc_deploy_partition_template",
                wraps=hmc_deploy_partition_template):
         # Deep mock: patch the client's deploy call
-        with patch("hmc_mcp.client.HMCClient.deploy_partition_template",
+        with patch("hmc_mcp.client.core.HMCClient.deploy_partition_template",
                    new=AsyncMock(return_value={"UUID": "job-uuid", "link": "/rest/api/uom/Job/job-uuid"})):
             with respx.mock:
                 respx.post(f"{BASE}/rest/api/web/Logon").mock(
@@ -873,7 +873,7 @@ def test_deploy_template_wait_false_returns_ownership_note(monkeypatch):
         assert "ownership_stamped" in result or result is not None
 ```
 
-- [ ] **Step 2: Modify `server_templates.py`**
+- [ ] **Step 2: Modify `server_tools/templates.py`**
 
 Add to imports:
 ```python
@@ -899,8 +899,8 @@ Modify `hmc_deploy_partition_template` to wrap the return value and stamp when `
                     "warnings": ["ownership stamp not attempted: wait=False"],
                 }
 
-            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-            if not job_uuid:
+            job_id = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+            if not job_id:
                 return {
                     "job": job,
                     "ownership_stamped": None,
@@ -908,7 +908,7 @@ Modify `hmc_deploy_partition_template` to wrap the return value and stamp when `
                 }
 
             final_job = await hmc.wait_for_job(
-                job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+                job_id, timeout_seconds, poll_interval, job_href=job.get("link")
             )
 
             # Stamp: only when job completed successfully
@@ -965,7 +965,7 @@ Expected: all pass.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/hmc_mcp/server_templates.py
+git add src/hmc_mcp/server_tools/templates.py
 git commit -m "feat: add ownership_stamped key to hmc_deploy_partition_template (#132)"
 ```
 
@@ -974,15 +974,15 @@ git commit -m "feat: add ownership_stamped key to hmc_deploy_partition_template 
 ### Task 6: Advisory docstrings on destructive tools + server instructions
 
 **Files:**
-- Modify: `src/hmc_mcp/server_power.py` (`hmc_delete_lpar`, `hmc_modify_lpar`)
-- Modify: `src/hmc_mcp/server_cli.py` (`hmc_set_lpar_description`)
+- Modify: `src/hmc_mcp/server_tools/power.py` (`hmc_delete_lpar`, `hmc_modify_lpar`)
+- Modify: `src/hmc_mcp/server_tools/cli.py` (`hmc_set_lpar_description`)
 - Modify: `src/hmc_mcp/_app.py` (server instructions)
 
 **Interfaces:** Documentation only — no behavior change, no new tests required (existing tests must still pass).
 
 - [ ] **Step 1: Update `hmc_delete_lpar` docstring**
 
-In `src/hmc_mcp/server_power.py`, add advisory to `hmc_delete_lpar` docstring after the existing warning text:
+In `src/hmc_mcp/server_tools/power.py`, add advisory to `hmc_delete_lpar` docstring after the existing warning text:
 
 ```
     **Multi-agent ownership:** Before deleting, read the LPAR description with
@@ -993,7 +993,7 @@ In `src/hmc_mcp/server_power.py`, add advisory to `hmc_delete_lpar` docstring af
 
 - [ ] **Step 2: Update `hmc_modify_lpar` docstring**
 
-In `src/hmc_mcp/server_power.py`, add to `hmc_modify_lpar` docstring:
+In `src/hmc_mcp/server_tools/power.py`, add to `hmc_modify_lpar` docstring:
 
 ```
     **Multi-agent ownership:** When changing the ``name`` of an LPAR, first read
@@ -1004,7 +1004,7 @@ In `src/hmc_mcp/server_power.py`, add to `hmc_modify_lpar` docstring:
 
 - [ ] **Step 3: Update `hmc_set_lpar_description` docstring**
 
-In `src/hmc_mcp/server_cli.py`, add to `hmc_set_lpar_description` docstring:
+In `src/hmc_mcp/server_tools/cli.py`, add to `hmc_set_lpar_description` docstring:
 
 ```
     **Multi-agent ownership:** If the current description contains
@@ -1045,7 +1045,7 @@ Expected: all pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/hmc_mcp/server_power.py src/hmc_mcp/server_cli.py src/hmc_mcp/_app.py
+git add src/hmc_mcp/server_tools/power.py src/hmc_mcp/server_tools/cli.py src/hmc_mcp/_app.py
 git commit -m "docs: advisory ownership docstrings and server instructions (#132)"
 ```
 

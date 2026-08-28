@@ -168,7 +168,7 @@ What this does not reach, so a green run is not read as more coverage than it is
   The marker is a pointer, not a guard: it tells an editor where the rule lives;
 - the module half of the two code pointers. `_alias_name` finds the alias wherever in
   `client` it is bound, so a rename reddens — but both docstrings write the dotted path
-  `hmc_mcp.client.VerifySSLSource` in prose, and moving the alias to another module would
+  `hmc_mcp.client.core.VerifySSLSource` in prose, and moving the alias to another module would
   leave that prefix wrong behind a green run;
 - a third pointer, the `:data:` reference in `client._verify_ssl_source`'s own docstring,
   which nothing here reads. A rename forces an edit to that function's return annotation
@@ -203,15 +203,17 @@ from typing import Literal, get_args, get_origin, get_type_hints
 
 import pytest
 
-from hmc_mcp import audit, client, tool_registry
+from hmc_mcp import tool_registry
+from hmc_mcp.audit import records as audit
+from hmc_mcp.client import core as client
 
 
 ROOT = Path(__file__).parents[1]
 DOCUMENT = ROOT / "docs" / "authorization-audit.md"
 ENVIRONMENT_DOCUMENT = ROOT / "docs" / "environment-variables.md"
-AUDIT_MODULE = ROOT / "src" / "hmc_mcp" / "audit.py"
+AUDIT_MODULE = ROOT / "src" / "hmc_mcp" / "audit" / "records.py"
 AUDIT_TEST = ROOT / "tests" / "unit" / "test_audit.py"
-DISPATCH_MODULE = ROOT / "src" / "hmc_mcp" / "dispatch_scope.py"
+DISPATCH_MODULE = ROOT / "src" / "hmc_mcp" / "authorization" / "dispatch_scope.py"
 
 #: One reason-code table row: the code it names and the decision that code yields. Both
 #: cells are read by one pattern, so a row whose decision cell stops being a bare token

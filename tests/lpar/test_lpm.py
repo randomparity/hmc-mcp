@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.jobs import (
     migrate_abort_lpar_job,
     migrate_lpar_job,

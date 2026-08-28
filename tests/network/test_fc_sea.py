@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
-from hmc_mcp.server import hmc_list_fc_ports, hmc_list_sea_adapters
-
 from conftest import mock_uuid_resolution
+
+from hmc_mcp.server_tools.vnic import (
+    hmc_list_fc_ports as hmc_list_fc_ports,
+)
+from hmc_mcp.server_tools.vnic import (
+    hmc_list_sea_adapters as hmc_list_sea_adapters,
+)
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9009-42A-SN12345"
@@ -20,10 +24,7 @@ FC_CSV_OUTPUT = (
     "other-lpar,3,C050760E2B4C0002,0,0\n"
 )
 
-SEA_LINE_OUTPUT = (
-    "my-lpar,1000,ETHERNET0,Open,1\n"
-    "other-lpar,2000,ETHERNET0,Open,1\n"
-)
+SEA_LINE_OUTPUT = "my-lpar,1000,ETHERNET0,Open,1\nother-lpar,2000,ETHERNET0,Open,1\n"
 
 
 def _make_ssh_mock(stdout: str = "") -> MagicMock:
@@ -53,7 +54,7 @@ def test_list_fc_ports_returns_list(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock(FC_CSV_OUTPUT)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_fc_ports(SYSTEM_UUID)
 
     assert isinstance(result, list)
@@ -71,7 +72,7 @@ def test_list_fc_ports_filter_by_lpar(monkeypatch, mock_hmc):
         "my-lpar,2,C050760E2B4C0001,0,0\n"
     )
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_fc_ports(SYSTEM_UUID, lpar_name_or_uuid=LPAR_UUID)
 
     called_cmd = conn_mock.run.call_args[0][0]
@@ -85,7 +86,7 @@ def test_list_fc_ports_empty_output(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_fc_ports(SYSTEM_UUID)
 
     assert result == []
@@ -97,7 +98,7 @@ def test_list_fc_ports_correct_command(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock(FC_CSV_OUTPUT)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         hmc_list_fc_ports(SYSTEM_UUID)
 
     called_cmd = conn_mock.run.call_args[0][0]
@@ -117,7 +118,7 @@ def test_list_sea_adapters_returns_list(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock(SEA_LINE_OUTPUT)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_sea_adapters(SYSTEM_UUID)
 
     assert isinstance(result, list)
@@ -135,7 +136,7 @@ def test_list_sea_adapters_filter_by_lpar(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("my-lpar,1000,ETHERNET0,Open,1\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_sea_adapters(SYSTEM_UUID, lpar_name_or_uuid=LPAR_UUID)
 
     called_cmd = conn_mock.run.call_args[0][0]
@@ -149,7 +150,7 @@ def test_list_sea_adapters_empty_output(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_sea_adapters(SYSTEM_UUID)
 
     assert result == []
@@ -161,7 +162,7 @@ def test_list_sea_adapters_correct_command(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock(SEA_LINE_OUTPUT)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         hmc_list_sea_adapters(SYSTEM_UUID)
 
     called_cmd = conn_mock.run.call_args[0][0]

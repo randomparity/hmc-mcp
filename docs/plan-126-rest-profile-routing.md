@@ -18,27 +18,27 @@ registry, sequential, and concurrent routing tests.
 ### Core helpers (`_app.py`)
 
 - Remove `with_client` (and its import in server files that use it)
-- No changes to `_run`, `_resolve_*_uuid`, or `_ssh_with_client`
+- No changes to `_run`, `_resolve_*_uuid`, or `ssh_with_client`
 
 ### Server modules (add `profile` param + thread to `client_from_env`)
 
 Each module: add `profile: str | None = None` to every `@mcp.tool` function,
 change every `client_from_env()` → `client_from_env(profile)`.
 
-1. `server_power.py` — also fix `HMCConfig()` → `hmc.config` in CLI fallback
-2. `server_vios.py`
-3. `server_metrics.py`
-4. `server_system.py`
-5. `server_composite.py`
-6. `server_lpm.py`
-7. `server_network.py`
-8. `server_storage.py`
-9. `server_templates.py`
-10. `server_updates.py`
-11. `server_provision.py` — also fix `HMCConfig()` → `hmc.config` in CLI fallback
-12. `server_profiles.py` (read: check if REST)
-13. `server_users.py` (read: check if REST)
-14. `server_cli.py` — check: SSH-only, no change
+1. `server_tools/power.py` — also fix `HMCConfig()` → `hmc.config` in CLI fallback
+2. `server_tools/vios.py`
+3. `server_tools/metrics.py`
+4. `server_tools/system.py`
+5. `server_tools/composite.py`
+6. `server_tools/lpm.py`
+7. `server_tools/network.py`
+8. `server_tools/storage.py`
+9. `server_tools/templates.py`
+10. `server_tools/updates.py`
+11. `server_tools/provision.py` — also fix `HMCConfig()` → `hmc.config` in CLI fallback
+12. `server_tools/profiles.py` (read: check if REST)
+13. `server_tools/users.py` (read: check if REST)
+14. `server_tools/cli.py` — check: SSH-only, no change
 
 ### `_app.py` — profile-aware UUID resolution helpers
 
@@ -70,15 +70,15 @@ tools are updated.
 
 Remove `with_client`. Update any internal call sites.
 
-### T-3: Update `server_power.py`
+### T-3: Update `server_tools/power.py`
 
 Add `profile` to all tools; fix `HMCConfig()` fallback; update `client_from_env` calls.
 
 ### T-4: Update remaining server modules
 
-`server_vios.py`, `server_metrics.py`, `server_system.py`, `server_composite.py`,
-`server_lpm.py`, `server_network.py`, `server_storage.py`, `server_templates.py`,
-`server_updates.py`, `server_provision.py`, `server_profiles.py`, `server_users.py`.
+`server_tools/vios.py`, `server_tools/metrics.py`, `server_tools/system.py`, `server_tools/composite.py`,
+`server_tools/lpm.py`, `server_tools/network.py`, `server_tools/storage.py`, `server_tools/templates.py`,
+`server_tools/updates.py`, `server_tools/provision.py`, `server_tools/profiles.py`, `server_tools/users.py`.
 
 ### T-5: Add routing isolation tests
 

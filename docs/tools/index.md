@@ -4,13 +4,13 @@
 
 This reference covers every tool the server registers, including the ones a default deployment does not expose. It is generated from the server's tool registry, so it cannot drift from what the code registers.
 
-- **148** tools are registered.
-- **147** are exposed by a default deployment.
+- **149** tools are registered.
+- **148** are exposed by a default deployment.
 
 | Effect class | Tools |
 | --- | --- |
 | `arbitrary-command` | 1 |
-| `destructive` | 28 |
+| `destructive` | 29 |
 | `mutate` | 48 |
 | `read` | 71 |
 
@@ -49,6 +49,7 @@ This reference covers every tool the server registers, including the ones a defa
 | `task_role` | 1 | [task_role.md](task_role.md) |
 | `template` | 3 | [template.md](template.md) |
 | `update` | 4 | [update.md](update.md) |
+| `upgrade` | 1 | [upgrade.md](upgrade.md) |
 | `user` | 5 | [user.md](user.md) |
 | `vios` | 10 | [vios.md](vios.md) |
 | `vnic` | 3 | [vnic.md](vnic.md) |
@@ -208,4 +209,5 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_update_firmware` | `destructive` | [update.md](update.md) |
 | `hmc_upload_iso` | `mutate` | [media.md](media.md) |
 | `hmc_vios_update` | `destructive` | [update.md](update.md) |
+| `hmc_vios_upgrade` | `destructive` | [upgrade.md](upgrade.md) |
 | `hmc_wait_for_job` | `read` | [job.md](job.md) |
