@@ -271,9 +271,11 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "delete_logical_unit",
         "StorageKind",
         "LuType",
-        "DeviceType",
-        "AuthenticationType",
-        "configure_remote_access",
+            "DeviceType",
+            "AuthenticationType",
+            "CreateUserRequest",
+            "ModifyUserPatch",
+            "configure_remote_access",
         "create_user",
         "delete_user",
         "modify_user",
@@ -1854,7 +1856,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         assert "system_name_or_uuid" in inspect.signature(
             getattr(api, operation_name)
         ).parameters
-        vios_install_parameters = inspect.signature(api.install_vios).parameters
+    vios_install_parameters = inspect.signature(api.install_vios).parameters
     assert [
         name
         for name in vios_install_parameters
@@ -1897,7 +1899,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # User mutation operations now name every supported document field instead
     # of accepting an untyped keyword bag.
     # PCM metric controls are keyword-only after the resource selector.
-    expected_digest = "435eae440f281ac1f3c49fc32bf5a0896271aa83940df1360b5ddc00e35e6c9a"  # pragma: allowlist secret
+    expected_digest = "539a421c3618b90cf8c05043bb70f95a5dfcd7622d7e4ee40c80e068fd0022d4"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

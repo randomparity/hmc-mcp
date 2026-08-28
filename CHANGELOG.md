@@ -388,6 +388,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `CreateUserRequest` and `ModifyUserPatch`; `create_user` and `modify_user`
+  now accept these typed profile payloads instead of duplicated wide parameter lists.
 - Changed: SSH-backed network and affinity operations now consistently name their
   selectors `system_name_or_uuid` and `lpar_name_or_uuid`.
 - Added: `resolve_and_authorize_lpar_mutation` and `resolve_and_authorize_lpar_names` after

@@ -236,6 +236,8 @@ from hmc_mcp.operations.vios import (
     restore_vios,
 )
 from hmc_mcp.operations.users import (
+    CreateUserRequest,
+    ModifyUserPatch,
     configure_remote_access,
     create_user,
     delete_user,
@@ -478,6 +480,8 @@ __all__ = [
     "LuType",
     "DeviceType",
     "AuthenticationType",
+    "CreateUserRequest",
+    "ModifyUserPatch",
     "configure_remote_access",
     "create_user",
     "delete_user",
