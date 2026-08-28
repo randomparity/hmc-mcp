@@ -1,5 +1,7 @@
 """Tests for LPAR boot order operations."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from hmc_mcp.documents import (
@@ -7,6 +9,12 @@ from hmc_mcp.documents import (
     BOOT_DEVICE_SELECTORS,
     build_boot_order_document,
     build_clear_boot_order_document,
+)
+from hmc_mcp.errors import HMCError
+from hmc_mcp.operations.lpar.boot_order import (
+    clear_lpar_boot_order,
+    read_lpar_boot_order,
+    set_lpar_boot_order,
 )
 
 
@@ -184,3 +192,142 @@ def test_boot_order_string_order_preservation():
     assert result == "network cd disk"
     assert result.index("network") < result.index("cd")
     assert result.index("cd") < result.index("disk")
+
+
+# ------------------------------------------------------------------ #
+# Async operation behavior
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_read_lpar_boot_order_returns_named_boot_state():
+    hmc = AsyncMock()
+    hmc.get_logical_partition.return_value = {
+        "Resource": {
+            "PartitionName": "aix-db",
+            "BootListInformation": {
+                "PendingBootString": "network disk",
+                "BootDeviceList": ["network", "disk"],
+                "LastBootedDeviceString": "disk",
+            },
+        }
+    }
+
+    result = await read_lpar_boot_order(hmc, "system-a", "lpar-1")
+
+    assert result == {
+        "lpar_uuid": "lpar-1",
+        "lpar_name": "aix-db",
+        "pending_boot_string": "network disk",
+        "boot_device_list": ["network", "disk"],
+        "last_booted_device_string": "disk",
+    }
+    hmc.get_logical_partition.assert_awaited_once_with("lpar-1")
+
+
+@pytest.mark.asyncio
+async def test_read_lpar_boot_order_rejects_missing_lpar():
+    hmc = AsyncMock()
+    hmc.get_logical_partition.return_value = None
+
+    with pytest.raises(ValueError, match="LPAR 'missing' not found"):
+        await read_lpar_boot_order(hmc, "system-a", "missing")
+
+
+@pytest.mark.asyncio
+async def test_set_lpar_boot_order_authorizes_before_forwarding_payload():
+    events: list[object] = []
+    hmc = AsyncMock()
+    hmc.modify_logical_partition.side_effect = lambda uuid, xml: (
+        events.append(("modify", uuid, xml)) or {"Resource": {"UUID": uuid}}
+    )
+
+    async def authorize(*args, **kwargs):
+        events.append(("authorize", args[1:], kwargs))
+        return "system-a", "aix-db"
+
+    with (
+        patch(
+            "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_names",
+            side_effect=authorize,
+        ) as authorization,
+        patch(
+            "hmc_mcp.operations.lpar.boot_order.build_boot_order_document",
+            side_effect=lambda devices: events.append(("build", devices)) or "<boot/>",
+        ),
+    ):
+        result = await set_lpar_boot_order(
+            hmc, "system-1", "lpar-1", ["network", "disk"], ownership_override=True
+        )
+
+    assert events == [
+        (
+            "authorize",
+            ("system-1", "lpar-1"),
+            {"ownership_override": True},
+        ),
+        ("build", ["network", "disk"]),
+        ("modify", "lpar-1", "<boot/>"),
+    ]
+    authorization.assert_awaited_once()
+    assert result == {"Resource": {"UUID": "lpar-1"}}
+
+
+@pytest.mark.asyncio
+async def test_clear_lpar_boot_order_propagates_default_ownership_override():
+    events: list[object] = []
+    hmc = AsyncMock()
+    hmc.modify_logical_partition.side_effect = lambda uuid, xml: (
+        events.append(("modify", uuid, xml)) or None
+    )
+
+    async def authorize(*args, **kwargs):
+        events.append(("authorize", args[1:], kwargs))
+        return "system-a", "aix-db"
+
+    with (
+        patch(
+            "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_names",
+            side_effect=authorize,
+        ),
+        patch(
+            "hmc_mcp.operations.lpar.boot_order.build_clear_boot_order_document",
+            side_effect=lambda: events.append(("build",)) or "<clear/>",
+        ),
+    ):
+        result = await clear_lpar_boot_order(hmc, "system-1", "lpar-1")
+
+    assert events == [
+        (
+            "authorize",
+            ("system-1", "lpar-1"),
+            {"ownership_override": False},
+        ),
+        ("build",),
+        ("modify", "lpar-1", "<clear/>"),
+    ]
+    assert result is None
+
+
+@pytest.mark.parametrize("operation", ["set", "clear"])
+@pytest.mark.asyncio
+async def test_boot_order_mutations_translate_hmc_not_acceptable(operation: str):
+    body = "<Error><Message>schema mismatch</Message></Error>"
+    hmc = AsyncMock()
+    hmc.modify_logical_partition.side_effect = HMCError(
+        "write failed", status_code=406, body=body
+    )
+
+    with patch(
+        "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_names",
+        new=AsyncMock(return_value=("system-a", "aix-db")),
+    ):
+        with pytest.raises(HMCError, match="Not Acceptable") as exc_info:
+            if operation == "set":
+                await set_lpar_boot_order(hmc, "system-1", "lpar-1", ["disk"])
+            else:
+                await clear_lpar_boot_order(hmc, "system-1", "lpar-1")
+
+    assert exc_info.value.status_code == 406
+    assert exc_info.value.body == body
+    assert isinstance(exc_info.value.__cause__, HMCError)
