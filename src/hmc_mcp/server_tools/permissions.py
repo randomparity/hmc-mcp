@@ -353,13 +353,9 @@ def _guard_source(config: HMCConfig) -> tuple[str, str | None]:
     reader `source` exists for; ``environment`` would end their search on the
     wrong answer.
 
-    ``default`` also covers a ``config.toml`` that exists but could not be read,
-    parsed, or resolved to a profile, on the ``<default>`` connection only:
-    :func:`~hmc_mcp.config.build_config` catches that ``ConfigError`` itself when
-    no profile was named and falls through to env-only construction, so
-    :func:`_power_guard` is handed a valid config and never sees the failure.
-    The boolean stays right — the runtime resolves ``false`` the same way — but
-    nothing on either channel says the file was discarded.
+    ``default`` covers only a value omitted by both the selected profile and the
+    environment. Configuration read, parse, and validation failures reach
+    :func:`_power_guard` and are reported as ``unresolved`` instead.
     """
     spelling = _guard_env_spelling()
     if spelling == "exact":

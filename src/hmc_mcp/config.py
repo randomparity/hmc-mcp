@@ -352,6 +352,10 @@ class ConfigError(ValueError):
     """Raised when hmc-mcp/config.toml is invalid or a profile cannot be selected."""
 
 
+class NoProfileSelectedError(ConfigError):
+    """Raised when no argument, environment variable, or default selects a profile."""
+
+
 def resolve_config_path() -> Path | None:
     """Return the platform-native config.toml path, or None when absent.
 
@@ -626,7 +630,7 @@ def _select_profile(
         raise ConfigError(f"{path}: 'default_profile' must be a profile-name string")
     requested = requested_profile or os.environ.get("HMC_PROFILE") or default_profile
     if requested is None:
-        raise ConfigError(
+        raise NoProfileSelectedError(
             f"{path or 'config.toml'}: no default_profile set and no "
             "--profile / HMC_PROFILE supplied"
         )
@@ -845,7 +849,11 @@ def load_profile(
 
 
 def build_config(profile: str | None = None, **overrides: Any) -> HMCConfig:
-    """Build configuration from CLI options, environment, and a TOML profile."""
+    """Build configuration from CLI options, environment, and a TOML profile.
+
+    Environment-only construction is used when nothing selects a profile. Errors
+    reading or validating an authored configuration are propagated unchanged.
+    """
     filtered = {key: value for key, value in overrides.items() if value is not None}
 
     explicit_host = filtered.get("host")
@@ -864,9 +872,8 @@ def build_config(profile: str | None = None, **overrides: Any) -> HMCConfig:
                         **merged,
                     )
                 return base
-            except ConfigError:
-                if profile:
-                    raise
+            except NoProfileSelectedError:
+                pass
 
     return HMCConfig(
         _env_file=None,  # ty: ignore[unknown-argument]

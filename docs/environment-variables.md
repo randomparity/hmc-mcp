@@ -119,18 +119,12 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   name, each carrying the effective post-precedence `authorize_power_operations`
   value — `true` means the ownership guard is **enforced** — and the `source` that
   supplied it: `environment`, `profile`, or `default`. `default` is the answer
-  that means *nothing you wrote arrived*, which is the case a bare
-  `false` cannot distinguish. It also covers one case that is not your memory's
-  fault: a `config.toml` that exists but cannot be read, parsed, or resolved to a
-  profile is discarded on the default connection with no error and no log line
-  from this report, and every setting in it reverts to its built-in default. **If
-  you have a `config.toml` and the default connection reads `default`, suspect the
-  file itself** before you go looking for a typo in the key. A read or parse
-  failure is not silent everywhere: `hmc_list_configured_hosts` surfaces it by
-  name, with the line and column, and the same `read` grant that reaches this
-  report reaches that tool. Only a file that parses but resolves to no profile —
-  a missing `default_profile`, an `HMC_PROFILE` naming nothing — is silent on
-  every channel.
+  that means no profile or environment value supplied the setting, which is the
+  case a bare `false` cannot distinguish. A missing `default_profile` with no
+  explicit profile selection legitimately takes this environment/default path.
+  An unreadable, malformed, or invalid `config.toml`, or an explicit
+  `HMC_PROFILE` that names nothing, instead reports the connection as
+  `unresolved`; authored configuration is never silently discarded.
 
   A fourth value, `ambiguous`, means a **case variant** of
   `HMC_AUTHORIZE_POWER_OPERATIONS` is exported. It over-reports

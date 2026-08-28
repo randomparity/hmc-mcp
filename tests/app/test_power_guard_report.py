@@ -72,19 +72,10 @@ def test_the_value_is_readable_with_no_config_file_present():
     assert guards[0].detail is None
 
 
-def test_an_unreadable_config_file_reads_as_default_on_the_default_connection(
+def test_a_malformed_config_file_is_reported_as_unresolved(
     tmp_path, caplog
 ):
-    """Characterization: `build_config` swallows this, so the report cannot see it.
-
-    With no profile named, `build_config` catches the `ConfigError` itself and
-    falls through to env-only construction, so `_power_guard` is handed a valid
-    config and `source` reads `default` — the label
-    `docs/environment-variables.md` otherwise glosses as "nothing you wrote
-    arrived". The boolean is right; the operator instruction that paragraph gives
-    rests entirely on this behaviour. Pinned here so a change to
-    `config.build_config`'s swallow reddens a test rather than rotting a doc.
-    """
+    """Authored configuration failures remain visible to the operator."""
     _write_config(tmp_path, "[profiles.a\nhost = 'h'\n")
     policy = _policy(ALL_TOOLS_GRANT)
 
@@ -92,9 +83,11 @@ def test_an_unreadable_config_file_reads_as_default_on_the_default_connection(
         (guard,) = resolve_power_guards(policy)
 
     assert guard.connection == DEFAULT_CONNECTION_TOKEN
-    assert guard.authorize_power_operations is False
-    assert guard.source == "default"
-    assert caplog.records == []
+    assert guard.authorize_power_operations is None
+    assert guard.source == "unresolved"
+    assert guard.detail == "ConfigError"
+    assert len(caplog.records) == 1
+    assert "TOML parse error" in caplog.records[0].message
 
 
 def test_an_environment_variable_is_reported_as_such(monkeypatch):
