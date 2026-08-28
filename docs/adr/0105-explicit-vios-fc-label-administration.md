@@ -32,6 +32,12 @@ validating attribute-record builder, validates every standalone command argument
 boundary, then shell-quotes the completed arguments. It returns structured list rows or a
 structured mutation receipt.
 
+List operations request the HMC's complete current projection with `-F --header`. "Structured"
+means each value is keyed by the attribute name in that HMC-supplied header; this decision does
+not claim a fixed cross-version field set that the captured manuals do not enumerate. Parsing
+requires unique nonblank attribute names and equal header/data widths, preserves unknown columns,
+and fails rather than guessing when the output is malformed.
+
 Existing vFC adapter operations remain unchanged. The new functions are internal implementation
 interfaces, not additions to the reusable `hmc_mcp.api` facade.
 
