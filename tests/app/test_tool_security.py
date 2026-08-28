@@ -567,12 +567,18 @@ def test_legacy_classification_sets_are_gone():
             assert not hasattr(module, removed), f"{module.__name__}.{removed}"
 
 
-# A handler's connection routes through exactly these four helpers. Every one
+# A handler's connection routes through exactly these shared helpers. Every one
 # of them resolves an HMCConfig from `config.build_config`, so a call that omits
 # the handler's declared connection argument reaches the deployment default
 # whatever the caller — and the access policy — named.
 _CONNECTION_BUILDERS = frozenset(
-    {"build_config", "client_from_env", "ssh_with_client", "with_client"}
+    {
+        "build_config",
+        "client_from_env",
+        "run_limited_collection",
+        "ssh_with_client",
+        "with_client",
+    }
 )
 
 # `host` is deliberately singled out: `build_config` skips the whole profile
