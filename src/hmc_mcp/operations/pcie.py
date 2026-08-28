@@ -465,15 +465,15 @@ async def _preflight_sriov_assignment(
             before,
             profile_before,
             SriovLogicalPortChangeResult(
-                "assign",
-                "dynamic",
-                False,
-                selector,
-                before,
-                before,
-                profile_before,
-                profile_before,
-                "",
+                operation="assign",
+                path="dynamic",
+                changed=False,
+                selector=selector,
+                effective_before=before,
+                effective_after=before,
+                profile_before=profile_before,
+                profile_after=profile_before,
+                output="",
             ),
         )
     await _require_sriov_assignment_capacity_and_state(
@@ -549,15 +549,15 @@ async def assign_sriov_logical_port(
     after = readback.effective
     profile_after = readback.profile
     result = SriovLogicalPortChangeResult(
-        "assign",
-        "dynamic",
-        True,
-        selector,
-        before,
-        after,
-        profile_before,
-        profile_after,
-        output,
+        operation="assign",
+        path="dynamic",
+        changed=True,
+        selector=selector,
+        effective_before=before,
+        effective_after=after,
+        profile_before=profile_before,
+        profile_after=profile_after,
+        output=output,
     )
     if (
         error
@@ -615,7 +615,15 @@ async def unassign_sriov_logical_port(
     )["sriov_eth_logical_ports"]
     if before == "none":
         return SriovLogicalPortChangeResult(
-            "unassign", "profile", False, selector, None, None, before, before, ""
+            operation="unassign",
+            path="profile",
+            changed=False,
+            selector=selector,
+            effective_before=None,
+            effective_after=None,
+            profile_before=before,
+            profile_after=before,
+            output="",
         )
     parts = before.split(":")
     if (
@@ -646,7 +654,15 @@ async def unassign_sriov_logical_port(
     except Exception as caught:
         read_error = caught
     result = SriovLogicalPortChangeResult(
-        "unassign", "profile", True, selector, None, None, before, after, output
+        operation="unassign",
+        path="profile",
+        changed=True,
+        selector=selector,
+        effective_before=None,
+        effective_after=None,
+        profile_before=before,
+        profile_after=after,
+        output=output,
     )
     if error or read_error or after != "none":
         partial = SriovLogicalPortPartialError(
