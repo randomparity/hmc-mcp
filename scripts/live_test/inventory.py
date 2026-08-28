@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shlex
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
@@ -191,14 +191,15 @@ async def capture_lpar_baseline(client: Client, state: RunState) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def inventory_connectivity(client: Client, state: RunState) -> None:
-    context = state.context
-    print("\n=== ST1: Connectivity & Inventory ===")
-
+async def _discover_console(client: Client, state: RunState) -> None:
     st, data = await state.call(client, "hmc_console_info")
     state.record(1, "hmc_console_info", st, data)
     if st == "PASS" and isinstance(data, dict):
-        context.console_uuid = data.get("uuid") or data.get("UUID")
+        state.context.console_uuid = data.get("uuid") or data.get("UUID")
+
+
+async def _discover_system(client: Client, state: RunState) -> None:
+    context = state.context
 
     st, data = await state.call(client, "hmc_list_systems")
     state.record(1, "hmc_list_systems (list)", st, data)
@@ -226,6 +227,10 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
         context.system_uuid = data.get("UUID") or data.get("uuid")
     print(f"  System UUID: {context.system_uuid}")
 
+
+async def _discover_partitions(client: Client, state: RunState) -> None:
+    context = state.context
+
     st, data = await state.call(client, "hmc_list_lpars")
     state.record(1, "hmc_list_lpars (list)", st, data)
 
@@ -235,6 +240,10 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
     state.record(1, "hmc_get_lpar (single lp3)", st, data)
     if st == "PASS" and isinstance(data, dict) and not context.lp3_uuid:
         context.lp3_uuid = data.get("uuid") or data.get("UUID")
+
+
+async def _discover_vios(client: Client, state: RunState) -> None:
+    context = state.context
 
     st, data = await state.call(
         client, "hmc_list_vios", system_name_or_uuid=context.system_name
@@ -250,6 +259,10 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
                 context.vios_partition_id = int(pid) if pid is not None else None
                 break
     print(f"  VIOS UUID: {context.vios_uuid}  PartitionID: {context.vios_partition_id}")
+
+
+async def _probe_capacity_and_resources(client: Client, state: RunState) -> None:
+    context = state.context
 
     st, data = await state.call(client, "hmc_capacity_report")
     state.record(1, "hmc_capacity_report", st, data)
@@ -267,6 +280,10 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
     )
     state.record(1, "hmc_list_resources", st, data)
 
+
+async def _sample_recent_job(client: Client, state: RunState) -> None:
+    context = state.context
+
     st, data = await state.call(client, "hmc_list_recent_jobs", limit=10)
     state.record(1, "hmc_list_recent_jobs", st, data)
     if st == "PASS":
@@ -274,6 +291,10 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
             if isinstance(e, dict) and e.get("type") != "error":
                 context.job_uuid_sample = e.get("UUID") or e.get("uuid")
                 break
+
+
+async def _record_inventory_summaries(client: Client, state: RunState) -> None:
+    context = state.context
 
     st, data = await state.call(
         client, "hmc_system_summary", system_name_or_uuid=context.system_name
@@ -286,15 +307,24 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
     state.record(1, "hmc_lpar_summary", st, data)
 
 
+async def inventory_connectivity(client: Client, state: RunState) -> None:
+    print("\n=== ST1: Connectivity & Inventory ===")
+    await _discover_console(client, state)
+    await _discover_system(client, state)
+    await _discover_partitions(client, state)
+    await _discover_vios(client, state)
+    await _probe_capacity_and_resources(client, state)
+    await _sample_recent_job(client, state)
+    await _record_inventory_summaries(client, state)
+
+
 # ---------------------------------------------------------------------------
 # ST2 — Network Inventory
 # ---------------------------------------------------------------------------
 
 
-async def inventory_network(client: Client, state: RunState) -> None:
+async def _discover_virtual_switch(client: Client, state: RunState) -> None:
     context = state.context
-    print("\n=== ST2: Network Inventory ===")
-
     st, data = await state.call(
         client, "hmc_list_virtual_switches", system_name_or_uuid=context.system_name
     )
@@ -309,40 +339,54 @@ async def inventory_network(client: Client, state: RunState) -> None:
         if context.test_vswitch_id is None:
             context.test_vswitch_id = 0
 
+
+def _unused_vlan(data: Any) -> tuple[int | None, list[object]]:
+    used_vlans: set[int] = set()
+    malformed_vlans: list[object] = []
+    for entry in entries(data):
+        resource = get_resource(entry)
+        vlan = (
+            resource.get("NetworkVLANID")
+            or resource.get("VLANId")
+            or resource.get("vlan_id")
+        )
+        if vlan is not None:
+            try:
+                used_vlans.add(int(vlan))
+            except (TypeError, ValueError):
+                malformed_vlans.append(vlan)
+    available = None
+    if not malformed_vlans:
+        available = next(
+            (
+                candidate
+                for candidate in range(3000, 3100)
+                if candidate not in used_vlans
+            ),
+            None,
+        )
+    return available, malformed_vlans
+
+
+async def _select_unused_vlan(client: Client, state: RunState) -> None:
+    context = state.context
+
     st, data = await state.call(
         client, "hmc_list_virtual_networks", system_name_or_uuid=context.system_name
     )
     if st == "PASS":
-        used_vlans: set[int] = set()
-        malformed_vlans: list[object] = []
-        for e in entries(data):
-            resource = get_resource(e)
-            vlan = (
-                resource.get("NetworkVLANID")
-                or resource.get("VLANId")
-                or resource.get("vlan_id")
-            )
-            if vlan is not None:
-                try:
-                    used_vlans.add(int(vlan))
-                except (TypeError, ValueError):
-                    malformed_vlans.append(vlan)
+        context.test_vlan_id, malformed_vlans = _unused_vlan(data)
         if malformed_vlans:
             st = "FAIL"
             data = (
                 "Virtual-network inventory contains unparsable VLAN identifiers: "
                 + ", ".join(repr(value) for value in malformed_vlans)
             )
-        else:
-            for candidate in range(3000, 3100):
-                if candidate not in used_vlans:
-                    context.test_vlan_id = candidate
-                    break
     state.record(2, "hmc_list_virtual_networks", st, data)
-    print(
-        f"  Test VLAN ID: {context.test_vlan_id}  VSwitch ID: {context.test_vswitch_id}"
-    )
 
+
+async def _record_network_adapters(client: Client, state: RunState) -> None:
+    context = state.context
     st, data = await state.call(
         client, "hmc_list_network_bridges", system_name_or_uuid=context.system_name
     )
@@ -367,70 +411,90 @@ async def inventory_network(client: Client, state: RunState) -> None:
     state.record(2, "hmc_list_adapters (CNA lp3)", st, data)
 
 
+async def inventory_network(client: Client, state: RunState) -> None:
+    context = state.context
+    print("\n=== ST2: Network Inventory ===")
+    await _discover_virtual_switch(client, state)
+    await _select_unused_vlan(client, state)
+    print(
+        f"  Test VLAN ID: {context.test_vlan_id}  VSwitch ID: {context.test_vswitch_id}"
+    )
+    await _record_network_adapters(client, state)
+
+
 # ---------------------------------------------------------------------------
 # ST3 — Storage & SSP Inventory
 # ---------------------------------------------------------------------------
 
 
-async def inventory_storage(client: Client, state: RunState) -> None:
-    context = state.context
-    print("\n=== ST3: Storage & SSP Inventory ===")
+def _virtual_disks(resource: dict[str, Any]) -> list[dict[str, Any]]:
+    disks = resource.get("VirtualDisks") or resource.get("virtual_disks") or []
+    if isinstance(disks, dict):
+        disks = disks.get("VirtualDisk") or []
+    if isinstance(disks, dict):
+        return [disks]
+    return disks if isinstance(disks, list) else []
 
-    if context.vios_uuid:
-        st, data = await state.call(
-            client, "hmc_list_volume_groups", vios_name_or_uuid=context.vios_uuid
+
+def _capture_disk_capacity(state: RunState, disk: dict[str, Any]) -> bool:
+    context = state.context
+    resource = get_resource(disk)
+    if resource.get("DiskName") != context.vdisk_name:
+        return False
+    raw = resource.get("DiskCapacity") or resource.get("disk_capacity")
+    try:
+        gib = int(float(raw))
+        if gib <= 0:
+            raise ValueError("capacity must be positive")
+        context.vdisk_size_mib = gib * 1024
+    except (TypeError, ValueError):
+        context.vdisk_size_mib = None
+        state.record(
+            3,
+            "parse virtual disk capacity",
+            "FAIL",
+            f"Disk {context.vdisk_name!r} has invalid DiskCapacity {raw!r}; "
+            "storage mutation will be skipped",
         )
-        state.record(3, "hmc_list_volume_groups", st, data)
-        if st == "PASS":
-            for vg in entries(data):
-                resource = get_resource(vg)
-                vg_name = resource.get("GroupName") or resource.get("group_name") or ""
-                uuid = vg.get("UUID") or vg.get("uuid")
-                # Accept any VG that contains our target disk; fall back to first
-                vdisks = (
-                    resource.get("VirtualDisks") or resource.get("virtual_disks") or []
-                )
-                if isinstance(vdisks, dict):
-                    # May be wrapped: {"VirtualDisk": [...]} or {"VirtualDisk": {...}}
-                    vdisks = vdisks.get("VirtualDisk") or []
-                if isinstance(vdisks, dict):
-                    vdisks = [vdisks]
-                found_target_disk = False
-                for vd in vdisks if isinstance(vdisks, list) else []:
-                    virtual_disk_resource = get_resource(vd)
-                    if virtual_disk_resource.get("DiskName") == context.vdisk_name:
-                        found_target_disk = True
-                        raw = virtual_disk_resource.get(
-                            "DiskCapacity"
-                        ) or virtual_disk_resource.get("disk_capacity")
-                        try:
-                            # DiskCapacity is in GB — convert to MB.
-                            gb = int(float(raw))
-                            if gb <= 0:
-                                raise ValueError("capacity must be positive")
-                            context.vdisk_size_mib = gb * 1024
-                        except (TypeError, ValueError):
-                            context.vdisk_size_mib = None
-                            state.record(
-                                3,
-                                "parse virtual disk capacity",
-                                "FAIL",
-                                f"Disk {context.vdisk_name!r} has invalid "
-                                f"DiskCapacity {raw!r}; storage mutation will be skipped",
-                            )
-                if found_target_disk or not context.vg_uuid:
-                    context.vg_uuid = uuid
-                    context.vdisk_vg_name = vg_name
-                if found_target_disk:
-                    break  # found the VG containing lp3's disk
-        print(f"  VG UUID: {context.vg_uuid}  vdisk_size_mib: {context.vdisk_size_mib}")
-    else:
+    return True
+
+
+def _capture_volume_group(state: RunState, data: Any) -> None:
+    context = state.context
+    for volume_group in entries(data):
+        resource = get_resource(volume_group)
+        found_target = any(
+            _capture_disk_capacity(state, disk) for disk in _virtual_disks(resource)
+        )
+        if found_target or not context.vg_uuid:
+            context.vg_uuid = volume_group.get("UUID") or volume_group.get("uuid")
+            context.vdisk_vg_name = (
+                resource.get("GroupName") or resource.get("group_name") or ""
+            )
+        if found_target:
+            break
+
+
+async def _discover_volume_group(client: Client, state: RunState) -> None:
+    context = state.context
+    if not context.vios_uuid:
         state.skip(
             3,
             "hmc_list_volume_groups",
             "no VIOS UUID in context (ST0/ST1 failed)",
         )
+        return
+    st, data = await state.call(
+        client, "hmc_list_volume_groups", vios_name_or_uuid=context.vios_uuid
+    )
+    state.record(3, "hmc_list_volume_groups", st, data)
+    if st == "PASS":
+        _capture_volume_group(state, data)
+    print(f"  VG UUID: {context.vg_uuid}  vdisk_size_mib: {context.vdisk_size_mib}")
 
+
+async def _record_storage_collections(client: Client, state: RunState) -> None:
+    context = state.context
     st, data = await state.call(client, "hmc_list_clusters")
     state.record(3, "hmc_list_clusters", st, data)
 
@@ -446,6 +510,12 @@ async def inventory_storage(client: Client, state: RunState) -> None:
         client, "hmc_list_memory_pools", system_name_or_uuid=context.system_name
     )
     state.record(3, "hmc_list_memory_pools", st, data)
+
+
+async def inventory_storage(client: Client, state: RunState) -> None:
+    print("\n=== ST3: Storage & SSP Inventory ===")
+    await _discover_volume_group(client, state)
+    await _record_storage_collections(client, state)
 
 
 # ---------------------------------------------------------------------------

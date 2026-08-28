@@ -54,9 +54,7 @@ class ScenarioState:
 async def test_baseline_capture_preserves_identity_and_adapter_topology() -> None:
     def adapters(kwargs: dict[str, Any]) -> list[dict[str, Any]]:
         if kwargs["adapter_type"] == "ClientNetworkAdapter":
-            return [
-                {"Resource": {"PortVLANID": "42", "VirtualSwitchID": "7"}}
-            ]
+            return [{"Resource": {"PortVLANID": "42", "VirtualSwitchID": "7"}}]
         return [
             {
                 "Resource": {
@@ -74,9 +72,7 @@ async def test_baseline_capture_preserves_identity_and_adapter_topology() -> Non
             "hmc_get_lpar_msp": True,
             "hmc_get_lpar_proc_compat": "POWER10",
             "hmc_list_adapters": adapters,
-            "hmc_list_vios": [
-                {"UUID": "vios-uuid", "Resource": {"PartitionID": "2"}}
-            ],
+            "hmc_list_vios": [{"UUID": "vios-uuid", "Resource": {"PartitionID": "2"}}],
             "hmc_run_command": "name=lp three",
         }
     )
@@ -91,7 +87,9 @@ async def test_baseline_capture_preserves_identity_and_adapter_topology() -> Non
     assert state.context.lp3_baseline["vswitch_id"] == 7
     assert state.context.lp3_baseline["vios_partition_id"] == 2
     assert state.context.lp3_baseline["vios_slot"] == 11
-    command = next(kwargs["cmd"] for tool, kwargs in state.calls if tool == "hmc_run_command")
+    command = next(
+        kwargs["cmd"] for tool, kwargs in state.calls if tool == "hmc_run_command"
+    )
     assert "-m 'system one'" in command
     assert "lpar_names=lp three" in command
 
@@ -100,9 +98,7 @@ async def test_baseline_capture_preserves_identity_and_adapter_topology() -> Non
 async def test_network_inventory_selects_unused_vlan_and_switch() -> None:
     state = ScenarioState(
         {
-            "hmc_list_virtual_switches": [
-                {"Resource": {"SwitchID": "9"}}
-            ],
+            "hmc_list_virtual_switches": [{"Resource": {"SwitchID": "9"}}],
             "hmc_list_virtual_networks": [
                 {"Resource": {"NetworkVLANID": "3000"}},
                 {"Resource": {"NetworkVLANID": "3002"}},
