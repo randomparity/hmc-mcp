@@ -22,10 +22,6 @@ from typing import Any, Final
 #: the record" a property of the logger rather than only of the emitter.
 AUDIT_LOGGER_NAME: Final = "hmc_mcp.audit"
 
-# Defining the reserved logger also prevents records from propagating into an
-# ancestor stdout handler before the served application installs its sink.
-logging.getLogger(AUDIT_LOGGER_NAME).propagate = False
-
 
 def emit(level: int, build: Callable[[], dict[str, Any]]) -> None:
     """Render and log one record, or drop it. Never raises.
@@ -227,8 +223,18 @@ def _drop_marker(count: int) -> str:
     )
 
 
-_SINK: Final = _StderrSink(_QUEUE_CAPACITY, _DRAIN_TIMEOUT)
-atexit.register(_SINK.close)
+_SINK: _StderrSink | None = None
+_SINK_LOCK: Final = threading.Lock()
+
+
+def _sink() -> _StderrSink:
+    """Return the process sink, creating and registering it on first use."""
+    global _SINK
+    with _SINK_LOCK:
+        if _SINK is None:
+            _SINK = _StderrSink(_QUEUE_CAPACITY, _DRAIN_TIMEOUT)
+            atexit.register(_SINK.close)
+        return _SINK
 
 
 def write_diagnostic(line: str) -> None:
@@ -239,7 +245,7 @@ def write_diagnostic(line: str) -> None:
     second mechanism with its own failure mode on the same descriptor — the
     condition #269 names first is precisely a start that hangs on such a write.
     """
-    _SINK.submit(line + "\n")
+    _sink().submit(line + "\n")
 
 
 class _AuditHandler(logging.Handler):
@@ -270,7 +276,7 @@ class _AuditHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             rendered = self.format(record) if self.formatter else record.getMessage()
-            _SINK.submit(rendered + "\n")
+            _sink().submit(rendered + "\n")
         except Exception:  # noqa: BLE001 - the stdlib handler contract
             # Every stdlib handler wraps its body this way, and that is what makes
             # a logging call safe to place anywhere in a program. This module's own
@@ -286,7 +292,7 @@ class _AuditHandler(logging.Handler):
         ``logging.shutdown`` calls this on every handler at interpreter exit, and
         the bound is what keeps that from becoming the hang this sink removes.
         """
-        _SINK.drain(_DRAIN_TIMEOUT)
+        _sink().drain(_DRAIN_TIMEOUT)
 
 
 #: What a rendered line may not carry if this stream is to keep its shape. The C0
@@ -387,6 +393,7 @@ def install_audit_sink() -> None:
     """
     logger = logging.getLogger(AUDIT_LOGGER_NAME)
     logger.propagate = False
+    _sink()
     if not logger.handlers:
         logger.addHandler(sink_handler())
     if logger.level == logging.NOTSET:

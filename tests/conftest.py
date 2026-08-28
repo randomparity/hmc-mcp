@@ -189,11 +189,11 @@ def isolate_audit_logging():
         # `flush`/`drain`.
         stderr, sys.stderr = sys.stderr, io.StringIO()
         try:
-            audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT)
+            audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT)
         finally:
             sys.stderr = stderr
-        with audit_sink._SINK._state:
-            audit_sink._SINK._dropped = 0
+        with audit_sink._sink()._state:
+            audit_sink._sink()._dropped = 0
 
 
 @dataclass
@@ -251,7 +251,7 @@ def full_stderr_pipe():
         yield FullPipe(stream=stream, read_fd=read_fd, capacity=capacity)
     finally:
         os.close(read_fd)
-        audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT)
+        audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT)
         try:
             stream.close()
         except OSError:
@@ -329,12 +329,12 @@ def mock_uuid_resolution(
         router.get(f"/rest/api/uom/LogicalPartition/{lpar_uuid}").mock(
             return_value=httpx.Response(200, text=lpar_entry)
         )
-        feed_entry = lpar_entry.split("?>", 1)[1].strip().replace(
-            ' xmlns="http://www.w3.org/2005/Atom"', "", 1
+        feed_entry = (
+            lpar_entry.split("?>", 1)[1]
+            .strip()
+            .replace(' xmlns="http://www.w3.org/2005/Atom"', "", 1)
         )
-        router.get(
-            f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition"
-        ).mock(
+        router.get(f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition").mock(
             return_value=httpx.Response(
                 200,
                 text=(

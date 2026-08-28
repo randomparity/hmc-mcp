@@ -12,7 +12,10 @@ import pytest
 from fastmcp import FastMCP
 
 from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
+from hmc_mcp.authorization.access_policy import (
+    DEFAULT_CONNECTION_TOKEN,
+    compile_access_policy,
+)
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import (
     PERMISSIONS_TOOL_NAME,
@@ -54,9 +57,9 @@ def test_a_read_only_policy_registers_only_read_tools():
     policy = _policy(READ_ONLY_GRANT)
     names = _names(create_mcp(policy))
 
-    assert names == {
-        name for name in TOOL_SECURITY if policy.permits_tool(name)
-    } - {"hmc_run_command"}
+    assert names == {name for name in TOOL_SECURITY if policy.permits_tool(name)} - {
+        "hmc_run_command"
+    }
     assert names
     assert all(TOOL_SECURITY[name].effect == "read" for name in names)
     assert "hmc_delete_lpar" not in names
@@ -145,7 +148,13 @@ def test_inspection_is_subject_to_the_ceiling():
     assert "hmc_effective_permissions" in _names(create_mcp(_policy(READ_ONLY_GRANT)))
 
     withheld = _policy(
-        [{"tools": ["hmc_list_systems"], "connections": ["lab"], "targets": "all-targets"}]
+        [
+            {
+                "tools": ["hmc_list_systems"],
+                "connections": ["lab"],
+                "targets": "all-targets",
+            }
+        ]
     )
     assert "hmc_effective_permissions" not in _names(create_mcp(withheld))
 
@@ -158,7 +167,8 @@ def test_inspection_matches_the_registry_and_the_policy():
     reported = [tool["name"] for tool in _inspect(application)["tools"]]
     live = sorted(tool.name for tool in asyncio.run(application.list_tools()))
     expected = sorted(
-        {name for name in TOOL_SECURITY if policy.permits_tool(name)} - {"hmc_run_command"}
+        {name for name in TOOL_SECURITY if policy.permits_tool(name)}
+        - {"hmc_run_command"}
     )
 
     assert reported == live == expected
@@ -215,7 +225,9 @@ def test_inspection_reports_no_policy_honestly():
     from hmc_mcp.server_tools.permissions import build_effective_permissions
 
     result = asdict(
-        build_effective_permissions({"hmc_list_systems": _guarded_stub()}, None, TOOL_SECURITY, ())
+        build_effective_permissions(
+            {"hmc_list_systems": _guarded_stub()}, None, TOOL_SECURITY, ()
+        )
     )
 
     assert result["policy_name"] is None
@@ -228,14 +240,16 @@ def test_inspection_reports_no_policy_honestly():
 
 def test_inspection_reports_grants_separately_without_merging():
     """R15: one entry per grant, in document order, never unioned."""
-    policy = _policy([
-        {"effects": ["read"], "connections": ["lab"], "targets": "all-targets"},
-        {
-            "tools": ["hmc_delete_lpar"],
-            "connections": ["scratch"],
-            "targets": {"lpar": ["db-01"], "managed_system": ["sys-a"]},
-        },
-    ])
+    policy = _policy(
+        [
+            {"effects": ["read"], "connections": ["lab"], "targets": "all-targets"},
+            {
+                "tools": ["hmc_delete_lpar"],
+                "connections": ["scratch"],
+                "targets": {"lpar": ["db-01"], "managed_system": ["sys-a"]},
+            },
+        ]
+    )
     grants = _inspect(create_mcp(policy))["declared_grants"]
 
     assert [grant["connections"] for grant in grants] == [["lab"], ["scratch"]]
@@ -247,14 +261,16 @@ def test_inspection_reports_each_grant_authored_effects():
     """#251: each grant discloses the effect classes it authored, not only the
     resolved tool union. An `effects = ["read"]` grant and a named-tool list
     render identically in `tools`, so authorship must be its own field."""
-    policy = _policy([
-        {"effects": ["read"], "connections": ["lab"], "targets": "all-targets"},
-        {
-            "tools": ["hmc_delete_lpar"],
-            "connections": ["scratch"],
-            "targets": {"lpar": ["db-01"], "managed_system": ["sys-a"]},
-        },
-    ])
+    policy = _policy(
+        [
+            {"effects": ["read"], "connections": ["lab"], "targets": "all-targets"},
+            {
+                "tools": ["hmc_delete_lpar"],
+                "connections": ["scratch"],
+                "targets": {"lpar": ["db-01"], "managed_system": ["sys-a"]},
+            },
+        ]
+    )
     grants = _inspect(create_mcp(policy))["declared_grants"]
 
     assert [grant["effects"] for grant in grants] == [["read"], []]
@@ -264,14 +280,16 @@ def test_inspection_reports_a_mixed_grant_effects_besides_named_tools():
     """#251: a grant authored with both an effect class and named tools reports
     both — the authored classes in `effects`, everything it resolves to in
     `tools`."""
-    policy = _policy([
-        {
-            "effects": ["read"],
-            "tools": ["hmc_power_off_lpar"],
-            "connections": ["lab"],
-            "targets": "all-targets",
-        },
-    ])
+    policy = _policy(
+        [
+            {
+                "effects": ["read"],
+                "tools": ["hmc_power_off_lpar"],
+                "connections": ["lab"],
+                "targets": "all-targets",
+            },
+        ]
+    )
     grants = _inspect(create_mcp(policy))["declared_grants"]
 
     assert grants[0]["effects"] == ["read"]
@@ -351,7 +369,9 @@ def _configure(application, enabled, permits=None, policy=None):
     from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
     from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 
-    effective = policy if policy is not None else _legacy(include_arbitrary_command=True)
+    effective = (
+        policy if policy is not None else _legacy(include_arbitrary_command=True)
+    )
     asyncio.run(
         configure_arbitrary_command_tool(
             enabled,
@@ -389,13 +409,15 @@ def test_escape_hatch_needs_both_the_flag_and_the_grant():
 
 def test_escape_hatch_is_withheld_when_the_policy_omits_it():
     """R5, R6: an effect-class policy cannot reach it, flag or no flag."""
-    every_effect = _policy([
-        {
-            "effects": ["read", "mutate", "destructive"],
-            "connections": ["<default>"],
-            "targets": "all-targets",
-        }
-    ])
+    every_effect = _policy(
+        [
+            {
+                "effects": ["read", "mutate", "destructive"],
+                "connections": ["<default>"],
+                "targets": "all-targets",
+            }
+        ]
+    )
     assert every_effect.permits_tool("hmc_run_command") is False
 
     application = create_mcp(every_effect)
@@ -413,7 +435,9 @@ def test_inspection_tracks_the_arbitrary_command_toggle():
     result = _inspect(application)
     reported = [tool["name"] for tool in result["tools"]]
 
-    assert reported == sorted(tool.name for tool in asyncio.run(application.list_tools()))
+    assert reported == sorted(
+        tool.name for tool in asyncio.run(application.list_tools())
+    )
     assert "hmc_run_command" in reported
     assert "arbitrary-command" in result["effects"]
     assert result["ceiling_enforced"] is True
@@ -535,9 +559,14 @@ def test_an_unwrapped_tool_costs_only_the_target_label():
 
     security = TOOL_SECURITY["hmc_list_lpars"]
     assert security.targets, "the fixture needs a tool that declares selectors"
-    index = {**TOOL_SECURITY, "hmc_list_lpars": replace(security, connection_argument=None)}
+    index = {
+        **TOOL_SECURITY,
+        "hmc_list_lpars": replace(security, connection_argument=None),
+    }
 
-    result = build_effective_permissions({"hmc_list_lpars": hmc_list_lpars}, _legacy(), index, ())
+    result = build_effective_permissions(
+        {"hmc_list_lpars": hmc_list_lpars}, _legacy(), index, ()
+    )
 
     assert result.ceiling_enforced is True
     assert result.enforced_dimensions == ("tools", "connections")
@@ -649,7 +678,10 @@ NAMED_ALL_TARGETS_GRANT = [
     ("label", "build"),
     [
         ("effects with all-targets", lambda: _policy(READ_ONLY_GRANT)),
-        ("a ceiling naming only the two tools", lambda: _policy(NAMED_ALL_TARGETS_GRANT)),
+        (
+            "a ceiling naming only the two tools",
+            lambda: _policy(NAMED_ALL_TARGETS_GRANT),
+        ),
         ("the legacy-equivalent policy", _legacy),
         (
             "a table grant beside an all-targets grant naming them",
@@ -725,13 +757,15 @@ def test_entry_points_serve_a_freshly_composed_filtered_application(entry_point)
 
     import hmc_mcp.server as server_module
 
-    every_effect = _policy([
-        {
-            "effects": ["read", "mutate", "destructive"],
-            "connections": ["<default>"],
-            "targets": "all-targets",
-        }
-    ])
+    every_effect = _policy(
+        [
+            {
+                "effects": ["read", "mutate", "destructive"],
+                "connections": ["<default>"],
+                "targets": "all-targets",
+            }
+        ]
+    )
     served = {}
 
     def _capture(self, **_kwargs):
@@ -745,12 +779,8 @@ def test_entry_points_serve_a_freshly_composed_filtered_application(entry_point)
         served_apps.append(self)
 
     with patch.object(FastMCP, "run", _capture_twice):
-        getattr(server_module, entry_point)(
-            every_effect, enable_arbitrary_command=True
-        )
-        getattr(server_module, entry_point)(
-            every_effect, enable_arbitrary_command=True
-        )
+        getattr(server_module, entry_point)(every_effect, enable_arbitrary_command=True)
+        getattr(server_module, entry_point)(every_effect, enable_arbitrary_command=True)
 
     # R9 is object identity, not set difference: an all-three-effects grant
     # resolves to every tool but hmc_run_command, which create_mcp never
@@ -792,7 +822,13 @@ def test_an_empty_served_surface_is_warned_and_suppresses_the_other_line():
 def test_a_withheld_inspection_tool_is_warned():
     """R18: named, with the policy that withheld it."""
     policy = _policy(
-        [{"tools": ["hmc_list_systems"], "connections": ["lab"], "targets": "all-targets"}]
+        [
+            {
+                "tools": ["hmc_list_systems"],
+                "connections": ["lab"],
+                "targets": "all-targets",
+            }
+        ]
     )
 
     lines = _warnings(1, policy)
@@ -810,9 +846,7 @@ def test_an_authored_but_unselected_policy_file_is_warned():
     import hmc_mcp.server as server_app
 
     assert not hasattr(server_app, "_unselected_policy_file")
-    assert not any(
-        "access-policy.toml" in line for line in _warnings(129, _legacy())
-    )
+    assert not any("access-policy.toml" in line for line in _warnings(129, _legacy()))
 
 
 def test_an_unresolvable_policy_path_never_fails_the_start():
@@ -841,9 +875,7 @@ def test_a_withheld_escape_hatch_is_warned_only_when_requested():
     requested = _warnings(90, policy, enable_arbitrary_command=True)
     assert any("hmc_run_command" in line for line in requested)
 
-    assert not any(
-        "hmc_run_command" in line for line in _warnings(90, policy)
-    )
+    assert not any("hmc_run_command" in line for line in _warnings(90, policy))
 
 
 POLICY_FILE = """
@@ -915,7 +947,9 @@ def test_the_serve_path_counts_after_the_toggle_and_writes_only_to_stderr(capsys
 
     policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
     application = server_app._serve_application(True, policy)
-    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
+        "the sink must settle, not stall"
+    )
 
     assert _names(application) == {"hmc_run_command"}
 
@@ -934,7 +968,9 @@ def test_the_serve_path_warns_once_on_a_genuinely_empty_surface(capsys):
 
     policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
     application = server_app._serve_application(False, policy)
-    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
+        "the sink must settle, not stall"
+    )
 
     assert _names(application) == set()
 
@@ -991,7 +1027,9 @@ def test_an_unusable_stderr_neither_fails_the_start_nor_reaches_stdout(
     monkeypatch.setattr(sys, "stderr", _unusable_stderr(state, tmp_path))
 
     application = server_app._serve_application(False, policy)
-    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
+        "the sink must settle, not stall"
+    )
 
     assert _names(application) == set()
     assert capsys.readouterr().out == ""
@@ -1048,9 +1086,7 @@ def test_inspection_reports_which_tools_a_targets_table_cannot_bound():
         tool["name"] for tool in result["tools"] if not tool["exhaustive_targets"]
     }
     assert reported == {
-        name
-        for name in by_name
-        if not TOOL_SECURITY[name].exhaustive_targets
+        name for name in by_name if not TOOL_SECURITY[name].exhaustive_targets
     }
 
 

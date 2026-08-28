@@ -54,7 +54,7 @@ Not spec-numbered, each pinning something a review round found:
 
   test_resolved_connection_is_bound_to_the_sentinel_that_owns_it
   test_events_matches_the_literal_and_every_emitter_uses_it
-  test_the_module_closes_propagation_at_import          (#272, fresh interpreter)
+  test_import_is_inert_until_sink_installation          (#272, fresh interpreter)
   test_an_unconfigured_logger_still_reaches_last_resort (#272's other half)
   test_the_override_record_carries_the_hmc_host       (#271)
   test_an_empty_override_host_renders_empty_and_is_bounded (#271)
@@ -121,7 +121,7 @@ def _flush() -> None:
     reached the logger — has to wait for the writer thread, and has to fail rather
     than time out silently if it never lands.
     """
-    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), (
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
         "the sink did not settle: a submitted line neither landed nor dropped"
     )
 
@@ -144,7 +144,10 @@ def _authorization(**overrides) -> dict:
         "resolved": audit.resolved_connection("lab"),
         "targets": (
             audit.AuditTarget(
-                kind="lpar", argument="lpar_name_or_uuid", state="present", value="db-01"
+                kind="lpar",
+                argument="lpar_name_or_uuid",
+                state="present",
+                value="db-01",
             ),
         ),
     }
@@ -189,14 +192,25 @@ def test_a_permitted_record_carries_every_field_in_order():
         resolved=audit.resolved_connection("lab"),
         targets=(
             audit.AuditTarget(
-                kind="lpar", argument="lpar_name_or_uuid", state="present", value="db-01"
+                kind="lpar",
+                argument="lpar_name_or_uuid",
+                state="present",
+                value="db-01",
             ),
         ),
     )
     record = _one(lines)
     assert list(record) == [
-        "time", "event", "policy", "tool", "effect", "decision", "reason",
-        "connection", "targets", "attribution",
+        "time",
+        "event",
+        "policy",
+        "tool",
+        "effect",
+        "decision",
+        "reason",
+        "connection",
+        "targets",
+        "attribution",
     ]
     assert record["event"] == "authorization"
     assert record["policy"] == "lab-only"
@@ -205,7 +219,9 @@ def test_a_permitted_record_carries_every_field_in_order():
     assert record["decision"] == "allow"
     assert record["reason"] == "permitted"
     assert record["connection"] == {
-        "state": "present", "selector": "lab", "resolved": "lab"
+        "state": "present",
+        "selector": "lab",
+        "resolved": "lab",
     }
     assert record["targets"] == [
         {
@@ -223,12 +239,19 @@ def test_output_is_one_ascii_line_whatever_the_caller_sends():
     hostile = "a\nb\rc\td\x1be‮f g"
     lines = _capture()
     audit.record_authorization(
-        policy="p", tool="t", effect="mutate", decision="deny",
-        reason="target-not-granted", token=hostile,
+        policy="p",
+        tool="t",
+        effect="mutate",
+        decision="deny",
+        reason="target-not-granted",
+        token=hostile,
         resolved=audit.resolved_connection(""),
         targets=(
             audit.AuditTarget(
-                kind="lpar", argument="lpar_name_or_uuid", state="present", value=hostile
+                kind="lpar",
+                argument="lpar_name_or_uuid",
+                state="present",
+                value=hostile,
             ),
         ),
     )
@@ -289,11 +312,11 @@ def test_targets_and_resolved_are_null_when_nothing_was_resolved():
     assert selectorless["targets"] == []
 
     for empty in (None, ""):
-        assert _authorization(
-            token=empty, resolved=audit.resolved_connection(None)
-        )["connection"] == {
-            "state": "absent", "selector": None, "resolved": "<default>"
-        }, f"an absent token must render a null selector, got {empty!r}"
+        assert _authorization(token=empty, resolved=audit.resolved_connection(None))[
+            "connection"
+        ] == {"state": "absent", "selector": None, "resolved": "<default>"}, (
+            f"an absent token must render a null selector, got {empty!r}"
+        )
     assert (
         _authorization(token="nope", resolved=audit.resolved_connection(""))[
             "connection"
@@ -514,7 +537,12 @@ def test_the_override_record_carries_the_hmc_host():
     )
     record = _one(lines)
     assert list(record) == [
-        "time", "event", "system", "lpar", "host", "attribution",
+        "time",
+        "event",
+        "system",
+        "lpar",
+        "host",
+        "attribution",
     ]
     assert record["host"] == "hmc.test"
 
@@ -527,9 +555,7 @@ def test_an_empty_override_host_renders_empty_and_is_bounded():
     assert _one(lines)["host"] == ""
 
     lines = _capture()
-    audit.record_ownership_override(
-        system="s", lpar="l", host="H" * 500, agent_id="a"
-    )
+    audit.record_ownership_override(system="s", lpar="l", host="H" * 500, agent_id="a")
     assert len(_one(lines)["host"]) == audit.MAX_VALUE_LENGTH
 
 
@@ -555,15 +581,24 @@ def test_the_denial_record_names_both_halves_of_the_refusal():
     )
     record = _one(lines)
     assert list(record) == [
-        "time", "event", "operation", "denial", "system", "lpar", "owner",
-        "host", "attribution",
+        "time",
+        "event",
+        "operation",
+        "denial",
+        "system",
+        "lpar",
+        "owner",
+        "host",
+        "attribution",
     ]
     assert record["event"] == "ownership-denied"
     assert record["operation"] == "lpar-mutation"
     assert record["denial"] == "foreign-owner"
     assert record["owner"] == "agent-3"
     assert record["attribution"] == {
-        "claim": "agent-7", "source": "config:agent_id", "verified": False
+        "claim": "agent-7",
+        "source": "config:agent_id",
+        "verified": False,
     }
 
 
@@ -685,7 +720,13 @@ def test_the_install_record_names_the_target_and_the_log_path():
     )
     record = _one(lines)
     assert list(record) == [
-        "time", "event", "system", "partition", "log_path", "host", "attribution",
+        "time",
+        "event",
+        "system",
+        "partition",
+        "log_path",
+        "host",
+        "attribution",
     ]
     assert record["event"] == "install-attempted"
     assert record["system"] == "sys-a"
@@ -693,7 +734,9 @@ def test_the_install_record_names_the_target_and_the_log_path():
     assert record["log_path"] == "/tmp/hmc-mcp-installios-vios-01.log"
     assert record["host"] == "hmc.test"
     assert record["attribution"] == {
-        "claim": "agent-7", "source": "config:agent_id", "verified": False
+        "claim": "agent-7",
+        "source": "config:agent_id",
+        "verified": False,
     }
 
 
@@ -785,7 +828,9 @@ def test_only_audit_sink_resolves_the_audit_logger():
 def test_a_record_reaches_stderr_and_not_stdout(capsys):
     """Spec 9."""
     audit_sink.install_audit_sink()
-    audit.record_ownership_override(system="sys-a", lpar="db-01", host="hmc.test", agent_id="agent-7")
+    audit.record_ownership_override(
+        system="sys-a", lpar="db-01", host="hmc.test", agent_id="agent-7"
+    )
     # Through the handler's own `flush`, which is what `logging.shutdown` calls at
     # interpreter exit — and the reason that call cannot become the hang #269 is
     # about, since it is the sink's bounded drain rather than an unbounded join.
@@ -808,7 +853,9 @@ def test_the_sink_does_not_propagate_to_an_ancestor_handler(capsys):
     try:
         audit_sink.install_audit_sink()
         assert logging.getLogger(audit_sink.AUDIT_LOGGER_NAME).propagate is False
-        audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
+        audit.record_ownership_override(
+            system="s", lpar="l", host="hmc.test", agent_id="a"
+        )
         _flush()
         capsys.readouterr()
         assert root_lines == [], "a root handler must not receive audit records"
@@ -819,7 +866,7 @@ def test_the_sink_does_not_propagate_to_an_ancestor_handler(capsys):
 def _private_sink(capacity: int = 8, drain_timeout: float = 2.0):
     """A sink of this test's own, so nothing here depends on process-global state.
 
-    ``audit_sink._SINK`` is shared with every other test in the session and carries a
+    ``audit_sink._sink()`` is shared with every other test in the session and carries a
     live daemon thread; a test that wants to observe a drop counter, a shutdown, or
     a blocked writer needs an instance it alone owns.
     """
@@ -886,21 +933,24 @@ def test_a_stream_that_cannot_be_written_drops_and_says_so(
     assert f"lost-{label}" not in landed.getvalue()
 
 
-def test_the_module_closes_propagation_at_import(tmp_path):
-    """#272. Asserted in a *fresh interpreter*, because the autouse isolation
-    fixture resets `propagate` to True for every test in this session — so an
-    in-process assertion would read the fixture's value, not the shipped one."""
+def test_import_is_inert_until_sink_installation(tmp_path):
+    """Import leaves logging untouched; explicit installation owns mutation."""
     probe = (
         "import logging, hmc_mcp.audit.sink as a; "
-        "print(logging.getLogger(a.AUDIT_LOGGER_NAME).propagate)"
+        "logger = logging.getLogger(a.AUDIT_LOGGER_NAME); "
+        "print(logger.propagate, a._SINK is None); "
+        "a.install_audit_sink(); "
+        "print(logger.propagate, a._SINK is not None)"
     )
     result = subprocess.run(
-        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
     )
-    assert result.stdout.strip() == "False", (
-        "importing hmc_mcp.audit must close the route to an ancestor handler, "
-        "which under stdio may be pointed at the JSON-RPC stream"
-    )
+    assert result.stdout.splitlines() == ["True True", "False True"]
+
 
 def test_an_unconfigured_logger_still_reaches_last_resort(capsys):
     """The other half of #272's fix: closing propagation must not cost a CLI user
@@ -912,12 +962,15 @@ def test_an_unconfigured_logger_still_reaches_last_resort(capsys):
     saved = list(logging.root.handlers)
     logging.root.handlers.clear()
     try:
-        audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
+        audit.record_ownership_override(
+            system="s", lpar="l", host="hmc.test", agent_id="a"
+        )
         captured = capsys.readouterr()
     finally:
         logging.root.handlers[:] = saved
     assert captured.out == ""
     assert json.loads(captured.err.strip())["event"] == "ownership-override"
+
 
 def test_a_foreign_writers_bad_record_does_not_raise_into_them(capsys):
     """A stdlib handler never raises into its caller, and this is an attachment
@@ -971,7 +1024,10 @@ def test_the_singletons_render_as_states_rather_than_raising():
                 kind="lpar", argument="lpar_name_or_uuid", state="absent", value=None
             ),
             audit.AuditTarget(
-                kind="vios", argument="vios_partition_id", state="unreadable", value=None
+                kind="vios",
+                argument="vios_partition_id",
+                state="unreadable",
+                value=None,
             ),
         ),
     )
@@ -1003,8 +1059,12 @@ def test_the_line_equals_the_message_and_records_do_not_share_a_line(capsys):
     assert logging.StreamHandler.terminator == "\n"
 
     audit_sink.install_audit_sink()
-    audit.record_ownership_override(system="one", lpar="l", host="hmc.test", agent_id="a")
-    audit.record_ownership_override(system="two", lpar="l", host="hmc.test", agent_id="a")
+    audit.record_ownership_override(
+        system="one", lpar="l", host="hmc.test", agent_id="a"
+    )
+    audit.record_ownership_override(
+        system="two", lpar="l", host="hmc.test", agent_id="a"
+    )
     _flush()
     err = capsys.readouterr().err
     lines = err.splitlines()

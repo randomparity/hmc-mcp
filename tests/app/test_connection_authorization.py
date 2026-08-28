@@ -18,7 +18,10 @@ from fastmcp.exceptions import ToolError
 from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.server_tools import command as server_command
 from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
+from hmc_mcp.authorization.access_policy import (
+    DEFAULT_CONNECTION_TOKEN,
+    compile_access_policy,
+)
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
@@ -644,7 +647,9 @@ def _stderr(capsys) -> str:
     terminal size of whoever ran it.
     """
 
-    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
+        "the sink must settle, not stall"
+    )
     return " ".join(capsys.readouterr().err.split())
 
 
@@ -1016,8 +1021,9 @@ def test_a_hostile_tool_error_cannot_forge_an_audit_record(denial_filter, capsys
     with pytest.raises(ToolError):
         _call(application, "hostile", {})
 
-
-    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
+        "the sink must settle, not stall"
+    )
     err = capsys.readouterr().err
     for line in err.splitlines():
         try:

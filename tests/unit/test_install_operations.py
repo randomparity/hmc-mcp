@@ -283,7 +283,9 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
             hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
         )
 
-    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink did not settle"
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
+        "the sink did not settle"
+    )
     captured = capsys.readouterr()
     assert captured.out == "", "an audit record must never reach the JSON-RPC stream"
     record = _one_install_record(captured.err)
@@ -345,7 +347,9 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
                 hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
             )
 
-    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink did not settle"
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
+        "the sink did not settle"
+    )
     record = _one_install_record(capsys.readouterr().err)
     assert (record["system"], record["partition"]) == ("sys1", "target1")
 
@@ -372,7 +376,9 @@ async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
                 _REQUEST,
             )
 
-    assert audit_sink._SINK.drain(audit_sink._DRAIN_TIMEOUT), "the sink did not settle"
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
+        "the sink did not settle"
+    )
     assert _install_records(capsys.readouterr().err) == []
 
 
