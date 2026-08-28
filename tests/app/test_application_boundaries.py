@@ -83,15 +83,16 @@ def test_create_mcp_returns_independent_complete_applications():
     # read; #316 adds one guarded minimum-affinity policy write; #317 adds one
     # local read-only affinity assessment; #320 adds one affinity-aware LPM
     # operation; #362 removes hmc_detach_optical_mapping, which duplicated
-    # hmc_unmount_optical_media, for 147 total.
+    # hmc_unmount_optical_media, for 147 total. ADR 0103 splits VIOS updates and
+    # upgrades into separate tools, for 148 total.
     policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
 
     first = create_mcp(policy)
     second = create_mcp(policy)
 
     assert first is not second
-    assert len(asyncio.run(first.list_tools())) == 147
-    assert len(asyncio.run(second.list_tools())) == 147
+    assert len(asyncio.run(first.list_tools())) == 148
+    assert len(asyncio.run(second.list_tools())) == 148
 
 
 def test_operations_do_not_import_application_modules():

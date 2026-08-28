@@ -220,6 +220,7 @@ from hmc_mcp.operations.updates import (
     update_console_software,
     update_firmware,
     update_vios,
+    upgrade_vios,
 )
 from hmc_mcp.operations.vios import (
     BackupType,
@@ -492,6 +493,7 @@ __all__ = [
     "update_console_software",
     "update_firmware",
     "update_vios",
+    "upgrade_vios",
     "ConsoleUpdateMediaType",
     "ConsoleUpdateSource",
     "IOAdapterUpdateModel",

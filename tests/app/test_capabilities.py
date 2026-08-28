@@ -553,22 +553,25 @@ def test_update_source_enums_match_runtime_constants():
     ]
     assert repository["required"] == ["MediaType"]
 
-    vios_sources = by_name["hmc_vios_update"].parameters["properties"]["repository"]
-    variants = vios_sources["anyOf"]
-    update_sources = [
-        source for source in variants if "RestartVIOS" in source["properties"]
+    update_sources = by_name["hmc_vios_update"].parameters["properties"]["repository"][
+        "anyOf"
     ]
-    upgrade_sources = [source for source in variants if "Disks" in source["properties"]]
+    upgrade_sources = by_name["hmc_vios_upgrade"].parameters["properties"][
+        "repository"
+    ]["anyOf"]
     assert {
         source["properties"]["ResourceType"]["const"] for source in update_sources
     } == set(_VIOS_UPDATE_RESOURCE_TYPES)
     assert {
         source["properties"]["ResourceType"]["const"] for source in upgrade_sources
     } == set(_VIOS_UPGRADE_RESOURCE_TYPES)
-    assert all("ResourceType" in source["required"] for source in variants)
+    assert all(
+        "ResourceType" in source["required"]
+        for source in (*update_sources, *upgrade_sources)
+    )
     assert all(
         property_schema.get("description")
-        for source in variants
+        for source in (*update_sources, *upgrade_sources)
         for property_schema in source["properties"].values()
     )
     update_required = {

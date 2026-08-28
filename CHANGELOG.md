@@ -375,6 +375,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `upgrade_vios`, splitting VIOS upgrades from `update_vios`; `update_vios` now accepts
+  only `VIOSUpdateSource` and has no `kind` mode selector.
 - Removed: `add_vios_adapter`; use the explicit `add_vscsi_adapter` or `add_vfc_adapter`
   operation instead.
 - Added: `add_vscsi_adapter` and `add_vfc_adapter`, replacing the boolean mode selector on

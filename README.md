@@ -773,10 +773,10 @@ For example, a system-firmware update is:
 }
 ```
 
-`hmc_vios_update` uses IBM's operation-specific parameter names. Every source
-requires `ResourceType`. Updates accept `HMC`, `NFS`, `SFTP`, `USB`, or
-`IBMWebsite` and may include `RestartVIOS`; upgrades accept `HMC`, `NFS`,
-`SFTP`, or `USB` and require `Disks`. For example:
+`hmc_vios_update` uses IBM's `UpdateVIOS` parameter names. Every source requires
+`ResourceType`; updates accept `HMC`, `NFS`, `SFTP`, `USB`, or `IBMWebsite` and may
+include `RestartVIOS`. `hmc_vios_upgrade` accepts the `HMC`, `NFS`, `SFTP`, and `USB`
+upgrade sources, each of which requires `Disks`.
 
 HMC sources require `Name`, NFS/SFTP sources require `ServerHostOrIP` and
 `RemoteDirectory`, USB sources require `USBDevice`, and every upgrade requires
@@ -785,7 +785,6 @@ HMC sources require `Name`, NFS/SFTP sources require `ServerHostOrIP` and
 ```json
 {
   "vios_name_or_uuid": "vios1",
-  "kind": "update",
   "repository": {
     "ResourceType": "NFS",
     "ServerHostOrIP": "repo.example.com",

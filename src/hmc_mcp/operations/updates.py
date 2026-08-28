@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Literal, cast, overload
+from typing import Any
 from urllib.parse import quote
 
 from ..client import HMCClient
@@ -18,7 +18,6 @@ from ..resource_identity import resolve_system_uuid, resolve_vios_uuid
 from .update_models import (
     ConsoleUpdateSource,
     PlatformUpdateParameter,
-    VIOSSource,
     VIOSUpdateSource,
     VIOSUpgradeSource,
     list_management_console_updates_job,
@@ -140,56 +139,43 @@ async def list_available_hmc_ptfs(
     return await _submit_update(hmc, job, wait, timeout_seconds, poll_interval)
 
 
-@overload
 async def update_vios(
     hmc: HMCClient,
     vios_name_or_uuid: str,
     repository: VIOSUpdateSource,
-    kind: Literal["update"] = "update",
-    *,
-    wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
-) -> dict[str, Any] | None: ...
-
-
-@overload
-async def update_vios(
-    hmc: HMCClient,
-    vios_name_or_uuid: str,
-    repository: VIOSUpgradeSource,
-    kind: Literal["upgrade"],
-    *,
-    wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
-) -> dict[str, Any] | None: ...
-
-
-async def update_vios(
-    hmc: HMCClient,
-    vios_name_or_uuid: str,
-    repository: VIOSSource,
-    kind: Literal["update", "upgrade"] = "update",
     *,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
 ) -> dict[str, Any] | None:
-    """Submit a VIOS software update or upgrade and project terminal output."""
-    if kind == "update":
-        job_xml = update_vios_job(cast(VIOSUpdateSource, repository))
-        operation = "UpdateVIOS"
-    elif kind == "upgrade":
-        job_xml = upgrade_vios_job(cast(VIOSUpgradeSource, repository))
-        operation = "UpgradeVIOS"
-    else:
-        raise ValueError(f"Unknown kind {kind!r}. Expected 'update' or 'upgrade'.")
+    """Submit a VIOS software update and project terminal output."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
     vios_path_id = quote(vios_uuid, safe="")
     job = await hmc.submit_job(
-        f"/rest/api/uom/VirtualIOServer/{vios_path_id}/do/{operation}", job_xml
+        f"/rest/api/uom/VirtualIOServer/{vios_path_id}/do/UpdateVIOS",
+        update_vios_job(repository),
+    )
+    result = await _submit_update(hmc, job, wait, timeout_seconds, poll_interval)
+    return _with_vios_stdout(result, wait)
+
+
+async def upgrade_vios(
+    hmc: HMCClient,
+    vios_name_or_uuid: str,
+    repository: VIOSUpgradeSource,
+    *,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None:
+    """Submit a VIOS version upgrade and project terminal output."""
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
+    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_path_id = quote(vios_uuid, safe="")
+    job = await hmc.submit_job(
+        f"/rest/api/uom/VirtualIOServer/{vios_path_id}/do/UpgradeVIOS",
+        upgrade_vios_job(repository),
     )
     result = await _submit_update(hmc, job, wait, timeout_seconds, poll_interval)
     return _with_vios_stdout(result, wait)

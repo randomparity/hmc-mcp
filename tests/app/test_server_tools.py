@@ -62,6 +62,7 @@ from hmc_mcp.server_tools.updates import (
 from hmc_mcp.server_tools.updates import (
     hmc_vios_update as hmc_vios_update,
 )
+from hmc_mcp.server_tools.updates import hmc_vios_upgrade as hmc_vios_upgrade
 from hmc_mcp.operations.update_models import PlatformUpdateParameter, SystemFirmwareUpdateModel
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
@@ -531,38 +532,26 @@ def test_hmc_update_encodes_console_uuid_as_one_path_segment(monkeypatch, mock_h
     assert route.called
 
 
-def test_vios_update_kind_update(monkeypatch, mock_hmc):
-    """The update kind submits the documented UpdateVIOS job."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.put(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpdateVIOS"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, kind="update")
-    body = route.calls.last.request.content.decode()
-    assert "UpdateVIOS</OperationName>" in body
-    assert "repo.example.com" in body
-
-
-def test_vios_update_kind_upgrade(monkeypatch, mock_hmc):
-    """The upgrade kind submits the documented UpgradeVIOS job."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.put(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpgradeVIOS"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    hmc_vios_update(VIOS_UUID, VIOS_UPGRADE_SOURCE, kind="upgrade")
-    body = route.calls.last.request.content.decode()
-    assert "UpgradeVIOS</OperationName>" in body
-    assert "repo.example.com" in body
-
-
-def test_vios_update_default_kind_is_update(monkeypatch, mock_hmc):
-    """hmc_vios_update defaults to kind='update' when kind is omitted."""
+def test_vios_update_submits_documented_job(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpdateVIOS"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE)
-    assert route.calls.last.request.url.path.endswith("/do/UpdateVIOS")
+    body = route.calls.last.request.content.decode()
+    assert "UpdateVIOS</OperationName>" in body
+    assert "repo.example.com" in body
+
+
+def test_vios_upgrade_submits_documented_job(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpgradeVIOS"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    hmc_vios_upgrade(VIOS_UUID, VIOS_UPGRADE_SOURCE)
+    body = route.calls.last.request.content.decode()
+    assert "UpgradeVIOS</OperationName>" in body
+    assert "repo.example.com" in body
 
 
 def test_vios_update_encodes_uuid_as_one_path_segment(monkeypatch, mock_hmc):
@@ -583,25 +572,25 @@ def test_vios_update_encodes_uuid_as_one_path_segment(monkeypatch, mock_hmc):
 
 
 @pytest.mark.parametrize(
-    ("source", "kind", "message"),
+    ("tool", "source", "message"),
     [
-        ({"Name": "image"}, "update", "ResourceType"),
-        ({"ResourceType": "NFS", "unknown": "x"}, "update", "unknown"),
-        ({"ResourceType": "NFS", "Disks": "hdisk1"}, "update", "Disks"),
-        ({"ResourceType": "NFS", "RestartVIOS": "false"}, "upgrade", "RestartVIOS"),
-        ({"ResourceType": "IBMWebsite"}, "upgrade", "IBMWebsite"),
-        ({"ResourceType": "NFS"}, "update", "RemoteDirectory"),
-        ({"ResourceType": "HMC", "Name": "image"}, "upgrade", "Disks"),
+        (hmc_vios_update, {"Name": "image"}, "ResourceType"),
+        (hmc_vios_update, {"ResourceType": "NFS", "unknown": "x"}, "unknown"),
+        (hmc_vios_update, {"ResourceType": "NFS", "Disks": "hdisk1"}, "Disks"),
+        (hmc_vios_upgrade, {"ResourceType": "NFS", "RestartVIOS": "false"}, "RestartVIOS"),
+        (hmc_vios_upgrade, {"ResourceType": "IBMWebsite"}, "IBMWebsite"),
+        (hmc_vios_update, {"ResourceType": "NFS"}, "RemoteDirectory"),
+        (hmc_vios_upgrade, {"ResourceType": "HMC", "Name": "image"}, "Disks"),
     ],
 )
 def test_vios_invalid_source_fails_before_submission(
-    monkeypatch, mock_hmc, source, kind, message
+    monkeypatch, mock_hmc, tool, source, message
 ):
     _hmc_env(monkeypatch)
     route = mock_hmc.put(url__regex=r".*/VirtualIOServer/.*/do/.*")
 
     with pytest.raises(ValueError, match=message):
-        hmc_vios_update(VIOS_UUID, source, kind=kind)
+        tool(VIOS_UUID, source)
     assert not route.called
 
 
@@ -678,15 +667,6 @@ def test_vios_stdout_does_not_overwrite_raw_top_level_value(monkeypatch, mock_hm
 
     assert result is raw
     assert result["stdOut"] == "raw value"
-
-
-def test_vios_update_invalid_kind_raises(monkeypatch, mock_hmc):
-    """hmc_vios_update raises ValueError for an unknown kind, never reaching the HMC."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Invalid")
-    with pytest.raises(ValueError, match="Unknown kind"):
-        hmc_vios_update(VIOS_UUID, REPO, kind="invalid")  # type: ignore[arg-type]
-    assert not route.called
 
 
 def test_update_firmware_submits_platform_update(monkeypatch, mock_hmc):

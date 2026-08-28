@@ -291,6 +291,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "update_console_software",
         "update_firmware",
         "update_vios",
+        "upgrade_vios",
         "ConsoleUpdateMediaType",
         "ConsoleUpdateSource",
         "IOAdapterUpdateModel",
@@ -1869,7 +1870,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # qualified annotation paths without changing exported names or signatures.
     # Replacing add_vios_adapter's boolean mode with explicit vSCSI and vFC
     # operations changed the supported facade manifest.
-    expected_digest = "782dd016f99af9b2faebcdd093c5e3616cfe2bffd1a63eae513937f1a0e8bad1"  # pragma: allowlist secret
+    # Splitting VIOS upgrades into upgrade_vios removed update_vios's mode
+    # selector and added the explicit operation to the facade.
+    expected_digest = "85b9fddb5c1927c4e59a872ac4210e41a2ec76b15d47bad3a15dd6bf63ea4bdf"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

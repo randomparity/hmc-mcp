@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..tool_registry import tool_module
 
-from typing import Any, Literal, cast
+from typing import Any
 
 from .._app import (
     run_sync,
@@ -16,11 +16,11 @@ from ..operations.updates import (
     update_console_software,
     update_firmware,
     update_vios,
+    upgrade_vios,
 )
 from ..operations.update_models import (
     ConsoleUpdateSource,
     PlatformUpdateParameter,
-    VIOSSource,
     VIOSUpdateSource,
     VIOSUpgradeSource,
 )
@@ -114,26 +114,22 @@ def hmc_get_available_hmc_ptfs(
 @tool(effect="destructive", operation="update.vios", target_kind="vios")
 def hmc_vios_update(
     vios_name_or_uuid: str,
-    repository: VIOSSource,
-    kind: Literal["update", "upgrade"] = "update",
+    repository: VIOSUpdateSource,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Submit a VIOS software update or upgrade job.
+    """Submit a VIOS software update job.
 
-    kind='update' installs fixes (PTF level); kind='upgrade' performs a full
-    VIOS version upgrade. repository uses the documented VIOS operation
-    parameter names. Submits UpdateVIOS or UpgradeVIOS to VirtualIOServer; poll
-    hmc_get_job for status.
+    repository uses the documented UpdateVIOS parameter names. Poll hmc_get_job
+    for status.
 
     Set wait=True to block until the job reaches a terminal state.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
-        repository: Documented VIOS update or upgrade job parameters.
-        kind: ``update`` for PTFs or ``upgrade`` for a full version upgrade.
+        repository: Documented VIOS update job parameters.
         wait: Wait for the submitted job to reach a terminal state.
         timeout_seconds: Maximum wait duration in seconds.
         poll_interval: Seconds between job-status requests while waiting.
@@ -142,21 +138,49 @@ def hmc_vios_update(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            if kind == "update":
-                return await update_vios(
-                    hmc,
-                    vios_name_or_uuid,
-                    cast(VIOSUpdateSource, repository),
-                    kind,
-                    wait=wait,
-                    timeout_seconds=timeout_seconds,
-                    poll_interval=poll_interval,
-                )
             return await update_vios(
                 hmc,
                 vios_name_or_uuid,
-                cast(VIOSUpgradeSource, repository),
-                kind,
+                repository,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
+            )
+
+    return run_sync(_go)
+
+
+@tool(effect="destructive", operation="upgrade.vios", target_kind="vios")
+def hmc_vios_upgrade(
+    vios_name_or_uuid: str,
+    repository: VIOSUpgradeSource,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    profile: str | None = None,
+) -> dict[str, Any] | None:
+    """Submit a VIOS version upgrade job.
+
+    repository uses the documented UpgradeVIOS parameter names. Poll hmc_get_job
+    for status.
+
+    Set wait=True to block until the job reaches a terminal state.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        repository: Documented VIOS upgrade job parameters.
+        wait: Wait for the submitted job to reach a terminal state.
+        timeout_seconds: Maximum wait duration in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await upgrade_vios(
+                hmc,
+                vios_name_or_uuid,
+                repository,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,

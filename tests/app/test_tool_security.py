@@ -444,6 +444,7 @@ DESTRUCTIVE_WITHOUT_PREFIX = frozenset(
         "hmc_update_console_software",
         "hmc_update_firmware",
         "hmc_vios_update",
+        "hmc_vios_upgrade",
     }
 )
 
@@ -475,6 +476,7 @@ def test_software_and_firmware_update_tools_are_destructive():
     for name in (
         "hmc_update_console_software",
         "hmc_vios_update",
+        "hmc_vios_upgrade",
         "hmc_update_firmware",
     ):
         assert TOOL_SECURITY[name].effect == "destructive", name
@@ -1623,6 +1625,7 @@ def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
         "hmc_update_firmware": (True, ["platform_update"]),
         "hmc_upload_iso": (True, ["iso_source"]),
         "hmc_vios_update": (True, ["repository"]),
+        "hmc_vios_upgrade": (True, ["repository"]),
     }
     # The two tables must stay disjoint, or the decision above would silently
     # contradict the one UNBOUNDED_ARGUMENTS encodes: a name cannot both be

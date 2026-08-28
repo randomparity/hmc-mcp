@@ -164,7 +164,6 @@ VIOSUpgradeSource = (
 )
 
 
-VIOSSource = VIOSUpdateSource | VIOSUpgradeSource
 _VIOS_COMMON_KEYS = frozenset(
     {
         "Name",

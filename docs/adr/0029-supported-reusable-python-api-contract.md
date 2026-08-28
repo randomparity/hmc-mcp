@@ -250,7 +250,7 @@ names are internal everywhere and are never inventoried.
   synchronous: `list_management_console_updates_job`, `platform_update_job`,
   `update_hmc_job`, `update_vios_job`, `upgrade_vios_job`.
 - `operations.updates` — operations: `list_available_hmc_ptfs`, `update_console_software`,
-  `update_firmware`, `update_vios`; types: none; excluded synchronous: none.
+  `update_firmware`, `update_vios`, `upgrade_vios`; types: none; excluded synchronous: none.
 - `operations.users` — operations: `configure_remote_access`, `create_user`, `delete_user`,
   `modify_user`; types: none; excluded synchronous: none.
 - `operations.vios` — operations: `backup_vios`, `create_vios`, `delete_vios`,
