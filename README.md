@@ -926,8 +926,8 @@ src/hmc_mcp/
   errors.py      # HMCError (shared by client and its mixins)
   client/        # HMCClient, domain mixins, response parsing, and PCM payload builders
   resource_identity.py      # managed-system, partition, and VIOS name/UUID resolution
-  operations/    # workflows and policies shared by MCP and CLI presentations
-    lpar/         # LPAR lifecycle, configuration, DLPAR, and ownership operations
+  operations/    # shared workflows; ownership.py owns protocol and name resolution
+    lpar/         # LPAR lifecycle, configuration, and DLPAR operations
   server_tools/  # MCP tool adapters grouped by resource family
   cli_commands/  # Typer command groups, CLI policy generation, and shared application state
   snapshots/     # portable LPAR snapshot models, affinity assessment, and operations
