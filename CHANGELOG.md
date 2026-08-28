@@ -375,6 +375,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Removed: `add_vios_adapter`; use the explicit `add_vscsi_adapter` or `add_vfc_adapter`
+  operation instead.
+- Added: `add_vscsi_adapter` and `add_vfc_adapter`, replacing the boolean mode selector on
+  `add_vios_adapter` with operation-specific names.
 - Changed: `add_network_adapter`, `add_vios_adapter`, `delete_adapter`,
   `map_storage`, `attach_disk_to_lpar`, `mount_optical_media`,
   `unmount_optical_media`, `migrate_lpar`, `migrate_lpar_with_affinity_preflight`,

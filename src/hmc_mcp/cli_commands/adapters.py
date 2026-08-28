@@ -17,7 +17,8 @@ from .app import (
 )
 from ..operations.adapters import (
     add_network_adapter,
-    add_vios_adapter,
+    add_vfc_adapter,
+    add_vscsi_adapter,
     delete_adapter,
     list_adapters,
 )
@@ -104,14 +105,13 @@ def adapters_add_vscsi(
 
     async def _go():
         async with _client() as hmc:
-            return await add_vios_adapter(
+            return await add_vscsi_adapter(
                 hmc,
                 None,
                 lpar,
                 vios_id,
                 vios_slot,
                 slot,
-                fibre_channel=False,
                 ownership_override=ownership_override,
             )
 
@@ -138,14 +138,13 @@ def adapters_add_vfc(
 
     async def _go():
         async with _client() as hmc:
-            return await add_vios_adapter(
+            return await add_vfc_adapter(
                 hmc,
                 None,
                 lpar,
                 vios_id,
                 vios_slot,
                 slot,
-                fibre_channel=True,
                 ownership_override=ownership_override,
             )
 

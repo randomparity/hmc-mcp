@@ -103,7 +103,8 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "HMCCLIError",
         "list_adapters",
         "add_network_adapter",
-        "add_vios_adapter",
+        "add_vfc_adapter",
+        "add_vscsi_adapter",
         "delete_adapter",
         "AdapterResult",
         "AdapterType",
@@ -1817,7 +1818,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     assert create_parameters["cloned_from"].default is None
     for operation_name in (
         "add_network_adapter",
-        "add_vios_adapter",
+        "add_vfc_adapter",
+        "add_vscsi_adapter",
         "delete_adapter",
         "install_lpar_os",
         "list_adapters",
@@ -1865,7 +1867,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # normalisation `_signature_text` applies.
     # Moving the update request models beside operations.updates changed their
     # qualified annotation paths without changing exported names or signatures.
-    expected_digest = "cdd550d499c7dc949f261e42d1629abc6c3d56bf4dcf4344a5ad24ba910b505f"  # pragma: allowlist secret
+    # Replacing add_vios_adapter's boolean mode with explicit vSCSI and vFC
+    # operations changed the supported facade manifest.
+    expected_digest = "782dd016f99af9b2faebcdd093c5e3616cfe2bffd1a63eae513937f1a0e8bad1"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

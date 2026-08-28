@@ -11,7 +11,8 @@ from ..client.client_adapters import AdapterType, validate_adapter_type
 from ..client.client_factory import client_from_env
 from ..operations.adapters import (
     add_network_adapter,
-    add_vios_adapter,
+    add_vfc_adapter,
+    add_vscsi_adapter,
     delete_adapter,
     list_adapters,
 )
@@ -135,14 +136,13 @@ def hmc_add_vscsi_adapter(
     async def operation():
         async with client_from_env(profile) as hmc:
             return (
-                await add_vios_adapter(
+                await add_vscsi_adapter(
                     hmc,
                     system_name_or_uuid,
                     lpar_name_or_uuid,
                     vios_partition_id,
                     vios_slot,
                     slot_number,
-                    fibre_channel=False,
                     ownership_override=ownership_override,
                 )
             ).resource
@@ -185,14 +185,13 @@ def hmc_add_vfc_adapter(
     async def operation():
         async with client_from_env(profile) as hmc:
             return (
-                await add_vios_adapter(
+                await add_vfc_adapter(
                     hmc,
                     system_name_or_uuid,
                     lpar_name_or_uuid,
                     vios_partition_id,
                     vios_slot,
                     slot_number,
-                    fibre_channel=True,
                     ownership_override=ownership_override,
                 )
             ).resource

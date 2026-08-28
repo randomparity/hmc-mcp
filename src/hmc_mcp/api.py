@@ -41,7 +41,8 @@ from hmc_mcp.operations.jobs import get_job, wait_for_job
 from hmc_mcp.operations.adapters import (
     AdapterResult,
     add_network_adapter,
-    add_vios_adapter,
+    add_vfc_adapter,
+    add_vscsi_adapter,
     delete_adapter,
     list_adapters,
 )
@@ -303,7 +304,8 @@ __all__ = [
     "HMCCLIError",
     "list_adapters",
     "add_network_adapter",
-    "add_vios_adapter",
+    "add_vfc_adapter",
+    "add_vscsi_adapter",
     "delete_adapter",
     "AdapterResult",
     "AdapterType",

@@ -144,8 +144,9 @@ names are internal everywhere and are never inventoried.
   - Note: `JobOutcome`'s fields are a package-owned model contract except the opaque `job`
     mapping (ADR 0093). The synchronous helpers `job_identifier`, `job_outcome`, and
     `validate_wait_timing` stay in `jobs.py` as transformations and validators.
-- `operations.adapters` — operations: `add_network_adapter`, `add_vios_adapter`, `delete_adapter`,
-  `list_adapters`; types: `AdapterResult`; excluded synchronous: none.
+- `operations.adapters` — operations: `add_network_adapter`, `add_vfc_adapter`,
+  `add_vscsi_adapter`, `delete_adapter`, `list_adapters`; types: `AdapterResult`; excluded
+  synchronous: none.
 - `operations.assignments` — operations: `apply_lpar_pcie_assignments`,
   `apply_validated_lpar_pcie_assignments`, `prevalidate_lpar_pcie_assignments`; types:
   `AssignmentResult`, `DedicatedPcieAssignment`, `LparPcieAssignments`,

@@ -9,7 +9,8 @@ import pytest
 
 from hmc_mcp.operations.adapters import (
     add_network_adapter,
-    add_vios_adapter,
+    add_vfc_adapter,
+    add_vscsi_adapter,
     delete_adapter,
 )
 from hmc_mcp.operations.lpm import (
@@ -39,9 +40,11 @@ CASES: tuple[tuple[str, Operation], ...] = (
     ),
     (
         "hmc_mcp.operations.adapters._resolve_and_authorize_lpar",
-        lambda hmc: add_vios_adapter(
-            hmc, None, LPAR, 2, 10, None, fibre_channel=False
-        ),
+        lambda hmc: add_vscsi_adapter(hmc, None, LPAR, 2, 10, None),
+    ),
+    (
+        "hmc_mcp.operations.adapters._resolve_and_authorize_lpar",
+        lambda hmc: add_vfc_adapter(hmc, None, LPAR, 2, 10, None),
     ),
     (
         "hmc_mcp.operations.adapters._resolve_and_authorize_lpar",

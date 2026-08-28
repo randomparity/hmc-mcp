@@ -59,7 +59,7 @@ async def add_network_adapter(
     return AdapterResult(lpar_uuid, resource)
 
 
-async def add_vios_adapter(
+async def add_vscsi_adapter(
     hmc: HMCClient,
     system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
@@ -67,7 +67,6 @@ async def add_vios_adapter(
     vios_slot: int,
     slot: int | None,
     *,
-    fibre_channel: bool,
     ownership_override: bool = False,
 ) -> AdapterResult:
     lpar_uuid = await _resolve_and_authorize_lpar(
@@ -76,8 +75,27 @@ async def add_vios_adapter(
         system_name_or_uuid,
         ownership_override=ownership_override,
     )
-    add = hmc.add_vfc_adapter if fibre_channel else hmc.add_vscsi_adapter
-    resource = await add(lpar_uuid, vios_partition_id, vios_slot, slot)
+    resource = await hmc.add_vscsi_adapter(lpar_uuid, vios_partition_id, vios_slot, slot)
+    return AdapterResult(lpar_uuid, resource)
+
+
+async def add_vfc_adapter(
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    lpar_name_or_uuid: str,
+    vios_partition_id: int,
+    vios_slot: int,
+    slot: int | None,
+    *,
+    ownership_override: bool = False,
+) -> AdapterResult:
+    lpar_uuid = await _resolve_and_authorize_lpar(
+        hmc,
+        lpar_name_or_uuid,
+        system_name_or_uuid,
+        ownership_override=ownership_override,
+    )
+    resource = await hmc.add_vfc_adapter(lpar_uuid, vios_partition_id, vios_slot, slot)
     return AdapterResult(lpar_uuid, resource)
 
 
