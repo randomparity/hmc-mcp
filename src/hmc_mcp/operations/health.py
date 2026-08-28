@@ -10,6 +10,7 @@ from typing import Any
 from ..client import HMCClient
 from ..errors import HMCError
 from ..jobs import FAILED_JOB_STATUSES, job_outcome
+from . import jobs as operations_jobs
 
 
 _SYSTEM_WORKERS = 8
@@ -143,22 +144,13 @@ def _failed_job(job: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _unsupported_job_listing(exc: HMCError) -> bool:
-    body = exc.body or ""
-    return (
-        exc.status_code == 400
-        and "REST000E" in body
-        and "Unrecognized root REST type of Job" in body
-    )
-
-
 async def _recent_failed_jobs(
     hmc: HMCClient,
 ) -> tuple[tuple[dict[str, Any], ...], tuple[str, ...]]:
     try:
-        jobs = await hmc.list_uom("Job")
+        jobs = await operations_jobs.list_jobs(hmc)
     except HMCError as exc:
-        if not _unsupported_job_listing(exc):
+        if not operations_jobs.is_unsupported_job_listing(exc):
             raise
         return (), (_UNSUPPORTED_JOB_WARNING,)
     failures = [

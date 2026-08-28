@@ -46,7 +46,7 @@ def jobs_list(
     if limit < 0:
         _usage_error("--limit must be greater than or equal to 0")
 
-    jobs = _with_client(lambda hmc: hmc.list_uom("Job"))
+    jobs = _with_client(operations_jobs.list_jobs)
     jobs = jobs[:limit]
     _output(jobs, as_json, empty_msg="No jobs found")
 

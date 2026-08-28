@@ -36,6 +36,21 @@ _JOB_MISSING_STATUS = 404
 _ILLEGAL_JOB_ID_CHARACTERS = frozenset("/?#%")
 
 
+def is_unsupported_job_listing(exc: HMCError) -> bool:
+    """Whether *exc* identifies firmware without the global Job feed."""
+    body = exc.body or ""
+    return (
+        exc.status_code == 400
+        and "REST000E" in body
+        and "Unrecognized root REST type of Job" in body
+    )
+
+
+async def list_jobs(hmc: HMCClient) -> list[dict[str, Any]]:
+    """Return the global HMC Job feed without applying presentation policy."""
+    return await hmc.list_uom("Job")
+
+
 def _require_job_id(job_id: str) -> str:
     """Return the trimmed identifier, rejecting one that addresses no job.
 

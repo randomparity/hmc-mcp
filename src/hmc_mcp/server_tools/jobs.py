@@ -13,15 +13,6 @@ from ..errors import HMCError
 from ..jobs import JobOutcome
 
 
-def _is_unsupported_job_listing(exc: HMCError) -> bool:
-    body = exc.body or ""
-    return (
-        exc.status_code == 400
-        and "REST000E" in body
-        and "Unrecognized root REST type of Job" in body
-    )
-
-
 tool, register_tools, tool_security = tool_module()
 
 
@@ -99,12 +90,12 @@ def hmc_list_recent_jobs(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            return await hmc.list_uom("Job")
+            return await operations_jobs.list_jobs(hmc)
 
     try:
         return run_limited_collection(operation, limit)
     except HMCError as exc:
-        if not _is_unsupported_job_listing(exc):
+        if not operations_jobs.is_unsupported_job_listing(exc):
             raise
         raise HMCError(
             "This HMC version does not support global Job listing. Use "
