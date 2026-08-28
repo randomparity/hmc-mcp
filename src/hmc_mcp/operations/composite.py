@@ -66,7 +66,6 @@ def _lpar_summary(
         rmc_state=res.get("ResourceMonitoringControlState") or res.get("RMCState"),
         partition_type=res.get("PartitionType"),
         partition_id=res.get("PartitionID"),
-        # Current memory/CPU (what the LPAR currently has)
         current_memory_mib=_current_or_desired(res, "CurrentMemory", "DesiredMemory"),
         desired_memory_mib=res.get("DesiredMemory"),
         # Current CPU: shared-processor units or dedicated CPUs
@@ -76,12 +75,9 @@ def _lpar_summary(
         desired_proc_units=res.get("DesiredProcessingUnits"),
         desired_vcpus=res.get("DesiredVirtualProcessors"),
         dedicated_procs=res.get("DedicatedProcessors"),
-        # OS info
         os_version=res.get("OperatingSystemVersion"),
         os_type=res.get("OperatingSystemType"),
-        # Adapters
         client_network_adapter_count=len(adapters),
-        # Description (REST field; full text from the resource if present)
         description=res.get("Description"),
         # Note: mapped vSCSI storage requires VIOS UUID resolution
         # (vSCSI adapter → vios_partition_id → VIOS UUID → mapping groups
@@ -156,14 +152,12 @@ def _system_summary(
     """Build a summary dict from raw system entry, LPAR list, and VIOS list."""
     res = system.get("Resource") or {}
 
-    # LPAR counts by state
     lpar_states: dict[str, int] = {}
     for lpar in lpars:
         lr = lpar.get("Resource") or {}
         state = lr.get("PartitionState") or "unknown"
         lpar_states[state] = lpar_states.get(state, 0) + 1
 
-    # Free resources
     total_mem = int(res.get("AssignableSystemMemory") or 0)
     total_procs = float(res.get("ConfigurableSystemProcessorUnits") or 0.0)
     assigned_mem = sum(
