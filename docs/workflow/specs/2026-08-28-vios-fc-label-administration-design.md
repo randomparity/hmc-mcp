@@ -50,9 +50,12 @@ The MCP surface adds seven explicit tools:
 operation layer resolves a UUID to its HMC CLI name before command construction. A
 VIOS selector is exactly one of `vios_name: str` and `vios_id: int`; both set or both omitted is a
 pre-dispatch error. A group member selector is exactly one non-empty list, `vios_names: list[str]`
-or `vios_ids: list[int]`. Empty strings, non-positive VIOS IDs, empty member lists, duplicate
-members, HMC record delimiters, ASCII controls, and ambiguous selector combinations fail before
-SSH dispatch.
+or `vios_ids: list[int]`. A string identifier is blank when it contains no non-whitespace
+character; blank labels, ports, rename targets, and VIOS names fail before dispatch. Nonblank
+strings are preserved byte-for-byte rather than stripped because embedded or surrounding spaces
+remain caller data protected by shell quoting. Non-positive VIOS IDs, empty member lists,
+duplicate members, HMC record delimiters, ASCII controls, and ambiguous selector combinations also
+fail before SSH dispatch.
 
 The group update tool uses `action: Literal["rename", "add-members", "remove-members"]`.
 `rename` requires `new_name` and forbids member lists. Member actions require exactly one
@@ -144,7 +147,7 @@ HMC operators are not trusted to preserve this request's intent.
 ### Controls
 
 - Public values are checked for requiredness, selector exclusivity, positive IDs, duplicate
-  members, record delimiters, and controls before dispatch.
+members, record delimiters, and controls before dispatch.
 - Fixed operation/resource/attribute names prevent callers from reaching other `labelvios`
   families or bulk removal.
 - `build_attribute_record` controls the HMC CSV grammar; `shlex.quote` separately controls the
@@ -167,10 +170,11 @@ host authentication and credential secrecy.
 Sanitized synthetic POWER10/POWER11 fixtures cover FC-port rows, vFC group rows, empty results,
 malformed headers, malformed CSV, and row-width drift. Command tests assert exact documented
 commands for every operation and both VIOS selector families. Table-driven rejection tests cover
-empty and duplicate members, both/neither selectors, non-positive IDs, every HMC record delimiter,
-ASCII controls, incompatible update arguments, and label/port shell metacharacters remaining
-quoted data. A controlled fault changes one expected command and proves the new tests fail before
-the implementation is retained.
+blank and duplicate members, whitespace-only labels, ports, rename targets, and VIOS names,
+both/neither selectors, non-positive IDs, every HMC record delimiter, ASCII controls,
+incompatible update arguments, preservation of nonblank surrounding spaces, and label/port shell
+metacharacters remaining quoted data. A controlled fault changes one expected command and proves
+the new tests fail before the implementation is retained.
 
 MCP tests assert names, schemas, effects, operation names, managed-system targets, authorization,
 and receipts, including exact member lists and rename targets. CLI tests assert registration, JSON
