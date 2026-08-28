@@ -7,7 +7,7 @@ import pytest
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.snapshots.operations import capture_lpar_snapshot
 from hmc_mcp.snapshots.operations import _placement
-from hmc_mcp.operations.ssh_network import (
+from hmc_mcp.operations.ssh_affinity import (
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
 )

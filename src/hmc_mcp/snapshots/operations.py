@@ -18,7 +18,7 @@ from hmc_mcp.operations.affinity import (
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.resource_identity import resolve_lpar_uuid, resolve_system_name, resolve_system_uuid
-from hmc_mcp.operations.ssh_network import (
+from hmc_mcp.operations.ssh_affinity import (
     get_minimum_affinity_policy,
     get_lpar_memopt_score,
     get_system_memopt_score,

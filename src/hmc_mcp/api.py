@@ -163,11 +163,22 @@ from hmc_mcp.operations.lpar.provision import (
     attach_disk_to_lpar,
     provision_lpar,
 )
-from hmc_mcp.operations.ssh_network import (
+from hmc_mcp.operations.ssh_affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
+    get_lpar_memopt_score,
+    get_minimum_affinity_policy,
+    get_system_memopt_score,
+    list_lpar_memopt_scores,
+    list_resource_group_memopt_scores,
+    plan_lpar_memopt_scores,
+    plan_resource_group_memopt_scores,
+    plan_system_memopt_score,
+    set_minimum_affinity_policy,
+)
+from hmc_mcp.operations.ssh_network import (
     VnicBackingSelector,
     VnicBackingSnapshot,
     VnicCapabilityError,
@@ -175,18 +186,9 @@ from hmc_mcp.operations.ssh_network import (
     VnicPartialError,
     VnicSnapshot,
     add_vnic,
-    get_lpar_memopt_score,
-    get_minimum_affinity_policy,
-    set_minimum_affinity_policy,
-    get_system_memopt_score,
     list_fc_ports,
-    list_lpar_memopt_scores,
     list_sea_adapters,
     list_vnics,
-    plan_lpar_memopt_scores,
-    plan_system_memopt_score,
-    list_resource_group_memopt_scores,
-    plan_resource_group_memopt_scores,
     remove_vnic,
 )
 from hmc_mcp.ssh.affinity import MinimumAffinityPolicy

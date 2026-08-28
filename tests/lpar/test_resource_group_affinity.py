@@ -15,7 +15,7 @@ from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.operations.ssh_network import (
+from hmc_mcp.operations.ssh_affinity import (
     ResourceGroupAffinityResult,
     list_resource_group_memopt_scores,
 )
@@ -226,11 +226,11 @@ def test_shared_operation_resolves_system_and_defaults_to_all():
     )
     with (
         patch(
-            "hmc_mcp.operations.ssh_network.resolve_ssh_names",
+                "hmc_mcp.operations.ssh_affinity.resolve_ssh_names",
             AsyncMock(return_value=("resolved-system", None)),
         ) as resolve,
         patch(
-            "hmc_mcp.operations.ssh_network.query_resource_group_memopt_scores", query
+                "hmc_mcp.operations.ssh_affinity.query_resource_group_memopt_scores", query
         ),
     ):
         result = asyncio.run(

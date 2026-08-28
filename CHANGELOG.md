@@ -395,6 +395,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: SSH affinity result types and workflows now live in
+  `operations.ssh_affinity`; `operations.ssh_network` is limited to network inventory
+  and vNIC mutation.
 - Changed: `get_vios`, `delete_vios`, `update_vios`, and `upgrade_vios` now place the
   optional managed-system selector before the VIOS selector, matching sibling VIOS
   operations and allowing update and upgrade names to be disambiguated.

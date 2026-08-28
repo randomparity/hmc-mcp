@@ -9,7 +9,7 @@ from .._app import (
     ssh_with_client,
 )
 from ..client.client_factory import client_from_env
-from ..operations.ssh_network import (
+from ..operations.ssh_affinity import (
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
     get_lpar_memopt_score,

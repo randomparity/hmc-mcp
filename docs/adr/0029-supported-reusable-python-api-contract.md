@@ -225,13 +225,16 @@ names are internal everywhere and are never inventoried.
   `resolve_pcm_resource`, `set_pcm_preferences`; types: `MetricKind`, `PcmCategory`,
   `PcmResource`; excluded synchronous: `preference_flags`, `validate_pcm_metric_target`,
   `validate_pcm_preferences_category`.
-- `operations.ssh_network` — operations: `add_vnic`, `get_lpar_memopt_score`,
-  `get_minimum_affinity_policy`, `get_system_memopt_score`, `list_fc_ports`,
-  `list_lpar_memopt_scores`, `list_resource_group_memopt_scores`, `list_sea_adapters`,
-  `list_vnics`, `plan_lpar_memopt_scores`, `plan_resource_group_memopt_scores`,
-  `plan_system_memopt_score`, `remove_vnic`, `set_minimum_affinity_policy`; types:
+- `operations.ssh_affinity` — operations: `get_lpar_memopt_score`,
+  `get_minimum_affinity_policy`, `get_system_memopt_score`,
+  `list_lpar_memopt_scores`, `list_resource_group_memopt_scores`,
+  `plan_lpar_memopt_scores`, `plan_resource_group_memopt_scores`,
+  `plan_system_memopt_score`, `set_minimum_affinity_policy`; types:
   `MemoptLparSelector`, `MemoptResourceGroupSelector`, `MinimumAffinityPolicyResult`,
-  `ResourceGroupAffinityResult`, `VnicBackingSelector`, `VnicBackingSnapshot`,
+  `ResourceGroupAffinityResult`; excluded synchronous: none.
+- `operations.ssh_network` — operations: `add_vnic`, `list_fc_ports`,
+  `list_sea_adapters`, `list_vnics`, `remove_vnic`; types:
+  `VnicBackingSelector`, `VnicBackingSnapshot`,
   `VnicCapabilityError`, `VnicChangeResult`, `VnicPartialError`, `VnicSnapshot`; excluded
   synchronous: none.
 - `operations.storage` — operations: `create_logical_unit`, `create_media_repository`,

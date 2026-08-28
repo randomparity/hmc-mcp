@@ -17,7 +17,7 @@ from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.operations.ssh_network import (
+from hmc_mcp.operations.ssh_affinity import (
     get_system_memopt_score as get_system_memopt_score_operation,
     plan_lpar_memopt_scores as plan_lpar_memopt_scores_operation,
     plan_system_memopt_score as plan_system_memopt_score_operation,
@@ -101,10 +101,10 @@ def test_shared_affinity_operations_resolve_system_uuid_before_delegating(
 
     with (
         patch(
-            "hmc_mcp.operations.ssh_network.resolve_ssh_names",
+                "hmc_mcp.operations.ssh_affinity.resolve_ssh_names",
             AsyncMock(return_value=(SYSTEM, None)),
         ) as resolve,
-        patch(f"hmc_mcp.operations.ssh_network._{primitive}", delegated),
+            patch(f"hmc_mcp.operations.ssh_affinity._{primitive}", delegated),
     ):
         kwargs = (
             {"prioritized": selector, "excluded": None}

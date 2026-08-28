@@ -11,7 +11,7 @@ from ..operations.lpar.core import (
     ProcessorCompatibilityMode,
 )
 from hmc_mcp.operations.ownership import set_lpar_ownership_description
-from ..operations.ssh_network import (
+from ..operations.ssh_affinity import (
     get_lpar_memopt_score,
     get_minimum_affinity_policy,
     get_system_memopt_score,
