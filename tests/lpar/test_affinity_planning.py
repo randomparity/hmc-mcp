@@ -14,7 +14,6 @@ from fastmcp.exceptions import ToolError
 
 from hmc_mcp.server_tools.lpar import configuration as server_lpar_config
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.operations.ssh_affinity import (
@@ -48,10 +47,6 @@ def _config() -> HMCConfig:
         password="abc123",  # pragma: allowlist secret
         _env_file=None,
     )
-
-
-def _client() -> HMCClient:
-    return HMCClient(_config())
 
 
 def _connection(stdout: str = "") -> MagicMock:
@@ -111,7 +106,7 @@ def test_shared_affinity_operations_resolve_system_uuid_before_delegating(
             if primitive.startswith("plan_")
             else {}
         )
-        actual = asyncio.run(operation(_client(), system_uuid, **kwargs))
+        actual = asyncio.run(operation(_config(), system_uuid, **kwargs))
 
     assert actual == result
     resolve.assert_awaited_once_with(_config(), system_uuid, None)
@@ -143,7 +138,7 @@ def test_shared_planning_rejects_invalid_scenarios_before_system_resolution(
         with pytest.raises(ValueError, match=diagnostic):
             asyncio.run(
                 plan_lpar_memopt_scores_operation(
-                    _client(), SYSTEM, prioritized, excluded
+                    _config(), SYSTEM, prioritized, excluded
                 )
             )
 
@@ -162,14 +157,11 @@ def test_affinity_mcp_adapters_delegate_to_shared_operations(
     adapter, operation, result
 ):
     config = _config()
-    client = HMCClient(config)
-    context = AsyncMock()
-    context.__aenter__.return_value = client
     selector = MemoptLparSelector(ids=(7,))
     delegated = AsyncMock(return_value=result)
 
     with (
-        patch("hmc_mcp._app.client_from_env", return_value=context) as client_factory,
+        patch("hmc_mcp._app.build_config", return_value=config) as config_factory,
         patch.object(server_lpar_config, operation, delegated),
     ):
         kwargs = (
@@ -180,9 +172,9 @@ def test_affinity_mcp_adapters_delegate_to_shared_operations(
         actual = getattr(server_lpar_config, adapter)(SYSTEM, profile="lab", **kwargs)
 
     assert actual == result
-    client_factory.assert_called_once_with("lab")
-    actual_client = delegated.await_args.args[0]
-    assert actual_client is client
+    config_factory.assert_called_once_with(profile="lab")
+    actual_config = delegated.await_args.args[0]
+    assert actual_config is config
     expected = (SYSTEM, selector, None) if kwargs else (SYSTEM,)
     assert delegated.await_args.args[1:] == expected
 
@@ -208,7 +200,7 @@ def test_affinity_mcp_rejects_invalid_scenarios_before_system_resolution(
     resolve = AsyncMock()
 
     with (
-        patch("hmc_mcp._app.client_from_env") as client_factory,
+        patch("hmc_mcp._app.build_config") as config_factory,
         patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve),
     ):
         with pytest.raises(ValueError, match=diagnostic):
@@ -217,7 +209,7 @@ def test_affinity_mcp_rejects_invalid_scenarios_before_system_resolution(
             )
 
     resolve.assert_not_awaited()
-    client_factory.assert_not_called()
+    config_factory.assert_not_called()
 
 
 def test_selector_accepts_one_representation_and_is_frozen():
@@ -255,7 +247,7 @@ def test_oversized_selector_is_rejected_before_resolution_or_transport():
         with pytest.raises(ValueError, match="option package exceeds 4096 UTF-8 bytes"):
             asyncio.run(
                 plan_lpar_memopt_scores_operation(
-                    _client(), SYSTEM, prioritized, excluded
+                    _config(), SYSTEM, prioritized, excluded
                 )
             )
 

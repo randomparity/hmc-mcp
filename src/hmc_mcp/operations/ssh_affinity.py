@@ -52,10 +52,9 @@ class MinimumAffinityPolicyResult:
 
 
 async def get_lpar_memopt_score(
-    hmc: HMCClient, system_name_or_uuid: str, lpar_name_or_uuid: str
+    config: HMCConfig, system_name_or_uuid: str, lpar_name_or_uuid: str
 ) -> dict[str, object]:
     """Return one LPAR's current memory-optimization score."""
-    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(
         config, system_name_or_uuid, lpar_name_or_uuid
     )
@@ -63,12 +62,11 @@ async def get_lpar_memopt_score(
 
 
 async def list_lpar_memopt_scores(
-    hmc: HMCClient,
+    config: HMCConfig,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
 ) -> list[dict[str, object]]:
     """Return current memory-optimization scores for selected system LPARs."""
-    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(
         config, system_name_or_uuid, lpar_name_or_uuid
     )
@@ -76,35 +74,32 @@ async def list_lpar_memopt_scores(
 
 
 async def get_system_memopt_score(
-    hmc: HMCClient, system_name_or_uuid: str
+    config: HMCConfig, system_name_or_uuid: str
 ) -> dict[str, object]:
     """Return a managed system's current memory-optimization score."""
-    config = hmc.config
     system_name, _ = await resolve_ssh_names(config, system_name_or_uuid, None)
     return await _get_system_memopt_score(config, system_name)
 
 
 async def plan_lpar_memopt_scores(
-    hmc: HMCClient,
+    config: HMCConfig,
     system_name_or_uuid: str,
     prioritized: MemoptLparSelector | None = None,
     excluded: MemoptLparSelector | None = None,
 ) -> list[dict[str, object]]:
     """Return predicted LPAR scores for a read-only affinity scenario."""
-    config = hmc.config
     validate_memopt_scenario(prioritized, excluded)
     system_name, _ = await resolve_ssh_names(config, system_name_or_uuid, None)
     return await _plan_lpar_memopt_scores(config, system_name, prioritized, excluded)
 
 
 async def plan_system_memopt_score(
-    hmc: HMCClient,
+    config: HMCConfig,
     system_name_or_uuid: str,
     prioritized: MemoptLparSelector | None = None,
     excluded: MemoptLparSelector | None = None,
 ) -> dict[str, object]:
     """Return a predicted system score for a read-only affinity scenario."""
-    config = hmc.config
     validate_memopt_scenario(prioritized, excluded)
     system_name, _ = await resolve_ssh_names(config, system_name_or_uuid, None)
     return await _plan_system_memopt_score(config, system_name, prioritized, excluded)
@@ -136,34 +131,33 @@ async def _resource_group_memopt_scores(
 
 
 async def list_resource_group_memopt_scores(
-    hmc: HMCClient,
+    config: HMCConfig,
     system_name_or_uuid: str,
     selector: MemoptResourceGroupSelector | None = None,
 ) -> ResourceGroupAffinityResult:
     """Return current resource-group affinity scores when supported."""
     return await _resource_group_memopt_scores(
-        hmc.config, system_name_or_uuid, selector, calculated=False
+        config, system_name_or_uuid, selector, calculated=False
     )
 
 
 async def plan_resource_group_memopt_scores(
-    hmc: HMCClient,
+    config: HMCConfig,
     system_name_or_uuid: str,
     selector: MemoptResourceGroupSelector | None = None,
 ) -> ResourceGroupAffinityResult:
     """Return potential resource-group affinity scores without running DPO."""
     return await _resource_group_memopt_scores(
-        hmc.config, system_name_or_uuid, selector, calculated=True
+        config, system_name_or_uuid, selector, calculated=True
     )
 
 
 async def get_minimum_affinity_policy(
-    hmc: HMCClient,
+    config: HMCConfig,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
 ) -> MinimumAffinityPolicyResult:
     """Return an LPAR's minimum-affinity policy when supported."""
-    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(
         config, system_name_or_uuid, lpar_name_or_uuid
     )
@@ -201,5 +195,4 @@ async def set_minimum_affinity_policy(
         ownership_override=ownership_override,
     )
     return await set_minimum_affinity_policy_cli(hmc.config, *names, policy)
-
 

@@ -577,6 +577,7 @@ _CONNECTION_BUILDERS = frozenset(
         "client_from_env",
         "run_limited_collection",
         "ssh_with_client",
+        "with_config",
         "with_client",
     }
 )

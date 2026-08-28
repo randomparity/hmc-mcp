@@ -203,6 +203,18 @@ def with_client(
     return run_sync(operation)
 
 
+def with_config(
+    fn: Callable[[HMCConfig], Awaitable[_T]], *, profile: str | None = None
+) -> _T:
+    """Run one SSH-only operation with profile-selected configuration."""
+    config = build_config(profile=profile)
+
+    async def operation() -> _T:
+        return await fn(config)
+
+    return run_sync(operation)
+
+
 def run_limited_collection(
     fn: Callable[[HMCClient], Awaitable[list[_T]]],
     limit: int | None,

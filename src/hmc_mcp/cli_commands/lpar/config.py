@@ -38,7 +38,7 @@ from ...ssh.profiles import (
     set_lpar_msp,
     set_lpar_proc_compat,
 )
-from ..runtime import _client, _run, _ssh_client, _ssh_config
+from ..runtime import _client, _run, _ssh_config
 from ..output import _print_json, _usage_error, console
 
 
@@ -89,7 +89,7 @@ def lpars_memopt_score(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get an LPAR's current memory-optimization affinity score."""
-    score = _run(lambda: get_lpar_memopt_score(_ssh_client(), system_name, lpar_name))
+    score = _run(lambda: get_lpar_memopt_score(_ssh_config(), system_name, lpar_name))
     if as_json:
         _print_json(score)
     else:
@@ -106,7 +106,7 @@ def lpars_get_minimum_affinity_policy(
 ) -> None:
     """Get an LPAR's minimum-affinity policy when supported."""
     policy = _run(
-        lambda: get_minimum_affinity_policy(_ssh_client(), system_name, lpar_name)
+        lambda: get_minimum_affinity_policy(_ssh_config(), system_name, lpar_name)
     )
     if as_json:
         _print_json(asdict(policy))
@@ -129,7 +129,7 @@ def lpars_memopt_scores(
 ) -> None:
     """List current memory-optimization affinity scores for a system's LPARs."""
     scores = _run(
-        lambda: list_lpar_memopt_scores(_ssh_client(), system_name, lpar_name)
+        lambda: list_lpar_memopt_scores(_ssh_config(), system_name, lpar_name)
     )
     if as_json:
         _print_json(scores)
@@ -154,7 +154,7 @@ def lpars_system_memopt_score(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get a managed system's current memory-optimization affinity score."""
-    score = _run(lambda: get_system_memopt_score(_ssh_client(), system_name))
+    score = _run(lambda: get_system_memopt_score(_ssh_config(), system_name))
     if as_json:
         _print_json(score)
         return
@@ -172,7 +172,7 @@ def _run_memopt_plan(
     prioritized, excluded = _memopt_selectors(
         prioritize_name, prioritize_id, exclude_name, exclude_id
     )
-    return _run(lambda: operation(_ssh_client(), system_name, prioritized, excluded))
+    return _run(lambda: operation(_ssh_config(), system_name, prioritized, excluded))
 
 
 def _resource_group_selector(
@@ -203,7 +203,7 @@ def _run_resource_group_memopt(
     as_json: bool,
 ) -> None:
     selector = _resource_group_selector(names, ids, all_groups)
-    result = _run(lambda: operation(_ssh_client(), system_name, selector))
+    result = _run(lambda: operation(_ssh_config(), system_name, selector))
     if as_json:
         _print_json(asdict(result))
         return

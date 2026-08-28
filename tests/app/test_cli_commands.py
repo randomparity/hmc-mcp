@@ -32,7 +32,6 @@ from hmc_mcp.cli_commands import runtime as cli_runtime
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
 from hmc_mcp.cli_commands import network as cli_network
 from hmc_mcp.operations import ownership as lpar_ownership
-from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.vnic import VnicChangeResult, VnicPartialError
@@ -50,7 +49,7 @@ def _patch_ssh_command(monkeypatch, replacement) -> None:
         }
     )
     for module in (cli_lpars, cli_network):
-        monkeypatch.setattr(module, "_ssh_client", lambda: HMCClient(config))
+        monkeypatch.setattr(module, "_ssh_config", lambda: config)
     for module in (ssh_affinity, ssh_lpar, ssh_network, ssh_profiles):
         monkeypatch.setattr(module, "run_hmc_command", replacement)
 
@@ -68,7 +67,7 @@ RUNNER = CliRunner()
 
 
 @pytest.fixture(autouse=True)
-def _configured_ssh_client(monkeypatch) -> None:
+def _configured_ssh_config(monkeypatch) -> None:
     config = HMCConfig.from_mapping(
         {
             "host": "hmc.test",
@@ -77,7 +76,7 @@ def _configured_ssh_client(monkeypatch) -> None:
         }
     )
     for module in (cli_lpars, cli_network):
-        monkeypatch.setattr(module, "_ssh_client", lambda: HMCClient(config))
+        monkeypatch.setattr(module, "_ssh_config", lambda: config)
 
 
 class FakeHMC:

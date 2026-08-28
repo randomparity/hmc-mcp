@@ -11,6 +11,7 @@ from typing import Any
 
 from .._app import (
     run_limited_collection,
+    with_config,
     with_client,
 )
 
@@ -198,8 +199,10 @@ def hmc_list_fc_ports(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_client(
-        lambda hmc: list_fc_ports(hmc, system_name_or_uuid, lpar_name_or_uuid),
+    return with_config(
+        lambda config: list_fc_ports(
+            config, system_name_or_uuid, lpar_name_or_uuid
+        ),
         profile=profile,
     )
 
@@ -229,8 +232,10 @@ def hmc_list_sea_adapters(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_client(
-        lambda hmc: list_sea_adapters(hmc, system_name_or_uuid, lpar_name_or_uuid),
+    return with_config(
+        lambda config: list_sea_adapters(
+            config, system_name_or_uuid, lpar_name_or_uuid
+        ),
         profile=profile,
     )
 
@@ -266,8 +271,10 @@ def hmc_set_sriov_adapter_mode(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_client(
-        lambda hmc: set_sriov_adapter_mode(hmc, system_name_or_uuid, adapter_id, mode),
+    return with_config(
+        lambda config: set_sriov_adapter_mode(
+            config, system_name_or_uuid, adapter_id, mode
+        ),
         profile=profile,
     )
 
@@ -378,8 +385,10 @@ def hmc_list_vnics(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_client(
-        lambda hmc: list_vnics(hmc, system_name_or_uuid, lpar_name_or_uuid),
+    return with_config(
+        lambda config: list_vnics(
+            config, system_name_or_uuid, lpar_name_or_uuid
+        ),
         profile=profile,
     )
 

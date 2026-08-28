@@ -13,7 +13,6 @@ from hmc_mcp.cli_commands.lpar import config as cli_lpars
 from hmc_mcp.server_tools.lpar import configuration as server_lpar_config
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli import app
-from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.operations.ssh_affinity import (
@@ -32,10 +31,6 @@ from hmc_mcp.ssh.affinity import (
 
 def _config() -> HMCConfig:
     return HMCConfig(host="hmc.test", user="u", password="p", _env_file=None)
-
-
-def _client() -> HMCClient:
-    return HMCClient(_config())
 
 
 @pytest.mark.asyncio
@@ -232,7 +227,7 @@ async def test_shared_policy_operation_resolves_names_and_wraps_result():
         ),
             patch("hmc_mcp.operations.ssh_affinity.query_minimum_affinity_policy", query),
     ):
-        result = await get_minimum_affinity_policy(_client(), "system", "lpar")
+        result = await get_minimum_affinity_policy(_config(), "system", "lpar")
 
     assert result.capability == "available"
     assert result.system == "resolved-system"
@@ -247,17 +242,15 @@ def test_mcp_policy_adapter_delegates_to_shared_operation():
         "available", "system", "lpar", 75, "warn", None
     )
     operation = AsyncMock(return_value=expected)
-    client = _client()
-    context = AsyncMock()
-    context.__aenter__.return_value = client
+    config = _config()
     with (
-        patch("hmc_mcp._app.client_from_env", return_value=context),
+        patch("hmc_mcp._app.build_config", return_value=config),
         patch.object(server_lpar_config, "get_minimum_affinity_policy", operation),
     ):
         actual = server_lpar_config.hmc_get_minimum_affinity_policy("system", "lpar")
 
     assert actual == expected
-    operation.assert_awaited_once_with(client, "system", "lpar")
+    operation.assert_awaited_once_with(config, "system", "lpar")
 
 
 def test_mcp_registers_minimum_affinity_policy_as_lpar_read():
@@ -295,7 +288,7 @@ def test_mcp_registers_minimum_affinity_policy_as_lpar_read():
 )
 def test_cli_policy_human_output(result, expected):
     with (
-        patch.object(cli_lpars, "_ssh_client", return_value=_client()),
+        patch.object(cli_lpars, "_ssh_config", return_value=_config()),
         patch.object(
             cli_lpars, "get_minimum_affinity_policy", AsyncMock(return_value=result)
         ),
@@ -313,7 +306,7 @@ def test_cli_policy_json_delegates():
     )
     operation = AsyncMock(return_value=expected)
     with (
-        patch.object(cli_lpars, "_ssh_client", return_value=_client()),
+        patch.object(cli_lpars, "_ssh_config", return_value=_config()),
         patch.object(cli_lpars, "get_minimum_affinity_policy", operation),
     ):
         invocation = CliRunner().invoke(

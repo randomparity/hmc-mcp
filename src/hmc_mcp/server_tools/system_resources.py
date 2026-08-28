@@ -8,7 +8,7 @@ from ..tool_registry import tool_module
 
 from typing import Any
 
-from .._app import ssh_with_client, with_client
+from .._app import ssh_with_client, with_config
 from ..operations.pcie import (
     list_dedicated_slots,
     list_sriov_adapters,
@@ -39,10 +39,10 @@ def hmc_list_dedicated_pcie_slots(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def slots(hmc):
-        return asdict(await list_dedicated_slots(hmc, system_name_or_uuid))
+    async def slots(config):
+        return asdict(await list_dedicated_slots(config, system_name_or_uuid))
 
-    return with_client(slots, profile=profile)
+    return with_config(slots, profile=profile)
 
 
 @tool(effect="read", operation="pcie.list_sriov_adapters", target_kind="managed_system")
@@ -59,10 +59,10 @@ def hmc_list_sriov_adapters(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def adapters(hmc):
-        return asdict(await list_sriov_adapters(hmc, system_name_or_uuid, adapter_id))
+    async def adapters(config):
+        return asdict(await list_sriov_adapters(config, system_name_or_uuid, adapter_id))
 
-    return with_client(adapters, profile=profile)
+    return with_config(adapters, profile=profile)
 
 
 @tool(
@@ -85,14 +85,14 @@ def hmc_list_sriov_physical_ports(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def ports(hmc):
+    async def ports(config):
         return asdict(
             await list_sriov_physical_ports(
-                hmc, system_name_or_uuid, adapter_id, physical_port_id
+                config, system_name_or_uuid, adapter_id, physical_port_id
             )
         )
 
-    return with_client(ports, profile=profile)
+    return with_config(ports, profile=profile)
 
 
 @tool(
@@ -117,10 +117,10 @@ def hmc_list_sriov_logical_ports(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def ports(hmc):
+    async def ports(config):
         return asdict(
             await list_sriov_logical_ports(
-                hmc,
+                config,
                 system_name_or_uuid,
                 adapter_id,
                 physical_port_id,
@@ -128,7 +128,7 @@ def hmc_list_sriov_logical_ports(
             )
         )
 
-    return with_client(ports, profile=profile)
+    return with_config(ports, profile=profile)
 
 
 @tool(

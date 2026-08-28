@@ -115,12 +115,11 @@ class VnicPartialError(RuntimeError):
 
 
 async def list_fc_ports(
-    hmc: HMCClient,
+    config: HMCConfig,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
     """List Fibre Channel ports, optionally scoped to one LPAR."""
-    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(
         config, system_name_or_uuid, lpar_name_or_uuid
     )
@@ -128,12 +127,11 @@ async def list_fc_ports(
 
 
 async def list_sea_adapters(
-    hmc: HMCClient,
+    config: HMCConfig,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
     """List shared Ethernet adapters, optionally scoped to one LPAR."""
-    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(
         config, system_name_or_uuid, lpar_name_or_uuid
     )
@@ -141,10 +139,9 @@ async def list_sea_adapters(
 
 
 async def list_vnics(
-    hmc: HMCClient, system_name_or_uuid: str, lpar_name_or_uuid: str
+    config: HMCConfig, system_name_or_uuid: str, lpar_name_or_uuid: str
 ) -> list[dict[str, object]]:
     """List vNICs on an LPAR."""
-    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(
         config, system_name_or_uuid, lpar_name_or_uuid
     )

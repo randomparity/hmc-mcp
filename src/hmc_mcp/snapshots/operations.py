@@ -285,13 +285,15 @@ async def capture_lpar_snapshot(
         _parse_profile(native_data)
     )
     observed_at = _utcnow()
-    current_lpar = await get_lpar_memopt_score(hmc, system_name, lpar_name)
-    current_system = await get_system_memopt_score(hmc, system_name)
-    predicted_lpars = await plan_lpar_memopt_scores(hmc, system_name)
-    predicted_system = await plan_system_memopt_score(hmc, system_name)
-    current_groups = await list_resource_group_memopt_scores(hmc, system_name)
-    predicted_groups = await plan_resource_group_memopt_scores(hmc, system_name)
-    minimum_policy = await get_minimum_affinity_policy(hmc, system_name, lpar_name)
+    current_lpar = await get_lpar_memopt_score(hmc.config, system_name, lpar_name)
+    current_system = await get_system_memopt_score(hmc.config, system_name)
+    predicted_lpars = await plan_lpar_memopt_scores(hmc.config, system_name)
+    predicted_system = await plan_system_memopt_score(hmc.config, system_name)
+    current_groups = await list_resource_group_memopt_scores(hmc.config, system_name)
+    predicted_groups = await plan_resource_group_memopt_scores(hmc.config, system_name)
+    minimum_policy = await get_minimum_affinity_policy(
+        hmc.config, system_name, lpar_name
+    )
     mtms = system_resource.get("MachineTypeModelSerialNumber")
     if isinstance(mtms, dict):
         machine_type = _text(mtms.get("MachineType"), "system machine type")

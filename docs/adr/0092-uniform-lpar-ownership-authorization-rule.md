@@ -143,11 +143,11 @@ only the transport boundary.
 | `clear_lpar_boot_order` | `operations/lpar/boot_order.py:89` | guarded (`:99`) | — |
 | `assign_dedicated_pcie_slot` | `operations/pcie.py:179` | guarded (`:223`, via `_authorize_pcie_profile_request`) | — |
 | `unassign_dedicated_pcie_slot` | `operations/pcie.py:199` | guarded (`:223`) | — |
-| `assign_sriov_logical_port` | `operations/pcie.py:495` | guarded (`:371`, via `_resolve_lpar`) | — |
-| `unassign_sriov_logical_port` | `operations/pcie.py:590` | guarded (`:614`) | — |
-| `add_vnic` | `operations/vnic.py:593` | guarded (via `_preflight_add:367` → `resolve_and_authorize_lpar_names:374`) | — |
-| `remove_vnic` | `operations/vnic.py:676` | guarded (`:692`) | — |
-| `set_minimum_affinity_policy` | `operations/ssh_affinity.py:187` | guarded (`:334`) | — |
+| `assign_sriov_logical_port` | `operations/pcie.py:494` | guarded (`:428`, via `_resolve_lpar`) | — |
+| `unassign_sriov_logical_port` | `operations/pcie.py:589` | guarded (`:613`) | — |
+| `add_vnic` | `operations/vnic.py:590` | guarded (via `_preflight_add:364` → `resolve_and_authorize_lpar_names:371`) | — |
+| `remove_vnic` | `operations/vnic.py:673` | guarded (`:689`) | — |
+| `set_minimum_affinity_policy` | `operations/ssh_affinity.py:181` | guarded (`:191`) | — |
 | `set_lpar_processors` | `operations/lpar/dlpar.py:107` | guarded (`:405`, via `_apply_dlpar_document:397` → `_resolve_and_authorize_lpar:328`) | — |
 | `set_lpar_memory` | `operations/lpar/dlpar.py:143` | guarded (`:405`, via `_apply_dlpar_document`) | — |
 | `apply_lpar_pcie_assignments` | `operations/lpar/assignments.py:275` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
@@ -155,10 +155,10 @@ only the transport boundary.
 | `add_vscsi_adapter` | `operations/adapters.py:68` | guarded (`:79`) | #372 |
 | `add_vfc_adapter` | `operations/adapters.py:91` | guarded (`:102`) | #372 |
 | `delete_adapter` | `operations/adapters.py:114` | guarded (`:129`) | #372 |
-| `map_storage` | `operations/storage.py:172` | guarded (`:187`) | #372 |
+| `map_storage` | `operations/storage.py:174` | guarded (`:189`) | #372 |
 | `attach_disk_to_lpar` | `operations/lpar/provision.py:317` | guarded before the storage workflow (`:349`) | #372 |
-| `mount_optical_media` | `operations/storage.py:822` | guarded (`:841`) | #440 |
-| `unmount_optical_media` | `operations/storage.py:852` | guarded (`:893`) | #440 |
+| `mount_optical_media` | `operations/storage.py:826` | guarded (`:845`) | #440 |
+| `unmount_optical_media` | `operations/storage.py:856` | guarded (`:897`) | #440 |
 | `migrate_lpar` | `operations/lpm.py:333` | guarded after optional validation and before migration submission (`:378`) | #373 |
 | `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:226` | guarded by delegation to `migrate_lpar` | #373 |
 | `abort_lpar_migration` | `operations/lpm.py:398` | guarded (`:414`) | #373 |
@@ -190,7 +190,7 @@ The remaining direct entry points and their guard state are:
 | `configure_lpar_processor_compatibility` | `operations/lpar/configuration.py:46` | guarded (`:25`) | — |
 | `hmc_modify_lpar` | `server_tools/lpar/lifecycle.py:155` | guarded by `operations/lpar/dlpar.py:35` before any write | #442 |
 | `hmc lpar modify` (CLI) | `cli_commands/lpars.py:596` | guarded by `operations/lpar/dlpar.py:35` before any write | #442 |
-| `detach_storage_mapping` | `operations/storage.py:257` | resolves the mapping's client LPAR and guards it before deletion (`:292`) | #448 |
+| `detach_storage_mapping` | `operations/storage.py:259` | resolves the mapping's client LPAR and guards it before deletion (`:294`) | #448 |
 
 `hmc_dlpar_proc` and `hmc_dlpar_mem` were rows in this table at `b41e658`. #365
 extracted `set_lpar_processors` and `set_lpar_memory` from those tool bodies and
