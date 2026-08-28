@@ -25,6 +25,7 @@ import sys
 import tomllib
 import warnings
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlsplit
@@ -607,6 +608,50 @@ def env_var_value(name: str) -> str | None:
     return found
 
 
+@dataclass(frozen=True)
+class _ProfileSelection:
+    name: str
+    nickname: str | None = None
+
+
+def _select_profile(
+    profiles: Mapping[str, Any],
+    nicknames: Mapping[str, str],
+    default_profile: Any,
+    path: Path | None,
+    requested_profile: str | None,
+) -> _ProfileSelection:
+    """Select one profile and record the nickname that resolved to it."""
+    if default_profile is not None and not isinstance(default_profile, str):
+        raise ConfigError(f"{path}: 'default_profile' must be a profile-name string")
+    requested = requested_profile or os.environ.get("HMC_PROFILE") or default_profile
+    if requested is None:
+        raise ConfigError(
+            f"{path or 'config.toml'}: no default_profile set and no "
+            "--profile / HMC_PROFILE supplied"
+        )
+    if requested in profiles:
+        return _ProfileSelection(requested)
+    if requested in nicknames:
+        target = nicknames[requested]
+        if target in profiles:
+            return _ProfileSelection(target, requested)
+        profile_names = ", ".join(sorted(profiles)) or "(none)"
+        nickname_names = ", ".join(sorted(nicknames)) or "(none)"
+        raise ConfigError(
+            f"nickname {requested!r} targets missing profile {target!r} "
+            f"in {path}; available profiles: {profile_names}; "
+            f"available nicknames: {nickname_names}"
+        )
+    profile_names = ", ".join(sorted(profiles)) or "(none)"
+    nickname_names = ", ".join(sorted(nicknames)) or "(none)"
+    raise ConfigError(
+        f"profile {requested!r} not found in {path}; "
+        f"available profiles: {profile_names}; "
+        f"available nicknames: {nickname_names}"
+    )
+
+
 def _load_profile_from_document(
     doc: dict[str, Any],
     path: Path | None,
@@ -621,16 +666,6 @@ def _load_profile_from_document(
     second time to also select a profile (issue #295). *path* is used only for
     error messages; it is not re-read here.
     """
-    name = profile or os.environ.get("HMC_PROFILE")
-    if name is None:
-        name = doc.get("default_profile")
-
-    if name is None:
-        raise ConfigError(
-            f"{path or 'config.toml'}: no default_profile set and no "
-            "--profile / HMC_PROFILE supplied"
-        )
-
     profiles = _coerce_profiles(doc.get("profiles"), path)
 
     # Validate the nicknames table structure whenever the key is
@@ -638,31 +673,10 @@ def _load_profile_from_document(
     # which profile is selected (ADR 0030). No existing config
     # carries a nicknames key, so this cannot break current users.
     nicknames = _coerce_nicknames(doc.get("nicknames"), path)
-
-    # Nickname resolution: one level deep, case-sensitive. A profile
-    # key always wins over a same-named nickname because the branch
-    # below only runs when the name is not already a profile key.
-    if name not in profiles:
-        if name in nicknames:
-            target = nicknames[name]
-            if target in profiles:
-                name = target
-            else:
-                profile_names = ", ".join(sorted(profiles)) or "(none)"
-                nickname_names = ", ".join(sorted(nicknames)) or "(none)"
-                raise ConfigError(
-                    f"nickname {name!r} targets missing profile {target!r} "
-                    f"in {path}; available profiles: {profile_names}; "
-                    f"available nicknames: {nickname_names}"
-                  )
-        else:
-            profile_names = ", ".join(sorted(profiles)) or "(none)"
-            nickname_names = ", ".join(sorted(nicknames)) or "(none)"
-            raise ConfigError(
-                f"profile {name!r} not found in {path}; "
-                f"available profiles: {profile_names}; "
-                f"available nicknames: {nickname_names}"
-              )
+    selection = _select_profile(
+        profiles, nicknames, doc.get("default_profile"), path, profile
+    )
+    name = selection.name
 
     selected = profiles[name]
     if not isinstance(selected, dict):
@@ -733,8 +747,6 @@ def config_inventory(
     profiles = _coerce_profiles(doc.get("profiles"), path)
     nicknames = _coerce_nicknames(doc.get("nicknames"), path)
     default_profile = doc.get("default_profile")
-    if default_profile is not None and not isinstance(default_profile, str):
-        raise ConfigError(f"{path}: 'default_profile' must be a profile-name string")
 
     fields = HMCConfig.model_fields
     default_port = int(fields["port"].default)
@@ -771,18 +783,14 @@ def config_inventory(
     if not include_selected:
         return result
 
-    requested = selected_profile or env_var_value("HMC_PROFILE") or default_profile
-    resolved_name = requested
-    resolved_from = None
-    if requested is not None and requested not in profiles and requested in nicknames:
-        resolved_name = nicknames[requested]
-        if resolved_name in profiles:
-            resolved_from = requested
-    raw_profile = profiles.get(resolved_name or "", {})
+    selection = _select_profile(
+        profiles, nicknames, default_profile, path, selected_profile
+    )
+    raw_profile = profiles[selection.name]
     cfg = _load_profile_from_document(doc, path, selected_profile)
     result["selected"] = {
-        "profile": resolved_name or "(default)",
-        "resolved_from": resolved_from,
+        "profile": selection.name,
+        "resolved_from": selection.nickname,
         "host": cfg.host,
         "port": cfg.port,
         "user": cfg.user,
