@@ -29,6 +29,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- Provisioning workflow results now report virtual-disk capacity as
+  `capacity_mib`, matching the value's mebibyte unit.
 - Exported LPAR operations now place `system_name_or_uuid` before
   `lpar_name_or_uuid`, including LPM, disk attachment, summaries, ownership
   authorization, and PCIe assignment workflows. Presentation adapters pass
