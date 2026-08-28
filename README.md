@@ -943,7 +943,8 @@ src/hmc_mcp/
   server.py      # MCP composition, startup validation, logging, and serving bootstrap
   cli.py         # thin aggregator importing every cli_commands/ registration module
 tests/           # pytest + respx, no real HMC needed
-scripts/         # smoke/manual harnesses
+scripts/         # repository guardrails, generators, test runners, smoke checks,
+                 # and live-test harnesses
 ```
 
 ## Notes on the HMC API
