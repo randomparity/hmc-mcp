@@ -42,13 +42,14 @@ from pathlib import Path
 import pytest
 
 from hmc_mcp import audit, audit_sink, server as server_app
-from hmc_mcp.access_policy import compile_access_policy
-from hmc_mcp.connection_scope import ConnectionScopeError
-from hmc_mcp.dispatch_scope import dispatch_authorizer
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.authorization import dispatch_scope as authorization_dispatch_scope
+from hmc_mcp.authorization.access_policy import compile_access_policy
+from hmc_mcp.authorization.connection_scope import ConnectionScopeError
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY
-from hmc_mcp.target_scope import TargetScopeError
+from hmc_mcp.authorization.target_scope import TargetScopeError
 from hmc_mcp.tool_registry import authorized
 
 SOURCE = "test-access-policy.toml"
@@ -423,12 +424,11 @@ def test_the_outcome_is_invariant_under_agent_id(records, monkeypatch, value):
 def test_no_module_on_the_decision_path_reads_the_agent_identity():
     """Spec 8b. The invariant behind A4, and bounded: a textual scan catches a
     literal read, not an identity threaded in as a parameter."""
-    package = Path(audit.__file__).parent
-    for module in (
-        "dispatch_scope", "connection_scope", "target_scope", "access_policy",
-        "tool_registry",
-    ):
-        source = (package / f"{module}.py").read_text()
+    package = Path(authorization_dispatch_scope.__file__).parent
+    modules = tuple(package.glob("*.py")) + (Path(server_app.__file__).parent / "tool_registry.py",)
+    for path in modules:
+        module = path.stem
+        source = path.read_text()
         assert audit.ATTRIBUTION_ENV not in source, f"{module} names HMC_AGENT_ID"
         assert "agent_id" not in source, f"{module} reads an agent identity"
 

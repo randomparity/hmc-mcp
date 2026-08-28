@@ -24,7 +24,12 @@ from dataclasses import dataclass
 from fastmcp import FastMCP
 from pydantic import ValidationError
 
-from ..access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy, AllTargets, Grant
+from ..authorization.access_policy import (
+    DEFAULT_CONNECTION_TOKEN,
+    AccessPolicy,
+    AllTargets,
+    Grant,
+)
 from ..config import build_config
 from ..config import ConfigError, HMCConfig
 from ..tool_registry import (

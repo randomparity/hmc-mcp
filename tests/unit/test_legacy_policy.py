@@ -34,7 +34,7 @@ from pathlib import Path
 
 import pytest
 
-from hmc_mcp.access_policy import (
+from hmc_mcp.authorization.access_policy import (
     ALL_TARGETS_TOKEN,
     DEFAULT_CONNECTION_TOKEN,
     AccessPolicyError,

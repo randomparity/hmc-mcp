@@ -26,7 +26,7 @@ import typer
 from rich.markup import escape
 
 from . import app as cli_app
-from ..access_policy import AccessPolicyError
+from ..authorization.access_policy import AccessPolicyError
 from .app import _fail, _policy_file, config_app, console, err_console
 from ..config import (
     ConfigError,

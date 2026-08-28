@@ -16,7 +16,7 @@ import logging
 import pytest
 from fastmcp import Client
 
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.server_tools.permissions import build_effective_permissions, resolve_power_guards
 

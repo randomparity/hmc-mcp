@@ -20,9 +20,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
-from .access_policy import ALL_TARGETS_TOKEN, AllTargets
-from .audit import MAX_VALUE_LENGTH, Reason, State
-from .tool_registry import TargetKind, TargetSelector, ToolSecurity
+from hmc_mcp.authorization.access_policy import ALL_TARGETS_TOKEN, AllTargets
+from hmc_mcp.audit import MAX_VALUE_LENGTH, Reason, State
+from hmc_mcp.tool_registry import TargetKind, TargetSelector, ToolSecurity
 
 
 class TargetScopeError(Exception):

@@ -23,7 +23,7 @@ import tomllib
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
-from ..access_policy import (
+from ..authorization.access_policy import (
     ALL_TARGETS_TOKEN,
     DEFAULT_CONNECTION_TOKEN,
     AccessPolicy,

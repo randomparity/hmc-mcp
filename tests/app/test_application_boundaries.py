@@ -66,7 +66,7 @@ import hmc_mcp.server_tools.vios
 def test_create_mcp_returns_independent_complete_applications():
     import asyncio
 
-    from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+    from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
     from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
     from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
@@ -121,8 +121,8 @@ def test_tool_registry_does_not_import_the_policy_modules():
     forbidden = {
         "access_policy",
         "connection_scope",
-        "hmc_mcp.access_policy",
-        "hmc_mcp.connection_scope",
+        "hmc_mcp.authorization.access_policy",
+        "hmc_mcp.authorization.connection_scope",
     }
 
     path = package / "tool_registry.py"

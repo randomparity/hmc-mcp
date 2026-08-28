@@ -98,7 +98,7 @@ import asyncio
 
 import pytest
 
-from hmc_mcp.access_policy import compile_access_policy
+from hmc_mcp.authorization.access_policy import compile_access_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
 SOURCE = "test-access-policy.toml"
@@ -196,7 +196,7 @@ In `src/hmc_mcp/tool_registry.py`, replace the `register_tools` closure inside
 In `src/hmc_mcp/server.py`, add to the imports:
 
 ```python
-from .access_policy import AccessPolicy
+from .authorization.access_policy import AccessPolicy
 ```
 
 and replace `create_mcp`:
@@ -498,7 +498,7 @@ from dataclasses import dataclass
 
 from fastmcp import FastMCP
 
-from .access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy, AllTargets, Grant
+from .authorization.access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy, AllTargets, Grant
 from .tool_registry import ToolSecurity, annotations_for, validate_security
 
 TOOL_NAME = "hmc_effective_permissions"
@@ -1223,8 +1223,8 @@ def test_serve_forwards_the_compiled_policy_to_the_entry_point(
 
     from typer.testing import CliRunner
 
-    import hmc_mcp.access_policy as access_policy_module
-    from hmc_mcp.access_policy import AccessPolicy
+    import hmc_mcp.authorization.access_policy as access_policy_module
+    from hmc_mcp.authorization.access_policy import AccessPolicy
     from hmc_mcp.cli import app
 
     path = tmp_path / "access-policy.toml"
@@ -1292,7 +1292,7 @@ def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeyp
     """R7, R8: an explicit selection that cannot be loaded exits non-zero."""
     from typer.testing import CliRunner
 
-    import hmc_mcp.access_policy as access_policy_module
+    import hmc_mcp.authorization.access_policy as access_policy_module
     from hmc_mcp.cli import app
 
     monkeypatch.setattr(
@@ -1330,7 +1330,7 @@ consequential tests in this task. Expect exactly these failures:
 
 In `src/hmc_mcp/server.py`, add the function — Task 3 deliberately left no stub. Add
 `import sys` to the module imports (Step 4.3a is what uses it), and add
-`from .access_policy import AccessPolicy, resolve_access_policy_path` to the imports and
+`from .authorization.access_policy import AccessPolicy, resolve_access_policy_path` to the imports and
 `from .server_permissions import TOOL_NAME as PERMISSIONS_TOOL_NAME`.
 
 ```python
@@ -1428,7 +1428,7 @@ In `src/hmc_mcp/cli_commands/app.py`, add to `serve`'s parameters, after `enable
 Inside the body, after the connection-options guard and before the transport branch:
 
 ```python
-    from .access_policy import AccessPolicyError, load_access_policy
+    from .authorization.access_policy import AccessPolicyError, load_access_policy
 
     policy = None
     if access_policy is not None:

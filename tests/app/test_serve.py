@@ -17,7 +17,7 @@ from fastmcp import FastMCP
 from typer.testing import CliRunner
 
 from hmc_mcp import server as server_app
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy
 from hmc_mcp.cli import app
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, _is_loopback
@@ -47,7 +47,7 @@ def selectable_policy(tmp_path, monkeypatch):
     invocation that quietly read the developer's own `access-policy.toml` would be a
     test whose result depends on the machine it runs on.
     """
-    import hmc_mcp.access_policy as access_policy_module
+    import hmc_mcp.authorization.access_policy as access_policy_module
 
     path = tmp_path / "access-policy.toml"
     path.write_text(POLICY_FILE, encoding="utf-8")

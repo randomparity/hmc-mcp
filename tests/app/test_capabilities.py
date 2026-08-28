@@ -18,9 +18,9 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.client import HMCError
-from hmc_mcp.dispatch_scope import dispatch_authorizer
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import (
     TOOL_SECURITY,

@@ -17,13 +17,13 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp.access_policy import AccessPolicyError
+from hmc_mcp.authorization.access_policy import AccessPolicyError
 from hmc_mcp.config import config_dir
-from hmc_mcp.connection_scope import ConnectionScopeError
-from hmc_mcp.dispatch_scope import dispatch_authorizer
+from hmc_mcp.authorization.connection_scope import ConnectionScopeError
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
 from hmc_mcp.operations.lpar.provision import ProvisionNetwork, ProvisionStorage
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.target_scope import TargetScopeError
+from hmc_mcp.authorization.target_scope import TargetScopeError
 
 # `lab_profile` is autouse in its own module, so importing it applies it here
 # too — no test in this module names it, and doing so would shadow the import.
@@ -608,7 +608,7 @@ def test_the_decision_modules_never_mention_dry_run():
     """
     from pathlib import Path
 
-    from hmc_mcp import connection_scope, dispatch_scope, target_scope
+    from hmc_mcp.authorization import connection_scope, dispatch_scope, target_scope
 
     for module in (dispatch_scope, target_scope, connection_scope):
         source = Path(module.__file__).read_text(encoding="utf-8")

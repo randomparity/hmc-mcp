@@ -12,7 +12,7 @@ import pytest
 from fastmcp import FastMCP
 
 from hmc_mcp import audit_sink
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import (
     PERMISSIONS_TOOL_NAME,
@@ -348,7 +348,7 @@ def _configure(application, enabled, permits=None, policy=None):
     `permits` stays a separate parameter because these tests vary the ceiling
     independently of the authorizer to isolate which gate withheld the tool.
     """
-    from hmc_mcp.dispatch_scope import dispatch_authorizer
+    from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
     from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 
     effective = policy if policy is not None else _legacy(include_arbitrary_command=True)
@@ -869,8 +869,8 @@ def test_serve_forwards_the_compiled_policy_to_the_entry_point(
 
     from typer.testing import CliRunner
 
-    import hmc_mcp.access_policy as access_policy_module
-    from hmc_mcp.access_policy import AccessPolicy
+    import hmc_mcp.authorization.access_policy as access_policy_module
+    from hmc_mcp.authorization.access_policy import AccessPolicy
     from hmc_mcp.cli import app
 
     path = tmp_path / "access-policy.toml"
@@ -1009,7 +1009,7 @@ def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeyp
     """
     from typer.testing import CliRunner
 
-    import hmc_mcp.access_policy as access_policy_module
+    import hmc_mcp.authorization.access_policy as access_policy_module
     from hmc_mcp.cli import app
 
     present = tmp_path / "access-policy.toml"

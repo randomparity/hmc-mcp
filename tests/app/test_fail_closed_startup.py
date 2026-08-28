@@ -49,9 +49,9 @@ import typer
 from typer.testing import CliRunner
 
 from hmc_mcp import server as server_module
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli import app
-from hmc_mcp.dispatch_scope import dispatch_authorizer
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
 from hmc_mcp.cli_commands.legacy_policy import LEGACY_POLICY_NAME, compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
@@ -274,7 +274,7 @@ def test_a_denial_bounds_the_callers_own_token():
     it is closed here rather than left to the layer that has always had it.
     """
     from hmc_mcp.audit import MAX_VALUE_LENGTH
-    from hmc_mcp.connection_scope import ConnectionScopeError
+    from hmc_mcp.authorization.connection_scope import ConnectionScopeError
 
     authorize = dispatch_authorizer(_legacy_policy())
     oversized = "z" * (MAX_VALUE_LENGTH * 40)
@@ -320,7 +320,7 @@ def test_a_mixed_effect_grant_warns_at_startup():
     operator already looks for what a compiled policy means for this run, so
     that is where the dead subset is named.
     """
-    from hmc_mcp.access_policy import compile_access_policy
+    from hmc_mcp.authorization.access_policy import compile_access_policy
 
     policy = compile_access_policy(
         {

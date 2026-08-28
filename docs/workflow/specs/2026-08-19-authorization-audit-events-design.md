@@ -32,8 +32,8 @@ One source file is added, three change, and one operator document is added.
 | file | responsibility after this change |
 |---|---|
 | `src/hmc_mcp/audit.py` (new) | the record's field set, its rendering, the reason-code vocabulary, and the sink. Imports nothing from the package. |
-| `src/hmc_mcp/dispatch_scope.py` | unchanged decision; additionally assembles and emits exactly one record per decision it reaches. |
-| `src/hmc_mcp/target_scope.py` | gains `denial_reason`, the single owner of the four-way target-denial case selection; `target_denial` reads it instead of repeating it. |
+| `src/hmc_mcp/authorization/dispatch_scope.py` | unchanged decision; additionally assembles and emits exactly one record per decision it reaches. |
+| `src/hmc_mcp/authorization/target_scope.py` | gains `denial_reason`, the single owner of the four-way target-denial case selection; `target_denial` reads it instead of repeating it. |
 | `src/hmc_mcp/server.py` | `_serve_application` installs the sink, beside its existing `_warn` call. |
 | `src/hmc_mcp/operations/ownership.py` | `_audit_lpar_ownership_override`'s body becomes a call into `audit`; the two call sites and the rest of the file are untouched. Converges the package's second audit emitter (`Refs #268`). |
 | `tests/unit/test_ownership.py` | `test_authorize_lpar_mutation_override_is_audited` asserts `record.getMessage() == "LPAR ownership override approved"` and reads `record.hmc_system` / `hmc_lpar` / `hmc_agent_id` off the `extra=` payload on logger `hmc_mcp.operations.lpar` — exactly what convergence removes, so it is **replaced** by test 26a rather than left to fail. Its sibling `…_normal_access_has_no_override_audit` still asserts the right thing but would pass vacuously against the old logger name, so it is repointed too. |

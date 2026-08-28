@@ -323,7 +323,7 @@ def _policy_file() -> tuple[str, bool] | None:
     collapsed *unresolvable* and *resolvable-but-absent* into one ``None``, and the
     absent case is precisely the one the refusal most needs the path for.
     """
-    from ..access_policy import resolve_access_policy_path
+    from ..authorization.access_policy import resolve_access_policy_path
 
     try:
         path = resolve_access_policy_path()
@@ -446,7 +446,7 @@ def serve(
         assert isinstance(resolved, int), name  # guaranteed by _AUDIT_LEVELS
         level = resolved
 
-    from ..access_policy import AccessPolicyError, load_access_policy
+    from ..authorization.access_policy import AccessPolicyError, load_access_policy
 
     # A usage error: the invocation is incomplete. Checked after the HMC-option
     # rejection above, which is also exit 2 — that ordering is what

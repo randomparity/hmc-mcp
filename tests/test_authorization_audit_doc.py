@@ -211,7 +211,7 @@ DOCUMENT = ROOT / "docs" / "authorization-audit.md"
 ENVIRONMENT_DOCUMENT = ROOT / "docs" / "environment-variables.md"
 AUDIT_MODULE = ROOT / "src" / "hmc_mcp" / "audit.py"
 AUDIT_TEST = ROOT / "tests" / "unit" / "test_audit.py"
-DISPATCH_MODULE = ROOT / "src" / "hmc_mcp" / "dispatch_scope.py"
+DISPATCH_MODULE = ROOT / "src" / "hmc_mcp" / "authorization" / "dispatch_scope.py"
 
 #: One reason-code table row: the code it names and the decision that code yields. Both
 #: cells are read by one pattern, so a row whose decision cell stops being a bare token

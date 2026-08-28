@@ -145,9 +145,9 @@ only the transport boundary.
 | `unassign_dedicated_pcie_slot` | `operations/pcie.py:199` | guarded (`:223`) | — |
 | `assign_sriov_logical_port` | `operations/pcie.py:495` | guarded (`:371`, via `_resolve_lpar`) | — |
 | `unassign_sriov_logical_port` | `operations/pcie.py:583` | guarded (`:371`) | — |
-| `add_vnic` | `operations/ssh_network.py:748` | guarded (`:411`, via `_preflight_add:536` → `_resolve:405`) | — |
-| `remove_vnic` | `operations/ssh_network.py:820` | guarded (`:411`, via `_resolve`) | — |
-| `set_minimum_affinity_policy` | `operations/ssh_network.py:302` | guarded (`:318`) | — |
+| `add_vnic` | `operations/ssh_network.py:773` | guarded (via `_preflight_add:556` → `resolve_and_authorize_lpar_names:563`) | — |
+| `remove_vnic` | `operations/ssh_network.py:845` | guarded (`:854`) | — |
+| `set_minimum_affinity_policy` | `operations/ssh_network.py:324` | guarded (`:334`) | — |
 | `set_lpar_processors` | `operations/lpar/dlpar.py:107` | guarded (`:405`, via `_apply_dlpar_document:397` → `_resolve_and_authorize_lpar:328`) | — |
 | `set_lpar_memory` | `operations/lpar/dlpar.py:143` | guarded (`:405`, via `_apply_dlpar_document`) | — |
 | `apply_lpar_pcie_assignments` | `operations/lpar/assignments.py:275` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
@@ -159,11 +159,11 @@ only the transport boundary.
 | `attach_disk_to_lpar` | `operations/lpar/provision.py:316` | guarded before the storage workflow (`:348`) | #372 |
 | `mount_optical_media` | `operations/storage.py:706` | guarded (`:713`) | #440 |
 | `unmount_optical_media` | `operations/storage.py:734` | guarded (`:763`) | #440 |
-| `migrate_lpar` | `operations/lpm.py:320` | guarded after optional validation and before migration submission (`:360`) | #373 |
-| `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:222` | guarded by delegation to `migrate_lpar` | #373 |
-| `abort_lpar_migration` | `operations/lpm.py:380` | guarded (`:392`) | #373 |
-| `recover_lpar_migration` | `operations/lpm.py:405` | guarded (`:417`) | #373 |
-| `remote_restart_lpar` | `operations/lpm.py:430` | guarded (`:446`) | #373 |
+| `migrate_lpar` | `operations/lpm.py:333` | guarded after optional validation and before migration submission (`:378`) | #373 |
+| `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:226` | guarded by delegation to `migrate_lpar` | #373 |
+| `abort_lpar_migration` | `operations/lpm.py:398` | guarded (`:414`) | #373 |
+| `recover_lpar_migration` | `operations/lpm.py:427` | guarded (`:443`) | #373 |
+| `remote_restart_lpar` | `operations/lpm.py:456` | guarded (`:476`) | #373 |
 
 `mount_optical_media` and `unmount_optical_media` became facade exports in #363,
 so they are Domain A callables (§5) as well as MCP tools — the guard is the only

@@ -20,9 +20,9 @@ from __future__ import annotations
 from collections.abc import Container
 from typing import Any
 
-from .access_policy import DEFAULT_CONNECTION_TOKEN
-from .audit import MAX_VALUE_LENGTH
-from .config import ConfigError, env_var_value, list_profiles_and_nicknames
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.audit import MAX_VALUE_LENGTH
+from hmc_mcp.config import ConfigError, env_var_value, list_profiles_and_nicknames
 
 
 class ConnectionScopeError(Exception):

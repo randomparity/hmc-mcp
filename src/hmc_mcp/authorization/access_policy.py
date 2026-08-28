@@ -28,8 +28,8 @@ from pydantic import (
     model_validator,
 )
 
-from .config import config_dir
-from .tool_registry import TARGET_KINDS, TargetKind, ToolSecurity
+from hmc_mcp.config import config_dir
+from hmc_mcp.tool_registry import TARGET_KINDS, TargetKind, ToolSecurity
 
 ACCESS_POLICY_FILENAME = "access-policy.toml"
 

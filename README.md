@@ -936,10 +936,7 @@ src/hmc_mcp/
   ssh/console.py             # bounded, non-interactive LPAR console capture (mkvterm)
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
-  access_policy.py           # server access policy: TOML loading, validation, compilation
-  dispatch_scope.py          # the dispatch-boundary authorization decision
-  target_scope.py            # dispatch-time authorization of the targets a call names
-  connection_scope.py        # dispatch-time authorization of the connection a call selects
+  authorization/             # access policy and dispatch-time scope enforcement
   audit.py       # audit event vocabulary and record construction
   audit_sink.py  # non-blocking audit and diagnostic transport
   tool_registry.py           # local MCP tool collection, each tool carrying ToolSecurity

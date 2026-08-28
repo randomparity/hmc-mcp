@@ -55,8 +55,8 @@ the plan is the one that was verified.
 | path | action | answerable for |
 |---|---|---|
 | `src/hmc_mcp/audit.py` | create | record vocabulary, rendering, truncation, the two emitters, the sink |
-| `src/hmc_mcp/target_scope.py` | modify | `denial_reason` added; `target_denial` refactored to read it |
-| `src/hmc_mcp/dispatch_scope.py` | modify | assemble and emit one record per decision |
+| `src/hmc_mcp/authorization/target_scope.py` | modify | `denial_reason` added; `target_denial` refactored to read it |
+| `src/hmc_mcp/authorization/dispatch_scope.py` | modify | assemble and emit one record per decision |
 | `src/hmc_mcp/operations/ownership.py` | modify | `_audit_lpar_ownership_override` body calls `audit` |
 | `src/hmc_mcp/server.py` | modify | `_serve_application` installs the sink |
 | `tests/unit/test_audit.py` | create | rendering, truncation, sink, totality |
@@ -282,7 +282,7 @@ items is how this task's list was wrong the first time.
 
 ## Task 2 — `target_scope.denial_reason`
 
-Modifies `src/hmc_mcp/target_scope.py` and `tests/unit/test_target_scope.py`. Behaviour-preserving:
+Modifies `src/hmc_mcp/authorization/target_scope.py` and `tests/unit/test_target_scope.py`. Behaviour-preserving:
 the four-case selection moves into one function that both the message and the reason code read.
 
 ### Steps
@@ -292,7 +292,7 @@ the four-case selection moves into one function that both the message and the re
    `targets_permitted` agreeing arm by arm, with no application involved. The spec files them under
    its Boundary heading, which is where the ambiguity came from. Run
    `uv run --no-sync pytest --no-cov tests/unit/test_target_scope.py -q`. **Expect: `AttributeError: module
-   'hmc_mcp.target_scope' has no attribute 'denial_reason'`.**
+   'hmc_mcp.authorization.target_scope' has no attribute 'denial_reason'`.**
 2. Add `from .audit import Reason, State` to `target_scope`'s imports, then two functions.
    First `audit_state(value: str | _Unresolved) -> State`, beside `_value` where the two singletons
    already live: `"present"` for a `str`, `"absent"` for `ABSENT`, `"unreadable"` for `UNREADABLE`.
@@ -321,7 +321,7 @@ behaviour-preserving rather than a rewrite.
 
 ## Task 3 — emit from `dispatch_scope.authorize`
 
-Modifies `src/hmc_mcp/dispatch_scope.py`; creates `tests/app/test_authorization_audit.py`.
+Modifies `src/hmc_mcp/authorization/dispatch_scope.py`; creates `tests/app/test_authorization_audit.py`.
 
 ### Steps
 
@@ -345,11 +345,11 @@ Modifies `src/hmc_mcp/dispatch_scope.py`; creates `tests/app/test_authorization_
 
    ```python
    from . import audit
-   from .access_policy import AccessPolicy
-   from .connection_scope import (
+   from .authorization.access_policy import AccessPolicy
+   from .authorization.connection_scope import (
        ConnectionScopeError, connection_denial, connection_permitted, selected_connection,
    )
-   from .target_scope import (
+   from .authorization.target_scope import (
        audit_state, denial_reason, selected_targets, target_denial, targets_permitted,
    )
    from .tool_registry import Authorize, ToolSecurity

@@ -61,7 +61,7 @@ from ._app import (
     ceiling_aware_instructions,
     create_mcp as _create_base_mcp,
 )
-from .access_policy import AccessPolicy, unboundable_effect_tools
+from .authorization.access_policy import AccessPolicy, unboundable_effect_tools
 from .audit_sink import (
     StreamSafeFormatter,
     install_audit_sink,
@@ -69,9 +69,9 @@ from .audit_sink import (
     sink_handler,
     write_diagnostic,
 )
-from .connection_scope import ConnectionScopeError
-from .dispatch_scope import dispatch_authorizer
-from .target_scope import TargetScopeError
+from .authorization.connection_scope import ConnectionScopeError
+from .authorization.dispatch_scope import dispatch_authorizer
+from .authorization.target_scope import TargetScopeError
 from .tool_registry import Authorize, ToolSecurity, build_tool_security
 from .server_tools import (
     adapters as server_adapters,

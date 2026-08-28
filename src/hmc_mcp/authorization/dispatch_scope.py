@@ -19,15 +19,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from . import audit
-from .access_policy import AccessPolicy
-from .connection_scope import (
+from hmc_mcp import audit
+from hmc_mcp.authorization.access_policy import AccessPolicy
+from hmc_mcp.authorization.connection_scope import (
     ConnectionScopeError,
     connection_denial,
     connection_permitted,
     selected_connection,
 )
-from .target_scope import (
+from hmc_mcp.authorization.target_scope import (
     Selected,
     audit_state,
     denial_reason,
@@ -35,7 +35,7 @@ from .target_scope import (
     target_denial,
     targets_permitted,
 )
-from .tool_registry import Authorize, ToolSecurity
+from hmc_mcp.tool_registry import Authorize, ToolSecurity
 
 
 def _audit_view(

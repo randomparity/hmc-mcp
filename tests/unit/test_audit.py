@@ -311,7 +311,7 @@ def test_resolved_connection_is_bound_to_the_sentinel_that_owns_it():
     this is the connection half's equivalent, paid for in a test rather than a
     dependency.
     """
-    from hmc_mcp import connection_scope
+    from hmc_mcp.authorization import connection_scope
 
     assert audit.resolved_connection(connection_scope.UNRESOLVED) == (
         audit.UNRESOLVED_RENDERING

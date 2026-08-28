@@ -163,8 +163,8 @@ chained exception text. Proven by a sentinel-secret test on the real user path.
 **R17 — `dry_run` is never read by the authorizer.** The decision is identical for
 `dry_run=True` and `dry_run=False` on all three tools that accept it, under both a matching
 and a non-matching grant. The three modules that make the decision —
-`src/hmc_mcp/dispatch_scope.py`, `src/hmc_mcp/target_scope.py`, and
-`src/hmc_mcp/connection_scope.py` — contain no reference to `dry_run`.
+`src/hmc_mcp/authorization/dispatch_scope.py`, `src/hmc_mcp/authorization/target_scope.py`, and
+`src/hmc_mcp/authorization/connection_scope.py` — contain no reference to `dry_run`.
 
 **R18 — The three dry-run paths are classified by test.** For `hmc_provision_lpar`,
 `hmc_decommission_lpar`, and `hmc_attach_disk_to_lpar`, a test proves the `dry_run=True`

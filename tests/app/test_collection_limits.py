@@ -16,7 +16,7 @@ from hmc_mcp.server_tools import (
     systems as server_systems,
 )
 from hmc_mcp._app import run_limited_collection
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
