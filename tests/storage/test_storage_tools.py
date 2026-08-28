@@ -76,10 +76,10 @@ def _authorize_lpar_mutations(monkeypatch):
         return lpar
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.adapters._resolve_and_authorize_lpar", authorize
+        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar", authorize
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage._resolve_and_authorize_lpar", authorize
+        "hmc_mcp.operations.storage.resolve_and_authorize_lpar", authorize
     )
 
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
@@ -206,7 +206,7 @@ def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
 
     guard = AsyncMock(return_value=LPAR_UUID)
     with patch(
-        "hmc_mcp.operations.storage._resolve_and_authorize_lpar", new=guard
+        "hmc_mcp.operations.storage.resolve_and_authorize_lpar", new=guard
     ):
         assert hmc_detach_storage_mapping(VIOS_UUID, "map-1") == "map-1"
 

@@ -201,7 +201,7 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations.lpar.dlpar._resolve_and_authorize_lpar",
+            "hmc_mcp.operations.lpar.dlpar.resolve_and_authorize_lpar",
             new=AsyncMock(return_value=LPAR_UUID),
         ),
         pytest.raises(HMCError) as exc_info,

@@ -35,25 +35,25 @@ Operation = Callable[[AsyncMock], Awaitable[object]]
 
 CASES: tuple[tuple[str, Operation], ...] = (
     (
-        "hmc_mcp.operations.adapters._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar",
         lambda hmc: add_network_adapter(hmc, None, LPAR, 100),
     ),
     (
-        "hmc_mcp.operations.adapters._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar",
         lambda hmc: add_vscsi_adapter(hmc, None, LPAR, 2, 10, None),
     ),
     (
-        "hmc_mcp.operations.adapters._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar",
         lambda hmc: add_vfc_adapter(hmc, None, LPAR, 2, 10, None),
     ),
     (
-        "hmc_mcp.operations.adapters._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar",
         lambda hmc: delete_adapter(
             hmc, None, LPAR, "ClientNetworkAdapter", "adapter"
         ),
     ),
     (
-        "hmc_mcp.operations.storage._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.storage.resolve_and_authorize_lpar",
         lambda hmc: map_storage(
             hmc,
             None,
@@ -64,19 +64,19 @@ CASES: tuple[tuple[str, Operation], ...] = (
         ),
     ),
     (
-        "hmc_mcp.operations.storage._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.storage.resolve_and_authorize_lpar",
         lambda hmc: mount_optical_media(
             hmc, None, VIOS, LPAR, media_name="aix.iso"
         ),
     ),
     (
-        "hmc_mcp.operations.storage._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.storage.resolve_and_authorize_lpar",
         lambda hmc: unmount_optical_media(
             hmc, None, VIOS, LPAR, media_name="aix.iso"
         ),
     ),
     (
-        "hmc_mcp.operations.provision._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.provision.resolve_and_authorize_lpar",
         lambda hmc: attach_disk_to_lpar(
             hmc,
             LPAR,
@@ -87,19 +87,19 @@ CASES: tuple[tuple[str, Operation], ...] = (
         ),
     ),
     (
-        "hmc_mcp.operations.lpm._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar",
         lambda hmc: migrate_lpar(hmc, LPAR, "target", validate_first=False),
     ),
     (
-        "hmc_mcp.operations.lpm._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar",
         lambda hmc: abort_lpar_migration(hmc, LPAR),
     ),
     (
-        "hmc_mcp.operations.lpm._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar",
         lambda hmc: recover_lpar_migration(hmc, LPAR),
     ),
     (
-        "hmc_mcp.operations.lpm._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar",
         lambda hmc: remote_restart_lpar(hmc, LPAR, "cleanup", "source"),
     ),
 )

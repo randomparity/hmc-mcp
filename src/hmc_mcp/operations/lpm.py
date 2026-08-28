@@ -21,7 +21,7 @@ from ..jobs import (
     wait_for_submitted_job,
 )
 from ..errors import HMCError
-from .lpar.dlpar import _resolve_and_authorize_lpar
+from .lpar.ownership import resolve_and_authorize_lpar
 
 _MAX_CAPABILITY_LIMITS = 8
 _MAX_CAPABILITY_LIMIT_LENGTH = 200
@@ -357,7 +357,7 @@ async def migrate_lpar(
                 f"(status={validation.status or 'unknown'!r}, error={detail!r}); "
                 "migration was not submitted"
             )
-    lpar_uuid = await _resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,
@@ -389,7 +389,7 @@ async def abort_lpar_migration(
 ) -> LpmResult:
     """Resolve and abort an in-progress migration."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
-    lpar_uuid = await _resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,
@@ -414,7 +414,7 @@ async def recover_lpar_migration(
 ) -> LpmResult:
     """Resolve and recover a failed migration."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
-    lpar_uuid = await _resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,
@@ -443,7 +443,7 @@ async def remote_restart_lpar(
 ) -> LpmResult:
     """Resolve selectors and submit an explicit RemoteRestart operation."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
-    lpar_uuid = await _resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,

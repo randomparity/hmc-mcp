@@ -402,7 +402,7 @@ def test_modify_lpar_builds_resource_xml(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="owned-lpar"))
     )
     with patch(
-        "hmc_mcp.operations.lpar.dlpar._resolve_and_authorize_lpar",
+        "hmc_mcp.operations.lpar.dlpar.resolve_and_authorize_lpar",
         new=AsyncMock(return_value=LPAR_UUID),
     ):
         result = hmc_modify_lpar(

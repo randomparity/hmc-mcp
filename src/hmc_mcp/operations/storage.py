@@ -28,7 +28,7 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from .lpar.dlpar import _resolve_and_authorize_lpar
+from .lpar.ownership import resolve_and_authorize_lpar
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ async def map_storage(
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-    lpar_uuid = await _resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,
@@ -201,7 +201,7 @@ async def detach_storage_mapping(
         raise ValueError(
             f"Storage mapping {mapping_uuid!r} has an invalid client LPAR link"
         )
-    await _resolve_and_authorize_lpar(
+    await resolve_and_authorize_lpar(
         hmc,
         lpar_uuid,
         system_name_or_uuid,
@@ -710,7 +710,7 @@ async def mount_optical_media(
     target_device optionally pins the vtscsi name. Returns the created mapping resource.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-    lpar_uuid = await _resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,
@@ -760,7 +760,7 @@ async def unmount_optical_media(
     the duty to serialize concurrent VIOS mapping changes on the caller.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-    lpar_uuid = await _resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,

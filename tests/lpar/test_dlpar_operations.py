@@ -608,7 +608,7 @@ async def test_discovery_translates_its_own_timeout(mock_hmc, monkeypatch):
     """
     _mock_lpar_detail(mock_hmc)
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.dlpar.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0.01
+        "hmc_mcp.operations.lpar.ownership.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0.01
     )
 
     async def _slow_fleet(request):

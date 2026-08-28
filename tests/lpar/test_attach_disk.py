@@ -25,7 +25,7 @@ def _authorize_lpar_mutations(monkeypatch):
         return lpar
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.provision._resolve_and_authorize_lpar", authorize
+        "hmc_mcp.operations.provision.resolve_and_authorize_lpar", authorize
     )
 
 

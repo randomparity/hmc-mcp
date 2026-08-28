@@ -21,7 +21,7 @@ def _authorize_lpar_mutations(monkeypatch):
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage._resolve_and_authorize_lpar", authorize
+        "hmc_mcp.operations.storage.resolve_and_authorize_lpar", authorize
     )
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"

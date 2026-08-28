@@ -36,7 +36,7 @@ from .ownership import (
     resolve_lpar_ownership_names,
     stamp_created_lpar_ownership,
 )
-from .dlpar import _resolve_and_authorize_lpar
+from .ownership import resolve_and_authorize_lpar
 from ...ssh.transport import HMCCLIError
 from ...ssh.lpar import (
     resolve_system_cli_name,
@@ -354,7 +354,7 @@ async def power_lpar(
     managed system in one REST call.
 
     With the setting on the resolve chain is ADR 0094's
-    :func:`_resolve_and_authorize_lpar`, shared with the DLPAR operations —
+    :func:`resolve_and_authorize_lpar`, shared with the DLPAR operations —
     the same shape, because these are the operations whose managed-system
     selector is optional (ADR 0063). It derives the owning system when the
     caller omits the selector, and confirms the partition lives on the system
@@ -369,7 +369,7 @@ async def power_lpar(
     """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     if hmc.config.authorize_power_operations:
-        lpar_uuid = await _resolve_and_authorize_lpar(
+        lpar_uuid = await resolve_and_authorize_lpar(
             hmc,
             lpar_name_or_uuid,
             system_name_or_uuid,

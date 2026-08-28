@@ -8,7 +8,7 @@ from typing import Any
 from ..client import HMCClient
 from ..client.client_adapters import AdapterType, validate_adapter_type
 from ..resource_identity import resolve_lpar_uuid
-from .lpar.dlpar import _resolve_and_authorize_lpar
+from .lpar.ownership import resolve_and_authorize_lpar
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ async def add_network_adapter(
     mac_address: str | None = None,
     ownership_override: bool = False,
 ) -> AdapterResult:
-    lpar_uuid = await _resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,
@@ -69,7 +69,7 @@ async def add_vscsi_adapter(
     *,
     ownership_override: bool = False,
 ) -> AdapterResult:
-    lpar_uuid = await _resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,
@@ -89,7 +89,7 @@ async def add_vfc_adapter(
     *,
     ownership_override: bool = False,
 ) -> AdapterResult:
-    lpar_uuid = await _resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,
@@ -109,7 +109,7 @@ async def delete_adapter(
     ownership_override: bool = False,
 ) -> str:
     validate_adapter_type(adapter_type)
-    lpar_uuid = await _resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,
