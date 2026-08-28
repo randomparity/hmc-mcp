@@ -388,6 +388,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: SSH-backed network and affinity operations now consistently name their
+  selectors `system_name_or_uuid` and `lpar_name_or_uuid`.
 - Added: `resolve_and_authorize_lpar_mutation` and `resolve_and_authorize_lpar_names` after
   ownership authorization moved to the cross-cutting `operations.ownership` module.
 - Added: `StorageMapResult`; `map_storage` now returns this concrete result instead of the

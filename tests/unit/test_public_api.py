@@ -1827,7 +1827,14 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         "delete_adapter",
         "install_lpar_os",
         "list_adapters",
+        "list_fc_ports",
+        "list_lpar_memopt_scores",
+        "list_sea_adapters",
+        "list_vnics",
+        "get_lpar_memopt_score",
+        "get_minimum_affinity_policy",
         "power_lpar",
+        "set_minimum_affinity_policy",
         "set_lpar_memory",
         "set_lpar_processors",
     ):
@@ -1837,7 +1844,17 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             if name in {"system_name_or_uuid", "lpar_name_or_uuid"}
         ]
         assert selector_names == ["system_name_or_uuid", "lpar_name_or_uuid"]
-    vios_install_parameters = inspect.signature(api.install_vios).parameters
+    for operation_name in (
+        "get_system_memopt_score",
+        "list_resource_group_memopt_scores",
+        "plan_lpar_memopt_scores",
+        "plan_resource_group_memopt_scores",
+        "plan_system_memopt_score",
+    ):
+        assert "system_name_or_uuid" in inspect.signature(
+            getattr(api, operation_name)
+        ).parameters
+        vios_install_parameters = inspect.signature(api.install_vios).parameters
     assert [
         name
         for name in vios_install_parameters
@@ -1880,7 +1897,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # User mutation operations now name every supported document field instead
     # of accepting an untyped keyword bag.
     # PCM metric controls are keyword-only after the resource selector.
-    expected_digest = "73927d7fb042dd731bea09ebb8656ba0c71b096bd07bb64528cd7400450f8f62"  # pragma: allowlist secret
+    expected_digest = "435eae440f281ac1f3c49fc32bf5a0896271aa83940df1360b5ddc00e35e6c9a"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
