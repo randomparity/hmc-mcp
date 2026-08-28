@@ -19,7 +19,26 @@ from hmc_mcp.server import TOOL_SECURITY
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
-from live_test import inventory, lifecycle, results, vmedia  # noqa: E402
+from live_test import (  # noqa: E402
+    inventory,
+    lpar,
+    metrics,
+    network,
+    provisioning,
+    results,
+    users,
+    vmedia,
+)
+
+LIVE_WORKFLOW_MODULES = (
+    inventory,
+    lpar,
+    metrics,
+    network,
+    provisioning,
+    users,
+    vmedia,
+)
 
 _SPEC = importlib.util.spec_from_file_location("hmc_live_test_runner", _RUNNER_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
@@ -201,6 +220,7 @@ def test_a_dotenv_entry_never_outranks_a_case_variant_export(monkeypatch, tmp_pa
 
 def test_bootstrap_propagates_unexpected_profile_loader_failure(monkeypatch):
     """Only a configuration rejection authorizes the legacy dotenv fallback."""
+
     def fail_to_load_profile():
         raise RuntimeError("profile loader defect")
 
@@ -378,7 +398,9 @@ def test_restore_context_propagates_unexpected_restoration_defects(
 ):
     results_path = tmp_path / "previous.json"
     results_path.write_text('{"context": {}}')
-    monkeypatch.setattr(runner, "asdict", lambda _context: (_ for _ in ()).throw(RuntimeError("defect")))
+    monkeypatch.setattr(
+        runner, "asdict", lambda _context: (_ for _ in ()).throw(RuntimeError("defect"))
+    )
 
     with pytest.raises(RuntimeError, match="defect"):
         runner._restore_ctx_from_results(runner.RunState(), str(results_path))
@@ -497,7 +519,7 @@ def test_every_dispatched_tool_name_is_registered():
     dispatched = set().union(
         *(
             _dispatched_tool_names(Path(module.__file__).read_text(encoding="utf-8"))
-            for module in (inventory, lifecycle, vmedia)
+            for module in LIVE_WORKFLOW_MODULES
         )
     )
 
@@ -528,7 +550,7 @@ def test_dispatch_guard_refuses_a_tool_name_it_cannot_read():
 def test_every_live_workflow_dispatch_has_exactly_client_and_tool_arguments():
     """A duplicated client argument turns a live stage into an immediate TypeError."""
     invalid: list[str] = []
-    for module in (inventory, lifecycle, vmedia):
+    for module in LIVE_WORKFLOW_MODULES:
         source = Path(module.__file__).read_text(encoding="utf-8")
         for node in ast.walk(ast.parse(source)):
             if not isinstance(node, ast.Call):
@@ -715,7 +737,9 @@ def test_vmedia_behavioral_inventory_covers_every_registered_stage():
         runner.vmedia_teardown,
     }
 
-    assert {runner.SUBTASKS[number] for number in runner.SUBTASK_GROUPS["vmedia"]} == covered
+    assert {
+        runner.SUBTASKS[number] for number in runner.SUBTASK_GROUPS["vmedia"]
+    } == covered
 
 
 @pytest.mark.asyncio
@@ -863,9 +887,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
                 {"UUID": "system-uuid", "Resource": {"SystemName": "ltczz386"}}
             ],
             "hmc_get_lpar": {"UUID": "lpar-uuid"},
-            "hmc_list_vios": [
-                {"UUID": "vios-uuid", "Resource": {"PartitionID": "7"}}
-            ],
+            "hmc_list_vios": [{"UUID": "vios-uuid", "Resource": {"PartitionID": "7"}}],
             "hmc_list_recent_jobs": [{"UUID": "job-uuid"}],
         }
         return "PASS", responses.get(tool, {})
@@ -992,7 +1014,7 @@ async def test_user_administration_cleans_up_only_a_created_user(
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
 
-    await lifecycle.administer_test_user(None, state)
+    await users.administer_test_user(None, state)
 
     expected = ["hmc_create_user", "hmc_list_users"]
     if create_status == "PASS":
@@ -1004,7 +1026,9 @@ async def test_user_administration_cleans_up_only_a_created_user(
         assert calls[2][1]["description"].endswith("updated")
         assert calls[3][1] == {"name": state.context.test_user}
     else:
-        skipped = [result["tool"] for result in state.results if result["status"] == "SKIP"]
+        skipped = [
+            result["tool"] for result in state.results if result["status"] == "SKIP"
+        ]
         assert skipped == ["hmc_create_user", "hmc_modify_user", "hmc_delete_user"]
 
 
@@ -1024,7 +1048,7 @@ async def test_metrics_jobs_restores_disabled_preference_and_forwards_job_option
     state = runner.RunState()
     state.context.job_uuid_sample = "job-uuid"
 
-    await lifecycle.inspect_metrics_jobs(None, state)
+    await metrics.inspect_metrics_jobs(None, state)
 
     assert [tool for tool, _ in calls] == [
         "hmc_get_pcm_preferences",
@@ -1221,14 +1245,14 @@ def test_unrestorable_description_names_the_reason(baseline):
     The runner defers to the server's validator, so the ``-i`` record grammar
     of ADR 0045 skips the restore instead of failing it.
     """
-    reason = lifecycle._unrestorable_description(baseline)
+    reason = lpar._unrestorable_description(baseline)
     assert isinstance(reason, str) and reason
 
 
 @pytest.mark.parametrize("baseline", ["", "plain text", "[hmc-mcp owner:a created:x]"])
 def test_restorable_description_is_not_blocked(baseline):
     """An ordinary baseline description is restored, not skipped."""
-    assert lifecycle._unrestorable_description(baseline) is None
+    assert lpar._unrestorable_description(baseline) is None
 
 
 @pytest.mark.asyncio

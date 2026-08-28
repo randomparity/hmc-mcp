@@ -45,16 +45,18 @@ from live_test.inventory import (
     inventory_storage,
     inventory_users,
 )
-from live_test.lifecycle import (
-    administer_test_user,
+from live_test.lpar import (
     exercise_lpar_lifecycle,
-    exercise_storage_provisioning,
-    inspect_metrics_jobs,
     mutate_lpar_properties,
-    mutate_virtual_networking,
     restore_lpar_baseline,
+)
+from live_test.metrics import inspect_metrics_jobs
+from live_test.network import mutate_virtual_networking
+from live_test.provisioning import (
+    exercise_storage_provisioning,
     validate_provisioning_dry_run,
 )
+from live_test.users import administer_test_user
 from live_test.vmedia import (
     IsoHttpServer,
     vmedia_boot_verification,
