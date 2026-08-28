@@ -938,21 +938,15 @@ async def vmedia_mapping_crossvalidation(client: Client, state: RunState) -> Non
 # ---------------------------------------------------------------------------
 
 
-async def vmedia_teardown(client: Client, state: RunState) -> None:
+async def _restore_teardown_boot_order(client: Client, state: RunState) -> None:
+    """Restore a saved boot order when ST20 did not finish its own cleanup."""
     context = state.context
-    print("\n=== ST22: Teardown: Unmount Orphans → Delete ISO → Delete Repository ===")
-
-    vios = context.vios_uuid
-    vg = context.vg_uuid
-    lp3_uuid = context.lp3_uuid
-
-    # Step 1 — Boot order restore guard (in case ST20 restore was skipped)
-    if context.vmedia_orig_boot_order and lp3_uuid:
+    if context.vmedia_orig_boot_order and context.lp3_uuid:
         st, data = await state.call(
             client,
             "hmc_set_lpar_boot_order",
             system_name_or_uuid=context.system_name,
-            lpar_uuid=lp3_uuid,
+            lpar_uuid=context.lp3_uuid,
             devices=context.vmedia_orig_boot_order,
         )
         state.record(22, "hmc_set_lpar_boot_order (boot order restore guard)", st, data)
@@ -971,18 +965,11 @@ async def vmedia_teardown(client: Client, state: RunState) -> None:
             "lp3_uuid not available",
         )
 
-    if not vios:
-        for name in [
-            "hmc_list_optical_mappings (orphan cleanup)",
-            "hmc_list_optical_media (media cleanup)",
-            "hmc_delete_media_repository",
-            "hmc_get_media_repository (confirm gone)",
-            "hmc_list_volume_groups (final audit)",
-        ]:
-            state.skip(22, name, "no VIOS UUID in context")
-        return
 
-    # Step 2 — Orphan mapping cleanup
+async def _remove_orphan_mappings(
+    client: Client, state: RunState, vios: str
+) -> None:
+    """Unmount every optical mapping left behind by earlier vMedia stages."""
     st, data = await state.call(
         client,
         "hmc_list_optical_mappings",
@@ -1011,39 +998,41 @@ async def vmedia_teardown(client: Client, state: RunState) -> None:
                     data_u,
                 )
 
-    # Step 3 — Media cleanup
-    if vg:
-        st, data = await state.call(
+
+async def _remove_optical_media(
+    client: Client, state: RunState, vios: str, vg: str | None
+) -> None:
+    """Delete all optical media from the test repository when it exists."""
+    if not vg:
+        state.skip(22, "hmc_list_optical_media (media cleanup)", "no VG UUID")
+        return
+    st, data = await state.call(
+        client,
+        "hmc_list_optical_media",
+        vios_name_or_uuid=vios,
+        vg_uuid=vg,
+    )
+    state.record(22, "hmc_list_optical_media (media cleanup)", st, data)
+    if st != "PASS":
+        return
+    for entry in data if isinstance(data, list) else []:
+        media_name = entry.get("MediaName") or get_resource(entry).get("MediaName")
+        if not media_name:
+            continue
+        st_d, data_d = await state.call(
             client,
-            "hmc_list_optical_media",
+            "hmc_delete_optical_media",
             vios_name_or_uuid=vios,
             vg_uuid=vg,
+            media_name=media_name,
         )
-        state.record(22, "hmc_list_optical_media (media cleanup)", st, data)
-        if st == "PASS":
-            media_list = data if isinstance(data, list) else []
-            for entry in media_list:
-                media_name = entry.get("MediaName") or (get_resource(entry)).get(
-                    "MediaName"
-                )
-                if media_name:
-                    st_d, data_d = await state.call(
-                        client,
-                        "hmc_delete_optical_media",
-                        vios_name_or_uuid=vios,
-                        vg_uuid=vg,
-                        media_name=media_name,
-                    )
-                    state.record(
-                        22,
-                        f"hmc_delete_optical_media ({media_name})",
-                        st_d,
-                        data_d,
-                    )
-    else:
-        state.skip(22, "hmc_list_optical_media (media cleanup)", "no VG UUID")
+        state.record(22, f"hmc_delete_optical_media ({media_name})", st_d, data_d)
 
-    # Step 4 — Delete repository
+
+async def _remove_repository_and_audit(
+    client: Client, state: RunState, vios: str, vg: str | None
+) -> None:
+    """Remove the repository, confirm its absence, and capture final VG state."""
     if vg:
         st, data = await state.call(
             client,
@@ -1065,9 +1054,7 @@ async def vmedia_teardown(client: Client, state: RunState) -> None:
             skip_reason="repository already gone (expected on re-run)",
         )
         if st == "PASS":
-            context.vmedia_repo_created = False
-
-        # Step 5 — Confirm gone
+            state.context.vmedia_repo_created = False
         st, data = await state.call(
             client,
             "hmc_get_media_repository",
@@ -1079,10 +1066,33 @@ async def vmedia_teardown(client: Client, state: RunState) -> None:
         state.skip(22, "hmc_delete_media_repository", "no VG UUID")
         state.skip(22, "hmc_get_media_repository (confirm gone)", "no VG UUID")
 
-    # Step 6 — Final VG audit
     st, data = await state.call(
         client,
         "hmc_list_volume_groups",
         vios_name_or_uuid=vios,
     )
     state.record(22, "hmc_list_volume_groups (final audit)", st, data)
+
+
+async def vmedia_teardown(client: Client, state: RunState) -> None:
+    """Restore boot state and remove every vMedia artifact in phase order."""
+    context = state.context
+    print("\n=== ST22: Teardown: Unmount Orphans → Delete ISO → Delete Repository ===")
+
+    await _restore_teardown_boot_order(client, state)
+    if not context.vios_uuid:
+        for name in [
+            "hmc_list_optical_mappings (orphan cleanup)",
+            "hmc_list_optical_media (media cleanup)",
+            "hmc_delete_media_repository",
+            "hmc_get_media_repository (confirm gone)",
+            "hmc_list_volume_groups (final audit)",
+        ]:
+            state.skip(22, name, "no VIOS UUID in context")
+        return
+
+    await _remove_orphan_mappings(client, state, context.vios_uuid)
+    await _remove_optical_media(client, state, context.vios_uuid, context.vg_uuid)
+    await _remove_repository_and_audit(
+        client, state, context.vios_uuid, context.vg_uuid
+    )
