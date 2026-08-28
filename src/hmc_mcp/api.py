@@ -1,9 +1,10 @@
 """Supported reusable-library facade for hmc-mcp.
 
 Operations propagate :class:`HMCError` and :class:`HMCTransportError` when the
-HMC rejects a request or communication fails. Individual operation docstrings
-list additional validation, authorization, capability, and reconciliation
-failures specific to that operation.
+HMC rejects a request or communication fails. Operations can additionally raise
+``ValueError`` or a documented domain exception when local validation,
+authorization, capability checks, or post-mutation reconciliation fail; consult
+an operation's docstring when it defines a narrower failure contract.
 """
 
 from hmc_mcp.client import HMCClient
