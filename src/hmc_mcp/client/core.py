@@ -546,11 +546,7 @@ class HMCClient(
     # Reference: project-pim/cli/utils/iso_util.py (create_iso_path pattern)
 
     async def _broker_file_create(self, vios_uuid: str, vg_uuid: str, filename: str) -> str:
-        """Create a brokered file handle for upload (verification primitive).
-
-        Returns the brokered file URI from the Location header.
-        This method exists to verify the broker creation endpoint behavior.
-        """
+        """Create a brokered file handle and return its URI."""
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         create_xml = build_brokered_file_document(filename=filename)
         resp = await self._request(
@@ -565,7 +561,6 @@ class HMCClient(
                 resp.status_code,
                 resp.text,
             )
-        # Extract Location header containing the brokered file URI
         location = resp.headers.get("Location")
         if not location:
             raise HMCError(
@@ -581,13 +576,11 @@ class HMCClient(
         content: AsyncIterator[bytes],
         content_length: int,
     ) -> str:
-        """Stream content to a brokered file (verification primitive).
+        """Stream content to a brokered file and return its media UUID.
 
-        Sends the chunks *content* yields to the broker URI and returns the final
-        media UUID. This method exists to verify the upload endpoint behavior and
-        response format. It never buffers the body: an ISO that passes the
-        caller's size bound may be tens of gigabytes, and this process is shared
-        by every caller of every tool (ADR 0052, #308).
+        The method never buffers the body: an ISO that passes the caller's size
+        bound may be tens of gigabytes, and this process is shared by every caller
+        of every tool (ADR 0052, #308).
 
         ``content`` must be an **async** iterator, and ``content_length`` the
         exact total it will yield. Both are constraints of the transport, not
@@ -639,11 +632,7 @@ class HMCClient(
         media_name: str,
         broker_uri: str,
     ) -> str:
-        """Import an uploaded ISO into the Virtual Media Library (verification primitive).
-
-        Creates VirtualOpticalMedia linked to the brokered file and returns the media UUID.
-        This method exists to verify the import endpoint behavior.
-        """
+        """Import a brokered ISO and return its VirtualOpticalMedia UUID."""
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         import_xml = build_linked_optical_media_document(
             media_name=media_name, broker_uri=broker_uri
@@ -652,11 +641,7 @@ class HMCClient(
         return resp if resp else ""
 
     async def _broker_file_cleanup(self, broker_uri: str) -> None:
-        """Clean up a brokered file (verification primitive).
-
-        Deletes the brokered file to release resources after import or on failure.
-        This method exists to verify cleanup behavior and error handling.
-        """
+        """Delete a brokered file to release its resources."""
         resp = await self._request(
             "DELETE",
             broker_uri,
