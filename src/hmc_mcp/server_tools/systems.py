@@ -9,6 +9,7 @@ from typing import Any
 from .._app import (
     run_sync,
     run_limited_collection,
+    with_client,
 )
 from ..client.client_factory import client_from_env
 from ..config import (
@@ -48,11 +49,7 @@ def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.get_console_info()
-
-    return run_sync(_go)
+    return with_client(lambda hmc: hmc.get_console_info(), profile=profile)
 
 
 @tool(

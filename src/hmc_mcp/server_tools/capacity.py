@@ -7,8 +7,7 @@ from ..tool_registry import tool_module
 
 from typing import Any
 
-from .._app import run_sync
-from ..client.client_factory import client_from_env
+from .._app import with_client
 from ..operations.capacity import capacity_report, find_placement
 
 
@@ -23,11 +22,10 @@ def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return [asdict(item) for item in await capacity_report(hmc)]
+    async def report(hmc):
+        return [asdict(item) for item in await capacity_report(hmc)]
 
-    return run_sync(_go)
+    return with_client(report, profile=profile)
 
 
 @tool(effect="read", operation="placement.find", target_kind="console")
@@ -44,13 +42,10 @@ def hmc_find_placement(
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return [
-                asdict(item)
-                for item in await find_placement(
-                    hmc, desired_memory_mb, desired_proc_units
-                )
-            ]
+    async def placements(hmc):
+        return [
+            asdict(item)
+            for item in await find_placement(hmc, desired_memory_mb, desired_proc_units)
+        ]
 
-    return run_sync(_go)
+    return with_client(placements, profile=profile)

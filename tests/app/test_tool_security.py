@@ -567,12 +567,12 @@ def test_legacy_classification_sets_are_gone():
             assert not hasattr(module, removed), f"{module.__name__}.{removed}"
 
 
-# A handler's connection routes through exactly these three helpers. Every one
+# A handler's connection routes through exactly these four helpers. Every one
 # of them resolves an HMCConfig from `config.build_config`, so a call that omits
 # the handler's declared connection argument reaches the deployment default
 # whatever the caller — and the access policy — named.
 _CONNECTION_BUILDERS = frozenset(
-    {"build_config", "client_from_env", "ssh_with_client"}
+    {"build_config", "client_from_env", "ssh_with_client", "with_client"}
 )
 
 # `host` is deliberately singled out: `build_config` skips the whole profile
@@ -819,10 +819,11 @@ def test_every_handler_routes_the_connection_argument_it_declares():
     the call does not make. That is a fail-open, and it is what
     ``hmc_set_lpar_boot_order`` and ``hmc_clear_lpar_boot_order`` did before #222.
 
-    The check is static and follows same-module helpers down the call chain,
-    which is how the metrics, vios, and composite tools reach their client. It
-    does not follow a helper imported from another module, a ``functools.partial``,
-    or a callable held in a variable; ADR 0038 records that residual.
+        The check is static and follows same-module helpers down the call chain,
+        while recognizing the shared connection builders imported from ``_app``.
+        It does not follow any other helper imported from another module, a
+        ``functools.partial``, or a callable held in a variable; ADR 0038 records
+        that residual.
 
     The two tools that declare *no* connection argument are checked in the same
     pass, from the other side: entering the walk with no selector, the first

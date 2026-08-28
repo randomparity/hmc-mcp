@@ -7,8 +7,7 @@ from ..tool_registry import tool_module
 
 from typing import Any
 
-from .._app import run_sync
-from ..client.client_factory import client_from_env
+from .._app import with_client
 from ..operations.composite import lpar_summary, system_summary
 
 
@@ -30,13 +29,10 @@ def hmc_lpar_summary(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return asdict(
-                await lpar_summary(hmc, system_name_or_uuid, lpar_name_or_uuid)
-            )
+    async def summary(hmc):
+        return asdict(await lpar_summary(hmc, system_name_or_uuid, lpar_name_or_uuid))
 
-    return run_sync(_go)
+    return with_client(summary, profile=profile)
 
 
 @tool(effect="read", operation="system.summary", target_kind="managed_system")
@@ -51,8 +47,7 @@ def hmc_system_summary(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return asdict(await system_summary(hmc, system_name_or_uuid))
+    async def summary(hmc):
+        return asdict(await system_summary(hmc, system_name_or_uuid))
 
-    return run_sync(_go)
+    return with_client(summary, profile=profile)

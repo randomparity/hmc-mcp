@@ -21,6 +21,8 @@ from typing import Any, Literal, TypeVar, overload
 
 from fastmcp import FastMCP
 
+from .client.core import HMCClient
+from .client.client_factory import client_from_env
 from .config import build_config
 from .config import HMCConfig
 from .ssh.selectors import resolve_ssh_names
@@ -187,6 +189,18 @@ def create_mcp(instructions: str = INSTRUCTIONS) -> FastMCP:
 def run_sync(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     """Run a coroutine-returning closure from a sync tool function."""
     return asyncio.run(fn())
+
+
+def with_client(
+    fn: Callable[[HMCClient], Awaitable[_T]], *, profile: str | None = None
+) -> _T:
+    """Run one REST operation with a profile-selected managed client."""
+
+    async def operation() -> _T:
+        async with client_from_env(profile) as hmc:
+            return await fn(hmc)
+
+    return run_sync(operation)
 
 
 def run_limited_collection(
