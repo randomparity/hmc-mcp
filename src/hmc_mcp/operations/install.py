@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
 from dataclasses import dataclass
+from typing import Protocol
 
 # Not `typing.TypedDict`: pydantic refuses one on Python < 3.12, which is inside
 # this package's supported range, and `InstallHandle` is a facade export a
@@ -35,7 +36,14 @@ from ..ssh.install import (
 
 _logger = logging.getLogger(__name__)
 
-_TargetResolver = Callable[..., Awaitable[str]]
+class _TargetResolver(Protocol):
+    def __call__(
+        self,
+        hmc: HMCClient,
+        value: str,
+        *,
+        system_name_or_uuid: str,
+    ) -> Awaitable[str]: ...
 
 
 class InstallHandle(TypedDict):
