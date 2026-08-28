@@ -5,7 +5,11 @@ import pytest
 
 import hmc_mcp.config as config_module
 from hmc_mcp.config import HMCConfig, build_config
-from hmc_mcp.resource_identity import resolve_lpar_uuid, resolve_vios_uuid
+from hmc_mcp.resource_identity import (
+    ResourceNotFoundError,
+    resolve_lpar_uuid,
+    resolve_vios_uuid,
+)
 
 
 @pytest.mark.parametrize(
@@ -80,7 +84,11 @@ async def test_lpar_resolver_preserves_no_match_guidance():
     hmc.find_partition_by_name.return_value = None
 
     with pytest.raises(
-        ValueError,
+        ResourceNotFoundError,
         match="No LPAR named 'missing' found. Use hmc_list_lpars to list available partitions.",
-    ):
+    ) as raised:
         await resolve_lpar_uuid(hmc, "missing")
+
+    assert raised.value.resource_kind == "LPAR"
+    assert raised.value.selector == "missing"
+    assert isinstance(raised.value, ValueError)

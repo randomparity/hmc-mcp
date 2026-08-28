@@ -14,6 +14,7 @@ from ...operations.lpar.core import (
     get_lpar_state,
     list_lpars,
 )
+from ...resource_identity import ResourceNotFoundError
 from ..runtime import _client, _run, _with_client
 from ..output import _first_field, _output, _partition_not_found, _print_json, console
 
@@ -121,10 +122,8 @@ def lpars_state(
         async with _client() as hmc:
             try:
                 return await get_lpar_state(hmc, name_or_uuid)
-            except ValueError as exc:
-                if str(exc).startswith("No LPAR named "):
-                    return None
-                raise
+            except ResourceNotFoundError:
+                return None
 
     state = _run(_go)
 

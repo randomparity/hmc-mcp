@@ -805,6 +805,21 @@ def test_lpars_state_entry_without_uuid_reports_not_found(fake_hmc, monkeypatch)
     assert fake_hmc.calls == [("find_partition_by_name", (LPAR_NAME,), {})]
 
 
+def test_lpars_state_uses_typed_resolver_miss(fake_hmc, monkeypatch):
+    from hmc_mcp.cli_commands.lpar import inventory
+    from hmc_mcp.resource_identity import ResourceNotFoundError
+
+    async def missing_lpar(*_args, **_kwargs):
+        raise ResourceNotFoundError("LPAR", LPAR_NAME, "typed resolver miss")
+
+    monkeypatch.setattr(inventory, "get_lpar_state", missing_lpar)
+
+    result = RUNNER.invoke(cli.app, ["lpars", "state", LPAR_NAME])
+
+    assert result.exit_code == 1
+    assert "not found" in result.stderr
+
+
 def test_lpars_state(fake_hmc):
     result = RUNNER.invoke(cli.app, ["lpars", "state", LPAR_UUID])
 

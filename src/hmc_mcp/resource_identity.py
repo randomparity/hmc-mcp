@@ -15,6 +15,15 @@ _UUID_RE = re.compile(
 )
 
 
+class ResourceNotFoundError(ValueError):
+    """A named resource selector did not resolve to an HMC resource."""
+
+    def __init__(self, resource_kind: str, selector: str, message: str) -> None:
+        super().__init__(message)
+        self.resource_kind = resource_kind
+        self.selector = selector
+
+
 def is_uuid(value: str) -> bool:
     """True if *value* is a canonical 8-4-4-4-12 hex UUID."""
     return _UUID_RE.fullmatch(value) is not None
@@ -64,9 +73,11 @@ async def resolve_lpar_uuid(
         else await hmc.find_partition_by_name(value)
     )
     if not entry or not entry.get("UUID"):
-        raise ValueError(
+        raise ResourceNotFoundError(
+            "LPAR",
+            value,
             f"No LPAR named {value!r} found. "
-            "Use hmc_list_lpars to list available partitions."
+            "Use hmc_list_lpars to list available partitions.",
         )
     return str(entry["UUID"])
 
