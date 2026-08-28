@@ -339,11 +339,11 @@ async def attach_disk_to_lpar(
     step_names = ["create_disk", "vscsi", "storage"]
     if dry_run:
         return AttachDiskResult(
-            False,
-            lpar_uuid,
-            True,
-            tuple(WorkflowStep(name, "dry_run") for name in step_names),
-            (),
+            workflow_completed=False,
+            lpar_uuid=lpar_uuid,
+            dry_run=True,
+            steps=tuple(WorkflowStep(name, "dry_run") for name in step_names),
+            warnings=(),
         )
 
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
@@ -361,7 +361,13 @@ async def attach_disk_to_lpar(
         vios_slot=vios_slot,
         disk_capacity_mib=capacity_mib,
     )
-    return AttachDiskResult(completed, lpar_uuid, False, tuple(steps), ())
+    return AttachDiskResult(
+        workflow_completed=completed,
+        lpar_uuid=lpar_uuid,
+        dry_run=False,
+        steps=tuple(steps),
+        warnings=(),
+    )
 
 
 def _provision_result(
@@ -599,13 +605,13 @@ async def provision_lpar(
 
     if dry_run:
         return ProvisionResult(
-            False,
-            False,
-            None,
-            True,
-            None,
-            tuple(WorkflowStep(n, "dry_run") for n in step_names),
-            (),
+            resource_created=False,
+            workflow_completed=False,
+            lpar_uuid=None,
+            dry_run=True,
+            ownership_stamped=None,
+            steps=tuple(WorkflowStep(n, "dry_run") for n in step_names),
+            warnings=(),
         )
 
     steps: list[WorkflowStep] = []
