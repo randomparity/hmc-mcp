@@ -426,6 +426,7 @@ async def test_storage_mixin_uses_active_base_in_optical_mapping():
     client = StorageHarness()
     system_uuid = "11111111-1111-1111-1111-111111111111"
     client._get.return_value = """<VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <UUID>vios-1</UUID>
       <AssociatedManagedSystem href="https://source.example/rest/api/uom/ManagedSystem/{system_uuid}"/>
       <VirtualSCSIMappings/>
     </VirtualIOServer>""".format(system_uuid=system_uuid)
