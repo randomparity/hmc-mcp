@@ -73,32 +73,59 @@ UPLOAD_CHUNK_SIZE = 64 * 1024
 
 
 async def list_volume_groups(
-    hmc: HMCClient, vios_name_or_uuid: str
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    vios_name_or_uuid: str,
 ) -> list[dict[str, Any]]:
     """List volume groups on a VIOS."""
-    return await hmc.list_volume_groups(await resolve_vios_uuid(hmc, vios_name_or_uuid))
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
+    return await hmc.list_volume_groups(vios_uuid)
 
 
 async def create_volume_group(
-    hmc: HMCClient, vios_name_or_uuid: str, name: str, physical_volumes: list[str]
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    vios_name_or_uuid: str,
+    name: str,
+    physical_volumes: list[str],
 ) -> dict[str, Any] | None:
     """Create a volume group from the selected physical volumes."""
     return await hmc.create_volume_group(
-        await resolve_vios_uuid(hmc, vios_name_or_uuid), name, physical_volumes
+        await resolve_vios_uuid(
+            hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        ),
+        name,
+        physical_volumes,
     )
 
 
 async def create_virtual_disk(
-    hmc: HMCClient, vios_name_or_uuid: str, vg_uuid: str, name: str, size_mib: int
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    vios_name_or_uuid: str,
+    vg_uuid: str,
+    name: str,
+    size_mib: int,
 ) -> dict[str, Any] | None:
     """Create a virtual disk of ``size_mib`` in a volume group."""
     return await hmc.create_virtual_disk(
-        await resolve_vios_uuid(hmc, vios_name_or_uuid), vg_uuid, name, size_mib
+        await resolve_vios_uuid(
+            hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        ),
+        vg_uuid,
+        name,
+        size_mib,
     )
 
 
 async def delete_virtual_disk(
-    hmc: HMCClient, vios_name_or_uuid: str, vg_uuid: str, disk_name: str
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    vios_name_or_uuid: str,
+    vg_uuid: str,
+    disk_name: str,
 ) -> dict[str, Any] | None:
     """Delete a Virtual Disk from a Volume Group.
 
@@ -117,7 +144,9 @@ async def delete_virtual_disk(
     Raises:
         HMCError: If the disk is mapped to an LPAR or deletion fails.
     """
-    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     mappings = await hmc.list_storage_mappings(vios_uuid)
     disk_link = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}/VirtualDisk/{disk_name}"
 
@@ -151,7 +180,9 @@ async def map_storage(
     ownership_override: bool = False,
 ) -> StorageMapResult:
     """Authorize an LPAR and map VIOS storage to it."""
-    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
@@ -165,20 +196,38 @@ async def map_storage(
 
 
 async def create_media_repository(
-    hmc: HMCClient, vios_name_or_uuid: str, vg_uuid: str, size_mib: int
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    vios_name_or_uuid: str,
+    vg_uuid: str,
+    size_mib: int,
 ) -> dict[str, Any] | None:
     """Create a media repository in a VIOS volume group."""
     return await hmc.create_media_repository(
-        await resolve_vios_uuid(hmc, vios_name_or_uuid), vg_uuid, size_mib
+        await resolve_vios_uuid(
+            hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        ),
+        vg_uuid,
+        size_mib,
     )
 
 
 async def create_optical_media(
-    hmc: HMCClient, vios_name_or_uuid: str, vg_uuid: str, name: str, size_mib: int
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    vios_name_or_uuid: str,
+    vg_uuid: str,
+    name: str,
+    size_mib: int,
 ) -> dict[str, Any] | None:
     """Create blank optical media in a VIOS media repository."""
     return await hmc.create_optical_media(
-        await resolve_vios_uuid(hmc, vios_name_or_uuid), vg_uuid, name, size_mib
+        await resolve_vios_uuid(
+            hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        ),
+        vg_uuid,
+        name,
+        size_mib,
     )
 
 
@@ -193,7 +242,9 @@ async def list_storage_mappings(
     Returns mappings with backing storage details and client LPAR information.
     Use lpar to scope mappings to a single partition by name or UUID.
     """
-    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     lpar_uuid = None
     if lpar_name_or_uuid:
         lpar_uuid = await resolve_lpar_uuid(
@@ -214,7 +265,9 @@ async def detach_storage_mapping(
 
     ``mapping_uuid`` is the exact UUID returned by ``list_storage_mappings``.
     """
-    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     mappings = await hmc.list_storage_mappings(vios_uuid)
     mapping = next(
         (item for item in mappings if item.get("UUID") == mapping_uuid), None
@@ -245,7 +298,10 @@ async def detach_storage_mapping(
 
 
 async def delete_media_repository(
-    hmc: HMCClient, vios_name_or_uuid: str, vg_uuid: str
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    vios_name_or_uuid: str,
+    vg_uuid: str,
 ) -> str:
     """Delete the Virtual Media Repository from a Volume Group.
 
@@ -255,7 +311,9 @@ async def delete_media_repository(
     Raises:
         HMCError: If the repository is not empty.
     """
-    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     media = await hmc.list_optical_media(vios_uuid, vg_uuid)
     if media:
         names = ", ".join(m.get("MediaName", "unknown") for m in media)
@@ -268,7 +326,11 @@ async def delete_media_repository(
 
 
 async def delete_optical_media(
-    hmc: HMCClient, vios_name_or_uuid: str, vg_uuid: str, media_name: str
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    vios_name_or_uuid: str,
+    vg_uuid: str,
+    media_name: str,
 ) -> dict[str, Any] | None:
     """Delete a VirtualOpticalMedia (ISO image) from the media repository.
 
@@ -278,7 +340,9 @@ async def delete_optical_media(
     Raises:
         HMCError: If the media is referenced by any optical mapping.
     """
-    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
 
     # Exhaustively check optical mappings for references to this media
     optical_mappings = await hmc.list_optical_mappings(vios_uuid)
@@ -303,7 +367,10 @@ async def delete_optical_media(
 
 
 async def get_media_repository(
-    hmc: HMCClient, vios_name_or_uuid: str, vg_uuid: str
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    vios_name_or_uuid: str,
+    vg_uuid: str,
 ) -> dict[str, Any] | None:
     """Get the Virtual Media Repository (VMLibrary) from a Volume Group.
 
@@ -311,7 +378,10 @@ async def get_media_repository(
     embedded VirtualOpticalMedia entries if present.
     """
     return await hmc.get_media_repository(
-        await resolve_vios_uuid(hmc, vios_name_or_uuid), vg_uuid
+        await resolve_vios_uuid(
+            hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        ),
+        vg_uuid,
     )
 
 
@@ -506,7 +576,10 @@ async def _aiter_file_chunks(
 
 
 async def list_optical_media(
-    hmc: HMCClient, vios_name_or_uuid: str, vg_uuid: str
+    hmc: HMCClient,
+    system_name_or_uuid: str | None,
+    vios_name_or_uuid: str,
+    vg_uuid: str,
 ) -> list[dict[str, Any]]:
     """List Virtual Optical Media in the Virtual Media Repository.
 
@@ -515,7 +588,10 @@ async def list_optical_media(
     (VMLibrary on the specified Volume Group).
     """
     return await hmc.list_optical_media(
-        await resolve_vios_uuid(hmc, vios_name_or_uuid), vg_uuid
+        await resolve_vios_uuid(
+            hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        ),
+        vg_uuid,
     )
 
 
@@ -555,6 +631,7 @@ async def _upload_iso_via_broker(
 
 async def upload_iso(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     media_name: str,
@@ -600,7 +677,9 @@ async def upload_iso(
     iso_url = _require_allowlisted_iso_url(
         _require_http_url(iso_source), hmc.config.iso_url_allowlist_entries
     )
-    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
 
     _HMC_FILENAME_RE = re.compile(r"^[A-Za-z0-9_.]{1,79}$")
     if not _HMC_FILENAME_RE.match(media_name):
@@ -728,7 +807,9 @@ async def list_optical_mappings(
     details and client LPAR information. Use lpar to scope mappings to a single partition
     by name or UUID.
     """
-    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     lpar_uuid = None
     if lpar_name_or_uuid:
         lpar_uuid = await resolve_lpar_uuid(
@@ -753,7 +834,9 @@ async def mount_optical_media(
     to a client LPAR. The media_name must exist in the VIOS media repository.
     target_device optionally pins the vtscsi name. Returns the created mapping resource.
     """
-    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
@@ -803,7 +886,9 @@ async def unmount_optical_media(
     snapshot, so another writer's change in that window is lost; ADR 0079 puts
     the duty to serialize concurrent VIOS mapping changes on the caller.
     """
-    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,

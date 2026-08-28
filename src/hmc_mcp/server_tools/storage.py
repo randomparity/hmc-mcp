@@ -59,6 +59,7 @@ def hmc_list_volume_groups(
     vios_name_or_uuid: str,
     profile: str | None = None,
     limit: int | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List Volume Groups on a VIOS.
 
@@ -67,6 +68,7 @@ def hmc_list_volume_groups(
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        system_name_or_uuid: Optional managed system that scopes a VIOS name.
         profile: TOML profile name, or the environment-default HMC when omitted.
         limit: Maximum entries returned after the complete HMC feed is transferred
             and parsed; omitted returns all entries. This client-side cap does not
@@ -75,7 +77,7 @@ def hmc_list_volume_groups(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await list_volume_groups(hmc, vios_name_or_uuid)
+            return await list_volume_groups(hmc, system_name_or_uuid, vios_name_or_uuid)
 
     return run_limited_collection(_go, limit)
 
@@ -86,6 +88,7 @@ def hmc_create_volume_group(
     name: str,
     physical_volumes: list[str],
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> StorageMapResult:
     """Create a Volume Group on a VIOS from one or more physical volumes.
 
@@ -95,6 +98,7 @@ def hmc_create_volume_group(
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        system_name_or_uuid: Optional managed system that scopes a VIOS name.
         name: New volume-group name.
         physical_volumes: One or more unused VIOS physical-volume device names.
         profile: TOML profile name, or the environment-default HMC when omitted.
@@ -103,7 +107,7 @@ def hmc_create_volume_group(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await create_volume_group(
-                hmc, vios_name_or_uuid, name, physical_volumes
+                hmc, system_name_or_uuid, vios_name_or_uuid, name, physical_volumes
             )
 
     return run_sync(_go)
@@ -178,6 +182,7 @@ def hmc_create_virtual_disk(
     disk_name: str,
     capacity_mib: int,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a Virtual Disk (logical volume) inside a Volume Group.
 
@@ -187,6 +192,7 @@ def hmc_create_virtual_disk(
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        system_name_or_uuid: Optional managed system that scopes a VIOS name.
         vg_uuid: Volume-group UUID from ``hmc_list_volume_groups``.
         disk_name: Name for the new virtual disk.
         capacity_mib: New disk capacity in mebibytes.
@@ -196,7 +202,12 @@ def hmc_create_virtual_disk(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await create_virtual_disk(
-                hmc, vios_name_or_uuid, vg_uuid, disk_name, capacity_mib
+                hmc,
+                system_name_or_uuid,
+                vios_name_or_uuid,
+                vg_uuid,
+                disk_name,
+                capacity_mib,
             )
 
     return run_sync(_go)
@@ -208,6 +219,7 @@ def hmc_delete_virtual_disk(
     vg_uuid: str,
     disk_name: str,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Delete a Virtual Disk from a Volume Group.
 
@@ -216,6 +228,7 @@ def hmc_delete_virtual_disk(
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        system_name_or_uuid: Optional managed system that scopes a VIOS name.
         vg_uuid: Volume-group UUID from ``hmc_list_volume_groups``.
         disk_name: Name of the Virtual Disk to delete.
         profile: TOML profile name, or the environment-default HMC when omitted.
@@ -223,7 +236,9 @@ def hmc_delete_virtual_disk(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await delete_virtual_disk(hmc, vios_name_or_uuid, vg_uuid, disk_name)
+            return await delete_virtual_disk(
+                hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid, disk_name
+            )
 
     return run_sync(_go)
 
@@ -279,7 +294,11 @@ def hmc_map_storage_to_lpar(
 
 @tool(effect="mutate", operation="media.create_repository", target_kind="vios")
 def hmc_create_media_repository(
-    vios_name_or_uuid: str, vg_uuid: str, size_mib: int, profile: str | None = None
+    vios_name_or_uuid: str,
+    vg_uuid: str,
+    size_mib: int,
+    profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create the Virtual Media Repository (named VMLibrary) on a Volume Group.
 
@@ -288,6 +307,7 @@ def hmc_create_media_repository(
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        system_name_or_uuid: Optional managed system that scopes a VIOS name.
         vg_uuid: Volume-group UUID from ``hmc_list_volume_groups``.
         size_mib: Repository capacity in mebibytes.
         profile: TOML profile name, or the environment-default HMC when omitted.
@@ -296,7 +316,7 @@ def hmc_create_media_repository(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await create_media_repository(
-                hmc, vios_name_or_uuid, vg_uuid, size_mib
+                hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid, size_mib
             )
 
     return run_sync(_go)
@@ -309,6 +329,7 @@ def hmc_create_optical_media(
     media_name: str,
     size_mib: int,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a blank VirtualOpticalMedia (ISO container) in the media repository.
 
@@ -317,6 +338,7 @@ def hmc_create_optical_media(
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        system_name_or_uuid: Optional managed system that scopes a VIOS name.
         vg_uuid: Volume-group UUID containing the media repository.
         media_name: ISO container file name, such as ``aix.iso``.
         size_mib: Blank media capacity in mebibytes.
@@ -326,7 +348,12 @@ def hmc_create_optical_media(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await create_optical_media(
-                hmc, vios_name_or_uuid, vg_uuid, media_name, size_mib
+                hmc,
+                system_name_or_uuid,
+                vios_name_or_uuid,
+                vg_uuid,
+                media_name,
+                size_mib,
             )
 
     return run_sync(_go)
@@ -334,7 +361,10 @@ def hmc_create_optical_media(
 
 @tool(effect="destructive", operation="media.delete_repository", target_kind="vios")
 def hmc_delete_media_repository(
-    vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None
+    vios_name_or_uuid: str,
+    vg_uuid: str,
+    profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> str:
     """Delete the Virtual Media Repository from a Volume Group.
 
@@ -343,13 +373,16 @@ def hmc_delete_media_repository(
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        system_name_or_uuid: Optional managed system that scopes a VIOS name.
         vg_uuid: Volume-group UUID containing the repository.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            await delete_media_repository(hmc, vios_name_or_uuid, vg_uuid)
+            await delete_media_repository(
+                hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid
+            )
         return f"Deleted media repository from VolumeGroup {vg_uuid}"
 
     return run_sync(_go)
@@ -361,6 +394,7 @@ def hmc_delete_optical_media(
     vg_uuid: str,
     media_name: str,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> str:
     """Delete a VirtualOpticalMedia (ISO image) from the media repository.
 
@@ -369,6 +403,7 @@ def hmc_delete_optical_media(
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        system_name_or_uuid: Optional managed system that scopes a VIOS name.
         vg_uuid: Volume-group UUID containing the repository.
         media_name: Name of the ISO image to delete.
         profile: TOML profile name, or the environment-default HMC when omitted.
@@ -376,7 +411,9 @@ def hmc_delete_optical_media(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            await delete_optical_media(hmc, vios_name_or_uuid, vg_uuid, media_name)
+            await delete_optical_media(
+                hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid, media_name
+            )
         return f"Deleted optical media '{media_name}' from VolumeGroup {vg_uuid}"
 
     return run_sync(_go)
@@ -384,7 +421,10 @@ def hmc_delete_optical_media(
 
 @tool(effect="read", operation="media.get_repository", target_kind="vios")
 def hmc_get_media_repository(
-    vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None
+    vios_name_or_uuid: str,
+    vg_uuid: str,
+    profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Get the Virtual Media Repository (VMLibrary) from a Volume Group.
 
@@ -393,20 +433,26 @@ def hmc_get_media_repository(
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        system_name_or_uuid: Optional managed system that scopes a VIOS name.
         vg_uuid: Volume-group UUID containing the repository.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await get_media_repository(hmc, vios_name_or_uuid, vg_uuid)
+            return await get_media_repository(
+                hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid
+            )
 
     return run_sync(_go)
 
 
 @tool(effect="read", operation="media.list", target_kind="vios")
 def hmc_list_optical_media(
-    vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None
+    vios_name_or_uuid: str,
+    vg_uuid: str,
+    profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List Virtual Optical Media in the Virtual Media Repository.
 
@@ -416,13 +462,16 @@ def hmc_list_optical_media(
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        system_name_or_uuid: Optional managed system that scopes a VIOS name.
         vg_uuid: Volume-group UUID containing the repository.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await list_optical_media(hmc, vios_name_or_uuid, vg_uuid)
+            return await list_optical_media(
+                hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid
+            )
 
     return run_sync(_go)
 
@@ -659,6 +708,7 @@ def hmc_upload_iso(
     media_name: str,  # Target name for the ISO in the repository
     iso_source: str,  # http(s) URL to download the ISO from
     profile: str | None = None,  # HMC profile name (uses default if omitted)
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
     """Upload an ISO to a VIOS media repository via the HMC file broker.
 
@@ -672,6 +722,7 @@ def hmc_upload_iso(
 
     Args:
         vios_name_or_uuid: VIOS name or UUID to target.
+        system_name_or_uuid: Optional managed system that scopes a VIOS name.
         vg_uuid: Volume Group UUID containing the media repository.
         media_name: Target name for the ISO in the repository.
         iso_source: http(s) URL to download the ISO from, served by a host on
@@ -694,7 +745,12 @@ def hmc_upload_iso(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await upload_iso(
-                hmc, vios_name_or_uuid, vg_uuid, media_name, iso_source
+                hmc,
+                system_name_or_uuid,
+                vios_name_or_uuid,
+                vg_uuid,
+                media_name,
+                iso_source,
             )
 
     return run_sync(_go)

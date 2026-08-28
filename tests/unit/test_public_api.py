@@ -128,11 +128,11 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "InstallHandle",
         "InstallRequest",
         "assess_post_activation_affinity",
-            "authorize_decommission_lpar_ownership_snapshot",
-            "authorize_lpar_mutation",
-            "resolve_and_authorize_lpar_mutation",
-            "resolve_and_authorize_lpar_names",
-            "resolve_lpar_ownership_names",
+        "authorize_decommission_lpar_ownership_snapshot",
+        "authorize_lpar_mutation",
+        "resolve_and_authorize_lpar_mutation",
+        "resolve_and_authorize_lpar_names",
+        "resolve_lpar_ownership_names",
         "list_lpar_ownership",
         "stamp_created_lpar_ownership",
         "create_and_stamp_lpar",
@@ -259,10 +259,10 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "get_shared_storage_pool",
         "create_volume_group",
         "create_virtual_disk",
-            "delete_virtual_disk",
-            "map_storage",
-            "StorageMapResult",
-            "upload_iso",
+        "delete_virtual_disk",
+        "map_storage",
+        "StorageMapResult",
+        "upload_iso",
         "create_media_repository",
         "create_optical_media",
         "delete_media_repository",
@@ -278,19 +278,19 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "delete_logical_unit",
         "StorageKind",
         "LuType",
-            "DeviceType",
-            "AuthenticationType",
-            "CreateUserRequest",
-            "ModifyUserPatch",
-            "configure_remote_access",
+        "DeviceType",
+        "AuthenticationType",
+        "CreateUserRequest",
+        "ModifyUserPatch",
+        "configure_remote_access",
         "create_user",
         "delete_user",
         "modify_user",
-            "modify_system",
-            "ManagedSystemState",
-            "get_system",
-            "list_systems",
-            "power_system",
+        "modify_system",
+        "ManagedSystemState",
+        "get_system",
+        "list_systems",
+        "power_system",
         "list_partition_templates",
         "get_partition_template",
         "deploy_partition_template",
@@ -1873,9 +1873,10 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         "plan_resource_group_memopt_scores",
         "plan_system_memopt_score",
     ):
-        assert "system_name_or_uuid" in inspect.signature(
-            getattr(api, operation_name)
-        ).parameters
+        assert (
+            "system_name_or_uuid"
+            in inspect.signature(getattr(api, operation_name)).parameters
+        )
     vios_install_parameters = inspect.signature(api.install_vios).parameters
     assert [
         name
@@ -1892,6 +1893,23 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         "power_vios",
         "update_vios",
         "upgrade_vios",
+        "list_volume_groups",
+        "create_volume_group",
+        "create_virtual_disk",
+        "delete_virtual_disk",
+        "map_storage",
+        "create_media_repository",
+        "create_optical_media",
+        "list_storage_mappings",
+        "detach_storage_mapping",
+        "delete_media_repository",
+        "delete_optical_media",
+        "get_media_repository",
+        "list_optical_media",
+        "upload_iso",
+        "list_optical_mappings",
+        "mount_optical_media",
+        "unmount_optical_media",
     ):
         parameters = inspect.signature(getattr(api, operation_name)).parameters
         selector_names = [
@@ -1914,8 +1932,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     unassign_parameters = inspect.signature(api.unassign_sriov_logical_port).parameters
     assert unassign_parameters["profile_name"].kind is inspect.Parameter.KEYWORD_ONLY
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-        # Moved when AssignmentStep became the shared WorkflowStep contract.
-        # Before that, provision_lpar made its workflow controls keyword-only.
+    # Moved when AssignmentStep became the shared WorkflowStep contract.
+    # Before that, provision_lpar made its workflow controls keyword-only.
     # Before that, update_console_software dropped the permanently refused
     # ``kind`` selector, and install_vios adopted
     # system-before-partition selector order,
@@ -1947,7 +1965,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Boot-order operations now accept a system-scoped LPAR name or UUID.
     # PCIe inventory operations now name their system selector explicitly.
     # Cluster and shared-storage-pool inventory joined the reusable facade.
-    expected_digest = "d8168d002c73850999ffae2250878cfbd03d61495b5336a5932a875f58101392"  # pragma: allowlist secret
+    # VIOS storage operations now accept managed-system scope before the
+    # VIOS selector, making duplicate names unambiguous.
+    expected_digest = "b7c7cb4eab12f56d445513ab3bb54bfcb88dd312c6324f7043341bb66eb1c54b"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

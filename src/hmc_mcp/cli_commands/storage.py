@@ -35,11 +35,14 @@ from .output import _first_field, _output, _print_json, _usage_error, console
 
 def storage_list_vgs(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List Volume Groups on a VIOS (free space, PVs, virtual disks)."""
 
-    vgs = _with_client(lambda hmc: list_volume_groups(hmc, vios))
+    vgs = _with_client(lambda hmc: list_volume_groups(hmc, system, vios))
 
     table = None
     if not as_json:
@@ -63,6 +66,9 @@ def storage_create_vg(
         ..., "--pvs", help="Comma-separated physical volumes, e.g. hdisk10,hdisk11"
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Create a Volume Group on a VIOS from physical volumes."""
     pv_list = [p.strip() for p in pvs.split(",") if p.strip()]
@@ -73,7 +79,7 @@ def storage_create_vg(
     ):
         raise typer.Abort()
 
-    vg = _with_client(lambda hmc: create_volume_group(hmc, vios, name, pv_list))
+    vg = _with_client(lambda hmc: create_volume_group(hmc, system, vios, name, pv_list))
 
     console.print(f"[green]Created Volume Group '{name}'[/green]")
     _print_json(vg)
@@ -87,6 +93,9 @@ def storage_create_disk(
         ..., "--capacity-mib", help="Virtual disk capacity in MiB"
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Create a Virtual Disk (logical volume) in a Volume Group."""
     if not yes and not typer.confirm(
@@ -95,7 +104,7 @@ def storage_create_disk(
         raise typer.Abort()
 
     disk = _with_client(
-        lambda hmc: create_virtual_disk(hmc, vios, vg, name, capacity_mib)
+        lambda hmc: create_virtual_disk(hmc, system, vios, vg, name, capacity_mib)
     )
 
     console.print(f"[green]Created virtual disk '{name}' ({capacity_mib} MiB)[/green]")
@@ -107,6 +116,9 @@ def storage_delete_disk(
     vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Virtual disk name"),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Delete a Virtual Disk from a Volume Group.
 
@@ -115,7 +127,7 @@ def storage_delete_disk(
     if not yes and not typer.confirm(f"Delete virtual disk '{name}' from VG {vg}?"):
         raise typer.Abort()
 
-    disk = _with_client(lambda hmc: delete_virtual_disk(hmc, vios, vg, name))
+    disk = _with_client(lambda hmc: delete_virtual_disk(hmc, system, vios, vg, name))
 
     console.print(f"[green]Deleted virtual disk '{name}'[/green]")
     _print_json(disk)
@@ -198,6 +210,9 @@ def storage_map(
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Map backing storage to an LPAR via a vSCSI mapping on a VIOS."""
     if not yes and not typer.confirm(
@@ -209,7 +224,7 @@ def storage_map(
         async with _client() as hmc:
             return await map_storage(
                 hmc,
-                None,
+                system,
                 vios,
                 lpar,
                 kind=kind,
@@ -229,6 +244,9 @@ def storage_create_media_repo(
     vg: str = typer.Argument(..., help="Volume Group UUID"),
     size_mib: int = typer.Option(..., "--size-mib", help="Repository size in MiB"),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Create the Virtual Media Repository (VMLibrary) on a volume group."""
     if not yes and not typer.confirm(
@@ -236,7 +254,9 @@ def storage_create_media_repo(
     ):
         raise typer.Abort()
 
-    result = _with_client(lambda hmc: create_media_repository(hmc, vios, vg, size_mib))
+    result = _with_client(
+        lambda hmc: create_media_repository(hmc, system, vios, vg, size_mib)
+    )
 
     console.print(f"[green]Created media repository on {vg}[/green]")
     _print_json(result)
@@ -250,6 +270,9 @@ def storage_create_media(
     ),
     size_mib: int = typer.Option(..., "--size-mib", help="Media size in MiB"),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Create a blank optical media (ISO container) in the media repository."""
     if not yes and not typer.confirm(
@@ -258,7 +281,7 @@ def storage_create_media(
         raise typer.Abort()
 
     result = _with_client(
-        lambda hmc: create_optical_media(hmc, vios, vg, name, size_mib)
+        lambda hmc: create_optical_media(hmc, system, vios, vg, name, size_mib)
     )
 
     console.print(f"[green]Created media '{name}' on {vg}[/green]")
@@ -269,6 +292,9 @@ def storage_delete_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Delete the Virtual Media Repository from a volume group."""
     if not yes and not typer.confirm(
@@ -276,7 +302,7 @@ def storage_delete_media_repo(
     ):
         raise typer.Abort()
 
-    _with_client(lambda hmc: delete_media_repository(hmc, vios, vg))
+    _with_client(lambda hmc: delete_media_repository(hmc, system, vios, vg))
     console.print(f"[green]Deleted media repository on {vg}[/green]")
 
 
@@ -285,6 +311,9 @@ def storage_delete_media(
     vg: str = typer.Argument(..., help="Volume Group UUID"),
     media_name: str = typer.Argument(..., help="ISO image name to delete"),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Delete an ISO image from the media repository."""
     if not yes and not typer.confirm(
@@ -292,7 +321,7 @@ def storage_delete_media(
     ):
         raise typer.Abort()
 
-    _with_client(lambda hmc: delete_optical_media(hmc, vios, vg, media_name))
+    _with_client(lambda hmc: delete_optical_media(hmc, system, vios, vg, media_name))
     console.print(f"[green]Deleted media '{media_name}' on {vg}[/green]")
 
 
@@ -300,9 +329,12 @@ def storage_get_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
     as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Get the Virtual Media Repository (VMLibrary) from a volume group."""
-    result = _with_client(lambda hmc: get_media_repository(hmc, vios, vg))
+    result = _with_client(lambda hmc: get_media_repository(hmc, system, vios, vg))
 
     if as_json:
         _print_json(result)
@@ -321,9 +353,12 @@ def storage_list_optical_media(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
     as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """List Virtual Optical Media in the Virtual Media Repository."""
-    media_list = _with_client(lambda hmc: list_optical_media(hmc, vios, vg))
+    media_list = _with_client(lambda hmc: list_optical_media(hmc, system, vios, vg))
 
     if as_json:
         _print_json(media_list)
@@ -352,13 +387,16 @@ def storage_list_mappings(
         None, "--lpar", help="Scope to single LPAR by name or UUID"
     ),
     as_json: bool = typer.Option(False, "--json", "-j", help="Output as raw JSON"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """List VirtualSCSIMappings on a VIOS (optionally scoped to an LPAR)."""
 
     async def _go() -> list[dict[str, Any]]:
         config = load_profile()
         async with HMCClient(config) as hmc:
-            return await list_storage_mappings(hmc, None, vios, lpar)
+            return await list_storage_mappings(hmc, system, vios, lpar)
 
     mappings = _run(_go)
     if as_json:
@@ -441,6 +479,9 @@ def storage_upload_iso(
         "HMC_ISO_URL_ALLOWLIST",
     ),
     as_json: bool = typer.Option(False, "--json", "-j", help="Output as raw JSON"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Upload an ISO to a VIOS media repository via the HMC file broker.
 
@@ -454,7 +495,7 @@ def storage_upload_iso(
     async def _go() -> dict[str, Any]:
         config = load_profile()
         async with HMCClient(config) as hmc:
-            return await upload_iso(hmc, vios, vg, media_name, iso_source)
+            return await upload_iso(hmc, system, vios, vg, media_name, iso_source)
 
     result = _run(_go)
 

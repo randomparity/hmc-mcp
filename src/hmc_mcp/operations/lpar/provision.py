@@ -234,6 +234,7 @@ async def _create_disk(
     assert storage.vg_uuid is not None
     await create_virtual_disk(
         hmc,
+        None,
         storage.vios_uuid,
         storage.vg_uuid,
         storage.storage_name,

@@ -29,7 +29,6 @@ from hmc_mcp.server import TOOL_SECURITY, create_mcp
 mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))
 
 
-
 README = Path(__file__).parents[2] / "README.md"
 COLLECTION_LIMIT_HEADING = "### Collection limits"
 COLLECTION_LIMIT_NEXT = "### Public parameter units and selectors"
@@ -61,7 +60,13 @@ COLLECTION_TOOLS = {
     "hmc_list_adapters": (
         server_adapters,
         ("lpar-1",),
-        ["lpar_name_or_uuid", "adapter_type", "profile", "limit", "system_name_or_uuid"],
+        [
+            "lpar_name_or_uuid",
+            "adapter_type",
+            "profile",
+            "limit",
+            "system_name_or_uuid",
+        ],
     ),
     "hmc_list_virtual_switches": (
         server_network,
@@ -81,7 +86,7 @@ COLLECTION_TOOLS = {
     "hmc_list_volume_groups": (
         server_storage,
         ("vios-1",),
-        ["vios_name_or_uuid", "profile", "limit"],
+        ["vios_name_or_uuid", "profile", "limit", "system_name_or_uuid"],
     ),
     "hmc_list_clusters": (server_storage, (), ["profile", "limit"]),
     "hmc_list_shared_storage_pools": (
@@ -145,7 +150,9 @@ def test_collection_tools_delegate_limit_to_shared_helper(tool_name, entry, limi
     module, args, _expected_parameters = entry
     function = getattr(module, tool_name)
 
-    with patch.object(module, "run_limited_collection", return_value=[{"id": 1}]) as run:
+    with patch.object(
+        module, "run_limited_collection", return_value=[{"id": 1}]
+    ) as run:
         result = function(*args, limit=limit)
 
     assert result == [{"id": 1}]
@@ -173,9 +180,9 @@ def test_limit_is_not_sent_on_root_child_search_or_job_requests(monkeypatch, moc
             ),
         ),
         (
-            mock_hmc.get(
-                "/rest/api/uom/ManagedSystem/search/(State==operating)"
-            ).mock(return_value=httpx.Response(200, text=EMPTY_FEED)),
+            mock_hmc.get("/rest/api/uom/ManagedSystem/search/(State==operating)").mock(
+                return_value=httpx.Response(200, text=EMPTY_FEED)
+            ),
             lambda: server_systems.hmc_list_systems(state="operating", limit=1),
         ),
         (
@@ -281,10 +288,7 @@ def _collection_limit_section(readme: str) -> str:
         assert heading in readme, f"README has no '{heading}' heading"
     assert readme.index(COLLECTION_LIMIT_HEADING) < readme.index(
         COLLECTION_LIMIT_NEXT
-    ), (
-        f"README must keep '{COLLECTION_LIMIT_HEADING}' before "
-        f"'{COLLECTION_LIMIT_NEXT}'"
-    )
+    ), f"README must keep '{COLLECTION_LIMIT_HEADING}' before '{COLLECTION_LIMIT_NEXT}'"
     return readme.split(COLLECTION_LIMIT_HEADING, 1)[1].split(COLLECTION_LIMIT_NEXT, 1)[
         0
     ]
@@ -302,9 +306,7 @@ def test_readme_discloses_collection_limit_costs():
     section = _collection_limit_section(README.read_text(encoding="utf-8"))
 
     for claim in COLLECTION_LIMIT_CLAIMS:
-        assert claim in section, (
-            f"'{COLLECTION_LIMIT_HEADING}' must state {claim!r}"
-        )
+        assert claim in section, f"'{COLLECTION_LIMIT_HEADING}' must state {claim!r}"
 
 
 def test_collection_limit_disclosure_relocated_out_of_its_section_is_caught():

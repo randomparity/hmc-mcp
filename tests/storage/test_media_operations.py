@@ -66,7 +66,7 @@ async def test_get_media_repository_operation(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_WITH_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        result = await get_media_repository(hmc, VIOS_UUID, VG_UUID)
+        result = await get_media_repository(hmc, None, VIOS_UUID, VG_UUID)
 
     assert route.called
     assert result is not None
@@ -103,7 +103,7 @@ async def test_list_optical_media_operation(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=vg_entry_with_media))
 
     async with HMCClient(make_config()) as hmc:
-        media_list = await list_optical_media(hmc, VIOS_UUID, VG_UUID)
+        media_list = await list_optical_media(hmc, None, VIOS_UUID, VG_UUID)
 
     assert route.called
     assert len(media_list) == 1
@@ -118,7 +118,7 @@ async def test_get_media_repository_none_propagates(mock_hmc):
     ).mock(return_value=httpx.Response(404, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        result = await get_media_repository(hmc, VIOS_UUID, "missing-vg")
+        result = await get_media_repository(hmc, None, VIOS_UUID, "missing-vg")
 
     assert route.called
     assert result is None
@@ -132,7 +132,7 @@ async def test_list_optical_media_empty_propagates(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_EMPTY))
 
     async with HMCClient(make_config()) as hmc:
-        media_list = await list_optical_media(hmc, VIOS_UUID, VG_UUID)
+        media_list = await list_optical_media(hmc, None, VIOS_UUID, VG_UUID)
 
     assert route.called
     assert media_list == []

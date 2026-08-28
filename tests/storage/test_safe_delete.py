@@ -156,7 +156,7 @@ async def test_delete_media_repository_refuses_nonempty(mock_hmc):
     config = make_config()
     async with HMCClient(config) as hmc:
         with pytest.raises(HMCError, match="contains 1 image"):
-            await delete_media_repository(hmc, VIOS_UUID, VG_UUID)
+            await delete_media_repository(hmc, None, VIOS_UUID, VG_UUID)
 
 
 @pytest.mark.asyncio
@@ -171,7 +171,7 @@ async def test_delete_media_repository_succeeds_when_empty(mock_hmc):
 
     config = make_config()
     async with HMCClient(config) as hmc:
-        result = await delete_media_repository(hmc, VIOS_UUID, VG_UUID)
+        result = await delete_media_repository(hmc, None, VIOS_UUID, VG_UUID)
 
     assert result == VIOS_UUID
 
@@ -186,7 +186,7 @@ async def test_delete_optical_media_refuses_when_mounted(mock_hmc):
     config = make_config()
     async with HMCClient(config) as hmc:
         with pytest.raises(HMCError, match="mounted on 1 LPAR"):
-            await delete_optical_media(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME)
+            await delete_optical_media(hmc, None, VIOS_UUID, VG_UUID, MEDIA_NAME)
 
 
 @pytest.mark.asyncio
@@ -210,7 +210,7 @@ async def test_delete_optical_media_succeeds_when_unmounted(mock_hmc):
 
     config = make_config()
     async with HMCClient(config) as hmc:
-        result = await delete_optical_media(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME)
+        result = await delete_optical_media(hmc, None, VIOS_UUID, VG_UUID, MEDIA_NAME)
 
     assert result is not None
 
@@ -235,7 +235,7 @@ async def test_delete_virtual_disk_refusal_is_repr_quoted(mock_hmc):
     async with HMCClient(config) as hmc:
         hmc.list_storage_mappings = AsyncMock(return_value=[mapping])
         with pytest.raises(HMCError) as exc_info:
-            await delete_virtual_disk(hmc, VIOS_UUID, VG_UUID, disk_name)
+            await delete_virtual_disk(hmc, None, VIOS_UUID, VG_UUID, disk_name)
 
     message = str(exc_info.value)
     assert repr(disk_name) in message
@@ -252,7 +252,7 @@ async def test_delete_media_repository_refusal_is_repr_quoted(mock_hmc):
     config = make_config()
     async with HMCClient(config) as hmc:
         with pytest.raises(HMCError) as exc_info:
-            await delete_media_repository(hmc, VIOS_UUID, VG_UUID)
+            await delete_media_repository(hmc, None, VIOS_UUID, VG_UUID)
 
     message = str(exc_info.value)
     hostile_names = "evil\nimage\t.iso"
@@ -273,7 +273,7 @@ async def test_delete_optical_media_refusal_is_repr_quoted(mock_hmc):
     config = make_config()
     async with HMCClient(config) as hmc:
         with pytest.raises(HMCError) as exc_info:
-            await delete_optical_media(hmc, VIOS_UUID, VG_UUID, media_name)
+            await delete_optical_media(hmc, None, VIOS_UUID, VG_UUID, media_name)
 
     message = str(exc_info.value)
     assert repr(media_name) in message
