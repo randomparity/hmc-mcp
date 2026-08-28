@@ -480,6 +480,75 @@ def _failed_provision_result(
     return _provision_result(creation, created_uuid, steps, False)
 
 
+async def _preflight_provision_request(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    name: str,
+    network: ProvisionNetwork,
+    storage: ProvisionStorage,
+    assignments: LparPcieAssignments,
+    caller_token: str | None,
+    minimum_affinity_policy: MinimumAffinityPolicy | None,
+    affinity_assessment: ProvisionAffinityAssessment | None,
+) -> None:
+    """Validate a provisioning request and every external dependency it names."""
+    if affinity_assessment is not None:
+        if (
+            affinity_assessment.system_name_or_uuid != system_name_or_uuid
+            or affinity_assessment.lpar_name != name
+        ):
+            raise ValueError(
+                "affinity assessment identities must match the provisioned system and LPAR"
+            )
+        if affinity_assessment.response not in {"warn", "fail"}:
+            raise ValueError("affinity assessment response must be warn or fail")
+        if affinity_assessment.timeout_seconds < 0:
+            raise ValueError("affinity assessment timeout_seconds must be non-negative")
+        if affinity_assessment.poll_interval <= 0:
+            raise ValueError("affinity assessment poll_interval must be positive")
+    if minimum_affinity_policy is not None:
+        validate_minimum_affinity_policy(minimum_affinity_policy)
+    if affinity_assessment is not None:
+        configured_minimum = (
+            minimum_affinity_policy.min_affinity_score
+            if minimum_affinity_policy is not None
+            else None
+        )
+        validate_affinity_request(affinity_assessment, configured_minimum)
+    if caller_token is not None:
+        validate_caller_token(caller_token)
+
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    if minimum_affinity_policy is not None:
+        system_name, _ = await resolve_ssh_names(hmc.config, system_name_or_uuid, None)
+        assert system_name is not None
+        await require_minimum_affinity_policy_capability(hmc.config, system_name)
+    await _check_name_unique(hmc, name)
+    await _check_vlan_exists(hmc, system_uuid, network.port_vlan_id)
+    if storage.vg_uuid is not None:
+        await _check_vg_exists(hmc, storage.vios_uuid, storage.vg_uuid)
+    await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
+
+
+def _provision_step_names(
+    assignments: LparPcieAssignments,
+    *,
+    minimum_affinity_policy: MinimumAffinityPolicy | None,
+    power_on: bool,
+    affinity_assessment: ProvisionAffinityAssessment | None,
+) -> list[str]:
+    """Return the ordered workflow-step names for one provision request."""
+    names = ["create"]
+    if minimum_affinity_policy is not None:
+        names.append("minimum_affinity_policy")
+    names.extend(["network", "vscsi", "storage", *assignment_step_names(assignments)])
+    if power_on:
+        names.append("power_on")
+    if affinity_assessment is not None:
+        names.append("affinity_assessment")
+    return names
+
+
 async def provision_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str,
@@ -509,57 +578,23 @@ async def provision_lpar(
     the ownership stamp, so the result describes both values as one write.
     """
 
-    if affinity_assessment is not None:
-        if (
-            affinity_assessment.system_name_or_uuid != system_name_or_uuid
-            or affinity_assessment.lpar_name != name
-        ):
-            raise ValueError(
-                "affinity assessment identities must match the provisioned system and LPAR"
-            )
-        if affinity_assessment.response not in {"warn", "fail"}:
-            raise ValueError("affinity assessment response must be warn or fail")
-        if affinity_assessment.timeout_seconds < 0:
-            raise ValueError("affinity assessment timeout_seconds must be non-negative")
-        if affinity_assessment.poll_interval <= 0:
-            raise ValueError("affinity assessment poll_interval must be positive")
-    if minimum_affinity_policy is not None:
-        validate_minimum_affinity_policy(minimum_affinity_policy)
-    if affinity_assessment is not None:
-        configured_minimum = (
-            minimum_affinity_policy.min_affinity_score
-            if minimum_affinity_policy is not None
-            else None
-        )
-        validate_affinity_request(affinity_assessment, configured_minimum)
-    if caller_token is not None:
-        # First statement, before any HMC round trip: the public operation is
-        # reachable directly (api.__all__) without the MCP tool's entry check,
-        # and a malformed token must fail identically there (ADR 0064).
-        validate_caller_token(caller_token)
-
-    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    if minimum_affinity_policy is not None:
-        system_name, _ = await resolve_ssh_names(hmc.config, system_name_or_uuid, None)
-        assert system_name is not None
-        await require_minimum_affinity_policy_capability(hmc.config, system_name)
-
-    await _check_name_unique(hmc, name)
-    await _check_vlan_exists(hmc, system_uuid, network.port_vlan_id)
-    if storage.vg_uuid is not None:
-        await _check_vg_exists(hmc, storage.vios_uuid, storage.vg_uuid)
-    await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
-
-    step_names = ["create"]
-    if minimum_affinity_policy is not None:
-        step_names.append("minimum_affinity_policy")
-    step_names.extend(
-        ["network", "vscsi", "storage", *assignment_step_names(assignments)]
+    await _preflight_provision_request(
+        hmc,
+        system_name_or_uuid,
+        name,
+        network,
+        storage,
+        assignments,
+        caller_token,
+        minimum_affinity_policy,
+        affinity_assessment,
     )
-    if power_on:
-        step_names.append("power_on")
-    if affinity_assessment is not None:
-        step_names.append("affinity_assessment")
+    step_names = _provision_step_names(
+        assignments,
+        minimum_affinity_policy=minimum_affinity_policy,
+        power_on=power_on,
+        affinity_assessment=affinity_assessment,
+    )
 
     if dry_run:
         return ProvisionResult(
