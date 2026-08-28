@@ -421,6 +421,29 @@ def test_numeric_dispatch_uses_intent_revealing_workflow_names():
 
 
 @pytest.mark.asyncio
+async def test_baseline_capture_runs_cohesive_phases_in_order(monkeypatch):
+    events: list[str] = []
+
+    def phase(name):
+        async def run(_client, _state):
+            events.append(name)
+
+        return run
+
+    monkeypatch.setattr(inventory, "_capture_lpar_properties", phase("properties"))
+    monkeypatch.setattr(inventory, "_capture_adapter_topology", phase("adapters"))
+    monkeypatch.setattr(inventory, "_capture_vios_identity", phase("vios"))
+    monkeypatch.setattr(inventory, "_capture_lpar_cli_dump", phase("cli"))
+    monkeypatch.setattr(
+        inventory, "_print_baseline_summary", lambda _state: events.append("summary")
+    )
+
+    await inventory.capture_lpar_baseline(object(), object())
+
+    assert events == ["properties", "adapters", "vios", "cli", "summary"]
+
+
+@pytest.mark.asyncio
 async def test_lpar_inventory_calls_all_read_only_affinity_operations(monkeypatch):
     calls = []
 

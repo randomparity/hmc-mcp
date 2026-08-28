@@ -15,10 +15,8 @@ if TYPE_CHECKING:
     from live_test_runner import RunState
 
 
-async def capture_lpar_baseline(client: Client, state: RunState) -> None:
+async def _capture_lpar_properties(client: Client, state: RunState) -> None:
     context = state.context
-    print("\n=== ST0: Capture ltczz386-lp3 Baseline ===")
-
     # 1. Basic LPAR info
     st, data = await state.call(
         client, "hmc_get_lpar", lpar_name_or_uuid=context.lp3_name
@@ -74,6 +72,9 @@ async def capture_lpar_baseline(client: Client, state: RunState) -> None:
     if st == "PASS":
         context.lp3_baseline["proc_compat"] = data
 
+
+async def _capture_adapter_topology(client: Client, state: RunState) -> None:
+    context = state.context
     # 6. CNA adapters — capture PVID and vswitch ID for ST14
     st, data = await state.call(
         client,
@@ -132,6 +133,9 @@ async def capture_lpar_baseline(client: Client, state: RunState) -> None:
                 context.lp3_baseline["vios_slot"] = int(vios_slot)
             break
 
+
+async def _capture_vios_identity(client: Client, state: RunState) -> None:
+    context = state.context
     # 8. VIOS — capture UUID and numeric PartitionID scoped to our managed system
     st, data = await state.call(
         client, "hmc_list_vios", system_name_or_uuid=context.system_name
@@ -147,6 +151,9 @@ async def capture_lpar_baseline(client: Client, state: RunState) -> None:
                 context.vios_partition_id = int(pid) if pid is not None else None
                 break
 
+
+async def _capture_lpar_cli_dump(client: Client, state: RunState) -> None:
+    context = state.context
     # 9. Full CLI dump
     st, data = await state.call(
         client,
@@ -158,6 +165,9 @@ async def capture_lpar_baseline(client: Client, state: RunState) -> None:
     if st == "PASS":
         context.lp3_baseline["lssyscfg"] = data
 
+
+def _print_baseline_summary(state: RunState) -> None:
+    context = state.context
     print(f"  lp3 UUID: {context.lp3_uuid}")
     print(f"  VIOS UUID: {context.vios_uuid}  PartitionID: {context.vios_partition_id}")
     print(
@@ -165,6 +175,15 @@ async def capture_lpar_baseline(client: Client, state: RunState) -> None:
         f"vSCSI VIOS slot: {context.lp3_baseline.get('vios_slot')}"
     )
     print(f"  Baseline keys: {list(context.lp3_baseline.keys())}")
+
+
+async def capture_lpar_baseline(client: Client, state: RunState) -> None:
+    print("\n=== ST0: Capture ltczz386-lp3 Baseline ===")
+    await _capture_lpar_properties(client, state)
+    await _capture_adapter_topology(client, state)
+    await _capture_vios_identity(client, state)
+    await _capture_lpar_cli_dump(client, state)
+    _print_baseline_summary(state)
 
 
 # ---------------------------------------------------------------------------
