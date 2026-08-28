@@ -23,11 +23,14 @@ Add a dedicated SSH-backed VIOS label module and explicit MCP and CLI operations
 - listing, setting, and removing individual FC-port labels; and
 - listing, creating, changing membership, renaming, and removing individual vFC group labels.
 
-Every mutation names one label or one FC port and one VIOS identity. Group membership accepts
-exactly one non-empty selector family, VIOS names or VIOS IDs. Update actions are explicit rather
-than encoded in caller-provided `labelvios` attributes. The implementation constructs only the
-documented `resource=fcport` and `resource=vfc` records, shell-quotes the completed record, and
-returns structured list rows or a structured mutation receipt.
+FC-port set and removal name exactly one port and one VIOS identity. Group creation and membership
+changes accept exactly one non-empty selector family, VIOS names or VIOS IDs, containing one or
+more identities; rename and individual group removal name only the group label. Update actions are
+explicit rather than encoded in caller-provided `labelvios` attributes. The implementation
+constructs only the documented `resource=fcport` and `resource=vfc` records through the existing
+validating attribute-record builder, validates every standalone command argument at its trust
+boundary, then shell-quotes the completed arguments. It returns structured list rows or a
+structured mutation receipt.
 
 Existing vFC adapter operations remain unchanged. The new functions are internal implementation
 interfaces, not additions to the reusable `hmc_mcp.api` facade.
@@ -59,4 +62,3 @@ request, and this change does not add transactions or rollback around HMC state.
   label-management endpoint; both command references document `labelvios` and `lslabelvios`.
 - **Do nothing and retain the arbitrary-command escape hatch.** judgment: it provides no typed,
   bounded, independently authorizable surface for the daily operation requested by issue #556.
-
