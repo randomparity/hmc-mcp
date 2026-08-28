@@ -144,7 +144,11 @@ async def get_lpar_state(
     *,
     system_name_or_uuid: str | None = None,
 ) -> str | None:
-    """Return the current state of one system-scoped LPAR selector."""
+    """Return one LPAR's state by UUID or an optionally system-scoped name.
+
+    System scope disambiguates duplicate partition names; UUID selectors do not
+    require it.
+    """
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )

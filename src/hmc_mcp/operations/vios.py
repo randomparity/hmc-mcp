@@ -49,7 +49,11 @@ async def get_vios(
     system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
 ) -> dict[str, Any] | None:
-    """Get one VIOS storage-detail resource by a system-scoped selector."""
+    """Get VIOS storage detail by UUID or an optionally system-scoped name.
+
+    System scope disambiguates duplicate VIOS names; UUID selectors do not
+    require it.
+    """
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
