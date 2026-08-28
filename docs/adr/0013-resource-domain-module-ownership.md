@@ -27,7 +27,7 @@ Presentation adapters are grouped by resource domain:
   `operations/lpar/ownership.py` owns the LPAR ownership protocol and authorization-name
   resolution; neither concern belongs to a presentation adapter.
 - Cross-domain request construction remains in `documents.py`, `jobs.py`, and
-  `pcm.py`; configuration remains in `config.py`, and selector helpers live
+  `client/pcm_payloads.py`; configuration remains in `config.py`, and selector helpers live
   beside their transport boundary (`ssh/selectors.py` for HMC CLI selectors).
 
 This ADR supersedes only the module-path and ownership statements in ADRs

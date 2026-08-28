@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-from .errors import HMCError
+from ..errors import HMCError
 
 _T = TypeVar("_T")
 

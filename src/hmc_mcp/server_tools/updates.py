@@ -17,7 +17,7 @@ from ..operations.updates import (
     update_firmware,
     update_vios,
 )
-from ..update_jobs import (
+from ..operations.update_models import (
     ConsoleUpdateSource,
     PlatformUpdateParameter,
     VIOSSource,

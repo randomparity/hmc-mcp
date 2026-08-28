@@ -16,7 +16,7 @@ from hmc_mcp.server_tools import lpar_config as server_lpar_config
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.operations.ssh_network import (
     get_system_memopt_score as get_system_memopt_score_operation,
     plan_lpar_memopt_scores as plan_lpar_memopt_scores_operation,

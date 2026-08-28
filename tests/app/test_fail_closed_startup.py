@@ -52,7 +52,7 @@ from hmc_mcp import server as server_module
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli import app
 from hmc_mcp.dispatch_scope import dispatch_authorizer
-from hmc_mcp.legacy_policy import LEGACY_POLICY_NAME, compile_legacy_policy
+from hmc_mcp.cli_commands.legacy_policy import LEGACY_POLICY_NAME, compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
 REPO_ROOT = Path(__file__).parents[2]

@@ -62,7 +62,7 @@ from hmc_mcp.server_tools.updates import (
 from hmc_mcp.server_tools.updates import (
     hmc_vios_update as hmc_vios_update,
 )
-from hmc_mcp.update_jobs import PlatformUpdateParameter, SystemFirmwareUpdateModel
+from hmc_mcp.operations.update_models import PlatformUpdateParameter, SystemFirmwareUpdateModel
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"

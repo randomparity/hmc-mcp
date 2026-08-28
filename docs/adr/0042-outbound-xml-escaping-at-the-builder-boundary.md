@@ -196,7 +196,7 @@ returning `str`, which is exactly why it never reached a coroutine on `HMCClient
 documents render byte-for-byte what they rendered before for input free of the five
 metacharacters, so nothing about the wire format changes.
 
-`pcm.py` was checked and is not affected: it interpolates only a validated field name and a
+`client/pcm_payloads.py` was checked and is not affected: it interpolates only a validated field name and a
 literal `true`/`false`.
 
 ## Considered & rejected

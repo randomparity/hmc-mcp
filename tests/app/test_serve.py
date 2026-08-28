@@ -19,7 +19,7 @@ from typer.testing import CliRunner
 from hmc_mcp import server as server_app
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy
 from hmc_mcp.cli import app
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, _is_loopback
 
 # ADR 0041 made --access-policy required, so every invocation below that expects a

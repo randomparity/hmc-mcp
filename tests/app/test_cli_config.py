@@ -559,7 +559,7 @@ def _generate(tmp_path, monkeypatch, *extra):
 def test_init_access_policy_writes_a_loadable_policy_at_0600(tmp_path, monkeypatch):
     """R11: the file a server has to read, created the way `config init` creates one."""
     from hmc_mcp.access_policy import load_access_policy
-    from hmc_mcp.legacy_policy import LEGACY_POLICY_NAME
+    from hmc_mcp.cli_commands.legacy_policy import LEGACY_POLICY_NAME
     from hmc_mcp.server import TOOL_SECURITY
 
     result = _generate(tmp_path, monkeypatch)

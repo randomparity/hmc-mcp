@@ -13,7 +13,7 @@ from fastmcp import FastMCP
 
 from hmc_mcp import audit_sink
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import (
     PERMISSIONS_TOOL_NAME,
     TOOL_SECURITY,

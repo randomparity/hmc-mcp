@@ -12,7 +12,7 @@ from hmc_mcp.jobs import (
     create_logical_unit_job,
     delete_logical_unit_job,
 )
-from hmc_mcp.pcm import (
+from hmc_mcp.client.pcm_payloads import (
     build_pcm_preferences_document,
     metric_links,
     newest_metric_link,

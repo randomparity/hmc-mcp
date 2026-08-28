@@ -267,7 +267,7 @@ from hmc_mcp.snapshots import (
     SnapshotValidationError,
     SystemIdentity,
 )
-from hmc_mcp.update_jobs import (
+from hmc_mcp.operations.update_models import (
     ConsoleUpdateMediaType,
     ConsoleUpdateSource,
     IOAdapterUpdateModel,

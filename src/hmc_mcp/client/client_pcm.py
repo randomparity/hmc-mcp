@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 from .client_contracts import PcmClient
 from .client_parse import _metric_links, _pcm_preferences
 from ..errors import HMCError
-from ..pcm import build_pcm_preferences_document
+from .pcm_payloads import build_pcm_preferences_document
 
 
 class PcmMixin:

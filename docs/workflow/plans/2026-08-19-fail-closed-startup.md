@@ -6,7 +6,7 @@ init-access-policy` writes a reviewable policy granting exactly what the unpolic
 granted, so an existing deployment can migrate.
 
 **Architecture.** `server.create_mcp(policy)` becomes the single composer and loses its default;
-the module-level `server.mcp` is deleted. A new `hmc_mcp.legacy_policy` builds, renders, and
+the module-level `server.mcp` is deleted. A new `hmc_mcp.cli_commands.legacy_policy` builds, renders, and
 compiles the legacy-equivalent document; `cli_commands.config` writes it; `cli_commands.app.serve` refuses without
 `--access-policy`; both scripts compose through the generator.
 
@@ -55,7 +55,7 @@ compiles the legacy-equivalent document; `cli_commands.config` writes it; `cli_c
 
 | File | Change | Answerable for |
 |---|---|---|
-| `src/hmc_mcp/legacy_policy.py` | **new** | Building, rendering, and compiling the legacy-equivalent document |
+| `src/hmc_mcp/cli_commands/legacy_policy.py` | **new** | Building, rendering, and compiling the legacy-equivalent document |
 | `src/hmc_mcp/server.py` | modified | `create_mcp` requires a policy; `mcp` deleted; `_gates` non-optional; `_unselected_policy_file` deleted; warnings and docstrings |
 | `src/hmc_mcp/cli_commands/app.py` | modified | `serve`'s `--access-policy` requirement, the guarded path helper, the two refusals, markup escaping in `_fail`/`_usage_error`, help text |
 | `src/hmc_mcp/cli_commands/config.py` | modified | `config init-access-policy`; module docstring |
@@ -68,9 +68,9 @@ compiles the legacy-equivalent document; `cli_commands.config` writes it; `cli_c
 | `tests/app/test_serve.py`, `test_capability_ceiling.py`, `test_connection_authorization.py`, `test_capabilities.py`, `test_tool_security.py`, `test_collection_limits.py`, `test_profile_routing.py`, `test_lifecycle_schema_descriptions.py`, `test_application_boundaries.py`, `tests/test_live_runner.py` | modified | R2a-R2e and the three retired tests |
 | `tests/app/test_cli*.py` and any module asserting on `Error:` text | inspected | R2e — `_fail`'s rendering change reaches every `cli_*` module |
 
-## Task 1 — `hmc_mcp.legacy_policy`
+## Task 1 — `hmc_mcp.cli_commands.legacy_policy`
 
-**Creates** `src/hmc_mcp/legacy_policy.py`. **Tests** `tests/unit/test_legacy_policy.py`.
+**Creates** `src/hmc_mcp/cli_commands/legacy_policy.py`. **Tests** `tests/unit/test_legacy_policy.py`.
 
 **Interfaces this task provides** (later tasks rely on these exact signatures):
 
@@ -98,7 +98,7 @@ Steps, in TDD order:
 1. Write `tests/unit/test_legacy_policy.py::test_the_grant_names_every_ordinary_tool` asserting
    `set(legacy_tools(TOOL_SECURITY)) == set(TOOL_SECURITY) - {"hmc_run_command"}` and that the
    result is sorted. Run `uv run --no-sync pytest -q --no-cov tests/unit/test_legacy_policy.py`;
-   expect `ModuleNotFoundError: No module named 'hmc_mcp.legacy_policy'`.
+   expect `ModuleNotFoundError: No module named 'hmc_mcp.cli_commands.legacy_policy'`.
 2. Create the module with `legacy_tools` and `legacy_document`. `legacy_document` returns
    `{"policies": {LEGACY_POLICY_NAME: {"grants": [{"tools": [...], "connections": [...],
    "targets": ALL_TARGETS_TOKEN}]}}}` — no `effects` key (R7). Re-run; expect pass.

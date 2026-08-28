@@ -19,7 +19,7 @@ from hmc_mcp import audit_sink
 from hmc_mcp.server_tools import command as server_command
 from hmc_mcp.server_tools import lpars as server_lpars
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.dispatch_scope import dispatch_authorizer
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.tool_registry import ToolSecurity, authorized

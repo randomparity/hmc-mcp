@@ -15,7 +15,7 @@ from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli import app
 from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.operations.ssh_network import (
     MinimumAffinityPolicyResult,
     get_minimum_affinity_policy,

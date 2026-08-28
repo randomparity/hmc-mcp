@@ -6,7 +6,7 @@ from typing import Any
 
 from ..client import HMCClient
 from ..resource_identity import resolve_system_uuid
-from ..error_translation import translate_virtual_network_create_error
+from .error_translation import translate_virtual_network_create_error
 from ..errors import HMCError
 
 

@@ -247,7 +247,7 @@ def config_init_access_policy(
     ``serve`` runs under: both resolve the file through the same config directory, and
     the connection list is read from that identity's ``config.toml``.
     """
-    from ..legacy_policy import (
+    from .legacy_policy import (
         LEGACY_POLICY_NAME,
         compile_rendered_policy,
         legacy_connections,
@@ -386,7 +386,7 @@ def config_diff_access_policy(
     """
     import difflib
 
-    from ..legacy_policy import (
+    from .legacy_policy import (
         GENERATED_SOURCE,
         compile_rendered_policy,
         legacy_connections,

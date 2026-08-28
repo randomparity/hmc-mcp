@@ -67,7 +67,7 @@ def test_create_mcp_returns_independent_complete_applications():
     import asyncio
 
     from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
-    from hmc_mcp.legacy_policy import compile_legacy_policy
+    from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
     from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
     # ADR 0041 made the policy mandatory. The legacy-equivalent one registers exactly

@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from hmc_mcp.error_translation import (
+from hmc_mcp.operations.error_translation import (
     run_with_error_translation,
     translate_pcm_error,
     translate_template_error,

@@ -8,7 +8,7 @@ from typing import Any
 from ..client import HMCClient
 from ..resource_identity import resolve_system_uuid
 from ..errors import HMCError
-from ..error_translation import translate_template_error
+from .error_translation import translate_template_error
 from ..jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
     DEFAULT_JOB_TIMEOUT_SECONDS,

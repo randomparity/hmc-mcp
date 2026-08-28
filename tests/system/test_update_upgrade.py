@@ -9,7 +9,7 @@ from conftest import JOB_ENTRY, make_config
 from hmc_mcp.client import HMCClient
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import build_job_request, job_outcome
-from hmc_mcp.update_jobs import (
+from hmc_mcp.operations.update_models import (
     IOAdapterUpdateModel,
     PlatformUpdateParameter,
     SriovAdapterUpdate,

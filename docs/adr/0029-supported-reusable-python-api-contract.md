@@ -158,6 +158,8 @@ names are internal everywhere and are never inventoried.
   synchronous: none.
 - `operations.decommission` — operations: `decommission_lpar`; types: `DecommissionResult`;
   excluded synchronous: none.
+- `operations.error_translation` — operations: none; types: none; excluded synchronous:
+  `translate_pcm_error`, `translate_template_error`, `translate_virtual_network_create_error`.
 - `operations.health` — operations: `fleet_health`; types: `FleetHealthResult`; excluded
   synchronous: none.
 - `operations.install` — operations: `install_lpar_os`, `install_vios`; types: `InstallHandle`, `InstallRequest`;
@@ -238,6 +240,14 @@ names are internal everywhere and are never inventoried.
   synchronous: none.
 - `operations.templates` — operations: `deploy_partition_template`, `get_partition_template`,
   `list_partition_templates`; types: none; excluded synchronous: none.
+- `operations.update_models` — operations: none; types: `ConsoleUpdateMediaType`,
+  `ConsoleUpdateSource`, `IOAdapterUpdateModel`, `PlatformUpdateParameter`,
+  `SriovAdapterUpdate`, `SystemFirmwareUpdateModel`, `VIOSPlatformUpdate`,
+  `VIOSUpdateHMCSource`, `VIOSUpdateIBMWebsiteSource`, `VIOSUpdateNFSSource`,
+  `VIOSUpdateSFTPSource`, `VIOSUpdateUSBSource`, `VIOSUpgradeHMCSource`,
+  `VIOSUpgradeNFSSource`, `VIOSUpgradeSFTPSource`, `VIOSUpgradeUSBSource`; excluded
+  synchronous: `list_management_console_updates_job`, `platform_update_job`,
+  `update_hmc_job`, `update_vios_job`, `upgrade_vios_job`.
 - `operations.updates` — operations: `list_available_hmc_ptfs`, `update_console_software`,
   `update_firmware`, `update_vios`; types: none; excluded synchronous: none.
 - `operations.users` — operations: `configure_remote_access`, `create_user`, `delete_user`,
@@ -266,13 +276,6 @@ names are internal everywhere and are never inventoried.
     the selection rule does not reach it; it is exported by this entry alone.
 - `ssh.network` — exports: `SriovMode`.
 - `ssh.transport` — exports: `HMCCLIError`.
-- `update_jobs` — exports: `ConsoleUpdateMediaType`, `ConsoleUpdateSource`,
-  `IOAdapterUpdateModel`, `PlatformUpdateParameter`, `SriovAdapterUpdate`,
-  `SystemFirmwareUpdateModel`, `VIOSPlatformUpdate`, `VIOSUpdateHMCSource`,
-  `VIOSUpdateIBMWebsiteSource`, `VIOSUpdateNFSSource`, `VIOSUpdateSFTPSource`,
-  `VIOSUpdateUSBSource`, `VIOSUpgradeHMCSource`, `VIOSUpgradeNFSSource`,
-  `VIOSUpgradeSFTPSource`, `VIOSUpgradeUSBSource`.
-
 <!-- ADR-0029-INVENTORY:END -->
 
 Return annotations such as `dict[str, Any]`, `list[dict[str, Any]]`, and tuples containing those

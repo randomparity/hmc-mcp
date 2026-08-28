@@ -8,7 +8,7 @@ from typing import Annotated, Any, Literal, NotRequired, Required, get_args
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import TypedDict
 
-from .jobs import build_job_request
+from ..jobs import build_job_request
 
 
 

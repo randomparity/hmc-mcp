@@ -32,7 +32,8 @@ from typing import Any, Literal, get_args, get_origin, get_type_hints
 import pytest
 from defusedxml import ElementTree as DET
 
-from hmc_mcp import documents, jobs, update_jobs
+from hmc_mcp import documents, jobs
+from hmc_mcp.operations import update_models as update_jobs
 from hmc_mcp.xmlutil import escape_xml, escapes_string_arguments, localname
 
 # A value an operator could plausibly type that carries all five XML

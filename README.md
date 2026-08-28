@@ -925,23 +925,19 @@ src/hmc_mcp/
   config.py      # pydantic-settings config (TOML profile + env vars + CLI flags)
   xmlutil.py     # defusedxml Atom-feed -> dict parsing
   errors.py      # HMCError (shared by client and its mixins)
-  error_translation.py       # presentation-neutral wording for identified HMC failures
-  client/        # HMCClient plus domain mixins, parsing, and construction
+  client/        # HMCClient, domain mixins, response parsing, and PCM payload builders
   resource_identity.py      # managed-system, partition, and VIOS name/UUID resolution
   operations/    # workflows and policies shared by MCP and CLI presentations
     lpar/         # LPAR lifecycle, configuration, DLPAR, and ownership operations
   server_tools/  # MCP tool adapters grouped by resource family
-  cli_commands/  # Typer command groups and shared CLI application state
+  cli_commands/  # Typer command groups, CLI policy generation, and shared application state
   snapshots/     # portable LPAR snapshot models, affinity assessment, and operations
   ssh/            # asyncssh transport plus HMC CLI operations by resource family
     ssh/*.py       # transport, shared parsing, and resource-specific commands
   ssh/console.py             # bounded, non-interactive LPAR console capture (mkvterm)
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
-  update_jobs.py # update/upgrade request schemas and payload builders
-  pcm.py         # PCM metrics/preferences parsing + XML documents
   access_policy.py           # server access policy: TOML loading, validation, compilation
-  legacy_policy.py           # the legacy-equivalent access policy, built and compiled
   dispatch_scope.py          # the dispatch-boundary authorization decision
   target_scope.py            # dispatch-time authorization of the targets a call names
   connection_scope.py        # dispatch-time authorization of the connection a call selects

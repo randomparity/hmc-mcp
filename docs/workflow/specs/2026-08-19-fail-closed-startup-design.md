@@ -21,7 +21,7 @@ unpolicied server used to grant.
 
 In scope: `server.create_mcp`'s signature and the removal of the module-level application;
 `server._gates`, `_serve_application`, `main_stdio`, `main_http`, and the startup-warning
-set; the `--access-policy` requirement on `hmc-mcp serve`; a new `hmc_mcp.legacy_policy`
+set; the `--access-policy` requirement on `hmc-mcp serve`; a new `hmc_mcp.cli_commands.legacy_policy`
 module and the `hmc-mcp config init-access-policy` command that writes its output;
 `scripts/smoke_mcp.py` and `scripts/live_test_runner.py`; and the operator documentation,
 including the corrected statements about unpolicied servers in `README.md` and
@@ -188,12 +188,12 @@ surface, a policy withholding `hmc_effective_permissions`, and
 `--enable-arbitrary-command` without a `hmc_run_command` grant. The condition it dropped is
 unreachable — a server cannot start with no policy.
 
-**R7 — The generated document's shape.** A new module `hmc_mcp.legacy_policy` exports
+**R7 — The generated document's shape.** A new module `hmc_mcp.cli_commands.legacy_policy` exports
 `LEGACY_POLICY_NAME = "legacy-equivalent"` and builds one policy holding exactly one grant:
 `tools` is `sorted(set(tool_security) - {"hmc_run_command"})`, `connections` is the
 caller-supplied sequence, and `targets` is the string `"all-targets"`. The grant carries no
 `effects` key, so the policy grants no tool that does not exist at generation time.
-`hmc_mcp.legacy_policy` imports no `server` module: `tool_security` arrives as a parameter,
+`hmc_mcp.cli_commands.legacy_policy` imports no `server` module: `tool_security` arrives as a parameter,
 as it does for `compile_access_policy`.
 
 **R7a — The escape hatch is opt-in and unreachable from the CLI.** The document builder and

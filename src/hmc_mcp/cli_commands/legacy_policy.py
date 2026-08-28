@@ -23,14 +23,14 @@ import tomllib
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
-from .access_policy import (
+from ..access_policy import (
     ALL_TARGETS_TOKEN,
     DEFAULT_CONNECTION_TOKEN,
     AccessPolicy,
     compile_access_policy,
 )
-from .config import list_profiles_and_nicknames
-from .tool_registry import ToolSecurity
+from ..config import list_profiles_and_nicknames
+from ..tool_registry import ToolSecurity
 
 #: The name the generated policy carries, and therefore the name an operator passes to
 #: ``--access-policy``.

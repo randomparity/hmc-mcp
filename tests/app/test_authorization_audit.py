@@ -46,7 +46,7 @@ from hmc_mcp.access_policy import compile_access_policy
 from hmc_mcp.connection_scope import ConnectionScopeError
 from hmc_mcp.dispatch_scope import dispatch_authorizer
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY
 from hmc_mcp.target_scope import TargetScopeError
 from hmc_mcp.tool_registry import authorized

@@ -44,6 +44,10 @@ from hmc_mcp.client.client_contracts import PcmClient, TemplatesClient
 # so neither mapping can silently accumulate dead excuses.
 ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {
     (
+        "hmc_mcp.operations.error_translation",
+        "run_with_error_translation",
+    ): "ADR 0029 excludes this shared error-translation wrapper from domain operations",
+    (
         "hmc_mcp.operations.pcie",
         "require_admitted_environment",
     ): "ADR 0029 excludes this shared admission-policy guard from domain operations",
@@ -1863,7 +1867,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "fc8e723e01a4ee6bb67b7a4c7df108c28573b31012645ba0c6dd410c8bf352cd"  # pragma: allowlist secret
+    # Moving the update request models beside operations.updates changed their
+    # qualified annotation paths without changing exported names or signatures.
+    expected_digest = "cdd550d499c7dc949f261e42d1629abc6c3d56bf4dcf4344a5ad24ba910b505f"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

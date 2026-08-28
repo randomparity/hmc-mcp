@@ -8,7 +8,7 @@ from typing import Any, Callable, TypeVar
 from defusedxml import ElementTree as DET
 
 from ..errors import HMCError
-from ..pcm import metric_links, pcm_preferences_to_dict
+from .pcm_payloads import metric_links, pcm_preferences_to_dict
 from ..xmlutil import find_text, parse_feed
 
 _T = TypeVar("_T")

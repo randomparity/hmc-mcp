@@ -42,7 +42,7 @@ from hmc_mcp.access_policy import (
     compile_access_policy,
 )
 from hmc_mcp.config import ConfigError
-from hmc_mcp.legacy_policy import (
+from hmc_mcp.cli_commands.legacy_policy import (
     GENERATED_SOURCE,
     LEGACY_POLICY_NAME,
     compile_legacy_policy,

@@ -15,7 +15,7 @@ from ..jobs import (
     wait_for_submitted_job,
 )
 from ..resource_identity import resolve_system_uuid, resolve_vios_uuid
-from ..update_jobs import (
+from .update_models import (
     ConsoleUpdateSource,
     PlatformUpdateParameter,
     VIOSSource,
