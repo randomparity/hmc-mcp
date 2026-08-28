@@ -62,6 +62,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   POWER10 and POWER11 `lslabelvios`/`labelvios` grammar. They do not expose MSP,
   vNIC, vSCSI, override-default, bulk-removal, or adapter-mutation behavior. Issue
   #559 tracks live-system field and mutation evidence not established by the manuals.
+  The matching `hmc-mcp vios` commands are `list-fc-port-labels`,
+  `set-fc-port-label`, `remove-fc-port-label`, `list-vfc-group-labels`,
+  `create-vfc-group-label`, `update-vfc-group-label`, and `remove-vfc-group-label`.
 - `ManagedSystemPatch` and `LpmMigrationRequest` provide reusable typed request
   values for managed-system configuration and LPM destination inputs.
 - `VirtualNetworkResult` exposes the resolved managed-system UUID beside the
