@@ -271,6 +271,9 @@ async def test_invalid_input_does_not_dispatch(monkeypatch, call):
     [
         ([f"vios-{number}" for number in range(1025)], "at most 1024"),
         (["x" * 16385], "at most 16384 bytes"),
+        (["x" * 8192, "y" * 8192], "at most 16384 bytes"),
+        (["é" * 8193], "at most 16384 bytes"),
+        (["\ud800"], "valid UTF-8"),
     ],
 )
 async def test_group_member_payload_is_bounded(monkeypatch, members, message: str):
@@ -281,6 +284,17 @@ async def test_group_member_payload_is_bounded(monkeypatch, members, message: st
             CONFIG, "system-a", "label", vios_names=members
         )
     run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_group_member_payload_accepts_exact_byte_limit(monkeypatch):
+    run = AsyncMock(return_value="accepted")
+    monkeypatch.setattr("hmc_mcp.ssh.vios_labels.run_hmc_command", run)
+    result = await create_vios_vfc_group_label(
+        CONFIG, "system-a", "label", vios_names=["x" * 16384]
+    )
+    assert result["output"] == "accepted"
+    run.assert_awaited_once()
 
 
 @pytest.mark.asyncio

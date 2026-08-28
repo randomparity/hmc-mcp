@@ -94,13 +94,33 @@ def _member_selector(
 
 
 def _require_bounded_member_bytes(attribute: str, members: Sequence[str | int]) -> None:
-    encoded_size = sum(len(str(member).encode("utf-8")) for member in members)
-    encoded_size += max(0, len(members) - 1)
-    if encoded_size > _MAX_GROUP_MEMBER_BYTES:
-        raise HMCCLIError(
-            f"VIOS group label {attribute} accepts at most "
-            f"{_MAX_GROUP_MEMBER_BYTES} bytes including separators"
-        )
+    remaining = _MAX_GROUP_MEMBER_BYTES
+    for index, member in enumerate(members):
+        if index:
+            remaining -= 1
+        try:
+            text = member if isinstance(member, str) else str(member)
+        except ValueError as error:
+            raise HMCCLIError(
+                f"VIOS group label {attribute} member cannot be encoded as text: {error}"
+            ) from error
+        if remaining < 0 or len(text) > remaining:
+            _raise_member_payload_too_large(attribute)
+        try:
+            remaining -= len(text.encode("utf-8"))
+        except UnicodeEncodeError as error:
+            raise HMCCLIError(
+                f"VIOS group label {attribute} members must be valid UTF-8 text"
+            ) from error
+        if remaining < 0:
+            _raise_member_payload_too_large(attribute)
+
+
+def _raise_member_payload_too_large(attribute: str) -> None:
+    raise HMCCLIError(
+        f"VIOS group label {attribute} accepts at most "
+        f"{_MAX_GROUP_MEMBER_BYTES} bytes including separators"
+    )
 
 
 def _parse_label_rows(output: str, operation: str) -> list[dict[str, str]]:
