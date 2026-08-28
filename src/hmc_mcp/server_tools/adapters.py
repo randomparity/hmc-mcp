@@ -7,7 +7,7 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from .._app import run_sync, run_limited_collection
-from ..client.client_adapters import AdapterType, validate_adapter_type
+from ..client.client_adapters import AdapterType
 from ..client.client_factory import client_from_env
 from ..operations.adapters import (
     add_network_adapter,
@@ -42,8 +42,6 @@ def hmc_list_adapters(
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
     """
-    validate_adapter_type(adapter_type)
-
     return run_limited_collection(
         lambda hmc: list_adapters(
             hmc, system_name_or_uuid, lpar_name_or_uuid, adapter_type
@@ -221,7 +219,6 @@ def hmc_delete_adapter(
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
     """
-    validate_adapter_type(adapter_type)
 
     async def operation():
         async with client_from_env(profile) as hmc:

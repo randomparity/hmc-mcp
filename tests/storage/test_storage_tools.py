@@ -82,6 +82,7 @@ def _authorize_lpar_mutations(monkeypatch):
         "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation", authorize
     )
 
+
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 VG_UUID = "vg-uuid-0001"
@@ -167,11 +168,11 @@ def test_all_adapter_types_reach_the_matching_resource(monkeypatch, mock_hmc):
         assert route.called
 
 
-def test_invalid_adapter_type_fails_before_transport(monkeypatch, mock_hmc):
+def test_invalid_adapter_type_fails_before_resource_request(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     with pytest.raises(ValueError, match="adapter_type"):
         hmc_list_adapters(LPAR_UUID, adapter_type="UnknownAdapter")
-    assert not mock_hmc.calls
+    assert {call.request.url.path for call in mock_hmc.calls} == {"/rest/api/web/Logon"}
 
 
 def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
@@ -551,7 +552,7 @@ def test_create_logical_unit_submits_job(monkeypatch, mock_hmc):
         ("THIN", "PhysicalDisk", "device_type"),
     ],
 )
-def test_create_logical_unit_rejects_invalid_types_before_transport(
+def test_create_logical_unit_rejects_invalid_types_before_resource_request(
     monkeypatch, mock_hmc, lu_type, device_type, match
 ):
     _hmc_env(monkeypatch)
@@ -563,7 +564,7 @@ def test_create_logical_unit_rejects_invalid_types_before_transport(
             lu_type=lu_type,
             device_type=device_type,
         )
-    assert not mock_hmc.calls
+    assert {call.request.url.path for call in mock_hmc.calls} == {"/rest/api/web/Logon"}
 
 
 def test_create_logical_unit_with_clone(monkeypatch, mock_hmc):

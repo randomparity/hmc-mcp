@@ -42,7 +42,6 @@ from ...operations.lpar.assignments import (
     LparPcieAssignments,
     LparPcieWorkflowResult,
 )
-from ...ssh.lpar import validate_caller_token
 
 tool, register_tools, tool_security = tool_module()
 
@@ -125,9 +124,6 @@ def hmc_create_lpar(
         assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
-
-    if caller_token is not None:
-        validate_caller_token(caller_token)
 
     async def _go():
         async with client_from_env(profile) as hmc:

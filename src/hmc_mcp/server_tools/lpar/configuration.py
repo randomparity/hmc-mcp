@@ -26,9 +26,7 @@ from ...ssh.affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
     MinimumAffinityPolicy,
-    validate_memopt_scenario,
 )
-from ...ssh.lpar import validate_lpar_description
 from ...ssh.profiles import (
     get_lpar_description,
     get_lpar_msp,
@@ -179,7 +177,6 @@ def hmc_plan_lpar_memopt_scores(
         excluded: Optional LPAR names or IDs to exclude from the scenario.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    validate_memopt_scenario(prioritized, excluded)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -205,7 +202,6 @@ def hmc_plan_system_memopt_score(
         excluded: Optional LPAR names or IDs to exclude from the scenario.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    validate_memopt_scenario(prioritized, excluded)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -321,7 +317,6 @@ def hmc_set_lpar_description(
             only after explicit operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    validate_lpar_description(description)
 
     async def _go():
         async with client_from_env(profile) as hmc:

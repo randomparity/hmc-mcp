@@ -59,7 +59,8 @@ def test_valid_ipv4_addresses_pass(value):
 
 
 @pytest.mark.parametrize(
-    "value", ["999.1.1.1", "10.0.0", "10.0.0.0.1", "a.b.c.d", "", "10.0.0.1 ", "-1.2.3.4"]
+    "value",
+    ["999.1.1.1", "10.0.0", "10.0.0.0.1", "a.b.c.d", "", "10.0.0.1 ", "-1.2.3.4"],
 )
 def test_invalid_ipv4_addresses_rejected(value):
     with pytest.raises(ValueError, match="IPv4"):
@@ -291,8 +292,10 @@ def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc)
     assert submitted["cmd"] == expected
 
 
-def test_install_lpar_os_tool_rejects_invalid_arguments_before_any_io(monkeypatch):
-    """Validator failures raise before an SSH session is opened."""
+def test_install_lpar_os_tool_rejects_invalid_arguments_before_ssh(
+    monkeypatch, mock_hmc
+):
+    """Operations-layer validation rejects input before SSH submission."""
     from hmc_mcp.server_tools.vios import hmc_install_lpar_os as hmc_install_lpar_os
 
     _hmc_env(monkeypatch)
@@ -305,6 +308,7 @@ def test_install_lpar_os_tool_rejects_invalid_arguments_before_any_io(monkeypatc
             nim_subnetmask="255.255.255.0",
             nim_gateway="192.168.1.1",
         )
+    assert {call.request.url.path for call in mock_hmc.calls} == {"/rest/api/web/Logon"}
 
 
 def test_install_lpar_os_unknown_name_fails_before_submission(monkeypatch, mock_hmc):
@@ -327,7 +331,6 @@ def test_install_lpar_os_unknown_name_fails_before_submission(monkeypatch, mock_
     with patch("hmc_mcp.operations.install.run_installios", new=fail):
         with pytest.raises(ValueError, match="No LPAR named"):
             hmc_install_lpar_os("nosuchlpar", "sys1", **_INSTALL_KWARGS)
-
 
 
 def _system_feed(name: str) -> str:

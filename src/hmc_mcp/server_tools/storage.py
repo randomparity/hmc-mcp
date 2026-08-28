@@ -41,9 +41,7 @@ from ..operations.storage import (
     list_volume_groups,
     map_storage,
     StorageMapResult,
-    validate_logical_unit_create,
     upload_iso,
-    validate_logical_unit_wait,
 )
 from ..operations.lpar.provision import (
     AttachDiskResult,
@@ -628,9 +626,6 @@ def hmc_create_logical_unit(
         poll_interval: Seconds between job-status requests while waiting.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    validate_logical_unit_create(
-        lu_type, device_type, wait, timeout_seconds, poll_interval
-    )
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -676,7 +671,6 @@ def hmc_delete_logical_unit(
         poll_interval: Seconds between job-status requests while waiting.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    validate_logical_unit_wait(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:

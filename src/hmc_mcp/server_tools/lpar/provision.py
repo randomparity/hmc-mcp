@@ -16,7 +16,6 @@ from ...operations.lpar.provision import (
 )
 from ...operations.lpar.assignments import LparPcieAssignments
 from ...ssh.affinity import MinimumAffinityPolicy
-from ...ssh.lpar import validate_caller_token
 
 tool, register_tools, tool_security = tool_module()
 
@@ -90,9 +89,6 @@ def hmc_provision_lpar(
         stamp and the caller segment landed (one combined write); ``False`` means both
         were lost; ``None`` means the stamp was skipped — the reason is in ``warnings``.
     """
-
-    if caller_token is not None:
-        validate_caller_token(caller_token)
 
     async def _go():
         async with client_from_env(profile) as hmc:
