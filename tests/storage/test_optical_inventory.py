@@ -21,6 +21,7 @@ VIOS_GET_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <content>
       <VirtualIOServer xmlns="{UOM_NS}" schemaVersion="V1_0">
         <Metadata><Atom/></Metadata>
+        <UUID>{VIOS_UUID}</UUID>
         <AssociatedManagedSystem href="https://hmc.test:12443/rest/api/uom/ManagedSystem/{SYS_UUID}" rel="related"/>
         <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
           <Metadata><Atom/></Metadata>
@@ -181,8 +182,8 @@ async def test_create_optical_mapping_submits_document(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_create_optical_mapping_preserves_permissive_system_link(mock_hmc):
-    """Issue #403 strict detach parsing does not narrow existing optical responses."""
+async def test_create_optical_mapping_rejects_noncanonical_system_link(mock_hmc):
+    """Every read-modify-write path rejects an imprecise managed-system link."""
     response = VIOS_GET_FEED.replace(
         f"/ManagedSystem/{SYS_UUID}\"", f"/ManagedSystem/{SYS_UUID}/details\""
     )
@@ -194,9 +195,10 @@ async def test_create_optical_mapping_preserves_permissive_system_link(mock_hmc)
     ).mock(return_value=httpx.Response(200, text=CREATE_MAPPING_RESPONSE))
 
     async with HMCClient(make_config()) as hmc:
-        await hmc.create_optical_mapping(VIOS_UUID, "test.iso", LPAR_UUID)
+        with pytest.raises(HMCError, match="exact ManagedSystem UUID"):
+            await hmc.create_optical_mapping(VIOS_UUID, "test.iso", LPAR_UUID)
 
-    assert posted.called
+    assert not posted.called
 
 
 # VIOS document containing one optical mapping for LPAR_UUID / test.iso
@@ -206,6 +208,7 @@ VIOS_GET_FEED_WITH_MAPPING = f"""<?xml version="1.0" encoding="UTF-8" standalone
     <content>
       <VirtualIOServer xmlns="{UOM_NS}" schemaVersion="V1_0">
         <Metadata><Atom/></Metadata>
+        <UUID>{VIOS_UUID}</UUID>
         <AssociatedManagedSystem href="https://hmc.test:12443/rest/api/uom/ManagedSystem/{SYS_UUID}" rel="related"/>
         <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
           <Metadata><Atom/></Metadata>

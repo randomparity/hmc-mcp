@@ -27,22 +27,6 @@ _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 _ATOM_NS = "http://www.w3.org/2005/Atom"
 
 
-def _extract_system_uuid_from_vios_xml(vios_xml: str) -> str:
-    """Extract the first ManagedSystem UUID from a VIOS response."""
-    match = _re.search(
-        r"/rest/api/uom/ManagedSystem/([0-9a-fA-F-]{36})",
-        vios_xml,
-    )
-    if not match:
-        raise HMCError(
-            "Cannot find ManagedSystem UUID in VirtualIOServer document. "
-            "The VIOS response is missing AssociatedManagedSystem href.",
-            200,
-            vios_xml[:500],
-        )
-    return match.group(1)
-
-
 async def _load_vios_document(
     client: StorageClient, vios_uuid: str
 ) -> tuple[str, ET.Element, str]:
@@ -59,12 +43,8 @@ async def _load_vios_document(
         raise HMCError(
             "VirtualIOServer GET response is not valid XML", 200, vios_xml
         ) from exc
-    vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
-    return (
-        vios_xml,
-        vios_elem if vios_elem is not None else root,
-        _extract_system_uuid_from_vios_xml(vios_xml),
-    )
+    vios_elem = _find_vios_element(root, vios_uuid)
+    return vios_xml, vios_elem, _extract_system_uuid_from_vios(vios_elem)
 
 
 def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:

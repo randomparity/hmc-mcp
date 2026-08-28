@@ -146,6 +146,7 @@ VIOS_DOC_WITH_OPTICAL_MAPPINGS = f"""<?xml version="1.0" encoding="UTF-8" standa
   <id>urn:uuid:{VIOS_UUID}</id>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <UUID>{VIOS_UUID}</UUID>
       <PartitionName>vios1</PartitionName>
       <AssociatedManagedSystem rel="related"
         href="https://hmc/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
