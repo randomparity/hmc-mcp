@@ -13,7 +13,7 @@ import pytest
 
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.config import parse_iso_url_allowlist
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.storage import (

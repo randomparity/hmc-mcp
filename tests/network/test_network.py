@@ -6,7 +6,7 @@ import httpx
 import pytest
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.documents import build_virtual_network_document
 from hmc_mcp.operations.network import (
     VirtualNetworkResult,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..errors import HMCError
 from ..resource_identity import resolve_system_uuid
 from .error_translation import translate_virtual_network_create_error

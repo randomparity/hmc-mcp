@@ -422,7 +422,7 @@ def record_tls_verification_disabled(*, host: str, source: str) -> None:
 
     *source* names where the effective setting came from, because an operator
     needs to know which knob to turn to fix it. Its closed vocabulary is
-    ``hmc_mcp.client.VerifySSLSource``, at the only place that produces a value;
+    ``hmc_mcp.client.core.VerifySSLSource``, at the only place that produces a value;
     this parameter stays a plain ``str`` because this module imports nothing from
     the package (#504 — spelling the values here left them to drift silently).
     It carries no credential, no session token and no request body; like every

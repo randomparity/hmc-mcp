@@ -853,7 +853,7 @@ def test_deploy_template_wait_false_returns_ownership_note(monkeypatch):
     with patch("hmc_mcp.server_tools.templates.hmc_deploy_partition_template",
                wraps=hmc_deploy_partition_template):
         # Deep mock: patch the client's deploy call
-        with patch("hmc_mcp.client.HMCClient.deploy_partition_template",
+        with patch("hmc_mcp.client.core.HMCClient.deploy_partition_template",
                    new=AsyncMock(return_value={"UUID": "job-uuid", "link": "/rest/api/uom/Job/job-uuid"})):
             with respx.mock:
                 respx.post(f"{BASE}/rest/api/web/Logon").mock(

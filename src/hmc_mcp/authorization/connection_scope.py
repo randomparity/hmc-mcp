@@ -21,7 +21,7 @@ from collections.abc import Container
 from typing import Any
 
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.audit import MAX_VALUE_LENGTH
+from hmc_mcp.audit.records import MAX_VALUE_LENGTH
 from hmc_mcp.config import ConfigError, env_var_value, list_profiles_and_nicknames
 
 

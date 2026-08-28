@@ -130,8 +130,8 @@ names are internal everywhere and are never inventoried.
 
 <!-- ADR-0029-INVENTORY:BEGIN -->
 
-- `client` — exports: `HMCClient`.
 - `client.client_adapters` — exports: `AdapterType`.
+- `client.core` — exports: `HMCClient`.
 - `config` — exports: `ConfigError`, `HMCConfig`, `load_profile`.
   - Note: `load_profile` is synchronous and exported all the same. It is a configuration
     constructor, not a domain operation, and the synchronous-exclusion reason above does not
@@ -269,7 +269,7 @@ names are internal everywhere and are never inventoried.
   `VnicBackingSelector`, `VnicBackingSnapshot`,
   `VnicCapabilityError`, `VnicChangeResult`, `VnicPartialError`, `VnicSnapshot`; excluded
   synchronous: none.
-- `snapshots` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
+- `snapshots.models` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
   `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,
   `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotInspection`, `SnapshotObservations`,
   `SnapshotSource`, `SnapshotValidationError`, `SystemIdentity`.

@@ -14,7 +14,7 @@ from hmc_mcp.cli_commands.runtime import client, run
 from hmc_mcp.cli_commands.output import print_json
 from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
 from hmc_mcp.operations.affinity import PolicyState
-from hmc_mcp.snapshots import (
+from hmc_mcp.snapshots.models import (
     SnapshotValidationError,
     inspect_snapshot,
     read_snapshot,

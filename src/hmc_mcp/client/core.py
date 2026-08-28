@@ -16,7 +16,7 @@ from typing import Any, Literal, get_args
 import re
 from urllib.parse import quote, unquote, urlparse
 
-from .. import audit
+from ..audit import records as audit
 from .client_contracts import httpx
 from .client_parse import _find_text, _parse_feed
 from ..config import HMCConfig, env_var_value

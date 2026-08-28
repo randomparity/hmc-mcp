@@ -14,7 +14,7 @@ import logging
 from dataclasses import replace
 from typing import Any
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..errors import HMCError
 from ..jobs import (
     DEFAULT_JOB_POLL_INTERVAL,

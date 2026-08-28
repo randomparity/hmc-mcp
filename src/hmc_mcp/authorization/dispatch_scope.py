@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from hmc_mcp import audit
+from hmc_mcp.audit import records as audit
 from hmc_mcp.authorization.access_policy import AccessPolicy
 from hmc_mcp.authorization.connection_scope import (
     ConnectionScopeError,

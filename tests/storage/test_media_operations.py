@@ -5,7 +5,7 @@ import pytest
 
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.operations.storage import (
     get_media_repository,
     list_optical_media,

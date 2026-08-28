@@ -8,8 +8,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from hmc_mcp import audit
-from hmc_mcp.client import HMCClient
+from hmc_mcp.audit import records as audit
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.client.client_resolution import (
     MAX_PARENT_DISCOVERY_SYSTEMS,
     PARENT_DISCOVERY_TIMEOUT_SECONDS,

@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from typing import Any, BinaryIO
 
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..config import ISO_URL_ALLOWLIST_HELP
 from ..errors import HMCError
 from ..client.client_contracts import httpx

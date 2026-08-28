@@ -6,7 +6,7 @@ from defusedxml import ElementTree as DET
 
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.documents import build_remote_access_document
 from hmc_mcp.errors import HMCError
 

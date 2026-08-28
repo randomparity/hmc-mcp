@@ -668,7 +668,7 @@ def test_the_tls_record_carries_host_and_source():
     """#379. The durable counterpart of the logon warning names the HMC and the knob.
 
     `source` is the operator-facing half of the record: it says which knob to turn
-    to stop the exposure. Its closed vocabulary is `hmc_mcp.client.VerifySSLSource`
+    to stop the exposure. Its closed vocabulary is `hmc_mcp.client.core.VerifySSLSource`
     and the value below is one member of it, not a restatement of the set (#504).
     No credential, session token or request body travels — a construction-time
     event has none to carry.

@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from .capacity import lpar_processing_units
 

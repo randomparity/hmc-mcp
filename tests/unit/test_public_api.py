@@ -89,6 +89,27 @@ SUPPORTED_CLIENT_LIFECYCLE = frozenset(
 )
 
 
+def test_package_initializers_do_not_define_compatibility_manifests() -> None:
+    """Keep ``hmc_mcp.api`` as the package's only curated import boundary."""
+    package_root = Path(__file__).resolve().parents[2] / "src/hmc_mcp"
+    offenders = []
+    for path in package_root.rglob("__init__.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if any(
+            isinstance(node, (ast.Assign, ast.AnnAssign))
+            and any(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in (
+                    node.targets if isinstance(node, ast.Assign) else [node.target]
+                )
+            )
+            for node in tree.body
+        ):
+            offenders.append(path.relative_to(package_root).as_posix())
+
+    assert offenders == []
+
+
 def test_public_api_exports_the_adr_inventory() -> None:
     assert api.__all__ == [
         "HMCClient",

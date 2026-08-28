@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..resource_identity import resolve_system_uuid
 from ..errors import HMCError
 from .error_translation import translate_template_error

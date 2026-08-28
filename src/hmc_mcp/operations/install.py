@@ -13,8 +13,8 @@ from typing import Protocol
 # imports it here.
 from typing_extensions import TypedDict
 
-from .. import audit
-from ..client import HMCClient
+from ..audit import records as audit
+from hmc_mcp.client.core import HMCClient
 from ..resource_identity import (
     is_uuid,
     resolve_lpar_uuid,

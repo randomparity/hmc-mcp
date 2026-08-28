@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.storage import (
     delete_media_repository,

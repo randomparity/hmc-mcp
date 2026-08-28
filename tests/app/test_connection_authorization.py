@@ -141,7 +141,7 @@ def _seal_every_outbound_path(monkeypatch, opened: list[str]):
     import pkgutil
 
     import hmc_mcp
-    from hmc_mcp import client as client_module
+    from hmc_mcp.client import core as client_module
 
     def _forbidden(label):
         def _refuse(*args, **kwargs):

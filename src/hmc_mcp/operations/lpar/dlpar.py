@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ...documents import (
     LparResources,
     build_dlpar_mem_document,

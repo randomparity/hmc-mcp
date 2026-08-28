@@ -7,7 +7,7 @@ authorization, capability checks, or post-mutation reconciliation fail; consult
 an operation's docstring when it defines a narrower failure contract.
 """
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.client.client_adapters import AdapterType
 from hmc_mcp.config import ConfigError, HMCConfig, load_profile
 from hmc_mcp.operations.affinity import (
@@ -284,7 +284,7 @@ from hmc_mcp.snapshots.operations import (
     inspect_lpar_snapshot,
     validate_lpar_snapshot,
 )
-from hmc_mcp.snapshots import (
+from hmc_mcp.snapshots.models import (
     HMCIdentity,
     LparIdentity,
     LparSnapshot,

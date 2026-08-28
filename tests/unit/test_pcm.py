@@ -5,7 +5,8 @@ import pytest
 from conftest import make_config
 from defusedxml import ElementTree as ET
 
-from hmc_mcp.client import HMCClient, HMCError
+from hmc_mcp.client.core import HMCClient
+from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import (
     DEVICE_TYPES,
     LU_TYPES,

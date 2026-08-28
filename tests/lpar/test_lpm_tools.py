@@ -13,7 +13,7 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY
 
-from hmc_mcp.client import HMCError
+from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.lpm import (
     abort_lpar_migration,
     recover_lpar_migration,

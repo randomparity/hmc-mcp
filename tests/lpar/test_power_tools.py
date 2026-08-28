@@ -15,7 +15,7 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY, SYSTEM_ENTRY
 
-from hmc_mcp.client import HMCError
+from hmc_mcp.errors import HMCError
 from hmc_mcp.documents import LparResources
 from hmc_mcp.operations.systems import power_system
 from hmc_mcp.server_tools.lpar.lifecycle import (

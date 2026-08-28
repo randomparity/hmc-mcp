@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from ...client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from ...documents import LparResources, PartitionType, StorageKind
 from ...errors import HMCError

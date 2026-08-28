@@ -832,7 +832,7 @@ def test_provision_lpar_propagates_unexpected_step_failure(monkeypatch, mock_hmc
     _mock_execution_steps(mock_hmc)
 
     with patch(
-        "hmc_mcp.client.HMCClient.add_vscsi_adapter",
+        "hmc_mcp.client.core.HMCClient.add_vscsi_adapter",
         new=AsyncMock(side_effect=TypeError("adapter defect")),
     ):
         with pytest.raises(TypeError, match="adapter defect"):

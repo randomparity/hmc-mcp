@@ -273,7 +273,7 @@ def test_a_denial_bounds_the_callers_own_token():
     client. ADR 0041 is what makes that path universal rather than opt-in, which is why
     it is closed here rather than left to the layer that has always had it.
     """
-    from hmc_mcp.audit import MAX_VALUE_LENGTH
+    from hmc_mcp.audit.records import MAX_VALUE_LENGTH
     from hmc_mcp.authorization.connection_scope import ConnectionScopeError
 
     authorize = dispatch_authorizer(_legacy_policy())

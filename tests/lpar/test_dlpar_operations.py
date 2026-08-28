@@ -23,7 +23,7 @@ import pytest
 from conftest import make_config
 
 from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
 from hmc_mcp.documents import LparResources
 from hmc_mcp.errors import HMCError

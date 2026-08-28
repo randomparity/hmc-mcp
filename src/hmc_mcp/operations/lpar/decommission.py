@@ -8,7 +8,7 @@ from typing import Any
 from typing_extensions import TypedDict
 
 from ...client.client_adapters import AdapterType
-from ...client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ...resource_identity import is_uuid, resolve_system_uuid
 from ...errors import HMCError
 from ...jobs import (

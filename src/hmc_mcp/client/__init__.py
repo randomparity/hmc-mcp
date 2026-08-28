@@ -1,12 +1,4 @@
-"""Public client package contracts."""
+"""Internal REST client implementation package.
 
-from ..errors import HMCError, HMCTransportError
-from .core import HMCClient, VERIFY_SSL_SOURCES, VerifySSLSource
-
-__all__ = [
-    "HMCClient",
-    "HMCError",
-    "HMCTransportError",
-    "VERIFY_SSL_SOURCES",
-    "VerifySSLSource",
-]
+Reusable-library consumers import supported contracts from :mod:`hmc_mcp.api`.
+"""

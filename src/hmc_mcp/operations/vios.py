@@ -8,7 +8,7 @@ import io
 import shlex
 from typing import Any, Literal
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..documents import LparResources, build_vios_document
 from ..errors import HMCError
 from ..resource_identity import is_uuid, resolve_system_uuid, resolve_vios_uuid

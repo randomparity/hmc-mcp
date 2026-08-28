@@ -183,7 +183,7 @@ def test_two_profile_strings_produce_distinct_clients(tmp_path, monkeypatch):
     (no shared cached instance).  For thread/coroutine interleaving coverage
     see the sequential routing test.
     """
-    from hmc_mcp.client import HMCClient
+    from hmc_mcp.client.core import HMCClient
 
     cfg_path = _toml_two_profiles(tmp_path)
 

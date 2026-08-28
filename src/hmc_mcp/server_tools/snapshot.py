@@ -7,7 +7,7 @@ from dataclasses import asdict
 
 from hmc_mcp.operations.affinity import PolicyState
 from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
-from hmc_mcp.snapshots import inspect_snapshot, parse_snapshot
+from hmc_mcp.snapshots.models import inspect_snapshot, parse_snapshot
 from hmc_mcp.tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()

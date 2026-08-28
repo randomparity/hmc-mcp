@@ -4,7 +4,8 @@ import httpx
 import pytest
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient, HMCError
+from hmc_mcp.client.core import HMCClient
+from hmc_mcp.errors import HMCError
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 SYS_UUID = "00000000-0000-0000-0000-000000000099"

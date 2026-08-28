@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from .ssh_affinity import (
     get_lpar_memopt_score,
     get_minimum_affinity_policy,

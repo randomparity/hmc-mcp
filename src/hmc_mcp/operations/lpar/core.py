@@ -17,7 +17,7 @@ from hmc_mcp.operations.affinity import (
 from hmc_mcp.operations.partition_state import PARTITION_STATES, PartitionState
 from hmc_mcp.operations.lpar.errors import translate_lpar_write_error
 
-from ...client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ...resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
 from ...documents import (
     Keylock,

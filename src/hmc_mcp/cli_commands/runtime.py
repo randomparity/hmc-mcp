@@ -10,7 +10,7 @@ from typing import Any, TypeVar
 import typer
 from typer._click.globals import get_current_context
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..config import HMCConfig, build_config
 from .output import fail
 

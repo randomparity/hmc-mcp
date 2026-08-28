@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..documents import (
     MemoryMirroringMode,
     PowerOffPolicy,

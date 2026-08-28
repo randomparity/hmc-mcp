@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from ..config import HMCConfig
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..errors import HMCError
 from .transport import HMCCLIError, open_hmc_connection, run_hmc_command
 

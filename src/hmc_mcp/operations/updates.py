@@ -6,7 +6,7 @@ import re
 from typing import Any
 from urllib.parse import quote
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..errors import HMCError
 from ..jobs import (
     TERMINAL_JOB_STATUSES,

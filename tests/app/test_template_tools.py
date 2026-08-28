@@ -12,7 +12,7 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY
 
-from hmc_mcp.client import HMCError
+from hmc_mcp.errors import HMCError
 from hmc_mcp.server_tools.templates import (
     hmc_deploy_partition_template as hmc_deploy_partition_template,
 )

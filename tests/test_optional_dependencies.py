@@ -51,7 +51,7 @@ sys.meta_path.insert(0, BlockAppOnlyPackages())
 
 import hmc_mcp
 from hmc_mcp import operations
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 

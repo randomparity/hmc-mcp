@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ...errors import HMCError
 from .assignments import (
     WorkflowStep,

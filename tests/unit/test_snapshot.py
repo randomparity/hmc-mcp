@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from hmc_mcp.snapshots import (
+from hmc_mcp.snapshots.models import (
     SnapshotValidationError,
     inspect_snapshot,
     parse_snapshot,

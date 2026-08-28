@@ -15,7 +15,7 @@ import httpx
 import pytest
 
 from hmc_mcp.api import JobOutcome, get_job, wait_for_job
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
 
 from conftest import make_config

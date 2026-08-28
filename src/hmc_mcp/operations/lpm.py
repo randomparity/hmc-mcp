@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, replace
 import math
 from typing import Any, Literal
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name
 from ..jobs import (
     DEFAULT_JOB_POLL_INTERVAL,

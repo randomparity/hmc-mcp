@@ -7,7 +7,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..errors import HMCError
 from ..jobs import FAILED_JOB_STATUSES, job_outcome
 from . import jobs as operations_jobs

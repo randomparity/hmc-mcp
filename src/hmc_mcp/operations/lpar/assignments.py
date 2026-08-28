@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Literal
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.operations.pcie import (
     PCIE_ASSIGNMENT_UNAVAILABLE_REASON,
     PcieAssignmentUnavailableError,

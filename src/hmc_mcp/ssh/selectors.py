@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import overload
 
-from ..client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from ..resource_identity import is_uuid
 from ..config import HMCConfig
 from ..errors import HMCTransportError

@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from hmc_mcp.client import HMCError
+from hmc_mcp.errors import HMCError
 from hmc_mcp.documents import LparResources
 from hmc_mcp.operations.ownership import _resolve_system_name as _system_name
 from hmc_mcp.server_tools.lpar.lifecycle import (

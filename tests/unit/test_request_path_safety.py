@@ -18,7 +18,7 @@ import asyncio
 import httpx
 import pytest
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.client.core import _reject_dot_segments, _reject_non_job_path
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
@@ -241,7 +241,7 @@ def test_the_guard_is_reached_by_every_transport_helper():
     """
     import inspect
 
-    from hmc_mcp import client as client_module
+    from hmc_mcp.client import core as client_module
 
     source = inspect.getsource(client_module)
     direct = [

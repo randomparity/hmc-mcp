@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.operations.storage import list_volume_groups
 
 
