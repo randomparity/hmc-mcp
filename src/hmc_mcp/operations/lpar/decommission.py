@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, TypedDict
+from typing import Any
+
+from typing_extensions import TypedDict
 
 from ...client.client_adapters import AdapterType
 from ...client import HMCClient
@@ -37,6 +39,27 @@ _STORAGE_MAPPING_TYPES: tuple[tuple[str, str], ...] = (
 )
 
 
+class DecommissionAdapterRecord(TypedDict):
+    """Adapter identity included in a decommission blast-radius inventory."""
+
+    type: AdapterType
+    uuid: str
+
+
+class DecommissionBlastRadius(TypedDict):
+    """Stable inventory returned before an LPAR decommission mutates resources."""
+
+    lpar_uuid: str
+    lpar_name: str
+    partition_id: int | None
+    state: str | None
+    owner: str | None
+    adapters: tuple[DecommissionAdapterRecord, ...]
+    storage_mappings: tuple[dict[str, str], ...]
+    unresolved_storage_mapping_count: int
+    unavailable_storage_source_count: int
+
+
 @dataclass(frozen=True)
 class DecommissionResult:
     """Truthful outcome of an LPAR decommission request."""
@@ -59,7 +82,7 @@ class DecommissionResult:
     warnings: tuple[str, ...] = field(
         metadata={"description": "Non-fatal warnings discovered during inventory."}
     )
-    blast_radius: dict[str, Any] = field(
+    blast_radius: DecommissionBlastRadius = field(
         metadata={
             "description": "Curated inventory of the LPAR, adapters, and observed storage mappings."
         }
@@ -75,13 +98,13 @@ class _Inventory:
     partition_id: int | None
     state: str | None
     owner: str | None
-    adapters: tuple[_AdapterRecord, ...]
+    adapters: tuple[DecommissionAdapterRecord, ...]
     storage_mappings: tuple[dict[str, str], ...]
     unresolved_storage_mapping_count: int
     unavailable_storage_source_count: int
     warnings: tuple[str, ...]
 
-    def blast_radius(self) -> dict[str, Any]:
+    def blast_radius(self) -> DecommissionBlastRadius:
         return {
             "lpar_uuid": self.lpar_uuid,
             "lpar_name": self.lpar_name,
@@ -93,12 +116,6 @@ class _Inventory:
             "unresolved_storage_mapping_count": self.unresolved_storage_mapping_count,
             "unavailable_storage_source_count": self.unavailable_storage_source_count,
         }
-
-
-class _AdapterRecord(TypedDict):
-    type: AdapterType
-    uuid: str
-
 
 def _skip_steps(steps: list[WorkflowStep], *names: str) -> None:
     steps.extend(WorkflowStep(name, "skipped") for name in names)
@@ -304,8 +321,8 @@ async def _partition_snapshot(
 
 async def _inventory_adapters(
     hmc: HMCClient, lpar_uuid: str
-) -> tuple[_AdapterRecord, ...]:
-    adapters: list[_AdapterRecord] = []
+) -> tuple[DecommissionAdapterRecord, ...]:
+    adapters: list[DecommissionAdapterRecord] = []
     for adapter_type in _ADAPTER_ORDER:
         entries = await hmc.list_adapters(lpar_uuid, adapter_type)
         for entry in sorted(entries, key=lambda item: str(item.get("UUID") or "")):
@@ -492,7 +509,7 @@ async def _power_off(
 
 
 async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> WorkflowStep:
-    deleted: list[_AdapterRecord] = []
+    deleted: list[DecommissionAdapterRecord] = []
     for adapter in inventory.adapters:
         try:
             await hmc.delete_adapter(

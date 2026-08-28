@@ -191,7 +191,8 @@ names are internal everywhere and are never inventoried.
 - `operations.lpar.core` — exports: `LparCreation`, `LparCreationResult`,
   `LparPowerResult`, `PartitionState`, `ProcessorCompatibilityMode`, `create_and_stamp_lpar`,
   `delete_lpar`, `power_lpar`, `rename_lpar`.
-- `operations.lpar.decommission` — exports: `DecommissionResult`, `decommission_lpar`.
+- `operations.lpar.decommission` — exports: `DecommissionAdapterRecord`,
+  `DecommissionBlastRadius`, `DecommissionResult`, `decommission_lpar`.
 - `operations.lpar.dlpar` — exports: `modify_lpar`, `set_lpar_memory`,
   `set_lpar_processors`.
 - `operations.lpar.provision` — exports: `AttachDiskResult`, `ProvisionNetwork`,

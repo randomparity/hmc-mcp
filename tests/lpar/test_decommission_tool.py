@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, get_type_hints
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -12,13 +12,35 @@ from conftest import assert_only_these_client_methods_used
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.lpar.assignments import WorkflowStep
-from hmc_mcp.operations.lpar.decommission import DecommissionResult, decommission_lpar
+from hmc_mcp.operations.lpar.decommission import (
+    DecommissionAdapterRecord,
+    DecommissionBlastRadius,
+    DecommissionResult,
+    decommission_lpar,
+)
 from hmc_mcp.server_tools.lpar.lifecycle import hmc_decommission_lpar as hmc_decommission_lpar
 
 SYSTEM_UUID = "11111111-1111-1111-1111-111111111111"
 LPAR_UUID = "22222222-2222-2222-2222-222222222222"
 VIOS_UUID = "33333333-3333-3333-3333-333333333333"
 TARGET_PARTITION_ID = "7"
+
+
+def test_decommission_blast_radius_schema_is_named_and_complete() -> None:
+    assert DecommissionBlastRadius.__required_keys__ == {
+        "lpar_uuid",
+        "lpar_name",
+        "partition_id",
+        "state",
+        "owner",
+        "adapters",
+        "storage_mappings",
+        "unresolved_storage_mapping_count",
+        "unavailable_storage_source_count",
+    }
+    hints = get_type_hints(DecommissionBlastRadius)
+    assert hints["adapters"] == tuple[DecommissionAdapterRecord, ...]
+    assert DecommissionAdapterRecord.__required_keys__ == {"type", "uuid"}
 
 
 def _workflow_steps(*entries: dict[str, Any]) -> tuple[WorkflowStep, ...]:

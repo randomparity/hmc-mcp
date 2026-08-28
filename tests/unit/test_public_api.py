@@ -120,6 +120,8 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "system_summary",
         "SystemSummary",
         "decommission_lpar",
+        "DecommissionAdapterRecord",
+        "DecommissionBlastRadius",
         "DecommissionResult",
         "fleet_health",
         "FleetHealthResult",
@@ -1969,7 +1971,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # VIOS selector, making duplicate names unambiguous.
     # ConsoleCapture now exposes bounded stream-failure context.
     # Capacity and summary memory contracts now use the accurate MiB suffix.
-    expected_digest = "ac12c8f0a5b50107eb3d9a96a3090988fe157b9dc0abeae5dd600af7a5723680"  # pragma: allowlist secret
+    # DecommissionResult now exposes its blast-radius record types.
+    expected_digest = "bc7a7f4f3ef876216142e0c1e56573473f89f49d7316dcc05d0a0e2f31068ed2"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

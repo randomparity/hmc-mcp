@@ -48,6 +48,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Added
 
+- `DecommissionBlastRadius` and `DecommissionAdapterRecord` expose the fixed
+  `DecommissionResult.blast_radius` inventory schema to reusable Python callers.
 - `StorageMapResult` records the authorized LPAR UUID beside the resource returned by
   `map_storage`, so library and CLI callers no longer resolve the partition independently
   before the guarded storage operation (ADR 0104).
@@ -407,6 +409,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `DecommissionBlastRadius` and `DecommissionAdapterRecord` type the
+  stable inventory returned through `DecommissionResult.blast_radius`.
 - Added: `list_clusters`, `list_shared_storage_pools`, and
   `get_shared_storage_pool` provide shared presentation-neutral cluster inventory
   operations for CLI, MCP, and reusable Python callers.

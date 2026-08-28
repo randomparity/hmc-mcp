@@ -61,7 +61,12 @@ from hmc_mcp.operations.composite import (
     lpar_summary,
     system_summary,
 )
-from hmc_mcp.operations.lpar.decommission import DecommissionResult, decommission_lpar
+from hmc_mcp.operations.lpar.decommission import (
+    DecommissionAdapterRecord,
+    DecommissionBlastRadius,
+    DecommissionResult,
+    decommission_lpar,
+)
 from hmc_mcp.operations.health import FleetHealthResult, fleet_health
 from hmc_mcp.operations.install import (
     InstallHandle,
@@ -342,6 +347,8 @@ __all__ = [
     "system_summary",
     "SystemSummary",
     "decommission_lpar",
+    "DecommissionAdapterRecord",
+    "DecommissionBlastRadius",
     "DecommissionResult",
     "fleet_health",
     "FleetHealthResult",
