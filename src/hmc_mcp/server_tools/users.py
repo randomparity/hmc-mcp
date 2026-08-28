@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import run_sync, with_client
+from .._app import with_client
 from ..client.client_users import AuthenticationFilter
-from ..client.client_factory import client_from_env
 from ..documents import AuthenticationType
 from ..operations.users import (
     CreateUserRequest,
@@ -240,12 +239,11 @@ def hmc_delete_user(
         profile: TOML profile name, or the environment default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            await delete_user(hmc, console_uuid, user_profile_uuid)
-            return f"Deleted HMC user profile {user_profile_uuid}"
+    async def _go(hmc):
+        await delete_user(hmc, console_uuid, user_profile_uuid)
+        return f"Deleted HMC user profile {user_profile_uuid}"
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="read", operation="task_role.list", target_kind="console")

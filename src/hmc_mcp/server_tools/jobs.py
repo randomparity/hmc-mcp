@@ -7,8 +7,7 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from ..operations import jobs as operations_jobs
-from .._app import run_sync, run_limited_collection, with_client
-from ..client.client_factory import client_from_env
+from .._app import run_limited_collection, with_client
 from ..errors import HMCError
 from ..jobs import JobOutcome
 
@@ -63,12 +62,11 @@ def hmc_get_job(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
-    async def operation():
-        async with client_from_env(profile) as hmc:
-            outcome = await operations_jobs.get_job(hmc, job_id, job_href=job_href)
-            return outcome.job
+    async def operation(hmc):
+        outcome = await operations_jobs.get_job(hmc, job_id, job_href=job_href)
+        return outcome.job
 
-    return run_sync(operation)
+    return with_client(operation, profile=profile)
 
 
 @tool(effect="read", operation="job.list", target_kind="console")

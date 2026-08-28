@@ -677,9 +677,7 @@ def test_capture_tool_resolves_identity_and_forwards_bounds(
     )
 
     with (
-        patch.object(
-            server_console, "client_from_env", return_value=context
-        ) as factory,
+        patch("hmc_mcp._app.client_from_env", return_value=context) as factory,
         patch.object(server_console, "resolve_system_uuid", resolve_system_uuid),
         patch.object(server_console, "resolve_lpar_uuid", resolve_lpar_uuid),
         patch.object(server_console, "resolve_system_name", resolve_system_name),

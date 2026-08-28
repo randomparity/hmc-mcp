@@ -8,10 +8,8 @@ from typing import Any
 
 from .._app import (
     with_client,
-    run_sync,
 )
 
-from ..client.client_factory import client_from_env
 from ..operations.install import (
     InstallRequest,
     install_lpar_os,
@@ -173,19 +171,18 @@ def hmc_install_vios(
     )
     validate_install_request(request)
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await install_vios(
-                hmc,
-                system_name_or_uuid,
-                vios_name_or_uuid,
-                request,
-            )
+    async def _go(hmc):
+        return await install_vios(
+            hmc,
+            system_name_or_uuid,
+            vios_name_or_uuid,
+            request,
+        )
 
     # `install_*` returns an `InstallHandle`, and a `TypedDict` is not assignable
     # to `dict[str, Any]`. Widen here rather than narrowing this tool's return
     # annotation, which would move the derived MCP output schema.
-    return dict(run_sync(_go))
+    return dict(with_client(_go, profile=profile))
 
 
 @tool(effect="destructive", operation="lpar.install_os", target_kind="lpar")
@@ -268,19 +265,18 @@ def hmc_install_lpar_os(
         mac_address=mac_address,
     )
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await install_lpar_os(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                request,
-            )
+    async def _go(hmc):
+        return await install_lpar_os(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            request,
+        )
 
     # `install_*` returns an `InstallHandle`, and a `TypedDict` is not assignable
     # to `dict[str, Any]`. Widen here rather than narrowing this tool's return
     # annotation, which would move the derived MCP output schema.
-    return dict(run_sync(_go))
+    return dict(with_client(_go, profile=profile))
 
 
 @tool(effect="read", operation="vios.list_backups", target_kind="vios")

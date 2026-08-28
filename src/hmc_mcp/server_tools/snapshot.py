@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from hmc_mcp._app import run_sync
-from hmc_mcp.client.client_factory import client_from_env
+from hmc_mcp._app import run_sync, with_client
 from dataclasses import asdict
 
 from hmc_mcp.operations.affinity import PolicyState
@@ -73,17 +72,16 @@ def hmc_snapshot_capture(
         profile: Optional local HMC connection-profile name.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            snapshot = await capture_lpar_snapshot(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                profile_name,
-            )
-            return snapshot.model_dump(mode="json", exclude_none=True)
+    async def _go(hmc):
+        snapshot = await capture_lpar_snapshot(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            profile_name,
+        )
+        return snapshot.model_dump(mode="json", exclude_none=True)
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(

@@ -224,7 +224,7 @@ def test_a_permitted_call_reaches_the_handler(monkeypatch):
         reached.append(profile)
         raise RuntimeError("stop before any HMC request")
 
-    monkeypatch.setattr(server_lpars, "client_from_env", _capture)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _capture)
 
     application = create_mcp(_policy(LAB_ONLY))
     with pytest.raises(ToolError):
@@ -407,7 +407,7 @@ def test_compositions_authorize_independently(monkeypatch):
         reached.append(profile)
         raise RuntimeError("stop before any HMC request")
 
-    monkeypatch.setattr(server_lpars, "client_from_env", _capture)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _capture)
 
     restricted = create_mcp(_policy(LAB_ONLY))
     # A policy granting the connection the call selects, standing in for the

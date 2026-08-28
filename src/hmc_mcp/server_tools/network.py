@@ -10,12 +10,10 @@ import json
 from typing import Any
 
 from .._app import (
-    run_sync,
     run_limited_collection,
     with_client,
 )
 
-from ..client.client_factory import client_from_env
 from ..operations.network import (
     create_virtual_network,
     delete_virtual_network,
@@ -145,12 +143,11 @@ def hmc_delete_virtual_network(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            await delete_virtual_network(hmc, system_name_or_uuid, network_uuid)
+    async def _go(hmc):
+        await delete_virtual_network(hmc, system_name_or_uuid, network_uuid)
         return f"Deleted VirtualNetwork {network_uuid} from {system_name_or_uuid}"
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="read", operation="network.list_bridges", target_kind="managed_system")
@@ -301,23 +298,22 @@ def hmc_assign_sriov_logical_port(
         profile: TOML connection profile name.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return asdict(
-                await assign_sriov_logical_port(
-                    hmc,
-                    system_name_or_uuid,
-                    lpar_name_or_uuid,
-                    adapter_id,
-                    physical_port_id,
-                    logical_port_id,
-                    Decimal(str(capacity_percent)),
-                    profile_name=profile_name,
-                    ownership_override=ownership_override,
-                )
+    async def _go(hmc):
+        return asdict(
+            await assign_sriov_logical_port(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                adapter_id,
+                physical_port_id,
+                logical_port_id,
+                Decimal(str(capacity_percent)),
+                profile_name=profile_name,
+                ownership_override=ownership_override,
             )
+        )
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="mutate", operation="sriov.unassign_logical_port", target_kind="lpar")
@@ -344,22 +340,21 @@ def hmc_unassign_sriov_logical_port(
         profile: TOML connection profile name.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return asdict(
-                await unassign_sriov_logical_port(
-                    hmc,
-                    system_name_or_uuid,
-                    lpar_name_or_uuid,
-                    adapter_id,
-                    physical_port_id,
-                    logical_port_id,
-                    profile_name=profile_name,
-                    ownership_override=ownership_override,
-                )
+    async def _go(hmc):
+        return asdict(
+            await unassign_sriov_logical_port(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                adapter_id,
+                physical_port_id,
+                logical_port_id,
+                profile_name=profile_name,
+                ownership_override=ownership_override,
             )
+        )
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="read", operation="vnic.list", target_kind="lpar")
@@ -420,29 +415,28 @@ def hmc_add_vnic(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            try:
-                result = await add_vnic(
-                    hmc,
-                    system_name_or_uuid,
-                    lpar_name_or_uuid,
-                    VnicBackingSelector(
-                        vios_name,
-                        vios_lpar_id,
-                        adapter_id,
-                        physical_port_id,
-                        Decimal(str(capacity_percent)),
-                    ),
-                    port_vlan_id,
-                    ownership_override=ownership_override,
-                )
-            except VnicPartialError as exc:
-                evidence = json.dumps(asdict(exc.result), default=str)
-                raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
-            return asdict(result)
+    async def _go(hmc):
+        try:
+            result = await add_vnic(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                VnicBackingSelector(
+                    vios_name,
+                    vios_lpar_id,
+                    adapter_id,
+                    physical_port_id,
+                    Decimal(str(capacity_percent)),
+                ),
+                port_vlan_id,
+                ownership_override=ownership_override,
+            )
+        except VnicPartialError as exc:
+            evidence = json.dumps(asdict(exc.result), default=str)
+            raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
+        return asdict(result)
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="destructive", operation="vnic.remove", target_kind="lpar")
@@ -466,19 +460,18 @@ def hmc_remove_vnic(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            try:
-                result = await remove_vnic(
-                    hmc,
-                    system_name_or_uuid,
-                    lpar_name_or_uuid,
-                    slot_num,
-                    ownership_override=ownership_override,
-                )
-            except VnicPartialError as exc:
-                evidence = json.dumps(asdict(exc.result), default=str)
-                raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
-            return asdict(result)
+    async def _go(hmc):
+        try:
+            result = await remove_vnic(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                slot_num,
+                ownership_override=ownership_override,
+            )
+        except VnicPartialError as exc:
+            evidence = json.dumps(asdict(exc.result), default=str)
+            raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
+        return asdict(result)
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)

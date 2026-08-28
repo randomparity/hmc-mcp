@@ -8,13 +8,11 @@ from typing import Any
 
 from ..._app import (
     with_client,
-    run_sync,
 )
 from hmc_mcp.operations.ownership import list_lpar_ownership
 from ...operations.affinity import (
     ProvisionAffinityAssessment,
 )
-from ...client.client_factory import client_from_env
 from ...documents import (
     Keylock,
     LparResources,
@@ -353,17 +351,16 @@ def hmc_delete_lpar(
         HMCError: If the partition state is not 'not activated' (HTTP 409).
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            lpar_uuid = await delete_lpar(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                ownership_override=ownership_override,
-            )
-            return f"Deleted LPAR {lpar_uuid}"
+    async def _go(hmc):
+        lpar_uuid = await delete_lpar(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            ownership_override=ownership_override,
+        )
+        return f"Deleted LPAR {lpar_uuid}"
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="destructive", operation="lpar.decommission", target_kind="lpar")
@@ -527,22 +524,21 @@ def hmc_power_off_lpar(
             approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            result = await power_lpar(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                power_on=False,
-                immediate=immediate,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-                ownership_override=ownership_override,
-            )
-            return result.job
+    async def _go(hmc):
+        result = await power_lpar(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            power_on=False,
+            immediate=immediate,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+            ownership_override=ownership_override,
+        )
+        return result.job
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 # LPAR Boot Order Tools
@@ -562,16 +558,15 @@ def hmc_read_lpar_boot_order(
         profile: Configured HMC profile, or the default when omitted.
     """
 
-    async def _go() -> dict[str, Any]:
-        async with client_from_env(profile) as hmc:
-            result = await read_lpar_boot_order(
-                hmc,
-                system_name_or_uuid=system_name_or_uuid,
-                lpar_name_or_uuid=lpar_name_or_uuid,
-            )
-            return result
+    async def _go(hmc) -> dict[str, Any]:
+        result = await read_lpar_boot_order(
+            hmc,
+            system_name_or_uuid=system_name_or_uuid,
+            lpar_name_or_uuid=lpar_name_or_uuid,
+        )
+        return result
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="mutate", operation="boot_order.set", target_kind="lpar")
@@ -593,18 +588,17 @@ def hmc_set_lpar_boot_order(
         profile: Configured HMC profile, or the default when omitted.
     """
 
-    async def _go() -> dict[str, Any] | None:
-        async with client_from_env(profile) as hmc:
-            result = await set_lpar_boot_order(
-                hmc,
-                system_name_or_uuid=system_name_or_uuid,
-                lpar_name_or_uuid=lpar_name_or_uuid,
-                devices=devices,
-                ownership_override=ownership_override,
-            )
-            return result
+    async def _go(hmc) -> dict[str, Any] | None:
+        result = await set_lpar_boot_order(
+            hmc,
+            system_name_or_uuid=system_name_or_uuid,
+            lpar_name_or_uuid=lpar_name_or_uuid,
+            devices=devices,
+            ownership_override=ownership_override,
+        )
+        return result
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="mutate", operation="boot_order.clear", target_kind="lpar")
@@ -624,17 +618,16 @@ def hmc_clear_lpar_boot_order(
         profile: Configured HMC profile, or the default when omitted.
     """
 
-    async def _go() -> dict[str, Any] | None:
-        async with client_from_env(profile) as hmc:
-            result = await clear_lpar_boot_order(
-                hmc,
-                system_name_or_uuid=system_name_or_uuid,
-                lpar_name_or_uuid=lpar_name_or_uuid,
-                ownership_override=ownership_override,
-            )
-            return result
+    async def _go(hmc) -> dict[str, Any] | None:
+        result = await clear_lpar_boot_order(
+            hmc,
+            system_name_or_uuid=system_name_or_uuid,
+            lpar_name_or_uuid=lpar_name_or_uuid,
+            ownership_override=ownership_override,
+        )
+        return result
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="read", operation="lpar.list_ownership", target_kind="managed_system")

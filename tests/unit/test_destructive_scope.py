@@ -110,7 +110,7 @@ async def test_power_vios_forwards_optional_system_scope():
 def test_power_off_lpar_tool_forwards_system_scope(monkeypatch):
     hmc = AsyncMock()
     operation = AsyncMock(return_value=AsyncMock(job={"UUID": "job-uuid"}))
-    monkeypatch.setattr(server_lpars, "client_from_env", _client_factory(hmc))
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _client_factory(hmc))
     monkeypatch.setattr(server_lpars, "power_lpar", operation)
 
     server_lpars.hmc_power_off_lpar(

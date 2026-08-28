@@ -6,10 +6,8 @@ from ..tool_registry import tool_module
 
 from .._app import (
     with_client,
-    run_sync,
 )
 
-from ..client.client_factory import client_from_env
 from ..jobs import JobOutcome
 from ..operations.lpm import (
     LpmAffinityMigrationResult,
@@ -69,24 +67,23 @@ def hmc_migrate_lpar(
             searched fleet-wide.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            result = await migrate_lpar(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                target_system_name_or_uuid,
-                target_profile_name,
-                wait_time,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-                validate_first=validate_first,
-                ownership_override=ownership_override,
-            )
-            return result.job
+    async def _go(hmc):
+        result = await migrate_lpar(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            target_system_name_or_uuid,
+            target_profile_name,
+            wait_time,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+            validate_first=validate_first,
+            ownership_override=ownership_override,
+        )
+        return result.job
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="mutate", operation="lpar.migrate_affinity", target_kind="lpar")
@@ -173,22 +170,21 @@ def hmc_migrate_validate_lpar(
             searched fleet-wide.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            result = await validate_lpar_migration(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                target_system_name_or_uuid,
-                target_profile_name,
-                wait_time,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-            return result.job
+    async def _go(hmc):
+        result = await validate_lpar_migration(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            target_system_name_or_uuid,
+            target_profile_name,
+            wait_time,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        )
+        return result.job
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="destructive", operation="lpar.migrate_abort", target_kind="lpar")
@@ -220,20 +216,19 @@ def hmc_migrate_abort_lpar(
             searched fleet-wide.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            result = await abort_lpar_migration(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-                ownership_override=ownership_override,
-            )
-            return result.job
+    async def _go(hmc):
+        result = await abort_lpar_migration(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+            ownership_override=ownership_override,
+        )
+        return result.job
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="mutate", operation="lpar.migrate_recover", target_kind="lpar")
@@ -265,20 +260,19 @@ def hmc_migrate_recover_lpar(
             searched fleet-wide.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            result = await recover_lpar_migration(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-                ownership_override=ownership_override,
-            )
-            return result.job
+    async def _go(hmc):
+        result = await recover_lpar_migration(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+            ownership_override=ownership_override,
+        )
+        return result.job
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="destructive", operation="lpar.remote_restart", target_kind="lpar")
@@ -316,21 +310,20 @@ def hmc_remote_restart_lpar(
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            result = await remote_restart_lpar(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                operation,
-                target_system_name_or_uuid=target_system_name_or_uuid,
-                use_current_data=use_current_data,
-                retain_devices=retain_devices,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-                ownership_override=ownership_override,
-            )
-            return result.job
+    async def _go(hmc):
+        result = await remote_restart_lpar(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            operation,
+            target_system_name_or_uuid=target_system_name_or_uuid,
+            use_current_data=use_current_data,
+            retain_devices=retain_devices,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+            ownership_override=ownership_override,
+        )
+        return result.job
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)

@@ -178,7 +178,7 @@ def test_lpar_summary_cli_delegates_to_neutral_operation():
     with (
         patch("hmc_mcp.cli_commands.lpar.inventory.lpar_summary", summary),
         patch(
-            "hmc_mcp.cli_commands.lpar.inventory._client",
+                "hmc_mcp.cli_commands.runtime._client",
             return_value=_ClientContext(client),
         ),
     ):
@@ -195,7 +195,7 @@ def test_system_summary_cli_delegates_to_neutral_operation():
     with (
         patch("hmc_mcp.cli_commands.systems.system_summary", summary),
         patch(
-            "hmc_mcp.cli_commands.systems._client", return_value=_ClientContext(client)
+                "hmc_mcp.cli_commands.runtime._client", return_value=_ClientContext(client)
         ),
     ):
         result = CliRunner().invoke(app, ["systems", "summary", "system1", "--json"])
@@ -211,7 +211,7 @@ def test_fleet_health_cli_delegates_to_neutral_operation():
     with (
         patch("hmc_mcp.cli_commands.systems.fleet_health", health),
         patch(
-            "hmc_mcp.cli_commands.systems._client", return_value=_ClientContext(client)
+                "hmc_mcp.cli_commands.runtime._client", return_value=_ClientContext(client)
         ),
     ):
         result = CliRunner().invoke(app, ["systems", "health", "--json"])
@@ -229,7 +229,7 @@ def test_fleet_health_cli_does_not_claim_healthy_when_telemetry_is_unavailable()
     with (
         patch("hmc_mcp.cli_commands.systems.fleet_health", health),
         patch(
-            "hmc_mcp.cli_commands.systems._client", return_value=_ClientContext(client)
+                "hmc_mcp.cli_commands.runtime._client", return_value=_ClientContext(client)
         ),
     ):
         result = CliRunner().invoke(app, ["systems", "health"])
@@ -246,7 +246,7 @@ def test_capacity_clis_delegate_to_neutral_operations():
         patch("hmc_mcp.cli_commands.systems.capacity_report", report),
         patch("hmc_mcp.cli_commands.systems.find_placement", placement),
         patch(
-            "hmc_mcp.cli_commands.systems._client", return_value=_ClientContext(client)
+                "hmc_mcp.cli_commands.runtime._client", return_value=_ClientContext(client)
         ),
     ):
         capacity_result = CliRunner().invoke(app, ["systems", "capacity", "--json"])

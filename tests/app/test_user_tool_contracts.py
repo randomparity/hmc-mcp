@@ -143,7 +143,7 @@ def test_delete_user_tool_returns_identified_confirmation() -> None:
     client.delete_hmc_user = AsyncMock(return_value=None)
     context = _client_context(client)
 
-    with patch.object(server_users, "client_from_env", return_value=context):
+    with patch("hmc_mcp._app.client_from_env", return_value=context):
         result = server_users.hmc_delete_user(
             "console-1", "profile-1", profile="lab"
         )

@@ -6,9 +6,8 @@ from ..tool_registry import tool_module
 
 from typing import Any
 
-from .._app import run_sync, run_limited_collection
+from .._app import run_limited_collection, with_client
 from ..client.client_adapters import AdapterType
-from ..client.client_factory import client_from_env
 from ..operations.adapters import (
     add_network_adapter,
     add_vfc_adapter,
@@ -80,23 +79,22 @@ def hmc_add_network_adapter(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def operation():
-        async with client_from_env(profile) as hmc:
-            return (
-                await add_network_adapter(
-                    hmc,
-                    system_name_or_uuid,
-                    lpar_name_or_uuid,
-                    port_vlan_id,
-                    slot_number=slot_number,
-                    virtual_switch_id=virtual_switch_id,
-                    tagged=tagged,
-                    mac_address=mac_address,
-                    ownership_override=ownership_override,
-                )
-            ).resource
+    async def operation(hmc):
+        return (
+            await add_network_adapter(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                port_vlan_id,
+                slot_number=slot_number,
+                virtual_switch_id=virtual_switch_id,
+                tagged=tagged,
+                mac_address=mac_address,
+                ownership_override=ownership_override,
+            )
+        ).resource
 
-    return run_sync(operation)
+    return with_client(operation, profile=profile)
 
 
 # Not exhaustive: `vios_partition_id` is a slot number within one managed
@@ -131,21 +129,20 @@ def hmc_add_vscsi_adapter(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def operation():
-        async with client_from_env(profile) as hmc:
-            return (
-                await add_vscsi_adapter(
-                    hmc,
-                    system_name_or_uuid,
-                    lpar_name_or_uuid,
-                    vios_partition_id,
-                    vios_slot,
-                    slot_number=slot_number,
-                    ownership_override=ownership_override,
-                )
-            ).resource
+    async def operation(hmc):
+        return (
+            await add_vscsi_adapter(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                vios_partition_id,
+                vios_slot,
+                slot_number=slot_number,
+                ownership_override=ownership_override,
+            )
+        ).resource
 
-    return run_sync(operation)
+    return with_client(operation, profile=profile)
 
 
 # Not exhaustive: `vios_partition_id` is a slot number within one managed
@@ -180,21 +177,20 @@ def hmc_add_vfc_adapter(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def operation():
-        async with client_from_env(profile) as hmc:
-            return (
-                await add_vfc_adapter(
-                    hmc,
-                    system_name_or_uuid,
-                    lpar_name_or_uuid,
-                    vios_partition_id,
-                    vios_slot,
-                    slot_number=slot_number,
-                    ownership_override=ownership_override,
-                )
-            ).resource
+    async def operation(hmc):
+        return (
+            await add_vfc_adapter(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                vios_partition_id,
+                vios_slot,
+                slot_number=slot_number,
+                ownership_override=ownership_override,
+            )
+        ).resource
 
-    return run_sync(operation)
+    return with_client(operation, profile=profile)
 
 
 @tool(effect="destructive", operation="adapter.delete", target_kind="lpar")
@@ -220,16 +216,15 @@ def hmc_delete_adapter(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def operation():
-        async with client_from_env(profile) as hmc:
-            await delete_adapter(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                adapter_type,
-                adapter_uuid,
-                ownership_override=ownership_override,
-            )
+    async def operation(hmc):
+        await delete_adapter(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            adapter_type,
+            adapter_uuid,
+            ownership_override=ownership_override,
+        )
         return f"Deleted {adapter_type} {adapter_uuid} from {lpar_name_or_uuid}"
 
-    return run_sync(operation)
+    return with_client(operation, profile=profile)

@@ -47,7 +47,7 @@ def test_add_vnic_builds_typed_selector(monkeypatch) -> None:
     client = MagicMock()
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
-    monkeypatch.setattr("hmc_mcp.server_tools.network.client_from_env", lambda _profile: client)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", lambda _profile: client)
 
     result = hmc_add_vnic(
         "system",
@@ -79,7 +79,7 @@ def test_add_vnic_forwards_ownership_override(monkeypatch) -> None:
     client = MagicMock()
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
-    monkeypatch.setattr("hmc_mcp.server_tools.network.client_from_env", lambda _profile: client)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", lambda _profile: client)
 
     hmc_add_vnic(
         "system", "lpar", "vios1", "2", "1", "0", 20.25, 100,
@@ -99,7 +99,7 @@ def test_add_vnic_partial_error_retains_serialized_result(monkeypatch) -> None:
     client = MagicMock()
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
-    monkeypatch.setattr("hmc_mcp.server_tools.network.client_from_env", lambda _profile: client)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", lambda _profile: client)
 
     with pytest.raises(VnicPartialError) as caught:
         hmc_add_vnic("system", "lpar", "vios1", "2", "1", "0", 20.25, 100)
@@ -118,7 +118,7 @@ def test_remove_vnic_uses_slot_num(monkeypatch) -> None:
     client = MagicMock()
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
-    monkeypatch.setattr("hmc_mcp.server_tools.network.client_from_env", lambda _profile: client)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", lambda _profile: client)
 
     result = hmc_remove_vnic("system", "lpar", slot_num="4")
 
@@ -136,7 +136,7 @@ def test_remove_vnic_forwards_ownership_override(monkeypatch) -> None:
     client = MagicMock()
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
-    monkeypatch.setattr("hmc_mcp.server_tools.network.client_from_env", lambda _profile: client)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", lambda _profile: client)
 
     hmc_remove_vnic("system", "lpar", slot_num="4", ownership_override=True)
 

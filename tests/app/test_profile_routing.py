@@ -329,7 +329,7 @@ def test_boot_order_tools_route_the_profile_they_declare(
         seen.append(profile)
         return _Recorder()
 
-    monkeypatch.setattr(server_lpars, "client_from_env", _capture)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _capture)
 
     with pytest.raises(AssertionError, match="stops before any HMC request"):
         getattr(server_lpars, tool_name)(**arguments, profile="beta")

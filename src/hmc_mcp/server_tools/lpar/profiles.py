@@ -5,11 +5,9 @@ from __future__ import annotations
 from ...tool_registry import tool_module
 
 from ..._app import (
-    run_sync,
     ssh_with_client,
     with_client,
 )
-from ...client.client_factory import client_from_env
 from ...operations.pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
 from ...operations.lpar.configuration import synchronize_lpar_profile
 
@@ -195,18 +193,17 @@ def hmc_assign_dedicated_pcie_slot(
         profile: Optional configured HMC profile name.
     """
 
-    async def _go() -> None:
-        async with client_from_env(profile) as hmc:
-            await assign_dedicated_pcie_slot(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                profile_name,
-                drc_index,
-                ownership_override=ownership_override,
-            )
+    async def _go(hmc) -> None:
+        await assign_dedicated_pcie_slot(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            profile_name,
+            drc_index,
+            ownership_override=ownership_override,
+        )
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)
 
 
 @tool(effect="mutate", operation="pcie.unassign_dedicated_slot", target_kind="lpar")
@@ -229,15 +226,14 @@ def hmc_unassign_dedicated_pcie_slot(
         profile: Optional configured HMC profile name.
     """
 
-    async def _go() -> None:
-        async with client_from_env(profile) as hmc:
-            await unassign_dedicated_pcie_slot(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                profile_name,
-                drc_index,
-                ownership_override=ownership_override,
-            )
+    async def _go(hmc) -> None:
+        await unassign_dedicated_pcie_slot(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            profile_name,
+            drc_index,
+            ownership_override=ownership_override,
+        )
 
-    return run_sync(_go)
+    return with_client(_go, profile=profile)

@@ -396,7 +396,6 @@ def test_power_tools_forward_the_ownership_override(
     hmc = _hmc(authorize=True)
     operation = AsyncMock(return_value=AsyncMock(job={"UUID": "job-uuid"}))
     monkeypatch.setattr("hmc_mcp._app.client_from_env", _client_factory(hmc))
-    monkeypatch.setattr(server_lpars, "client_from_env", _client_factory(hmc))
     monkeypatch.setattr(operation_module, "power_lpar", operation)
 
     tool("aix1", system_name_or_uuid="sys1", ownership_override=True)
