@@ -1718,20 +1718,49 @@ def _typed_dict_text(exported: type) -> str:
     return f"({keys})"
 
 
+def _normalize_optional_annotations(rendered: str) -> str:
+    """Render ``Optional[T]`` as ``T | None`` without assuming T's bracket depth."""
+    marker = "Optional["
+    while marker in rendered:
+        start = rendered.index(marker)
+        cursor = start + len(marker)
+        depth = 1
+        while depth:
+            character = rendered[cursor]
+            if character == "[":
+                depth += 1
+            elif character == "]":
+                depth -= 1
+            cursor += 1
+        inner = rendered[start + len(marker) : cursor - 1]
+        rendered = f"{rendered[:start]}{inner} | None{rendered[cursor:]}"
+    return rendered
+
+
 def _signature_text(exported: object) -> str:
     """One exported name's signature, rendered the same on every supported interpreter.
 
     `inspect` writes an `Annotated` annotation as `typing.Annotated[...]` on 3.11 and
-    as `Annotated[...]` from 3.12 on. The digest below is a single frozen constant
-    checked against 3.11 through 3.14, so an interpreter-dependent rendering makes it
-    unfreezable — invisible until #482 put the first `Annotated` field in the manifest,
-    and then a failure on whichever versions did not recompute it. Dropping the
-    qualifier everywhere it appears leaves the annotation's content intact and the
-    text identical across all four.
+    as `Annotated[...]` from 3.12 on. Python 3.14 also renders Pydantic's synthesized
+    optional model fields as ``T | None`` where older interpreters use ``Optional[T]``.
+    The digest below is one frozen constant across 3.11 through 3.14, so both forms are
+    normalized without changing their annotation content.
     """
     if hasattr(exported, "__required_keys__"):  # A ``TypedDict``: see above.
         return _typed_dict_text(exported)
-    return re.sub(r"\btyping\.", "", str(inspect.signature(exported)))
+    rendered = re.sub(r"\btyping\.", "", str(inspect.signature(exported)))
+    return _normalize_optional_annotations(rendered)
+
+
+def test_signature_text_normalizes_optional_union_rendering() -> None:
+    """Pydantic signatures must freeze identically on Python 3.11 through 3.14."""
+    rendered = _signature_text(api.VIOSPlatformUpdate)
+
+    assert "Optional[" not in rendered
+    assert (
+        "ResourceType: Literal['HMC', 'NFS', 'SFTP', 'USB', 'IBMWebsite'] | None"
+        in rendered
+    )
 
 
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
@@ -2008,7 +2037,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Virtual-network creation now records its resolved parent system UUID.
     # Cohesive managed-system patch and LPM destination request values replace
     # their recurring scalar parameter groups.
-    expected_digest = "d93d8b0934b8c409916394a81e728cb2a1d0c8844aa88630a37a36d877505a3d"  # pragma: allowlist secret
+    # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
+    # now normalizes it to the declared ``T | None`` form on every supported version.
+    expected_digest = "07d5116d8851c62a65a6711d16196beb10f4758a043542d2c8ee5b8771e11cc4"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
