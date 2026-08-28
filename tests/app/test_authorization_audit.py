@@ -41,7 +41,9 @@ from pathlib import Path
 
 import pytest
 
-from hmc_mcp import audit, audit_sink, server as server_app
+from hmc_mcp import server as server_app
+from hmc_mcp.audit import records as audit
+from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.authorization import dispatch_scope as authorization_dispatch_scope
 from hmc_mcp.authorization.access_policy import compile_access_policy
 from hmc_mcp.authorization.connection_scope import ConnectionScopeError

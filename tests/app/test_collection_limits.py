@@ -18,6 +18,7 @@ from hmc_mcp.server_tools import (
 from hmc_mcp._app import run_limited_collection
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.operations.lpar import core as lpar_core
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
@@ -221,7 +222,7 @@ def test_lpar_parent_selector_runs_before_results_are_capped():
             server_systems, "client_from_env", return_value=_client_context(client)
         ),
         patch.object(
-            server_systems,
+            lpar_core,
             "resolve_system_uuid",
             new=AsyncMock(return_value="system-uuid"),
         ) as resolve,

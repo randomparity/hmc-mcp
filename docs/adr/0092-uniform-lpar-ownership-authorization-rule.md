@@ -119,9 +119,9 @@ against that commit rather than maintained forward.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `delete_lpar` | `operations/lpar/core.py:294` | guarded (`:313`) | — |
+| `delete_lpar` | `operations/lpar/core.py:349` | guarded (`:357`) | — |
 | `decommission_lpar` | `operations/lpar/decommission.py:606` | guarded (`:283`, `:637`, `:656`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
-| `rename_lpar` | `operations/lpar/core.py:399` | guarded (`:426`) | — |
+| `rename_lpar` | `operations/lpar/core.py:454` | guarded (`:463`) | — |
 | `set_lpar_ownership_description` | `operations/ownership.py:597` | guarded (`:281`) | — |
 | `synchronize_lpar_profile` | `operations/lpar/configuration.py:11` | guarded (`:25`) | — |
 
@@ -209,7 +209,7 @@ kind of modification on the other side of the authorization boundary.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `power_lpar` | `operations/lpar/core.py:322` | guarded when opted in (`:372`, via `_resolve_and_authorize_lpar`); §4 | #371 |
+| `power_lpar` | `operations/lpar/core.py:377` | guarded when opted in (`:416`, via `resolve_and_authorize_lpar_mutation`); §4 | #371 |
 
 `power_lpar` is the whole class. Both `hmc_power_on_lpar` (`server_tools/lpars.py:504`)
 and `hmc_power_off_lpar` (`server_tools/lpars.py:615`) delegate to it, and so does the
@@ -226,7 +226,7 @@ exempt anyway.
 
 | Operation | Reason |
 |---|---|
-| `create_and_stamp_lpar` (`operations/lpar/core.py:185`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
+| `create_and_stamp_lpar` (`operations/lpar/core.py:240`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
 | `provision_lpar` (`operations/lpar/provision.py:552`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
 | `deploy_partition_template` (`operations/templates.py:93`) | Creates the partition and stamps it per ADR 0014. |
 | `hmc_capture_lpar_console` (`server_tools/console.py:24`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |

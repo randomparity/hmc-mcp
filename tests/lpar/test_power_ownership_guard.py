@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from hmc_mcp import audit_sink
+from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.cli import app as cli_app
 from hmc_mcp.cli_commands import lpars as cli_lpars
 from hmc_mcp.operations.lpar import provision as operations_provision

@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Final, Literal, get_args
 
-from .audit_sink import emit
+from .sink import emit
 
 #: Every caller-supplied value is truncated to this, with no marker. In band a
 #: marker is forgeable; out of band it is a field on every record for something a

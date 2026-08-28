@@ -15,7 +15,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp import audit_sink
+from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.server_tools import command as server_command
 from hmc_mcp.server_tools import lpars as server_lpars
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy

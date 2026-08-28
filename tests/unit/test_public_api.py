@@ -44,6 +44,10 @@ from hmc_mcp.client.client_contracts import PcmClient, TemplatesClient
 # so neither mapping can silently accumulate dead excuses.
 ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {
     (
+        "hmc_mcp.operations.jobs",
+        "list_jobs",
+    ): "ADR 0029 excludes this adapter-facing inventory boundary from the reusable facade",
+    (
         "hmc_mcp.operations.pcie",
         "require_admitted_environment",
     ): "ADR 0029 excludes this shared admission-policy guard from domain operations",

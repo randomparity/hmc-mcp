@@ -178,7 +178,7 @@ names are internal everywhere and are never inventoried.
     `InstallHandle`: §6 places a new facade export in one of §5's three sets, and §5 enumerates
     Domain A over exported *functions*, which a type is not.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
-  none.
+  `is_unsupported_job_listing`.
 - `operations.lpar` — operations: none; types: none; excluded synchronous: none.
 - `operations.lpar.assignments` — exports: `AssignmentResult`, `DedicatedPcieAssignment`,
   `LparPcieAssignments`, `LparPcieWorkflowResult`, `SriovLogicalPortAssignment`,

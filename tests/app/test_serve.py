@@ -9,7 +9,7 @@ import logging
 import socket
 from unittest.mock import patch
 
-from hmc_mcp import audit_sink
+from hmc_mcp.audit import sink as audit_sink
 
 import pytest
 from click import unstyle

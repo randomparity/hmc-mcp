@@ -12,8 +12,8 @@ import httpx
 import pytest
 import respx
 
-from hmc_mcp import audit_sink
-from hmc_mcp.audit_sink import AUDIT_LOGGER_NAME
+from hmc_mcp.audit import sink as audit_sink
+from hmc_mcp.audit.sink import AUDIT_LOGGER_NAME
 from hmc_mcp.config import HMCConfig
 
 

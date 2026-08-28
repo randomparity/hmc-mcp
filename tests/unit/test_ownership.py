@@ -12,7 +12,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from hmc_mcp import audit, audit_sink
+from hmc_mcp import audit
+from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.operations.lpar import core as operations_lpar
 from hmc_mcp.operations import ownership as lpar_ownership
 from hmc_mcp.config import validate_agent_id

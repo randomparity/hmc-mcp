@@ -11,7 +11,7 @@ import asyncio
 import pytest
 from fastmcp import FastMCP
 
-from hmc_mcp import audit_sink
+from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import (

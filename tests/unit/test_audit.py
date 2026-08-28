@@ -93,7 +93,8 @@ from typing import get_args
 
 import pytest
 
-from hmc_mcp import audit, audit_sink
+from hmc_mcp.audit import records as audit
+from hmc_mcp.audit import sink as audit_sink
 
 SENTINEL = "SENTINEL-DO-NOT-LOG-9c1f"
 
@@ -765,18 +766,18 @@ def test_a_long_partition_records_a_log_path_that_does_not_exist(length, recover
 
 def test_only_audit_sink_resolves_the_audit_logger():
     """Spec 8a. The sink owns the logger and has no package dependencies."""
-    package = Path(audit.__file__).parent
+    package = Path(audit.__file__).parent.parent
     offenders = [
         path.name
         for path in package.glob("*.py")
-        if path.name != "audit_sink.py"
+        if path != Path(audit_sink.__file__)
         and audit_sink.AUDIT_LOGGER_NAME in path.read_text()
     ]
     assert offenders == [], f"{offenders} name the reserved audit logger"
 
     source = Path(audit_sink.__file__).read_text()
     assert "from ." not in source and "from hmc_mcp" not in source, (
-        "audit_sink.py must import nothing from the package so audit can depend "
+        "audit/sink.py must import nothing from the package so records can depend "
         "on its emission boundary without a cycle"
     )
 
@@ -890,7 +891,7 @@ def test_the_module_closes_propagation_at_import(tmp_path):
     fixture resets `propagate` to True for every test in this session — so an
     in-process assertion would read the fixture's value, not the shipped one."""
     probe = (
-        "import logging, hmc_mcp.audit_sink as a; "
+        "import logging, hmc_mcp.audit.sink as a; "
         "print(logging.getLogger(a.AUDIT_LOGGER_NAME).propagate)"
     )
     result = subprocess.run(

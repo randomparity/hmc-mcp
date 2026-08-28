@@ -937,8 +937,7 @@ src/hmc_mcp/
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
   authorization/             # access policy and dispatch-time scope enforcement
-  audit.py       # audit event vocabulary and record construction
-  audit_sink.py  # non-blocking audit and diagnostic transport
+  audit/         # audit records plus non-blocking diagnostic transport
   tool_registry.py           # local MCP tool collection, each tool carrying ToolSecurity
   _app.py        # shared FastMCP instance, sync-run and SSH helpers, entry points
   server.py      # MCP composition, startup validation, logging, and serving bootstrap

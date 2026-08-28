@@ -209,7 +209,7 @@ from hmc_mcp import audit, client, tool_registry
 ROOT = Path(__file__).parents[1]
 DOCUMENT = ROOT / "docs" / "authorization-audit.md"
 ENVIRONMENT_DOCUMENT = ROOT / "docs" / "environment-variables.md"
-AUDIT_MODULE = ROOT / "src" / "hmc_mcp" / "audit.py"
+AUDIT_MODULE = ROOT / "src" / "hmc_mcp" / "audit" / "records.py"
 AUDIT_TEST = ROOT / "tests" / "unit" / "test_audit.py"
 DISPATCH_MODULE = ROOT / "src" / "hmc_mcp" / "authorization" / "dispatch_scope.py"
 

@@ -62,7 +62,7 @@ from ._app import (
     create_mcp as _create_base_mcp,
 )
 from .authorization.access_policy import AccessPolicy, unboundable_effect_tools
-from .audit_sink import (
+from .audit.sink import (
     StreamSafeFormatter,
     install_audit_sink,
     set_audit_level,

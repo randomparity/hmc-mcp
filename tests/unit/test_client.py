@@ -12,7 +12,7 @@ import pytest
 import respx
 from defusedxml import ElementTree as DET
 
-from hmc_mcp import audit_sink
+from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.client import HMCClient, HMCError
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCTransportError

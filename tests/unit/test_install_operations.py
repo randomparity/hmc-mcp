@@ -19,7 +19,8 @@ import pytest
 
 from conftest import make_config
 
-from hmc_mcp import api, audit_sink
+from hmc_mcp import api
+from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.operations.install import (
     InstallHandle,
     InstallRequest,
