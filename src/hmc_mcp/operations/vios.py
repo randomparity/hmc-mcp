@@ -46,9 +46,8 @@ async def list_vios(
 
 async def get_vios(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
-    *,
-    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Get one VIOS storage-detail resource by a system-scoped selector."""
     vios_uuid = await resolve_vios_uuid(
@@ -71,8 +70,8 @@ async def create_vios(
 
 async def delete_vios(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
-    system_name_or_uuid: str | None = None,
 ) -> str:
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid

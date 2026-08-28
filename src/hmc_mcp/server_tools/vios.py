@@ -93,7 +93,7 @@ def hmc_delete_vios(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await delete_vios(hmc, vios_name_or_uuid, system_name_or_uuid)
+            return await delete_vios(hmc, system_name_or_uuid, vios_name_or_uuid)
 
     return run_sync(_go)
 

@@ -241,8 +241,8 @@ def hmc_get_vios(
         async with client_from_env(profile) as hmc:
             return await get_vios(
                 hmc,
+                system_name_or_uuid,
                 vios_name_or_uuid,
-                system_name_or_uuid=system_name_or_uuid,
             )
 
     return run_sync(_go)

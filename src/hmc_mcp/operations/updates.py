@@ -130,6 +130,7 @@ async def list_available_hmc_ptfs(
 
 async def update_vios(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     repository: VIOSUpdateSource,
     *,
@@ -139,7 +140,9 @@ async def update_vios(
 ) -> dict[str, Any] | None:
     """Submit a VIOS software update and project terminal output."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
-    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     vios_path_id = quote(vios_uuid, safe="")
     job = await hmc.submit_job(
         f"/rest/api/uom/VirtualIOServer/{vios_path_id}/do/UpdateVIOS",
@@ -153,6 +156,7 @@ async def update_vios(
 
 async def upgrade_vios(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     repository: VIOSUpgradeSource,
     *,
@@ -162,7 +166,9 @@ async def upgrade_vios(
 ) -> dict[str, Any] | None:
     """Submit a VIOS version upgrade and project terminal output."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
-    vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     vios_path_id = quote(vios_uuid, safe="")
     job = await hmc.submit_job(
         f"/rest/api/uom/VirtualIOServer/{vios_path_id}/do/UpgradeVIOS",

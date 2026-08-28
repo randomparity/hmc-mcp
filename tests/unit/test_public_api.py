@@ -1861,6 +1861,20 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         parameters = inspect.signature(getattr(api, operation_name)).parameters
         assert "power_on" in parameters
         assert "on" not in parameters
+    for operation_name in (
+        "get_vios",
+        "delete_vios",
+        "power_vios",
+        "update_vios",
+        "upgrade_vios",
+    ):
+        parameters = inspect.signature(getattr(api, operation_name)).parameters
+        selector_names = [
+            name
+            for name in parameters
+            if name in {"system_name_or_uuid", "vios_name_or_uuid"}
+        ]
+        assert selector_names == ["system_name_or_uuid", "vios_name_or_uuid"]
     provision_parameters = inspect.signature(api.provision_lpar).parameters
     for control in (
         "partition_type",
@@ -1904,7 +1918,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Every LPAR operation now places the system selector before the LPAR selector.
     # VIOS inventory operations and their PartitionState selector joined the facade.
     # System and VIOS power operations now use power_on like the LPAR operation.
-    expected_digest = "bea89cf712d473d99b7e9a7df635067830d58498805bb24013140fa15cce9ac3"  # pragma: allowlist secret
+    # VIOS operations now share system-before-partition selector order.
+    expected_digest = "967b9d9be4191de36b84874d87a4667ada2f5b15f47c5c9a2631cea98c7eae6f"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

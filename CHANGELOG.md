@@ -395,6 +395,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: `get_vios`, `delete_vios`, `update_vios`, and `upgrade_vios` now place the
+  optional managed-system selector before the VIOS selector, matching sibling VIOS
+  operations and allowing update and upgrade names to be disambiguated.
+
 - Added: `get_vios`, `list_vios`, and the latter's `PartitionState` selector
   type as the shared VIOS inventory boundary used by both presentation layers.
 - Changed: `power_system` and `power_vios` now name their action flag

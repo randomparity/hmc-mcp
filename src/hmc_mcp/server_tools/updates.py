@@ -115,6 +115,7 @@ def hmc_get_available_hmc_ptfs(
 def hmc_vios_update(
     vios_name_or_uuid: str,
     repository: VIOSUpdateSource,
+    system_name_or_uuid: str | None = None,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
@@ -130,6 +131,7 @@ def hmc_vios_update(
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
         repository: Documented VIOS update job parameters.
+        system_name_or_uuid: Optional managed system used to disambiguate a VIOS name.
         wait: Wait for the submitted job to reach a terminal state.
         timeout_seconds: Maximum wait duration in seconds.
         poll_interval: Seconds between job-status requests while waiting.
@@ -140,6 +142,7 @@ def hmc_vios_update(
         async with client_from_env(profile) as hmc:
             return await update_vios(
                 hmc,
+                system_name_or_uuid,
                 vios_name_or_uuid,
                 repository,
                 wait=wait,
@@ -154,6 +157,7 @@ def hmc_vios_update(
 def hmc_vios_upgrade(
     vios_name_or_uuid: str,
     repository: VIOSUpgradeSource,
+    system_name_or_uuid: str | None = None,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
@@ -169,6 +173,7 @@ def hmc_vios_upgrade(
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
         repository: Documented VIOS upgrade job parameters.
+        system_name_or_uuid: Optional managed system used to disambiguate a VIOS name.
         wait: Wait for the submitted job to reach a terminal state.
         timeout_seconds: Maximum wait duration in seconds.
         poll_interval: Seconds between job-status requests while waiting.
@@ -179,6 +184,7 @@ def hmc_vios_upgrade(
         async with client_from_env(profile) as hmc:
             return await upgrade_vios(
                 hmc,
+                system_name_or_uuid,
                 vios_name_or_uuid,
                 repository,
                 wait=wait,
