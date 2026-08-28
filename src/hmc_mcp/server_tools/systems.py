@@ -223,7 +223,11 @@ def hmc_get_vios(
     """
 
     return with_client(
-        lambda hmc: get_vios(hmc, system_name_or_uuid, vios_name_or_uuid),
+        lambda hmc: get_vios(
+            hmc,
+            vios_name_or_uuid,
+            system_name_or_uuid=system_name_or_uuid,
+        ),
         profile=profile,
     )
 

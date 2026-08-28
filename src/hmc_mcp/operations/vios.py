@@ -46,8 +46,9 @@ async def list_vios(
 
 async def get_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Get VIOS storage detail by UUID or an optionally system-scoped name.
 

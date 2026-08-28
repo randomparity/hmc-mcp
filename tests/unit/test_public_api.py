@@ -1890,7 +1890,6 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         assert "power_on" in parameters
         assert "on" not in parameters
     for operation_name in (
-        "get_vios",
         "delete_vios",
         "power_vios",
         "update_vios",
@@ -1920,6 +1919,10 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             if name in {"system_name_or_uuid", "vios_name_or_uuid"}
         ]
         assert selector_names == ["system_name_or_uuid", "vios_name_or_uuid"]
+    get_vios_parameters = inspect.signature(api.get_vios).parameters
+    assert list(get_vios_parameters)[:2] == ["hmc", "vios_name_or_uuid"]
+    assert get_vios_parameters["system_name_or_uuid"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert get_vios_parameters["system_name_or_uuid"].default is None
     provision_parameters = inspect.signature(api.provision_lpar).parameters
     for control in (
         "partition_type",
@@ -1963,7 +1966,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Every LPAR operation now places the system selector before the LPAR selector.
     # VIOS inventory operations and their PartitionState selector joined the facade.
     # System and VIOS power operations now use power_on like the LPAR operation.
-    # VIOS operations now share system-before-partition selector order.
+    # VIOS mutations share system-before-partition selector order; get_vios
+    # makes its optional system scope keyword-only after the required selector.
     # Boot-order operations now accept a system-scoped LPAR name or UUID.
     # PCIe inventory operations now name their system selector explicitly.
     # Cluster and shared-storage-pool inventory joined the reusable facade.
@@ -1973,7 +1977,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Capacity and summary memory contracts now use the accurate MiB suffix.
     # DecommissionResult now exposes its blast-radius record types.
     # PartitionState now lives at the shared operations layer used by LPAR and VIOS.
-    expected_digest = "7e5873211ec0dd1e6079fbf96f21de7fed7889899b5ba9d058bbcec1b76c358f"  # pragma: allowlist secret
+    expected_digest = "0fb334c2a53d6d8863a4ba407a06343ece63b2b85802f8cdcbc79da97dcf53c5"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
