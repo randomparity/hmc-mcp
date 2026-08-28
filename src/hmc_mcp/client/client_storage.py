@@ -43,6 +43,30 @@ def _extract_system_uuid_from_vios_xml(vios_xml: str) -> str:
     return match.group(1)
 
 
+async def _load_vios_document(
+    client: StorageClient, vios_uuid: str
+) -> tuple[str, ET.Element, str]:
+    """Load one VIOS document and return its XML, resource element, and system UUID."""
+    get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
+    vios_xml = await client._get(
+        get_path, "VirtualIOServer", include_schema_version=False
+    )
+    if not vios_xml:
+        raise HMCError(f"GET {get_path} returned empty response", 200, "")
+    try:
+        root = ET.fromstring(vios_xml)
+    except ET.ParseError as exc:
+        raise HMCError(
+            "VirtualIOServer GET response is not valid XML", 200, vios_xml
+        ) from exc
+    vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
+    return (
+        vios_xml,
+        vios_elem if vios_elem is not None else root,
+        _extract_system_uuid_from_vios_xml(vios_xml),
+    )
+
+
 def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
     """Return the one VIOS resource and reject ambiguous or mismatched documents."""
     tag = f"{{{_UOM_NS}}}VirtualIOServer"
@@ -743,22 +767,7 @@ class StorageMixin:
         Returns the new VirtualSCSIMapping entry if it can be located in the
         response feed, else None.
         """
-        get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        vios_xml = await self._get(get_path, "VirtualIOServer", include_schema_version=False)
-        if not vios_xml:
-            raise HMCError(f"GET {get_path} returned empty response", 200, "")
-
-        try:
-            root = ET.fromstring(vios_xml)
-        except ET.ParseError as exc:
-            raise HMCError(
-                "VirtualIOServer GET response is not valid XML", 200, vios_xml
-            ) from exc
-
-        vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
-        if vios_elem is None:
-            vios_elem = root
-        sys_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
+        vios_xml, vios_elem, sys_uuid = await _load_vios_document(self, vios_uuid)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
         if mappings_elem is None:
@@ -773,28 +782,33 @@ class StorageMixin:
             f"{self._rest_base_url}/rest/api/uom/ManagedSystem/{sys_uuid}"
             f"/LogicalPartition/{lpar_uuid}"
         )
-        mount_type = "r"
-        new_mapping_xml = (
-            f'<VirtualSCSIMapping xmlns="{_UOM_NS}" xmlns:atom="{_ATOM_NS}" schemaVersion="V1_0">'
-            f"<Metadata><Atom/></Metadata>"
-            f'<AssociatedLogicalPartition kb="CUR" kxe="false"'
-            f' href="{lpar_link}" rel="related"/>'
-            f'<Storage kxe="false" kb="CUR">'
-            f'<VirtualOpticalMedia schemaVersion="V1_0">'
-            f"<Metadata><Atom/></Metadata>"
-            f'<MediaName kxe="false" kb="CUR">{media_name}</MediaName>'
-            f'<MountType kxe="false" kb="CUD">{mount_type}</MountType>'
-            f"</VirtualOpticalMedia>"
-            f"</Storage>"
-            f"</VirtualSCSIMapping>"
+        mapping = ET.Element(
+            f"{{{_UOM_NS}}}VirtualSCSIMapping", {"schemaVersion": "V1_0"}
         )
-        try:
-            new_mapping_elem = ET.fromstring(new_mapping_xml)
-        except ET.ParseError as exc:
-            raise HMCError(
-                "Failed to build VirtualSCSIMapping XML", 0, new_mapping_xml
-            ) from exc
-        mappings_elem.append(new_mapping_elem)
+        metadata = ET.SubElement(mapping, f"{{{_UOM_NS}}}Metadata")
+        ET.SubElement(metadata, f"{{{_UOM_NS}}}Atom")
+        ET.SubElement(
+            mapping,
+            f"{{{_UOM_NS}}}AssociatedLogicalPartition",
+            {"kb": "CUR", "kxe": "false", "href": lpar_link, "rel": "related"},
+        )
+        storage = ET.SubElement(
+            mapping, f"{{{_UOM_NS}}}Storage", {"kxe": "false", "kb": "CUR"}
+        )
+        media = ET.SubElement(
+            storage,
+            f"{{{_UOM_NS}}}VirtualOpticalMedia",
+            {"schemaVersion": "V1_0"},
+        )
+        media_metadata = ET.SubElement(media, f"{{{_UOM_NS}}}Metadata")
+        ET.SubElement(media_metadata, f"{{{_UOM_NS}}}Atom")
+        ET.SubElement(
+            media, f"{{{_UOM_NS}}}MediaName", {"kxe": "false", "kb": "CUR"}
+        ).text = media_name
+        ET.SubElement(
+            media, f"{{{_UOM_NS}}}MountType", {"kxe": "false", "kb": "CUD"}
+        ).text = "r"
+        mappings_elem.append(mapping)
 
         post_path = f"/rest/api/uom/ManagedSystem/{sys_uuid}/VirtualIOServer/{vios_uuid}"
         body = ET.tostring(vios_elem, encoding="unicode")
@@ -837,22 +851,7 @@ class StorageMixin:
         ET.register_namespace("", _UOM_NS)
         ET.register_namespace("atom", _ATOM_NS)
 
-        get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        vios_xml = await self._get(get_path, "VirtualIOServer", include_schema_version=False)
-        if not vios_xml:
-            raise HMCError(f"GET {get_path} returned empty response", 200, "")
-
-        try:
-            root = ET.fromstring(vios_xml)
-        except ET.ParseError as exc:
-            raise HMCError(
-                "VirtualIOServer GET response is not valid XML", 200, vios_xml
-            ) from exc
-
-        vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
-        if vios_elem is None:
-            vios_elem = root
-        sys_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
+        _, vios_elem, sys_uuid = await _load_vios_document(self, vios_uuid)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
         if mappings_elem is None:
