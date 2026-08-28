@@ -137,8 +137,8 @@ def test_system_summary_by_uuid_returns_flat_dict(monkeypatch, mock_hmc):
     assert result["state"] == "operating"
     assert result["mtms"] == "9009-41A*12345AB"
     assert result["firmware_version"] == "FW950.10"
-    assert result["total_memory_mb"] == 131072
-    assert result["free_memory_mb"] == 131072 - 8192 - 4096
+    assert result["total_memory_mib"] == 131072
+    assert result["free_memory_mib"] == 131072 - 8192 - 4096
     assert result["total_proc_units"] == 16.0
     assert result["free_proc_units"] == pytest.approx(16.0 - 1.0)
     assert result["lpar_count"] == 2
@@ -173,7 +173,7 @@ def test_system_summary_no_lpars_no_vios(monkeypatch, mock_hmc):
     assert result["lpar_count"] == 0
     assert result["lpar_states"] == {}
     assert result["vios_count"] == 0
-    assert result["free_memory_mb"] == 65536
+    assert result["free_memory_mib"] == 65536
     assert result["free_proc_units"] == pytest.approx(8.0)
 
 
@@ -246,5 +246,5 @@ def test_system_summary_missing_optional_fields(monkeypatch, mock_hmc):
 
     assert result["mtms"] is None
     assert result["firmware_version"] is None
-    assert result["total_memory_mb"] == 0
+    assert result["total_memory_mib"] == 0
     assert result["total_proc_units"] == 0.0

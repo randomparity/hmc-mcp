@@ -254,7 +254,7 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
     st, data = await state.call(client, "hmc_capacity_report")
     state.record(1, "hmc_capacity_report", st, data)
 
-    st, data = await state.call(client, "hmc_find_placement", desired_memory_mb=1024)
+    st, data = await state.call(client, "hmc_find_placement", desired_memory_mib=1024)
     state.record(1, "hmc_find_placement", st, data)
 
     st, data = await state.call(
@@ -408,9 +408,9 @@ async def inventory_storage(client: Client, state: RunState) -> None:
                             gb = int(float(raw))
                             if gb <= 0:
                                 raise ValueError("capacity must be positive")
-                            context.vdisk_size_mb = gb * 1024
+                            context.vdisk_size_mib = gb * 1024
                         except (TypeError, ValueError):
-                            context.vdisk_size_mb = None
+                            context.vdisk_size_mib = None
                             state.record(
                                 3,
                                 "parse virtual disk capacity",
@@ -423,7 +423,7 @@ async def inventory_storage(client: Client, state: RunState) -> None:
                     context.vdisk_vg_name = vg_name
                 if found_target_disk:
                     break  # found the VG containing lp3's disk
-        print(f"  VG UUID: {context.vg_uuid}  vdisk_size_mb: {context.vdisk_size_mb}")
+        print(f"  VG UUID: {context.vg_uuid}  vdisk_size_mib: {context.vdisk_size_mib}")
     else:
         state.skip(
             3,

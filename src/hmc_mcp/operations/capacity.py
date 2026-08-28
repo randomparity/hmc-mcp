@@ -14,9 +14,9 @@ class CapacitySummary:
 
     system_uuid: str | None
     system_name: str
-    total_memory_mb: int
-    assigned_memory_mb: int
-    free_memory_mb: int
+    total_memory_mib: int
+    assigned_memory_mib: int
+    free_memory_mib: int
     total_proc_units: float
     assigned_proc_units: float
     free_proc_units: float
@@ -58,9 +58,9 @@ def system_capacity(
     return CapacitySummary(
         system_uuid=system.get("UUID"),
         system_name=resource.get("SystemName", ""),
-        total_memory_mb=total_memory,
-        assigned_memory_mb=assigned_memory,
-        free_memory_mb=total_memory - assigned_memory,
+        total_memory_mib=total_memory,
+        assigned_memory_mib=assigned_memory,
+        free_memory_mib=total_memory - assigned_memory,
         total_proc_units=total_processors,
         assigned_proc_units=round(assigned_processors, 4),
         free_proc_units=round(total_processors - assigned_processors, 4),
@@ -82,7 +82,7 @@ async def capacity_report(hmc: HMCClient) -> list[CapacitySummary]:
 
 async def find_placement(
     hmc: HMCClient,
-    desired_memory_mb: int,
+    desired_memory_mib: int,
     desired_proc_units: float = 0.5,
 ) -> list[CapacitySummary]:
     """Return systems with sufficient free resources, best fit first."""
@@ -90,12 +90,12 @@ async def find_placement(
     candidates = [
         capacity
         for capacity in report
-        if capacity.free_memory_mb >= desired_memory_mb
+        if capacity.free_memory_mib >= desired_memory_mib
         and capacity.free_proc_units >= desired_proc_units
     ]
     candidates.sort(
         key=lambda capacity: (
-            capacity.free_memory_mb,
+            capacity.free_memory_mib,
             capacity.free_proc_units,
             capacity.system_name,
             capacity.system_uuid or "",

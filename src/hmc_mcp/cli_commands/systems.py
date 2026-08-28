@@ -181,8 +181,8 @@ def systems_summary(
     table.add_row("State", result.get("state") or "-")
     table.add_row("MTMS", result.get("mtms") or "-")
     table.add_row("Firmware", result.get("firmware_version") or "-")
-    table.add_row("Total Memory (MiB)", str(result.get("total_memory_mb", 0)))
-    table.add_row("Free Memory (MiB)", str(result.get("free_memory_mb", 0)))
+    table.add_row("Total Memory (MiB)", str(result.get("total_memory_mib", 0)))
+    table.add_row("Free Memory (MiB)", str(result.get("free_memory_mib", 0)))
     table.add_row("Total Proc Units", str(result.get("total_proc_units", 0.0)))
     table.add_row("Free Proc Units", str(result.get("free_proc_units", 0.0)))
     table.add_row("Total LPARs", str(result.get("lpar_count", 0)))
@@ -226,9 +226,9 @@ def systems_capacity(
         table.add_row(
             r.get("system_name") or "-",
             r.get("system_uuid") or "-",
-            str(r.get("total_memory_mb", 0)),
-            str(r.get("assigned_memory_mb", 0)),
-            str(r.get("free_memory_mb", 0)),
+            str(r.get("total_memory_mib", 0)),
+            str(r.get("assigned_memory_mib", 0)),
+            str(r.get("free_memory_mib", 0)),
             str(r.get("total_proc_units", 0.0)),
             str(r.get("assigned_proc_units", 0.0)),
             str(r.get("free_proc_units", 0.0)),
@@ -263,7 +263,7 @@ def systems_find_placement(
         table.add_row(
             r.get("system_name") or "-",
             r.get("system_uuid") or "-",
-            str(r.get("free_memory_mb", 0)),
+            str(r.get("free_memory_mib", 0)),
             str(r.get("free_proc_units", 0.0)),
             str(r.get("running_lpars", 0)),
         )

@@ -30,14 +30,14 @@ def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
 
 @tool(effect="read", operation="placement.find", target_kind="console")
 def hmc_find_placement(
-    desired_memory_mb: int,
+    desired_memory_mib: int,
     desired_proc_units: float = 0.5,
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """Rank systems able to host an LPAR with the requested capacity.
 
     Args:
-        desired_memory_mb: Required LPAR memory in MiB.
+        desired_memory_mib: Required LPAR memory in MiB.
         desired_proc_units: Required shared-processor processing units.
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
@@ -45,7 +45,7 @@ def hmc_find_placement(
     async def placements(hmc):
         return [
             asdict(item)
-            for item in await find_placement(hmc, desired_memory_mb, desired_proc_units)
+            for item in await find_placement(hmc, desired_memory_mib, desired_proc_units)
         ]
 
     return with_client(placements, profile=profile)

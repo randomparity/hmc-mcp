@@ -459,9 +459,9 @@ def test_capacity_report_computes_per_system(monkeypatch, mock_hmc):
     by_name = {r["system_name"]: r for r in result}
 
     a = by_name["p9-01"]
-    assert a["total_memory_mb"] == 131072
-    assert a["assigned_memory_mb"] == 16384
-    assert a["free_memory_mb"] == 131072 - 16384
+    assert a["total_memory_mib"] == 131072
+    assert a["assigned_memory_mib"] == 16384
+    assert a["free_memory_mib"] == 131072 - 16384
     assert a["total_proc_units"] == 16.0
     assert a["assigned_proc_units"] == 2.0
     assert a["free_proc_units"] == pytest.approx(14.0)
@@ -469,8 +469,8 @@ def test_capacity_report_computes_per_system(monkeypatch, mock_hmc):
     assert a["running_lpars"] == 1  # only "running" counts
 
     b = by_name["p9-02"]
-    assert b["assigned_memory_mb"] == 4096
-    assert b["free_memory_mb"] == 65536 - 4096
+    assert b["assigned_memory_mib"] == 4096
+    assert b["free_memory_mib"] == 65536 - 4096
 
 
 def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
@@ -489,8 +489,8 @@ def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
     )
 
     result = hmc_capacity_report()
-    assert result[0]["assigned_memory_mb"] == 0
-    assert result[0]["free_memory_mb"] == 65536
+    assert result[0]["assigned_memory_mib"] == 0
+    assert result[0]["free_memory_mib"] == 65536
     assert result[0]["running_lpars"] == 0
     assert result[0]["total_lpars"] == 0
 
@@ -527,10 +527,10 @@ def test_find_placement_returns_candidates(monkeypatch, mock_hmc):
     )
 
     # Request 4096 MiB and 0.5 procs → only big-sys qualifies (small-sys has 2048 MiB free)
-    result = hmc_find_placement(desired_memory_mb=4096, desired_proc_units=0.5)
+    result = hmc_find_placement(desired_memory_mib=4096, desired_proc_units=0.5)
     assert len(result) == 1
     assert result[0]["system_name"] == "big-sys"
-    assert result[0]["free_memory_mb"] == 131072 - 8192
+    assert result[0]["free_memory_mib"] == 131072 - 8192
 
 
 def test_find_placement_no_candidates(monkeypatch, mock_hmc):
@@ -553,7 +553,7 @@ def test_find_placement_no_candidates(monkeypatch, mock_hmc):
         )
     )
 
-    result = hmc_find_placement(desired_memory_mb=512)
+    result = hmc_find_placement(desired_memory_mib=512)
     assert result == []
 
 

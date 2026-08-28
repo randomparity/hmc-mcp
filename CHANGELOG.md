@@ -29,6 +29,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- Capacity and summary contracts now name mebibyte values explicitly:
+  `desired_memory_mib`, `current_memory_mib`, `total_memory_mib`,
+  `assigned_memory_mib`, and `free_memory_mib` replace their misleading
+  `*_mb` names across the facade, MCP tools, CLI adapters, and live-test state.
 - `ConsoleCapture` now preserves a bounded, single-line transport diagnostic in
   `error` when `stop_reason` is `"error"`. Partial console bytes and mandatory
   vterm release behavior are unchanged; non-error captures report `error=None`.

@@ -52,7 +52,7 @@ INSTRUCTIONS = (
     "- **hmc_fleet_health()** — exception-only estate view covering systems "
     "not operating, VIOS not running, inactive LPAR RMC, and recent failed "
     "jobs. Use for a bounded fleet health check instead of composing raw lists.\n"
-    "- **hmc_find_placement(desired_memory_mb, desired_proc_units)** — "
+    "- **hmc_find_placement(desired_memory_mib, desired_proc_units)** — "
     "returns systems that can host a new LPAR of the given size, sorted by "
     "free memory. Use before provisioning to choose a target system.\n"
     "- **hmc_list_recent_jobs(limit)** — most-recent HMC async jobs (power ops, "

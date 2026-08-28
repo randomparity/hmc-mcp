@@ -19,8 +19,8 @@ class LparSummary:
     rmc_state: object | None
     partition_type: object | None
     partition_id: object | None
-    current_memory_mb: object | None
-    desired_memory_mb: object | None
+    current_memory_mib: object | None
+    desired_memory_mib: object | None
     current_proc_units: object | None
     desired_proc_units: object | None
     desired_vcpus: object | None
@@ -39,8 +39,8 @@ class SystemSummary:
     state: object | None
     mtms: object | None
     firmware_version: object | None
-    total_memory_mb: int
-    free_memory_mb: int
+    total_memory_mib: int
+    free_memory_mib: int
     total_proc_units: float
     free_proc_units: float
     lpar_count: int
@@ -67,8 +67,8 @@ def _lpar_summary(
         partition_type=res.get("PartitionType"),
         partition_id=res.get("PartitionID"),
         # Current memory/CPU (what the LPAR currently has)
-        current_memory_mb=_current_or_desired(res, "CurrentMemory", "DesiredMemory"),
-        desired_memory_mb=res.get("DesiredMemory"),
+        current_memory_mib=_current_or_desired(res, "CurrentMemory", "DesiredMemory"),
+        desired_memory_mib=res.get("DesiredMemory"),
         # Current CPU: shared-processor units or dedicated CPUs
         current_proc_units=_current_or_desired(
             res, "CurrentProcessingUnits", "DesiredProcessingUnits"
@@ -177,8 +177,8 @@ def _system_summary(
         state=res.get("State"),
         mtms=res.get("MachineTypeModelSerialNumber"),
         firmware_version=res.get("SystemFirmware") or res.get("FirmwareVersion"),
-        total_memory_mb=total_mem,
-        free_memory_mb=total_mem - assigned_mem,
+        total_memory_mib=total_mem,
+        free_memory_mib=total_mem - assigned_mem,
         total_proc_units=total_procs,
         free_proc_units=round(total_procs - assigned_procs, 4),
         lpar_count=len(lpars),

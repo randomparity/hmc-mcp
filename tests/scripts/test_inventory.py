@@ -31,7 +31,7 @@ class ScenarioState:
             test_vswitch_id=None,
             test_vlan_id=None,
             vdisk_name="disk-one",
-            vdisk_size_mb=None,
+            vdisk_size_mib=None,
             vg_uuid=None,
             vdisk_vg_name=None,
         )
@@ -150,7 +150,7 @@ async def test_storage_inventory_finds_disk_capacity_and_owning_group() -> None:
 
     assert state.context.vg_uuid == "vg-uuid"
     assert state.context.vdisk_vg_name == "rootvg"
-    assert state.context.vdisk_size_mb == 8192
+    assert state.context.vdisk_size_mib == 8192
     assert [tool for tool, _ in state.calls] == [
         "hmc_list_volume_groups",
         "hmc_list_clusters",

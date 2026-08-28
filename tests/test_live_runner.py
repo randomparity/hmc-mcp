@@ -992,7 +992,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
     ]
     assert calls[2][1] == {"system_name_or_uuid": "ltczz386"}
     assert calls[4][1] == {"lpar_name_or_uuid": "ltczz386-lp3"}
-    assert calls[7][1] == {"desired_memory_mb": 1024}
+    assert calls[7][1] == {"desired_memory_mib": 1024}
     assert calls[9][1] == {"resource_type": "LogicalPartition"}
     assert calls[10][1] == {"limit": 10}
     assert state.context.console_uuid == "console-uuid"
@@ -1277,7 +1277,7 @@ async def test_malformed_inventory_capacity_blocks_storage_mutation(monkeypatch)
         if result["tool"] == "parse virtual disk capacity"
     )
     assert failure["status"] == "FAIL"
-    assert state.context.vdisk_size_mb is None
+    assert state.context.vdisk_size_mib is None
     assert not any(tool == "hmc_create_virtual_disk" for tool, _ in calls)
 
 

@@ -1968,7 +1968,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # VIOS storage operations now accept managed-system scope before the
     # VIOS selector, making duplicate names unambiguous.
     # ConsoleCapture now exposes bounded stream-failure context.
-    expected_digest = "e25440cf560bc3fd1ec02e0c793bab126525bde604da9ac95807270f34ea6547"  # pragma: allowlist secret
+    # Capacity and summary memory contracts now use the accurate MiB suffix.
+    expected_digest = "ac12c8f0a5b50107eb3d9a96a3090988fe157b9dc0abeae5dd600af7a5723680"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

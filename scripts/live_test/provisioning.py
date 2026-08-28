@@ -93,7 +93,7 @@ async def _recreate_test_disk(
     state: RunState,
     vios_uuid: str,
     vg_uuid: str,
-    vdisk_size_mb: int,
+    vdisk_size_mib: int,
 ) -> None:
     """Remove any stale VIOS logical volume and create a fresh virtual disk."""
     context = state.context
@@ -129,7 +129,7 @@ async def _recreate_test_disk(
         vios_name_or_uuid=vios_uuid,
         vg_uuid=vg_uuid,
         disk_name=context.vdisk_name,
-        capacity_mib=vdisk_size_mb,
+        capacity_mib=vdisk_size_mib,
     )
     state.record_expected_or_real(
         14,
@@ -211,7 +211,7 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
     baseline = context.lp3_baseline
     vios_uuid = context.vios_uuid
     vg_uuid = context.vg_uuid
-    vdisk_size_mb = context.vdisk_size_mb
+    vdisk_size_mib = context.vdisk_size_mib
     pvid = baseline.get("pvid")
     vios_slot = baseline.get("vios_slot")
     vios_pid = context.vios_partition_id or baseline.get("vios_partition_id")
@@ -224,7 +224,7 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
             "pvid": pvid,
             "vios_slot": vios_slot,
             "vios_pid": vios_pid,
-            "vdisk_size_mb": vdisk_size_mb,
+            "vdisk_size_mib": vdisk_size_mib,
         }.items()
         if not v
     ]
@@ -253,7 +253,7 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
         "pre-flight check",
         "PASS",
         f"vios_uuid={vios_uuid} vg_uuid={vg_uuid} pvid={pvid} "
-        f"vios_slot={vios_slot} vios_pid={vios_pid} vdisk_mb={vdisk_size_mb}",
+        f"vios_slot={vios_slot} vios_pid={vios_pid} vdisk_mib={vdisk_size_mib}",
     )
 
     await _remove_previous_test_lpar(client, state)
@@ -262,7 +262,7 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
         state,
         str(vios_uuid),
         str(vg_uuid),
-        int(vdisk_size_mb),
+        int(vdisk_size_mib),
     )
     await _provision_from_baseline(
         client,

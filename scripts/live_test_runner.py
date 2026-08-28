@@ -218,7 +218,7 @@ class LiveTestContext:
     vg_uuid: str | None = None
     vdisk_name: str = "VG1-lp3"
     vdisk_vg_name: str | None = None
-    vdisk_size_mb: int | None = None
+    vdisk_size_mib: int | None = None
     lp3_baseline: dict[str, Any] = field(default_factory=dict)
     # Virtual-media round (ST16–ST22)
     vmedia_repo_created: bool = False
