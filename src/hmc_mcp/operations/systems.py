@@ -80,6 +80,7 @@ async def modify_system(
     requested_num_sys_huge_pages: int | None = None,
     mem_mirroring_mode: MemoryMirroringMode | None = None,
 ) -> dict[str, Any] | None:
+    """Apply the supplied configuration fields to a managed system."""
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     document = build_managed_system_document(
         new_name=new_name,

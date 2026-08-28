@@ -30,6 +30,11 @@ async def resolve_pcm_resource(
     resource: str,
     system_name_or_uuid: str | None = None,
 ) -> PcmResource:
+    """Resolve a PCM category selector to its REST resource identity.
+
+    Raises:
+        ValueError: If system scope is missing or invalid for the category.
+    """
     if category == "ManagedSystem":
         if system_name_or_uuid is not None:
             raise ValueError(
@@ -90,6 +95,11 @@ def preference_flags(
 async def get_pcm_preferences(
     hmc: HMCClient, category: PcmCategory, resource: str
 ) -> dict[str, Any]:
+    """Return PCM preferences for a managed system.
+
+    Raises:
+        ValueError: If ``category`` is not ``ManagedSystem``.
+    """
     validate_pcm_preferences_category(category)
     target = await resolve_pcm_resource(hmc, category, resource)
     try:
@@ -105,6 +115,11 @@ async def set_pcm_preferences(
     resource: str,
     flags: dict[str, bool],
 ) -> dict[str, Any]:
+    """Update PCM preferences on a managed system.
+
+    Raises:
+        ValueError: If no flags are supplied or the category is unsupported.
+    """
     if not flags:
         raise ValueError("No preference flags supplied; nothing to change.")
     validate_pcm_preferences_category(category)
@@ -127,6 +142,11 @@ async def metric_links(
     no_of_samples: int | None,
     system_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
+    """Return PCM metric links for a resource and time window.
+
+    Raises:
+        ValueError: If system scope is missing or invalid for the category.
+    """
     validate_pcm_metric_target(category, system_name_or_uuid)
     target = await resolve_pcm_resource(
         hmc, category, resource, system_name_or_uuid=system_name_or_uuid
@@ -161,6 +181,11 @@ async def metric_data(
     no_of_samples: int | None,
     system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
+    """Fetch the newest PCM metric payload, or an empty mapping if absent.
+
+    Raises:
+        ValueError: If system scope is missing or invalid for the category.
+    """
     links = await metric_links(
         hmc,
         category,

@@ -1,4 +1,10 @@
-"""Supported reusable-library facade for hmc-mcp."""
+"""Supported reusable-library facade for hmc-mcp.
+
+Operations propagate :class:`HMCError` and :class:`HMCTransportError` when the
+HMC rejects a request or communication fails. Individual operation docstrings
+list additional validation, authorization, capability, and reconciliation
+failures specific to that operation.
+"""
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.client.client_adapters import AdapterType

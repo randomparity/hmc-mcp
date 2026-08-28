@@ -119,6 +119,7 @@ async def list_fc_ports(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
+    """List Fibre Channel ports, optionally scoped to one LPAR."""
     config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(
         config, system_name_or_uuid, lpar_name_or_uuid
@@ -131,6 +132,7 @@ async def list_sea_adapters(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
+    """List shared Ethernet adapters, optionally scoped to one LPAR."""
     config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(
         config, system_name_or_uuid, lpar_name_or_uuid
@@ -141,6 +143,7 @@ async def list_sea_adapters(
 async def list_vnics(
     hmc: HMCClient, system_name_or_uuid: str, lpar_name_or_uuid: str
 ) -> list[dict[str, object]]:
+    """List vNICs on an LPAR."""
     config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(
         config, system_name_or_uuid, lpar_name_or_uuid
@@ -411,7 +414,8 @@ async def _preflight_add(
     )
     before = _parse_vnic_snapshots(await list_vnic_rows(config, system_name, lpar_name))
     backings = tuple(
-        _parse_backing_snapshot(row) for row in await list_vnic_backing_rows(config, system_name)
+        _parse_backing_snapshot(row)
+        for row in await list_vnic_backing_rows(config, system_name)
     )
     observations = _reconciled_logical_ports(direct, backings)
     return _VnicPreflightContext(
@@ -423,7 +427,9 @@ async def _preflight_add(
     )
 
 
-async def _read_vnic_state_after_mutation(config: HMCConfig, system: str, lpar: str) -> _VnicReadback:
+async def _read_vnic_state_after_mutation(
+    config: HMCConfig, system: str, lpar: str
+) -> _VnicReadback:
     vnics: tuple[VnicSnapshot, ...] = ()
     backings: tuple[VnicBackingSnapshot, ...] = ()
     v_ok = b_ok = False
@@ -437,7 +443,8 @@ async def _read_vnic_state_after_mutation(config: HMCConfig, system: str, lpar: 
         errors.append(f"vNIC reconciliation read failed: {error}")
     try:
         backings = tuple(
-            _parse_backing_snapshot(row) for row in await list_vnic_backing_rows(config, system)
+            _parse_backing_snapshot(row)
+            for row in await list_vnic_backing_rows(config, system)
         )
         b_ok = True
     except Exception as error:
@@ -488,7 +495,9 @@ def _reconcile_add(
     )
     new_pairs = tuple(
         pair
-        for pair in _active_matching_backing_pairs(readback.vnics, readback.backings, selector, port_vlan_id)
+        for pair in _active_matching_backing_pairs(
+            readback.vnics, readback.backings, selector, port_vlan_id
+        )
         if pair[0].slot_num not in before_slots
     )
     final = (
@@ -590,6 +599,13 @@ async def add_vnic(
     *,
     ownership_override: bool = False,
 ) -> VnicChangeResult:
+    """Add a vNIC backing and reconcile the resulting state.
+
+    Raises:
+        ValueError: If selectors, VLAN, or available capacity are invalid.
+        VnicCapabilityError: If current inventory forbids the mutation.
+        VnicPartialError: If a dispatched mutation cannot be reconciled.
+    """
     selector = _validate_vnic_backing_selector(selector)
     if type(port_vlan_id) is not int or not 0 <= port_vlan_id <= 4094:
         raise ValueError("port_vlan_id must be an integer between 0 and 4094")
@@ -604,7 +620,9 @@ async def add_vnic(
     matching_backing_before = _correlated_matching_backings(
         candidates, context.backings, selector
     )
-    pairs = _active_matching_backing_pairs(candidates, matching_backing_before, selector, port_vlan_id)
+    pairs = _active_matching_backing_pairs(
+        candidates, matching_backing_before, selector, port_vlan_id
+    )
     if len(pairs) == 1 and len(candidates) == 1 and len(matching_backing_before) == 1:
         return VnicChangeResult(
             operation="add",
@@ -642,7 +660,9 @@ async def add_vnic(
     except Exception as error:
         mutation_error = error
         errors.append(f"mutation failed: {error}")
-    readback = await _read_vnic_state_after_mutation(hmc.config, context.system_name, context.lpar_name)
+    readback = await _read_vnic_state_after_mutation(
+        hmc.config, context.system_name, context.lpar_name
+    )
     result = _reconcile_add(context, readback, selector, port_vlan_id, output, errors)
     if result.errors:
         partial = VnicPartialError("vNIC add could not be fully verified", result)
@@ -661,6 +681,13 @@ async def remove_vnic(
     *,
     ownership_override: bool = False,
 ) -> VnicChangeResult:
+    """Remove a vNIC slot and reconcile the resulting state.
+
+    Raises:
+        ValueError: If ``slot_num`` is unsafe.
+        VnicCapabilityError: If current inventory forbids the mutation.
+        VnicPartialError: If a dispatched mutation cannot be reconciled.
+    """
     slot_num = require_command_safe_text(slot_num, "slot_num")
     system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
@@ -669,9 +696,12 @@ async def remove_vnic(
         ownership_override=ownership_override,
     )
     await require_admitted_environment(hmc.config, system_name)
-    all_vnics = _parse_vnic_snapshots(await list_vnic_rows(hmc.config, system_name, lpar_name))
+    all_vnics = _parse_vnic_snapshots(
+        await list_vnic_rows(hmc.config, system_name, lpar_name)
+    )
     all_backings = tuple(
-        _parse_backing_snapshot(row) for row in await list_vnic_backing_rows(hmc.config, system_name)
+        _parse_backing_snapshot(row)
+        for row in await list_vnic_backing_rows(hmc.config, system_name)
     )
     selected = tuple(item for item in all_vnics if item.slot_num == slot_num)
     if not selected:

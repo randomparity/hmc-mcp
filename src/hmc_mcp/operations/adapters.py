@@ -23,6 +23,11 @@ async def list_adapters(
     lpar_name_or_uuid: str,
     adapter_type: AdapterType,
 ) -> list[dict[str, Any]]:
+    """List one kind of virtual adapter on an LPAR.
+
+    Raises:
+        ValueError: If ``adapter_type`` is unsupported.
+    """
     validate_adapter_type(adapter_type)
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
@@ -42,6 +47,7 @@ async def add_network_adapter(
     mac_address: str | None = None,
     ownership_override: bool = False,
 ) -> AdapterResult:
+    """Authorize the LPAR and add a virtual Ethernet adapter."""
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
@@ -69,6 +75,7 @@ async def add_vscsi_adapter(
     slot_number: int | None = None,
     ownership_override: bool = False,
 ) -> AdapterResult:
+    """Authorize the LPAR and add a virtual SCSI adapter."""
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
@@ -91,6 +98,7 @@ async def add_vfc_adapter(
     slot_number: int | None = None,
     ownership_override: bool = False,
 ) -> AdapterResult:
+    """Authorize the LPAR and add a virtual Fibre Channel adapter."""
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
@@ -112,6 +120,11 @@ async def delete_adapter(
     *,
     ownership_override: bool = False,
 ) -> str:
+    """Authorize the LPAR and delete one virtual adapter.
+
+    Raises:
+        ValueError: If ``adapter_type`` is unsupported.
+    """
     validate_adapter_type(adapter_type)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,

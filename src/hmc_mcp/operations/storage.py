@@ -58,6 +58,7 @@ async def get_shared_storage_pool(
     """Get one shared storage pool by UUID."""
     return await hmc.get_shared_storage_pool(ssp_uuid)
 
+
 # HTTP download configuration
 CONNECT_TIMEOUT = 30.0
 READ_TIMEOUT = 300.0
@@ -74,12 +75,14 @@ UPLOAD_CHUNK_SIZE = 64 * 1024
 async def list_volume_groups(
     hmc: HMCClient, vios_name_or_uuid: str
 ) -> list[dict[str, Any]]:
+    """List volume groups on a VIOS."""
     return await hmc.list_volume_groups(await resolve_vios_uuid(hmc, vios_name_or_uuid))
 
 
 async def create_volume_group(
     hmc: HMCClient, vios_name_or_uuid: str, name: str, physical_volumes: list[str]
 ) -> dict[str, Any] | None:
+    """Create a volume group from the selected physical volumes."""
     return await hmc.create_volume_group(
         await resolve_vios_uuid(hmc, vios_name_or_uuid), name, physical_volumes
     )
@@ -88,6 +91,7 @@ async def create_volume_group(
 async def create_virtual_disk(
     hmc: HMCClient, vios_name_or_uuid: str, vg_uuid: str, name: str, size_mib: int
 ) -> dict[str, Any] | None:
+    """Create a virtual disk of ``size_mib`` in a volume group."""
     return await hmc.create_virtual_disk(
         await resolve_vios_uuid(hmc, vios_name_or_uuid), vg_uuid, name, size_mib
     )
@@ -146,6 +150,7 @@ async def map_storage(
     target: str | None = None,
     ownership_override: bool = False,
 ) -> StorageMapResult:
+    """Authorize an LPAR and map VIOS storage to it."""
     vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
@@ -162,6 +167,7 @@ async def map_storage(
 async def create_media_repository(
     hmc: HMCClient, vios_name_or_uuid: str, vg_uuid: str, size_mib: int
 ) -> dict[str, Any] | None:
+    """Create a media repository in a VIOS volume group."""
     return await hmc.create_media_repository(
         await resolve_vios_uuid(hmc, vios_name_or_uuid), vg_uuid, size_mib
     )
@@ -170,6 +176,7 @@ async def create_media_repository(
 async def create_optical_media(
     hmc: HMCClient, vios_name_or_uuid: str, vg_uuid: str, name: str, size_mib: int
 ) -> dict[str, Any] | None:
+    """Create blank optical media in a VIOS media repository."""
     return await hmc.create_optical_media(
         await resolve_vios_uuid(hmc, vios_name_or_uuid), vg_uuid, name, size_mib
     )
@@ -658,6 +665,11 @@ async def create_logical_unit(
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
 ) -> dict[str, Any] | None:
+    """Submit logical-unit creation and optionally wait for completion.
+
+    Raises:
+        ValueError: If the LU/device combination or polling controls are invalid.
+    """
     validate_logical_unit_types(lu_type, device_type)
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     job = await hmc.create_logical_unit(
@@ -675,6 +687,11 @@ async def delete_logical_unit(
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
 ) -> dict[str, Any] | None:
+    """Submit logical-unit deletion and optionally wait for completion.
+
+    Raises:
+        ValueError: If the polling controls are invalid.
+    """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     job = await hmc.delete_logical_unit(cluster_uuid, lu_udid)
     return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)

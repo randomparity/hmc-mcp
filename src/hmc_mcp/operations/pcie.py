@@ -504,6 +504,13 @@ async def assign_sriov_logical_port(
     profile_name: str,
     ownership_override: bool = False,
 ) -> SriovLogicalPortChangeResult:
+    """Assign an SR-IOV logical port and reconcile the resulting state.
+
+    Raises:
+        ValueError: If a selector or requested capacity is invalid.
+        SriovLogicalPortCapabilityError: If current inventory forbids assignment.
+        SriovLogicalPortPartialError: If a dispatched mutation cannot be reconciled.
+    """
     preflight = await _preflight_sriov_assignment(
         hmc,
         system_name_or_uuid,
@@ -591,6 +598,13 @@ async def unassign_sriov_logical_port(
     profile_name: str,
     ownership_override: bool = False,
 ) -> SriovLogicalPortChangeResult:
+    """Unassign an SR-IOV logical port from an inactive profile.
+
+    Raises:
+        ValueError: If selectors or the profile record are invalid.
+        SriovLogicalPortCapabilityError: If current state forbids unassignment.
+        SriovLogicalPortPartialError: If a dispatched mutation cannot be reconciled.
+    """
     selector = InventorySelector(
         require_command_safe_text(adapter_id, "adapter_id"),
         require_command_safe_text(physical_port_id, "physical_port_id"),
@@ -679,6 +693,12 @@ async def unassign_sriov_logical_port(
 async def set_sriov_adapter_mode(
     hmc: HMCClient, system_name_or_uuid: str, adapter_id: str, mode: SriovMode
 ) -> str:
+    """Confirm an adapter already has the requested admitted mode.
+
+    Raises:
+        ValueError: If the mode or adapter selector is invalid.
+        SriovLogicalPortCapabilityError: If a mode transition would be required.
+    """
     config = hmc.config
     validate_sriov_mode(mode)
     system_name = await _system_name(config, system_name_or_uuid)

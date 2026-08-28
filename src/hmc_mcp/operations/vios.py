@@ -66,6 +66,7 @@ async def create_vios(
     name: str,
     resources: LparResources,
 ) -> dict[str, Any] | None:
+    """Create a VIOS partition on a managed system."""
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     return await hmc.create_logical_partition(
         system_uuid, build_vios_document(name=name, resources=resources)
@@ -77,6 +78,11 @@ async def delete_vios(
     system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
 ) -> str:
+    """Delete an inactive VIOS partition.
+
+    Raises:
+        HMCError: If the VIOS is not in the ``not activated`` state.
+    """
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
@@ -105,6 +111,11 @@ async def power_vios(
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
 ) -> dict[str, Any] | None:
+    """Submit a VIOS power job and optionally wait for completion.
+
+    Raises:
+        ValueError: If the polling controls are invalid.
+    """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
