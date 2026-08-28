@@ -10,10 +10,10 @@ import pytest
 from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.server_tools.lpar_config import (
+from hmc_mcp.server_tools.lpar.configuration import (
     hmc_get_lpar_memopt_score as hmc_get_lpar_memopt_score,
 )
-from hmc_mcp.server_tools.lpar_config import (
+from hmc_mcp.server_tools.lpar.configuration import (
     hmc_list_lpar_memopt_scores as hmc_list_lpar_memopt_scores,
 )
 from hmc_mcp.ssh.affinity import (

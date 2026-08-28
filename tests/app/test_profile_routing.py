@@ -314,7 +314,7 @@ def test_boot_order_tools_route_the_profile_they_declare(
     Authorization in #222 decides on the declared argument, so a handler that
     discards it authorizes one connection and reaches another.
     """
-    from hmc_mcp.server_tools import lpars as server_lpars
+    from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
 
     seen: list[str | None] = []
 

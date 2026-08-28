@@ -27,10 +27,10 @@ from hmc_mcp.operations.vnic import (
     VnicBackingSelector,
     _validate_vnic_backing_selector,
 )
-from hmc_mcp.server_tools.lpar_config import (
+from hmc_mcp.server_tools.lpar.configuration import (
     hmc_set_lpar_description as hmc_set_lpar_description,
 )
-from hmc_mcp.server_tools.profiles import (
+from hmc_mcp.server_tools.lpar.profiles import (
     hmc_backup_lpar_profiles as hmc_backup_lpar_profiles,
 )
 from hmc_mcp.server_tools.system_resources import (

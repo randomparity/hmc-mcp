@@ -9,10 +9,10 @@ import pytest
 from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.server_tools.lpar_config import (
+from hmc_mcp.server_tools.lpar.configuration import (
     hmc_get_lpar_description as hmc_get_lpar_description,
 )
-from hmc_mcp.server_tools.lpar_config import (
+from hmc_mcp.server_tools.lpar.configuration import (
     hmc_set_lpar_description as hmc_set_lpar_description,
 )
 from hmc_mcp.ssh.profiles import set_lpar_description
@@ -169,7 +169,8 @@ def test_set_lpar_description_rejects_record_delimiters_in_description(monkeypat
 # ---------------------------------------------------------------------- #
 # hmc_set_lpar_description — ASCII validation
 # ---------------------------------------------------------------------- #
-# The guard fires in hmc_set_lpar_description (server_tools/lpar_config.py) *before*
+# The guard fires in hmc_set_lpar_description (server_tools/lpar/configuration.py)
+# *before*
 # UUID resolution and before the SSH command is built.  Rejection tests
 # therefore need no UUID mocks and no SSH mock.
 

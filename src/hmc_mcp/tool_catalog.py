@@ -11,13 +11,9 @@ from hmc_mcp.server_tools import (
     console,
     health,
     jobs,
-    lpar_config,
-    lpars,
     lpm,
     metrics,
     network,
-    profiles,
-    provision,
     snapshot,
     storage,
     system_resources,
@@ -27,6 +23,7 @@ from hmc_mcp.server_tools import (
     users,
     vios,
 )
+from hmc_mcp.server_tools.lpar import configuration, lifecycle, profiles, provision
 from hmc_mcp.server_tools.command import HMC_RUN_COMMAND_SECURITY
 from hmc_mcp.server_tools.permissions import EFFECTIVE_PERMISSIONS_SECURITY
 from hmc_mcp.tool_registry import ToolSecurity, build_tool_security
@@ -37,7 +34,7 @@ TOOL_MODULES = (
     capacity,
     jobs,
     health,
-    lpars,
+    lifecycle,
     vios,
     adapters,
     storage,
@@ -49,7 +46,7 @@ TOOL_MODULES = (
     updates,
     profiles,
     snapshot,
-    lpar_config,
+    configuration,
     system_resources,
     composite,
     provision,

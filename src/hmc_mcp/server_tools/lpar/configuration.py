@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from ..tool_registry import tool_module
+from ...tool_registry import tool_module
 
-from .._app import (
+from ..._app import (
     run_sync,
     ssh_with_client,
 )
-from ..client.client_factory import client_from_env
-from ..operations.ssh_affinity import (
+from ...client.client_factory import client_from_env
+from ...operations.ssh_affinity import (
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
     get_lpar_memopt_score,
@@ -22,24 +22,24 @@ from ..operations.ssh_affinity import (
     list_resource_group_memopt_scores,
     plan_resource_group_memopt_scores,
 )
-from ..ssh.affinity import (
+from ...ssh.affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
     MinimumAffinityPolicy,
     validate_memopt_scenario,
 )
-from ..ssh.lpar import validate_lpar_description
-from ..ssh.profiles import (
+from ...ssh.lpar import validate_lpar_description
+from ...ssh.profiles import (
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,
 )
 from hmc_mcp.operations.ownership import set_lpar_ownership_description
-from ..operations.lpar.configuration import (
+from ...operations.lpar.configuration import (
     configure_lpar_msp,
     configure_lpar_processor_compatibility,
 )
-from ..operations.lpar.core import ProcessorCompatibilityMode
+from ...operations.lpar.core import ProcessorCompatibilityMode
 
 
 tool, register_tools, tool_security = tool_module()

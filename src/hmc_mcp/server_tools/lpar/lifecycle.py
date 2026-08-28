@@ -2,32 +2,32 @@
 
 from __future__ import annotations
 
-from ..tool_registry import tool_module
+from ...tool_registry import tool_module
 
 from typing import Any
 
-from .._app import (
+from ..._app import (
     run_sync,
 )
-from ..errors import HMCError
+from ...errors import HMCError
 from hmc_mcp.operations.ownership import list_lpar_ownership
-from ..operations.affinity import (
+from ...operations.affinity import (
     ProvisionAffinityAssessment,
     affinity_not_measured,
     assess_post_activation_affinity,
     classify_affinity_outcome,
     validate_affinity_request,
 )
-from ..ssh.transport import HMCCLIError
-from ..client.client_factory import client_from_env
-from ..documents import (
+from ...ssh.transport import HMCCLIError
+from ...client.client_factory import client_from_env
+from ...documents import (
     Keylock,
     LparResources,
     OsType,
     PartitionType,
 )
-from ..operations.lpar.decommission import DecommissionResult, decommission_lpar
-from ..operations.lpar.core import (
+from ...operations.lpar.decommission import DecommissionResult, decommission_lpar
+from ...operations.lpar.core import (
     LparCreation,
     LparPowerOnOutcome,
     activation_allows_assessment,
@@ -36,19 +36,19 @@ from ..operations.lpar.core import (
     power_on_outcome,
     rename_lpar,
 )
-from ..operations.lpar.boot_order import (
+from ...operations.lpar.boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,
     set_lpar_boot_order,
 )
-from ..operations.lpar.dlpar import modify_lpar, set_lpar_memory, set_lpar_processors
-from ..operations.lpar.errors import translate_lpar_write_error
-from ..operations.lpar.workflows import create_lpar
-from ..operations.lpar.assignments import (
+from ...operations.lpar.dlpar import modify_lpar, set_lpar_memory, set_lpar_processors
+from ...operations.lpar.errors import translate_lpar_write_error
+from ...operations.lpar.workflows import create_lpar
+from ...operations.lpar.assignments import (
     LparPcieAssignments,
     LparPcieWorkflowResult,
 )
-from ..ssh.lpar import validate_caller_token
+from ...ssh.lpar import validate_caller_token
 
 tool, register_tools, tool_security = tool_module()
 

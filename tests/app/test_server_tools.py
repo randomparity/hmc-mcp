@@ -31,22 +31,22 @@ from hmc_mcp.server_tools.jobs import (
 from hmc_mcp.server_tools.jobs import (
     hmc_wait_for_job as hmc_wait_for_job,
 )
-from hmc_mcp.server_tools.lpars import (
+from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_create_lpar as hmc_create_lpar,
 )
-from hmc_mcp.server_tools.lpars import (
+from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_delete_lpar as hmc_delete_lpar,
 )
-from hmc_mcp.server_tools.lpars import (
+from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_modify_lpar as hmc_modify_lpar,
 )
-from hmc_mcp.server_tools.lpars import (
+from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_power_off_lpar as hmc_power_off_lpar,
 )
-from hmc_mcp.server_tools.lpars import (
+from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_power_on_lpar as hmc_power_on_lpar,
 )
-from hmc_mcp.server_tools.lpars import (
+from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_rename_lpar as hmc_rename_lpar,
 )
 from hmc_mcp.server_tools.systems import hmc_get_lpar as hmc_get_lpar

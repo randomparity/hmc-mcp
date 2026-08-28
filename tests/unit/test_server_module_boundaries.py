@@ -12,13 +12,12 @@ from hmc_mcp.server_tools import (
     command,
     health,
     jobs,
-    lpar_config,
-    lpars,
     storage,
     system_resources,
     systems,
     vios,
 )
+from hmc_mcp.server_tools.lpar import configuration, lifecycle
 import hmc_mcp.ssh.transport as ssh
 
 
@@ -35,9 +34,11 @@ def test_domain_handlers_live_in_focused_modules() -> None:
         systems.hmc_power_off_system: "hmc_mcp.server_tools.systems",
         vios.hmc_power_on_vios: "hmc_mcp.server_tools.vios",
         vios.hmc_power_off_vios: "hmc_mcp.server_tools.vios",
-        lpars.hmc_power_on_lpar: "hmc_mcp.server_tools.lpars",
-        lpars.hmc_power_off_lpar: "hmc_mcp.server_tools.lpars",
-        lpar_config.hmc_get_lpar_description: "hmc_mcp.server_tools.lpar_config",
+        lifecycle.hmc_power_on_lpar: "hmc_mcp.server_tools.lpar.lifecycle",
+        lifecycle.hmc_power_off_lpar: "hmc_mcp.server_tools.lpar.lifecycle",
+        configuration.hmc_get_lpar_description: (
+            "hmc_mcp.server_tools.lpar.configuration"
+        ),
         system_resources.hmc_get_proc_compat_modes: (
             "hmc_mcp.server_tools.system_resources"
         ),
@@ -62,7 +63,7 @@ def test_ssh_transport_does_not_own_resource_commands() -> None:
 def test_server_tools_do_not_construct_unmanaged_hmc_clients() -> None:
     server_tools = Path(server.__file__).parent / "server_tools"
     direct_constructors: list[str] = []
-    for path in server_tools.glob("*.py"):
+    for path in server_tools.rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not isinstance(node, ast.Call):
                 continue

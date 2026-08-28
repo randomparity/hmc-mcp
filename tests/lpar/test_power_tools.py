@@ -2,7 +2,7 @@
 
 The document builders and client methods are covered in test_dlpar.py and
 test_power.py; these tests call the actual ``@mcp.tool`` functions in
-``server_tools.lpars`` against the respx ``mock_hmc`` router so the
+``server_tools.lpar.lifecycle`` against the respx ``mock_hmc`` router so the
 argument->URL and argument->XML mapping in the tool bodies is exercised.
 LPAR create/modify and LPAR power-on/off are covered in
 ``tests/app/test_server_tools.py``; the delete-LPAR precondition guard is
@@ -18,10 +18,10 @@ from conftest import JOB_ENTRY, SYSTEM_ENTRY
 from hmc_mcp.client import HMCError
 from hmc_mcp.documents import LparResources
 from hmc_mcp.operations.systems import power_system
-from hmc_mcp.server_tools.lpars import (
+from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_dlpar_mem as hmc_dlpar_mem,
 )
-from hmc_mcp.server_tools.lpars import (
+from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_dlpar_proc as hmc_dlpar_proc,
 )
 from hmc_mcp.server_tools.systems import (

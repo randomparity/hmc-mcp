@@ -13,7 +13,7 @@ from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.lpar.assignments import WorkflowStep
 from hmc_mcp.operations.lpar.decommission import DecommissionResult, decommission_lpar
-from hmc_mcp.server_tools.lpars import hmc_decommission_lpar as hmc_decommission_lpar
+from hmc_mcp.server_tools.lpar.lifecycle import hmc_decommission_lpar as hmc_decommission_lpar
 
 SYSTEM_UUID = "11111111-1111-1111-1111-111111111111"
 LPAR_UUID = "22222222-2222-2222-2222-222222222222"
@@ -187,9 +187,9 @@ def test_hmc_decommission_lpar_delegates_with_one_configured_client() -> None:
         return fake_client_context(profile)
 
     with (
-        patch("hmc_mcp.server_tools.lpars.client_from_env", side_effect=fake_client_from_env),
+        patch("hmc_mcp.server_tools.lpar.lifecycle.client_from_env", side_effect=fake_client_from_env),
         patch(
-            "hmc_mcp.server_tools.lpars.decommission_lpar",
+            "hmc_mcp.server_tools.lpar.lifecycle.decommission_lpar",
             new=AsyncMock(return_value=expected),
         ) as decommission_mock,
     ):

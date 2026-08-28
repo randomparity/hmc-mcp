@@ -834,7 +834,7 @@ def test_every_handler_routes_the_connection_argument_it_declares():
     root = Path(server_command.__file__).parent
     checked: set[str] = set()
 
-    for path in sorted(root.glob("*.py")):
+    for path in sorted(root.rglob("*.py")):
         functions = _module_functions(ast.parse(path.read_text(encoding="utf-8")))
         for name in sorted(functions.keys() & set(TOOL_SECURITY)):
             _assert_handler_routes(
@@ -1434,7 +1434,7 @@ def test_every_handler_reads_the_target_selectors_it_declares():
     unread: dict[str, list[str]] = {}
     checked: set[str] = set()
 
-    for path in sorted(root.glob("*.py")):
+    for path in sorted(root.rglob("*.py")):
         functions = _module_functions(ast.parse(path.read_text(encoding="utf-8")))
         for name in sorted(functions.keys() & set(TOOL_SECURITY)):
             body = functions[name]

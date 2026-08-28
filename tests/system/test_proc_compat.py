@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from conftest import mock_uuid_resolution
 
-from hmc_mcp.server_tools.lpar_config import (
+from hmc_mcp.server_tools.lpar.configuration import (
     hmc_get_lpar_proc_compat as hmc_get_lpar_proc_compat,
 )
-from hmc_mcp.server_tools.lpar_config import (
+from hmc_mcp.server_tools.lpar.configuration import (
     hmc_set_lpar_proc_compat as hmc_set_lpar_proc_compat,
 )
 from hmc_mcp.server_tools.system_resources import (

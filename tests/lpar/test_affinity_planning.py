@@ -12,7 +12,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp.server_tools import lpar_config as server_lpar_config
+from hmc_mcp.server_tools.lpar import configuration as server_lpar_config
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig

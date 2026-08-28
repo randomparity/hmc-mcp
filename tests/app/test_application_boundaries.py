@@ -59,7 +59,7 @@ def test_domain_import_does_not_register_tools_on_base_application():
 import asyncio
 from hmc_mcp._app import create_mcp
 application = create_mcp()
-import hmc_mcp.server_tools.lpars
+import hmc_mcp.server_tools.lpar.lifecycle
 raise SystemExit(0 if len(asyncio.run(application.list_tools())) == 0 else 1)
 """
     subprocess.run([sys.executable, "-c", script], check=True)
@@ -71,7 +71,7 @@ def test_operation_modules_import_before_their_server_tool_consumers():
 import hmc_mcp.operations.lpar
 import hmc_mcp.operations.systems
 import hmc_mcp.operations.vios
-import hmc_mcp.server_tools.lpars
+import hmc_mcp.server_tools.lpar.lifecycle
 import hmc_mcp.server_tools.systems
 import hmc_mcp.server_tools.vios
 """

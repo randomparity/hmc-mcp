@@ -9,10 +9,10 @@ import pytest
 from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.server_tools.lpar_config import (
+from hmc_mcp.server_tools.lpar.configuration import (
     hmc_get_lpar_msp as hmc_get_lpar_msp,
 )
-from hmc_mcp.server_tools.lpar_config import (
+from hmc_mcp.server_tools.lpar.configuration import (
     hmc_set_lpar_msp as hmc_set_lpar_msp,
 )
 from hmc_mcp.ssh.profiles import HMCCLIError, set_lpar_msp
