@@ -41,6 +41,23 @@ class StorageMapResult:
     lpar_uuid: str
     resource: dict[str, Any] | None
 
+
+async def list_clusters(hmc: HMCClient) -> list[dict[str, Any]]:
+    """List clusters through the shared presentation-neutral operation seam."""
+    return await hmc.list_clusters()
+
+
+async def list_shared_storage_pools(hmc: HMCClient) -> list[dict[str, Any]]:
+    """List shared storage pools through the shared operation seam."""
+    return await hmc.list_shared_storage_pools()
+
+
+async def get_shared_storage_pool(
+    hmc: HMCClient, ssp_uuid: str
+) -> dict[str, Any] | None:
+    """Get one shared storage pool by UUID."""
+    return await hmc.get_shared_storage_pool(ssp_uuid)
+
 # HTTP download configuration
 CONNECT_TIMEOUT = 30.0
 READ_TIMEOUT = 300.0

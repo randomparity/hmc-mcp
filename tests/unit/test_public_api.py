@@ -254,6 +254,9 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "apply_lpar_pcie_assignments",
         "prevalidate_lpar_pcie_assignments",
         "list_volume_groups",
+        "list_clusters",
+        "list_shared_storage_pools",
+        "get_shared_storage_pool",
         "create_volume_group",
         "create_virtual_disk",
             "delete_virtual_disk",
@@ -1939,7 +1942,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # VIOS operations now share system-before-partition selector order.
     # Boot-order operations now accept a system-scoped LPAR name or UUID.
     # PCIe inventory operations now name their system selector explicitly.
-    expected_digest = "f33ee831cb0016ecafec7ad5c61fe540598b0043e5006e27b96b673b23b3fa2a"  # pragma: allowlist secret
+    # Cluster and shared-storage-pool inventory joined the reusable facade.
+    expected_digest = "8b45098dd4d4d3c991081ff2379ef0a4ec77b8dca7244239767438d141721490"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

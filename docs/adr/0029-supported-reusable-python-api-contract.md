@@ -240,7 +240,8 @@ names are internal everywhere and are never inventoried.
 - `operations.storage` — operations: `create_logical_unit`, `create_media_repository`,
   `create_optical_media`, `create_virtual_disk`, `create_volume_group`, `delete_logical_unit`,
   `delete_media_repository`, `delete_optical_media`, `delete_virtual_disk`,
-  `detach_storage_mapping`, `get_media_repository`, `list_optical_mappings`, `list_optical_media`,
+  `detach_storage_mapping`, `get_media_repository`, `get_shared_storage_pool`, `list_clusters`,
+  `list_optical_mappings`, `list_optical_media`, `list_shared_storage_pools`,
   `list_storage_mappings`, `list_volume_groups`, `map_storage`, `mount_optical_media`,
   `unmount_optical_media`, `upload_iso`; types: `StorageMapResult`; excluded synchronous:
   `validate_logical_unit_create`, `validate_logical_unit_wait`.

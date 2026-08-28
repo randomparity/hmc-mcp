@@ -28,11 +28,14 @@ from ..operations.storage import (
     delete_optical_media,
     delete_virtual_disk,
     detach_storage_mapping,
+    get_shared_storage_pool,
     list_optical_mappings,
     mount_optical_media,
     unmount_optical_media,
     get_media_repository,
     list_optical_media,
+    list_clusters,
+    list_shared_storage_pools,
     list_storage_mappings,
     list_volume_groups,
     map_storage,
@@ -505,7 +508,7 @@ def hmc_list_clusters(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.list_clusters()
+            return await list_clusters(hmc)
 
     return run_limited_collection(_go, limit)
 
@@ -526,7 +529,7 @@ def hmc_list_shared_storage_pools(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.list_shared_storage_pools()
+            return await list_shared_storage_pools(hmc)
 
     return run_limited_collection(_go, limit)
 
@@ -544,7 +547,7 @@ def hmc_get_shared_storage_pool(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.get_shared_storage_pool(ssp_uuid)
+            return await get_shared_storage_pool(hmc, ssp_uuid)
 
     return run_sync(_go)
 
