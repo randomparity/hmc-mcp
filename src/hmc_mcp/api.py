@@ -78,13 +78,13 @@ from hmc_mcp.operations.lpar.core import (
     LparCreation,
     LparCreationResult,
     LparPowerResult,
-    PartitionState,
     ProcessorCompatibilityMode,
     create_and_stamp_lpar,
     delete_lpar,
     power_lpar,
     rename_lpar,
 )
+from hmc_mcp.operations.partition_state import PartitionState
 from hmc_mcp.operations.lpar.boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,

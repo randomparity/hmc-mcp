@@ -26,11 +26,11 @@ from ..operations.systems import (
     power_system,
 )
 from ..operations.lpar.core import (
-    PartitionState,
     get_lpar,
     get_lpar_state,
     list_lpars,
 )
+from ..operations.partition_state import PartitionState
 from ..operations.vios import get_vios, list_vios
 
 

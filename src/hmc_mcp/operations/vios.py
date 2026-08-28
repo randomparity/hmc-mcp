@@ -20,7 +20,7 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from hmc_mcp.operations.lpar.core import PARTITION_STATES, PartitionState
+from hmc_mcp.operations.partition_state import PARTITION_STATES, PartitionState
 
 
 async def list_vios(

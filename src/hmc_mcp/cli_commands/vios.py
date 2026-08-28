@@ -10,7 +10,7 @@ from .runtime import _run, _client, _with_client
 from .output import _first_field, _output, _print_json, console
 from ..jobs import validate_wait_timing
 from ..operations.vios import list_vios, power_vios
-from ..operations.lpar.core import PartitionState
+from ..operations.partition_state import PartitionState
 
 
 def vios_list(

@@ -189,7 +189,7 @@ names are internal everywhere and are never inventoried.
 - `operations.lpar.configuration` — exports: `configure_lpar_msp`,
   `configure_lpar_processor_compatibility`, `synchronize_lpar_profile`.
 - `operations.lpar.core` — exports: `LparCreation`, `LparCreationResult`,
-  `LparPowerResult`, `PartitionState`, `ProcessorCompatibilityMode`, `create_and_stamp_lpar`,
+  `LparPowerResult`, `ProcessorCompatibilityMode`, `create_and_stamp_lpar`,
   `delete_lpar`, `power_lpar`, `rename_lpar`.
 - `operations.lpar.decommission` — exports: `DecommissionAdapterRecord`,
   `DecommissionBlastRadius`, `DecommissionResult`, `decommission_lpar`.
@@ -212,6 +212,8 @@ names are internal everywhere and are never inventoried.
   `set_lpar_ownership_description`, `stamp_created_lpar_ownership`; types: none; excluded
   synchronous: `authorize_lpar_ownership_description`, `lpar_ownership_entry`,
   `parse_lpar_ownership_caller_token`, `parse_lpar_ownership_owner`.
+- `operations.partition_state` — types: `PartitionState`; operations: none; excluded
+  synchronous: none.
 - `operations.pcie` — operations: `assign_dedicated_pcie_slot`, `assign_sriov_logical_port`,
   `list_dedicated_slots`, `list_sriov_adapters`, `list_sriov_logical_ports`,
   `list_sriov_physical_ports`, `set_sriov_adapter_mode`, `unassign_dedicated_pcie_slot`,

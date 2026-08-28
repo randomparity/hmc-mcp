@@ -14,6 +14,7 @@ from hmc_mcp.operations.affinity import (
     classify_affinity_outcome,
     validate_affinity_request,
 )
+from hmc_mcp.operations.partition_state import PARTITION_STATES, PartitionState
 
 from ...client import HMCClient
 from ...resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
@@ -46,34 +47,6 @@ from ...ssh.lpar import (
 
 _logger = logging.getLogger(__name__)
 
-PartitionState = Literal[
-    "running",
-    "not activated",
-    "starting",
-    "shutting down",
-    "stopping",
-    "open firmware",
-    "error",
-    "migrating",
-    "suspended",
-    "resuming",
-    "unknown",
-]
-PARTITION_STATES: frozenset[PartitionState] = frozenset(
-    {
-        "running",
-        "not activated",
-        "starting",
-        "shutting down",
-        "stopping",
-        "open firmware",
-        "error",
-        "migrating",
-        "suspended",
-        "resuming",
-        "unknown",
-    }
-)
 ProcessorCompatibilityMode = Literal[
     "default",
     "POWER5",
