@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from hmc_mcp import _app as app_runtime
 from hmc_mcp.server_tools import (
     adapters as server_adapters,
     jobs as server_jobs,
@@ -109,11 +110,15 @@ COLLECTION_TOOLS = {
 def test_run_limited_collection_caps_after_operation(limit, expected):
     entries = [{"id": 1}, {"id": 2}, {"id": 3}]
     operation = AsyncMock(return_value=entries)
+    client = MagicMock()
 
-    result = run_limited_collection(operation, limit)
+    with patch.object(
+        app_runtime, "client_from_env", return_value=_client_context(client)
+    ):
+        result = run_limited_collection(operation, limit)
 
     assert result == expected
-    operation.assert_awaited_once_with()
+    operation.assert_awaited_once_with(client)
 
 
 def test_run_limited_collection_rejects_negative_limit_before_operation():
@@ -212,7 +217,7 @@ def test_system_state_selector_runs_before_results_are_capped():
     client = MagicMock()
     client.search_uom = AsyncMock(return_value=entries)
     with patch.object(
-        server_systems, "client_from_env", return_value=_client_context(client)
+        app_runtime, "client_from_env", return_value=_client_context(client)
     ):
         result = server_systems.hmc_list_systems(state="operating", limit=2)
 
@@ -226,7 +231,7 @@ def test_lpar_parent_selector_runs_before_results_are_capped():
     client.list_logical_partitions = AsyncMock(return_value=entries)
     with (
         patch.object(
-            server_systems, "client_from_env", return_value=_client_context(client)
+            app_runtime, "client_from_env", return_value=_client_context(client)
         ),
         patch.object(
             lpar_core,
@@ -246,7 +251,7 @@ def test_adapter_type_selector_runs_before_results_are_capped():
     client = MagicMock()
     with (
         patch.object(
-            server_adapters, "client_from_env", return_value=_client_context(client)
+            app_runtime, "client_from_env", return_value=_client_context(client)
         ),
         patch.object(
             server_adapters,
@@ -269,7 +274,7 @@ def test_arbitrary_resource_type_runs_before_results_are_capped():
     client = MagicMock()
     client.list_uom = AsyncMock(return_value=entries)
     with patch.object(
-        server_systems, "client_from_env", return_value=_client_context(client)
+        app_runtime, "client_from_env", return_value=_client_context(client)
     ):
         result = server_systems.hmc_list_resources("Cluster", limit=2)
 

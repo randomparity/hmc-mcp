@@ -7,10 +7,8 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from .._app import (
-    run_sync,
+    with_client,
 )
-
-from ..client.client_factory import client_from_env
 from ..operations.templates import (
     deploy_partition_template,
     get_partition_template,
@@ -29,11 +27,7 @@ def hmc_list_partition_templates(profile: str | None = None) -> list[dict[str, A
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_partition_templates(hmc)
-
-    return run_sync(_go)
+    return with_client(list_partition_templates, profile=profile)
 
 
 @tool(effect="read", operation="template.get", target_kind="template")
@@ -50,11 +44,9 @@ def hmc_get_partition_template(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await get_partition_template(hmc, template_uuid)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: get_partition_template(hmc, template_uuid), profile=profile
+    )
 
 
 @tool(effect="mutate", operation="template.deploy", target_kind="managed_system")
@@ -90,15 +82,14 @@ def hmc_deploy_partition_template(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await deploy_partition_template(
-                hmc,
-                draft_template_uuid,
-                target_system_name_or_uuid,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: deploy_partition_template(
+            hmc,
+            draft_template_uuid,
+            target_system_name_or_uuid,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )

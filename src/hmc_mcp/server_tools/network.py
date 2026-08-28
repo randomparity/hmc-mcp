@@ -12,6 +12,7 @@ from typing import Any
 from .._app import (
     run_sync,
     run_limited_collection,
+    with_client,
 )
 
 from ..client.client_factory import client_from_env
@@ -61,11 +62,11 @@ def hmc_list_virtual_switches(
             reduce HMC work or network transfer.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_virtual_switches(hmc, system_name_or_uuid)
-
-    return run_limited_collection(_go, limit)
+    return run_limited_collection(
+        lambda hmc: list_virtual_switches(hmc, system_name_or_uuid),
+        limit,
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="network.list_networks", target_kind="managed_system")
@@ -84,11 +85,11 @@ def hmc_list_virtual_networks(
             reduce HMC work or network transfer.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_virtual_networks(hmc, system_name_or_uuid)
-
-    return run_limited_collection(_go, limit)
+    return run_limited_collection(
+        lambda hmc: list_virtual_networks(hmc, system_name_or_uuid),
+        limit,
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="network.create_network", target_kind="managed_system")
@@ -111,18 +112,17 @@ def hmc_create_virtual_network(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await create_virtual_network(
-                hmc,
-                system_name_or_uuid,
-                name,
-                vlan_id,
-                virtual_switch_id,
-                tagged=tagged,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: create_virtual_network(
+            hmc,
+            system_name_or_uuid,
+            name,
+            vlan_id,
+            virtual_switch_id,
+            tagged=tagged,
+        ),
+        profile=profile,
+    )
 
 
 @tool(
@@ -169,11 +169,11 @@ def hmc_list_network_bridges(
             reduce HMC work or network transfer.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_network_bridges(hmc, system_name_or_uuid)
-
-    return run_limited_collection(_go, limit)
+    return run_limited_collection(
+        lambda hmc: list_network_bridges(hmc, system_name_or_uuid),
+        limit,
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="network.list_fc_ports", target_kind="managed_system")
@@ -200,11 +200,11 @@ def hmc_list_fc_ports(
         lpar_name_or_uuid: Optional partition name or UUID to restrict results.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_fc_ports(hmc, system_name_or_uuid, lpar_name_or_uuid)
 
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: list_fc_ports(hmc, system_name_or_uuid, lpar_name_or_uuid),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="network.list_sea", target_kind="managed_system")
@@ -231,13 +231,11 @@ def hmc_list_sea_adapters(
         lpar_name_or_uuid: Optional partition name or UUID to restrict results.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_sea_adapters(
-                hmc, system_name_or_uuid, lpar_name_or_uuid
-            )
 
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: list_sea_adapters(hmc, system_name_or_uuid, lpar_name_or_uuid),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="sriov.set_mode", target_kind="managed_system")
@@ -270,13 +268,11 @@ def hmc_set_sriov_adapter_mode(
             passthrough use.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await set_sriov_adapter_mode(
-                hmc, system_name_or_uuid, adapter_id, mode
-            )
 
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: set_sriov_adapter_mode(hmc, system_name_or_uuid, adapter_id, mode),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="sriov.assign_logical_port", target_kind="lpar")
@@ -304,6 +300,7 @@ def hmc_assign_sriov_logical_port(
         ownership_override: Permit a separately approved ADR 0011 ownership override.
         profile: TOML connection profile name.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return asdict(
@@ -346,6 +343,7 @@ def hmc_unassign_sriov_logical_port(
         ownership_override: Permit a separately approved ADR 0011 ownership override.
         profile: TOML connection profile name.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return asdict(
@@ -385,11 +383,10 @@ def hmc_list_vnics(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_vnics(hmc, system_name_or_uuid, lpar_name_or_uuid)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: list_vnics(hmc, system_name_or_uuid, lpar_name_or_uuid),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="vnic.add", target_kind="lpar")

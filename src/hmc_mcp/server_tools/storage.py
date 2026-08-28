@@ -9,6 +9,7 @@ from typing import Any
 from .._app import (
     run_sync,
     run_limited_collection,
+    with_client,
 )
 
 from ..client.client_factory import client_from_env
@@ -75,11 +76,11 @@ def hmc_list_volume_groups(
             reduce HMC work or network transfer.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_volume_groups(hmc, system_name_or_uuid, vios_name_or_uuid)
-
-    return run_limited_collection(_go, limit)
+    return run_limited_collection(
+        lambda hmc: list_volume_groups(hmc, system_name_or_uuid, vios_name_or_uuid),
+        limit,
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="storage.create_volume_group", target_kind="vios")
@@ -555,11 +556,7 @@ def hmc_list_clusters(
             reduce HMC work or network transfer.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_clusters(hmc)
-
-    return run_limited_collection(_go, limit)
+    return run_limited_collection(list_clusters, limit, profile=profile)
 
 
 @tool(effect="read", operation="cluster.list_pools", target_kind="console")
@@ -576,11 +573,7 @@ def hmc_list_shared_storage_pools(
             reduce HMC work or network transfer.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_shared_storage_pools(hmc)
-
-    return run_limited_collection(_go, limit)
+    return run_limited_collection(list_shared_storage_pools, limit, profile=profile)
 
 
 @tool(effect="read", operation="cluster.get_pool", target_kind="shared_storage_pool")
@@ -594,11 +587,9 @@ def hmc_get_shared_storage_pool(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await get_shared_storage_pool(hmc, ssp_uuid)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: get_shared_storage_pool(hmc, ssp_uuid), profile=profile
+    )
 
 
 @tool(effect="mutate", operation="cluster.create_logical_unit", target_kind="cluster")

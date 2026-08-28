@@ -204,13 +204,15 @@ def with_client(
 
 
 def run_limited_collection(
-    fn: Callable[[], Coroutine[Any, Any, list[_T]]],
+    fn: Callable[[HMCClient], Awaitable[list[_T]]],
     limit: int | None,
+    *,
+    profile: str | None = None,
 ) -> list[_T]:
     """Run a full collection request, then cap its agent-facing result."""
     if limit is not None and limit < 0:
         raise ValueError("limit must be greater than or equal to 0")
-    entries = run_sync(fn)
+    entries = with_client(fn, profile=profile)
     return entries if limit is None else entries[:limit]
 
 

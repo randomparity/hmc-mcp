@@ -88,12 +88,8 @@ def hmc_list_recent_jobs(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
-    async def operation():
-        async with client_from_env(profile) as hmc:
-            return await operations_jobs.list_jobs(hmc)
-
     try:
-        return run_limited_collection(operation, limit)
+        return run_limited_collection(operations_jobs.list_jobs, limit, profile=profile)
     except HMCError as exc:
         if not operations_jobs.is_unsupported_job_listing(exc):
             raise

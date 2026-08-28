@@ -44,13 +44,13 @@ def hmc_list_adapters(
     """
     validate_adapter_type(adapter_type)
 
-    async def operation():
-        async with client_from_env(profile) as hmc:
-            return await list_adapters(
-                hmc, system_name_or_uuid, lpar_name_or_uuid, adapter_type
-            )
-
-    return run_limited_collection(operation, limit)
+    return run_limited_collection(
+        lambda hmc: list_adapters(
+            hmc, system_name_or_uuid, lpar_name_or_uuid, adapter_type
+        ),
+        limit,
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="adapter.add_network", target_kind="lpar")

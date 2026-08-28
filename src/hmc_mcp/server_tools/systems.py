@@ -7,11 +7,9 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from .._app import (
-    run_sync,
     run_limited_collection,
     with_client,
 )
-from ..client.client_factory import client_from_env
 from ..config import (
     config_inventory,
 )
@@ -96,11 +94,9 @@ def hmc_list_systems(
             reduce HMC work or network transfer.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_systems(hmc, state)
-
-    return run_limited_collection(_go, limit)
+    return run_limited_collection(
+        lambda hmc: list_systems(hmc, state), limit, profile=profile
+    )
 
 
 @tool(effect="read", operation="lpar.list", target_kind="managed_system")
@@ -123,11 +119,11 @@ def hmc_list_lpars(
             and parsed; omitted returns all entries. This client-side cap does not
             reduce HMC work or network transfer.
     """
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_lpars(hmc, system_name_or_uuid, state)
-
-    return run_limited_collection(_go, limit)
+    return run_limited_collection(
+        lambda hmc: list_lpars(hmc, system_name_or_uuid, state),
+        limit,
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="lpar.get", target_kind="lpar")
@@ -145,15 +141,14 @@ def hmc_get_lpar(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await get_lpar(
-                hmc,
-                lpar_name_or_uuid,
-                system_name_or_uuid=system_name_or_uuid,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: get_lpar(
+            hmc,
+            lpar_name_or_uuid,
+            system_name_or_uuid=system_name_or_uuid,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="lpar.get_state", target_kind="lpar")
@@ -171,15 +166,14 @@ def hmc_get_lpar_state(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await get_lpar_state(
-                hmc,
-                lpar_name_or_uuid,
-                system_name_or_uuid=system_name_or_uuid,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: get_lpar_state(
+            hmc,
+            lpar_name_or_uuid,
+            system_name_or_uuid=system_name_or_uuid,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="vios.list", target_kind="managed_system")
@@ -207,11 +201,11 @@ def hmc_list_vios(
             and parsed; omitted returns all entries. This client-side cap does not
             reduce HMC work or network transfer.
     """
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_vios(hmc, system_name_or_uuid, state)
-
-    return run_limited_collection(_go, limit)
+    return run_limited_collection(
+        lambda hmc: list_vios(hmc, system_name_or_uuid, state),
+        limit,
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="vios.get", target_kind="vios")
@@ -228,15 +222,10 @@ def hmc_get_vios(
         system_name_or_uuid: Optional SystemName or UUID that disambiguates a VIOS name.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await get_vios(
-                hmc,
-                system_name_or_uuid,
-                vios_name_or_uuid,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: get_vios(hmc, system_name_or_uuid, vios_name_or_uuid),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="console.list_resources", target_kind="console")
@@ -259,11 +248,9 @@ def hmc_list_resources(
             reduce HMC work or network transfer.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.list_uom(resource_type)
-
-    return run_limited_collection(_go, limit)
+    return run_limited_collection(
+        lambda hmc: hmc.list_uom(resource_type), limit, profile=profile
+    )
 
 
 @tool(effect="read", operation="system.get", target_kind="managed_system")
@@ -280,11 +267,9 @@ def hmc_get_system(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await get_system(hmc, system_name_or_uuid)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: get_system(hmc, system_name_or_uuid), profile=profile
+    )
 
 
 @tool(effect="mutate", operation="system.modify", target_kind="managed_system")
@@ -311,20 +296,19 @@ def hmc_modify_system(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await modify_system(
-                hmc,
-                system_name_or_uuid,
-                new_name=new_name,
-                power_off_policy=power_off_policy,
-                power_on_lpar_start_policy=power_on_lpar_start_policy,
-                pend_mem_region_size=pend_mem_region_size,
-                requested_num_sys_huge_pages=requested_num_sys_huge_pages,
-                mem_mirroring_mode=mem_mirroring_mode,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: modify_system(
+            hmc,
+            system_name_or_uuid,
+            new_name=new_name,
+            power_off_policy=power_off_policy,
+            power_on_lpar_start_policy=power_on_lpar_start_policy,
+            pend_mem_region_size=pend_mem_region_size,
+            requested_num_sys_huge_pages=requested_num_sys_huge_pages,
+            mem_mirroring_mode=mem_mirroring_mode,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="system.power_on", target_kind="managed_system")
@@ -348,18 +332,17 @@ def hmc_power_on_system(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await power_system(
-                hmc,
-                system_name_or_uuid,
-                power_on=True,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: power_system(
+            hmc,
+            system_name_or_uuid,
+            power_on=True,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="system.power_off", target_kind="managed_system")
@@ -385,16 +368,15 @@ def hmc_power_off_system(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await power_system(
-                hmc,
-                system_name_or_uuid,
-                power_on=False,
-                immediate=immediate,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: power_system(
+            hmc,
+            system_name_or_uuid,
+            power_on=False,
+            immediate=immediate,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )
