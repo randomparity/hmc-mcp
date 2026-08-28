@@ -3198,7 +3198,7 @@ def test_vios_list_fc_port_labels_json(monkeypatch):
                 "b",
             ],
             "create_vios_vfc_group_label",
-            ["system-a", "group-a", "vios_names=a,b"],
+            ["system-a", "group-a", "vios_names=['a', 'b']"],
         ),
         (
             [
@@ -3242,6 +3242,27 @@ def test_vios_label_declined_confirmation_does_not_dispatch(monkeypatch):
     )
     assert result.exit_code == 1
     assert "Aborted" in result.stderr
+    operation.assert_not_awaited()
+
+
+def test_vios_label_confirmation_escapes_control_characters(monkeypatch):
+    operation = _patch_vios_label_cli(monkeypatch, "set_vios_fc_port_label", {})
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "vios",
+            "set-fc-port-label",
+            "system-a",
+            "fcs0",
+            "safe\nspoofed-target",
+            "--vios-name",
+            "vios-a",
+        ],
+        input="n\n",
+    )
+    assert result.exit_code == 1
+    assert "safe\\nspoofed-target" in result.stderr
+    assert "safe\nspoofed-target" not in result.stderr
     operation.assert_not_awaited()
 
 

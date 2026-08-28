@@ -176,8 +176,9 @@ host authentication and credential secrecy.
 
 ## Verification
 
-Sanitized synthetic POWER10/POWER11 fixtures cover FC-port rows, vFC group rows, empty results,
-malformed headers, malformed CSV, and row-width drift. Command tests assert exact documented
+Version-labelled sanitized POWER10/POWER11 fixtures cover only #559's confirmed FC-port
+projection. Generic synthetic parser cases cover vFC-group-shaped rows, empty results, malformed
+headers, malformed CSV, and row-width drift. Command tests assert exact documented
 commands for every operation and both VIOS selector families. Table-driven rejection tests cover
 blank and duplicate members, whitespace-only labels, ports, rename targets, and VIOS names,
 both/neither selectors, non-positive IDs, every HMC record delimiter, ASCII controls,

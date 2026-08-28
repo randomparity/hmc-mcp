@@ -26,16 +26,21 @@ def _confirm_on_stderr(prompt: str) -> bool:
         return typer.confirm(prompt, err=True)
 
 
+def _prompt_value(value: object) -> str:
+    """Render caller input without allowing terminal control structure."""
+    return ascii(value)
+
+
 def _selected(vios_name: str | None, vios_id: int | None) -> str:
     if vios_name is not None:
-        return f"vios_name={vios_name}"
-    return f"vios_id={vios_id}"
+        return f"vios_name={_prompt_value(vios_name)}"
+    return f"vios_id={_prompt_value(vios_id)}"
 
 
 def _members(vios_names: list[str] | None, vios_ids: list[int] | None) -> str:
     if vios_names is not None:
-        return f"vios_names={','.join(vios_names)}"
-    return f"vios_ids={','.join(map(str, vios_ids or []))}"
+        return f"vios_names={_prompt_value(vios_names)}"
+    return f"vios_ids={_prompt_value(vios_ids)}"
 
 
 def vios_list_fc_port_labels(
@@ -63,8 +68,9 @@ def vios_set_fc_port_label(
 ) -> None:
     """Set one FC-port label without changing adapter configuration."""
     if not yes and not _confirm_on_stderr(
-        f"Set FC-port label on system={system_name_or_uuid}, port={port_name}, "
-        f"{_selected(vios_name, vios_id)}, label={label}?"
+        f"Set FC-port label on system={_prompt_value(system_name_or_uuid)}, "
+        f"port={_prompt_value(port_name)}, {_selected(vios_name, vios_id)}, "
+        f"label={_prompt_value(label)}?"
     ):
         raise typer.Abort()
     result = run(
@@ -89,8 +95,8 @@ def vios_remove_fc_port_label(
 ) -> None:
     """Remove one FC-port label without deleting the FC adapter."""
     if not yes and not _confirm_on_stderr(
-        f"Remove FC-port label on system={system_name_or_uuid}, port={port_name}, "
-        f"{_selected(vios_name, vios_id)}?"
+        f"Remove FC-port label on system={_prompt_value(system_name_or_uuid)}, "
+        f"port={_prompt_value(port_name)}, {_selected(vios_name, vios_id)}?"
     ):
         raise typer.Abort()
     result = run(
@@ -123,7 +129,8 @@ def vios_create_vfc_group_label(
 ) -> None:
     """Create one vFC placement group without changing adapters."""
     if not yes and not _confirm_on_stderr(
-        f"Create vFC group on system={system_name_or_uuid}, label={label}, "
+        f"Create vFC group on system={_prompt_value(system_name_or_uuid)}, "
+        f"label={_prompt_value(label)}, "
         f"{_members(vios_names, vios_ids)}?"
     ):
         raise typer.Abort()
@@ -150,11 +157,13 @@ def vios_update_vfc_group_label(
 ) -> None:
     """Rename or change membership of one vFC placement group."""
     detail = (
-        f"new_name={new_name}" if action == "rename" else _members(vios_names, vios_ids)
+        f"new_name={_prompt_value(new_name)}"
+        if action == "rename"
+        else _members(vios_names, vios_ids)
     )
     if not yes and not _confirm_on_stderr(
-        f"Update vFC group on system={system_name_or_uuid}, label={label}, "
-        f"action={action}, {detail}?"
+        f"Update vFC group on system={_prompt_value(system_name_or_uuid)}, "
+        f"label={_prompt_value(label)}, action={_prompt_value(action)}, {detail}?"
     ):
         raise typer.Abort()
     result = run(
@@ -178,7 +187,8 @@ def vios_remove_vfc_group_label(
 ) -> None:
     """Remove one named vFC placement group without deleting adapters."""
     if not yes and not _confirm_on_stderr(
-        f"Remove vFC group on system={system_name_or_uuid}, label={label}?"
+        f"Remove vFC group on system={_prompt_value(system_name_or_uuid)}, "
+        f"label={_prompt_value(label)}?"
     ):
         raise typer.Abort()
     result = run(
