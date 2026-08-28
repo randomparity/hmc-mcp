@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from conftest import mock_uuid_resolution
 
-from hmc_mcp.server_tools.network import (
+from hmc_mcp.server_tools.vnic import (
     hmc_list_fc_ports as hmc_list_fc_ports,
 )
-from hmc_mcp.server_tools.network import (
+from hmc_mcp.server_tools.vnic import (
     hmc_list_sea_adapters as hmc_list_sea_adapters,
 )
 
@@ -24,10 +24,7 @@ FC_CSV_OUTPUT = (
     "other-lpar,3,C050760E2B4C0002,0,0\n"
 )
 
-SEA_LINE_OUTPUT = (
-    "my-lpar,1000,ETHERNET0,Open,1\n"
-    "other-lpar,2000,ETHERNET0,Open,1\n"
-)
+SEA_LINE_OUTPUT = "my-lpar,1000,ETHERNET0,Open,1\nother-lpar,2000,ETHERNET0,Open,1\n"
 
 
 def _make_ssh_mock(stdout: str = "") -> MagicMock:

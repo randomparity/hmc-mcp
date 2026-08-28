@@ -14,6 +14,7 @@ from hmc_mcp.server_tools import (
     lpm,
     metrics,
     network,
+    pcie,
     snapshot,
     storage,
     system_resources,
@@ -22,6 +23,7 @@ from hmc_mcp.server_tools import (
     updates,
     users,
     vios,
+    vnic,
 )
 from hmc_mcp.server_tools.lpar import configuration, lifecycle, profiles, provision
 from hmc_mcp.server_tools.command import HMC_RUN_COMMAND_SECURITY
@@ -39,6 +41,8 @@ TOOL_MODULES = (
     adapters,
     storage,
     network,
+    pcie,
+    vnic,
     lpm,
     templates,
     metrics,

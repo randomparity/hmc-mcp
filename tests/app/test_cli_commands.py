@@ -30,7 +30,8 @@ from hmc_mcp.ssh import network as ssh_network
 from hmc_mcp.ssh import profiles as ssh_profiles
 from hmc_mcp.cli_commands import runtime as cli_runtime
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
-from hmc_mcp.cli_commands import network as cli_network
+from hmc_mcp.cli_commands import pcie as cli_pcie
+from hmc_mcp.cli_commands import vnic as cli_vnic
 from hmc_mcp.operations import ownership as lpar_ownership
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
@@ -48,7 +49,7 @@ def _patch_ssh_command(monkeypatch, replacement) -> None:
             "password": "test",  # pragma: allowlist secret
         }
     )
-    for module in (cli_lpars, cli_network):
+    for module in (cli_lpars, cli_pcie, cli_vnic):
         monkeypatch.setattr(module, "_ssh_config", lambda: config)
     for module in (ssh_affinity, ssh_lpar, ssh_network, ssh_profiles):
         monkeypatch.setattr(module, "run_hmc_command", replacement)
@@ -75,7 +76,7 @@ def _configured_ssh_config(monkeypatch) -> None:
             "password": "test",  # pragma: allowlist secret
         }
     )
-    for module in (cli_lpars, cli_network):
+    for module in (cli_lpars, cli_pcie, cli_vnic):
         monkeypatch.setattr(module, "_ssh_config", lambda: config)
 
 
@@ -2805,9 +2806,9 @@ def _vnic_result(operation: str) -> VnicChangeResult:
 
 def test_add_vnic_cli_default_confirmation_keeps_stdout_json(monkeypatch):
     operation = AsyncMock(return_value=_vnic_result("add"))
-    monkeypatch.setattr("hmc_mcp.cli_commands.network.add_vnic", operation)
+    monkeypatch.setattr("hmc_mcp.cli_commands.vnic.add_vnic", operation)
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.network._with_client",
+        "hmc_mcp.cli_commands.vnic._with_client",
         lambda fn: asyncio.run(fn(object())),
     )
 
@@ -2844,9 +2845,9 @@ def test_add_vnic_cli_default_confirmation_keeps_stdout_json(monkeypatch):
 def test_remove_vnic_cli_default_confirmation_keeps_partial_stdout_json(monkeypatch):
     partial = VnicPartialError("incomplete", _vnic_result("remove"))
     operation = AsyncMock(side_effect=partial)
-    monkeypatch.setattr("hmc_mcp.cli_commands.network.remove_vnic", operation)
+    monkeypatch.setattr("hmc_mcp.cli_commands.vnic.remove_vnic", operation)
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.network._with_client",
+        "hmc_mcp.cli_commands.vnic._with_client",
         lambda fn: asyncio.run(fn(object())),
     )
 

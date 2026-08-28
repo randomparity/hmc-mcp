@@ -5,6 +5,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from hmc_mcp.cli_commands import network as cli_network
+from hmc_mcp.cli_commands import pcie as cli_pcie
+from hmc_mcp.cli_commands import vnic as cli_vnic
 import hmc_mcp.server as server
 from hmc_mcp.server_tools import (
     adapters,
@@ -12,9 +15,12 @@ from hmc_mcp.server_tools import (
     command,
     health,
     jobs,
+    network,
+    pcie,
     storage,
     system_resources,
     systems,
+    vnic,
     vios,
 )
 from hmc_mcp.server_tools.lpar import configuration, lifecycle
@@ -45,6 +51,20 @@ def test_domain_handlers_live_in_focused_modules() -> None:
         system_resources.hmc_list_memory_pools: (
             "hmc_mcp.server_tools.system_resources"
         ),
+        network.hmc_list_virtual_networks: "hmc_mcp.server_tools.network",
+        pcie.hmc_set_sriov_adapter_mode: "hmc_mcp.server_tools.pcie",
+        vnic.hmc_list_vnics: "hmc_mcp.server_tools.vnic",
+    }
+
+    for handler, module_name in expected_modules.items():
+        assert handler.__module__ == module_name
+
+
+def test_network_cli_commands_follow_operation_domains() -> None:
+    expected_modules = {
+        cli_network.network_list_networks: "hmc_mcp.cli_commands.network",
+        cli_pcie.network_list_sriov_adapters: "hmc_mcp.cli_commands.pcie",
+        cli_vnic.network_list_vnics: "hmc_mcp.cli_commands.vnic",
     }
 
     for handler, module_name in expected_modules.items():

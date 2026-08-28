@@ -45,11 +45,13 @@ from .cli_commands import (
     memory_pools,
     metrics,
     network,
+    pcie,
     raw,
     snapshot,
     storage,
     systems,
     templates,
+    vnic,
     vios,
 )
 from .cli_commands.lpar import (
@@ -85,11 +87,13 @@ def _register_commands() -> None:
         (memory_pools, memory_pools_app),
         (metrics, metrics_app),
         (network, network_app),
+        (pcie, network_app),
         (raw, raw_app),
         (snapshot, snapshot_app),
         (storage, storage_app),
         (systems, systems_app),
         (templates, templates_app),
+        (vnic, network_app),
         (vios, vios_app),
     )
     for module, group in registrations:
