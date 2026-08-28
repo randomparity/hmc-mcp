@@ -847,55 +847,6 @@ def build_virtual_network_document(
 
 
 @escapes_string_arguments
-def build_media_repository_document(size_mib: int, vg_name: str = "") -> str:
-    """VolumeGroup document carrying a VirtualMediaRepository (create POST).
-
-    The repository is always named VMLibrary; size_mib is RepositorySize.
-    vg_name is the GroupName of the target VolumeGroup (required by HMC V10R3+).
-    VirtualMediaRepository must be wrapped in MediaRepositories per the HMC schema.
-    """
-    group_name_element = f"\n  <GroupName>{vg_name}</GroupName>" if vg_name else ""
-    body = f"""  <Metadata><Atom/></Metadata>{group_name_element}
-  <MediaRepositories schemaVersion="V1_0">
-    <Metadata><Atom/></Metadata>
-    <VirtualMediaRepository schemaVersion="V1_0">
-      <Metadata><Atom/></Metadata>
-      <RepositoryName>VMLibrary</RepositoryName>
-      <RepositorySize>{size_mib}</RepositorySize>
-    </VirtualMediaRepository>
-  </MediaRepositories>"""
-    return _document_envelope("VolumeGroup", body)
-
-
-@escapes_string_arguments
-def build_virtual_optical_media_document(
-    media_name: str, size_mib: int, vg_name: str = ""
-) -> str:
-    """VolumeGroup document carrying a blank VirtualOpticalMedia (create POST).
-
-    Only blank optical media can be created via the API; media_name is the
-    file name (e.g. 'aix.iso'), size_mib is MediaSize.
-    vg_name is the GroupName of the target VolumeGroup (required by HMC V10R3+).
-    VirtualMediaRepository must be wrapped in MediaRepositories per the HMC schema.
-    """
-    group_name_element = f"\n  <GroupName>{vg_name}</GroupName>" if vg_name else ""
-    body = f"""  <Metadata><Atom/></Metadata>{group_name_element}
-  <MediaRepositories schemaVersion="V1_0">
-    <Metadata><Atom/></Metadata>
-    <VirtualMediaRepository schemaVersion="V1_0">
-      <Metadata><Atom/></Metadata>
-      <VirtualOpticalMedia schemaVersion="V1_0">
-        <Metadata><Atom/></Metadata>
-        <MediaName>{media_name}</MediaName>
-        <MediaSize>{size_mib}</MediaSize>
-        <MediaType>BLANK</MediaType>
-      </VirtualOpticalMedia>
-    </VirtualMediaRepository>
-  </MediaRepositories>"""
-    return _document_envelope("VolumeGroup", body)
-
-
-@escapes_string_arguments
 def build_media_repository_delete_document(vg_name: str = "") -> str:
     """VolumeGroup document marking the VirtualMediaRepository for deletion (POST).
 

@@ -13,10 +13,6 @@ from conftest import make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.errors import HMCError
-from hmc_mcp.documents import (
-    build_media_repository_document,
-    build_virtual_optical_media_document,
-)
 
 # Minimal VolumeGroup feed — no MediaRepositories block (bare VG).
 _VG_FEED_BARE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -53,22 +49,6 @@ _VG_FEED_WITH_VMLIB = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 # Response after a successful POST — we just return the same bare feed.
 _VG_POST_RESPONSE = _VG_FEED_BARE
-
-
-def test_media_repository_document():
-    """build_media_repository_document still produces valid XML (legacy builder)."""
-    xml = build_media_repository_document(2048)
-    assert "VirtualMediaRepository" in xml
-    assert "RepositoryName" in xml and "VMLibrary" in xml
-    assert "RepositorySize" in xml and ">2048<" in xml
-
-
-def test_virtual_optical_media_document():
-    """build_virtual_optical_media_document still produces valid XML (legacy builder)."""
-    xml = build_virtual_optical_media_document("aix.iso", 1400)
-    assert "VirtualOpticalMedia" in xml
-    assert "MediaName" in xml and "aix.iso" in xml
-    assert "MediaSize" in xml and ">1400<" in xml
 
 
 @pytest.mark.asyncio
