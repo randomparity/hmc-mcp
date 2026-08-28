@@ -18,6 +18,7 @@ so the updated environment is loaded on restart.
 from __future__ import annotations
 
 import asyncio
+import argparse
 import json
 import os
 import sys
@@ -335,6 +336,60 @@ SUBTASK_GROUPS: dict[str, list[int]] = {
 }
 
 
+@dataclass(frozen=True)
+class RunnerArguments:
+    """Validated live-run selection and result destination."""
+
+    subtask: int | None
+    group: str | None
+    results_path: str
+
+
+def _parse_arguments(argv: list[str] | None = None) -> RunnerArguments:
+    """Parse the live-run selection without performing configuration or HMC work."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument(
+        "subtask",
+        nargs="?",
+        type=int,
+        choices=sorted(SUBTASKS),
+        help="run one numbered subtask",
+    )
+    selection.add_argument(
+        "--group",
+        choices=tuple(SUBTASK_GROUPS),
+        help="run one named subtask group",
+    )
+    parser.add_argument(
+        "--results-file",
+        help="write results to this path instead of the selection-specific default",
+    )
+    parsed = parser.parse_args(argv)
+    results_path = parsed.results_file
+    if results_path is None:
+        results_path = (
+            f"test-results-{parsed.group}.json"
+            if parsed.group is not None
+            else "test-results-round2.json"
+        )
+    return RunnerArguments(parsed.subtask, parsed.group, results_path)
+
+
+def _run_from_arguments(argv: list[str] | None = None) -> int:
+    """Validate arguments, then bootstrap configuration and execute the live run."""
+    arguments = _parse_arguments(argv)
+    _bootstrap_config()
+    _ensure_schema_version()
+    return asyncio.run(
+        main(
+            subtask_filter=arguments.subtask,
+            results_path=arguments.results_path,
+            group=arguments.group,
+        )
+    )
+
+
 def _restore_ctx_from_results(
     state: RunState,
     results_path: str = "test-results-round2.json",
@@ -458,35 +513,4 @@ async def main(
 
 
 if __name__ == "__main__":
-    _bootstrap_config()
-    _ensure_schema_version()
-    # Parse args: optional positional subtask number, optional --group <name>,
-    # optional --results-file <path>
-    args = sys.argv[1:]
-    subtask_num: int | None = None
-    group_name: str | None = None
-    results_file = "test-results-round2.json"
-
-    i = 0
-    while i < len(args):
-        if args[i] == "--group" and i + 1 < len(args):
-            group_name = args[i + 1]
-            if results_file == "test-results-round2.json":
-                results_file = f"test-results-{group_name}.json"
-            i += 2
-        elif args[i] == "--results-file" and i + 1 < len(args):
-            results_file = args[i + 1]
-            i += 2
-        elif args[i].lstrip("-").isdigit():
-            subtask_num = int(args[i])
-            i += 1
-        else:
-            i += 1
-
-    raise SystemExit(
-        asyncio.run(
-            main(
-                subtask_filter=subtask_num, results_path=results_file, group=group_name
-            )
-        )
-    )
+    raise SystemExit(_run_from_arguments())

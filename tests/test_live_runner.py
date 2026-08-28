@@ -406,6 +406,61 @@ def test_restore_context_propagates_unexpected_restoration_defects(
         runner._restore_ctx_from_results(runner.RunState(), str(results_path))
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--unknown"],
+        ["--group"],
+        ["--results-file"],
+        ["10", "--group", "round2"],
+        ["999"],
+    ],
+)
+def test_live_runner_rejects_malformed_arguments(argv):
+    with pytest.raises(SystemExit) as error:
+        runner._parse_arguments(argv)
+
+    assert error.value.code == 2
+
+
+def test_live_runner_rejects_arguments_before_bootstrap(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "_bootstrap_config",
+        lambda: (_ for _ in ()).throw(AssertionError("bootstrap reached")),
+    )
+
+    with pytest.raises(SystemExit) as error:
+        runner._run_from_arguments(["--unknown"])
+
+    assert error.value.code == 2
+
+
+def test_live_runner_parses_selection_and_result_defaults():
+    assert runner._parse_arguments([]) == runner.RunnerArguments(
+        subtask=None,
+        group=None,
+        results_path="test-results-round2.json",
+    )
+    assert runner._parse_arguments(["10"]) == runner.RunnerArguments(
+        subtask=10,
+        group=None,
+        results_path="test-results-round2.json",
+    )
+    assert runner._parse_arguments(["--group", "vmedia"]) == runner.RunnerArguments(
+        subtask=None,
+        group="vmedia",
+        results_path="test-results-vmedia.json",
+    )
+    assert runner._parse_arguments(
+        ["--group", "all", "--results-file", "custom.json"]
+    ) == runner.RunnerArguments(
+        subtask=None,
+        group="all",
+        results_path="custom.json",
+    )
+
+
 def test_live_context_has_no_mapping_facade():
     context = runner.LiveTestContext()
 
