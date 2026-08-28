@@ -873,15 +873,9 @@ def build_config(profile: str | None = None, **overrides: Any) -> HMCConfig:
                         key: getattr(base, key) for key in base.model_fields_set
                     }
                     merged.update(filtered)
-                    base = HMCConfig(
-                        _env_file=None,  # ty: ignore[unknown-argument]
-                        **merged,
-                    )
+                    base = HMCConfig(**merged)
                 return base
             except NoProfileSelectedError:
                 pass
 
-    return HMCConfig(
-        _env_file=None,  # ty: ignore[unknown-argument]
-        **filtered,
-    )
+    return HMCConfig(**filtered)
