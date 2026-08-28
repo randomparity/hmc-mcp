@@ -698,19 +698,19 @@ def _reconcile_add(
             "add reconciliation did not prove exactly one new active Operational backing"
         )
     return VnicChangeResult(
-        "add",
-        True,
-        True if final else False if unchanged else None,
-        selector,
-        observed_new[0].slot_num if len(observed_new) == 1 else None,
-        candidates,
-        backing_before,
-        matching_after,
-        backing_after,
-        readback.vnic_succeeded,
-        readback.backing_succeeded,
-        output,
-        tuple(errors),
+        operation="add",
+        mutation_dispatched=True,
+        changed=True if final else False if unchanged else None,
+        selector=selector,
+        slot_num=observed_new[0].slot_num if len(observed_new) == 1 else None,
+        vnic_before=candidates,
+        backing_before=backing_before,
+        vnic_after=matching_after,
+        backing_after=backing_after,
+        vnic_after_read_succeeded=readback.vnic_succeeded,
+        backing_after_read_succeeded=readback.backing_succeeded,
+        output=output,
+        errors=tuple(errors),
     )
 
 
@@ -754,19 +754,19 @@ def _reconcile_remove(
             "remove reconciliation did not prove the slot and captured backing absent"
         )
     return VnicChangeResult(
-        "remove",
-        True,
-        True if final else False if unchanged else None,
-        selector,
-        slot_num,
-        selected,
-        correlated,
-        matching_after,
-        backing_after,
-        readback.vnic_succeeded,
-        readback.backing_succeeded,
-        output,
-        tuple(errors),
+        operation="remove",
+        mutation_dispatched=True,
+        changed=True if final else False if unchanged else None,
+        selector=selector,
+        slot_num=slot_num,
+        vnic_before=selected,
+        backing_before=correlated,
+        vnic_after=matching_after,
+        backing_after=backing_after,
+        vnic_after_read_succeeded=readback.vnic_succeeded,
+        backing_after_read_succeeded=readback.backing_succeeded,
+        output=output,
+        errors=tuple(errors),
     )
 
 
@@ -796,19 +796,19 @@ async def add_vnic(
     pairs = _active_matching_backing_pairs(candidates, matching_backing_before, selector, port_vlan_id)
     if len(pairs) == 1 and len(candidates) == 1 and len(matching_backing_before) == 1:
         return VnicChangeResult(
-            "add",
-            False,
-            False,
-            selector,
-            pairs[0][0].slot_num,
-            candidates,
-            matching_backing_before,
-            candidates,
-            matching_backing_before,
-            True,
-            True,
-            "",
-            (),
+            operation="add",
+            mutation_dispatched=False,
+            changed=False,
+            selector=selector,
+            slot_num=pairs[0][0].slot_num,
+            vnic_before=candidates,
+            backing_before=matching_backing_before,
+            vnic_after=candidates,
+            backing_after=matching_backing_before,
+            vnic_after_read_succeeded=True,
+            backing_after_read_succeeded=True,
+            output="",
+            errors=(),
         )
     if pairs or candidates or matching_backing_before:
         raise VnicCapabilityError(
@@ -865,7 +865,19 @@ async def remove_vnic(
     selected = tuple(item for item in all_vnics if item.slot_num == slot_num)
     if not selected:
         return VnicChangeResult(
-            "remove", False, False, None, slot_num, (), (), (), (), True, True, "", ()
+            operation="remove",
+            mutation_dispatched=False,
+            changed=False,
+            selector=None,
+            slot_num=slot_num,
+            vnic_before=(),
+            backing_before=(),
+            vnic_after=(),
+            backing_after=(),
+            vnic_after_read_succeeded=True,
+            backing_after_read_succeeded=True,
+            output="",
+            errors=(),
         )
     if len(selected[0].backing_devices) != 1:
         raise VnicCapabilityError(
