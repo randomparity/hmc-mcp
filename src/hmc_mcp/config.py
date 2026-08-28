@@ -474,6 +474,13 @@ def _coerce_profiles(raw: Any, path: str | Path | None) -> dict[str, Any]:
     return {str(name): entry for name, entry in raw.items()}
 
 
+def _coerce_default_profile(raw: Any, path: str | Path | None) -> str | None:
+    """Validate and return the optional default profile name."""
+    if raw is not None and not isinstance(raw, str):
+        raise ConfigError(f"{path}: 'default_profile' must be a profile-name string")
+    return raw
+
+
 def list_profiles_with_default(
     config_path: Path | None = None,
 ) -> tuple[list[str], str | None]:
@@ -487,8 +494,8 @@ def list_profiles_with_default(
     if path is None:
         return [], None
     doc = _read_config_document(path)
-    return list(_coerce_profiles(doc.get("profiles"), path)), doc.get(
-        "default_profile"
+    return list(_coerce_profiles(doc.get("profiles"), path)), _coerce_default_profile(
+        doc.get("default_profile"), path
     )
 
 
@@ -626,8 +633,7 @@ def _select_profile(
     requested_profile: str | None,
 ) -> _ProfileSelection:
     """Select one profile and record the nickname that resolved to it."""
-    if default_profile is not None and not isinstance(default_profile, str):
-        raise ConfigError(f"{path}: 'default_profile' must be a profile-name string")
+    default_profile = _coerce_default_profile(default_profile, path)
     requested = requested_profile or os.environ.get("HMC_PROFILE") or default_profile
     if requested is None:
         raise NoProfileSelectedError(

@@ -390,6 +390,17 @@ def test_list_profiles_with_default_no_default(tmp_path, monkeypatch):
     assert default is None
 
 
+@pytest.mark.parametrize("value", ["42", '["prod"]', "true"])
+def test_list_profiles_with_default_rejects_non_string_default(tmp_path, value):
+    cfg = _write_toml(
+        tmp_path / "config.toml",
+        f"default_profile = {value}\n\n[profiles.prod]\nhost = 'h'\n",
+    )
+
+    with pytest.raises(ConfigError, match="'default_profile' must be a profile-name string"):
+        list_profiles_with_default(config_path=cfg)
+
+
 def test_list_profiles_with_default_absent(tmp_path):
     """Returns ([], None) when file absent."""
     names, default = list_profiles_with_default(config_path=tmp_path / "nonexistent.toml")
