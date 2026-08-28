@@ -32,7 +32,7 @@ class LpmResult:
     """An LPM submission paired with its resolved partition identity."""
 
     lpar_uuid: str
-    job: dict[str, Any] | JobOutcome | None
+    job: JobOutcome
 
 
 @dataclass(frozen=True)
@@ -88,7 +88,7 @@ class LpmAffinityMigrationResult:
 
     lpar_uuid: str | None
     preflight: LpmAffinityPreflightOutcome
-    job: dict[str, Any] | JobOutcome | None
+    job: JobOutcome | None
 
 
 def _validate_affinity_score(value: int | None, name: str) -> None:

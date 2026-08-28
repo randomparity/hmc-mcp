@@ -21,8 +21,6 @@ from ..operations.lpm import (
     remote_restart_lpar,
 )
 
-from typing import cast
-
 from ..jobs import RemoteRestartOperation
 
 
@@ -85,7 +83,7 @@ def hmc_migrate_lpar(
                 system_name_or_uuid=system_name_or_uuid,
                 ownership_override=ownership_override,
             )
-            return cast(JobOutcome, result.job)
+            return result.job
 
     return run_sync(_go)
 
@@ -233,7 +231,7 @@ def hmc_migrate_abort_lpar(
                 system_name_or_uuid=system_name_or_uuid,
                 ownership_override=ownership_override,
             )
-            return cast(JobOutcome, result.job)
+            return result.job
 
     return run_sync(_go)
 
@@ -278,7 +276,7 @@ def hmc_migrate_recover_lpar(
                 ownership_override=ownership_override,
                 system_name_or_uuid=system_name_or_uuid,
             )
-            return cast(JobOutcome, result.job)
+            return result.job
 
     return run_sync(_go)
 
@@ -333,6 +331,6 @@ def hmc_remote_restart_lpar(
                 poll_interval=poll_interval,
                 ownership_override=ownership_override,
             )
-            return cast(JobOutcome, result.job)
+            return result.job
 
     return run_sync(_go)
