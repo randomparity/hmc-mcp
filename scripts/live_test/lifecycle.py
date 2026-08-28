@@ -674,6 +674,150 @@ async def validate_provisioning_dry_run(client: Client, state: RunState) -> None
 # ---------------------------------------------------------------------------
 
 
+async def _remove_previous_test_lpar(client: Client, state: RunState) -> None:
+    """Power off and delete the prior test partition, then verify its absence."""
+    context = state.context
+    status, _ = await state.call(
+        client, "hmc_get_lpar", lpar_name_or_uuid=context.lp3_name
+    )
+    if status == "PASS":
+        status, data = await state.call(
+            client,
+            "hmc_power_off_lpar",
+            lpar_name_or_uuid=context.lp3_name,
+            immediate=True,
+            wait=True,
+        )
+        state.record(14, "hmc_power_off_lpar", status, data)
+        status, data = await state.call(
+            client, "hmc_delete_lpar", lpar_name_or_uuid=context.lp3_name
+        )
+        state.record(14, "hmc_delete_lpar", status, data)
+    else:
+        reason = "lp3 not found — already deleted in previous run"
+        state.skip(14, "hmc_power_off_lpar", reason)
+        state.skip(14, "hmc_delete_lpar", reason)
+
+    status, data = await state.call(client, "hmc_list_lpars")
+    state.record(14, "hmc_list_lpars (confirm lp3 gone)", status, data)
+
+
+async def _recreate_test_disk(
+    client: Client,
+    state: RunState,
+    vios_uuid: str,
+    vg_uuid: str,
+    vdisk_size_mb: int,
+) -> None:
+    """Remove any stale VIOS logical volume and create a fresh virtual disk."""
+    context = state.context
+    status, data = await state.call(
+        client, "hmc_list_volume_groups", vios_name_or_uuid=vios_uuid
+    )
+    state.record(14, "hmc_list_volume_groups (pre-create)", status, data)
+
+    vg_name = context.vdisk_vg_name or "VG1"
+    command = (
+        f"viosvrcmd -m {context.system_name} -p {context.vios_uuid}"
+        f' -c "rmvlog -vg {vg_name} -lv {context.vdisk_name}"'
+    )
+    status, data = await state.call(client, "hmc_run_command", cmd=command)
+    state.record_expected_or_real(
+        14,
+        "hmc_run_command rmvlog (delete old VG1-lp3)",
+        status,
+        data,
+        expected_fail_substrings=[
+            "does not exist",
+            "not found",
+            "No such",
+            "0516-306",
+            "0516-404",
+        ],
+        skip_reason="VG1-lp3 LV not present on VIOS (already cleaned up or never existed)",
+    )
+
+    status, data = await state.call(
+        client,
+        "hmc_create_virtual_disk",
+        vios_name_or_uuid=vios_uuid,
+        vg_uuid=vg_uuid,
+        disk_name=context.vdisk_name,
+        capacity_mib=vdisk_size_mb,
+    )
+    state.record_expected_or_real(
+        14,
+        "hmc_create_virtual_disk (VG1-lp3)",
+        status,
+        data,
+        expected_fail_substrings=["406", "not acceptable"],
+        skip_reason="REST VolumeGroup POST not supported on this HMC firmware — "
+        "pre-existing VG1-lp3 LV must be recreated manually on the VIOS",
+    )
+
+    status, data = await state.call(
+        client, "hmc_list_volume_groups", vios_name_or_uuid=vios_uuid
+    )
+    state.record(14, "hmc_list_volume_groups (post-create)", status, data)
+
+
+async def _provision_from_baseline(
+    client: Client,
+    state: RunState,
+    *,
+    vios_uuid: str,
+    vg_uuid: str,
+    pvid: int,
+    vios_slot: int,
+    vios_pid: int,
+) -> None:
+    """Build and submit the live provision request from captured baseline resources."""
+    context = state.context
+    baseline_lpar = context.lp3_baseline.get("lpars") or {}
+    resource = get_resource(baseline_lpar) if isinstance(baseline_lpar, dict) else {}
+    status, data = await state.call(
+        client,
+        "hmc_provision_lpar",
+        system_name_or_uuid=context.system_name,
+        name=context.lp3_name,
+        port_vlan_id=pvid,
+        vios_uuid=vios_uuid,
+        vios_partition_id=vios_pid,
+        vios_slot=vios_slot,
+        storage_name=context.vdisk_name,
+        storage_kind="VirtualDisk",
+        vg_uuid=vg_uuid,
+        min_memory=int(
+            resource.get("MinimumMemory") or resource.get("minimum_memory") or 256
+        ),
+        desired_memory=int(
+            resource.get("DesiredMemory") or resource.get("desired_memory") or 1024
+        ),
+        max_memory=int(
+            resource.get("MaximumMemory") or resource.get("maximum_memory") or 2048
+        ),
+        desired_vcpus=int(
+            resource.get("DesiredVirtualProcessors")
+            or resource.get("desired_virtual_processors")
+            or 1
+        ),
+        max_vcpus=int(
+            resource.get("MaximumVirtualProcessors")
+            or resource.get("maximum_virtual_processors")
+            or 2
+        ),
+        partition_type="AIX/Linux",
+        power_on=True,
+        dry_run=False,
+    )
+    state.record(14, "hmc_provision_lpar (live)", status, data)
+    if status == "PASS" and isinstance(data, dict):
+        for step in data.get("steps") or []:
+            step_status = step.get("status", "unknown")
+            icon = "✅" if step_status == "ok" else "❌"
+            print(f"    {icon} provision step [{step.get('step', '?')}]: {step_status}")
+
+
 async def exercise_storage_provisioning(client: Client, state: RunState) -> None:
     context = state.context
     print("\n=== ST14: Storage Lifecycle + Full Live Provision of ltczz386-lp3 ===")
@@ -726,156 +870,23 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
         f"vios_slot={vios_slot} vios_pid={vios_pid} vdisk_mb={vdisk_size_mb}",
     )
 
-    # Step 1 — Power off lp3 (skip gracefully if already gone)
-    st_check, _ = await state.call(
-        client, "hmc_get_lpar", lpar_name_or_uuid=context.lp3_name
-    )
-    if st_check == "PASS":
-        st, data = await state.call(
-            client,
-            "hmc_power_off_lpar",
-            lpar_name_or_uuid=context.lp3_name,
-            immediate=True,
-            wait=True,
-        )
-        state.record(14, "hmc_power_off_lpar", st, data)
-
-        # Step 2 — Delete lp3
-        st, data = await state.call(
-            client, "hmc_delete_lpar", lpar_name_or_uuid=context.lp3_name
-        )
-        state.record(14, "hmc_delete_lpar", st, data)
-    else:
-        state.skip(
-            14,
-            "hmc_power_off_lpar",
-            "lp3 not found — already deleted in previous run",
-        )
-        state.skip(
-            14,
-            "hmc_delete_lpar",
-            "lp3 not found — already deleted in previous run",
-        )
-
-    # Confirm gone
-    st, data = await state.call(client, "hmc_list_lpars")
-    state.record(14, "hmc_list_lpars (confirm lp3 gone)", st, data)
-
-    # Step 3 — Audit VG1 after lp3 deletion (VG1-lp3 LV now unmapped)
-    st, data = await state.call(
-        client, "hmc_list_volume_groups", vios_name_or_uuid=vios_uuid
-    )
-    state.record(14, "hmc_list_volume_groups (pre-create)", st, data)
-
-    # Step 4 — Delete the old VG1-lp3 logical volume via the VIOS CLI.
-    # The HMC REST API has no standalone delete-virtual-disk endpoint; the
-    # logical volume persists on the VIOS after the LPAR is removed (only the
-    # vSCSI mapping is dropped).  We remove it with `rmvlog` so the subsequent
-    # `hmc_create_virtual_disk` call exercises the full creation path rather
-    # than mapping the pre-existing LV.
-    #
-    # rmvlog syntax: rmvlog -vg <VGName> -lv <LVName>
-    # VGName defaults to "VG1" if we don't have the actual name; fall back to
-    # the known-good value for this test system.
-    vg_name = context.vdisk_vg_name or "VG1"
-    vdisk_name = context.vdisk_name
-    rmvlog_cmd = (
-        f"viosvrcmd -m {context.system_name} -p {context.vios_uuid}"
-        f' -c "rmvlog -vg {vg_name} -lv {vdisk_name}"'
-    )
-    st, data = await state.call(client, "hmc_run_command", cmd=rmvlog_cmd)
-    state.record_expected_or_real(
-        14,
-        "hmc_run_command rmvlog (delete old VG1-lp3)",
-        st,
-        data,
-        expected_fail_substrings=[
-            "does not exist",
-            "not found",
-            "No such",
-            "0516-306",
-            "0516-404",
-        ],
-        skip_reason="VG1-lp3 LV not present on VIOS (already cleaned up or never existed)",
-    )
-
-    # Step 5 — Create new VG1-lp3 virtual disk via REST.
-    st, data = await state.call(
+    await _remove_previous_test_lpar(client, state)
+    await _recreate_test_disk(
         client,
-        "hmc_create_virtual_disk",
-        vios_name_or_uuid=vios_uuid,
-        vg_uuid=vg_uuid,
-        disk_name=context.vdisk_name,
-        capacity_mib=int(vdisk_size_mb),
+        state,
+        str(vios_uuid),
+        str(vg_uuid),
+        int(vdisk_size_mb),
     )
-    state.record_expected_or_real(
-        14,
-        "hmc_create_virtual_disk (VG1-lp3)",
-        st,
-        data,
-        expected_fail_substrings=["406", "not acceptable"],
-        skip_reason="REST VolumeGroup POST not supported on this HMC firmware — "
-        "pre-existing VG1-lp3 LV must be recreated manually on the VIOS",
-    )
-
-    # Confirm new disk visible
-    st, data = await state.call(
-        client, "hmc_list_volume_groups", vios_name_or_uuid=vios_uuid
-    )
-    state.record(14, "hmc_list_volume_groups (post-create)", st, data)
-
-    # Extract memory/CPU from baseline lpar dict
-    baseline_lpar = baseline.get("lpars") or {}
-    resource = get_resource(baseline_lpar) if isinstance(baseline_lpar, dict) else {}
-    min_mem = int(
-        resource.get("MinimumMemory") or resource.get("minimum_memory") or 256
-    )
-    des_mem = int(
-        resource.get("DesiredMemory") or resource.get("desired_memory") or 1024
-    )
-    max_mem = int(
-        resource.get("MaximumMemory") or resource.get("maximum_memory") or 2048
-    )
-    des_vcpu = int(
-        resource.get("DesiredVirtualProcessors")
-        or resource.get("desired_virtual_processors")
-        or 1
-    )
-    max_vcpu = int(
-        resource.get("MaximumVirtualProcessors")
-        or resource.get("maximum_virtual_processors")
-        or 2
-    )
-
-    # Step 5 — Full live provision
-    st, data = await state.call(
+    await _provision_from_baseline(
         client,
-        "hmc_provision_lpar",
-        system_name_or_uuid=context.system_name,
-        name=context.lp3_name,
-        port_vlan_id=int(pvid or 0),
-        vios_uuid=vios_uuid,
-        vios_partition_id=int(vios_pid or 0),
-        vios_slot=int(vios_slot or 0),
-        storage_name=context.vdisk_name,
-        storage_kind="VirtualDisk",
-        vg_uuid=vg_uuid,
-        min_memory=min_mem,
-        desired_memory=des_mem,
-        max_memory=max_mem,
-        desired_vcpus=des_vcpu,
-        max_vcpus=max_vcpu,
-        partition_type="AIX/Linux",
-        power_on=True,
-        dry_run=False,
+        state,
+        vios_uuid=str(vios_uuid),
+        vg_uuid=str(vg_uuid),
+        pvid=int(pvid),
+        vios_slot=int(vios_slot),
+        vios_pid=int(vios_pid),
     )
-    state.record(14, "hmc_provision_lpar (live)", st, data)
-    if st == "PASS" and isinstance(data, dict):
-        for step in data.get("steps") or []:
-            step_status = step.get("status", "unknown")
-            step_name = step.get("step", "?")
-            icon = "✅" if step_status == "ok" else "❌"
-            print(f"    {icon} provision step [{step_name}]: {step_status}")
 
     # Confirm lp3 is back
     st, data = await state.call(

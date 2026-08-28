@@ -241,6 +241,7 @@ _HTTP_PORT = 18765
 _ISO_HOST = f"localhost:{_HTTP_PORT}"
 _ISO_URL = f"http://{_ISO_HOST}/{_ISO_FILENAME}"
 
+
 class IsoHttpServer:
     """Invocation-owned HTTP fixture for virtual-media ISO uploads."""
 
@@ -597,6 +598,194 @@ async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
 _PROTECTED_LPARS = {"ltczz386-lp1", "ltczz386-lp2"}
 
 
+async def _prepare_boot_media(
+    client: Client,
+    state: RunState,
+    vios_uuid: str,
+    vg_uuid: str,
+    remaining_steps: list[str],
+) -> bool:
+    """Upload and mount the boot ISO after placing the test LPAR offline."""
+    context = state.context
+    print("  ⏳ Re-uploading ISO for boot test (may take several minutes)…")
+    try:
+        state.iso_http_server.start()
+    except OSError as exc:
+        for name in remaining_steps:
+            state.skip(20, name, f"no HTTP server on port {_HTTP_PORT}: {exc}")
+        return False
+
+    status, data = await state.call(
+        client,
+        "hmc_upload_iso",
+        vios_name_or_uuid=vios_uuid,
+        vg_uuid=vg_uuid,
+        media_name=_ISO_MEDIA_NAME,
+        iso_source=_ISO_URL,
+    )
+    state.record(20, "hmc_upload_iso (re-upload for boot test)", status, data)
+    if status != "PASS":
+        for name in remaining_steps[1:]:
+            state.skip(20, name, "ISO re-upload failed")
+        return False
+    if isinstance(data, dict):
+        context.vmedia_iso_name = data.get("media_name") or _ISO_MEDIA_NAME
+
+    status, data = await state.call(
+        client,
+        "hmc_power_off_lpar",
+        lpar_name_or_uuid=context.lp3_name,
+        immediate=True,
+        wait=True,
+    )
+    state.record_expected_or_real(
+        20,
+        "hmc_power_off_lpar (pre-boot)",
+        status,
+        data,
+        expected_fail_substrings=[
+            "already",
+            "not activated",
+            "powered off",
+            "not running",
+        ],
+        skip_reason="lp3 already powered off (expected)",
+    )
+
+    status, data = await state.call(
+        client,
+        "hmc_mount_optical_media",
+        vios_name_or_uuid=vios_uuid,
+        media_name=context.vmedia_iso_name,
+        lpar_name_or_uuid=context.lp3_name,
+    )
+    state.record(20, "hmc_mount_optical_media (boot test)", status, data)
+    if status != "PASS":
+        for name in remaining_steps[3:]:
+            state.skip(20, name, "mount failed")
+        return False
+    if isinstance(data, dict):
+        resource = data.get("Resource") or {}
+        context.vmedia_mapping_uuid = (
+            data.get("ElementID")
+            or data.get("UUID")
+            or data.get("uuid")
+            or data.get("mapping_uuid")
+            or resource.get("ElementID")
+            or resource.get("UUID")
+        )
+    return True
+
+
+async def _configure_boot_order(
+    client: Client, state: RunState, lpar_uuid: str
+) -> None:
+    """Capture the current boot order and replace it with the boot-test order."""
+    context = state.context
+    status, data = await state.call(
+        client,
+        "hmc_read_lpar_boot_order",
+        system_name_or_uuid=context.system_name,
+        lpar_uuid=lpar_uuid,
+    )
+    state.record(20, "hmc_read_lpar_boot_order (baseline)", status, data)
+    if status == "PASS" and isinstance(data, dict):
+        pending = data.get("pending_boot_string") or ""
+        context.vmedia_orig_boot_order = [
+            device.strip() for device in pending.split(",") if device.strip()
+        ]
+
+    status, data = await state.call(
+        client,
+        "hmc_set_lpar_boot_order",
+        system_name_or_uuid=context.system_name,
+        lpar_uuid=lpar_uuid,
+        devices=["cd", "network", "disk"],
+    )
+    state.record(20, "hmc_set_lpar_boot_order (cd first)", status, data)
+
+
+async def _run_boot_probe(client: Client, state: RunState) -> None:
+    """Boot the test partition, report its state, and power it off again."""
+    context = state.context
+    status, data = await state.call(
+        client,
+        "hmc_power_on_lpar",
+        lpar_name_or_uuid=context.lp3_name,
+        wait=True,
+        timeout=120,
+    )
+    state.record(20, "hmc_power_on_lpar", status, data)
+
+    status, data = await state.call(
+        client, "hmc_lpar_summary", lpar_name_or_uuid=context.lp3_name
+    )
+    state.record(20, "hmc_lpar_summary (verify running)", status, data)
+    if status == "PASS" and isinstance(data, dict):
+        lpar_state = data.get("state") or ""
+        icon = "✅" if lpar_state.lower() == "running" else "⚠️"
+        print(f"  {icon} lp3 state: {lpar_state}")
+
+    status, data = await state.call(
+        client,
+        "hmc_power_off_lpar",
+        lpar_name_or_uuid=context.lp3_name,
+        immediate=True,
+        wait=True,
+    )
+    state.record(20, "hmc_power_off_lpar (post-boot)", status, data)
+
+
+async def _restore_boot_configuration(
+    client: Client, state: RunState, vios_uuid: str, lpar_uuid: str
+) -> None:
+    """Unmount the test ISO, restore boot order, and verify the restored state."""
+    context = state.context
+    if context.vmedia_mapping_uuid:
+        status, data = await state.call(
+            client,
+            "hmc_unmount_optical_media",
+            vios_name_or_uuid=vios_uuid,
+            mapping_uuid=context.vmedia_mapping_uuid,
+        )
+        state.record(20, "hmc_unmount_optical_media (boot test cleanup)", status, data)
+        if status == "PASS":
+            context.vmedia_mapping_uuid = None
+    else:
+        state.skip(
+            20,
+            "hmc_unmount_optical_media (boot test cleanup)",
+            "no mapping UUID to unmount",
+        )
+
+    if context.vmedia_orig_boot_order:
+        status, data = await state.call(
+            client,
+            "hmc_set_lpar_boot_order",
+            system_name_or_uuid=context.system_name,
+            lpar_uuid=lpar_uuid,
+            devices=context.vmedia_orig_boot_order,
+        )
+    else:
+        status, data = await state.call(
+            client,
+            "hmc_clear_lpar_boot_order",
+            system_name_or_uuid=context.system_name,
+            lpar_uuid=lpar_uuid,
+        )
+    state.record(20, "hmc_set_lpar_boot_order (restore)", status, data)
+    if status == "PASS":
+        context.vmedia_orig_boot_order = []
+
+    status, data = await state.call(
+        client,
+        "hmc_read_lpar_boot_order",
+        system_name_or_uuid=context.system_name,
+        lpar_uuid=lpar_uuid,
+    )
+    state.record(20, "hmc_read_lpar_boot_order (verify restore)", status, data)
+
+
 async def vmedia_boot_verification(client: Client, state: RunState) -> None:
     context = state.context
     print(
@@ -636,187 +825,11 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
             state.skip(20, name, "lp3_uuid not set (ST16 failed to capture it)")
         return
 
-    # Step 2 — Re-upload ISO (was deleted at end of ST19)
-    print("  ⏳ Re-uploading ISO for boot test (may take several minutes)…")
-    try:
-        state.iso_http_server.start()
-    except OSError as exc:
-        for name in _skip_names:
-            state.skip(20, name, f"no HTTP server on port {_HTTP_PORT}: {exc}")
+    if not await _prepare_boot_media(client, state, str(vios), str(vg), _skip_names):
         return
-    st, data = await state.call(
-        client,
-        "hmc_upload_iso",
-        vios_name_or_uuid=vios,
-        vg_uuid=vg,
-        media_name=_ISO_MEDIA_NAME,
-        iso_source=_ISO_URL,
-    )
-    state.record(20, "hmc_upload_iso (re-upload for boot test)", st, data)
-    if st == "PASS" and isinstance(data, dict):
-        context.vmedia_iso_name = data.get("media_name") or _ISO_MEDIA_NAME
-    if st != "PASS":
-        for name in _skip_names[1:]:
-            state.skip(20, name, "ISO re-upload failed")
-        return
-
-    # Step 3 — Power off lp3 (may already be off)
-    st, data = await state.call(
-        client,
-        "hmc_power_off_lpar",
-        lpar_name_or_uuid=context.lp3_name,
-        immediate=True,
-        wait=True,
-    )
-    state.record_expected_or_real(
-        20,
-        "hmc_power_off_lpar (pre-boot)",
-        st,
-        data,
-        expected_fail_substrings=[
-            "already",
-            "not activated",
-            "powered off",
-            "not running",
-        ],
-        skip_reason="lp3 already powered off (expected)",
-    )
-
-    # Step 4 — Mount ISO to lp3
-    assert context.lp3_name not in _PROTECTED_LPARS
-    st, data = await state.call(
-        client,
-        "hmc_mount_optical_media",
-        vios_name_or_uuid=vios,
-        media_name=context.vmedia_iso_name,
-        lpar_name_or_uuid=context.lp3_name,
-    )
-    state.record(20, "hmc_mount_optical_media (boot test)", st, data)
-    if st == "PASS" and isinstance(data, dict):
-        context.vmedia_mapping_uuid = (
-            data.get("ElementID")
-            or data.get("UUID")
-            or data.get("uuid")
-            or data.get("mapping_uuid")
-        )
-        if not context.vmedia_mapping_uuid:
-            resource = data.get("Resource") or {}
-            context.vmedia_mapping_uuid = resource.get("ElementID") or resource.get(
-                "UUID"
-            )
-    if st != "PASS":
-        for name in _skip_names[3:]:
-            state.skip(20, name, "mount failed")
-        return
-
-    # Step 5 — Read current boot order (save baseline for restore)
-    st, data = await state.call(
-        client,
-        "hmc_read_lpar_boot_order",
-        system_name_or_uuid=context.system_name,
-        lpar_uuid=lp3_uuid,
-    )
-    state.record(20, "hmc_read_lpar_boot_order (baseline)", st, data)
-    if st == "PASS" and isinstance(data, dict):
-        # pending_boot_string may be comma-separated "cd,disk,network" or empty
-        pending = data.get("pending_boot_string") or ""
-        if pending:
-            context.vmedia_orig_boot_order = [
-                d.strip() for d in pending.split(",") if d.strip()
-            ]
-        else:
-            context.vmedia_orig_boot_order = []
-
-    # Step 6 — Set CD-first boot order
-    st, data = await state.call(
-        client,
-        "hmc_set_lpar_boot_order",
-        system_name_or_uuid=context.system_name,
-        lpar_uuid=lp3_uuid,
-        devices=["cd", "network", "disk"],
-    )
-    state.record(20, "hmc_set_lpar_boot_order (cd first)", st, data)
-
-    # Step 7 — Power on lp3
-    assert context.lp3_name not in _PROTECTED_LPARS
-    st, data = await state.call(
-        client,
-        "hmc_power_on_lpar",
-        lpar_name_or_uuid=context.lp3_name,
-        wait=True,
-        timeout=120,
-    )
-    state.record(20, "hmc_power_on_lpar", st, data)
-
-    # Step 8 — Verify Running state
-    st, data = await state.call(
-        client,
-        "hmc_lpar_summary",
-        lpar_name_or_uuid=context.lp3_name,
-    )
-    state.record(20, "hmc_lpar_summary (verify running)", st, data)
-    if st == "PASS" and isinstance(data, dict):
-        lpar_state = data.get("state") or ""
-        icon = "✅" if lpar_state.lower() == "running" else "⚠️"
-        print(f"  {icon} lp3 state: {lpar_state}")
-
-    # Step 9 — Power off lp3 immediately
-    st, data = await state.call(
-        client,
-        "hmc_power_off_lpar",
-        lpar_name_or_uuid=context.lp3_name,
-        immediate=True,
-        wait=True,
-    )
-    state.record(20, "hmc_power_off_lpar (post-boot)", st, data)
-
-    # Step 10 — Unmount optical media
-    if context.vmedia_mapping_uuid:
-        st, data = await state.call(
-            client,
-            "hmc_unmount_optical_media",
-            vios_name_or_uuid=vios,
-            mapping_uuid=context.vmedia_mapping_uuid,
-        )
-        state.record(20, "hmc_unmount_optical_media (boot test cleanup)", st, data)
-        if st == "PASS":
-            context.vmedia_mapping_uuid = None
-    else:
-        state.skip(
-            20,
-            "hmc_unmount_optical_media (boot test cleanup)",
-            "no mapping UUID to unmount",
-        )
-
-    # Step 11 — Restore boot order
-    if context.vmedia_orig_boot_order:
-        st, data = await state.call(
-            client,
-            "hmc_set_lpar_boot_order",
-            system_name_or_uuid=context.system_name,
-            lpar_uuid=lp3_uuid,
-            devices=context.vmedia_orig_boot_order,
-        )
-        state.record(20, "hmc_set_lpar_boot_order (restore)", st, data)
-    else:
-        st, data = await state.call(
-            client,
-            "hmc_clear_lpar_boot_order",
-            system_name_or_uuid=context.system_name,
-            lpar_uuid=lp3_uuid,
-        )
-        state.record(20, "hmc_set_lpar_boot_order (restore)", st, data)
-    if st == "PASS":
-        context.vmedia_orig_boot_order = []
-
-    # Step 12 — Verify restored boot order
-    st, data = await state.call(
-        client,
-        "hmc_read_lpar_boot_order",
-        system_name_or_uuid=context.system_name,
-        lpar_uuid=lp3_uuid,
-    )
-    state.record(20, "hmc_read_lpar_boot_order (verify restore)", st, data)
+    await _configure_boot_order(client, state, str(lp3_uuid))
+    await _run_boot_probe(client, state)
+    await _restore_boot_configuration(client, state, str(vios), str(lp3_uuid))
 
 
 # ---------------------------------------------------------------------------
