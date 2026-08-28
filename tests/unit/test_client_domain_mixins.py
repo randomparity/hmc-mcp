@@ -426,19 +426,12 @@ async def test_storage_mixin_uses_active_base_for_volume_group_url():
 @pytest.mark.asyncio
 async def test_storage_mixin_uses_active_base_in_optical_mapping():
     client = StorageHarness()
-    system_uuid = "11111111-1111-1111-1111-111111111111"
-    client._get.return_value = """<VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <UUID>vios-1</UUID>
-      <AssociatedManagedSystem href="https://source.example/rest/api/uom/ManagedSystem/{system_uuid}"/>
-      <VirtualSCSIMappings/>
-    </VirtualIOServer>""".format(system_uuid=system_uuid)
 
     await client.create_optical_mapping("vios-1", "install.iso", "lpar-1")
 
-    body = client._request.await_args.kwargs["content"]
+    body = client._post.await_args.args[1]
     assert (
-        f"https://hmc.test:12443/rest/api/uom/ManagedSystem/{system_uuid}/"
-        "LogicalPartition/lpar-1" in body
+        "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-1" in body
     )
 
 

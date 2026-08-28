@@ -20,6 +20,7 @@ from ..documents import (
     StorageKind,
     build_virtual_disk_delete_document,
     build_virtual_disk_document,
+    build_virtual_optical_mapping_document,
     build_volume_group_document,
     build_vscsi_mapping_document,
 )
@@ -733,84 +734,27 @@ class StorageMixin:
                 if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("href") == expected_link
             ]
 
-        return optical_mappings if isinstance(optical_mappings, list) else [optical_mappings]
+        return optical_mappings
 
     async def create_optical_mapping(
         self: StorageClient, vios_uuid: str, media_name: str, lpar_uuid: str,
         target_device: str | None = None
     ) -> dict[str, Any] | None:
-        """Create a VirtualSCSIMapping for optical media (mount ISO to LPAR).
-
-        Uses a read-modify-write pattern: GETs the full VirtualIOServer document,
-        appends a VirtualSCSIMapping entry for the named optical media, then POSTs
-        the modified document back to the system-scoped VIOS endpoint.
-
-        The system UUID is discovered from the AssociatedManagedSystem link in the
-        VIOS document — no additional parameter is required.
-
-        Returns the new VirtualSCSIMapping entry if it can be located in the
-        response feed, else None.
-        """
-        vios_xml, vios_elem, sys_uuid = await _load_vios_document(self, vios_uuid)
-
-        mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
-        if mappings_elem is None:
-            raise HMCError(
-                "VirtualIOServer document has no VirtualSCSIMappings element; "
-                "the VIOS may not be configured for vSCSI",
-                200,
-                vios_xml,
-            )
-
-        lpar_link = (
-            f"{self._rest_base_url}/rest/api/uom/ManagedSystem/{sys_uuid}"
-            f"/LogicalPartition/{lpar_uuid}"
+        """Create an optical-media mapping and return its response entry, if any."""
+        lpar_link = self.get_lpar_link(lpar_uuid)
+        document = build_virtual_optical_mapping_document(
+            media_name,
+            lpar_link,
+            target_device=target_device,
         )
-        mapping = ET.Element(
-            f"{{{_UOM_NS}}}VirtualSCSIMapping", {"schemaVersion": "V1_0"}
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
+        response = await self._post(
+            path,
+            document,
+            resource_type="VirtualIOServer",
+            include_schema_version=False,
         )
-        metadata = ET.SubElement(mapping, f"{{{_UOM_NS}}}Metadata")
-        ET.SubElement(metadata, f"{{{_UOM_NS}}}Atom")
-        ET.SubElement(
-            mapping,
-            f"{{{_UOM_NS}}}AssociatedLogicalPartition",
-            {"kb": "CUR", "kxe": "false", "href": lpar_link, "rel": "related"},
-        )
-        storage = ET.SubElement(
-            mapping, f"{{{_UOM_NS}}}Storage", {"kxe": "false", "kb": "CUR"}
-        )
-        media = ET.SubElement(
-            storage,
-            f"{{{_UOM_NS}}}VirtualOpticalMedia",
-            {"schemaVersion": "V1_0"},
-        )
-        media_metadata = ET.SubElement(media, f"{{{_UOM_NS}}}Metadata")
-        ET.SubElement(media_metadata, f"{{{_UOM_NS}}}Atom")
-        ET.SubElement(
-            media, f"{{{_UOM_NS}}}MediaName", {"kxe": "false", "kb": "CUR"}
-        ).text = media_name
-        ET.SubElement(
-            media, f"{{{_UOM_NS}}}MountType", {"kxe": "false", "kb": "CUD"}
-        ).text = "r"
-        mappings_elem.append(mapping)
-
-        post_path = f"/rest/api/uom/ManagedSystem/{sys_uuid}/VirtualIOServer/{vios_uuid}"
-        body = ET.tostring(vios_elem, encoding="unicode")
-        # V10R3 returns 406 unless this update advertises an unrestricted response.
-        resp = await self._request(
-            "POST",
-            post_path,
-            content=body,
-            headers={
-                "Accept": "*/*",
-                "Content-Type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
-            },
-        )
-        if resp.status_code not in (200, 201, 202):
-            raise HMCError(
-                f"POST {post_path} failed", resp.status_code, resp.text
-            )
-        entries = _parse_feed(resp.text, post_path) if resp.text else []
+        entries = _parse_feed(response, path) if response else []
         return entries[0].get("Resource", entries[0]) if entries else None
 
     async def delete_optical_mapping(

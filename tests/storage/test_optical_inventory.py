@@ -2,8 +2,6 @@
 
 import httpx
 import pytest
-from defusedxml.common import EntitiesForbidden
-
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient, HMCError
@@ -12,17 +10,6 @@ VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 SYS_UUID = "00000000-0000-0000-0000-000000000099"
 LPAR_UUID = "00000000-0000-0000-0000-000000000001"
 
-
-@pytest.mark.asyncio
-async def test_optical_mapping_rejects_xml_entities(mock_hmc):
-    document = '<!DOCTYPE x [<!ENTITY payload "expanded">]><x>&payload;</x>'
-    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
-        return_value=httpx.Response(200, text=document)
-    )
-
-    async with HMCClient(make_config()) as hmc:
-        with pytest.raises(EntitiesForbidden):
-            await hmc.create_optical_mapping(VIOS_UUID, "test.iso", LPAR_UUID)
 
 # Minimal VirtualIOServer GET response for create_optical_mapping tests.
 # Must include AssociatedManagedSystem href (to extract SYS_UUID) and
@@ -170,49 +157,30 @@ async def test_list_optical_mappings_propagates_bad_request(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_create_optical_mapping_submits_document(mock_hmc):
-    """create_optical_mapping GETs the VIOS, appends mapping, POSTs to system-scoped endpoint."""
-    # Step 1: GET the full VIOS document
-    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
-        return_value=httpx.Response(200, text=VIOS_GET_FEED)
+    """create_optical_mapping submits a focused document to the VIOS endpoint."""
+    post_route = mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(200, text=CREATE_MAPPING_RESPONSE)
     )
-    # Step 2: POST the modified document to the system-scoped endpoint
-    post_route = mock_hmc.post(
-        f"/rest/api/uom/ManagedSystem/{SYS_UUID}/VirtualIOServer/{VIOS_UUID}"
-    ).mock(return_value=httpx.Response(200, text=CREATE_MAPPING_RESPONSE))
 
     config = make_config()
     async with HMCClient(config) as hmc:
-        result = await hmc.create_optical_mapping(VIOS_UUID, "test.iso", LPAR_UUID)
+        result = await hmc.create_optical_mapping(
+            VIOS_UUID,
+            "test.iso",
+            LPAR_UUID,
+            target_device="cd1",
+        )
 
     assert post_route.called
     req_body = post_route.calls.last.request.content.decode()
     assert "VirtualOpticalMedia" in req_body
     assert "test.iso" in req_body
     assert LPAR_UUID in req_body
+    assert "<TargetDevice" in req_body
+    assert ">cd1</TargetDevice>" in req_body
     assert result is not None
     assert result["UUID"] == "mapping-uuid-new-001"
     assert result["Storage"]["VirtualOpticalMedia"]["MediaName"] == "test.iso"
-
-
-@pytest.mark.asyncio
-async def test_create_optical_mapping_rejects_noncanonical_system_link(mock_hmc):
-    """Every read-modify-write path rejects an imprecise managed-system link."""
-    response = VIOS_GET_FEED.replace(
-        f"/ManagedSystem/{SYS_UUID}\"", f"/ManagedSystem/{SYS_UUID}/details\""
-    )
-    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
-        return_value=httpx.Response(200, text=response)
-    )
-    posted = mock_hmc.post(
-        f"/rest/api/uom/ManagedSystem/{SYS_UUID}/VirtualIOServer/{VIOS_UUID}"
-    ).mock(return_value=httpx.Response(200, text=CREATE_MAPPING_RESPONSE))
-
-    async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="exact ManagedSystem UUID"):
-            await hmc.create_optical_mapping(VIOS_UUID, "test.iso", LPAR_UUID)
-
-    assert not posted.called
-
 
 # VIOS document containing one optical mapping for LPAR_UUID / test.iso
 VIOS_GET_FEED_WITH_MAPPING = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
