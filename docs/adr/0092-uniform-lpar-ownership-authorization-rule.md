@@ -156,14 +156,14 @@ only the transport boundary.
 | `add_vfc_adapter` | `operations/adapters.py:91` | guarded (`:102`) | #372 |
 | `delete_adapter` | `operations/adapters.py:114` | guarded (`:129`) | #372 |
 | `map_storage` | `operations/storage.py:174` | guarded (`:189`) | #372 |
-| `attach_disk_to_lpar` | `operations/lpar/provision.py:317` | guarded before the storage workflow (`:349`) | #372 |
+| `attach_disk_to_lpar` | `operations/lpar/provision.py:318` | guarded before the storage workflow (`:350`) | #372 |
 | `mount_optical_media` | `operations/storage.py:826` | guarded (`:845`) | #440 |
 | `unmount_optical_media` | `operations/storage.py:856` | guarded (`:897`) | #440 |
-| `migrate_lpar` | `operations/lpm.py:338` | guarded after optional validation and before migration submission (`:383`) | #373 |
-| `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:235` | guarded by delegation to `migrate_lpar` | #373 |
-| `abort_lpar_migration` | `operations/lpm.py:403` | guarded (`:419`) | #373 |
-| `recover_lpar_migration` | `operations/lpm.py:432` | guarded (`:448`) | #373 |
-| `remote_restart_lpar` | `operations/lpm.py:461` | guarded (`:481`) | #373 |
+| `migrate_lpar` | `operations/lpm.py:340` | guarded after optional validation and before migration submission (`:385`) | #373 |
+| `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:237` | guarded by delegation to `migrate_lpar` | #373 |
+| `abort_lpar_migration` | `operations/lpm.py:405` | guarded (`:421`) | #373 |
+| `recover_lpar_migration` | `operations/lpm.py:434` | guarded (`:450`) | #373 |
+| `remote_restart_lpar` | `operations/lpm.py:463` | guarded (`:483`) | #373 |
 
 `mount_optical_media` and `unmount_optical_media` became facade exports in #363,
 so they are Domain A callables (§5) as well as MCP tools — the guard is the only

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from ..client import HMCClient
 from .ssh_affinity import (
@@ -407,10 +407,11 @@ def _admissible_scores(
             "Confirm which policy is current before acting on the assessment.",
         )
 
-    assert value.captured_score is not None
-    assert value.current_score is not None
-    assert value.predicted_score is not None
-    return value.captured_score, value.current_score, value.predicted_score
+    return (
+        cast(int, value.captured_score),
+        cast(int, value.current_score),
+        cast(int, value.predicted_score),
+    )
 
 
 def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:

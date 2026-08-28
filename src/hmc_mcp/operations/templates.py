@@ -163,7 +163,8 @@ async def deploy_partition_template(
 
     created_lpar, inference_warning = _new_lpar_from_snapshots(baseline, after)
     if created_lpar is None:
-        assert inference_warning is not None
+        if inference_warning is None:
+            raise ValueError("Template deployment could not infer the created LPAR")
         return {
             "job": selected_job,
             "ownership_stamped": None,

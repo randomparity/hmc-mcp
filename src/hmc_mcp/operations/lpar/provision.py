@@ -231,7 +231,8 @@ async def _map_storage(
 async def _create_disk(
     hmc: HMCClient, storage: ProvisionStorage, capacity_mib: int
 ) -> dict[str, Any]:
-    assert storage.vg_uuid is not None
+    if storage.vg_uuid is None:
+        raise ValueError("virtual-disk creation requires storage vg_uuid")
     await create_virtual_disk(
         hmc,
         None,
@@ -528,7 +529,6 @@ async def _preflight_provision_request(
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     if minimum_affinity_policy is not None:
         system_name, _ = await resolve_ssh_names(hmc.config, system_name_or_uuid, None)
-        assert system_name is not None
         await require_minimum_affinity_policy_capability(hmc.config, system_name)
     await _check_name_unique(hmc, name)
     await _check_vlan_exists(hmc, system_uuid, network.port_vlan_id)

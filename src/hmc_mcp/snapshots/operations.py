@@ -7,7 +7,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 import math
 import re
-from typing import Any
+from typing import Any, Literal, overload
 
 from hmc_mcp.operations.affinity import (
     AffinityAssessmentInput,
@@ -189,6 +189,14 @@ def _resource(entry: dict[str, Any] | None, label: str) -> dict[str, Any]:
     return entry["Resource"]
 
 
+@overload
+def _text(value: Any, label: str, *, optional: Literal[False] = False) -> str: ...
+
+
+@overload
+def _text(value: Any, label: str, *, optional: Literal[True]) -> str | None: ...
+
+
 def _text(value: Any, label: str, *, optional: bool = False) -> str | None:
     if value is None and optional:
         return None
@@ -277,7 +285,6 @@ async def capture_lpar_snapshot(
     system_resource = _resource(system, "managed-system")
     lpar_resource = _resource(lpar, "LPAR")
     lpar_name = _text(lpar_resource.get("PartitionName"), "LPAR name")
-    assert isinstance(lpar_name, str)
     native_data = await read_lpar_profile_record(
         hmc.config, system_name, lpar_name, profile_name
     )
@@ -299,12 +306,9 @@ async def capture_lpar_snapshot(
         machine_type = _text(mtms.get("MachineType"), "system machine type")
         model = _text(mtms.get("Model"), "system model")
         serial = _text(mtms.get("SerialNumber"), "system serial")
-        assert isinstance(machine_type, str) and isinstance(model, str)
-        assert isinstance(serial, str)
         machine_type_model = f"{machine_type}-{model}"
     else:
         mtms_text = _text(mtms, "system MTMS")
-        assert isinstance(mtms_text, str)
         if "*" not in mtms_text:
             raise ValueError(
                 "Snapshot capture requires system MTMS in type-model*serial form"
@@ -313,11 +317,6 @@ async def capture_lpar_snapshot(
     hmc_uuid = _text(console.get("UUID") if console else None, "HMC UUID")
     system_id = _text(system.get("UUID") if system else None, "system UUID")
     lpar_id = _text(lpar.get("UUID") if lpar else None, "LPAR UUID")
-    assert (
-        isinstance(hmc_uuid, str)
-        and isinstance(system_id, str)
-        and isinstance(lpar_id, str)
-    )
     snapshot = LparSnapshot(
         format="hmc-mcp.lpar-snapshot",
         version=1,

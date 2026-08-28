@@ -182,12 +182,14 @@ def evaluate_lpm_affinity_preflight(
             return _preflight_outcome(request, "failed", reason, False)
         return _preflight_outcome(request, "unavailable", reason, True)
 
-    assert request.destination_estimated_score is not None
-    assert request.configured_minimum is not None
-    if request.destination_estimated_score < request.configured_minimum:
+    destination_score = request.destination_estimated_score
+    configured_minimum = request.configured_minimum
+    if destination_score is None or configured_minimum is None:
+        raise ValueError("Affinity preflight requires destination and minimum scores")
+    if destination_score < configured_minimum:
         reason = (
-            f"Destination estimate {request.destination_estimated_score} is below "
-            f"configured minimum {request.configured_minimum}."
+            f"Destination estimate {destination_score} is below "
+            f"configured minimum {configured_minimum}."
         )
         if request.response == "fail":
             return _preflight_outcome(request, "failed", reason, False)
