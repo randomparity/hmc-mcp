@@ -3402,11 +3402,12 @@ def test_jobs_list_rejects_negative_limit_before_client_call(fake_hmc):
 
 
 def test_jobs_wait(fake_hmc):
+    fake_hmc.job["Resource"]["Status"] = "COMPLETED"
     result = RUNNER.invoke(cli.app, ["jobs", "wait", JOB_UUID])
 
     assert result.exit_code == 0
     assert "COMPLETED" in result.stdout
-    assert fake_hmc.calls == [("wait_for_job", (JOB_UUID, 300, 5), {"job_href": None})]
+    assert fake_hmc.calls == [("get_job", (JOB_UUID,), {"job_href": None})]
 
 
 # --------------------------------------------------------------------------- #

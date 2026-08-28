@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 
 import typer
+
+from ..operations import jobs as operations_jobs
 
 from .app import (
     _output,
     _print_json,
-    _run,
     _usage_error,
-    _client,
     _with_client,
     console,
     err_console,
@@ -27,12 +28,14 @@ def jobs_show(
 ) -> None:
     """Show status/result of an HMC job."""
 
-    job = _with_client(lambda hmc: hmc.get_job(job_id, job_href=job_href))
+    outcome = _with_client(
+        lambda hmc: operations_jobs.get_job(hmc, job_id, job_href=job_href)
+    )
 
-    if job is None:
+    if not outcome.found:
         err_console.print(f"[yellow]Job {job_id} not found[/yellow]")
         raise typer.Exit(code=1)
-    _print_json(job)
+    _print_json(asdict(outcome))
 
 
 @jobs_app.command("list")
@@ -68,15 +71,19 @@ def jobs_wait(
     timeout elapses.
     """
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.wait_for_job(job_id, timeout, interval, job_href=job_href)
+    outcome = _with_client(
+        lambda hmc: operations_jobs.wait_for_job(
+            hmc,
+            job_id,
+            job_href=job_href,
+            timeout_seconds=timeout,
+            poll_interval=interval,
+        )
+    )
 
-    job = _run(_go)
-
-    if job is None:
+    if not outcome.found:
         err_console.print(f"[yellow]Job {job_id} not found[/yellow]")
         raise typer.Exit(code=1)
-    status = (job.get("Resource") or {}).get("Status", "unknown")
+    status = outcome.status or "unknown"
     console.print(f"[green]Job {job_id} status: {status}[/green]")
-    _print_json(job)
+    _print_json(asdict(outcome))
