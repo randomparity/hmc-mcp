@@ -250,7 +250,7 @@ def config_init_access_policy(
         legacy_connections,
         render_legacy_policy,
     )
-    from ..tool_catalog import TOOL_SECURITY
+    from ..server_tools.catalog import TOOL_SECURITY
 
     if output is not None:
         target = Path(output)
@@ -390,7 +390,7 @@ def config_diff_access_policy(
         legacy_connections,
         render_legacy_policy,
     )
-    from ..tool_catalog import TOOL_SECURITY
+    from ..server_tools.catalog import TOOL_SECURITY
 
     path = Path(deployed)
 

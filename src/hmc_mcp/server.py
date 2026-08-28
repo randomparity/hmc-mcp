@@ -72,7 +72,7 @@ from .audit.sink import (
 from .authorization.connection_scope import ConnectionScopeError
 from .authorization.dispatch_scope import dispatch_authorizer
 from .authorization.target_scope import TargetScopeError
-from .tool_catalog import TOOL_MODULES, TOOL_SECURITY
+from .server_tools.catalog import TOOL_MODULES, TOOL_SECURITY
 from .tool_registry import Authorize
 from .server_tools.command import (
     configure_arbitrary_command_tool,
