@@ -84,7 +84,7 @@ INSTRUCTIONS = (
     "**Provision a new LPAR:** hmc_find_placement → hmc_provision_lpar with "
     "dry_run=True (validate) → hmc_provision_lpar with dry_run=False (execute) "
     "→ hmc_lpar_summary (confirm).\n\n"
-    "**Track an operation:** retain the job UUID and SELF link returned by the "
+    "**Track an operation:** retain the job UUID or JobID and SELF link returned by the "
     "submitting tool → hmc_get_job(job_id, job_href=self_link) for detail → "
     "hmc_wait_for_job(job_id, job_href=self_link) to poll until done. Use "
     "hmc_list_recent_jobs only for HMC versions that support the global feed.\n\n"

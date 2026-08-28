@@ -95,13 +95,13 @@ def _reject_non_job_path(path: str) -> None:
     segment to ``job_id`` would be tighter, and was rejected: ``jobs.job_identifier``
     prefers the response's ``UUID``/``JobID`` over the link's last segment, so the
     two can legitimately differ — and issue #95 exists precisely because some
-    firmware cannot resolve the UUID, which is the case this argument serves and
-    the one that cannot be tested here. Binding the class is what can be verified
-    from this checkout.
+    firmware cannot resolve the job identifier, which is the case this argument
+    serves and the one that cannot be tested here. Binding the class is what can
+    be verified from this checkout.
 
     The residual is that a caller may read a *different* job. That is the reach
-    an access-policy grant for these tools already confers: job UUIDs are minted
-    by the HMC at runtime and cannot be enumerated in a policy allowlist, so
+    an access-policy grant for these tools already confers: job identifiers are
+    minted by the HMC at runtime and cannot be enumerated in a policy allowlist, so
     ADR 0039 marks both job tools ``exhaustive_targets=False`` and only
     ``targets = "all-targets"`` grants them — a grant that means "any job".
     After this check the tool can reach exactly what that grant says.
@@ -905,7 +905,7 @@ class HMCClient(
         *,
         job_href: str | None = None,
     ) -> dict[str, Any] | None:
-        """Fetch an HMC job by UUID.
+        """Fetch an HMC job by UUID or JobID.
 
         When *job_href* is provided (the SELF link returned by ``submit_job``),
         it is used directly so the request hits the per-operation path.

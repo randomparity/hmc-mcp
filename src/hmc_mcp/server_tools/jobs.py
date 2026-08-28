@@ -29,8 +29,8 @@ tool, register_tools, tool_security = tool_module()
 # `job_id` selector outright — `client.get_job` fetches `urlparse(job_href).path`
 # and never looks at `job_id`. A `targets` table would therefore authorize one
 # job identity while the server reads another, so ADR 0039 grants this tool only
-# under `targets = "all-targets"`. ADR 0036 already noted that a job UUID is
-# minted by the HMC at runtime and so cannot usefully appear in an allowlist.
+# under `targets = "all-targets"`. ADR 0036 already noted that a job identifier
+# is minted by the HMC at runtime and so cannot usefully appear in an allowlist.
 @tool(
     effect="read",
     operation="job.get",
@@ -42,7 +42,7 @@ def hmc_get_job(
     job_href: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Get one HMC job by UUID, optionally using its submission SELF link.
+    """Get one HMC job by UUID or JobID, optionally using its submission SELF link.
 
     Returns null when the HMC produced no entry for this identifier — reaped,
     deleted, or never present. Any other HMC failure still raises. Null is one
@@ -67,7 +67,8 @@ def hmc_get_job(
 
     Args:
         job_id: UUID or JobID returned when the job was submitted.
-        job_href: Optional submission SELF link for firmware that cannot resolve the UUID.
+        job_href: Optional submission SELF link for firmware that cannot resolve the job
+            identifier.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
@@ -87,7 +88,7 @@ def hmc_list_recent_jobs(
     """List recent jobs.
 
     Raises HMCError when this HMC does not support global Job listing; use
-    hmc_get_job with a UUID and submission link on those firmware versions.
+    hmc_get_job with a job identifier and submission link on those firmware versions.
 
     Args:
         limit: Maximum entries returned after the complete HMC feed is transferred
@@ -117,8 +118,8 @@ def hmc_list_recent_jobs(
 # `job_id` selector outright — `client.get_job` fetches `urlparse(job_href).path`
 # and never looks at `job_id`. A `targets` table would therefore authorize one
 # job identity while the server reads another, so ADR 0039 grants this tool only
-# under `targets = "all-targets"`. ADR 0036 already noted that a job UUID is
-# minted by the HMC at runtime and so cannot usefully appear in an allowlist.
+# under `targets = "all-targets"`. ADR 0036 already noted that a job identifier
+# is minted by the HMC at runtime and so cannot usefully appear in an allowlist.
 @tool(
     effect="read",
     operation="job.wait",
@@ -191,7 +192,8 @@ def hmc_wait_for_job(
         job_id: UUID or JobID returned when the job was submitted.
         timeout_seconds: Maximum polling duration in seconds; zero performs one poll.
         poll_interval: Seconds between polls; must be greater than zero.
-        job_href: Optional submission SELF link for firmware that cannot resolve the UUID.
+        job_href: Optional submission SELF link for firmware that cannot resolve the job
+            identifier.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
