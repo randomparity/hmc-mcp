@@ -8,8 +8,8 @@ from decimal import Decimal
 import typer
 from rich.table import Table
 
-from .runtime import _run, _ssh_config, _with_client
-from .output import _output, _print_json, console
+from .runtime import run, ssh_config, with_client
+from .output import output, print_json, console
 
 from ..operations.pcie import (
     assign_dedicated_pcie_slot,
@@ -27,7 +27,7 @@ from ..ssh.network import PciClass, SriovMode, list_io_slots
 
 def _print_pcie_inventory(result, as_json: bool) -> None:
     if as_json:
-        _print_json(asdict(result))
+        print_json(asdict(result))
         return
     if result.capability == "capability-unavailable":
         console.print(f"Capability unavailable: {result.unavailable_reason}")
@@ -52,7 +52,7 @@ def network_list_dedicated_pcie_slots(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List normalized dedicated PCIe slots on a managed system."""
-    result = _run(lambda: list_dedicated_slots(_ssh_config(), system_name))
+    result = run(lambda: list_dedicated_slots(ssh_config(), system_name))
     _print_pcie_inventory(result, as_json)
 
 
@@ -64,7 +64,7 @@ def network_assign_dedicated_pcie_slot(
     ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Assign a dedicated slot when safe profile readback is available."""
-    _with_client(
+    with_client(
         lambda hmc: assign_dedicated_pcie_slot(
             hmc,
             system_name,
@@ -84,7 +84,7 @@ def network_unassign_dedicated_pcie_slot(
     ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Unassign a dedicated slot when safe profile readback is available."""
-    _with_client(
+    with_client(
         lambda hmc: unassign_dedicated_pcie_slot(
             hmc,
             system_name,
@@ -102,7 +102,7 @@ def network_list_sriov_adapters(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List normalized SR-IOV adapters or their unavailable capability."""
-    result = _run(lambda: list_sriov_adapters(_ssh_config(), system_name, adapter_id))
+    result = run(lambda: list_sriov_adapters(ssh_config(), system_name, adapter_id))
     _print_pcie_inventory(result, as_json)
 
 
@@ -113,9 +113,9 @@ def network_list_sriov_physical_ports(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List normalized SR-IOV physical ports or their unavailable capability."""
-    result = _run(
+    result = run(
         lambda: list_sriov_physical_ports(
-            _ssh_config(), system_name, adapter_id, physical_port_id
+            ssh_config(), system_name, adapter_id, physical_port_id
         )
     )
     _print_pcie_inventory(result, as_json)
@@ -129,9 +129,9 @@ def network_list_sriov_logical_ports(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List normalized SR-IOV logical ports or their unavailable capability."""
-    result = _run(
+    result = run(
         lambda: list_sriov_logical_ports(
-            _ssh_config(),
+            ssh_config(),
             system_name,
             adapter_id,
             physical_port_id,
@@ -152,7 +152,7 @@ def network_assign_sriov_logical_port(
     ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Assign an evidence-backed Ethernet SR-IOV logical port."""
-    result = _with_client(
+    result = with_client(
         lambda hmc: assign_sriov_logical_port(
             hmc,
             system_name,
@@ -165,7 +165,7 @@ def network_assign_sriov_logical_port(
             ownership_override=ownership_override,
         )
     )
-    _print_json(asdict(result))
+    print_json(asdict(result))
 
 
 def network_unassign_sriov_logical_port(
@@ -178,7 +178,7 @@ def network_unassign_sriov_logical_port(
     ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Unassign a profile logical port on a Not Activated LPAR."""
-    result = _with_client(
+    result = with_client(
         lambda hmc: unassign_sriov_logical_port(
             hmc,
             system_name,
@@ -190,7 +190,7 @@ def network_unassign_sriov_logical_port(
             ownership_override=ownership_override,
         )
     )
-    _print_json(asdict(result))
+    print_json(asdict(result))
 
 
 def network_list_io_slots(
@@ -202,9 +202,9 @@ def network_list_io_slots(
 ) -> None:
     """List physical I/O slots on a managed system (HMC CLI via SSH)."""
 
-    slots = _run(lambda: list_io_slots(_ssh_config(), system_name, pci_class))
+    slots = run(lambda: list_io_slots(ssh_config(), system_name, pci_class))
 
-    _output(slots, as_json, None, "No I/O slots found")
+    output(slots, as_json, None, "No I/O slots found")
 
 
 def network_set_sriov_mode(
@@ -215,8 +215,8 @@ def network_set_sriov_mode(
     mode: SriovMode = typer.Argument(..., help="'sriov' or 'dedicated'"),
 ) -> None:
     """Verify an adapter's current mode; transitions fail closed."""
-    result = _run(
-        lambda: set_sriov_adapter_mode(_ssh_config(), system_name, adapter_id, mode)
+    result = run(
+        lambda: set_sriov_adapter_mode(ssh_config(), system_name, adapter_id, mode)
     )
 
     console.print(

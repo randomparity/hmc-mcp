@@ -6,8 +6,8 @@ from __future__ import annotations
 import typer
 from rich.table import Table
 
-from .runtime import _run, _ssh_config
-from .output import _print_json, console, err_console
+from .runtime import run, ssh_config
+from .output import print_json, console, err_console
 
 from ..ssh.memory import list_memory_pools, remove_memory_pool
 
@@ -17,10 +17,10 @@ def memory_pools_list(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List shared memory pools on a managed system (HMC CLI via SSH)."""
-    config = _ssh_config()
-    pools = _run(lambda: list_memory_pools(config, system_name))
+    config = ssh_config()
+    pools = run(lambda: list_memory_pools(config, system_name))
     if as_json:
-        _print_json(pools)
+        print_json(pools)
         return
 
     if not pools:
@@ -51,8 +51,8 @@ def memory_pools_remove(
     ):
         raise typer.Abort()
 
-    config = _ssh_config()
-    result = _run(lambda: remove_memory_pool(config, system_name, pool_name))
+    config = ssh_config()
+    result = run(lambda: remove_memory_pool(config, system_name, pool_name))
 
     console.print(
         f"[green]Memory pool '{pool_name}' removed from '{system_name}'[/green]"

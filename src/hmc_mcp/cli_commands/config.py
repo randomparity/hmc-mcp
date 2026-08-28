@@ -27,7 +27,7 @@ from rich.markup import escape
 
 from . import runtime as cli_runtime
 from ..authorization.access_policy import AccessPolicyError
-from .output import _fail, console, err_console
+from .output import fail, console, err_console
 from .serve import _policy_file
 from ..config import (
     ConfigError,
@@ -67,7 +67,7 @@ def config_init() -> None:
     # do not call os.path.exists() separately (would re-open TOCTOU window).
     # resolve_config_path() returns non-None only when the file exists.
     if resolve_config_path() is not None:
-        _fail(FileExistsError(f"Config file already exists: {target}"))
+        fail(FileExistsError(f"Config file already exists: {target}"))
 
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -86,7 +86,7 @@ def config_init() -> None:
             with open(target, "x", encoding="utf-8") as fh:
                 fh.write(_STARTER_TOML)
     except FileExistsError:
-        _fail(FileExistsError(f"Config file already exists: {target}"))
+        fail(FileExistsError(f"Config file already exists: {target}"))
 
     # Same treatment as `init-access-policy` below, and for the same two reasons: this
     # line is the command's machine-readable output, and the path comes from
@@ -113,7 +113,7 @@ def config_list() -> None:
     try:
         inventory = config_inventory(config_path)
     except ConfigError as exc:
-        _fail(exc)
+        fail(exc)
     profiles = inventory["profiles"]
 
     if not profiles:
@@ -146,21 +146,21 @@ def config_show(
     SSH key credential is configured.
     """
     # Command --profile takes precedence over the invocation's root option.
-    effective_profile = profile or cli_runtime._current_options().profile
+    effective_profile = profile or cli_runtime.current_options().profile
 
     config_path = resolve_config_path()
     if config_path is None:
-        _fail(ConfigError(f"No config file found at {config_dir() / 'config.toml'}"))
+        fail(ConfigError(f"No config file found at {config_dir() / 'config.toml'}"))
 
     # config_inventory owns the single read, nickname resolution, and safe
     # credential-presence metadata. An unreadable, non-UTF-8, or malformed file
-    # reaches _fail as a ConfigError rather than a traceback.
+    # reaches fail as a ConfigError rather than a traceback.
     try:
         inventory = config_inventory(
             config_path, selected_profile=effective_profile, include_selected=True
         )
     except ConfigError as exc:
-        _fail(exc)
+        fail(exc)
     data: dict[str, Any] = inventory["selected"]
 
     if as_json:
@@ -257,7 +257,7 @@ def config_init_access_policy(
     else:
         resolved = _policy_file()
         if resolved is None:
-            _fail(
+            fail(
                 RuntimeError(
                     "cannot resolve the access-policy path: no home directory. Set "
                     "HOME or XDG_CONFIG_HOME for the identity this runs as, or pass "
@@ -269,7 +269,7 @@ def config_init_access_policy(
     try:
         connections = legacy_connections()
     except ConfigError as exc:
-        _fail(exc)
+        fail(exc)
 
     text = render_legacy_policy(TOOL_SECURITY, connections)
 
@@ -284,7 +284,7 @@ def config_init_access_policy(
         # Every noun in the loader's message belongs to a document that was never
         # written, while the operator's actual edit is a profile key — so the origin
         # and the remedy are named alongside it.
-        _fail(
+        fail(
             AccessPolicyError(
                 f"{exc}\n\nThat entry came from a profile key in config.toml. Remove "
                 "the padding from the profile key, or generate elsewhere with "
@@ -300,14 +300,14 @@ def config_init_access_policy(
         # that exact path, and the message must still speak to the flag they passed
         # rather than assume this is the reviewed policy.
         if output is not None:
-            _fail(
+            fail(
                 FileExistsError(
                     f"Output path already exists: {target}. This command never "
                     "overwrites an existing file. Delete it, or pass a different "
                     "--output PATH."
                 )
             )
-        _fail(
+        fail(
             FileExistsError(
                 f"Access policy file already exists: {target}. This command never "
                 "overwrites a reviewed policy. To regenerate, write to a scratch path "
@@ -315,9 +315,9 @@ def config_init_access_policy(
             )
         )
     except OSError as exc:
-        _fail(exc)
+        fail(exc)
 
-    # Escaped for the reason `_fail` escapes: these render through a markup-enabled
+    # Escaped for the reason `fail` escapes: these render through a markup-enabled
     # rich Console, and under --output the path is the operator's own. A bracketed
     # path would print with the bracketed segment silently deleted — so the operator
     # copies a path that does not exist — and a `[/x]`-shaped one would raise
@@ -325,7 +325,7 @@ def config_init_access_policy(
     # `soft_wrap=True` because this line is the command's machine-readable output: a
     # rich Console hard-folds at 80 columns on a non-tty, so
     # `hmc-mcp config init-access-policy > path.txt` would otherwise capture a path
-    # broken across lines. Escaped for the reason `_fail` escapes — under --output the
+    # broken across lines. Escaped for the reason `fail` escapes — under --output the
     # path is the operator's own, and a bracketed segment would be silently deleted
     # while a `[/x]`-shaped one would raise MarkupError in place of the success line.
     console.print(escape(str(target)), soft_wrap=True)
@@ -397,7 +397,7 @@ def config_diff_access_policy(
     try:
         connections = legacy_connections()
     except ConfigError as exc:
-        _fail(exc, code=GENERATION_FAILED)
+        fail(exc, code=GENERATION_FAILED)
 
     text = render_legacy_policy(TOOL_SECURITY, connections)
 
@@ -411,7 +411,7 @@ def config_diff_access_policy(
         # As in init-access-policy: every noun in the loader's message belongs to a
         # document that does not exist here either — the origin is the operator's
         # config.toml, and the remedy is an edit there.
-        _fail(
+        fail(
             AccessPolicyError(
                 f"{exc}\n\nThat entry came from a profile key in config.toml. "
                 "Remove the padding from the profile key."
@@ -422,7 +422,7 @@ def config_diff_access_policy(
     try:
         deployed_text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        _fail(
+        fail(
             RuntimeError(
                 f"No deployed access policy at {path}. Pass the path of the "
                 "access-policy.toml the server loads; if none exists yet, create "
@@ -431,7 +431,7 @@ def config_diff_access_policy(
             code=DEPLOYED_UNREADABLE,
         )
     except UnicodeDecodeError:
-        _fail(
+        fail(
             RuntimeError(
                 f"{path} is not UTF-8 text, so it is not a TOML policy document. "
                 "Pass the path of the access-policy.toml the server loads."
@@ -439,7 +439,7 @@ def config_diff_access_policy(
             code=DEPLOYED_UNREADABLE,
         )
     except OSError as exc:
-        _fail(exc, code=DEPLOYED_UNREADABLE)
+        fail(exc, code=DEPLOYED_UNREADABLE)
 
     diff = list(
         difflib.unified_diff(

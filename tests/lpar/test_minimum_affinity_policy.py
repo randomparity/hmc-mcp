@@ -288,7 +288,7 @@ def test_mcp_registers_minimum_affinity_policy_as_lpar_read():
 )
 def test_cli_policy_human_output(result, expected):
     with (
-        patch.object(cli_lpars, "_ssh_config", return_value=_config()),
+        patch.object(cli_lpars, "ssh_config", return_value=_config()),
         patch.object(
             cli_lpars, "get_minimum_affinity_policy", AsyncMock(return_value=result)
         ),
@@ -306,7 +306,7 @@ def test_cli_policy_json_delegates():
     )
     operation = AsyncMock(return_value=expected)
     with (
-        patch.object(cli_lpars, "_ssh_config", return_value=_config()),
+        patch.object(cli_lpars, "ssh_config", return_value=_config()),
         patch.object(cli_lpars, "get_minimum_affinity_policy", operation),
     ):
         invocation = CliRunner().invoke(

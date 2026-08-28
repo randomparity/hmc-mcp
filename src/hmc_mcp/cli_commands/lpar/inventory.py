@@ -15,8 +15,8 @@ from ...operations.lpar.core import (
 )
 from ...operations.partition_state import PartitionState
 from ...resource_identity import ResourceNotFoundError
-from ..runtime import _with_client
-from ..output import _first_field, _output, _partition_not_found, _print_json, console
+from ..runtime import with_client
+from ..output import first_field, output, partition_not_found, print_json, console
 
 
 def lpars_summary(
@@ -26,11 +26,11 @@ def lpars_summary(
     """One-call summary: state, RMC, memory/CPU, OS details, adapter count, description."""
 
     summary = asdict(
-        _with_client(lambda hmc: lpar_summary(hmc, None, name_or_uuid))
+        with_client(lambda hmc: lpar_summary(hmc, None, name_or_uuid))
     )
 
     if as_json:
-        _print_json(summary)
+        print_json(summary)
         return
 
     table = Table(title=f"LPAR Summary: {summary.get('name') or name_or_uuid}")
@@ -78,7 +78,7 @@ def lpars_list(
 ) -> None:
     """List logical partitions."""
 
-    lpars = _with_client(lambda hmc: list_lpars(hmc, system, state))
+    lpars = with_client(lambda hmc: list_lpars(hmc, system, state))
 
     table = None
     if not as_json:
@@ -87,15 +87,15 @@ def lpars_list(
             table.add_column(col)
         for lpar in lpars:
             table.add_row(
-                _first_field(lpar, "PartitionName"),
-                _first_field(lpar, "PartitionID"),
+                first_field(lpar, "PartitionName"),
+                first_field(lpar, "PartitionID"),
                 lpar.get("UUID") or "-",
-                _first_field(lpar, "PartitionState"),
-                _first_field(lpar, "PartitionType"),
-                _first_field(lpar, "OperatingSystemVersion", default="-"),
-                _first_field(lpar, "ResourceMonitoringControlState", "RMCState"),
+                first_field(lpar, "PartitionState"),
+                first_field(lpar, "PartitionType"),
+                first_field(lpar, "OperatingSystemVersion", default="-"),
+                first_field(lpar, "ResourceMonitoringControlState", "RMCState"),
             )
-    _output(lpars, as_json, table, "No logical partitions found")
+    output(lpars, as_json, table, "No logical partitions found")
 
 
 def lpars_show(
@@ -104,11 +104,11 @@ def lpars_show(
 ) -> None:
     """Show one LPAR, looked up by name (exact) or by UUID."""
 
-    lpar = _with_client(lambda hmc: get_lpar(hmc, name_or_uuid))
+    lpar = with_client(lambda hmc: get_lpar(hmc, name_or_uuid))
 
     if lpar is None:
-        _partition_not_found(name_or_uuid)
-    _print_json(lpar)
+        partition_not_found(name_or_uuid)
+    print_json(lpar)
 
 
 def lpars_state(
@@ -122,10 +122,10 @@ def lpars_state(
         except ResourceNotFoundError:
             return None
 
-    state = _with_client(state_or_none)
+    state = with_client(state_or_none)
 
     if state is None:
-        _partition_not_found(name_or_uuid)
+        partition_not_found(name_or_uuid)
     console.print(state)
 
 

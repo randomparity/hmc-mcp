@@ -20,8 +20,8 @@ from ...operations.lpar.provision import (
     ProvisionStorage,
     provision_lpar,
 )
-from ..runtime import _client, _run
-from ..output import _print_json, _usage_error, console
+from ..runtime import client, run
+from ..output import print_json, usage_error, console
 from .config import _load_pcie_assignments
 
 
@@ -83,11 +83,11 @@ def lpars_provision(
     assignments = _load_pcie_assignments(pcie_assignments)
 
     if partition_type not in PARTITION_TYPES:
-        _usage_error(
+        usage_error(
             f"--type must be one of {', '.join(PARTITION_TYPES)}, got {partition_type!r}"
         )
     if storage_kind not in STORAGE_KINDS:
-        _usage_error(
+        usage_error(
             "--storage-kind must be one of "
             f"{', '.join(sorted(STORAGE_KINDS))}, got {storage_kind!r}"
         )
@@ -99,7 +99,7 @@ def lpars_provision(
         )
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await provision_lpar(
                 hmc,
                 system_name_or_uuid=system,
@@ -124,10 +124,10 @@ def lpars_provision(
                 assignments=assignments,
             )
 
-    result = _run(_go)
+    result = run(_go)
 
     if as_json:
-        _print_json(asdict(result))
+        print_json(asdict(result))
         return
 
     if dry_run:

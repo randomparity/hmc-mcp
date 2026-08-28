@@ -10,8 +10,8 @@ import typer
 from ...documents import LparResources
 from ...operations.lpar.assignments import LparPcieAssignments
 from ...operations.lpar.dlpar import modify_lpar
-from ..runtime import _client, _run
-from ..output import _partition_not_found, _print_json, _usage_error, console
+from ..runtime import client, run
+from ..output import partition_not_found, print_json, usage_error, console
 from .config import _load_pcie_assignments
 
 
@@ -81,11 +81,11 @@ def lpars_modify(
         )
         and assignments == LparPcieAssignments()
     ):
-        _usage_error("Nothing to change — pass at least one option")
+        usage_error("Nothing to change — pass at least one option")
     if new_name is not None and system is None:
-        _usage_error("--system is required when renaming an LPAR")
+        usage_error("--system is required when renaming an LPAR")
     if assignments != LparPcieAssignments() and system is None:
-        _usage_error("--system is required when assigning PCIe resources")
+        usage_error("--system is required when assigning PCIe resources")
     resources = LparResources(
         min_memory=min_memory,
         desired_memory=memory,
@@ -103,7 +103,7 @@ def lpars_modify(
         raise typer.Abort()
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await modify_lpar(
                 hmc,
                 system,
@@ -114,13 +114,13 @@ def lpars_modify(
                 ownership_override=ownership_override,
             )
 
-    result = _run(_go)
+    result = run(_go)
 
     if result.lpar is None:
-        _partition_not_found(name_or_uuid)
+        partition_not_found(name_or_uuid)
     uuid = result.lpar.get("UUID", name_or_uuid)
     console.print(f"[green]Modified LPAR {uuid}[/green]")
-    _print_json(asdict(result))
+    print_json(asdict(result))
 
 
 def register_commands(group: typer.Typer) -> None:

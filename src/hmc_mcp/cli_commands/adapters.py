@@ -7,8 +7,8 @@ import typer
 
 from ..client.client_adapters import ADAPTER_TYPES, AdapterType
 
-from .runtime import _client, _run
-from .output import _output, _print_json, console
+from .runtime import client, run
+from .output import output, print_json, console
 from ..operations.adapters import (
     add_network_adapter,
     add_vfc_adapter,
@@ -31,12 +31,12 @@ def adapters_list(
     """List an LPAR's virtual adapters of a given type."""
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await list_adapters(hmc, None, lpar, adapter_type)
 
-    adapters = _run(_go)
+    adapters = run(_go)
 
-    _output(adapters, as_json, None, f"No {adapter_type} adapters on {lpar}")
+    output(adapters, as_json, None, f"No {adapter_type} adapters on {lpar}")
 
 
 def adapters_add_network(
@@ -61,7 +61,7 @@ def adapters_add_network(
         raise typer.Abort()
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await add_network_adapter(
                 hmc,
                 None,
@@ -95,7 +95,7 @@ def adapters_add_vscsi(
         raise typer.Abort()
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await add_vscsi_adapter(
                 hmc,
                 None,
@@ -127,7 +127,7 @@ def adapters_add_vfc(
         raise typer.Abort()
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await add_vfc_adapter(
                 hmc,
                 None,
@@ -158,7 +158,7 @@ def adapters_delete(
         raise typer.Abort()
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await delete_adapter(
                 hmc,
                 None,
@@ -168,15 +168,15 @@ def adapters_delete(
                 ownership_override=ownership_override,
             )
 
-    deleted_uuid = _run(_go)
+    deleted_uuid = run(_go)
 
     console.print(f"[green]Deleted {adapter_type} {deleted_uuid}[/green] from {lpar}")
 
 
 def _adapter_mutation(go_coro, lpar: str, kind: str) -> None:
-    result = _run(go_coro)
+    result = run(go_coro)
     console.print(f"[green]Added {kind} adapter[/green] to {result.lpar_uuid}")
-    _print_json(result.resource)
+    print_json(result.resource)
 
 
 def register_commands(group: typer.Typer) -> None:

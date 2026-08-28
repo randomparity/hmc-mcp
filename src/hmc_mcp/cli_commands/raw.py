@@ -6,8 +6,8 @@ from pathlib import Path
 
 import typer
 
-from .runtime import _with_client
-from .output import _fail, console
+from .runtime import with_client
+from .output import fail, console
 
 
 def raw_get(
@@ -17,7 +17,7 @@ def raw_get(
 ) -> None:
     """Raw GET against the HMC; prints the XML response body."""
 
-    body, _headers = _with_client(lambda hmc: hmc.raw_get(path))
+    body, _headers = with_client(lambda hmc: hmc.raw_get(path))
     console.print(body)
 
 
@@ -38,13 +38,13 @@ def raw_post(
         try:
             body = body_path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
-            _fail(OSError(f"cannot read body file {body_path}: {exc}"))
+            fail(OSError(f"cannot read body file {body_path}: {exc}"))
 
     if not yes and not typer.confirm(f"POST {path} to the HMC?"):
         raise typer.Abort()
 
     console.print(
-        _with_client(lambda hmc: hmc.raw_post(path, body, content_type=content_type))
+        with_client(lambda hmc: hmc.raw_post(path, body, content_type=content_type))
     )
 
 

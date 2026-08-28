@@ -11,8 +11,8 @@ from ...documents import PARTITION_TYPES, LparResources
 from ...operations.lpar.core import LparCreation
 from ...operations.lpar.workflows import create_lpar
 from ...ssh.lpar import validate_caller_token
-from ..runtime import _with_client
-from ..output import _print_json, _usage_error, console, err_console
+from ..runtime import with_client
+from ..output import print_json, usage_error, console, err_console
 from .config import _load_pcie_assignments
 
 
@@ -76,7 +76,7 @@ def lpars_create(
     if caller_token is not None:
         validate_caller_token(caller_token)
     if partition_type not in PARTITION_TYPES:
-        _usage_error(
+        usage_error(
             f"--type must be one of {', '.join(PARTITION_TYPES)}, got {partition_type!r}"
         )
     if not yes:
@@ -99,7 +99,7 @@ def lpars_create(
     )
     assignments = _load_pcie_assignments(pcie_assignments)
 
-    result = _with_client(
+    result = with_client(
         lambda hmc: create_lpar(
             hmc,
             system,
@@ -115,11 +115,11 @@ def lpars_create(
     )
 
     console.print(f"[green]Created LPAR '{name}'[/green]")
-    _print_json(result.lpar)
+    print_json(result.lpar)
     for warning in result.warnings:
         err_console.print(f"[yellow]Warning: {warning}[/yellow]")
     if result.steps:
-        _print_json(asdict(result))
+        print_json(asdict(result))
     if not result.workflow_completed:
         raise typer.Exit(1)
 

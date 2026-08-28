@@ -13,8 +13,8 @@ from ...operations.lpar.boot_order import (
     read_lpar_boot_order,
     set_lpar_boot_order,
 )
-from ..runtime import _with_client
-from ..output import _print_json, console
+from ..runtime import with_client
+from ..output import print_json, console
 
 
 def lpars_read_boot_order(
@@ -26,7 +26,7 @@ def lpars_read_boot_order(
     Example:
         lpars read-boot-order system1 aaaa0000-0000-0000-0000-000000000001
     """
-    result = _with_client(
+    result = with_client(
         lambda hmc: read_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name,
@@ -34,7 +34,7 @@ def lpars_read_boot_order(
         )
     )
 
-    _print_json(result)
+    print_json(result)
 
 
 def lpars_set_boot_order(
@@ -65,7 +65,7 @@ def lpars_set_boot_order(
     if not device_list:
         raise typer.BadParameter("Boot order must contain at least one device")
 
-    result = _with_client(
+    result = with_client(
         lambda hmc: set_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name,
@@ -76,7 +76,7 @@ def lpars_set_boot_order(
     )
 
     console.print(f"[green]Boot order set to: {', '.join(device_list)}[/green]")
-    _print_json(result)
+    print_json(result)
 
 
 def lpars_clear_boot_order(
@@ -92,7 +92,7 @@ def lpars_clear_boot_order(
     Example:
         lpars clear-boot-order system1 aaaa0000-0000-0000-0000-000000000001
     """
-    result = _with_client(
+    result = with_client(
         lambda hmc: clear_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name,
@@ -102,7 +102,7 @@ def lpars_clear_boot_order(
     )
 
     console.print("[green]Boot order cleared (restored defaults)[/green]")
-    _print_json(result)
+    print_json(result)
 
 
 def register_commands(group: typer.Typer) -> None:

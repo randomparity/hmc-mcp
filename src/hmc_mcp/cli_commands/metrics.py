@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import typer
 
-from .runtime import _client, _run, _with_client
-from .output import _print_json, _usage_error, console
+from .runtime import client, run, with_client
+from .output import print_json, usage_error, console
 from ..operations.pcm import (
     PcmCategory,
     get_pcm_preferences,
@@ -28,9 +28,9 @@ def metrics_prefs(
     """Show PCM monitoring preferences for a resource."""
     validate_pcm_preferences_category(category)
 
-    prefs = _with_client(lambda hmc: get_pcm_preferences(hmc, category, resource_uuid))
+    prefs = with_client(lambda hmc: get_pcm_preferences(hmc, category, resource_uuid))
 
-    _print_json(prefs)
+    print_json(prefs)
 
 
 def metrics_set_prefs(
@@ -60,7 +60,7 @@ def metrics_set_prefs(
     """
     flags = preference_flags(ltm, aggregation, stm, compute_ltm, energy)
     if not flags:
-        _usage_error("No flags supplied; nothing to change.")
+        usage_error("No flags supplied; nothing to change.")
     validate_pcm_preferences_category(category)
 
     if not yes and not typer.confirm(
@@ -68,7 +68,7 @@ def metrics_set_prefs(
     ):
         raise typer.Abort()
 
-    _with_client(lambda hmc: set_pcm_preferences(hmc, category, resource_uuid, flags))
+    with_client(lambda hmc: set_pcm_preferences(hmc, category, resource_uuid, flags))
 
     console.print(f"[green]Updated {category} {resource_uuid}: {flags}[/green]")
 
@@ -97,7 +97,7 @@ def metrics_show(
     validate_pcm_metric_target(category, system_name_or_uuid)
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             kind = "aggregated" if aggregated else "processed"
             operation = metric_data if fetch else metric_links
             return await operation(
@@ -111,9 +111,9 @@ def metrics_show(
                 system_name_or_uuid=system_name_or_uuid,
             )
 
-    result = _run(_go)
+    result = run(_go)
 
-    _print_json(result)
+    print_json(result)
 
 
 def register_commands(group: typer.Typer) -> None:

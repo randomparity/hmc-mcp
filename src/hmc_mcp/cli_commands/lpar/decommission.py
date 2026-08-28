@@ -8,8 +8,8 @@ import typer
 from rich.table import Table
 
 from ...operations.lpar.decommission import decommission_lpar
-from ..runtime import _client, _run
-from ..output import _print_json, console
+from ..runtime import client, run
+from ..output import print_json, console
 
 
 def lpars_decommission(
@@ -46,7 +46,7 @@ def lpars_decommission(
         )
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await decommission_lpar(
                 hmc,
                 system,
@@ -58,10 +58,10 @@ def lpars_decommission(
                 poll_interval=poll_interval,
             )
 
-    result = _run(_go)
+    result = run(_go)
 
     if as_json:
-        _print_json(asdict(result))
+        print_json(asdict(result))
     else:
         if result.dry_run:
             console.print(

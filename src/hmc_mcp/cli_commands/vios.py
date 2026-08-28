@@ -6,8 +6,8 @@ from __future__ import annotations
 import typer
 from rich.table import Table
 
-from .runtime import _run, _client, _with_client
-from .output import _first_field, _output, _print_json, console
+from .runtime import run, client, with_client
+from .output import first_field, output, print_json, console
 from ..jobs import validate_wait_timing
 from ..operations.vios import list_vios, power_vios
 from ..operations.partition_state import PartitionState
@@ -24,7 +24,7 @@ def vios_list(
 ) -> None:
     """List Virtual I/O Servers."""
 
-    vios = _with_client(lambda hmc: list_vios(hmc, system, state))
+    vios = with_client(lambda hmc: list_vios(hmc, system, state))
 
     table = None
     if not as_json:
@@ -33,13 +33,13 @@ def vios_list(
             table.add_column(col)
         for v in vios:
             table.add_row(
-                _first_field(v, "PartitionName"),
-                _first_field(v, "PartitionID"),
+                first_field(v, "PartitionName"),
+                first_field(v, "PartitionID"),
                 v.get("UUID") or "-",
-                _first_field(v, "PartitionState"),
-                _first_field(v, "IOSLevel", "VIOSVersion", default="-"),
+                first_field(v, "PartitionState"),
+                first_field(v, "IOSLevel", "VIOSVersion", default="-"),
             )
-    _output(vios, as_json, table, "No VIOS found")
+    output(vios, as_json, table, "No VIOS found")
 
 
 def vios_power_on(
@@ -59,7 +59,7 @@ def vios_power_on(
         raise typer.Abort()
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await power_vios(
                 hmc,
                 None,
@@ -70,10 +70,10 @@ def vios_power_on(
                 poll_interval=interval,
             )
 
-    job = _run(_go)
+    job = run(_go)
 
     console.print(f"[green]Submitted PowerOn for {name_or_uuid}[/green]")
-    _print_json(job)
+    print_json(job)
 
 
 def vios_power_off(
@@ -95,7 +95,7 @@ def vios_power_off(
         raise typer.Abort()
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await power_vios(
                 hmc,
                 None,
@@ -107,10 +107,10 @@ def vios_power_off(
                 poll_interval=interval,
             )
 
-    job = _run(_go)
+    job = run(_go)
 
     console.print(f"[green]Submitted {op} for {name_or_uuid}[/green]")
-    _print_json(job)
+    print_json(job)
 
 
 def register_commands(group: typer.Typer) -> None:

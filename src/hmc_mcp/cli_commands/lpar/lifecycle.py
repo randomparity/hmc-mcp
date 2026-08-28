@@ -6,8 +6,8 @@ import typer
 
 from ...jobs import validate_wait_timing
 from ...operations.lpar.core import delete_lpar, power_lpar
-from ..runtime import _client, _run
-from ..output import _print_json, console, err_console
+from ..runtime import client, run
+from ..output import print_json, console, err_console
 
 
 def lpars_power_on(
@@ -106,7 +106,7 @@ def _power_lpar(
             raise typer.Abort()
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await power_lpar(
                 hmc,
                 system,
@@ -120,14 +120,14 @@ def _power_lpar(
                 ownership_override=ownership_override,
             )
 
-    result = _run(_go)
+    result = run(_go)
     uuid, job = result.lpar_uuid, result.job
     if job and job.get("already_running"):
         console.print(f"[yellow]{job['message']}[/yellow]")
-        _print_json(job)
+        print_json(job)
         return
     console.print(f"[green]Job submitted[/green] for {uuid}")
-    _print_json(job)
+    print_json(job)
 
 
 def lpars_delete(
@@ -145,7 +145,7 @@ def lpars_delete(
     """Delete (destroy) an LPAR. It must be powered off first."""
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             if not yes:
                 if not typer.confirm(
                     f"Permanently DELETE partition '{name_or_uuid}'? This cannot be undone."
@@ -158,7 +158,7 @@ def lpars_delete(
                 ownership_override=ownership_override,
             )
 
-    uuid = _run(_go)
+    uuid = run(_go)
     console.print(f"[green]Deleted LPAR {uuid}[/green]")
 
 

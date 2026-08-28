@@ -6,20 +6,20 @@ import json
 
 import typer
 
-from .runtime import _with_client
-from .output import _print_json, _resource, console, err_console
+from .runtime import with_client
+from .output import print_json, _resource, console, err_console
 
 
 def console_info(as_json: bool = typer.Option(False, "--json")) -> None:
     """Show HMC version and network info (connectivity check)."""
 
-    info = _with_client(lambda hmc: hmc.get_console_info())
+    info = with_client(lambda hmc: hmc.get_console_info())
 
     if info is None:
         err_console.print("[yellow]No ManagementConsole data returned[/yellow]")
         return
     if as_json:
-        _print_json(info)
+        print_json(info)
         return
     res = _resource(info)
     console.print(f"[bold]HMC[/bold] {info.get('link') or ''}")

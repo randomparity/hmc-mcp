@@ -12,7 +12,7 @@ from typer._click.globals import get_current_context
 
 from ..client import HMCClient
 from ..config import HMCConfig, build_config
-from .output import _fail
+from .output import fail
 
 _T = TypeVar("_T")
 
@@ -29,7 +29,7 @@ class GlobalOpts:
     command_line_options: frozenset[str] = frozenset()
 
 
-def _current_options() -> GlobalOpts:
+def current_options() -> GlobalOpts:
     """Return the connection options belonging to the active CLI invocation."""
     ctx = get_current_context(silent=True)
     if ctx is None or not isinstance(ctx.find_root().obj, GlobalOpts):
@@ -39,9 +39,9 @@ def _current_options() -> GlobalOpts:
     return ctx.find_root().obj
 
 
-def _client() -> HMCClient:
+def client() -> HMCClient:
     """Build a REST client from the active invocation's connection options."""
-    options = _current_options()
+    options = current_options()
     return HMCClient(
         build_config(
             profile=options.profile,
@@ -53,9 +53,9 @@ def _client() -> HMCClient:
     )
 
 
-def _ssh_config() -> HMCConfig:
+def ssh_config() -> HMCConfig:
     """Build an SSH configuration from the active invocation's options."""
-    options = _current_options()
+    options = current_options()
     return build_config(
         profile=options.profile,
         host=options.host,
@@ -65,21 +65,21 @@ def _ssh_config() -> HMCConfig:
     )
 
 
-def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
+def run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     """Run a coroutine-returning closure through the CLI error path."""
     try:
         return asyncio.run(fn())
     except (typer.Abort, typer.Exit):
         raise
     except Exception as exc:
-        _fail(exc)
+        fail(exc)
 
 
-def _with_client(fn: Callable[[HMCClient], Awaitable[_T]]) -> _T:
+def with_client(fn: Callable[[HMCClient], Awaitable[_T]]) -> _T:
     """Run one async client call using the active connection options."""
 
     async def operation() -> _T:
-        async with _client() as hmc:
+        async with client() as hmc:
             return await fn(hmc)
 
-    return _run(operation)
+    return run(operation)

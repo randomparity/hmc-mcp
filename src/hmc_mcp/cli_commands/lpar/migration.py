@@ -8,8 +8,8 @@ import typer
 from typing import Literal, cast
 
 from ...jobs import REMOTE_RESTART_OPERATIONS, RemoteRestartOperation
-from ..runtime import _client, _run
-from ..output import _print_json, console
+from ..runtime import client, run
+from ..output import print_json, console
 
 from ...jobs import JobOutcome, validate_wait_timing
 from ...operations.lpm import (
@@ -29,7 +29,7 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) 
     """Confirm and present the result of a shared LPM operation."""
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             if not yes:
                 dest = f" to '{target}'" if target else ""
                 if not typer.confirm(
@@ -38,15 +38,15 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) 
                     raise typer.Abort()
             return await fn(hmc)
 
-    result = _run(_go)
+    result = run(_go)
     if isinstance(result, LpmAffinityMigrationResult):
         status = "Submitted" if result.job is not None else "Stopped"
         console.print(f"[green]{status} {action}[/green]")
-        _print_json(asdict(result))
+        print_json(asdict(result))
         return
     console.print(f"[green]Submitted {action} for {result.lpar_uuid}[/green]")
     job = asdict(result.job) if isinstance(result.job, JobOutcome) else result.job
-    _print_json(job)
+    print_json(job)
 
 
 def lpars_migrate(

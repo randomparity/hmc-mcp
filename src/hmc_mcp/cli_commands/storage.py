@@ -29,8 +29,8 @@ from ..operations.storage import (
     StorageMapResult,
     upload_iso,
 )
-from .runtime import _client, _run, _with_client
-from .output import _first_field, _output, _print_json, _usage_error, console
+from .runtime import client, run, with_client
+from .output import first_field, output, print_json, usage_error, console
 
 
 def storage_list_vgs(
@@ -42,7 +42,7 @@ def storage_list_vgs(
 ) -> None:
     """List Volume Groups on a VIOS (free space, PVs, virtual disks)."""
 
-    vgs = _with_client(lambda hmc: list_volume_groups(hmc, system, vios))
+    vgs = with_client(lambda hmc: list_volume_groups(hmc, system, vios))
 
     table = None
     if not as_json:
@@ -51,12 +51,12 @@ def storage_list_vgs(
             table.add_column(col)
         for v in vgs:
             table.add_row(
-                _first_field(v, "GroupName"),
+                first_field(v, "GroupName"),
                 v.get("UUID") or "-",
-                _first_field(v, "FreeSpace", "FreeSpaceInMBytes"),
-                _first_field(v, "GroupCapacity", "Capacity"),
+                first_field(v, "FreeSpace", "FreeSpaceInMBytes"),
+                first_field(v, "GroupCapacity", "Capacity"),
             )
-    _output(vgs, as_json, table, "No volume groups found")
+    output(vgs, as_json, table, "No volume groups found")
 
 
 def storage_create_vg(
@@ -73,16 +73,16 @@ def storage_create_vg(
     """Create a Volume Group on a VIOS from physical volumes."""
     pv_list = [p.strip() for p in pvs.split(",") if p.strip()]
     if not pv_list:
-        _usage_error("Provide at least one physical volume via --pvs")
+        usage_error("Provide at least one physical volume via --pvs")
     if not yes and not typer.confirm(
         f"Create VG '{name}' from {pv_list} on VIOS {vios}?"
     ):
         raise typer.Abort()
 
-    vg = _with_client(lambda hmc: create_volume_group(hmc, system, vios, name, pv_list))
+    vg = with_client(lambda hmc: create_volume_group(hmc, system, vios, name, pv_list))
 
     console.print(f"[green]Created Volume Group '{name}'[/green]")
-    _print_json(vg)
+    print_json(vg)
 
 
 def storage_create_disk(
@@ -103,14 +103,14 @@ def storage_create_disk(
     ):
         raise typer.Abort()
 
-    disk = _with_client(
+    disk = with_client(
         lambda hmc: create_virtual_disk(
             hmc, system, vios, vg, name, capacity_mib=capacity_mib
         )
     )
 
     console.print(f"[green]Created virtual disk '{name}' ({capacity_mib} MiB)[/green]")
-    _print_json(disk)
+    print_json(disk)
 
 
 def storage_delete_disk(
@@ -129,10 +129,10 @@ def storage_delete_disk(
     if not yes and not typer.confirm(f"Delete virtual disk '{name}' from VG {vg}?"):
         raise typer.Abort()
 
-    disk = _with_client(lambda hmc: delete_virtual_disk(hmc, system, vios, vg, name))
+    disk = with_client(lambda hmc: delete_virtual_disk(hmc, system, vios, vg, name))
 
     console.print(f"[green]Deleted virtual disk '{name}'[/green]")
-    _print_json(disk)
+    print_json(disk)
 
 
 def storage_attach_disk(
@@ -160,7 +160,7 @@ def storage_attach_disk(
     ):
         raise typer.Abort()
 
-    result = _with_client(
+    result = with_client(
         lambda hmc: attach_disk_to_lpar(
             hmc,
             None,
@@ -174,7 +174,7 @@ def storage_attach_disk(
         )
     )
     if as_json:
-        _print_json(asdict(result))
+        print_json(asdict(result))
         if not dry_run and not result.workflow_completed:
             raise typer.Exit(1)
         return
@@ -223,7 +223,7 @@ def storage_map(
         raise typer.Abort()
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await map_storage(
                 hmc,
                 system,
@@ -235,10 +235,10 @@ def storage_map(
                 ownership_override=ownership_override,
             )
 
-    result: StorageMapResult = _run(_go)
+    result: StorageMapResult = run(_go)
 
     console.print(f"[green]Mapped '{disk}'[/green] to {result.lpar_uuid}")
-    _print_json(asdict(result))
+    print_json(asdict(result))
 
 
 def storage_create_media_repo(
@@ -256,12 +256,12 @@ def storage_create_media_repo(
     ):
         raise typer.Abort()
 
-    result = _with_client(
+    result = with_client(
         lambda hmc: create_media_repository(hmc, system, vios, vg, size_mib)
     )
 
     console.print(f"[green]Created media repository on {vg}[/green]")
-    _print_json(result)
+    print_json(result)
 
 
 def storage_create_media(
@@ -282,12 +282,12 @@ def storage_create_media(
     ):
         raise typer.Abort()
 
-    result = _with_client(
+    result = with_client(
         lambda hmc: create_optical_media(hmc, system, vios, vg, name, size_mib)
     )
 
     console.print(f"[green]Created media '{name}' on {vg}[/green]")
-    _print_json(result)
+    print_json(result)
 
 
 def storage_delete_media_repo(
@@ -304,7 +304,7 @@ def storage_delete_media_repo(
     ):
         raise typer.Abort()
 
-    _with_client(lambda hmc: delete_media_repository(hmc, system, vios, vg))
+    with_client(lambda hmc: delete_media_repository(hmc, system, vios, vg))
     console.print(f"[green]Deleted media repository on {vg}[/green]")
 
 
@@ -323,7 +323,7 @@ def storage_delete_media(
     ):
         raise typer.Abort()
 
-    _with_client(lambda hmc: delete_optical_media(hmc, system, vios, vg, media_name))
+    with_client(lambda hmc: delete_optical_media(hmc, system, vios, vg, media_name))
     console.print(f"[green]Deleted media '{media_name}' on {vg}[/green]")
 
 
@@ -336,10 +336,10 @@ def storage_get_media_repo(
     ),
 ) -> None:
     """Get the Virtual Media Repository (VMLibrary) from a volume group."""
-    result = _with_client(lambda hmc: get_media_repository(hmc, system, vios, vg))
+    result = with_client(lambda hmc: get_media_repository(hmc, system, vios, vg))
 
     if as_json:
-        _print_json(result)
+        print_json(result)
     elif result:
         console.print(f"[green]Media Repository on VG {vg} (VIOS {vios}):[/green]")
         resource = result.get("Resource", {})
@@ -360,10 +360,10 @@ def storage_list_optical_media(
     ),
 ) -> None:
     """List Virtual Optical Media in the Virtual Media Repository."""
-    media_list = _with_client(lambda hmc: list_optical_media(hmc, system, vios, vg))
+    media_list = with_client(lambda hmc: list_optical_media(hmc, system, vios, vg))
 
     if as_json:
-        _print_json(media_list)
+        print_json(media_list)
     elif media_list:
         console.print(
             f"[green]Optical Media in repository on VG {vg} (VIOS {vios}):[/green]"
@@ -400,9 +400,9 @@ def storage_list_mappings(
         async with HMCClient(config) as hmc:
             return await list_storage_mappings(hmc, system, vios, lpar)
 
-    mappings = _run(_go)
+    mappings = run(_go)
     if as_json:
-        _print_json(mappings)
+        print_json(mappings)
     else:
         table = Table(title=f"Storage Mappings on {vios}")
         table.add_column("Mapping UUID", style="cyan")
@@ -465,7 +465,7 @@ def storage_detach_mapping(
                 ownership_override=ownership_override,
             )
 
-    _run(_go)
+    run(_go)
     console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")
 
 
@@ -499,10 +499,10 @@ def storage_upload_iso(
         async with HMCClient(config) as hmc:
             return await upload_iso(hmc, system, vios, vg, media_name, iso_source)
 
-    result = _run(_go)
+    result = run(_go)
 
     if as_json:
-        _print_json(result)
+        print_json(result)
     else:
         console.print(
             f"[green]Upload status: {result.get('status', 'unknown')}[/green]"

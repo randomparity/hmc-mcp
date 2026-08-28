@@ -288,7 +288,7 @@ def test_resource_group_cli_delegates_id_zero_and_prints_json():
     )
     operation = AsyncMock(return_value=expected)
     with (
-        patch.object(cli_lpars, "_ssh_config", return_value=_config()),
+        patch.object(cli_lpars, "ssh_config", return_value=_config()),
         patch.object(cli_lpars, "list_resource_group_memopt_scores", operation),
     ):
         result = CliRunner().invoke(

@@ -16,8 +16,8 @@ from ..operations.systems import (
     list_systems,
     power_system,
 )
-from .runtime import _with_client
-from .output import _first_field, _output, _print_json, console, err_console
+from .runtime import with_client
+from .output import first_field, output, print_json, console, err_console
 
 
 def systems_health(
@@ -25,9 +25,9 @@ def systems_health(
 ) -> None:
     """Show exception-only health across the managed estate."""
 
-    result = asdict(_with_client(fleet_health))
+    result = asdict(with_client(fleet_health))
     if as_json:
-        _print_json(result)
+        print_json(result)
         return
     if not any(result.values()):
         console.print("[green]No fleet health exceptions found[/green]")
@@ -54,7 +54,7 @@ def systems_list(
 ) -> None:
     """List managed systems."""
 
-    systems = _with_client(lambda hmc: list_systems(hmc, state))
+    systems = with_client(lambda hmc: list_systems(hmc, state))
 
     table = None
     if not as_json:
@@ -63,13 +63,13 @@ def systems_list(
             table.add_column(col)
         for s in systems:
             table.add_row(
-                _first_field(s, "SystemName"),
+                first_field(s, "SystemName"),
                 s.get("UUID") or "-",
-                _first_field(s, "State"),
-                _first_field(s, "MachineTypeModelSerialNumber", "MTMS"),
-                _first_field(s, "IPAddress", "PrimaryIPAddress"),
+                first_field(s, "State"),
+                first_field(s, "MachineTypeModelSerialNumber", "MTMS"),
+                first_field(s, "IPAddress", "PrimaryIPAddress"),
             )
-    _output(systems, as_json, table, "No managed systems found")
+    output(systems, as_json, table, "No managed systems found")
 
 
 def systems_show(
@@ -77,12 +77,12 @@ def systems_show(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Show full details of one managed system (accepts name or UUID)."""
-    system = _with_client(lambda hmc: get_system(hmc, name_or_uuid))
+    system = with_client(lambda hmc: get_system(hmc, name_or_uuid))
 
     if system is None:
         err_console.print(f"[yellow]System '{name_or_uuid}' not found[/yellow]")
         raise typer.Exit(code=1)
-    _print_json(system)
+    print_json(system)
 
 
 def systems_power_on(
@@ -101,7 +101,7 @@ def systems_power_on(
     if not yes and not typer.confirm(f"Really PowerOn system {name_or_uuid}?"):
         raise typer.Abort()
 
-    job = _with_client(
+    job = with_client(
         lambda hmc: power_system(
             hmc,
             name_or_uuid,
@@ -113,7 +113,7 @@ def systems_power_on(
     )
 
     console.print(f"[green]Submitted PowerOn for {name_or_uuid}[/green]")
-    _print_json(job)
+    print_json(job)
 
 
 def systems_power_off(
@@ -134,7 +134,7 @@ def systems_power_off(
     if not yes and not typer.confirm(f"Really {op} system {name_or_uuid}?"):
         raise typer.Abort()
 
-    job = _with_client(
+    job = with_client(
         lambda hmc: power_system(
             hmc,
             name_or_uuid,
@@ -147,7 +147,7 @@ def systems_power_off(
     )
 
     console.print(f"[green]Submitted {op} for {name_or_uuid}[/green]")
-    _print_json(job)
+    print_json(job)
 
 
 def systems_summary(
@@ -156,9 +156,9 @@ def systems_summary(
 ) -> None:
     """One-call summary: state, MTMS, firmware, LPAR counts, free memory/CPU, VIOS count."""
 
-    result = asdict(_with_client(lambda hmc: system_summary(hmc, name_or_uuid)))
+    result = asdict(with_client(lambda hmc: system_summary(hmc, name_or_uuid)))
     if as_json:
-        _print_json(result)
+        print_json(result)
         return
 
     table = Table(title=f"System Summary: {result.get('name') or name_or_uuid}")
@@ -184,9 +184,9 @@ def systems_capacity(
 ) -> None:
     """Capacity report: memory/CPU totals and free resources per managed system."""
 
-    report = [asdict(item) for item in _with_client(capacity_report)]
+    report = [asdict(item) for item in with_client(capacity_report)]
     if as_json:
-        _print_json(report)
+        print_json(report)
         return
     if not report:
         err_console.print("[yellow]No managed systems found[/yellow]")
@@ -218,7 +218,7 @@ def systems_capacity(
             str(r.get("running_lpars", 0)),
             str(r.get("total_lpars", 0)),
         )
-    _output(report, as_json=False, table=table, empty_msg="No managed systems found")
+    output(report, as_json=False, table=table, empty_msg="No managed systems found")
 
 
 def systems_find_placement(
@@ -230,10 +230,10 @@ def systems_find_placement(
 
     candidates = [
         asdict(item)
-        for item in _with_client(lambda hmc: find_placement(hmc, memory, procs))
+        for item in with_client(lambda hmc: find_placement(hmc, memory, procs))
     ]
     if as_json:
-        _print_json(candidates)
+        print_json(candidates)
         return
     if not candidates:
         err_console.print("[yellow]No systems with sufficient free capacity[/yellow]")
@@ -249,7 +249,7 @@ def systems_find_placement(
             str(r.get("free_proc_units", 0.0)),
             str(r.get("running_lpars", 0)),
         )
-    _output(candidates, as_json=False, table=table, empty_msg="No placement candidates")
+    output(candidates, as_json=False, table=table, empty_msg="No placement candidates")
 
 
 def register_commands(group: typer.Typer) -> None:

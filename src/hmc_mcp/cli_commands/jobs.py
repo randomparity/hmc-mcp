@@ -8,8 +8,8 @@ import typer
 
 from ..operations import jobs as operations_jobs
 
-from .runtime import _with_client
-from .output import _output, _print_json, _usage_error, console, err_console
+from .runtime import with_client
+from .output import output, print_json, usage_error, console, err_console
 
 
 def jobs_show(
@@ -20,14 +20,14 @@ def jobs_show(
 ) -> None:
     """Show status/result of an HMC job."""
 
-    outcome = _with_client(
+    outcome = with_client(
         lambda hmc: operations_jobs.get_job(hmc, job_id, job_href=job_href)
     )
 
     if not outcome.found:
         err_console.print(f"[yellow]Job {job_id} not found[/yellow]")
         raise typer.Exit(code=1)
-    _print_json(asdict(outcome))
+    print_json(asdict(outcome))
 
 
 def jobs_list(
@@ -38,11 +38,11 @@ def jobs_list(
 ) -> None:
     """List recent HMC jobs."""
     if limit < 0:
-        _usage_error("--limit must be greater than or equal to 0")
+        usage_error("--limit must be greater than or equal to 0")
 
-    jobs = _with_client(operations_jobs.list_jobs)
+    jobs = with_client(operations_jobs.list_jobs)
     jobs = jobs[:limit]
-    _output(jobs, as_json, empty_msg="No jobs found")
+    output(jobs, as_json, empty_msg="No jobs found")
 
 
 def jobs_wait(
@@ -61,7 +61,7 @@ def jobs_wait(
     timeout elapses.
     """
 
-    outcome = _with_client(
+    outcome = with_client(
         lambda hmc: operations_jobs.wait_for_job(
             hmc,
             job_id,
@@ -76,7 +76,7 @@ def jobs_wait(
         raise typer.Exit(code=1)
     status = outcome.status or "unknown"
     console.print(f"[green]Job {job_id} status: {status}[/green]")
-    _print_json(asdict(outcome))
+    print_json(asdict(outcome))
 
 
 def register_commands(group: typer.Typer) -> None:

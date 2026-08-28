@@ -10,8 +10,8 @@ from typing import NoReturn
 
 import typer
 
-from hmc_mcp.cli_commands.runtime import _client, _run
-from hmc_mcp.cli_commands.output import _print_json
+from hmc_mcp.cli_commands.runtime import client, run
+from hmc_mcp.cli_commands.output import print_json
 from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
 from hmc_mcp.operations.affinity import PolicyState
 from hmc_mcp.snapshots import (
@@ -23,7 +23,7 @@ from hmc_mcp.snapshots import (
 )
 
 
-def _fail(error: Exception) -> NoReturn:
+def fail(error: Exception) -> NoReturn:
     typer.echo(f"Error: {error}", err=True)
     raise typer.Exit(1) from error
 
@@ -54,7 +54,7 @@ def snapshot_capture(
     """Capture one portable LPAR snapshot without modifying the HMC."""
 
     async def _go():
-        async with _client() as hmc:
+        async with client() as hmc:
             return await capture_lpar_snapshot(
                 hmc,
                 system_name_or_uuid,
@@ -63,11 +63,11 @@ def snapshot_capture(
             )
 
     try:
-        snapshot = _run(_go)
+        snapshot = run(_go)
         _publish(output, serialize_snapshot(snapshot))
     except (SnapshotValidationError, OSError) as exc:
-        _fail(exc)
-    _print_json({"path": str(output), "format": snapshot.format, "version": 1})
+        fail(exc)
+    print_json({"path": str(output), "format": snapshot.format, "version": 1})
 
 
 def snapshot_validate(path: Path) -> None:
@@ -75,8 +75,8 @@ def snapshot_validate(path: Path) -> None:
     try:
         snapshot = read_snapshot(path)
     except (SnapshotValidationError, OSError) as exc:
-        _fail(exc)
-    _print_json({"valid": True, "format": snapshot.format, "version": snapshot.version})
+        fail(exc)
+    print_json({"valid": True, "format": snapshot.format, "version": snapshot.version})
 
 
 def snapshot_inspect(path: Path) -> None:
@@ -84,8 +84,8 @@ def snapshot_inspect(path: Path) -> None:
     try:
         result = inspect_snapshot(read_snapshot_text(path))
     except (SnapshotValidationError, OSError) as exc:
-        _fail(exc)
-    _print_json(result.model_dump(mode="json"))
+        fail(exc)
+    print_json(result.model_dump(mode="json"))
 
 
 def snapshot_assess_affinity(
@@ -100,7 +100,7 @@ def snapshot_assess_affinity(
 ) -> None:
     """Assess captured and explicit current affinity evidence without mutation."""
     try:
-        result = _run(
+        result = run(
             lambda: assess_snapshot_affinity(
                 read_snapshot_text(path),
                 current_score=current_score,
@@ -113,8 +113,8 @@ def snapshot_assess_affinity(
             )
         )
     except (SnapshotValidationError, OSError, ValueError) as exc:
-        _fail(exc)
-    _print_json(asdict(result))
+        fail(exc)
+    print_json(asdict(result))
 
 
 def register_commands(group: typer.Typer) -> None:

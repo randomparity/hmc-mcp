@@ -1057,7 +1057,7 @@ def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeyp
     )
     result = CliRunner().invoke(app, ["serve", "--access-policy", "missing"])
 
-    # `_fail` renders through a rich Console, which hard-folds a non-tty line at
+    # `fail` renders through a rich Console, which hard-folds a non-tty line at
     # 80 columns with no spaces to break on, so a tmp_path substring can fold
     # mid-word between runs. Assert on wrap-proof text instead.
     assert result.exit_code == 1

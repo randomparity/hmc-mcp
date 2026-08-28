@@ -9,8 +9,8 @@ import sys
 
 import typer
 
-from .runtime import _run, _ssh_config, _with_client
-from .output import _output, _print_json
+from .runtime import run, ssh_config, with_client
+from .output import output, print_json
 
 from ..operations.vnic import (
     VnicBackingSelector,
@@ -38,9 +38,9 @@ def network_list_fc_ports(
 ) -> None:
     """List Virtual Fibre Channel (NPIV) adapters on a managed system."""
 
-    ports = _run(lambda: list_fc_ports(_ssh_config(), system_name, lpar_name))
+    ports = run(lambda: list_fc_ports(ssh_config(), system_name, lpar_name))
 
-    _output(ports, as_json, None, "No FC ports found")
+    output(ports, as_json, None, "No FC ports found")
 
 
 def network_list_sea_adapters(
@@ -52,9 +52,9 @@ def network_list_sea_adapters(
 ) -> None:
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports on a managed system."""
 
-    adapters = _run(lambda: list_sea_adapters(_ssh_config(), system_name, lpar_name))
+    adapters = run(lambda: list_sea_adapters(ssh_config(), system_name, lpar_name))
 
-    _output(adapters, as_json, None, "No SEA adapters found")
+    output(adapters, as_json, None, "No SEA adapters found")
 
 
 def network_list_vnics(
@@ -63,8 +63,8 @@ def network_list_vnics(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR (HMC CLI via SSH)."""
-    vnics = _run(lambda: list_vnics(_ssh_config(), system_name, lpar))
-    _output(vnics, as_json, None, "No vNICs found")
+    vnics = run(lambda: list_vnics(ssh_config(), system_name, lpar))
+    output(vnics, as_json, None, "No vNICs found")
 
 
 def network_add_vnic(
@@ -106,9 +106,9 @@ def network_add_vnic(
         except VnicPartialError as exc:
             return exc
 
-    outcome = _with_client(operation)
+    outcome = with_client(operation)
     result = outcome.result if isinstance(outcome, VnicPartialError) else outcome
-    _print_json(asdict(result))
+    print_json(asdict(result))
     if isinstance(outcome, VnicPartialError):
         raise typer.Exit(1)
 
@@ -138,9 +138,9 @@ def network_remove_vnic(
         except VnicPartialError as exc:
             return exc
 
-    outcome = _with_client(operation)
+    outcome = with_client(operation)
     result = outcome.result if isinstance(outcome, VnicPartialError) else outcome
-    _print_json(asdict(result))
+    print_json(asdict(result))
     if isinstance(outcome, VnicPartialError):
         raise typer.Exit(1)
 

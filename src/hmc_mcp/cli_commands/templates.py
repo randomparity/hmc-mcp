@@ -6,8 +6,8 @@ from __future__ import annotations
 import typer
 from rich.table import Table
 
-from .runtime import _with_client
-from .output import _first_field, _output, _print_json, _usage_error, console
+from .runtime import with_client
+from .output import first_field, output, print_json, usage_error, console
 from ..jobs import validate_wait_timing
 from ..operations.templates import (
     deploy_partition_template,
@@ -19,7 +19,7 @@ from ..operations.templates import (
 def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
     """List partition templates in the template library."""
 
-    templates = _with_client(list_partition_templates)
+    templates = with_client(list_partition_templates)
 
     table = None
     if not as_json:
@@ -28,17 +28,17 @@ def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
             table.add_column(col)
         for t in templates:
             table.add_row(
-                _first_field(t, "templateName", "TemplateName"), t.get("UUID") or "-"
+                first_field(t, "templateName", "TemplateName"), t.get("UUID") or "-"
             )
-    _output(templates, as_json, table, "No partition templates found")
+    output(templates, as_json, table, "No partition templates found")
 
 
 def templates_show(uuid: str = typer.Argument(..., help="Template UUID")) -> None:
     """Show one partition template."""
 
-    t = _with_client(lambda hmc: get_partition_template(hmc, uuid))
+    t = with_client(lambda hmc: get_partition_template(hmc, uuid))
 
-    _print_json(t)
+    print_json(t)
 
 
 def templates_deploy(
@@ -55,13 +55,13 @@ def templates_deploy(
     try:
         validate_wait_timing(wait, timeout_seconds, poll_interval)
     except ValueError as exc:
-        _usage_error(str(exc))
+        usage_error(str(exc))
     if not yes and not typer.confirm(
         f"Deploy draft template {draft_uuid} to system {system}?"
     ):
         raise typer.Abort()
 
-    result = _with_client(
+    result = with_client(
         lambda hmc: deploy_partition_template(
             hmc,
             draft_uuid,
@@ -73,7 +73,7 @@ def templates_deploy(
     )
 
     console.print(f"[green]Deploy job for template {draft_uuid}[/green]")
-    _print_json(result)
+    print_json(result)
 
 
 def register_commands(group: typer.Typer) -> None:

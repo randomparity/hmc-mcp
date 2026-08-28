@@ -185,7 +185,7 @@ def test_cli_capture_existing_destination_is_concise(
     destination = tmp_path / "snapshot.json"
     destination.write_text("original", encoding="utf-8")
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.snapshot._run",
+        "hmc_mcp.cli_commands.snapshot.run",
         lambda operation: SimpleNamespace(format="hmc-mcp.lpar-snapshot", version=1),
     )
     monkeypatch.setattr("hmc_mcp.cli_commands.snapshot.serialize_snapshot", lambda value: "{}")

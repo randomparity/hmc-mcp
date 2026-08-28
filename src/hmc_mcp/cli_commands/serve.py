@@ -7,8 +7,8 @@ from typing import Final
 
 import typer
 
-from .output import _fail, _usage_error
-from .runtime import _current_options
+from .output import fail, usage_error
+from .runtime import current_options
 
 _AUDIT_LEVELS: Final = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
@@ -94,7 +94,7 @@ def serve(
     from .. import server
     from ..authorization.access_policy import AccessPolicyError, load_access_policy
 
-    command_line_options = _current_options().command_line_options
+    command_line_options = current_options().command_line_options
     if command_line_options:
         options = ", ".join(
             f"--{name.replace('_', '-')}" for name in sorted(command_line_options)
@@ -106,11 +106,11 @@ def serve(
 
     level = _audit_level(audit_level)
     if access_policy is None:
-        _usage_error(_no_policy_selected("serve requires --access-policy NAME"))
+        usage_error(_no_policy_selected("serve requires --access-policy NAME"))
 
     resolved = _policy_file()
     if resolved is not None and not resolved[1]:
-        _fail(
+        fail(
             FileNotFoundError(
                 _no_policy_selected(f"no access-policy file at {resolved[0]}")
             )
@@ -119,7 +119,7 @@ def serve(
     try:
         policy = load_access_policy(access_policy, server.TOOL_SECURITY)
     except AccessPolicyError as exc:
-        _fail(exc)
+        fail(exc)
 
     if http:
         try:

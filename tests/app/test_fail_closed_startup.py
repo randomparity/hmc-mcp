@@ -361,10 +361,10 @@ def test_error_text_survives_square_brackets(capsys):
     empty string, so the generator's most important diagnostic named a key the operator
     could not see.
     """
-    from hmc_mcp.cli_commands.output import _fail
+    from hmc_mcp.cli_commands.output import fail
 
     with pytest.raises(typer.Exit):
-        _fail(ValueError('came from a [profiles." prod"] key in config.toml'))
+        fail(ValueError('came from a [profiles." prod"] key in config.toml'))
 
     assert '[profiles." prod"]' in _unstyle(capsys.readouterr().err)
 
@@ -375,10 +375,10 @@ def test_error_text_survives_a_closing_tag_shape(capsys):
     `_check_entries` renders the offending value under `repr()`, so a profile key like
     `[/prod]` reaches this helper as literal text and must not be parsed as markup.
     """
-    from hmc_mcp.cli_commands.output import _usage_error
+    from hmc_mcp.cli_commands.output import usage_error
 
     with pytest.raises(typer.Exit):
-        _usage_error("connections entry '[/prod]' is empty or padded")
+        usage_error("connections entry '[/prod]' is empty or padded")
 
     assert "'[/prod]'" in _unstyle(capsys.readouterr().err)
 

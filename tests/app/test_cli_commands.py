@@ -1,11 +1,11 @@
 """Direct CLI command tests via ``typer.testing.CliRunner``.
 
-The REST-backed commands all funnel through ``cli_runtime._client`` and the SSH-backed
+The REST-backed commands all funnel through ``cli_runtime.client`` and the SSH-backed
 commands through ``ssh_commands.run_hmc_command``. These tests monkeypatch those
 two boundaries so every command runs against a scripted fake — no HTTP, no SSH.
 
-This closes the CLI blind spot where only the helpers (``_ssh_config``,
-``_output``) were exercised and no command body was ever invoked, so the
+This closes the CLI blind spot where only the helpers (``ssh_config``,
+``output``) were exercised and no command body was ever invoked, so the
 highest-complexity commands (lpars power/create/modify/delete, storage
 create-vg/create-disk) had zero direct coverage.
 """
@@ -50,7 +50,7 @@ def _patch_ssh_command(monkeypatch, replacement) -> None:
         }
     )
     for module in (cli_lpars, cli_pcie, cli_vnic):
-        monkeypatch.setattr(module, "_ssh_config", lambda: config)
+        monkeypatch.setattr(module, "ssh_config", lambda: config)
     for module in (ssh_affinity, ssh_lpar, ssh_network, ssh_profiles):
         monkeypatch.setattr(module, "run_hmc_command", replacement)
 
@@ -77,7 +77,7 @@ def _configured_ssh_config(monkeypatch) -> None:
         }
     )
     for module in (cli_lpars, cli_pcie, cli_vnic):
-        monkeypatch.setattr(module, "_ssh_config", lambda: config)
+        monkeypatch.setattr(module, "ssh_config", lambda: config)
 
 
 class FakeHMC:
@@ -85,7 +85,7 @@ class FakeHMC:
 
     Each method records its call on ``calls`` (name, args, kwargs) and returns
     canned data; set ``fail_on`` to a method name to make that method raise
-    :class:`HMCError`, exercising the CLI's ``_fail`` error path.
+    :class:`HMCError`, exercising the CLI's ``fail`` error path.
     """
 
     def __init__(self):
@@ -753,7 +753,7 @@ def test_lpars_summary_renders_numeric_zero(monkeypatch):
         [],
     )
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.lpar.inventory._with_client", lambda _operation: summary
+        "hmc_mcp.cli_commands.lpar.inventory.with_client", lambda _operation: summary
     )
 
     result = RUNNER.invoke(cli.app, ["lpars", "summary", "zero-lpar"])
@@ -1640,7 +1640,7 @@ def test_storage_attach_disk_json_incomplete_workflow_exits_1(fake_hmc):
 # storage: command bodies (#240)
 #
 # cli_storage's commands come in three shapes with different injection points:
-#   A  _with_client(lambda hmc: op(...))          -> patch hmc_mcp.cli_commands.storage.<op>
+#   A  with_client(lambda hmc: op(...))          -> patch hmc_mcp.cli_commands.storage.<op>
 #   B  _run(_go) building its own HMCClient, op   -> patch load_profile/HMCClient here
 #      imported inside the function                 and the op on operations_storage
 #   C  as B, but the op is imported at module top -> patch all three on cli_storage
@@ -2103,7 +2103,7 @@ def test_run_propagates_a_typer_exit_code_unchanged():
     """``_run`` must not rewrite a closure's chosen exit code to 1.
 
     ``typer.Exit`` subclasses ``RuntimeError``, so the catch-all would otherwise
-    route the sentinel through ``_fail`` and report exit 1 -- turning a usage
+    route the sentinel through ``fail`` and report exit 1 -- turning a usage
     error (code 2) into a generic failure.
     """
 
@@ -2111,13 +2111,13 @@ def test_run_propagates_a_typer_exit_code_unchanged():
         raise typer.Exit(code=2)
 
     with pytest.raises(typer.Exit) as excinfo:
-        cli_runtime._run(_go)
+        cli_runtime.run(_go)
 
     assert excinfo.value.exit_code == 2
 
 
 def test_with_client_propagates_a_typer_exit_code_unchanged(monkeypatch):
-    """``_with_client`` shares ``_run``'s control-flow passthrough."""
+    """``with_client`` shares ``_run``'s control-flow passthrough."""
 
     def boom(coroutine):
         coroutine.close()
@@ -2126,7 +2126,7 @@ def test_with_client_propagates_a_typer_exit_code_unchanged(monkeypatch):
     monkeypatch.setattr("hmc_mcp.cli_commands.runtime.asyncio.run", boom)
 
     with pytest.raises(typer.Exit) as excinfo:
-        cli_runtime._with_client(lambda hmc: None)
+        cli_runtime.with_client(lambda hmc: None)
 
     assert excinfo.value.exit_code == 2
 
@@ -2187,7 +2187,7 @@ def test_storage_upload_iso_json(direct_client, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# failure path (_fail)
+# failure path (fail)
 # --------------------------------------------------------------------------- #
 
 
@@ -2808,7 +2808,7 @@ def test_add_vnic_cli_default_confirmation_keeps_stdout_json(monkeypatch):
     operation = AsyncMock(return_value=_vnic_result("add"))
     monkeypatch.setattr("hmc_mcp.cli_commands.vnic.add_vnic", operation)
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.vnic._with_client",
+        "hmc_mcp.cli_commands.vnic.with_client",
         lambda fn: asyncio.run(fn(object())),
     )
 
@@ -2847,7 +2847,7 @@ def test_remove_vnic_cli_default_confirmation_keeps_partial_stdout_json(monkeypa
     operation = AsyncMock(side_effect=partial)
     monkeypatch.setattr("hmc_mcp.cli_commands.vnic.remove_vnic", operation)
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.vnic._with_client",
+        "hmc_mcp.cli_commands.vnic.with_client",
         lambda fn: asyncio.run(fn(object())),
     )
 
