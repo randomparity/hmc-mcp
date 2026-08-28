@@ -315,6 +315,7 @@ async def _run_storage_leg(
 
 async def attach_disk_to_lpar(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     storage: ProvisionStorage,
     *,
@@ -322,7 +323,6 @@ async def attach_disk_to_lpar(
     vios_partition_id: int,
     vios_slot: int,
     dry_run: bool = False,
-    system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> AttachDiskResult:
     """Create and attach a virtual disk to an existing LPAR."""
@@ -347,8 +347,8 @@ async def attach_disk_to_lpar(
 
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        lpar_name_or_uuid,
         system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
 

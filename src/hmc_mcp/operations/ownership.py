@@ -236,8 +236,8 @@ async def _verify_partition_on_system(
 
 async def resolve_and_authorize_lpar_mutation(
     hmc: HMCClient,
-    lpar_name_or_uuid: str,
     system_name_or_uuid: str | None,
+    lpar_name_or_uuid: str,
     *,
     ownership_override: bool,
 ) -> str:

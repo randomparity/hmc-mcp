@@ -79,6 +79,7 @@ CASES: tuple[tuple[str, Operation], ...] = (
         "hmc_mcp.operations.lpar.provision.resolve_and_authorize_lpar_mutation",
         lambda hmc: attach_disk_to_lpar(
             hmc,
+            None,
             LPAR,
             ProvisionStorage(VIOS, "disk1", vg_uuid=VG),
             capacity_mib=1024,
@@ -88,19 +89,19 @@ CASES: tuple[tuple[str, Operation], ...] = (
     ),
     (
         "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
-        lambda hmc: migrate_lpar(hmc, LPAR, "target", validate_first=False),
+        lambda hmc: migrate_lpar(hmc, None, LPAR, "target", validate_first=False),
     ),
     (
         "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
-        lambda hmc: abort_lpar_migration(hmc, LPAR),
+        lambda hmc: abort_lpar_migration(hmc, None, LPAR),
     ),
     (
         "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
-        lambda hmc: recover_lpar_migration(hmc, LPAR),
+        lambda hmc: recover_lpar_migration(hmc, None, LPAR),
     ),
     (
         "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
-        lambda hmc: remote_restart_lpar(hmc, LPAR, "cleanup", "source"),
+        lambda hmc: remote_restart_lpar(hmc, "source", LPAR, "cleanup"),
     ),
 )
 

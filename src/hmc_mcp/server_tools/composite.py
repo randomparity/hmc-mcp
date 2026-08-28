@@ -33,9 +33,7 @@ def hmc_lpar_summary(
     async def _go():
         async with client_from_env(profile) as hmc:
             return asdict(
-                await lpar_summary(
-                    hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
-                )
+                await lpar_summary(hmc, system_name_or_uuid, lpar_name_or_uuid)
             )
 
     return run_sync(_go)

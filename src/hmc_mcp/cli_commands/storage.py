@@ -157,6 +157,7 @@ def storage_attach_disk(
     result = _with_client(
         lambda hmc: attach_disk_to_lpar(
             hmc,
+            None,
             lpar,
             ProvisionStorage(vios, name, vg_uuid=vg),
             capacity_mib=capacity_mib,

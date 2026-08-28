@@ -155,13 +155,13 @@ def hmc_attach_disk_to_lpar(
         async with client_from_env(profile) as hmc:
             return await attach_disk_to_lpar(
                 hmc,
+                system_name_or_uuid,
                 lpar_name_or_uuid,
                 ProvisionStorage(vios_uuid, disk_name, vg_uuid=vg_uuid),
                 capacity_mib=capacity_mib,
                 vios_partition_id=vios_partition_id,
                 vios_slot=vios_slot,
                 dry_run=dry_run,
-                system_name_or_uuid=system_name_or_uuid,
                 ownership_override=ownership_override,
             )
 

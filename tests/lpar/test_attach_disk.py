@@ -21,7 +21,7 @@ VG_UUID = "33333333-3333-3333-3333-333333333333"
 
 @pytest.fixture(autouse=True)
 def _authorize_lpar_mutations(monkeypatch):
-    async def authorize(_hmc, lpar, _system, **_kwargs):
+    async def authorize(_hmc, _system, lpar, **_kwargs):
         return lpar
 
     monkeypatch.setattr(
@@ -46,6 +46,7 @@ async def test_attach_disk_dry_run_validates_without_mutating() -> None:
 
     result = await attach_disk_to_lpar(
         client,
+        None,
         "existing-lpar",
         _storage(),
         capacity_mib=1024,
@@ -81,6 +82,7 @@ async def test_attach_disk_runs_shared_storage_leg_in_order() -> None:
 
     result = await attach_disk_to_lpar(
         client,
+        None,
         LPAR_UUID,
         _storage(),
         capacity_mib=1024,
@@ -116,6 +118,7 @@ async def test_attach_disk_reports_partial_failure_and_skips_remainder() -> None
 
     result = await attach_disk_to_lpar(
         client,
+        None,
         LPAR_UUID,
         _storage(),
         capacity_mib=1024,
@@ -135,6 +138,7 @@ async def test_attach_disk_rejects_invalid_capacity_before_mutating() -> None:
     with pytest.raises(ValueError, match="capacity_mib must be greater than zero"):
         await attach_disk_to_lpar(
             client,
+            None,
             LPAR_UUID,
             _storage(),
             capacity_mib=0,
@@ -158,6 +162,7 @@ async def test_attach_disk_dry_run_makes_no_unclassified_call() -> None:
 
     await attach_disk_to_lpar(
         client,
+        None,
         "existing-lpar",
         _storage(),
         capacity_mib=1024,

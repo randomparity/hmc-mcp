@@ -166,7 +166,7 @@ def test_lpar_summary_cli_delegates_to_neutral_operation():
     ):
         result = CliRunner().invoke(app, ["lpars", "summary", "aix1", "--json"])
     assert result.exit_code == 0
-    summary.assert_awaited_once_with(client, "aix1")
+    summary.assert_awaited_once_with(client, None, "aix1")
 
 
 def test_system_summary_cli_delegates_to_neutral_operation():

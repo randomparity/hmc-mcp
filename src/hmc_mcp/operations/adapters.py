@@ -44,8 +44,8 @@ async def add_network_adapter(
 ) -> AdapterResult:
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        lpar_name_or_uuid,
         system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
     resource = await hmc.add_network_adapter(
@@ -71,8 +71,8 @@ async def add_vscsi_adapter(
 ) -> AdapterResult:
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        lpar_name_or_uuid,
         system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
     resource = await hmc.add_vscsi_adapter(lpar_uuid, vios_partition_id, vios_slot, slot)
@@ -91,8 +91,8 @@ async def add_vfc_adapter(
 ) -> AdapterResult:
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        lpar_name_or_uuid,
         system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
     resource = await hmc.add_vfc_adapter(lpar_uuid, vios_partition_id, vios_slot, slot)
@@ -111,8 +111,8 @@ async def delete_adapter(
     validate_adapter_type(adapter_type)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        lpar_name_or_uuid,
         system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
     await hmc.delete_adapter(lpar_uuid, adapter_type, adapter_uuid)

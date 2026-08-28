@@ -77,6 +77,7 @@ def lpars_migrate(
     async def _fn(hmc):
         return await migrate_lpar(
             hmc,
+            None,
             name_or_uuid,
             target,
             profile,
@@ -129,6 +130,7 @@ def lpars_migrate_affinity(
     async def _fn(hmc):
         return await migrate_lpar_with_affinity_preflight(
             hmc,
+            None,
             name_or_uuid,
             target,
             request,
@@ -152,7 +154,7 @@ def lpars_migrate_validate(
 
     async def _fn(hmc):
         return await validate_lpar_migration(
-            hmc, name_or_uuid, target, profile, wait_time
+            hmc, None, name_or_uuid, target, profile, wait_time
         )
 
     _lpm_run(name_or_uuid, _fn, "MigrateValidate", target, yes)
@@ -176,6 +178,7 @@ def lpars_migrate_abort(
     async def _fn(hmc):
         return await abort_lpar_migration(
             hmc,
+            None,
             name_or_uuid,
             wait=wait,
             timeout_seconds=timeout,
@@ -204,6 +207,7 @@ def lpars_migrate_recover(
     async def _fn(hmc):
         return await recover_lpar_migration(
             hmc,
+            None,
             name_or_uuid,
             wait=wait,
             timeout_seconds=timeout,
@@ -245,9 +249,9 @@ def lpars_remote_restart(
     async def _fn(hmc):
         return await remote_restart_lpar(
             hmc,
+            system,
             name_or_uuid,
             cast(RemoteRestartOperation, operation),
-            system,
             target_system_name_or_uuid=target,
             use_current_data=use_current_data,
             retain_devices=retain_devices,

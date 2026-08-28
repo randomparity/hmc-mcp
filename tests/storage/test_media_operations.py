@@ -15,7 +15,7 @@ from hmc_mcp.operations.storage import (
 
 @pytest.fixture(autouse=True)
 def _authorize_lpar_mutations(monkeypatch):
-    async def authorize(hmc, lpar, system, **_kwargs):
+    async def authorize(hmc, system, lpar, **_kwargs):
         from hmc_mcp.resource_identity import resolve_lpar_uuid
 
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)

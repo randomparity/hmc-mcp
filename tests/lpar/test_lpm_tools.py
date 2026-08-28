@@ -50,7 +50,7 @@ JOB_OUTCOME_KEYS = {
 
 @pytest.fixture(autouse=True)
 def _authorize_lpar_mutations(monkeypatch):
-    async def authorize(hmc, lpar, system, **_kwargs):
+    async def authorize(hmc, system, lpar, **_kwargs):
         from hmc_mcp.resource_identity import resolve_lpar_uuid
 
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
@@ -68,12 +68,12 @@ LPM_RECOVERY_TOOL_CASES = [
     ),
 ]
 LPM_RECOVERY_OPERATION_CASES = [
-    (abort_lpar_migration, "lpar_migrate_abort", (LPAR_UUID,)),
-    (recover_lpar_migration, "lpar_migrate_recover", (LPAR_UUID,)),
+    (abort_lpar_migration, "lpar_migrate_abort", (None, LPAR_UUID)),
+    (recover_lpar_migration, "lpar_migrate_recover", (None, LPAR_UUID)),
     (
         remote_restart_lpar,
         "lpar_remote_restart",
-        (LPAR_UUID, "restart", "source-system"),
+        ("source-system", LPAR_UUID, "restart"),
     ),
 ]
 

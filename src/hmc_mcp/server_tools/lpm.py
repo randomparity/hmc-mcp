@@ -72,6 +72,7 @@ def hmc_migrate_lpar(
         async with client_from_env(profile) as hmc:
             result = await migrate_lpar(
                 hmc,
+                system_name_or_uuid,
                 lpar_name_or_uuid,
                 target_system_name_or_uuid,
                 target_profile_name,
@@ -80,7 +81,6 @@ def hmc_migrate_lpar(
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
                 validate_first=validate_first,
-                system_name_or_uuid=system_name_or_uuid,
                 ownership_override=ownership_override,
             )
             return result.job
@@ -126,6 +126,7 @@ def hmc_migrate_lpar_with_affinity_preflight(
         async with client_from_env(profile) as hmc:
             return await migrate_lpar_with_affinity_preflight(
                 hmc,
+                system_name_or_uuid,
                 lpar_name_or_uuid,
                 target_system_name_or_uuid,
                 affinity_preflight,
@@ -134,7 +135,6 @@ def hmc_migrate_lpar_with_affinity_preflight(
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
-                system_name_or_uuid=system_name_or_uuid,
                 ownership_override=ownership_override,
             )
 
@@ -177,6 +177,7 @@ def hmc_migrate_validate_lpar(
         async with client_from_env(profile) as hmc:
             result = await validate_lpar_migration(
                 hmc,
+                system_name_or_uuid,
                 lpar_name_or_uuid,
                 target_system_name_or_uuid,
                 target_profile_name,
@@ -184,7 +185,6 @@ def hmc_migrate_validate_lpar(
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
-                system_name_or_uuid=system_name_or_uuid,
             )
             return result.job
 
@@ -224,11 +224,11 @@ def hmc_migrate_abort_lpar(
         async with client_from_env(profile) as hmc:
             result = await abort_lpar_migration(
                 hmc,
+                system_name_or_uuid,
                 lpar_name_or_uuid,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
-                system_name_or_uuid=system_name_or_uuid,
                 ownership_override=ownership_override,
             )
             return result.job
@@ -269,12 +269,12 @@ def hmc_migrate_recover_lpar(
         async with client_from_env(profile) as hmc:
             result = await recover_lpar_migration(
                 hmc,
+                system_name_or_uuid,
                 lpar_name_or_uuid,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
                 ownership_override=ownership_override,
-                system_name_or_uuid=system_name_or_uuid,
             )
             return result.job
 
@@ -320,9 +320,9 @@ def hmc_remote_restart_lpar(
         async with client_from_env(profile) as hmc:
             result = await remote_restart_lpar(
                 hmc,
+                system_name_or_uuid,
                 lpar_name_or_uuid,
                 operation,
-                system_name_or_uuid,
                 target_system_name_or_uuid=target_system_name_or_uuid,
                 use_current_data=use_current_data,
                 retain_devices=retain_devices,

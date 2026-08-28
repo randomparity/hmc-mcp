@@ -42,8 +42,8 @@ async def modify_lpar(
 
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        lpar_name_or_uuid,
         system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
     resource = None
@@ -93,8 +93,8 @@ async def _apply_dlpar_document(
     """Authorize one partition, then POST a partial LogicalPartition document."""
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        lpar_name_or_uuid,
         system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
     try:

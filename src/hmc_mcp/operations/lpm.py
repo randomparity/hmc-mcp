@@ -225,6 +225,7 @@ async def run_lpm_affinity_preflight(
 
 async def migrate_lpar_with_affinity_preflight(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     target_system_name_or_uuid: str,
     affinity_preflight: LpmAffinityPreflightRequest,
@@ -234,7 +235,6 @@ async def migrate_lpar_with_affinity_preflight(
     wait: bool = False,
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
-    system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> LpmAffinityMigrationResult:
     """Run affinity preflight before canonical validation-first migration.
@@ -248,6 +248,7 @@ async def migrate_lpar_with_affinity_preflight(
         return LpmAffinityMigrationResult(None, preflight, None)
     result = await migrate_lpar(
         hmc,
+        system_name_or_uuid,
         lpar_name_or_uuid,
         target_system_name_or_uuid,
         target_profile_name,
@@ -256,7 +257,6 @@ async def migrate_lpar_with_affinity_preflight(
         timeout_seconds=timeout_seconds,
         poll_interval=poll_interval,
         validate_first=True,
-        system_name_or_uuid=system_name_or_uuid,
         ownership_override=ownership_override,
     )
     return LpmAffinityMigrationResult(result.lpar_uuid, preflight, result.job)
@@ -296,6 +296,7 @@ async def _submit_migration_job(
 
 async def validate_lpar_migration(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     target_system_name_or_uuid: str,
     target_profile_name: str | None = None,
@@ -304,7 +305,6 @@ async def validate_lpar_migration(
     wait: bool = False,
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
-    system_name_or_uuid: str | None = None,
 ) -> LpmResult:
     """Resolve selectors and submit standalone LPM validation.
 
@@ -332,6 +332,7 @@ async def validate_lpar_migration(
 
 async def migrate_lpar(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     target_system_name_or_uuid: str,
     target_profile_name: str | None = None,
@@ -341,7 +342,6 @@ async def migrate_lpar(
     wait: bool = False,
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
-    system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> LpmResult:
     """Resolve selectors and submit a migration, optionally validating first.
@@ -377,8 +377,8 @@ async def migrate_lpar(
             )
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        lpar_name_or_uuid,
         system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
     job = await _submit_migration_job(
@@ -397,12 +397,12 @@ async def migrate_lpar(
 
 async def abort_lpar_migration(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     *,
     wait: bool = False,
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
-    system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> LpmResult:
     """Resolve and abort an in-progress migration.
@@ -413,8 +413,8 @@ async def abort_lpar_migration(
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        lpar_name_or_uuid,
         system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
     job = await hmc.lpar_migrate_abort(lpar_uuid)
@@ -426,12 +426,12 @@ async def abort_lpar_migration(
 
 async def recover_lpar_migration(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     *,
     wait: bool = False,
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
-    system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> LpmResult:
     """Resolve and recover a failed migration.
@@ -442,8 +442,8 @@ async def recover_lpar_migration(
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        lpar_name_or_uuid,
         system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
     job = await hmc.lpar_migrate_recover(lpar_uuid)
@@ -455,9 +455,9 @@ async def recover_lpar_migration(
 
 async def remote_restart_lpar(
     hmc: HMCClient,
+    system_name_or_uuid: str,
     lpar_name_or_uuid: str,
     operation: RemoteRestartOperation,
-    system_name_or_uuid: str,
     *,
     target_system_name_or_uuid: str | None = None,
     use_current_data: bool = False,
@@ -475,8 +475,8 @@ async def remote_restart_lpar(
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        lpar_name_or_uuid,
         system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
     source_system = await resolve_system_name(hmc, system_name_or_uuid)

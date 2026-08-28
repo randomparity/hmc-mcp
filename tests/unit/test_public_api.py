@@ -1828,31 +1828,15 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     create_parameters = inspect.signature(api.create_logical_unit).parameters
     assert create_parameters["cloned_from"].kind is inspect.Parameter.KEYWORD_ONLY
     assert create_parameters["cloned_from"].default is None
-    for operation_name in (
-        "add_network_adapter",
-        "apply_lpar_pcie_assignments",
-        "add_vfc_adapter",
-        "add_vscsi_adapter",
-        "delete_adapter",
-        "install_lpar_os",
-        "list_adapters",
-        "list_fc_ports",
-            "list_lpar_memopt_scores",
-            "list_sea_adapters",
-            "list_vnics",
-            "get_lpar_memopt_score",
-            "get_minimum_affinity_policy",
-            "modify_lpar",
-            "power_lpar",
-        "set_minimum_affinity_policy",
-        "set_lpar_memory",
-        "set_lpar_processors",
-    ):
-        selector_names = [
-            name
-            for name in inspect.signature(getattr(api, operation_name)).parameters
-            if name in {"system_name_or_uuid", "lpar_name_or_uuid"}
-        ]
+    for operation_name in api.__all__:
+        member = getattr(api, operation_name)
+        if not inspect.isfunction(member):
+            continue
+        parameters = inspect.signature(member).parameters
+        selectors = {"system_name_or_uuid", "lpar_name_or_uuid"}
+        if not selectors.issubset(parameters):
+            continue
+        selector_names = [name for name in parameters if name in selectors]
         assert selector_names == ["system_name_or_uuid", "lpar_name_or_uuid"]
     for operation_name in (
         "get_system_memopt_score",
@@ -1910,7 +1894,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # of accepting an untyped keyword bag.
     # PCM metric controls are keyword-only after the resource selector.
     # PCIe assignment selectors now state their accepted name-or-UUID vocabulary.
-    expected_digest = "072cc5df2379aa5682e6c1a984534d1e0ba873d21004d4664fff76a5a64f50b8"  # pragma: allowlist secret
+    # Every LPAR operation now places the system selector before the LPAR selector.
+    expected_digest = "2f2a1250551461d35ba6f29f64e71dbfebb6eb7a722f3debd3c40200a6ee639b"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

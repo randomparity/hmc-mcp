@@ -34,7 +34,7 @@ def lpars_summary(
 
     async def _go():
         async with _client() as hmc:
-            return await lpar_summary(hmc, name_or_uuid)
+            return await lpar_summary(hmc, None, name_or_uuid)
 
     summary = asdict(_run(_go))
 

@@ -27,6 +27,13 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ## [Unreleased]
 
+### Changed
+
+- Exported LPAR operations now place `system_name_or_uuid` before
+  `lpar_name_or_uuid`, including LPM, disk attachment, summaries, ownership
+  authorization, and PCIe assignment workflows. Presentation adapters pass
+  `None` when they intentionally request fleet-wide LPAR-name resolution.
+
 ### Added
 
 - `StorageMapResult` records the authorized LPAR UUID beside the resource returned by
