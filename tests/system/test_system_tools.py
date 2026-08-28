@@ -663,14 +663,17 @@ def test_vios_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
     assert result[0]["Resource"]["PartitionState"] == "running"
 
 
-def test_vios_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
-    """hmc_list_vios(state='no-match') returns [] when the search matches nothing."""
+def test_vios_state_filter_rejects_unknown_state(monkeypatch, mock_hmc):
+    """The shared inventory boundary rejects values outside PartitionState."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(
+    route = mock_hmc.get(
         "/rest/api/uom/VirtualIOServer/search/(PartitionState==no-match)"
-    ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
-    result = hmc_list_vios(state="no-match")
-    assert result == []
+    )
+
+    with pytest.raises(ValueError, match="state must be one of"):
+        hmc_list_vios(state="no-match")
+
+    assert not route.called
 
 
 def test_vios_rejects_conflicting_selectors():

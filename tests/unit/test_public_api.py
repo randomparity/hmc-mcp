@@ -147,6 +147,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "LparCreation",
         "LparCreationResult",
         "LparPowerResult",
+        "PartitionState",
         "ProcessorCompatibilityMode",
         "read_lpar_boot_order",
         "set_lpar_boot_order",
@@ -291,6 +292,8 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "get_partition_template",
         "deploy_partition_template",
         "list_vios_backups",
+        "list_vios",
+        "get_vios",
         "backup_vios",
         "create_vios",
         "delete_vios",
@@ -1895,7 +1898,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # PCM metric controls are keyword-only after the resource selector.
     # PCIe assignment selectors now state their accepted name-or-UUID vocabulary.
     # Every LPAR operation now places the system selector before the LPAR selector.
-    expected_digest = "2f2a1250551461d35ba6f29f64e71dbfebb6eb7a722f3debd3c40200a6ee639b"  # pragma: allowlist secret
+    # VIOS inventory operations and their PartitionState selector joined the facade.
+    expected_digest = "470b1883ccc0fe78a0322a95b359d80ed2cb4b4150cd8598d922d82d4242c0d4"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -2058,6 +2062,19 @@ _FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[object, ...]] = {
     ),
     "OsType": ("aix", "linux", "ibmi"),
     "PartitionType": ("AIX/Linux", "OS400", "Virtual IO Server"),
+    "PartitionState": (
+        "running",
+        "not activated",
+        "starting",
+        "shutting down",
+        "stopping",
+        "open firmware",
+        "error",
+        "migrating",
+        "suspended",
+        "resuming",
+        "unknown",
+    ),
     "PcmCategory": ("ManagedSystem", "LogicalPartition"),
     "PolicyState": ("configured", "absent", "unsupported"),
     "PowerOffPolicy": (0, 1),

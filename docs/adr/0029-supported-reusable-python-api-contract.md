@@ -189,8 +189,8 @@ names are internal everywhere and are never inventoried.
 - `operations.lpar.configuration` — exports: `configure_lpar_msp`,
   `configure_lpar_processor_compatibility`, `synchronize_lpar_profile`.
 - `operations.lpar.core` — exports: `LparCreation`, `LparCreationResult`,
-  `LparPowerResult`, `ProcessorCompatibilityMode`, `create_and_stamp_lpar`, `delete_lpar`,
-  `power_lpar`, `rename_lpar`.
+  `LparPowerResult`, `PartitionState`, `ProcessorCompatibilityMode`, `create_and_stamp_lpar`,
+  `delete_lpar`, `power_lpar`, `rename_lpar`.
 - `operations.lpar.decommission` — exports: `DecommissionResult`, `decommission_lpar`.
 - `operations.lpar.dlpar` — exports: `modify_lpar`, `set_lpar_memory`,
   `set_lpar_processors`.
@@ -258,7 +258,8 @@ names are internal everywhere and are never inventoried.
 - `operations.users` — operations: `configure_remote_access`, `create_user`, `delete_user`,
   `modify_user`; types: `CreateUserRequest`, `ModifyUserPatch`; excluded synchronous: none.
 - `operations.vios` — operations: `backup_vios`, `create_vios`, `delete_vios`,
-  `list_vios_backups`, `power_vios`, `restore_vios`; types: `BackupType`, `RestoreBackupType`;
+  `get_vios`, `list_vios`, `list_vios_backups`, `power_vios`, `restore_vios`; types:
+  `BackupType`, `RestoreBackupType`;
   excluded synchronous: `validate_vios_backup_name`.
 - `snapshots` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
   `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,

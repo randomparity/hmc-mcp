@@ -395,6 +395,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `get_vios`, `list_vios`, and the latter's `PartitionState` selector
+  type as the shared VIOS inventory boundary used by both presentation layers.
 - Added: `get_system`, `list_systems`, and their `ManagedSystemState` selector type as
   the shared managed-system read boundary used by both presentation layers.
 - Added: `CreateUserRequest` and `ModifyUserPatch`; `create_user` and `modify_user`

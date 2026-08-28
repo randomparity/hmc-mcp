@@ -20,6 +20,41 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
+from hmc_mcp.operations.lpar.core import PARTITION_STATES, PartitionState
+
+
+async def list_vios(
+    hmc: HMCClient,
+    system_name_or_uuid: str | None = None,
+    state: PartitionState | None = None,
+) -> list[dict[str, Any]]:
+    """List VIOSes, optionally scoped to one system or partition state."""
+    if system_name_or_uuid is not None and state is not None:
+        raise ValueError("Provide at most one of system_name_or_uuid or state")
+    if state is not None:
+        if state not in PARTITION_STATES:
+            allowed = ", ".join(sorted(PARTITION_STATES))
+            raise ValueError(f"state must be one of: {allowed}")
+        return await hmc.search_uom("VirtualIOServer", "PartitionState", state)
+    system_uuid = (
+        await resolve_system_uuid(hmc, system_name_or_uuid)
+        if system_name_or_uuid is not None
+        else None
+    )
+    return await hmc.list_vios(system_uuid)
+
+
+async def get_vios(
+    hmc: HMCClient,
+    vios_name_or_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
+) -> dict[str, Any] | None:
+    """Get one VIOS storage-detail resource by a system-scoped selector."""
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
+    return await hmc.get_vios_storage_detail(vios_uuid)
 
 
 async def create_vios(

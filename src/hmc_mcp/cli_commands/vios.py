@@ -16,13 +16,13 @@ from .app import (
     console,
 )
 from ..jobs import validate_wait_timing
-from ..operations.vios import power_vios
+from ..operations.vios import list_vios, power_vios
 from ..operations.lpar.core import PartitionState
 
 
 def vios_list(
     system: str | None = typer.Option(
-        None, "--system", "-s", help="Restrict to this managed system UUID"
+        None, "--system", "-s", help="Restrict to this managed system name or UUID"
     ),
     state: PartitionState | None = typer.Option(
         None, "--state", help="Filter by PartitionState (server-side search)"
@@ -31,12 +31,7 @@ def vios_list(
 ) -> None:
     """List Virtual I/O Servers."""
 
-    if state is not None:
-        vios = _with_client(
-            lambda hmc: hmc.search_uom("VirtualIOServer", "PartitionState", state)
-        )
-    else:
-        vios = _with_client(lambda hmc: hmc.list_vios(system))
+    vios = _with_client(lambda hmc: list_vios(hmc, system, state))
 
     table = None
     if not as_json:

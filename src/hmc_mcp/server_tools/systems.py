@@ -11,10 +11,6 @@ from .._app import (
     run_limited_collection,
 )
 from ..client.client_factory import client_from_env
-from ..resource_identity import (
-    resolve_system_uuid,
-    resolve_vios_uuid,
-)
 from ..config import (
     config_inventory,
 )
@@ -36,6 +32,7 @@ from ..operations.lpar.core import (
     get_lpar_state,
     list_lpars,
 )
+from ..operations.vios import get_vios, list_vios
 
 
 tool, register_tools, tool_security = tool_module()
@@ -221,31 +218,32 @@ def hmc_list_vios(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            if system_name_or_uuid is not None:
-                system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-                return await hmc.list_vios(system_uuid)
-            if state is not None:
-                return await hmc.search_uom("VirtualIOServer", "PartitionState", state)
-            return await hmc.list_vios(None)
+            return await list_vios(hmc, system_name_or_uuid, state)
 
     return run_limited_collection(_go, limit)
 
 
 @tool(effect="read", operation="vios.get", target_kind="vios")
 def hmc_get_vios(
-    vios_name_or_uuid: str, profile: str | None = None
+    vios_name_or_uuid: str,
+    profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Get storage-detail mappings for one VIOS by partition name or UUID.
 
     Args:
         vios_name_or_uuid: PartitionName or UUID of the Virtual I/O Server.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates a VIOS name.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            return await hmc.get_vios_storage_detail(vios_uuid)
+            return await get_vios(
+                hmc,
+                vios_name_or_uuid,
+                system_name_or_uuid=system_name_or_uuid,
+            )
 
     return run_sync(_go)
 
