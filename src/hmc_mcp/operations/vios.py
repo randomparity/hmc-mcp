@@ -251,6 +251,28 @@ def validate_vios_backup_name(backup_name: str) -> None:
         )
 
 
+def validate_vios_backup_request(backup_name: str, backup_type: BackupType) -> None:
+    """Validate a backup request before opening any HMC connection."""
+    if backup_type not in _VALID_BACKUP_TYPES:
+        raise ValueError(
+            f"Invalid backup_type {backup_type!r}. "
+            f"Must be one of: {', '.join(sorted(_VALID_BACKUP_TYPES))}"
+        )
+    validate_vios_backup_name(backup_name)
+
+
+def validate_vios_restore_request(
+    backup_name: str, backup_type: RestoreBackupType
+) -> None:
+    """Validate a restore request before opening any HMC connection."""
+    if backup_type not in _VALID_RESTORE_BACKUP_TYPES:
+        raise ValueError(
+            f"Invalid backup_type {backup_type!r}. "
+            f"Must be one of: {', '.join(sorted(_VALID_RESTORE_BACKUP_TYPES))}"
+        )
+    validate_vios_backup_name(backup_name)
+
+
 async def backup_vios(
     hmc: HMCClient,
     system_name_or_uuid: str,
@@ -260,12 +282,7 @@ async def backup_vios(
     backup_type: BackupType = "vios",
 ) -> str:
     """Create a named VIOS backup and return the raw HMC CLI output."""
-    if backup_type not in _VALID_BACKUP_TYPES:
-        raise ValueError(
-            f"Invalid backup_type {backup_type!r}. "
-            f"Must be one of: {', '.join(sorted(_VALID_BACKUP_TYPES))}"
-        )
-    validate_vios_backup_name(backup_name)
+    validate_vios_backup_request(backup_name, backup_type)
     system_name, vios_uuid = await _resolve_vios_backup_selectors(
         hmc, system_name_or_uuid, vios_name_or_uuid
     )
@@ -287,12 +304,7 @@ async def restore_vios(
     restart_if_required: bool = False,
 ) -> str:
     """Restore a VIOS backup and return the raw HMC CLI output."""
-    if backup_type not in _VALID_RESTORE_BACKUP_TYPES:
-        raise ValueError(
-            f"Invalid backup_type {backup_type!r}. "
-            f"Must be one of: {', '.join(sorted(_VALID_RESTORE_BACKUP_TYPES))}"
-        )
-    validate_vios_backup_name(backup_name)
+    validate_vios_restore_request(backup_name, backup_type)
     system_name, vios_uuid = await _resolve_vios_backup_selectors(
         hmc, system_name_or_uuid, vios_name_or_uuid
     )
