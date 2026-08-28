@@ -32,8 +32,7 @@ from ...jobs import (
     wait_for_submitted_job,
 )
 from .ownership import (
-    authorize_lpar_mutation,
-    resolve_lpar_ownership_names,
+    resolve_and_authorize_lpar_mutation,
     stamp_created_lpar_ownership,
 )
 from .ownership import resolve_and_authorize_lpar
@@ -307,13 +306,10 @@ async def delete_lpar(
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
     )
-    system_name, lpar_name = await resolve_lpar_ownership_names(
-        hmc, system_uuid, system_name_or_uuid, lpar_uuid
-    )
-    await authorize_lpar_mutation(
+    await resolve_and_authorize_lpar_mutation(
         hmc,
-        system_name,
-        lpar_name,
+        system_uuid,
+        lpar_uuid,
         ownership_override=ownership_override,
     )
     state = await hmc.get_quick_property(
@@ -420,13 +416,10 @@ async def rename_lpar(
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
     )
-    system_name, lpar_name = await resolve_lpar_ownership_names(
-        hmc, system_uuid, system_name_or_uuid, lpar_uuid
-    )
-    await authorize_lpar_mutation(
+    await resolve_and_authorize_lpar_mutation(
         hmc,
-        system_name,
-        lpar_name,
+        system_uuid,
+        lpar_uuid,
         ownership_override=ownership_override,
     )
     updated = await hmc.modify_logical_partition(

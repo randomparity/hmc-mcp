@@ -19,6 +19,7 @@ from hmc_mcp.config import validate_agent_id
 from hmc_mcp.operations.lpar.ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     authorize_lpar_mutation,
+    resolve_and_authorize_lpar_mutation,
 )
 
 
@@ -168,6 +169,46 @@ def test_token_format():
     from hmc_mcp.ssh.lpar import validate_lpar_description
 
     validate_lpar_description(token)  # no exception
+
+
+@pytest.mark.parametrize("ownership_override", [False, True])
+def test_resolve_and_authorize_lpar_mutation_forwards_resolved_names_and_override(
+    ownership_override,
+):
+    hmc = AsyncMock()
+    resolve_system = AsyncMock(return_value="system-uuid")
+    resolve_lpar = AsyncMock(return_value="lpar-uuid")
+    resolve_names = AsyncMock(return_value=("system-name", "lpar-name"))
+    authorize = AsyncMock()
+    with (
+        patch.object(lpar_ownership, "resolve_system_uuid", resolve_system),
+        patch.object(lpar_ownership, "resolve_lpar_uuid", resolve_lpar),
+        patch.object(lpar_ownership, "resolve_lpar_ownership_names", resolve_names),
+        patch.object(lpar_ownership, "authorize_lpar_mutation", authorize),
+    ):
+        result = asyncio.run(
+            resolve_and_authorize_lpar_mutation(
+                hmc,
+                "system-selector",
+                "lpar-selector",
+                ownership_override=ownership_override,
+            )
+        )
+
+    assert result == ("system-name", "lpar-name")
+    resolve_system.assert_awaited_once_with(hmc, "system-selector")
+    resolve_lpar.assert_awaited_once_with(
+        hmc, "lpar-selector", system_name_or_uuid="system-uuid"
+    )
+    resolve_names.assert_awaited_once_with(
+        hmc, "system-uuid", "system-selector", "lpar-uuid"
+    )
+    authorize.assert_awaited_once_with(
+        hmc,
+        "system-name",
+        "lpar-name",
+        ownership_override=ownership_override,
+    )
 
 
 @pytest.mark.parametrize(

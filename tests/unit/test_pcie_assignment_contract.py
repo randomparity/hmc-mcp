@@ -39,19 +39,12 @@ def test_assignment_rejects_before_mutation_when_profile_readback_is_unavailable
 ):
     hmc = AsyncMock()
     hmc.config = _config()
-    monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_system_uuid", AsyncMock(return_value="sys-uuid")
-    )
-    monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_lpar_uuid", AsyncMock(return_value="lpar-uuid")
-    )
-    monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_lpar_ownership_names",
-        AsyncMock(return_value=("sys", "lpar")),
-    )
     authorize = AsyncMock()
     inventory = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.operations.pcie.authorize_lpar_mutation", authorize)
+    authorize.return_value = ("sys", "lpar")
+    monkeypatch.setattr(
+        "hmc_mcp.operations.pcie.resolve_and_authorize_lpar_mutation", authorize
+    )
     monkeypatch.setattr("hmc_mcp.operations.pcie.list_dedicated_slots", inventory)
 
     with pytest.raises(PcieAssignmentUnavailableError, match="profile readback"):
@@ -64,18 +57,11 @@ def test_assignment_rejects_before_mutation_when_profile_readback_is_unavailable
 def test_unassignment_passes_explicit_ownership_override(monkeypatch):
     hmc = AsyncMock()
     hmc.config = _config()
-    monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_system_uuid", AsyncMock(return_value="sys-uuid")
-    )
-    monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_lpar_uuid", AsyncMock(return_value="lpar-uuid")
-    )
-    monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_lpar_ownership_names",
-        AsyncMock(return_value=("sys", "lpar")),
-    )
     authorize = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.operations.pcie.authorize_lpar_mutation", authorize)
+    authorize.return_value = ("sys", "lpar")
+    monkeypatch.setattr(
+        "hmc_mcp.operations.pcie.resolve_and_authorize_lpar_mutation", authorize
+    )
 
     with pytest.raises(PcieAssignmentUnavailableError):
         asyncio.run(

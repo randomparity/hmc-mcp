@@ -20,16 +20,9 @@ def _hmc() -> AsyncMock:
 
 def _common(monkeypatch, *, state="Not Activated", rmc="inactive", configured=()):
     monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_system_uuid", AsyncMock(return_value="su")
-    )
-    monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_lpar_uuid", AsyncMock(return_value="lu")
-    )
-    monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_lpar_ownership_names",
+        "hmc_mcp.operations.pcie.resolve_and_authorize_lpar_mutation",
         AsyncMock(return_value=("sys", "lpar")),
     )
-    monkeypatch.setattr("hmc_mcp.operations.pcie.authorize_lpar_mutation", AsyncMock())
     monkeypatch.setattr(
         "hmc_mcp.operations.pcie.read_sriov_environment",
         AsyncMock(return_value=("V10R3 M1060 build 2408210051", "8375-42A")),

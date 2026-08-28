@@ -8,11 +8,7 @@ from typing import Generic, Literal, TypeVar
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.client import HMCClient
-from hmc_mcp.resource_identity import resolve_lpar_uuid, resolve_system_uuid
-from .lpar.ownership import (
-    authorize_lpar_mutation,
-    resolve_lpar_ownership_names,
-)
+from .lpar.ownership import resolve_and_authorize_lpar_mutation
 from hmc_mcp.ssh.network import (
     SriovMode,
     assign_sriov_logical_port_dynamic,
@@ -233,17 +229,10 @@ async def _authorize_pcie_profile_request(
         raise ValueError("profile_name must not be blank")
     if not drc_index.strip():
         raise ValueError("drc_index must not be blank")
-    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
-    )
-    system_name, lpar_name = await resolve_lpar_ownership_names(
-        hmc, system_uuid, system_name_or_uuid, lpar_uuid
-    )
-    await authorize_lpar_mutation(
+    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
         hmc,
-        system_name,
-        lpar_name,
+        system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
     raise PcieAssignmentUnavailableError(PCIE_ASSIGNMENT_UNAVAILABLE_REASON)
@@ -309,23 +298,6 @@ async def require_admitted_environment(config: HMCConfig, system_name: str) -> N
             "SR-IOV operations are admitted only for HMC V10R3 M1060 "
             "with managed-system model 8375-42A"
         )
-
-
-async def _resolve_lpar(
-    hmc: HMCClient,
-    system_name_or_uuid: str,
-    lpar_name_or_uuid: str,
-    override: bool,
-) -> tuple[str, str]:
-    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
-    )
-    names = await resolve_lpar_ownership_names(
-        hmc, system_uuid, system_name_or_uuid, lpar_uuid
-    )
-    await authorize_lpar_mutation(hmc, *names, ownership_override=override)
-    return names
 
 
 async def _read_assignment_state(
@@ -454,8 +426,11 @@ async def _preflight_sriov_assignment(
         require_command_safe_text(logical_port_id, "logical_port_id"),
     )
     capacity = validate_capacity_percent(capacity_percent)
-    system_name, lpar_name = await _resolve_lpar(
-        hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
+    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+        hmc,
+        system_name_or_uuid,
+        lpar_name_or_uuid,
+        ownership_override=ownership_override,
     )
     config = hmc.config
     require_command_safe_text(profile_name, "profile_name")
@@ -618,8 +593,11 @@ async def unassign_sriov_logical_port(
         require_command_safe_text(logical_port_id, "logical_port_id"),
     )
     require_command_safe_text(profile_name, "profile_name")
-    system_name, lpar_name = await _resolve_lpar(
-        hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
+    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+        hmc,
+        system_name_or_uuid,
+        lpar_name_or_uuid,
+        ownership_override=ownership_override,
     )
     config = hmc.config
     await require_admitted_environment(config, system_name)

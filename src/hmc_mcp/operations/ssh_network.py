@@ -7,12 +7,8 @@ from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from hmc_mcp.client import HMCClient
-from hmc_mcp.resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from hmc_mcp.config import HMCConfig
-from .lpar.ownership import (
-    authorize_lpar_mutation,
-    resolve_lpar_ownership_names,
-)
+from .lpar.ownership import resolve_and_authorize_lpar_mutation
 from hmc_mcp.operations.pcie import require_admitted_environment
 from hmc_mcp.operations.pcie_validation import (
     require_command_safe_text,
@@ -312,10 +308,9 @@ async def set_minimum_affinity_policy(
 ) -> str:
     """Authorize and apply an LPAR minimum-affinity policy."""
     validate_minimum_affinity_policy(policy)
-    system_uuid = await resolve_system_uuid(hmc, system)
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system_uuid)
-    names = await resolve_lpar_ownership_names(hmc, system_uuid, system, lpar_uuid)
-    await authorize_lpar_mutation(hmc, *names, ownership_override=ownership_override)
+    names = await resolve_and_authorize_lpar_mutation(
+        hmc, system, lpar, ownership_override=ownership_override
+    )
     return await set_minimum_affinity_policy_cli(hmc.config, *names, policy)
 
 
@@ -400,16 +395,6 @@ def _parse_vnic_snapshots(rows: list[dict[str, str]]) -> tuple[VnicSnapshot, ...
     if len(slots) != len(set(slots)):
         raise ValueError("duplicate vNIC slot inventory rows")
     return result
-
-
-async def _resolve_authorized_lpar_names(
-    hmc: HMCClient, system: str, lpar: str, override: bool
-) -> tuple[str, str]:
-    system_uuid = await resolve_system_uuid(hmc, system)
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system_uuid)
-    names = await resolve_lpar_ownership_names(hmc, system_uuid, system, lpar_uuid)
-    await authorize_lpar_mutation(hmc, *names, ownership_override=override)
-    return names
 
 
 def _matches(item: VnicBackingSnapshot, selector: VnicBackingSelector) -> bool:
@@ -540,7 +525,9 @@ async def _preflight_add(
     selector: VnicBackingSelector,
     override: bool,
 ) -> _VnicPreflightContext:
-    system_name, lpar_name = await _resolve_authorized_lpar_names(hmc, system, lpar, override)
+    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+        hmc, system, lpar, ownership_override=override
+    )
     config = hmc.config
     await require_admitted_environment(config, system_name)
     identity = await read_vios_identity(config, system_name, selector.vios_name)
@@ -820,8 +807,11 @@ async def remove_vnic(
     ownership_override: bool = False,
 ) -> VnicChangeResult:
     slot_num = require_command_safe_text(slot_num, "slot_num")
-    system_name, lpar_name = await _resolve_authorized_lpar_names(
-        hmc, system_name_or_uuid, lpar_name_or_uuid, ownership_override
+    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+        hmc,
+        system_name_or_uuid,
+        lpar_name_or_uuid,
+        ownership_override=ownership_override,
     )
     await require_admitted_environment(hmc.config, system_name)
     all_vnics = _parse_vnic_snapshots(await list_vnic_rows(hmc.config, system_name, lpar_name))

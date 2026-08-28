@@ -12,9 +12,8 @@ from ...documents import (
     build_clear_boot_order_document,
 )
 from ...errors import HMCError
-from ...resource_identity import resolve_system_uuid
 from .errors import translate_lpar_write_error
-from .ownership import authorize_lpar_mutation, resolve_lpar_ownership_names
+from .ownership import resolve_and_authorize_lpar_mutation
 
 _logger = logging.getLogger(__name__)
 
@@ -59,12 +58,11 @@ async def set_lpar_boot_order(
     if not devices:
         raise ValueError("Boot order must contain at least one device")
 
-    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    system_name, lpar_name = await resolve_lpar_ownership_names(
-        hmc, system_uuid, system_name_or_uuid, lpar_uuid
-    )
-    await authorize_lpar_mutation(
-        hmc, system_name, lpar_name, ownership_override=ownership_override
+    _, lpar_name = await resolve_and_authorize_lpar_mutation(
+        hmc,
+        system_name_or_uuid,
+        lpar_uuid,
+        ownership_override=ownership_override,
     )
 
     xml = build_boot_order_document(devices)
@@ -92,12 +90,11 @@ async def clear_lpar_boot_order(
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Restore the HMC default boot order on the LPAR's next activation."""
-    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    system_name, lpar_name = await resolve_lpar_ownership_names(
-        hmc, system_uuid, system_name_or_uuid, lpar_uuid
-    )
-    await authorize_lpar_mutation(
-        hmc, system_name, lpar_name, ownership_override=ownership_override
+    _, lpar_name = await resolve_and_authorize_lpar_mutation(
+        hmc,
+        system_name_or_uuid,
+        lpar_uuid,
+        ownership_override=ownership_override,
     )
 
     xml = build_clear_boot_order_document()

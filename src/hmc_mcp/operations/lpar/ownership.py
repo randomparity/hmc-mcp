@@ -489,6 +489,27 @@ async def resolve_lpar_ownership_names(
     return system_name, lpar_name
 
 
+async def resolve_and_authorize_lpar_mutation(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    *,
+    ownership_override: bool = False,
+) -> tuple[str, str]:
+    """Resolve an LPAR's CLI names, authorize its mutation, and return the names."""
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
+    )
+    names = await resolve_lpar_ownership_names(
+        hmc, system_uuid, system_name_or_uuid, lpar_uuid
+    )
+    await authorize_lpar_mutation(
+        hmc, *names, ownership_override=ownership_override
+    )
+    return names
+
+
 async def _resolve_system_name(hmc: HMCClient, system_uuid: str, fallback: str) -> str:
     """Resolve an HMC CLI system name, falling back to the caller's selector."""
     try:
@@ -579,17 +600,10 @@ async def set_lpar_ownership_description(
 ) -> str:
     """Validate, authorize, and write one LPAR ownership description."""
     validate_lpar_description(description)
-    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
-    )
-    system_name, lpar_name = await resolve_lpar_ownership_names(
-        hmc, system_uuid, system_name_or_uuid, lpar_uuid
-    )
-    await authorize_lpar_mutation(
+    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
         hmc,
-        system_name,
-        lpar_name,
+        system_name_or_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
     return await set_lpar_description(hmc.config, system_name, lpar_name, description)

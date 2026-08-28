@@ -94,13 +94,10 @@ def _backing(logical: str = "3", **changes: str) -> dict[str, str]:
 
 def _common(monkeypatch: pytest.MonkeyPatch) -> None:
     module = "hmc_mcp.operations.ssh_network"
-    monkeypatch.setattr(f"{module}.resolve_system_uuid", AsyncMock(return_value="su"))
-    monkeypatch.setattr(f"{module}.resolve_lpar_uuid", AsyncMock(return_value="lu"))
     monkeypatch.setattr(
-        f"{module}.resolve_lpar_ownership_names",
+        f"{module}.resolve_and_authorize_lpar_mutation",
         AsyncMock(return_value=("system-a", "client-a")),
     )
-    monkeypatch.setattr(f"{module}.authorize_lpar_mutation", AsyncMock())
     monkeypatch.setattr(f"{module}.require_admitted_environment", AsyncMock())
     monkeypatch.setattr(
         f"{module}.read_vios_identity",
