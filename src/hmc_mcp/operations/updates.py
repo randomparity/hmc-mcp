@@ -47,17 +47,6 @@ def _with_vios_stdout(
     return result if output is None else {**result, "stdOut": output}
 
 
-async def _submit_update(
-    hmc: HMCClient,
-    job: dict[str, Any] | None,
-    wait: bool,
-    timeout_seconds: int,
-    poll_interval: int,
-) -> dict[str, Any] | None:
-    """Submit an update job and honor its shared waiting contract."""
-    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
-
-
 async def _submit_platform_update(
     hmc: HMCClient,
     job: dict[str, Any] | None,
@@ -117,7 +106,7 @@ async def update_console_software(
         f"/rest/api/uom/ManagementConsole/{console_path_id}/do/UpdateManagementConsole",
         update_hmc_job(repository),
     )
-    return await _submit_update(hmc, job, wait, timeout_seconds, poll_interval)
+    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
 
 
 async def list_available_hmc_ptfs(
@@ -136,7 +125,7 @@ async def list_available_hmc_ptfs(
         "/do/ListManagementConsoleUpdates",
         list_management_console_updates_job(),
     )
-    return await _submit_update(hmc, job, wait, timeout_seconds, poll_interval)
+    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
 
 
 async def update_vios(
@@ -156,7 +145,9 @@ async def update_vios(
         f"/rest/api/uom/VirtualIOServer/{vios_path_id}/do/UpdateVIOS",
         update_vios_job(repository),
     )
-    result = await _submit_update(hmc, job, wait, timeout_seconds, poll_interval)
+    result = await wait_for_submitted_job(
+        hmc, job, wait, timeout_seconds, poll_interval
+    )
     return _with_vios_stdout(result, wait)
 
 
@@ -177,7 +168,9 @@ async def upgrade_vios(
         f"/rest/api/uom/VirtualIOServer/{vios_path_id}/do/UpgradeVIOS",
         upgrade_vios_job(repository),
     )
-    result = await _submit_update(hmc, job, wait, timeout_seconds, poll_interval)
+    result = await wait_for_submitted_job(
+        hmc, job, wait, timeout_seconds, poll_interval
+    )
     return _with_vios_stdout(result, wait)
 
 
