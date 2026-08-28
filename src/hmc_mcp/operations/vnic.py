@@ -363,13 +363,16 @@ def _used_port_capacity(
 
 async def _preflight_add(
     hmc: HMCClient,
-    system: str,
-    lpar: str,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
     selector: VnicBackingSelector,
-    override: bool,
+    ownership_override: bool,
 ) -> _VnicPreflightContext:
     system_name, lpar_name = await resolve_and_authorize_lpar_names(
-        hmc, system, lpar, ownership_override=override
+        hmc,
+        system_name_or_uuid,
+        lpar_name_or_uuid,
+        ownership_override=ownership_override,
     )
     config = hmc.config
     await require_admitted_environment(config, system_name)
