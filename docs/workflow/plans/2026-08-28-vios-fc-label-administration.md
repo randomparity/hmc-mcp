@@ -123,19 +123,27 @@ comma-bearing list pair and `+`/`-` suffixes. `shlex.quote` owns only the remote
    ```text
    lslabelvios -r fcport -m system-a -F --header
    lslabelvios -r fcport -m system-a --filter vios_names=vios-a -F --header
+   lslabelvios -r fcport -m system-a --filter vios_ids=2 -F --header
    lslabelvios -r group -m system-a --filter resources=vfc -F --header
    labelvios -m system-a -o s -l port-label -i resource=fcport,port_name=fcs0,vios_ids=2
+   labelvios -m system-a -o s -l port-label -i resource=fcport,port_name=fcs0,vios_names=vios-a
    labelvios -m system-a -o r -i resource=fcport,port_name=fcs0,vios_names=vios-a
+   labelvios -m system-a -o r -i resource=fcport,port_name=fcs0,vios_ids=2
    labelvios -m system-a -o a -l group-a -i 'resource=vfc,"vios_names=vios-a,vios-b"'
+   labelvios -m system-a -o a -l group-a -i 'resource=vfc,"vios_ids=2,3"'
    labelvios -m system-a -o s -l group-a -i '"vios_ids+=2,3"'
+   labelvios -m system-a -o s -l group-a -i '"vios_names+=vios-a,vios-b"'
    labelvios -m system-a -o s -l group-a -i '"vios_names-=vios-a,vios-b"'
+   labelvios -m system-a -o s -l group-a -i '"vios_ids-=2,3"'
    labelvios -m system-a -o s -l group-a -i new_name=group-b
    labelvios -m system-a -o r -l group-a
    ```
 
-   Compare the actual single command string, not substrings. Expect import/collection failure
-   before implementation. Run `uv run --no-sync pytest tests/vios/test_vios_labels.py -q` and
-   retain the failing output in the forge ledger.
+   Compare the actual single command string, not substrings. The matrix is the complete positive
+   cross-product: both name and ID selectors for filtered FC listing, FC set/removal, group create,
+   and member addition/removal; unfiltered lists, rename, and named group removal are selector-free
+   singleton cases. Expect import/collection failure before implementation. Run `uv run --no-sync
+   pytest tests/vios/test_vios_labels.py -q` and retain the failing output in the forge ledger.
 
 2. In the same test module, add parser cases for dynamic headers, reordered/unknown columns,
    quoted CSV values, blank output, exact `No results were found.`, blank/duplicate headers,
