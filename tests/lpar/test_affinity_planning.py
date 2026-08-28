@@ -169,9 +169,7 @@ def test_affinity_mcp_adapters_delegate_to_shared_operations(
     delegated = AsyncMock(return_value=result)
 
     with (
-        patch.object(
-            server_lpar_config, "client_from_env", return_value=context
-        ) as client_factory,
+        patch("hmc_mcp._app.client_from_env", return_value=context) as client_factory,
         patch.object(server_lpar_config, operation, delegated),
     ):
         kwargs = (
@@ -210,7 +208,7 @@ def test_affinity_mcp_rejects_invalid_scenarios_before_system_resolution(
     resolve = AsyncMock()
 
     with (
-        patch.object(server_lpar_config, "client_from_env") as client_factory,
+        patch("hmc_mcp._app.client_from_env") as client_factory,
         patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve),
     ):
         with pytest.raises(ValueError, match=diagnostic):

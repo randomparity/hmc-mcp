@@ -38,6 +38,7 @@ def hmc_list_dedicated_pcie_slots(
         system_name_or_uuid: Managed-system name or UUID.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def slots(hmc):
         return asdict(await list_dedicated_slots(hmc, system_name_or_uuid))
 
@@ -57,6 +58,7 @@ def hmc_list_sriov_adapters(
         adapter_id: Optional exact adapter selector.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def adapters(hmc):
         return asdict(await list_sriov_adapters(hmc, system_name_or_uuid, adapter_id))
 
@@ -82,6 +84,7 @@ def hmc_list_sriov_physical_ports(
         physical_port_id: Optional exact physical-port selector.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def ports(hmc):
         return asdict(
             await list_sriov_physical_ports(
@@ -113,6 +116,7 @@ def hmc_list_sriov_logical_ports(
         logical_port_id: Optional exact logical-port selector.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def ports(hmc):
         return asdict(
             await list_sriov_logical_ports(

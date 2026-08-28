@@ -7,10 +7,9 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from .._app import (
-    run_sync,
+    with_client,
 )
 
-from ..client.client_factory import client_from_env
 from ..operations.updates import (
     list_available_hmc_ptfs,
     update_console_software,
@@ -60,18 +59,17 @@ def hmc_update_console_software(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await update_console_software(
-                hmc,
-                console_uuid,
-                repository,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: update_console_software(
+            hmc,
+            console_uuid,
+            repository,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="update.list_ptfs", target_kind="console")
@@ -98,17 +96,16 @@ def hmc_get_available_hmc_ptfs(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_available_hmc_ptfs(
-                hmc,
-                console_uuid,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: list_available_hmc_ptfs(
+            hmc,
+            console_uuid,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="update.vios", target_kind="vios")
@@ -138,19 +135,18 @@ def hmc_vios_update(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await update_vios(
-                hmc,
-                system_name_or_uuid,
-                vios_name_or_uuid,
-                repository,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: update_vios(
+            hmc,
+            system_name_or_uuid,
+            vios_name_or_uuid,
+            repository,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="upgrade.vios", target_kind="vios")
@@ -180,19 +176,18 @@ def hmc_vios_upgrade(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await upgrade_vios(
-                hmc,
-                system_name_or_uuid,
-                vios_name_or_uuid,
-                repository,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: upgrade_vios(
+            hmc,
+            system_name_or_uuid,
+            vios_name_or_uuid,
+            repository,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="update.firmware", target_kind="managed_system")
@@ -221,15 +216,14 @@ def hmc_update_firmware(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await update_firmware(
-                hmc,
-                system_name_or_uuid,
-                platform_update,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: update_firmware(
+            hmc,
+            system_name_or_uuid,
+            platform_update,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )

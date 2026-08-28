@@ -7,6 +7,7 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from .._app import (
+    with_client,
     run_sync,
 )
 
@@ -15,6 +16,7 @@ from ..operations.install import (
     InstallRequest,
     install_lpar_os,
     install_vios,
+    validate_install_request,
 )
 from ..documents import LparResources, VIOS_DEFAULT_RESOURCES
 from ..operations.vios import (
@@ -56,11 +58,10 @@ def hmc_create_vios(
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await create_vios(hmc, system_name_or_uuid, name, resources)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: create_vios(hmc, system_name_or_uuid, name, resources),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="vios.delete", target_kind="vios")
@@ -91,11 +92,10 @@ def hmc_delete_vios(
         system_name_or_uuid: Optional managed system used to disambiguate a VIOS name.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await delete_vios(hmc, system_name_or_uuid, vios_name_or_uuid)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: delete_vios(hmc, system_name_or_uuid, vios_name_or_uuid),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="vios.install", target_kind="vios")
@@ -171,6 +171,7 @@ def hmc_install_vios(
         vlan_id=vlan_id,
         mac_address=mac_address,
     )
+    validate_install_request(request)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -300,11 +301,10 @@ def hmc_list_vios_backups(
         ValueError: If the ``lsviosbk`` CSV is malformed.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_vios_backups(hmc, None, vios_name_or_uuid)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: list_vios_backups(hmc, None, vios_name_or_uuid),
+        profile=profile,
+    )
 
 
 @tool(
@@ -345,17 +345,16 @@ def hmc_backup_vios(
 
     validate_vios_backup_request(backup_name, backup_type)
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await backup_vios(
-                hmc,
-                system_name_or_uuid,
-                vios_name_or_uuid,
-                backup_name=backup_name,
-                backup_type=backup_type,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: backup_vios(
+            hmc,
+            system_name_or_uuid,
+            vios_name_or_uuid,
+            backup_name=backup_name,
+            backup_type=backup_type,
+        ),
+        profile=profile,
+    )
 
 
 @tool(
@@ -398,18 +397,17 @@ def hmc_restore_vios(
 
     validate_vios_restore_request(backup_name, backup_type)
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await restore_vios(
-                hmc,
-                system_name_or_uuid,
-                vios_name_or_uuid,
-                backup_name,
-                backup_type=backup_type,
-                restart_if_required=restart_if_required,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: restore_vios(
+            hmc,
+            system_name_or_uuid,
+            vios_name_or_uuid,
+            backup_name,
+            backup_type=backup_type,
+            restart_if_required=restart_if_required,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="vios.power_on", target_kind="vios")
@@ -430,19 +428,18 @@ def hmc_power_on_vios(
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await power_vios(
-                hmc,
-                None,
-                vios_name_or_uuid,
-                power_on=True,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: power_vios(
+            hmc,
+            None,
+            vios_name_or_uuid,
+            power_on=True,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="vios.power_off", target_kind="vios")
@@ -467,17 +464,16 @@ def hmc_power_off_vios(
         system_name_or_uuid: Optional managed system used to disambiguate a VIOS name.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await power_vios(
-                hmc,
-                system_name_or_uuid,
-                vios_name_or_uuid,
-                power_on=False,
-                immediate=immediate,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: power_vios(
+            hmc,
+            system_name_or_uuid,
+            vios_name_or_uuid,
+            power_on=False,
+            immediate=immediate,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )

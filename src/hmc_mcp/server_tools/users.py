@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import run_sync
+from .._app import run_sync, with_client
 from ..client.client_users import AuthenticationFilter
 from ..client.client_factory import client_from_env
 from ..documents import AuthenticationType
@@ -38,11 +38,10 @@ def hmc_list_users(
         profile: TOML profile name, or the environment default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.list_hmc_users(console_uuid, authentication_type)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: hmc.list_hmc_users(console_uuid, authentication_type),
+        profile=profile,
+    )
 
 
 @tool(
@@ -64,11 +63,10 @@ def hmc_get_user(
         profile: TOML profile name, or the environment default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.get_hmc_user(console_uuid, user_profile_uuid)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: hmc.get_hmc_user(console_uuid, user_profile_uuid),
+        profile=profile,
+    )
 
 
 @tool(
@@ -122,31 +120,30 @@ def hmc_create_user(
         profile: TOML profile name, or the environment default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await create_user(
-                hmc,
-                console_uuid,
-                CreateUserRequest(
-                    user_id=user_id,
-                    password=password,
-                    authentication_type=authentication_type,
-                    description=description,
-                    associated_task_role=associated_task_role,
-                    associated_resource_roles=associated_resource_roles,
-                    password_expiry=password_expiry,
-                    session_timeout=session_timeout,
-                    verify_session_timeout=verify_session_timeout,
-                    idle_session_timeout=idle_session_timeout,
-                    user_inactivity=user_inactivity,
-                    minimum_password_age=minimum_password_age,
-                    allow_web_remote_access=allow_web_remote_access,
-                    allow_ssh_remote_access=allow_ssh_remote_access,
-                    remote_user_id=remote_user_id,
-                ),
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: create_user(
+            hmc,
+            console_uuid,
+            CreateUserRequest(
+                user_id=user_id,
+                password=password,
+                authentication_type=authentication_type,
+                description=description,
+                associated_task_role=associated_task_role,
+                associated_resource_roles=associated_resource_roles,
+                password_expiry=password_expiry,
+                session_timeout=session_timeout,
+                verify_session_timeout=verify_session_timeout,
+                idle_session_timeout=idle_session_timeout,
+                user_inactivity=user_inactivity,
+                minimum_password_age=minimum_password_age,
+                allow_web_remote_access=allow_web_remote_access,
+                allow_ssh_remote_access=allow_ssh_remote_access,
+                remote_user_id=remote_user_id,
+            ),
+        ),
+        profile=profile,
+    )
 
 
 @tool(
@@ -200,31 +197,30 @@ def hmc_modify_user(
         profile: TOML profile name, or the environment default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await modify_user(
-                hmc,
-                console_uuid,
-                user_profile_uuid,
-                ModifyUserPatch(
-                    authentication_type=authentication_type,
-                    password=password,
-                    description=description,
-                    associated_task_role=associated_task_role,
-                    associated_resource_roles=associated_resource_roles,
-                    password_expiry=password_expiry,
-                    session_timeout=session_timeout,
-                    verify_session_timeout=verify_session_timeout,
-                    idle_session_timeout=idle_session_timeout,
-                    user_inactivity=user_inactivity,
-                    minimum_password_age=minimum_password_age,
-                    allow_web_remote_access=allow_web_remote_access,
-                    allow_ssh_remote_access=allow_ssh_remote_access,
-                    remote_user_id=remote_user_id,
-                ),
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: modify_user(
+            hmc,
+            console_uuid,
+            user_profile_uuid,
+            ModifyUserPatch(
+                authentication_type=authentication_type,
+                password=password,
+                description=description,
+                associated_task_role=associated_task_role,
+                associated_resource_roles=associated_resource_roles,
+                password_expiry=password_expiry,
+                session_timeout=session_timeout,
+                verify_session_timeout=verify_session_timeout,
+                idle_session_timeout=idle_session_timeout,
+                user_inactivity=user_inactivity,
+                minimum_password_age=minimum_password_age,
+                allow_web_remote_access=allow_web_remote_access,
+                allow_ssh_remote_access=allow_ssh_remote_access,
+                remote_user_id=remote_user_id,
+            ),
+        ),
+        profile=profile,
+    )
 
 
 @tool(
@@ -263,11 +259,10 @@ def hmc_list_task_roles(
         profile: TOML profile name, or the environment default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.list_task_roles(console_uuid)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: hmc.list_task_roles(console_uuid),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="resource_role.list", target_kind="console")
@@ -281,11 +276,10 @@ def hmc_list_resource_roles(
         profile: TOML profile name, or the environment default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.list_resource_roles(console_uuid)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: hmc.list_resource_roles(console_uuid),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="remote_access.get", target_kind="console")
@@ -299,11 +293,10 @@ def hmc_get_remote_access(
         profile: TOML profile name, or the environment default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.get_remote_access(console_uuid)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: hmc.get_remote_access(console_uuid),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="remote_access.configure", target_kind="console")
@@ -326,10 +319,7 @@ def hmc_configure_remote_access(
         profile: TOML profile name, or the environment default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await configure_remote_access(
-                hmc, console_uuid, values, clear_fields
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: configure_remote_access(hmc, console_uuid, values, clear_fields),
+        profile=profile,
+    )

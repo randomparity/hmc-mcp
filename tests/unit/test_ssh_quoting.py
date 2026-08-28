@@ -211,7 +211,7 @@ def test_vios_backup_tools_quote_hostile_backup_name(
     Quoting and containment are separate controls and this proves the first.
     """
     _hmc_env(monkeypatch)
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.client_from_env", _vios_client_factory())
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _vios_client_factory())
     conn = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
@@ -242,7 +242,7 @@ def test_vios_backup_tools_keep_hostile_direct_system_name_in_one_argument(
 ):
     """A caller-controlled direct system name remains one exact ``-m`` word."""
     _hmc_env(monkeypatch)
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.client_from_env", _vios_client_factory())
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _vios_client_factory())
     conn = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):

@@ -213,7 +213,7 @@ def test_mcp_fail_closed_surface_returns_stable_companion(
 ) -> None:
     hmc = AsyncMock()
     monkeypatch.setattr(
-        "hmc_mcp.server_tools.lpm.client_from_env", lambda profile: _ClientContext(hmc)
+        "hmc_mcp._app.client_from_env", lambda profile: _ClientContext(hmc)
     )
 
     result = hmc_migrate_lpar_with_affinity_preflight(

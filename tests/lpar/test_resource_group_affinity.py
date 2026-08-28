@@ -261,7 +261,7 @@ def test_mcp_adapter_delegates_to_shared_operation():
     context = AsyncMock()
     context.__aenter__.return_value = client
     with (
-        patch.object(server_lpar_config, "client_from_env", return_value=context),
+        patch("hmc_mcp._app.client_from_env", return_value=context),
         patch.object(
             server_lpar_config, "list_resource_group_memopt_scores", operation
         ),

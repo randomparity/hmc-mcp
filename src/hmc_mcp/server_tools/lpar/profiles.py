@@ -7,6 +7,7 @@ from ...tool_registry import tool_module
 from ..._app import (
     run_sync,
     ssh_with_client,
+    with_client,
 )
 from ...client.client_factory import client_from_env
 from ...operations.pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
@@ -163,16 +164,15 @@ def hmc_sync_lpar_profile(
     Returns:
         The raw HMC CLI output."""
 
-    async def _go() -> str:
-        async with client_from_env(profile) as hmc:
-            return await synchronize_lpar_profile(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                ownership_override=ownership_override,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: synchronize_lpar_profile(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            ownership_override=ownership_override,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="pcie.assign_dedicated_slot", target_kind="lpar")

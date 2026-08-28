@@ -173,7 +173,7 @@ def test_completed_activation_runs_and_returns_assessment() -> None:
     assessment = AsyncMock(return_value=_assessment("none", "passed reason"))
     with (
         patch(
-            "hmc_mcp.server_tools.lpar.lifecycle.client_from_env",
+            "hmc_mcp._app.client_from_env",
             return_value=_ClientContext(),
         ),
         patch(
@@ -203,7 +203,7 @@ def test_unconfirmed_activation_never_runs_assessment(status: str) -> None:
     assessment = AsyncMock()
     with (
         patch(
-            "hmc_mcp.server_tools.lpar.lifecycle.client_from_env",
+            "hmc_mcp._app.client_from_env",
             return_value=_ClientContext(),
         ),
         patch(
@@ -235,7 +235,7 @@ def test_malformed_measurement_preserves_job_and_applies_intent(
 ) -> None:
     with (
         patch(
-            "hmc_mcp.server_tools.lpar.lifecycle.client_from_env",
+            "hmc_mcp._app.client_from_env",
             return_value=_ClientContext(),
         ),
         patch(

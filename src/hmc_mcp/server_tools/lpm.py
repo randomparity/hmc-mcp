@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..tool_registry import tool_module
 
 from .._app import (
+    with_client,
     run_sync,
 )
 
@@ -122,23 +123,22 @@ def hmc_migrate_lpar_with_affinity_preflight(
         system_name_or_uuid: Optional source managed-system name or UUID.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await migrate_lpar_with_affinity_preflight(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                target_system_name_or_uuid,
-                affinity_preflight,
-                target_profile_name,
-                wait_time,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-                ownership_override=ownership_override,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: migrate_lpar_with_affinity_preflight(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            target_system_name_or_uuid,
+            affinity_preflight,
+            target_profile_name,
+            wait_time,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+            ownership_override=ownership_override,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="lpar.migrate_validate", target_kind="lpar")

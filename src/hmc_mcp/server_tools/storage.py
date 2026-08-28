@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from ..tool_registry import tool_module
 
 from typing import Any
@@ -103,13 +105,13 @@ def hmc_create_volume_group(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
+    async def operation():
         async with client_from_env(profile) as hmc:
             return await create_volume_group(
                 hmc, system_name_or_uuid, vios_name_or_uuid, name, physical_volumes
             )
 
-    return run_sync(_go)
+    return run_sync(operation)
 
 
 # Not exhaustive for the same reason as the adapter pair, and one more: it
@@ -157,21 +159,20 @@ def hmc_attach_disk_to_lpar(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await attach_disk_to_lpar(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                ProvisionStorage(vios_uuid, disk_name, vg_uuid=vg_uuid),
-                capacity_mib=capacity_mib,
-                vios_partition_id=vios_partition_id,
-                vios_slot=vios_slot,
-                dry_run=dry_run,
-                ownership_override=ownership_override,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: attach_disk_to_lpar(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            ProvisionStorage(vios_uuid, disk_name, vg_uuid=vg_uuid),
+            capacity_mib=capacity_mib,
+            vios_partition_id=vios_partition_id,
+            vios_slot=vios_slot,
+            dry_run=dry_run,
+            ownership_override=ownership_override,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="storage.create_disk", target_kind="vios")
@@ -198,18 +199,17 @@ def hmc_create_virtual_disk(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await create_virtual_disk(
-                hmc,
-                system_name_or_uuid,
-                vios_name_or_uuid,
-                vg_uuid,
-                disk_name,
-                capacity_mib,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: create_virtual_disk(
+            hmc,
+            system_name_or_uuid,
+            vios_name_or_uuid,
+            vg_uuid,
+            disk_name,
+            capacity_mib,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="storage.delete_disk", target_kind="vios")
@@ -233,13 +233,12 @@ def hmc_delete_virtual_disk(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await delete_virtual_disk(
-                hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid, disk_name
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: delete_virtual_disk(
+            hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid, disk_name
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="storage.map", target_kind="vios")
@@ -275,9 +274,9 @@ def hmc_map_storage_to_lpar(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await map_storage(
+    async def mapping(hmc):
+        return asdict(
+            await map_storage(
                 hmc,
                 system_name_or_uuid,
                 vios_name_or_uuid,
@@ -287,8 +286,9 @@ def hmc_map_storage_to_lpar(
                 target=target_device,
                 ownership_override=ownership_override,
             )
+        )
 
-    return run_sync(_go)
+    return with_client(mapping, profile=profile)
 
 
 @tool(effect="mutate", operation="media.create_repository", target_kind="vios")
@@ -312,13 +312,12 @@ def hmc_create_media_repository(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await create_media_repository(
-                hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid, size_mib
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: create_media_repository(
+            hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid, size_mib
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="media.create", target_kind="vios")
@@ -344,18 +343,17 @@ def hmc_create_optical_media(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await create_optical_media(
-                hmc,
-                system_name_or_uuid,
-                vios_name_or_uuid,
-                vg_uuid,
-                media_name,
-                size_mib,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: create_optical_media(
+            hmc,
+            system_name_or_uuid,
+            vios_name_or_uuid,
+            vg_uuid,
+            media_name,
+            size_mib,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="media.delete_repository", target_kind="vios")
@@ -437,13 +435,12 @@ def hmc_get_media_repository(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await get_media_repository(
-                hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: get_media_repository(
+            hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="media.list", target_kind="vios")
@@ -466,13 +463,12 @@ def hmc_list_optical_media(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_optical_media(
-                hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: list_optical_media(
+            hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="storage.list_mappings", target_kind="vios")
@@ -496,13 +492,12 @@ def hmc_list_storage_mappings(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_storage_mappings(
-                hmc, system_name_or_uuid, vios_name_or_uuid, lpar_name_or_uuid
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: list_storage_mappings(
+            hmc, system_name_or_uuid, vios_name_or_uuid, lpar_name_or_uuid
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="storage.detach_mapping", target_kind="vios")
@@ -627,22 +622,21 @@ def hmc_create_logical_unit(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await create_logical_unit(
-                hmc,
-                cluster_uuid,
-                lu_name,
-                lu_size_gib,
-                lu_type,
-                device_type,
-                cloned_from=cloned_from,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: create_logical_unit(
+            hmc,
+            cluster_uuid,
+            lu_name,
+            lu_size_gib,
+            lu_type,
+            device_type,
+            cloned_from=cloned_from,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )
 
 
 @tool(
@@ -672,18 +666,17 @@ def hmc_delete_logical_unit(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await delete_logical_unit(
-                hmc,
-                cluster_uuid,
-                lu_udid,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: delete_logical_unit(
+            hmc,
+            cluster_uuid,
+            lu_udid,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="media.upload_iso", target_kind="vios")
@@ -727,18 +720,17 @@ def hmc_upload_iso(
         FileExistsError: If media_name already exists in the repository.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await upload_iso(
-                hmc,
-                system_name_or_uuid,
-                vios_name_or_uuid,
-                vg_uuid,
-                media_name,
-                iso_source,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: upload_iso(
+            hmc,
+            system_name_or_uuid,
+            vios_name_or_uuid,
+            vg_uuid,
+            media_name,
+            iso_source,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="media.list_mappings", target_kind="vios")
@@ -801,19 +793,18 @@ def hmc_mount_optical_media(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await mount_optical_media(
-                hmc,
-                system_name_or_uuid,
-                vios_name_or_uuid,
-                lpar_name_or_uuid,
-                media_name=media_name,
-                target_device=target_device,
-                ownership_override=ownership_override,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: mount_optical_media(
+            hmc,
+            system_name_or_uuid,
+            vios_name_or_uuid,
+            lpar_name_or_uuid,
+            media_name=media_name,
+            target_device=target_device,
+            ownership_override=ownership_override,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="media.unmount", target_kind="vios")

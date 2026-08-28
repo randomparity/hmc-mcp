@@ -125,7 +125,7 @@ def test_delete_vios_tool_scopes_name_before_mutation(monkeypatch):
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     hmc.find_vios_by_name.return_value = {"UUID": "vios-uuid"}
     hmc.get_quick_property.return_value = "not activated"
-    monkeypatch.setattr(server_vios, "client_from_env", _client_factory(hmc))
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _client_factory(hmc))
 
     server_vios.hmc_delete_vios(
         "vios1", system_name_or_uuid="system-name"
@@ -142,7 +142,7 @@ def test_restore_vios_tool_forwards_system_scope(monkeypatch):
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     hmc.find_vios_by_name.return_value = {"UUID": "vios-uuid"}
     command = AsyncMock(return_value="restored")
-    monkeypatch.setattr(server_vios, "client_from_env", _client_factory(hmc))
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _client_factory(hmc))
     monkeypatch.setattr(operations_vios, "run_hmc_cli", command)
 
     assert server_vios.hmc_restore_vios(
@@ -161,7 +161,7 @@ def test_restore_vios_tool_forwards_system_scope(monkeypatch):
 def test_power_off_vios_tool_forwards_system_scope(monkeypatch):
     hmc = AsyncMock()
     operation = AsyncMock(return_value={"UUID": "job-uuid"})
-    monkeypatch.setattr(server_vios, "client_from_env", _client_factory(hmc))
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _client_factory(hmc))
     monkeypatch.setattr(server_vios, "power_vios", operation)
 
     server_vios.hmc_power_off_vios(

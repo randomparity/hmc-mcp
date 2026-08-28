@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from ...tool_registry import tool_module
 
-from ..._app import run_sync
-from ...client.client_factory import client_from_env
+from ..._app import with_client
 from ...documents import LparResources, PartitionType
 from ...operations.affinity import ProvisionAffinityAssessment
 from ...operations.lpar.provision import (
@@ -90,22 +89,21 @@ def hmc_provision_lpar(
         were lost; ``None`` means the stamp was skipped — the reason is in ``warnings``.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await provision_lpar(
-                hmc,
-                system_name_or_uuid=system_name_or_uuid,
-                name=name,
-                network=network,
-                storage=storage,
-                resources=resources,
-                partition_type=partition_type,
-                power_on=power_on,
-                dry_run=dry_run,
-                assignments=assignments,
-                caller_token=caller_token,
-                minimum_affinity_policy=minimum_affinity_policy,
-                affinity_assessment=affinity_assessment,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: provision_lpar(
+            hmc,
+            system_name_or_uuid=system_name_or_uuid,
+            name=name,
+            network=network,
+            storage=storage,
+            resources=resources,
+            partition_type=partition_type,
+            power_on=power_on,
+            dry_run=dry_run,
+            assignments=assignments,
+            caller_token=caller_token,
+            minimum_affinity_policy=minimum_affinity_policy,
+            affinity_assessment=affinity_assessment,
+        ),
+        profile=profile,
+    )

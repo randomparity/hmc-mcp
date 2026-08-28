@@ -276,7 +276,7 @@ def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
     from hmc_mcp.server_tools.vios import hmc_restore_vios as hmc_restore_vios
 
     client_factory = MagicMock(side_effect=_vios_client_factory())
-    monkeypatch.setattr("hmc_mcp.server_tools.vios.client_from_env", client_factory)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", client_factory)
     conn = _make_ssh_mock("")
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
         hmc_restore_vios(

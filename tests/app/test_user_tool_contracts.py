@@ -36,7 +36,7 @@ def test_create_user_tool_forwards_identifiers_and_optional_fields() -> None:
     resource_roles = ["/roles/operators", "/roles/storage"]
 
     with (
-        patch.object(server_users, "client_from_env", return_value=context) as factory,
+        patch("hmc_mcp._app.client_from_env", return_value=context) as factory,
         patch.object(server_users, "create_user", operation),
     ):
         result = server_users.hmc_create_user(
@@ -91,7 +91,7 @@ def test_modify_user_tool_preserves_explicit_clear_values() -> None:
     operation = AsyncMock(return_value=None)
 
     with (
-        patch.object(server_users, "client_from_env", return_value=context),
+        patch("hmc_mcp._app.client_from_env", return_value=context),
         patch.object(server_users, "modify_user", operation),
     ):
         result = server_users.hmc_modify_user(
@@ -171,9 +171,7 @@ def test_remote_access_tool_preserves_value_and_clear_semantics(
     )
     context = _client_context(client)
 
-    with patch.object(
-        server_users, "client_from_env", return_value=context
-    ) as factory:
+    with patch("hmc_mcp._app.client_from_env", return_value=context) as factory:
         result = server_users.hmc_configure_remote_access(
             "console-1", values, clear_fields, profile="security"
         )

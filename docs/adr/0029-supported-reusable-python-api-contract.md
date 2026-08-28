@@ -262,7 +262,8 @@ names are internal everywhere and are never inventoried.
 - `operations.vios` — operations: `backup_vios`, `create_vios`, `delete_vios`,
   `get_vios`, `list_vios`, `list_vios_backups`, `power_vios`, `restore_vios`; types:
   `BackupType`, `RestoreBackupType`;
-  excluded synchronous: `validate_vios_backup_name`.
+  excluded synchronous: `validate_vios_backup_name`, `validate_vios_backup_request`,
+  `validate_vios_restore_request`.
 - `operations.vnic` — operations: `add_vnic`, `list_fc_ports`,
   `list_sea_adapters`, `list_vnics`, `remove_vnic`; types:
   `VnicBackingSelector`, `VnicBackingSnapshot`,

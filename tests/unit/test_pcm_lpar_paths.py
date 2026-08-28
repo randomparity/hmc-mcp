@@ -147,7 +147,7 @@ def test_metric_tools_reject_missing_lpar_owner_before_client(monkeypatch, tool,
     def fail_client_entry(_profile):
         pytest.fail("invalid metric target entered the HMC client")
 
-    monkeypatch.setattr(server_metrics, "client_from_env", fail_client_entry)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", fail_client_entry)
 
     with pytest.raises(ValueError, match="system_name_or_uuid"):
         tool(*args)
@@ -157,7 +157,7 @@ def test_preferences_tool_rejects_lpar_before_client(monkeypatch):
     def fail_client_entry(_profile):
         pytest.fail("unsupported preference target entered the HMC client")
 
-    monkeypatch.setattr(server_metrics, "client_from_env", fail_client_entry)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", fail_client_entry)
 
     with pytest.raises(ValueError, match="ManagedSystem"):
         server_metrics.hmc_get_pcm_preferences("LogicalPartition", LPAR_UUID)

@@ -251,7 +251,7 @@ def test_mcp_policy_adapter_delegates_to_shared_operation():
     context = AsyncMock()
     context.__aenter__.return_value = client
     with (
-        patch.object(server_lpar_config, "client_from_env", return_value=context),
+        patch("hmc_mcp._app.client_from_env", return_value=context),
         patch.object(server_lpar_config, "get_minimum_affinity_policy", operation),
     ):
         actual = server_lpar_config.hmc_get_minimum_affinity_policy("system", "lpar")

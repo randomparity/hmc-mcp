@@ -7,6 +7,7 @@ from ...tool_registry import tool_module
 from typing import Any
 
 from ..._app import (
+    with_client,
     run_sync,
 )
 from ...errors import HMCError
@@ -30,6 +31,7 @@ from ...operations.lpar.core import (
     power_on_lpar,
     rename_lpar,
 )
+from ...ssh.lpar import validate_caller_token
 from ...operations.lpar.boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,
@@ -125,25 +127,26 @@ def hmc_create_lpar(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await create_lpar(
-                hmc,
-                system_name_or_uuid,
-                LparCreation(
-                    name,
-                    partition_type,
-                    resources,
-                    partition_id,
-                    os_type,
-                    keylock,
-                    max_virtual_slots,
-                    caller_token,
-                ),
-                assignments,
-            )
-
-    return run_sync(_go)
+    if caller_token is not None:
+        validate_caller_token(caller_token)
+    return with_client(
+        lambda hmc: create_lpar(
+            hmc,
+            system_name_or_uuid,
+            LparCreation(
+                name,
+                partition_type,
+                resources,
+                partition_id,
+                os_type,
+                keylock,
+                max_virtual_slots,
+                caller_token,
+            ),
+            assignments,
+        ),
+        profile=profile,
+    )
 
 
 # Assignment collections can name both a managed system and a nested VIOS.
@@ -187,18 +190,17 @@ def hmc_modify_lpar(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await modify_lpar(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                resources,
-                assignments,
-                ownership_override=ownership_override,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: modify_lpar(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            resources,
+            assignments,
+            ownership_override=ownership_override,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="lpar.rename", target_kind="lpar")
@@ -272,17 +274,16 @@ def hmc_dlpar_proc(
             operator approval.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await set_lpar_processors(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                resources,
-                ownership_override=ownership_override,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: set_lpar_processors(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            resources,
+            ownership_override=ownership_override,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="lpar.dlpar_mem", target_kind="lpar")
@@ -313,17 +314,16 @@ def hmc_dlpar_mem(
             operator approval.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await set_lpar_memory(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                resources,
-                ownership_override=ownership_override,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: set_lpar_memory(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            resources,
+            ownership_override=ownership_override,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="lpar.delete", target_kind="lpar")
@@ -422,20 +422,19 @@ def hmc_decommission_lpar(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await decommission_lpar(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                dry_run=dry_run,
-                ownership_override=ownership_override,
-                immediate=immediate,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: decommission_lpar(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            dry_run=dry_run,
+            ownership_override=ownership_override,
+            immediate=immediate,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="lpar.power_on", target_kind="lpar")
@@ -482,21 +481,20 @@ def hmc_power_on_lpar(
             approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await power_on_lpar(
-                hmc,
-                lpar_name_or_uuid,
-                system_name_or_uuid=system_name_or_uuid,
-                wait=wait,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-                force=force,
-                affinity_assessment=affinity_assessment,
-                ownership_override=ownership_override,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: power_on_lpar(
+            hmc,
+            lpar_name_or_uuid,
+            system_name_or_uuid=system_name_or_uuid,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+            force=force,
+            affinity_assessment=affinity_assessment,
+            ownership_override=ownership_override,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="destructive", operation="lpar.power_off", target_kind="lpar")
@@ -668,8 +666,7 @@ def hmc_list_lpar_ownership(
             omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_lpar_ownership(hmc, system_name_or_uuid)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: list_lpar_ownership(hmc, system_name_or_uuid),
+        profile=profile,
+    )

@@ -119,9 +119,9 @@ against that commit rather than maintained forward.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `delete_lpar` | `operations/lpar/core.py:353` | guarded (`:357`) | — |
-| `decommission_lpar` | `operations/lpar/decommission.py:611` | guarded (`:283`, `:637`, `:656`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
-| `rename_lpar` | `operations/lpar/core.py:458` | guarded (`:463`) | — |
+| `delete_lpar` | `operations/lpar/core.py:393` | guarded (`:397`) | — |
+| `decommission_lpar` | `operations/lpar/decommission.py:628` | guarded (`:283`, `:654`, `:673`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
+| `rename_lpar` | `operations/lpar/core.py:498` | guarded (`:503`) | — |
 | `set_lpar_ownership_description` | `operations/ownership.py:597` | guarded (`:281`) | — |
 | `synchronize_lpar_profile` | `operations/lpar/configuration.py:11` | guarded (`:25`) | — |
 
@@ -155,10 +155,10 @@ only the transport boundary.
 | `add_vscsi_adapter` | `operations/adapters.py:68` | guarded (`:79`) | #372 |
 | `add_vfc_adapter` | `operations/adapters.py:91` | guarded (`:102`) | #372 |
 | `delete_adapter` | `operations/adapters.py:114` | guarded (`:129`) | #372 |
-| `map_storage` | `operations/storage.py:171` | guarded (`:186`) | #372 |
+| `map_storage` | `operations/storage.py:172` | guarded (`:187`) | #372 |
 | `attach_disk_to_lpar` | `operations/lpar/provision.py:317` | guarded before the storage workflow (`:349`) | #372 |
-| `mount_optical_media` | `operations/storage.py:821` | guarded (`:840`) | #440 |
-| `unmount_optical_media` | `operations/storage.py:851` | guarded (`:892`) | #440 |
+| `mount_optical_media` | `operations/storage.py:822` | guarded (`:841`) | #440 |
+| `unmount_optical_media` | `operations/storage.py:852` | guarded (`:893`) | #440 |
 | `migrate_lpar` | `operations/lpm.py:333` | guarded after optional validation and before migration submission (`:378`) | #373 |
 | `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:226` | guarded by delegation to `migrate_lpar` | #373 |
 | `abort_lpar_migration` | `operations/lpm.py:398` | guarded (`:414`) | #373 |
@@ -188,9 +188,9 @@ The remaining direct entry points and their guard state are:
 |---|---|---|---|
 | `configure_lpar_msp` | `operations/lpar/configuration.py:28` | guarded (`:25`) | — |
 | `configure_lpar_processor_compatibility` | `operations/lpar/configuration.py:46` | guarded (`:25`) | — |
-| `hmc_modify_lpar` | `server_tools/lpars.py:166` | guarded by `operations/lpar/dlpar.py:35` before any write | #442 |
+| `hmc_modify_lpar` | `server_tools/lpar/lifecycle.py:159` | guarded by `operations/lpar/dlpar.py:35` before any write | #442 |
 | `hmc lpar modify` (CLI) | `cli_commands/lpars.py:596` | guarded by `operations/lpar/dlpar.py:35` before any write | #442 |
-| `detach_storage_mapping` | `operations/storage.py:256` | resolves the mapping's client LPAR and guards it before deletion (`:291`) | #448 |
+| `detach_storage_mapping` | `operations/storage.py:257` | resolves the mapping's client LPAR and guards it before deletion (`:292`) | #448 |
 
 `hmc_dlpar_proc` and `hmc_dlpar_mem` were rows in this table at `b41e658`. #365
 extracted `set_lpar_processors` and `set_lpar_memory` from those tool bodies and
@@ -209,7 +209,7 @@ kind of modification on the other side of the authorization boundary.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `power_lpar` | `operations/lpar/core.py:381` | guarded when opted in (`:416`, via `resolve_and_authorize_lpar_mutation`); §4 | #371 |
+| `power_lpar` | `operations/lpar/core.py:421` | guarded when opted in (`:456`, via `resolve_and_authorize_lpar_mutation`); §4 | #371 |
 
 `power_lpar` is the whole class. Both `hmc_power_on_lpar` (`server_tools/lpars.py:504`)
 and `hmc_power_off_lpar` (`server_tools/lpars.py:615`) delegate to it, and so does the
@@ -226,11 +226,11 @@ exempt anyway.
 
 | Operation | Reason |
 |---|---|
-| `create_and_stamp_lpar` (`operations/lpar/core.py:244`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
-| `provision_lpar` (`operations/lpar/provision.py:553`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
+| `create_and_stamp_lpar` (`operations/lpar/core.py:284`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
+| `provision_lpar` (`operations/lpar/provision.py:559`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
 | `deploy_partition_template` (`operations/templates.py:93`) | Creates the partition and stamps it per ADR 0014. |
 | `hmc_capture_lpar_console` (`server_tools/console.py:24`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
-| `hmc_backup_lpar_profiles` (`server_tools/profiles.py:35`) | Reads every profile and writes an HMC-side backup file; it does not mutate a partition or profile. |
+| `hmc_backup_lpar_profiles` (`server_tools/lpar/profiles.py:36`) | Reads every profile and writes an HMC-side backup file; it does not mutate a partition or profile. |
 | `hmc_migrate_validate_lpar` (`server_tools/lpm.py:145`) | Calls `validate_lpar_migration`, which submits an LPM validation job and changes nothing. The mutating migration operation has its own guard. |
 | `install_lpar_os` (`operations/install.py:198`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation *can be handed* a `LogicalPartition` selector and does not check the type locally; `installios` refuses a non-VIOS `-p` on the HMC, and because submission is detached that refusal reaches only the install log. That honesty gap is tracked by #460; it does not create an ownership decision, because a refused install mutates nothing. |
 | `install_vios` (`operations/install.py:288`) | Added by #366. Same reason. Resolves its target through the `VirtualIOServer` feed, so a name selector cannot name a `LogicalPartition` at all; a UUID selector is passed through unchecked, with the same #460 caveat. |
@@ -239,7 +239,7 @@ exempt anyway.
 
 | Operation | Reason | Tracking |
 |---|---|---|
-| `hmc_restore_lpar_profiles` (`server_tools/profiles.py:86`) | A per-partition decision is not expressible because the restore rewrites every profile. It therefore requires both a destructive managed-system grant, which produces the authorization audit record, and explicit `system_wide_restore_approved=true` acknowledgement before SSH is opened. | #449 |
+| `hmc_restore_lpar_profiles` (`server_tools/lpar/profiles.py:87`) | A per-partition decision is not expressible because the restore rewrites every profile. It therefore requires both a destructive managed-system grant, which produces the authorization audit record, and explicit `system_wide_restore_approved=true` acknowledgement before SSH is opened. | #449 |
 
 **3.4b records a separate administrative authorization contract, not an unguarded
 partition mutation.** A profile backup does not reveal which profiles the restore file

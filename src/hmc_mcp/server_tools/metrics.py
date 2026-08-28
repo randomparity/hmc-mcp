@@ -7,10 +7,9 @@ from ..tool_registry import tool_module
 from typing import Any
 
 from .._app import (
-    run_sync,
+    with_client,
 )
 
-from ..client.client_factory import client_from_env
 from ..operations.pcm import (
     MetricKind,
     PcmCategory,
@@ -19,6 +18,8 @@ from ..operations.pcm import (
     metric_links,
     preference_flags,
     set_pcm_preferences,
+    validate_pcm_metric_target,
+    validate_pcm_preferences_category,
 )
 
 
@@ -41,11 +42,11 @@ def hmc_get_pcm_preferences(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await get_pcm_preferences(hmc, category, resource_name_or_uuid)
-
-    return run_sync(_go)
+    validate_pcm_preferences_category(category)
+    return with_client(
+        lambda hmc: get_pcm_preferences(hmc, category, resource_name_or_uuid),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="pcm.set_preferences", target_kind="metric_resource")
@@ -89,14 +90,12 @@ def hmc_set_pcm_preferences(
     )
     if not flags:
         raise ValueError("No preference flags supplied; nothing to change.")
+    validate_pcm_preferences_category(category)
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await set_pcm_preferences(
-                hmc, category, resource_name_or_uuid, flags
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: set_pcm_preferences(hmc, category, resource_name_or_uuid, flags),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="metrics.processed", target_kind="metric_resource")
@@ -262,20 +261,20 @@ def _metrics_links(
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await metric_links(
-                hmc,
-                category,
-                resource_name_or_uuid,
-                kind=kind,
-                start_ts=start_ts,
-                end_ts=end_ts,
-                no_of_samples=no_of_samples,
-                system_name_or_uuid=system_name_or_uuid,
-            )
-
-    return run_sync(_go)
+    validate_pcm_metric_target(category, system_name_or_uuid)
+    return with_client(
+        lambda hmc: metric_links(
+            hmc,
+            category,
+            resource_name_or_uuid,
+            kind=kind,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            no_of_samples=no_of_samples,
+            system_name_or_uuid=system_name_or_uuid,
+        ),
+        profile=profile,
+    )
 
 
 def _metrics_fetch(
@@ -288,17 +287,17 @@ def _metrics_fetch(
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await metric_data(
-                hmc,
-                category,
-                resource_name_or_uuid,
-                kind=kind,
-                start_ts=start_ts,
-                end_ts=end_ts,
-                no_of_samples=no_of_samples,
-                system_name_or_uuid=system_name_or_uuid,
-            )
-
-    return run_sync(_go)
+    validate_pcm_metric_target(category, system_name_or_uuid)
+    return with_client(
+        lambda hmc: metric_data(
+            hmc,
+            category,
+            resource_name_or_uuid,
+            kind=kind,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            no_of_samples=no_of_samples,
+            system_name_or_uuid=system_name_or_uuid,
+        ),
+        profile=profile,
+    )

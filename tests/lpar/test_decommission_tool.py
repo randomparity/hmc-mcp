@@ -209,7 +209,7 @@ def test_hmc_decommission_lpar_delegates_with_one_configured_client() -> None:
         return fake_client_context(profile)
 
     with (
-        patch("hmc_mcp.server_tools.lpar.lifecycle.client_from_env", side_effect=fake_client_from_env),
+        patch("hmc_mcp._app.client_from_env", side_effect=fake_client_from_env),
         patch(
             "hmc_mcp.server_tools.lpar.lifecycle.decommission_lpar",
             new=AsyncMock(return_value=expected),

@@ -45,7 +45,9 @@ def hmc_find_placement(
     async def placements(hmc):
         return [
             asdict(item)
-            for item in await find_placement(hmc, desired_memory_mib, desired_proc_units)
+            for item in await find_placement(
+                hmc, desired_memory_mib, desired_proc_units
+            )
         ]
 
     return with_client(placements, profile=profile)

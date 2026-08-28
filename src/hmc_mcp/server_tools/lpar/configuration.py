@@ -5,10 +5,9 @@ from __future__ import annotations
 from ...tool_registry import tool_module
 
 from ..._app import (
-    run_sync,
     ssh_with_client,
+    with_client,
 )
-from ...client.client_factory import client_from_env
 from ...operations.ssh_affinity import (
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
@@ -26,6 +25,7 @@ from ...ssh.affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
     MinimumAffinityPolicy,
+    validate_memopt_scenario,
 )
 from ...ssh.profiles import (
     get_lpar_description,
@@ -57,13 +57,12 @@ def hmc_get_minimum_affinity_policy(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await get_minimum_affinity_policy(
-                hmc, system_name_or_uuid, lpar_name_or_uuid
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: get_minimum_affinity_policy(
+            hmc, system_name_or_uuid, lpar_name_or_uuid
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="lpar.set_minimum_affinity_policy", target_kind="lpar")
@@ -87,17 +86,16 @@ def hmc_set_minimum_affinity_policy(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go() -> str:
-        async with client_from_env(profile) as hmc:
-            return await set_minimum_affinity_policy(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                policy,
-                ownership_override=ownership_override,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: set_minimum_affinity_policy(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            policy,
+            ownership_override=ownership_override,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="lpar.get_memopt_score", target_kind="lpar")
@@ -112,13 +110,10 @@ def hmc_get_lpar_memopt_score(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await get_lpar_memopt_score(
-                hmc, system_name_or_uuid, lpar_name_or_uuid
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: get_lpar_memopt_score(hmc, system_name_or_uuid, lpar_name_or_uuid),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="lpar.list_memopt_scores", target_kind="managed_system")
@@ -135,13 +130,12 @@ def hmc_list_lpar_memopt_scores(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_lpar_memopt_scores(
-                hmc, system_name_or_uuid, lpar_name_or_uuid
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: list_lpar_memopt_scores(
+            hmc, system_name_or_uuid, lpar_name_or_uuid
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="system.get_memopt_score", target_kind="managed_system")
@@ -155,11 +149,10 @@ def hmc_get_system_memopt_score(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await get_system_memopt_score(hmc, system_name_or_uuid)
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: get_system_memopt_score(hmc, system_name_or_uuid),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="lpar.plan_memopt_scores", target_kind="managed_system")
@@ -178,13 +171,13 @@ def hmc_plan_lpar_memopt_scores(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await plan_lpar_memopt_scores(
-                hmc, system_name_or_uuid, prioritized, excluded
-            )
-
-    return run_sync(_go)
+    validate_memopt_scenario(prioritized, excluded)
+    return with_client(
+        lambda hmc: plan_lpar_memopt_scores(
+            hmc, system_name_or_uuid, prioritized, excluded
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="system.plan_memopt_score", target_kind="managed_system")
@@ -203,13 +196,13 @@ def hmc_plan_system_memopt_score(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await plan_system_memopt_score(
-                hmc, system_name_or_uuid, prioritized, excluded
-            )
-
-    return run_sync(_go)
+    validate_memopt_scenario(prioritized, excluded)
+    return with_client(
+        lambda hmc: plan_system_memopt_score(
+            hmc, system_name_or_uuid, prioritized, excluded
+        ),
+        profile=profile,
+    )
 
 
 @tool(
@@ -230,13 +223,12 @@ def hmc_list_resource_group_memopt_scores(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await list_resource_group_memopt_scores(
-                hmc, system_name_or_uuid, selector
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: list_resource_group_memopt_scores(
+            hmc, system_name_or_uuid, selector
+        ),
+        profile=profile,
+    )
 
 
 @tool(
@@ -257,13 +249,12 @@ def hmc_plan_resource_group_memopt_scores(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await plan_resource_group_memopt_scores(
-                hmc, system_name_or_uuid, selector
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: plan_resource_group_memopt_scores(
+            hmc, system_name_or_uuid, selector
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="lpar.get_description", target_kind="lpar")
@@ -318,17 +309,16 @@ def hmc_set_lpar_description(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await set_lpar_ownership_description(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                description,
-                ownership_override=ownership_override,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: set_lpar_ownership_description(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            description,
+            ownership_override=ownership_override,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="lpar.get_msp", target_kind="lpar")
@@ -373,17 +363,16 @@ def hmc_set_lpar_msp(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go() -> str:
-        async with client_from_env(profile) as hmc:
-            return await configure_lpar_msp(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                enabled,
-                ownership_override=ownership_override,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: configure_lpar_msp(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            enabled,
+            ownership_override=ownership_override,
+        ),
+        profile=profile,
+    )
 
 
 @tool(effect="read", operation="lpar.get_proc_compat", target_kind="lpar")
@@ -428,14 +417,13 @@ def hmc_set_lpar_proc_compat(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go() -> str:
-        async with client_from_env(profile) as hmc:
-            return await configure_lpar_processor_compatibility(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                mode,
-                ownership_override=ownership_override,
-            )
-
-    return run_sync(_go)
+    return with_client(
+        lambda hmc: configure_lpar_processor_compatibility(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            mode,
+            ownership_override=ownership_override,
+        ),
+        profile=profile,
+    )

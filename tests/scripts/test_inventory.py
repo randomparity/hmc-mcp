@@ -11,7 +11,7 @@ import pytest
 
 LIVE_TEST_ROOT = Path(__file__).parents[2] / "scripts"
 sys.path.insert(0, str(LIVE_TEST_ROOT))
-from live_test import inventory  # noqa: E402
+from live_test import inventory, network, storage  # noqa: E402
 
 
 class ScenarioState:
@@ -106,7 +106,7 @@ async def test_network_inventory_selects_unused_vlan_and_switch() -> None:
         }
     )
 
-    await inventory.inventory_network(None, state)
+    await network.inventory_network(None, state)
 
     assert state.context.test_vswitch_id == 9
     assert state.context.test_vlan_id == 3001
@@ -142,7 +142,7 @@ async def test_storage_inventory_finds_disk_capacity_and_owning_group() -> None:
     )
     state.context.vios_uuid = "vios-uuid"
 
-    await inventory.inventory_storage(None, state)
+    await storage.inventory_storage(None, state)
 
     assert state.context.vg_uuid == "vg-uuid"
     assert state.context.vdisk_vg_name == "rootvg"
