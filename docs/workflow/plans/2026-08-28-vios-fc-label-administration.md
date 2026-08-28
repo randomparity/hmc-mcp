@@ -172,7 +172,8 @@ comma-bearing list pair and `+`/`-` suffixes. `shlex.quote` owns only the remote
 3. Add table-driven validation tests covering whitespace-only `system_name`, `label`, `port_name`,
    `new_name`, and VIOS names; neither/singly selected FC-port list filters and refusal of both;
    exactly-one selector enforcement for FC-port set/removal; both/neither/empty group-member
-   families; duplicate names/IDs; non-positive IDs; comma, equals, double quote, ASCII controls in
+   families; duplicate names/IDs; non-positive IDs; more than 1,024 group members; more than 16
+   KiB of encoded group-member data; comma, equals, double quote, ASCII controls in
    record values; invalid update actions/argument combinations; and preservation plus shell
    quoting of nonblank surrounding spaces and shell metacharacters. Assert `run_hmc_command` was
    not awaited on every refusal.

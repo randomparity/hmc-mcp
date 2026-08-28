@@ -266,6 +266,24 @@ async def test_invalid_input_does_not_dispatch(monkeypatch, call):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("members", "message"),
+    [
+        ([f"vios-{number}" for number in range(1025)], "at most 1024"),
+        (["x" * 16385], "at most 16384 bytes"),
+    ],
+)
+async def test_group_member_payload_is_bounded(monkeypatch, members, message: str):
+    run = AsyncMock()
+    monkeypatch.setattr("hmc_mcp.ssh.vios_labels.run_hmc_command", run)
+    with pytest.raises(HMCCLIError, match=message):
+        await create_vios_vfc_group_label(
+            CONFIG, "system-a", "label", vios_names=members
+        )
+    run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_nonblank_standalone_values_preserve_spaces_and_shell_quote(monkeypatch):
     run = AsyncMock(return_value="done\n")
     monkeypatch.setattr("hmc_mcp.ssh.vios_labels.run_hmc_command", run)

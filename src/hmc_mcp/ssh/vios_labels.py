@@ -13,6 +13,8 @@ from .commands import build_attribute_record, build_filter
 from .transport import HMCCLIError, run_hmc_command
 
 ViosGroupUpdateAction = Literal["rename", "add-members", "remove-members"]
+_MAX_GROUP_MEMBERS = 1024
+_MAX_GROUP_MEMBER_BYTES = 16 * 1024
 
 
 def _nonblank(value: str, field: str) -> str:
@@ -61,6 +63,10 @@ def _member_selector(
             "VIOS group label operation requires exactly one of vios_names or vios_ids"
         )
     if vios_names is not None:
+        if len(vios_names) > _MAX_GROUP_MEMBERS:
+            raise HMCCLIError(
+                f"VIOS group label vios_names accepts at most {_MAX_GROUP_MEMBERS} members"
+            )
         members = list(vios_names)
         if not members:
             raise HMCCLIError("VIOS group label vios_names must not be empty")
@@ -69,8 +75,13 @@ def _member_selector(
             raise HMCCLIError("VIOS group label vios_names must not contain duplicates")
         for name in validated:
             build_attribute_record([("vios_names", name)])
+        _require_bounded_member_bytes("vios_names", validated)
         return "vios_names", validated
     assert vios_ids is not None
+    if len(vios_ids) > _MAX_GROUP_MEMBERS:
+        raise HMCCLIError(
+            f"VIOS group label vios_ids accepts at most {_MAX_GROUP_MEMBERS} members"
+        )
     identifiers = list(vios_ids)
     if not identifiers:
         raise HMCCLIError("VIOS group label vios_ids must not be empty")
@@ -78,7 +89,18 @@ def _member_selector(
         raise HMCCLIError("VIOS group label vios_ids must all be positive")
     if len(set(identifiers)) != len(identifiers):
         raise HMCCLIError("VIOS group label vios_ids must not contain duplicates")
+    _require_bounded_member_bytes("vios_ids", identifiers)
     return "vios_ids", identifiers
+
+
+def _require_bounded_member_bytes(attribute: str, members: Sequence[str | int]) -> None:
+    encoded_size = sum(len(str(member).encode("utf-8")) for member in members)
+    encoded_size += max(0, len(members) - 1)
+    if encoded_size > _MAX_GROUP_MEMBER_BYTES:
+        raise HMCCLIError(
+            f"VIOS group label {attribute} accepts at most "
+            f"{_MAX_GROUP_MEMBER_BYTES} bytes including separators"
+        )
 
 
 def _parse_label_rows(output: str, operation: str) -> list[dict[str, str]]:

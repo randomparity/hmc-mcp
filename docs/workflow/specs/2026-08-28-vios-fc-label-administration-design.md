@@ -156,7 +156,9 @@ HMC operators are not trusted to preserve this request's intent.
 ### Controls
 
 - Public values are checked for requiredness, selector exclusivity, positive IDs, duplicate
-members, record delimiters, and controls before dispatch.
+  members, record delimiters, and controls before dispatch. Group mutations accept at most 1,024
+  members and at most 16 KiB of UTF-8 member data including separators, bounding command and
+  receipt construction driven by an authenticated caller.
 - Fixed operation/resource/attribute names prevent callers from reaching other `labelvios`
   families or bulk removal.
 - `build_attribute_record` controls the HMC CSV grammar; `shlex.quote` separately controls the
