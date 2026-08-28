@@ -1,4 +1,4 @@
-"""Presentation-neutral VIOS FC label operations."""
+"""Internal shared VIOS FC label operations for MCP and CLI adapters."""
 
 from __future__ import annotations
 
