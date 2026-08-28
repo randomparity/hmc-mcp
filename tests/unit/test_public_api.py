@@ -1830,6 +1830,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     assert create_parameters["cloned_from"].default is None
     for operation_name in (
         "add_network_adapter",
+        "apply_lpar_pcie_assignments",
         "add_vfc_adapter",
         "add_vscsi_adapter",
         "delete_adapter",
@@ -1908,7 +1909,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # User mutation operations now name every supported document field instead
     # of accepting an untyped keyword bag.
     # PCM metric controls are keyword-only after the resource selector.
-    expected_digest = "6bc8dda8931e16aa98e26f4c58588e653bdb28b9d83d09111fcba7ee3f0241db"  # pragma: allowlist secret
+    # PCIe assignment selectors now state their accepted name-or-UUID vocabulary.
+    expected_digest = "072cc5df2379aa5682e6c1a984534d1e0ba873d21004d4664fff76a5a64f50b8"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

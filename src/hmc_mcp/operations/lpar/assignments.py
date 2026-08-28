@@ -263,30 +263,30 @@ async def _validate_vios_inventory(
 
 async def prevalidate_lpar_pcie_assignments(
     hmc: HMCClient,
-    system: str,
+    system_name_or_uuid: str,
     assignments: LparPcieAssignments,
 ) -> None:
     """Validate the complete collection without reserving or mutating resources."""
     requested_capacity, vios_identities = _analyze_assignment_requests(assignments)
-    await _validate_sriov_inventory(hmc, system, requested_capacity)
-    await _validate_vios_inventory(hmc, system, vios_identities)
+    await _validate_sriov_inventory(hmc, system_name_or_uuid, requested_capacity)
+    await _validate_vios_inventory(hmc, system_name_or_uuid, vios_identities)
 
 
 async def apply_lpar_pcie_assignments(
     hmc: HMCClient,
-    system: str,
-    lpar: str,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
     assignments: LparPcieAssignments,
     *,
     dry_run: bool = False,
     ownership_override: bool = False,
 ) -> AssignmentResult:
     """Apply requests in stable order and expose partial state without rollback."""
-    await prevalidate_lpar_pcie_assignments(hmc, system, assignments)
+    await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
     return await _apply_validated_lpar_pcie_assignments(
         hmc,
-        system,
-        lpar,
+        system_name_or_uuid,
+        lpar_name_or_uuid,
         assignments,
         dry_run=dry_run,
         ownership_override=ownership_override,
