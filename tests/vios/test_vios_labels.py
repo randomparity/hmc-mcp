@@ -2,11 +2,13 @@
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.operations import vios_labels as label_operations
+from hmc_mcp.server_tools import vios_labels as label_tools
 from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.ssh.vios_labels import (
     create_vios_vfc_group_label,
@@ -355,3 +357,179 @@ async def test_mutation_receipts(monkeypatch, call, expected):
         AsyncMock(return_value=" accepted \n"),
     )
     assert await call() == expected
+
+
+@pytest.mark.asyncio
+async def test_operation_resolves_system_uuid_and_preserves_arguments(monkeypatch):
+    resolve = AsyncMock(return_value="system-a")
+    dispatch = AsyncMock(return_value={"operation": "set"})
+    monkeypatch.setattr(label_operations, "resolve_system_name", resolve)
+    monkeypatch.setattr(label_operations.ssh, "set_vios_fc_port_label", dispatch)
+
+    result = await label_operations.set_vios_fc_port_label(
+        CONFIG, "00000000-0000-0000-0000-000000000001", " label ", "fcs0", vios_id=2
+    )
+
+    assert result == {"operation": "set"}
+    resolve.assert_awaited_once_with(CONFIG, "00000000-0000-0000-0000-000000000001")
+    dispatch.assert_awaited_once_with(
+        CONFIG, "system-a", " label ", "fcs0", vios_name=None, vios_id=2
+    )
+
+
+@pytest.mark.asyncio
+async def test_operation_resolution_failure_prevents_dispatch(monkeypatch):
+    monkeypatch.setattr(
+        label_operations, "resolve_system_name", AsyncMock(return_value=None)
+    )
+    dispatch = AsyncMock()
+    monkeypatch.setattr(label_operations.ssh, "list_vios_vfc_group_labels", dispatch)
+    with pytest.raises(HMCCLIError, match="resolve managed system"):
+        await label_operations.list_vios_vfc_group_labels(CONFIG, "missing")
+    dispatch.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("handler", "operation_name", "arguments", "expected", "operation_call"),
+    [
+        (
+            label_tools.hmc_list_vios_fc_port_labels,
+            "list_vios_fc_port_labels",
+            {"vios_name": "a"},
+            [{"name": "a"}],
+            call(CONFIG, "system-a", vios_name="a", vios_id=None),
+        ),
+        (
+            label_tools.hmc_set_vios_fc_port_label,
+            "set_vios_fc_port_label",
+            {"label": "l", "port_name": "fcs0", "vios_id": 2},
+            {"operation": "set"},
+            call(
+                CONFIG,
+                "system-a",
+                "l",
+                "fcs0",
+                vios_name=None,
+                vios_id=2,
+            ),
+        ),
+        (
+            label_tools.hmc_remove_vios_fc_port_label,
+            "remove_vios_fc_port_label",
+            {"port_name": "fcs0", "vios_id": 2},
+            {"operation": "remove"},
+            call(CONFIG, "system-a", "fcs0", vios_name=None, vios_id=2),
+        ),
+        (
+            label_tools.hmc_list_vios_vfc_group_labels,
+            "list_vios_vfc_group_labels",
+            {},
+            [{"name": "g"}],
+            call(CONFIG, "system-a"),
+        ),
+        (
+            label_tools.hmc_create_vios_vfc_group_label,
+            "create_vios_vfc_group_label",
+            {"label": "g", "vios_names": ["a"]},
+            {"operation": "create"},
+            call(CONFIG, "system-a", "g", vios_names=["a"], vios_ids=None),
+        ),
+        (
+            label_tools.hmc_update_vios_vfc_group_label,
+            "update_vios_vfc_group_label",
+            {"label": "g", "action": "rename", "new_name": "h"},
+            {"operation": "rename"},
+            call(
+                CONFIG,
+                "system-a",
+                "g",
+                "rename",
+                new_name="h",
+                vios_names=None,
+                vios_ids=None,
+            ),
+        ),
+        (
+            label_tools.hmc_remove_vios_vfc_group_label,
+            "remove_vios_vfc_group_label",
+            {"label": "g"},
+            {"operation": "remove-group"},
+            call(CONFIG, "system-a", "g"),
+        ),
+    ],
+)
+def test_mcp_handlers_pass_through_profile_and_results(
+    monkeypatch,
+    handler,
+    operation_name: str,
+    arguments: dict[str, object],
+    expected: object,
+    operation_call,
+):
+    captured: dict[str, object] = {}
+
+    def fake_with_config(fn, *, profile=None):
+        captured["profile"] = profile
+        return __import__("asyncio").run(fn(CONFIG))
+
+    operation = AsyncMock(return_value=expected)
+    monkeypatch.setattr(label_tools, "with_config", fake_with_config)
+    monkeypatch.setattr(label_tools.operations, operation_name, operation)
+    assert handler("system-a", profile="lab", **arguments) == expected
+    assert captured == {"profile": "lab"}
+    assert operation.await_args == operation_call
+
+
+def test_all_mcp_handlers_expose_managed_system_selector():
+    import inspect
+
+    handlers = [
+        label_tools.hmc_list_vios_fc_port_labels,
+        label_tools.hmc_set_vios_fc_port_label,
+        label_tools.hmc_remove_vios_fc_port_label,
+        label_tools.hmc_list_vios_vfc_group_labels,
+        label_tools.hmc_create_vios_vfc_group_label,
+        label_tools.hmc_update_vios_vfc_group_label,
+        label_tools.hmc_remove_vios_vfc_group_label,
+    ]
+    assert all(
+        "system_name_or_uuid" in inspect.signature(handler).parameters
+        for handler in handlers
+    )
+
+
+def test_vios_label_tool_security_is_exact_and_exhaustive():
+    expected = {
+        "hmc_list_vios_fc_port_labels": ("read", "vios_label.list_fc_ports"),
+        "hmc_set_vios_fc_port_label": ("mutate", "vios_label.set_fc_port"),
+        "hmc_remove_vios_fc_port_label": (
+            "destructive",
+            "vios_label.remove_fc_port",
+        ),
+        "hmc_list_vios_vfc_group_labels": ("read", "vios_label.list_vfc_groups"),
+        "hmc_create_vios_vfc_group_label": (
+            "mutate",
+            "vios_label.create_vfc_group",
+        ),
+        "hmc_update_vios_vfc_group_label": (
+            "mutate",
+            "vios_label.update_vfc_group",
+        ),
+        "hmc_remove_vios_vfc_group_label": (
+            "destructive",
+            "vios_label.remove_vfc_group",
+        ),
+    }
+    security = label_tools.tool_security()
+    assert set(security) == set(expected)
+    for name, (effect, operation) in expected.items():
+        record = security[name]
+        assert (record.effect, record.operation, record.target_kind) == (
+            effect,
+            operation,
+            "managed_system",
+        )
+        assert record.exhaustive_targets is True
+        assert [(target.kind, target.path) for target in record.targets] == [
+            ("managed_system", "system_name_or_uuid")
+        ]

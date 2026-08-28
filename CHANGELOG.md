@@ -57,6 +57,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Added
 
+- Seven bounded SSH-backed VIOS label tools list, set, and remove individual FC-port
+  labels and list, create, update, and remove individual vFC group labels using the
+  POWER10 and POWER11 `lslabelvios`/`labelvios` grammar. They do not expose MSP,
+  vNIC, vSCSI, override-default, bulk-removal, or adapter-mutation behavior. Issue
+  #559 tracks live-system field and mutation evidence not established by the manuals.
 - `ManagedSystemPatch` and `LpmMigrationRequest` provide reusable typed request
   values for managed-system configuration and LPM destination inputs.
 - `VirtualNetworkResult` exposes the resolved managed-system UUID beside the
