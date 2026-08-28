@@ -13,12 +13,7 @@ from ...errors import HMCError
 from hmc_mcp.operations.ownership import list_lpar_ownership
 from ...operations.affinity import (
     ProvisionAffinityAssessment,
-    affinity_not_measured,
-    assess_post_activation_affinity,
-    classify_affinity_outcome,
-    validate_affinity_request,
 )
-from ...ssh.transport import HMCCLIError
 from ...client.client_factory import client_from_env
 from ...documents import (
     Keylock,
@@ -30,10 +25,9 @@ from ...operations.lpar.decommission import DecommissionResult, decommission_lpa
 from ...operations.lpar.core import (
     LparCreation,
     LparPowerOnOutcome,
-    activation_allows_assessment,
     delete_lpar,
     power_lpar,
-    power_on_outcome,
+    power_on_lpar,
     rename_lpar,
 )
 from ...operations.lpar.boot_order import (
@@ -492,73 +486,18 @@ def hmc_power_on_lpar(
             approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
     """
 
-    if affinity_assessment is not None:
-        if system_name_or_uuid is None:
-            raise ValueError(
-                "system_name_or_uuid is required for post-activation affinity assessment"
-            )
-        if affinity_assessment.system_name_or_uuid != system_name_or_uuid:
-            raise ValueError(
-                "affinity assessment managed-system identity must match target"
-            )
-        if affinity_assessment.lpar_name != lpar_name_or_uuid:
-            raise ValueError("affinity assessment LPAR identity must match target")
-        validate_affinity_request(affinity_assessment)
-
     async def _go():
         async with client_from_env(profile) as hmc:
-            result = await power_lpar(
+            return await power_on_lpar(
                 hmc,
-                system_name_or_uuid,
                 lpar_name_or_uuid,
-                power_on=True,
-                force=force,
+                system_name_or_uuid=system_name_or_uuid,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
+                force=force,
+                affinity_assessment=affinity_assessment,
                 ownership_override=ownership_override,
-            )
-            if (
-                affinity_assessment is None
-                or result.job is None
-                or result.job.get("already_running") is True
-            ):
-                return power_on_outcome(result)
-            if not wait:
-                return power_on_outcome(
-                    result,
-                    affinity_not_measured(
-                        "skipped",
-                        "Assessment requires wait=true to observe successful activation.",
-                    ),
-                )
-            successful, reason = activation_allows_assessment(result)
-            if not successful:
-                status = (
-                    "failed"
-                    if affinity_assessment.response == "fail"
-                    else "unavailable"
-                )
-                return power_on_outcome(result, affinity_not_measured(status, reason))
-            try:
-                assessment = await assess_post_activation_affinity(
-                    hmc, affinity_assessment
-                )
-            except (HMCError, HMCCLIError, ValueError) as exc:
-                status = (
-                    "failed"
-                    if affinity_assessment.response == "fail"
-                    else "unavailable"
-                )
-                return power_on_outcome(
-                    result,
-                    affinity_not_measured(
-                        status, f"Affinity measurement unavailable: {exc}"
-                    ),
-                )
-            return power_on_outcome(
-                result,
-                classify_affinity_outcome(assessment, affinity_assessment.response),
             )
 
     return run_sync(_go)

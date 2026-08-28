@@ -8,7 +8,11 @@ from typing import Any, Literal
 
 from hmc_mcp.operations.affinity import (
     LparAffinityAssessmentOutcome,
+    ProvisionAffinityAssessment,
     affinity_not_measured,
+    assess_post_activation_affinity,
+    classify_affinity_outcome,
+    validate_affinity_request,
 )
 
 from ...client import HMCClient
@@ -133,9 +137,7 @@ async def get_lpar(
         if system_name_or_uuid is not None
         else None
     )
-    return await hmc.find_partition_by_name(
-        lpar_name_or_uuid, system_uuid=system_uuid
-    )
+    return await hmc.find_partition_by_name(lpar_name_or_uuid, system_uuid=system_uuid)
 
 
 async def get_lpar_state(
@@ -152,11 +154,7 @@ async def get_lpar_state(
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
-    return await hmc.get_quick_property(
-        "LogicalPartition", lpar_uuid, "PartitionState"
-    )
-
-
+    return await hmc.get_quick_property("LogicalPartition", lpar_uuid, "PartitionState")
 
 
 @dataclass(frozen=True)
@@ -239,6 +237,75 @@ def activation_allows_assessment(result: LparPowerResult) -> tuple[bool, str]:
     if outcome.status not in SUCCESSFUL_JOB_STATUSES:
         return False, outcome.error or f"PowerOn ended with status {outcome.status}."
     return True, "PowerOn reached a successful terminal status."
+
+
+async def power_on_lpar(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    force: bool = False,
+    affinity_assessment: ProvisionAffinityAssessment | None = None,
+    ownership_override: bool = False,
+) -> LparPowerOnOutcome:
+    """Activate an LPAR and optionally assess its resulting affinity."""
+    if affinity_assessment is not None:
+        if system_name_or_uuid is None:
+            raise ValueError(
+                "system_name_or_uuid is required for post-activation affinity assessment"
+            )
+        if affinity_assessment.system_name_or_uuid != system_name_or_uuid:
+            raise ValueError(
+                "affinity assessment managed-system identity must match target"
+            )
+        if affinity_assessment.lpar_name != lpar_name_or_uuid:
+            raise ValueError("affinity assessment LPAR identity must match target")
+        validate_affinity_request(affinity_assessment)
+
+    result = await power_lpar(
+        hmc,
+        system_name_or_uuid,
+        lpar_name_or_uuid,
+        power_on=True,
+        force=force,
+        wait=wait,
+        timeout_seconds=timeout_seconds,
+        poll_interval=poll_interval,
+        ownership_override=ownership_override,
+    )
+    if (
+        affinity_assessment is None
+        or result.job is None
+        or result.job.get("already_running") is True
+    ):
+        return power_on_outcome(result)
+    if not wait:
+        return power_on_outcome(
+            result,
+            affinity_not_measured(
+                "skipped",
+                "Assessment requires wait=true to observe successful activation.",
+            ),
+        )
+    successful, reason = activation_allows_assessment(result)
+    if not successful:
+        status = "failed" if affinity_assessment.response == "fail" else "unavailable"
+        return power_on_outcome(result, affinity_not_measured(status, reason))
+    try:
+        assessment = await assess_post_activation_affinity(hmc, affinity_assessment)
+    except (HMCError, HMCCLIError, ValueError) as exc:
+        status = "failed" if affinity_assessment.response == "fail" else "unavailable"
+        return power_on_outcome(
+            result,
+            affinity_not_measured(status, f"Affinity measurement unavailable: {exc}"),
+        )
+    return power_on_outcome(
+        result,
+        classify_affinity_outcome(assessment, affinity_assessment.response),
+    )
 
 
 async def create_and_stamp_lpar(

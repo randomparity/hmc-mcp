@@ -18,6 +18,7 @@ from typer.testing import CliRunner
 from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.cli import app as cli_app
 from hmc_mcp.cli_commands.lpar import lifecycle as cli_lpars
+from hmc_mcp.operations.lpar import core as lpar_core
 from hmc_mcp.operations.lpar import provision as operations_provision
 from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
 from hmc_mcp.config import HMCConfig
@@ -232,7 +233,9 @@ async def test_ownership_override_submits_the_job_and_is_audited(caplog) -> None
         for record in caplog.records
         if record.name == audit_sink.AUDIT_LOGGER_NAME
     ]
-    assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
+    assert len(records) == 1, (
+        "an absence assertion over an empty capture proves nothing"
+    )
     assert records[0]["event"] == "ownership-override"
     # The system is the caller's selector verbatim, not its resolved CLI name:
     # ADR 0094's override path deliberately skips the managed-system read so a
@@ -381,14 +384,19 @@ async def test_provision_activation_leg_overrides_its_own_stamp() -> None:
 
 
 @pytest.mark.parametrize(
-    "tool",
-    [server_lpars.hmc_power_on_lpar, server_lpars.hmc_power_off_lpar],
+    ("tool", "operation_module"),
+    [
+        (server_lpars.hmc_power_on_lpar, lpar_core),
+        (server_lpars.hmc_power_off_lpar, server_lpars),
+    ],
 )
-def test_power_tools_forward_the_ownership_override(monkeypatch, tool) -> None:
+def test_power_tools_forward_the_ownership_override(
+    monkeypatch, tool, operation_module
+) -> None:
     hmc = _hmc(authorize=True)
     operation = AsyncMock(return_value=AsyncMock(job={"UUID": "job-uuid"}))
     monkeypatch.setattr(server_lpars, "client_from_env", _client_factory(hmc))
-    monkeypatch.setattr(server_lpars, "power_lpar", operation)
+    monkeypatch.setattr(operation_module, "power_lpar", operation)
 
     tool("aix1", system_name_or_uuid="sys1", ownership_override=True)
 
