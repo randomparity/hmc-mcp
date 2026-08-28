@@ -685,9 +685,9 @@ def lpars_modify(
         async with _client() as hmc:
             return await modify_lpar(
                 hmc,
+                system,
                 name_or_uuid,
                 resources,
-                system,
                 assignments,
                 new_name=new_name,
                 ownership_override=ownership_override,

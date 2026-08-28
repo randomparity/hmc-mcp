@@ -24,9 +24,9 @@ from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
 
 async def modify_lpar(
     hmc: HMCClient,
+    system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
     resources: LparResources,
-    system_name_or_uuid: str | None,
     assignments: LparPcieAssignments,
     *,
     new_name: str | None = None,

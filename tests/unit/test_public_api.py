@@ -1835,10 +1835,11 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         "list_fc_ports",
         "list_lpar_memopt_scores",
         "list_sea_adapters",
-        "list_vnics",
-        "get_lpar_memopt_score",
-        "get_minimum_affinity_policy",
-        "power_lpar",
+            "list_vnics",
+            "get_lpar_memopt_score",
+            "get_minimum_affinity_policy",
+            "modify_lpar",
+            "power_lpar",
         "set_minimum_affinity_policy",
         "set_lpar_memory",
         "set_lpar_processors",
@@ -1902,7 +1903,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # User mutation operations now name every supported document field instead
     # of accepting an untyped keyword bag.
     # PCM metric controls are keyword-only after the resource selector.
-    expected_digest = "dd2838d09ef24aa104de0a5190749c68071edc5c99edf54f91ccc04b0b6e44b1"  # pragma: allowlist secret
+    expected_digest = "b066137dd64c250e5748081b27b25009689d2e6a20deedfdd47b7e7b74fcc0c6"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

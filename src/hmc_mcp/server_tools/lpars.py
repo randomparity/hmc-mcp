@@ -201,9 +201,9 @@ def hmc_modify_lpar(
         async with client_from_env(profile) as hmc:
             return await modify_lpar(
                 hmc,
+                system_name_or_uuid,
                 lpar_name_or_uuid,
                 resources,
-                system_name_or_uuid,
                 assignments,
                 ownership_override=ownership_override,
             )
