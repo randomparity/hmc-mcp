@@ -8,7 +8,7 @@ from typing import Generic, Literal, TypeVar
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.client import HMCClient
-from .lpar.ownership import resolve_and_authorize_lpar_names
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_names
 from hmc_mcp.ssh.network import (
     SriovMode,
     assign_sriov_logical_port_dynamic,

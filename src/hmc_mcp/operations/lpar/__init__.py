@@ -31,7 +31,7 @@ if TYPE_CHECKING:
         power_on_outcome,
         rename_lpar,
     )
-    from .ownership import resolve_and_authorize_lpar_mutation
+    from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
     from .decommission import DecommissionResult, decommission_lpar
     from .provision import (
         AttachDiskResult,
@@ -120,7 +120,7 @@ def __getattr__(name: str) -> Any:
 
         return getattr(core, name)
     if name in _OWNERSHIP_EXPORTS:
-        from . import ownership
+        from hmc_mcp.operations import ownership
 
         return getattr(ownership, name)
     if name in _ASSIGNMENT_EXPORTS:

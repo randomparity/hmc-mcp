@@ -7,7 +7,7 @@ Accepted (2026-08-26)
 ## Context
 
 The ADR 0011 ownership guard records the exception and not the rule it enforces. In
-`src/hmc_mcp/operations/lpar/ownership.py`, `_audit_lpar_ownership_override` is called from the two
+`src/hmc_mcp/operations/ownership.py`, `_audit_lpar_ownership_override` is called from the two
 override paths — `authorize_lpar_mutation` and `_authorize_lpar_ownership_description` —
 and emits one `ownership-override` record at `WARNING`. The two denial branches in
 `_authorize_lpar_ownership_description` raise `PermissionError` with no audit call: a

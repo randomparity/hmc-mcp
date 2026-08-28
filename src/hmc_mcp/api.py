@@ -29,10 +29,12 @@ from hmc_mcp.documents import (
 )
 from hmc_mcp.errors import HMCError, HMCTransportError
 from hmc_mcp.jobs import DeviceType, JobOutcome, LuType, RemoteRestartOperation
-from hmc_mcp.operations.lpar.ownership import (
+from hmc_mcp.operations.ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     authorize_lpar_mutation,
     list_lpar_ownership,
+    resolve_and_authorize_lpar_mutation,
+    resolve_and_authorize_lpar_names,
     resolve_lpar_ownership_names,
     set_lpar_ownership_description,
     stamp_created_lpar_ownership,
@@ -329,6 +331,8 @@ __all__ = [
     "assess_post_activation_affinity",
     "authorize_decommission_lpar_ownership_snapshot",
     "authorize_lpar_mutation",
+    "resolve_and_authorize_lpar_mutation",
+    "resolve_and_authorize_lpar_names",
     "resolve_lpar_ownership_names",
     "list_lpar_ownership",
     "stamp_created_lpar_ownership",

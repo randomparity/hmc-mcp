@@ -27,7 +27,7 @@ from . import (
     create_and_stamp_lpar,
     power_lpar,
 )
-from .ownership import resolve_and_authorize_lpar_mutation
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
 from ..ssh_network import set_minimum_affinity_policy
 from ...ssh.transport import HMCCLIError
 from ...ssh.selectors import resolve_ssh_names

@@ -20,7 +20,7 @@ from .assignments import (
     prevalidate_lpar_pcie_assignments,
 )
 from .errors import translate_lpar_write_error
-from .ownership import resolve_and_authorize_lpar_mutation
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
 
 async def modify_lpar(
     hmc: HMCClient,

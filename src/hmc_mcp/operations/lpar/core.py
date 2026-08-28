@@ -31,8 +31,8 @@ from ...jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from .ownership import stamp_created_lpar_ownership
-from .ownership import resolve_and_authorize_lpar_mutation
+from hmc_mcp.operations.ownership import stamp_created_lpar_ownership
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
 from ...ssh.transport import HMCCLIError
 from ...ssh.lpar import (
     resolve_system_cli_name,

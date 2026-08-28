@@ -21,7 +21,7 @@ from ..jobs import (
     wait_for_submitted_job,
 )
 from ..errors import HMCError
-from .lpar.ownership import resolve_and_authorize_lpar_mutation
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
 
 _MAX_CAPABILITY_LIMITS = 8
 _MAX_CAPABILITY_LIMIT_LENGTH = 200

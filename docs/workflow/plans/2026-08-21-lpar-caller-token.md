@@ -38,7 +38,7 @@ well-formed caller segment follows a well-formed ownership stamp.
 | File | Responsibility |
 |---|---|
 | `src/hmc_mcp/ssh_commands.py` | Token grammar validator; composed description write. |
-| `src/hmc_mcp/operations/lpar/core.py`, `operations/lpar/ownership.py` | `LparCreation.caller_token`; anchored extractor; creation-path validation; threading. |
+| `src/hmc_mcp/operations/lpar/core.py`, `operations/ownership.py` | `LparCreation.caller_token`; anchored extractor; creation-path validation; threading. |
 | `src/hmc_mcp/server_tools/lpars.py` | `hmc_create_lpar` parameter, docstring, entry validation. |
 | `src/hmc_mcp/server_tools/provision.py`, `src/hmc_mcp/operations/provision.py` | `hmc_provision_lpar` parameter plumbing. |
 | `src/hmc_mcp/cli_commands/lpars.py` | `lpars create --caller-token` with entry validation. |

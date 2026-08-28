@@ -24,7 +24,7 @@ Presentation adapters are grouped by resource domain:
 - Shared workflows and policies used by both presentations belong in
   presentation-neutral `operations/` modules.
 - `resource_identity.py` owns REST-facing name/UUID resolution.
-  `operations/lpar/ownership.py` owns the LPAR ownership protocol and authorization-name
+  `operations/ownership.py` owns the LPAR ownership protocol and authorization-name
   resolution; neither concern belongs to a presentation adapter.
 - Cross-domain request construction remains in `documents.py`, `jobs.py`, and
   `client/pcm_payloads.py`; configuration remains in `config.py`, and selector helpers live

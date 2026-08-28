@@ -29,7 +29,7 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from .lpar.ownership import resolve_and_authorize_lpar_mutation
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
 
 logger = logging.getLogger(__name__)
 

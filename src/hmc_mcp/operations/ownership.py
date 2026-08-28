@@ -8,20 +8,21 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from ... import audit
-from ...client import HMCClient
-from ...client.client_resolution import (
+from hmc_mcp import audit
+from hmc_mcp.client import HMCClient
+from hmc_mcp.client.client_resolution import (
     MAX_PARENT_DISCOVERY_SYSTEMS,
     PARENT_DISCOVERY_TIMEOUT_SECONDS,
 )
-from ...errors import HMCError
-from ...resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
-from ...ssh.transport import HMCCLIError
-from ...ssh.lpar import resolve_system_cli_name, stamp_lpar_ownership
-from ...ssh.description_validation import validate_lpar_description
-from ...ssh.profiles import get_lpar_description, set_lpar_description
+from hmc_mcp.errors import HMCError
+from hmc_mcp.resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
+from hmc_mcp.ssh.description_validation import validate_lpar_description
+from hmc_mcp.ssh.lpar import resolve_system_cli_name, stamp_lpar_ownership
+from hmc_mcp.ssh.profiles import get_lpar_description, set_lpar_description
+from hmc_mcp.ssh.transport import HMCCLIError
 
 _logger = logging.getLogger(__name__)
+
 
 def _fleet_within_discovery_bound(
     systems: list[dict[str, Any]], lpar_label: str

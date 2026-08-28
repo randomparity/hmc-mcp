@@ -5,7 +5,7 @@ from __future__ import annotations
 from ...client import HMCClient
 from ...ssh.profiles import set_lpar_msp, set_lpar_proc_compat, sync_lpar_profile
 from .core import ProcessorCompatibilityMode
-from .ownership import resolve_and_authorize_lpar_names
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_names
 
 
 async def synchronize_lpar_profile(

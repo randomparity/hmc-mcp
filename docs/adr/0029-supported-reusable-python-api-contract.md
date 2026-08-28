@@ -195,10 +195,6 @@ names are internal everywhere and are never inventoried.
   `power_lpar`, `rename_lpar`.
 - `operations.lpar.dlpar` — exports: `modify_lpar`, `set_lpar_memory`,
   `set_lpar_processors`.
-- `operations.lpar.ownership` — exports:
-  `authorize_decommission_lpar_ownership_snapshot`, `authorize_lpar_mutation`,
-  `list_lpar_ownership`, `resolve_lpar_ownership_names`, `set_lpar_ownership_description`,
-  `stamp_created_lpar_ownership`.
 - `operations.lpar.workflows` — exports: `create_lpar`.
 - `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
@@ -208,6 +204,12 @@ names are internal everywhere and are never inventoried.
 - `operations.network` — operations: `create_virtual_network`, `delete_virtual_network`,
   `list_network_bridges`, `list_virtual_networks`, `list_virtual_switches`; types: none; excluded
   synchronous: none.
+- `operations.ownership` — operations: `authorize_decommission_lpar_ownership_snapshot`,
+  `authorize_lpar_mutation`, `list_lpar_ownership`, `resolve_and_authorize_lpar_mutation`,
+  `resolve_and_authorize_lpar_names`, `resolve_lpar_ownership_names`,
+  `set_lpar_ownership_description`, `stamp_created_lpar_ownership`; types: none; excluded
+  synchronous: `authorize_lpar_ownership_description`, `lpar_ownership_entry`,
+  `parse_lpar_ownership_caller_token`, `parse_lpar_ownership_owner`.
 - `operations.pcie` — operations: `assign_dedicated_pcie_slot`, `assign_sriov_logical_port`,
   `list_dedicated_slots`, `list_sriov_adapters`, `list_sriov_logical_ports`,
   `list_sriov_physical_ports`, `set_sriov_adapter_mode`, `unassign_dedicated_pcie_slot`,

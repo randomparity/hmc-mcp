@@ -15,7 +15,7 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from .lpar.ownership import stamp_created_lpar_ownership
+from hmc_mcp.operations.ownership import stamp_created_lpar_ownership
 
 _logger = logging.getLogger(__name__)
 

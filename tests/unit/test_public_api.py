@@ -124,9 +124,11 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "InstallHandle",
         "InstallRequest",
         "assess_post_activation_affinity",
-        "authorize_decommission_lpar_ownership_snapshot",
-        "authorize_lpar_mutation",
-        "resolve_lpar_ownership_names",
+            "authorize_decommission_lpar_ownership_snapshot",
+            "authorize_lpar_mutation",
+            "resolve_and_authorize_lpar_mutation",
+            "resolve_and_authorize_lpar_names",
+            "resolve_lpar_ownership_names",
         "list_lpar_ownership",
         "stamp_created_lpar_ownership",
         "create_and_stamp_lpar",
@@ -1878,7 +1880,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # User mutation operations now name every supported document field instead
     # of accepting an untyped keyword bag.
     # PCM metric controls are keyword-only after the resource selector.
-    expected_digest = "c41cebe4324cbcc1abec267faefcb2a49f10a35b843c595a8d9525ea680b9754"  # pragma: allowlist secret
+    expected_digest = "73927d7fb042dd731bea09ebb8656ba0c71b096bd07bb64528cd7400450f8f62"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

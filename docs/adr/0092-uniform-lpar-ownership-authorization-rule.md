@@ -8,7 +8,7 @@ Accepted (2026-08-25)
 
 ADR 0011 established the advisory ownership protocol: a token
 (`[hmc-mcp owner:<agent_id> created:<date>]`) stamped into the partition
-description, and `authorize_lpar_mutation` (`src/hmc_mcp/operations/lpar/ownership.py:152`)
+description, and `authorize_lpar_mutation` (`src/hmc_mcp/operations/ownership.py:152`)
 to reject a mutation of a partition another agent owns. ADR 0011 named the tools
 that *stamp* and *read* the token. It never said which mutations must *check* it.
 
@@ -122,7 +122,7 @@ against that commit rather than maintained forward.
 | `delete_lpar` | `operations/lpar/core.py:294` | guarded (`:313`) | — |
 | `decommission_lpar` | `operations/lpar/decommission.py:606` | guarded (`:283`, `:637`, `:656`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
 | `rename_lpar` | `operations/lpar/core.py:399` | guarded (`:426`) | — |
-| `set_lpar_ownership_description` | `operations/lpar/ownership.py:593` | guarded (`:281`) | — |
+| `set_lpar_ownership_description` | `operations/ownership.py:597` | guarded (`:281`) | — |
 | `synchronize_lpar_profile` | `operations/lpar/configuration.py:11` | guarded (`:25`) | — |
 
 `rename_lpar` is Destructive rather than Reconfiguring because the partition name
@@ -144,10 +144,10 @@ only the transport boundary.
 | `assign_dedicated_pcie_slot` | `operations/pcie.py:179` | guarded (`:223`, via `_authorize_pcie_profile_request`) | — |
 | `unassign_dedicated_pcie_slot` | `operations/pcie.py:199` | guarded (`:223`) | — |
 | `assign_sriov_logical_port` | `operations/pcie.py:495` | guarded (`:371`, via `_resolve_lpar`) | — |
-| `unassign_sriov_logical_port` | `operations/pcie.py:579` | guarded (`:371`) | — |
-| `add_vnic` | `operations/ssh_network.py:744` | guarded (`:411`, via `_preflight_add:536` → `_resolve:405`) | — |
-| `remove_vnic` | `operations/ssh_network.py:810` | guarded (`:411`, via `_resolve`) | — |
-| `set_minimum_affinity_policy` | `operations/ssh_network.py:301` | guarded (`:318`) | — |
+| `unassign_sriov_logical_port` | `operations/pcie.py:583` | guarded (`:371`) | — |
+| `add_vnic` | `operations/ssh_network.py:748` | guarded (`:411`, via `_preflight_add:536` → `_resolve:405`) | — |
+| `remove_vnic` | `operations/ssh_network.py:820` | guarded (`:411`, via `_resolve`) | — |
+| `set_minimum_affinity_policy` | `operations/ssh_network.py:302` | guarded (`:318`) | — |
 | `set_lpar_processors` | `operations/lpar/dlpar.py:107` | guarded (`:405`, via `_apply_dlpar_document:397` → `_resolve_and_authorize_lpar:328`) | — |
 | `set_lpar_memory` | `operations/lpar/dlpar.py:143` | guarded (`:405`, via `_apply_dlpar_document`) | — |
 | `apply_lpar_pcie_assignments` | `operations/lpar/assignments.py:275` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
@@ -316,13 +316,13 @@ required selector and do not route through this chain.
 **The cost, stated.** Guarding `power_lpar` costs **one SSH login plus two REST
 GETs** on every call that does not carry `ownership_override=True`.
 
-The SSH login is the chain `authorize_lpar_mutation` (`operations/lpar/ownership.py:152`) →
+The SSH login is the chain `authorize_lpar_mutation` (`operations/ownership.py:152`) →
 `ssh_commands.get_lpar_description` (`ssh_commands.py:1577`) →
 `ssh.run_hmc_command` (`ssh.py:34`) → a fresh `asyncssh.connect` (`ssh.py:38`) per
 invocation. `run_hmc_command` opens and closes its connection inside the call; the
 only long-lived SSH connection in the package is the console path (`ssh.py:80`),
 which commands do not share. There is no pool and no reuse. (With
-`ownership_override=True` the guard returns at `operations/lpar/ownership.py:161` after
+`ownership_override=True` the guard returns at `operations/ownership.py:161` after
 auditing, before the read — so **`authorize_lpar_mutation` itself** pays nothing.
 A caller that resolves the ownership names first still pays the two REST GETs
 below, because the audit record for an approved override names the system and the
@@ -331,7 +331,7 @@ override path to be free end to end; ADR 0094's `_resolve_and_authorize_lpar`
 narrows it further — it skips the fleet walk on an override and pays one name read.)
 
 The two REST GETs come from `resolve_lpar_ownership_names`
-(`operations/lpar/ownership.py:169`), which the guard needs to turn UUIDs into the CLI names
+(`operations/ownership.py:169`), which the guard needs to turn UUIDs into the CLI names
 the SSH command takes. It calls `_system_name` (`:581`) → `hmc.get_managed_system`
 (`:591`) and `hmc.get_logical_partition` (`:582`) **unconditionally** — supplying
 `system_name_or_uuid` does not avoid either, as `rename_lpar` (`:917`) and
@@ -374,7 +374,7 @@ Two distinct mechanisms, deliberately not interchangeable:
 - **Per-call operator override.** Every guarded operation takes
   `ownership_override: bool = False`. When true the guard is bypassed for that one
   call and the bypass is audited by `_audit_lpar_ownership_override`
-  (`operations/lpar/ownership.py:75`). This is an operator-approved exception to a *single*
+  (`operations/ownership.py:75`). This is an operator-approved exception to a *single*
   mutation. It is not an exemption from this ADR, and an operation that accepts it
   is still classified and still guarded.
 - **Standing exemption.** A row in §3.4b with a recorded reason. This is the only
@@ -427,8 +427,8 @@ machine-readable and exhaustively enforced by the existing registry test, so the
 domain enumerates itself.
 
 **What counts as a guard.** Exactly two callables:
-`authorize_lpar_mutation` (`operations/lpar/ownership.py:152`) and
-`authorize_decommission_lpar_ownership_snapshot` (`operations/lpar/ownership.py:211`). Nothing
+`authorize_lpar_mutation` (`operations/ownership.py:152`) and
+`authorize_decommission_lpar_ownership_snapshot` (`operations/ownership.py:211`). Nothing
 else, and no new one without amending this list.
 
 **"Reaches" means call-graph reachability, not a direct call.** Six operations in §3

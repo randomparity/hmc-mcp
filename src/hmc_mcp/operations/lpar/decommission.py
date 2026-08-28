@@ -19,7 +19,7 @@ from ...jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from .ownership import (
+from hmc_mcp.operations.ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     resolve_lpar_ownership_names,
 )

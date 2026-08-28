@@ -35,7 +35,7 @@ from ..operations.lpar.boot_order import (
     set_lpar_boot_order,
 )
 from ..operations.lpar.dlpar import modify_lpar
-from ..operations.lpar.ownership import set_lpar_ownership_description
+from hmc_mcp.operations.ownership import set_lpar_ownership_description
 from ..operations.lpar.workflows import create_lpar
 from ..operations.lpar.provision import ProvisionNetwork, ProvisionStorage, provision_lpar
 from ..operations.ssh_network import (

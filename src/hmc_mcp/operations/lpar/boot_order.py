@@ -13,7 +13,7 @@ from ...documents import (
 )
 from ...errors import HMCError
 from .errors import translate_lpar_write_error
-from .ownership import resolve_and_authorize_lpar_names
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_names
 
 _logger = logging.getLogger(__name__)
 

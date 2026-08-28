@@ -10,7 +10,7 @@ from .._app import (
     run_sync,
 )
 from ..errors import HMCError
-from ..operations.lpar.ownership import list_lpar_ownership
+from hmc_mcp.operations.ownership import list_lpar_ownership
 from ..operations.affinity import (
     ProvisionAffinityAssessment,
     affinity_not_measured,

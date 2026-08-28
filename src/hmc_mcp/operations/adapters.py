@@ -8,7 +8,7 @@ from typing import Any
 from ..client import HMCClient
 from ..client.client_adapters import AdapterType, validate_adapter_type
 from ..resource_identity import resolve_lpar_uuid
-from .lpar.ownership import resolve_and_authorize_lpar_mutation
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
 
 
 @dataclass(frozen=True)
