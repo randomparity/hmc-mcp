@@ -47,10 +47,11 @@ The MCP surface adds seven explicit tools:
 | `hmc_remove_vios_vfc_group_label` | destructive | `system_name_or_uuid`, `label` | receipt |
 
 `system_name_or_uuid` accepts the managed-system name or UUID used by existing public tools. The
-operation layer resolves a UUID to its HMC CLI name before command construction. A
-VIOS selector is exactly one of `vios_name: str` and `vios_id: int`; both set or both omitted is a
-pre-dispatch error. A group member selector is exactly one non-empty list, `vios_names: list[str]`
-or `vios_ids: list[int]`. A string identifier is blank when it contains no non-whitespace
+operation layer resolves a UUID to its HMC CLI name before command construction. FC-port listing
+accepts neither VIOS selector to list all ports, accepts exactly one of `vios_name: str` and
+`vios_id: int` to filter, and rejects both. FC-port set and removal require exactly one selector. A
+group member selector is exactly one non-empty list, `vios_names: list[str]` or
+`vios_ids: list[int]`. A string identifier is blank when it contains no non-whitespace
 character; blank labels, ports, rename targets, and VIOS names fail before dispatch. Nonblank
 strings are preserved byte-for-byte rather than stripped because embedded or surrounding spaces
 remain caller data protected by shell quoting. Non-positive VIOS IDs, empty member lists,
@@ -172,7 +173,8 @@ malformed headers, malformed CSV, and row-width drift. Command tests assert exac
 commands for every operation and both VIOS selector families. Table-driven rejection tests cover
 blank and duplicate members, whitespace-only labels, ports, rename targets, and VIOS names,
 both/neither selectors, non-positive IDs, every HMC record delimiter, ASCII controls,
-incompatible update arguments, preservation of nonblank surrounding spaces, and label/port shell
+incompatible update arguments, unfiltered versus singly filtered FC-port list behavior, required
+FC-port mutation selectors, preservation of nonblank surrounding spaces, and label/port shell
 metacharacters remaining quoted data. A controlled fault changes one expected command and proves
 the new tests fail before the implementation is retained.
 
