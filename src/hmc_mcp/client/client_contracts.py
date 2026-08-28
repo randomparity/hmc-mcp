@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+# Element is a type contract only; client implementations parse inbound XML
+# through defusedxml.
+from xml.etree.ElementTree import Element  # nosec B405
 from importlib import import_module
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Protocol
@@ -147,19 +149,19 @@ class StorageClient(Protocol):
 
     async def _get_vg_raw_xml(
         self, vios_uuid: str, vg_uuid: str
-    ) -> tuple[str, ET.Element]: ...
+    ) -> tuple[str, Element]: ...
 
     async def _post_vg_xml(
-        self, vios_uuid: str, vg_uuid: str, vg_elem: ET.Element
+        self, vios_uuid: str, vg_uuid: str, vg_elem: Element
     ) -> dict[str, Any] | None: ...
 
-    def _build_mr_element(self, size_mib: int) -> ET.Element: ...
+    def _build_mr_element(self, size_mib: int) -> Element: ...
 
     def _insert_mr_at_correct_position(
-        self, vg_elem: ET.Element, mr_elem: ET.Element
+        self, vg_elem: Element, mr_elem: Element
     ) -> None: ...
 
-    def _find_vmlib(self, vg_elem: ET.Element) -> ET.Element | None: ...
+    def _find_vmlib(self, vg_elem: Element) -> Element | None: ...
 
 
 class AdaptersClient(Protocol):

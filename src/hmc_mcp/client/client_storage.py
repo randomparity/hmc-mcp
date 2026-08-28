@@ -6,8 +6,12 @@ domain mixin; this module only defines methods for storage.
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+# ElementTree is retained for element construction, traversal, typing, and
+# serialization only. Every inbound HMC response is parsed with defusedxml.
+import xml.etree.ElementTree as ET  # nosec B405
 from typing import Any
+
+from defusedxml import ElementTree as DET
 
 from .client_contracts import StorageClient
 from .client_parse import _parse_feed
@@ -38,8 +42,8 @@ async def _load_vios_document(
     if not vios_xml:
         raise HMCError(f"GET {get_path} returned empty response", 200, "")
     try:
-        root = ET.fromstring(vios_xml)
-    except ET.ParseError as exc:
+        root = DET.fromstring(vios_xml)
+    except DET.ParseError as exc:
         raise HMCError(
             "VirtualIOServer GET response is not valid XML", 200, vios_xml
         ) from exc
@@ -259,8 +263,8 @@ class StorageMixin:
         if not vios_xml:
             raise HMCError(f"GET {get_path} returned empty response", 200, "")
         try:
-            root = ET.fromstring(vios_xml)
-        except ET.ParseError as exc:
+            root = DET.fromstring(vios_xml)
+        except DET.ParseError as exc:
             raise HMCError(
                 "VirtualIOServer GET response is not valid XML", 200, vios_xml
             ) from exc
@@ -328,7 +332,7 @@ class StorageMixin:
         ET.register_namespace("", _UOM_NS)
         ET.register_namespace("atom", _ATOM_NS)
 
-        root = ET.fromstring(raw)
+        root = DET.fromstring(raw)
         # Firmware returns either an Atom-wrapped or bare VolumeGroup document.
         ns = {"atom": _ATOM_NS, "uom": _UOM_NS}
         vg_elem = (

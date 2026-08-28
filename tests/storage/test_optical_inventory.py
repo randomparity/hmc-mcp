@@ -2,6 +2,7 @@
 
 import httpx
 import pytest
+from defusedxml.common import EntitiesForbidden
 
 from conftest import make_config
 
@@ -10,6 +11,18 @@ from hmc_mcp.client import HMCClient, HMCError
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 SYS_UUID = "00000000-0000-0000-0000-000000000099"
 LPAR_UUID = "00000000-0000-0000-0000-000000000001"
+
+
+@pytest.mark.asyncio
+async def test_optical_mapping_rejects_xml_entities(mock_hmc):
+    document = '<!DOCTYPE x [<!ENTITY payload "expanded">]><x>&payload;</x>'
+    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(200, text=document)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(EntitiesForbidden):
+            await hmc.create_optical_mapping(VIOS_UUID, "test.iso", LPAR_UUID)
 
 # Minimal VirtualIOServer GET response for create_optical_mapping tests.
 # Must include AssociatedManagedSystem href (to extract SYS_UUID) and

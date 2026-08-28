@@ -8,11 +8,24 @@ after the mutation.
 
 import httpx
 import pytest
+from defusedxml.common import EntitiesForbidden
 
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.errors import HMCError
+
+
+@pytest.mark.asyncio
+async def test_media_repository_rejects_xml_entities(mock_hmc):
+    document = '<!DOCTYPE x [<!ENTITY payload "expanded">]><x>&payload;</x>'
+    mock_hmc.get(
+        "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid"
+    ).mock(return_value=httpx.Response(200, text=document))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(EntitiesForbidden):
+            await hmc.create_media_repository("vios-uuid", "vg-uuid", 2048)
 
 # Minimal VolumeGroup feed — no MediaRepositories block (bare VG).
 _VG_FEED_BARE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
