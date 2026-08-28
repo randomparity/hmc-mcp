@@ -29,7 +29,7 @@ from hmc_mcp.ssh import lpar as ssh_lpar
 from hmc_mcp.ssh import network as ssh_network
 from hmc_mcp.ssh import profiles as ssh_profiles
 from hmc_mcp.cli_commands import app as cli_app
-from hmc_mcp.cli_commands import lpars as cli_lpars
+from hmc_mcp.cli_commands import lpars_config as cli_lpars
 from hmc_mcp.cli_commands import network as cli_network
 from hmc_mcp.operations import ownership as lpar_ownership
 from hmc_mcp.client import HMCClient
@@ -43,12 +43,18 @@ LPAR_NAME = "lpar1"
 def _patch_ssh_command(monkeypatch, replacement) -> None:
     """Replace the transport name owned by every SSH domain used by the CLI."""
     config = HMCConfig.from_mapping(
-        {"host": "hmc.test", "user": "hscroot", "password": "test"}  # pragma: allowlist secret
+        {
+            "host": "hmc.test",
+            "user": "hscroot",
+            "password": "test",  # pragma: allowlist secret
+        }
     )
     for module in (cli_lpars, cli_network):
         monkeypatch.setattr(module, "_ssh_client", lambda: HMCClient(config))
     for module in (ssh_affinity, ssh_lpar, ssh_network, ssh_profiles):
         monkeypatch.setattr(module, "run_hmc_command", replacement)
+
+
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 VG_UUID = "33333333-3333-4333-8333-333333333333"
@@ -64,7 +70,11 @@ RUNNER = CliRunner()
 @pytest.fixture(autouse=True)
 def _configured_ssh_client(monkeypatch) -> None:
     config = HMCConfig.from_mapping(
-        {"host": "hmc.test", "user": "hscroot", "password": "test"}  # pragma: allowlist secret
+        {
+            "host": "hmc.test",
+            "user": "hscroot",
+            "password": "test",  # pragma: allowlist secret
+        }
     )
     for module in (cli_lpars, cli_network):
         monkeypatch.setattr(module, "_ssh_client", lambda: HMCClient(config))
@@ -1043,7 +1053,9 @@ def test_lpars_modify_procs_only_keeps_sharing_mode(fake_hmc):
     )
 
     assert result.exit_code == 0
-    _, args, _ = next(call for call in fake_hmc.calls if call[0] == "modify_logical_partition")
+    _, args, _ = next(
+        call for call in fake_hmc.calls if call[0] == "modify_logical_partition"
+    )
     body = args[1]
     assert "DesiredProcessingUnits" in body and ">0.5<" in body
     assert "HasDedicatedProcessors" not in body
@@ -1057,7 +1069,9 @@ def test_lpars_modify_dedicated_flag_sets_mode(fake_hmc):
     )
 
     assert result.exit_code == 0
-    _, args, _ = next(call for call in fake_hmc.calls if call[0] == "modify_logical_partition")
+    _, args, _ = next(
+        call for call in fake_hmc.calls if call[0] == "modify_logical_partition"
+    )
     body = args[1]
     assert "DedicatedProcessorConfiguration" in body
     assert "HasDedicatedProcessors" in body and ">true<" in body
@@ -1638,7 +1652,9 @@ def direct_client(monkeypatch):
     """Neutralise load_profile()/HMCClient() for the commands that build their own client."""
     client = _FakeClientContext()
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.load_profile", lambda: None)
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.HMCClient", lambda _config: client)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.HMCClient", lambda _config: client
+    )
     return client
 
 
@@ -1737,7 +1753,9 @@ def test_storage_create_media_repo_declined_confirmation_aborts(fake_hmc, monkey
     async def fake_create(*args):
         called.append(args)
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.create_media_repository", fake_create)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.create_media_repository", fake_create
+    )
 
     result = RUNNER.invoke(
         cli.app,
@@ -1757,7 +1775,9 @@ def test_storage_create_media_creates_when_confirmed(fake_hmc, monkeypatch):
         seen.update(vios=vios, vg=vg, name=name, size_mib=size_mib)
         return {"MediaName": "aix.iso"}
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.create_optical_media", fake_create)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.create_optical_media", fake_create
+    )
 
     result = RUNNER.invoke(
         cli.app,
@@ -1790,7 +1810,9 @@ def test_storage_create_media_declined_confirmation_aborts(fake_hmc, monkeypatch
     async def fake_create(*args):
         called.append(args)
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.create_optical_media", fake_create)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.create_optical_media", fake_create
+    )
 
     result = RUNNER.invoke(
         cli.app,
@@ -1818,7 +1840,9 @@ def test_storage_delete_media_deletes_when_confirmed(fake_hmc, monkeypatch):
     async def fake_delete(_hmc, vios, vg, media_name):
         seen.update(vios=vios, vg=vg, media_name=media_name)
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.delete_optical_media", fake_delete)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.delete_optical_media", fake_delete
+    )
 
     result = RUNNER.invoke(
         cli.app,
@@ -1836,7 +1860,9 @@ def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch
     async def fake_delete(*args):
         called.append(args)
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.delete_optical_media", fake_delete)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.delete_optical_media", fake_delete
+    )
 
     result = RUNNER.invoke(
         cli.app,
@@ -1998,9 +2024,7 @@ def test_storage_list_mappings_json(direct_client, monkeypatch):
 def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatch):
     seen = {}
 
-    async def fake_detach(
-        _hmc, system, vios, mapping_uuid, *, ownership_override
-    ):
+    async def fake_detach(_hmc, system, vios, mapping_uuid, *, ownership_override):
         seen.update(
             system=system,
             vios=vios,
@@ -2766,7 +2790,8 @@ def test_add_vnic_cli_default_confirmation_keeps_stdout_json(monkeypatch):
     operation = AsyncMock(return_value=_vnic_result("add"))
     monkeypatch.setattr("hmc_mcp.cli_commands.network.add_vnic", operation)
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.network._with_client", lambda fn: asyncio.run(fn(object()))
+        "hmc_mcp.cli_commands.network._with_client",
+        lambda fn: asyncio.run(fn(object())),
     )
 
     result = RUNNER.invoke(
@@ -2804,7 +2829,8 @@ def test_remove_vnic_cli_default_confirmation_keeps_partial_stdout_json(monkeypa
     operation = AsyncMock(side_effect=partial)
     monkeypatch.setattr("hmc_mcp.cli_commands.network.remove_vnic", operation)
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.network._with_client", lambda fn: asyncio.run(fn(object()))
+        "hmc_mcp.cli_commands.network._with_client",
+        lambda fn: asyncio.run(fn(object())),
     )
 
     result = RUNNER.invoke(
@@ -3672,7 +3698,9 @@ def test_memory_pools_list_table(monkeypatch):
     async def fake_list(config, system_name):
         return [{"pool_name": "pool1", "size": "1024", "lpar_names": "lpar1"}]
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.memory_pools.list_memory_pools", fake_list)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.memory_pools.list_memory_pools", fake_list
+    )
     result = RUNNER.invoke(cli.app, ["memory-pools", "list", "sys1"])
 
     assert result.exit_code == 0
@@ -3684,7 +3712,9 @@ def test_memory_pools_list_json(monkeypatch):
     async def fake_list(config, system_name):
         return [{"pool_name": "pool1", "size": "1024"}]
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.memory_pools.list_memory_pools", fake_list)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.memory_pools.list_memory_pools", fake_list
+    )
     result = RUNNER.invoke(cli.app, ["memory-pools", "list", "sys1", "--json"])
 
     assert result.exit_code == 0
@@ -3695,7 +3725,9 @@ def test_memory_pools_list_empty(monkeypatch):
     async def fake_list(config, system_name):
         return []
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.memory_pools.list_memory_pools", fake_list)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.memory_pools.list_memory_pools", fake_list
+    )
     result = RUNNER.invoke(cli.app, ["memory-pools", "list", "sys1"])
 
     assert result.exit_code == 0
@@ -3706,7 +3738,9 @@ def test_memory_pools_remove_with_yes(monkeypatch):
     async def fake_remove(config, system_name, pool_name):
         return "pool removed\n"
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.memory_pools.remove_memory_pool", fake_remove)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.memory_pools.remove_memory_pool", fake_remove
+    )
     result = RUNNER.invoke(
         cli.app, ["memory-pools", "remove", "sys1", "pool1", "--yes"]
     )
