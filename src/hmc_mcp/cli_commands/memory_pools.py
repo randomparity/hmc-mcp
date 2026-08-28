@@ -6,13 +6,8 @@ from __future__ import annotations
 import typer
 from rich.table import Table
 
-from .app import (
-    _print_json,
-    _run,
-    _ssh_config,
-    console,
-    err_console,
-)
+from .runtime import _run, _ssh_config
+from .output import _print_json, console, err_console
 
 from ..ssh.memory import list_memory_pools, remove_memory_pool
 

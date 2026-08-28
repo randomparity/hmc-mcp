@@ -10,16 +10,8 @@ import sys
 import typer
 from rich.table import Table
 
-from .app import (
-    _first_field,
-    _output,
-    _print_json,
-    _run,
-    _ssh_client,
-    _ssh_config,
-    _with_client,
-    console,
-)
+from .runtime import _run, _ssh_client, _ssh_config, _with_client
+from .output import _first_field, _output, _print_json, console
 
 from ..operations.network import (
     create_virtual_network,

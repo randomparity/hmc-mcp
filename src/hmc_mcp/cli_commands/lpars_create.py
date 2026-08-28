@@ -11,7 +11,8 @@ from ..documents import PARTITION_TYPES, LparResources
 from ..operations.lpar.core import LparCreation
 from ..operations.lpar.workflows import create_lpar
 from ..ssh.lpar import validate_caller_token
-from .app import _client, _print_json, _run, _usage_error, console, err_console
+from .runtime import _client, _run
+from .output import _print_json, _usage_error, console, err_console
 from .lpars_config import _load_pcie_assignments
 
 

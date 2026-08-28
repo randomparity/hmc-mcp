@@ -252,7 +252,7 @@ def test_capacity_cli_preserves_connection_overrides():
     with (
         patch("hmc_mcp.cli_commands.systems.capacity_report", report),
         patch(
-            "hmc_mcp.cli_commands.app.HMCClient",
+            "hmc_mcp.cli_commands.runtime.HMCClient",
             return_value=_ClientContext(client),
         ) as client_factory,
     ):

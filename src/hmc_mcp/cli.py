@@ -7,20 +7,18 @@ Usage examples:
     hmc-mcp lpars show mylpar         # find an LPAR by name and show it
     hmc-mcp console info              # HMC version / connectivity check
 
-This module is the explicit composition root: command groups and shared plumbing
-live in :mod:`hmc_mcp.cli_commands.app`, while domain modules expose registration
-functions called here to build the complete tree.
+This module is the explicit composition root: ``cli_commands.app`` owns command
+groups, while domain modules expose registration functions called here to build
+the complete tree.
 """
 
 from __future__ import annotations
 
 from .cli_commands.app import (
-    GlobalOpts as GlobalOpts,
     adapters_app,
     app as app,
     cluster_app,
     config_app,
-    console as console,
     console_app,
     jobs_app,
     lpars_app,
@@ -35,6 +33,8 @@ from .cli_commands.app import (
     templates_app,
     vios_app,
 )
+from .cli_commands.output import console as console
+from .cli_commands.runtime import GlobalOpts as GlobalOpts
 
 from .cli_commands import (
     adapters,

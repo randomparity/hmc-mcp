@@ -6,14 +6,8 @@ from __future__ import annotations
 import typer
 from rich.table import Table
 
-from .app import (
-    _first_field,
-    _output,
-    _print_json,
-    _usage_error,
-    _with_client,
-    console,
-)
+from .runtime import _with_client
+from .output import _first_field, _output, _print_json, _usage_error, console
 from ..jobs import validate_wait_timing
 from ..operations.templates import (
     deploy_partition_template,

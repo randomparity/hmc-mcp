@@ -7,13 +7,8 @@ import typer
 
 from ..client.client_adapters import ADAPTER_TYPES, AdapterType
 
-from .app import (
-    _client,
-    _output,
-    _print_json,
-    _run,
-    console,
-)
+from .runtime import _client, _run
+from .output import _output, _print_json, console
 from ..operations.adapters import (
     add_network_adapter,
     add_vfc_adapter,

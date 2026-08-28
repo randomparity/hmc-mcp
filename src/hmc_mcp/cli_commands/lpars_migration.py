@@ -8,12 +8,8 @@ import typer
 from typing import Literal, cast
 
 from ..jobs import REMOTE_RESTART_OPERATIONS, RemoteRestartOperation
-from .app import (
-    _client,
-    _print_json,
-    _run,
-    console,
-)
+from .runtime import _client, _run
+from .output import _print_json, console
 
 from ..jobs import JobOutcome, validate_wait_timing
 from ..operations.lpm import (

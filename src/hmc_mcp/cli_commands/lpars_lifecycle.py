@@ -6,7 +6,9 @@ import typer
 
 from ..jobs import validate_wait_timing
 from ..operations.lpar.core import delete_lpar, power_lpar
-from .app import _client, _print_json, _run, console, err_console
+from .runtime import _client, _run
+from .output import _print_json, console, err_console
+
 
 def lpars_power_on(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),

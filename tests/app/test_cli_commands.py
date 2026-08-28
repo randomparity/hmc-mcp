@@ -1,6 +1,6 @@
 """Direct CLI command tests via ``typer.testing.CliRunner``.
 
-The REST-backed commands all funnel through ``cli_app._client`` and the SSH-backed
+The REST-backed commands all funnel through ``cli_runtime._client`` and the SSH-backed
 commands through ``ssh_commands.run_hmc_command``. These tests monkeypatch those
 two boundaries so every command runs against a scripted fake — no HTTP, no SSH.
 
@@ -28,7 +28,7 @@ from hmc_mcp.ssh import commands as ssh_commands
 from hmc_mcp.ssh import lpar as ssh_lpar
 from hmc_mcp.ssh import network as ssh_network
 from hmc_mcp.ssh import profiles as ssh_profiles
-from hmc_mcp.cli_commands import app as cli_app
+from hmc_mcp.cli_commands import runtime as cli_runtime
 from hmc_mcp.cli_commands import lpars_config as cli_lpars
 from hmc_mcp.cli_commands import network as cli_network
 from hmc_mcp.operations import ownership as lpar_ownership
@@ -497,7 +497,7 @@ class FakeHMC:
 def fake_hmc(monkeypatch):
     """Wire the CLI's client factory to a scripted FakeHMC for every command."""
     hmc = FakeHMC()
-    monkeypatch.setattr(cli_app, "HMCClient", lambda _config: hmc)
+    monkeypatch.setattr(cli_runtime, "HMCClient", lambda _config: hmc)
 
     async def legacy_description(*_args):
         return "legacy partition"
@@ -518,7 +518,7 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
         seen.append(config)
         return hmc
 
-    monkeypatch.setattr(cli_app, "HMCClient", client_factory)
+    monkeypatch.setattr(cli_runtime, "HMCClient", client_factory)
 
     first = RUNNER.invoke(
         cli.app,
@@ -2093,7 +2093,7 @@ def test_run_propagates_a_typer_exit_code_unchanged():
         raise typer.Exit(code=2)
 
     with pytest.raises(typer.Exit) as excinfo:
-        cli_app._run(_go)
+        cli_runtime._run(_go)
 
     assert excinfo.value.exit_code == 2
 
@@ -2105,10 +2105,10 @@ def test_with_client_propagates_a_typer_exit_code_unchanged(monkeypatch):
         coroutine.close()
         raise typer.Exit(code=2)
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.app.asyncio.run", boom)
+    monkeypatch.setattr("hmc_mcp.cli_commands.runtime.asyncio.run", boom)
 
     with pytest.raises(typer.Exit) as excinfo:
-        cli_app._with_client(lambda hmc: None)
+        cli_runtime._with_client(lambda hmc: None)
 
     assert excinfo.value.exit_code == 2
 

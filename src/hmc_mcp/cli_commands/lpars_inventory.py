@@ -14,16 +14,8 @@ from ..operations.lpar.core import (
     get_lpar_state,
     list_lpars,
 )
-from .app import (
-    _client,
-    _first_field,
-    _output,
-    _partition_not_found,
-    _print_json,
-    _run,
-    _with_client,
-    console,
-)
+from .runtime import _client, _run, _with_client
+from .output import _first_field, _output, _partition_not_found, _print_json, console
 
 
 def lpars_summary(

@@ -6,13 +6,8 @@ import json
 
 import typer
 
-from .app import (
-    _print_json,
-    _resource,
-    _with_client,
-    console,
-    err_console,
-)
+from .runtime import _with_client
+from .output import _print_json, _resource, console, err_console
 
 
 def console_info(as_json: bool = typer.Option(False, "--json")) -> None:

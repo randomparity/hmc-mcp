@@ -25,9 +25,10 @@ from typing import Any, Final
 import typer
 from rich.markup import escape
 
-from . import app as cli_app
+from . import runtime as cli_runtime
 from ..authorization.access_policy import AccessPolicyError
-from .app import _fail, _policy_file, console, err_console
+from .output import _fail, console, err_console
+from .serve import _policy_file
 from ..config import (
     ConfigError,
     config_inventory,
@@ -145,7 +146,7 @@ def config_show(
     SSH key credential is configured.
     """
     # Command --profile takes precedence over the invocation's root option.
-    effective_profile = profile or cli_app._current_options().profile
+    effective_profile = profile or cli_runtime._current_options().profile
 
     config_path = resolve_config_path()
     if config_path is None:

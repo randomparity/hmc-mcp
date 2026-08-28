@@ -8,7 +8,9 @@ import typer
 from rich.table import Table
 
 from ..operations.lpar.decommission import decommission_lpar
-from .app import _client, _print_json, _run, console
+from .runtime import _client, _run
+from .output import _print_json, console
+
 
 def lpars_decommission(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),

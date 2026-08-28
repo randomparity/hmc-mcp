@@ -20,13 +20,8 @@ from ..operations.lpar.provision import (
     ProvisionStorage,
     provision_lpar,
 )
-from .app import (
-    _client,
-    _print_json,
-    _run,
-    _usage_error,
-    console,
-)
+from .runtime import _client, _run
+from .output import _print_json, _usage_error, console
 from .lpars_config import _load_pcie_assignments
 
 

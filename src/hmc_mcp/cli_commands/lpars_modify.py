@@ -10,7 +10,8 @@ import typer
 from ..documents import LparResources
 from ..operations.lpar.assignments import LparPcieAssignments
 from ..operations.lpar.dlpar import modify_lpar
-from .app import _client, _partition_not_found, _print_json, _run, _usage_error, console
+from .runtime import _client, _run
+from .output import _partition_not_found, _print_json, _usage_error, console
 from .lpars_config import _load_pcie_assignments
 
 

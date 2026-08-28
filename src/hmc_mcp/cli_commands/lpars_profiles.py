@@ -13,11 +13,8 @@ from ..operations.lpar.boot_order import (
     read_lpar_boot_order,
     set_lpar_boot_order,
 )
-from .app import (
-    _print_json,
-    _with_client,
-    console,
-)
+from .runtime import _with_client
+from .output import _print_json, console
 
 
 def lpars_read_boot_order(

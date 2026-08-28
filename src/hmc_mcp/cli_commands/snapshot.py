@@ -10,7 +10,8 @@ from typing import NoReturn
 
 import typer
 
-from hmc_mcp.cli_commands.app import _client, _print_json, _run
+from hmc_mcp.cli_commands.runtime import _client, _run
+from hmc_mcp.cli_commands.output import _print_json
 from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
 from hmc_mcp.operations.affinity import PolicyState
 from hmc_mcp.snapshots import (

@@ -17,16 +17,8 @@ from ..operations.systems import (
     list_systems,
     power_system,
 )
-from .app import (
-    _client,
-    _first_field,
-    _output,
-    _print_json,
-    _run,
-    _with_client,
-    console,
-    err_console,
-)
+from .runtime import _client, _run, _with_client
+from .output import _first_field, _output, _print_json, console, err_console
 
 
 def systems_health(

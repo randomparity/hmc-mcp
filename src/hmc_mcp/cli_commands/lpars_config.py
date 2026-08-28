@@ -38,15 +38,8 @@ from ..ssh.profiles import (
     set_lpar_msp,
     set_lpar_proc_compat,
 )
-from .app import (
-    _client,
-    _print_json,
-    _run,
-    _ssh_client,
-    _ssh_config,
-    _usage_error,
-    console,
-)
+from .runtime import _client, _run, _ssh_client, _ssh_config
+from .output import _print_json, _usage_error, console
 
 
 def _load_pcie_assignments(path: Path | None) -> LparPcieAssignments:
