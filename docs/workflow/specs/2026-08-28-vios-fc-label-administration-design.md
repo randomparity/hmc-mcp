@@ -71,9 +71,9 @@ same evidence as MCP.
 
 List results are `list[dict[str, str]]`. Each command requests all documented attributes with
 `-F --header`; the parser treats the first nonblank row as the HMC-supplied header, requires
-unique nonblank lower-case attribute names, and requires every later CSV row to have the same
-width. Empty output and the exact HMC `No results were found.` sentinel return `[]`; malformed
-output raises an actionable error rather than returning partial rows.
+unique nonblank attribute names, preserves each name byte-for-byte, and requires every later CSV
+row to have the same width. Empty output and the exact HMC `No results were found.` sentinel
+return `[]`; malformed output raises an actionable error rather than returning partial rows.
 
 A mutation receipt is a dictionary containing the applicable subset of `operation`, `system_name`,
 `label`, `port_name`, `vios_name`, `vios_id`, `vios_names`, `vios_ids`, `action`, `new_name`, and

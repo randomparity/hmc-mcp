@@ -139,8 +139,8 @@ comma-bearing list pair and `+`/`-` suffixes. `shlex.quote` owns only the remote
 
 2. In the same test module, add parser cases for dynamic headers, reordered/unknown columns,
    quoted CSV values, blank output, exact `No results were found.`, blank/duplicate headers,
-   uppercase or mixed-case headers, whitespace-padded header names, malformed CSV, and row-width
-   drift. Expected valid result:
+   uppercase, mixed-case, punctuation-bearing, and whitespace-padded header names preserved
+   byte-for-byte, malformed CSV, and row-width drift. Expected valid result:
 
    ```python
    [{"name": "fabric-a", "vios_names": "vios-a,vios-b", "future": "kept"}]
@@ -166,11 +166,11 @@ comma-bearing list pair and `+`/`-` suffixes. `shlex.quote` owns only the remote
    exists: `_nonblank`, `_single_vios_selector`, `_member_selector`, `_parse_label_rows`,
    `_receipt`, and `_run_mutation`. Use `build_attribute_record` for every `-i` value, passing the
    one list attribute through `quoted={attribute}` and keeping it final. Use `build_filter` for
-   list filters. `_parse_label_rows` must validate all header names as unique, nonblank lower-case
-   identifiers without surrounding whitespace before producing any row. Validate label/system
-   standalone values for blank/control input, and record-bound values through the existing
-   builder. Construct fixed tokens in code and `shlex.quote` every caller-derived standalone
-   argument, filter, and completed record.
+   list filters. `_parse_label_rows` must validate all header names as unique and nonblank before
+   producing any row, while preserving every name byte-for-byte. Validate label/system standalone
+   values for blank/control input, and record-bound values through the existing builder. Construct
+   fixed tokens in code and `shlex.quote` every caller-derived standalone argument, filter, and
+   completed record.
 
 6. Run `uv run --no-sync pytest tests/vios/test_vios_labels.py -q`. Expect all Task 1 tests green.
    Make one controlled fault by changing the expected FC-port set operation from `-o s` to `-o a`,
