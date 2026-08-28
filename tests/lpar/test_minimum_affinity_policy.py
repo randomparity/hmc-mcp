@@ -153,7 +153,7 @@ async def test_public_policy_setter_validates_before_resolution():
     hmc.config = _config()
     resolver = AsyncMock()
     with patch(
-        "hmc_mcp.operations.ssh_network.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.ssh_network.resolve_and_authorize_lpar_names",
         resolver,
     ):
         with pytest.raises(ValueError, match="none, warn, or fail"):
@@ -178,7 +178,7 @@ async def test_public_policy_setter_authorizes_before_mutation():
     mutate = AsyncMock(side_effect=lambda *args: events.append("mutate") or "changed")
     with (
         patch(
-            "hmc_mcp.operations.ssh_network.resolve_and_authorize_lpar_mutation",
+            "hmc_mcp.operations.ssh_network.resolve_and_authorize_lpar_names",
             authorize,
         ),
         patch("hmc_mcp.operations.ssh_network.set_minimum_affinity_policy_cli", mutate),

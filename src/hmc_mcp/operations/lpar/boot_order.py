@@ -13,7 +13,7 @@ from ...documents import (
 )
 from ...errors import HMCError
 from .errors import translate_lpar_write_error
-from .ownership import resolve_and_authorize_lpar_mutation
+from .ownership import resolve_and_authorize_lpar_names
 
 _logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ async def set_lpar_boot_order(
     if not devices:
         raise ValueError("Boot order must contain at least one device")
 
-    _, lpar_name = await resolve_and_authorize_lpar_mutation(
+    _, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_uuid,
@@ -90,7 +90,7 @@ async def clear_lpar_boot_order(
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Restore the HMC default boot order on the LPAR's next activation."""
-    _, lpar_name = await resolve_and_authorize_lpar_mutation(
+    _, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_uuid,

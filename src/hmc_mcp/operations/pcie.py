@@ -8,7 +8,7 @@ from typing import Generic, Literal, TypeVar
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.client import HMCClient
-from .lpar.ownership import resolve_and_authorize_lpar_mutation
+from .lpar.ownership import resolve_and_authorize_lpar_names
 from hmc_mcp.ssh.network import (
     SriovMode,
     assign_sriov_logical_port_dynamic,
@@ -229,7 +229,7 @@ async def _authorize_pcie_profile_request(
         raise ValueError("profile_name must not be blank")
     if not drc_index.strip():
         raise ValueError("drc_index must not be blank")
-    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+    system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
@@ -426,7 +426,7 @@ async def _preflight_sriov_assignment(
         require_command_safe_text(logical_port_id, "logical_port_id"),
     )
     capacity = validate_capacity_percent(capacity_percent)
-    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+    system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
@@ -593,7 +593,7 @@ async def unassign_sriov_logical_port(
         require_command_safe_text(logical_port_id, "logical_port_id"),
     )
     require_command_safe_text(profile_name, "profile_name")
-    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+    system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,

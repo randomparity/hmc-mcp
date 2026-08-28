@@ -31,11 +31,8 @@ from ...jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from .ownership import (
-    resolve_and_authorize_lpar_mutation,
-    stamp_created_lpar_ownership,
-)
-from .ownership import resolve_and_authorize_lpar
+from .ownership import stamp_created_lpar_ownership
+from .ownership import resolve_and_authorize_lpar_mutation
 from ...ssh.transport import HMCCLIError
 from ...ssh.lpar import (
     resolve_system_cli_name,
@@ -302,14 +299,10 @@ async def delete_lpar(
     ownership_override: bool = False,
 ) -> str:
     """Authorize and delete a powered-off LPAR, returning its UUID."""
-    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
-    )
-    await resolve_and_authorize_lpar_mutation(
+    lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        system_uuid,
-        lpar_uuid,
+        lpar_name_or_uuid,
+        system_name_or_uuid,
         ownership_override=ownership_override,
     )
     state = await hmc.get_quick_property(
@@ -350,7 +343,7 @@ async def power_lpar(
     managed system in one REST call.
 
     With the setting on the resolve chain is ADR 0094's
-    :func:`resolve_and_authorize_lpar`, shared with the DLPAR operations —
+    :func:`resolve_and_authorize_lpar_mutation`, shared with the DLPAR operations —
     the same shape, because these are the operations whose managed-system
     selector is optional (ADR 0063). It derives the owning system when the
     caller omits the selector, and confirms the partition lives on the system
@@ -365,7 +358,7 @@ async def power_lpar(
     """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     if hmc.config.authorize_power_operations:
-        lpar_uuid = await resolve_and_authorize_lpar(
+        lpar_uuid = await resolve_and_authorize_lpar_mutation(
             hmc,
             lpar_name_or_uuid,
             system_name_or_uuid,
@@ -412,14 +405,10 @@ async def rename_lpar(
     ownership_override: bool = False,
 ) -> tuple[str, dict[str, Any] | None]:
     """Resolve, authorize, and rename one LPAR."""
-    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
-    )
-    await resolve_and_authorize_lpar_mutation(
+    lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
-        system_uuid,
-        lpar_uuid,
+        lpar_name_or_uuid,
+        system_name_or_uuid,
         ownership_override=ownership_override,
     )
     updated = await hmc.modify_logical_partition(

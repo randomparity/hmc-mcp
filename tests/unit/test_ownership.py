@@ -19,7 +19,7 @@ from hmc_mcp.config import validate_agent_id
 from hmc_mcp.operations.lpar.ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     authorize_lpar_mutation,
-    resolve_and_authorize_lpar_mutation,
+    resolve_and_authorize_lpar_names,
 )
 
 
@@ -172,7 +172,7 @@ def test_token_format():
 
 
 @pytest.mark.parametrize("ownership_override", [False, True])
-def test_resolve_and_authorize_lpar_mutation_forwards_resolved_names_and_override(
+def test_resolve_and_authorize_lpar_names_forwards_resolution_and_override(
     ownership_override,
 ):
     hmc = AsyncMock()
@@ -187,7 +187,7 @@ def test_resolve_and_authorize_lpar_mutation_forwards_resolved_names_and_overrid
         patch.object(lpar_ownership, "authorize_lpar_mutation", authorize),
     ):
         result = asyncio.run(
-            resolve_and_authorize_lpar_mutation(
+            resolve_and_authorize_lpar_names(
                 hmc,
                 "system-selector",
                 "lpar-selector",

@@ -8,7 +8,7 @@ from typing import Literal
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
-from .lpar.ownership import resolve_and_authorize_lpar_mutation
+from .lpar.ownership import resolve_and_authorize_lpar_names
 from hmc_mcp.operations.pcie import require_admitted_environment
 from hmc_mcp.operations.pcie_validation import (
     require_command_safe_text,
@@ -308,7 +308,7 @@ async def set_minimum_affinity_policy(
 ) -> str:
     """Authorize and apply an LPAR minimum-affinity policy."""
     validate_minimum_affinity_policy(policy)
-    names = await resolve_and_authorize_lpar_mutation(
+    names = await resolve_and_authorize_lpar_names(
         hmc, system, lpar, ownership_override=ownership_override
     )
     return await set_minimum_affinity_policy_cli(hmc.config, *names, policy)
@@ -525,7 +525,7 @@ async def _preflight_add(
     selector: VnicBackingSelector,
     override: bool,
 ) -> _VnicPreflightContext:
-    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+    system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc, system, lpar, ownership_override=override
     )
     config = hmc.config
@@ -807,7 +807,7 @@ async def remove_vnic(
     ownership_override: bool = False,
 ) -> VnicChangeResult:
     slot_num = require_command_safe_text(slot_num, "slot_num")
-    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+    system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from ...client import HMCClient
 from ...ssh.profiles import set_lpar_msp, set_lpar_proc_compat, sync_lpar_profile
 from .core import ProcessorCompatibilityMode
-from .ownership import resolve_and_authorize_lpar_mutation
+from .ownership import resolve_and_authorize_lpar_names
 
 
 async def synchronize_lpar_profile(
@@ -16,7 +16,7 @@ async def synchronize_lpar_profile(
     ownership_override: bool = False,
 ) -> str:
     """Authorize and synchronize an LPAR's active configuration to its profile."""
-    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+    system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
@@ -34,7 +34,7 @@ async def configure_lpar_msp(
     ownership_override: bool = False,
 ) -> str:
     """Authorize and set an LPAR's migratable-service-partition flag."""
-    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+    system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
@@ -52,7 +52,7 @@ async def configure_lpar_processor_compatibility(
     ownership_override: bool = False,
 ) -> str:
     """Authorize and set an LPAR's processor compatibility mode."""
-    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+    system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,

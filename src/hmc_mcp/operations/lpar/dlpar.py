@@ -20,7 +20,7 @@ from ..assignments import (
     prevalidate_lpar_pcie_assignments,
 )
 from .errors import translate_lpar_write_error
-from .ownership import resolve_and_authorize_lpar
+from .ownership import resolve_and_authorize_lpar_mutation
 
 async def modify_lpar(
     hmc: HMCClient,
@@ -40,7 +40,7 @@ async def modify_lpar(
     if system_name_or_uuid is not None:
         await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
 
-    lpar_uuid = await resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,
@@ -91,7 +91,7 @@ async def _apply_dlpar_document(
     ownership_override: bool,
 ) -> dict[str, Any] | None:
     """Authorize one partition, then POST a partial LogicalPartition document."""
-    lpar_uuid = await resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,

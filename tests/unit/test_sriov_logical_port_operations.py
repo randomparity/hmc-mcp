@@ -20,7 +20,7 @@ def _hmc() -> AsyncMock:
 
 def _common(monkeypatch, *, state="Not Activated", rmc="inactive", configured=()):
     monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.pcie.resolve_and_authorize_lpar_names",
         AsyncMock(return_value=("sys", "lpar")),
     )
     monkeypatch.setattr(

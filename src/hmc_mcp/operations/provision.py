@@ -27,7 +27,7 @@ from .lpar import (
     create_and_stamp_lpar,
     power_lpar,
 )
-from .lpar.ownership import resolve_and_authorize_lpar
+from .lpar.ownership import resolve_and_authorize_lpar_mutation
 from .ssh_network import set_minimum_affinity_policy
 from ..ssh.transport import HMCCLIError
 from ..ssh.selectors import resolve_ssh_names
@@ -345,7 +345,7 @@ async def attach_disk_to_lpar(
             (),
         )
 
-    lpar_uuid = await resolve_and_authorize_lpar(
+    lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,

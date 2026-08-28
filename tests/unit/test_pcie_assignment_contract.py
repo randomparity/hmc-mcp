@@ -43,7 +43,7 @@ def test_assignment_rejects_before_mutation_when_profile_readback_is_unavailable
     inventory = AsyncMock()
     authorize.return_value = ("sys", "lpar")
     monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_and_authorize_lpar_mutation", authorize
+        "hmc_mcp.operations.pcie.resolve_and_authorize_lpar_names", authorize
     )
     monkeypatch.setattr("hmc_mcp.operations.pcie.list_dedicated_slots", inventory)
 
@@ -60,7 +60,7 @@ def test_unassignment_passes_explicit_ownership_override(monkeypatch):
     authorize = AsyncMock()
     authorize.return_value = ("sys", "lpar")
     monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_and_authorize_lpar_mutation", authorize
+        "hmc_mcp.operations.pcie.resolve_and_authorize_lpar_names", authorize
     )
 
     with pytest.raises(PcieAssignmentUnavailableError):

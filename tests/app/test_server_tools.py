@@ -402,7 +402,7 @@ def test_modify_lpar_builds_resource_xml(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="owned-lpar"))
     )
     with patch(
-        "hmc_mcp.operations.lpar.dlpar.resolve_and_authorize_lpar",
+        "hmc_mcp.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
         new=AsyncMock(return_value=LPAR_UUID),
     ):
         result = hmc_modify_lpar(
@@ -423,7 +423,7 @@ def test_rename_lpar_authorizes_and_writes_name(monkeypatch, mock_hmc):
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="renamed"))
     )
-    guard = AsyncMock(return_value=("system-1", "owned-lpar"))
+    guard = AsyncMock(return_value=LPAR_UUID)
     with patch(
         "hmc_mcp.operations.lpar.core.resolve_and_authorize_lpar_mutation",
         new=guard,
@@ -437,7 +437,7 @@ def test_rename_lpar_authorizes_and_writes_name(monkeypatch, mock_hmc):
 
     body = route.calls.last.request.content.decode()
     assert "renamed</PartitionName>" in body
-    guard.assert_awaited_once_with(ANY, SYSTEM_UUID, LPAR_UUID, ownership_override=True)
+    guard.assert_awaited_once_with(ANY, LPAR_UUID, SYSTEM_UUID, ownership_override=True)
     assert result["Resource"]["PartitionName"] == "renamed"
 
 

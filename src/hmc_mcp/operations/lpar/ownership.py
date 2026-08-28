@@ -233,7 +233,7 @@ async def _verify_partition_on_system(
         )
 
 
-async def resolve_and_authorize_lpar(
+async def resolve_and_authorize_lpar_mutation(
     hmc: HMCClient,
     lpar_name_or_uuid: str,
     system_name_or_uuid: str | None,
@@ -489,7 +489,7 @@ async def resolve_lpar_ownership_names(
     return system_name, lpar_name
 
 
-async def resolve_and_authorize_lpar_mutation(
+async def resolve_and_authorize_lpar_names(
     hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -600,7 +600,7 @@ async def set_lpar_ownership_description(
 ) -> str:
     """Validate, authorize, and write one LPAR ownership description."""
     validate_lpar_description(description)
-    system_name, lpar_name = await resolve_and_authorize_lpar_mutation(
+    system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,

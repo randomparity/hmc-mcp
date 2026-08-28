@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         power_on_outcome,
         rename_lpar,
     )
+    from .ownership import resolve_and_authorize_lpar_mutation
 
 __all__ = [
     "PARTITION_STATES",
@@ -35,15 +36,21 @@ __all__ = [
     "power_lpar",
     "power_on_outcome",
     "rename_lpar",
+    "resolve_and_authorize_lpar_mutation",
 ]
 
-_CORE_EXPORTS = frozenset(__all__)
+_OWNERSHIP_EXPORTS = frozenset({"resolve_and_authorize_lpar_mutation"})
+_CORE_EXPORTS = frozenset(__all__) - _OWNERSHIP_EXPORTS
 
 
 def __getattr__(name: str) -> Any:
     """Load the core seam without making lightweight submodules import it."""
-    if name not in _CORE_EXPORTS:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    from . import core
+    if name in _CORE_EXPORTS:
+        from . import core
 
-    return getattr(core, name)
+        return getattr(core, name)
+    if name in _OWNERSHIP_EXPORTS:
+        from . import ownership
+
+        return getattr(ownership, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

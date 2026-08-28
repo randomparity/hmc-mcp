@@ -712,7 +712,7 @@ def test_delete_lpar_refuses_when_active(monkeypatch, mock_hmc):
     with (
         patch(
             "hmc_mcp.operations.lpar.core.resolve_and_authorize_lpar_mutation",
-            new=AsyncMock(return_value=("system-1", "lpar-1")),
+            new=AsyncMock(return_value=LPAR_UUID),
         ) as guard,
         pytest.raises(HMCError) as exc_info,
     ):
@@ -730,7 +730,7 @@ def test_delete_lpar_succeeds_when_powered_off(monkeypatch, mock_hmc):
 
     with patch(
         "hmc_mcp.operations.lpar.core.resolve_and_authorize_lpar_mutation",
-        new=AsyncMock(return_value=("system-1", "lpar-1")),
+        new=AsyncMock(return_value=LPAR_UUID),
     ) as guard:
         result = hmc_delete_lpar(SYSTEM_UUID, LPAR_UUID, ownership_override=True)
 

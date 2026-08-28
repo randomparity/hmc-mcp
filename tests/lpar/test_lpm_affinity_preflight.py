@@ -23,7 +23,7 @@ def _authorize_lpar_mutations(monkeypatch):
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar", authorize
+        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation", authorize
     )
 
 
