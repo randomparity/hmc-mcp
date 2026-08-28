@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -28,6 +28,7 @@ from hmc_mcp.ssh.console import (
     _truncate,
     capture_lpar_console,
 )
+from hmc_mcp.server_tools import console as server_console
 
 BANNER = b"\r\n Open in progress  \r\n "
 
@@ -572,3 +573,83 @@ def test_base64_round_trip_preserves_raw_bytes():
     raw = bytes(range(256))
     encoded = base64.b64encode(raw).decode("ascii")
     assert base64.b64decode(encoded) == raw
+
+
+@pytest.mark.parametrize(
+    ("system_selector", "lpar_selector", "system_name", "lpar_name"),
+    [
+        ("system-a", "aix-db", "system-a", "aix-db"),
+        (
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+            "resolved-system",
+            "resolved-lpar",
+        ),
+    ],
+)
+def test_capture_tool_resolves_identity_and_forwards_bounds(
+    system_selector: str,
+    lpar_selector: str,
+    system_name: str,
+    lpar_name: str,
+):
+    client = MagicMock()
+    client.config = MagicMock()
+    context = MagicMock()
+    context.__aenter__ = AsyncMock(return_value=client)
+    context.__aexit__ = AsyncMock(return_value=False)
+    resolve_system_uuid = AsyncMock(return_value="system-uuid")
+    resolve_lpar_uuid = AsyncMock(return_value="lpar-uuid")
+    resolve_system_name = AsyncMock(return_value="resolved-system")
+    resolve_lpar_name = AsyncMock(return_value="resolved-lpar")
+    capture = AsyncMock(
+        return_value=ConsoleCapture(
+            system=system_name,
+            lpar=lpar_name,
+            data=b"\x00console\xff",
+            stop_reason="idle",
+            released=True,
+        )
+    )
+
+    with (
+        patch.object(server_console, "client_from_env", return_value=context) as factory,
+        patch.object(server_console, "resolve_system_uuid", resolve_system_uuid),
+        patch.object(server_console, "resolve_lpar_uuid", resolve_lpar_uuid),
+        patch.object(server_console, "resolve_system_name", resolve_system_name),
+        patch.object(server_console, "resolve_lpar_cli_name", resolve_lpar_name),
+        patch.object(server_console, "capture_lpar_console", capture),
+    ):
+        result = server_console.hmc_capture_lpar_console(
+            lpar_selector,
+            system_selector,
+            duration_seconds=12.5,
+            max_bytes=4096,
+            idle_timeout_seconds=3.5,
+            profile="lab",
+        )
+
+    factory.assert_called_once_with("lab")
+    resolve_system_uuid.assert_awaited_once_with(client, system_selector)
+    resolve_lpar_uuid.assert_awaited_once_with(
+        client, lpar_selector, system_name_or_uuid="system-uuid"
+    )
+    capture.assert_awaited_once_with(
+        client,
+        system_name,
+        lpar_name,
+        duration_seconds=12.5,
+        max_bytes=4096,
+        idle_timeout_seconds=3.5,
+    )
+    context.__aexit__.assert_awaited_once()
+    assert resolve_system_name.await_count == int(system_selector != system_name)
+    assert resolve_lpar_name.await_count == int(lpar_selector != lpar_name)
+    assert result == {
+        "system": system_name,
+        "partition": lpar_name,
+        "stop_reason": "idle",
+        "released": True,
+        "bytes_captured": 9,
+        "data_base64": base64.b64encode(b"\x00console\xff").decode("ascii"),
+    }
