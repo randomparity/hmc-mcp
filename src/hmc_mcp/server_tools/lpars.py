@@ -625,14 +625,14 @@ def hmc_power_off_lpar(
 @tool(effect="read", operation="boot_order.read", target_kind="lpar")
 def hmc_read_lpar_boot_order(
     system_name_or_uuid: str,
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
     profile: str | None = None,
 ) -> dict[str, Any]:
     """Read current, pending, and last-used boot-device state for an LPAR.
 
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.
-        lpar_uuid: UUID of the logical partition.
+        lpar_name_or_uuid: Name or UUID of the logical partition.
         profile: Configured HMC profile, or the default when omitted.
     """
 
@@ -641,7 +641,7 @@ def hmc_read_lpar_boot_order(
             result = await read_lpar_boot_order(
                 hmc,
                 system_name_or_uuid=system_name_or_uuid,
-                lpar_uuid=lpar_uuid,
+                lpar_name_or_uuid=lpar_name_or_uuid,
             )
             return result
 
@@ -651,7 +651,7 @@ def hmc_read_lpar_boot_order(
 @tool(effect="mutate", operation="boot_order.set", target_kind="lpar")
 def hmc_set_lpar_boot_order(
     system_name_or_uuid: str,
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
     devices: list[str],
     *,
     ownership_override: bool = False,
@@ -661,7 +661,7 @@ def hmc_set_lpar_boot_order(
 
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.
-        lpar_uuid: UUID of the logical partition.
+        lpar_name_or_uuid: Name or UUID of the logical partition.
         devices: Boot device selectors in first-to-last order.
         ownership_override: Skip ownership-token validation when true.
         profile: Configured HMC profile, or the default when omitted.
@@ -672,7 +672,7 @@ def hmc_set_lpar_boot_order(
             result = await set_lpar_boot_order(
                 hmc,
                 system_name_or_uuid=system_name_or_uuid,
-                lpar_uuid=lpar_uuid,
+                lpar_name_or_uuid=lpar_name_or_uuid,
                 devices=devices,
                 ownership_override=ownership_override,
             )
@@ -684,7 +684,7 @@ def hmc_set_lpar_boot_order(
 @tool(effect="mutate", operation="boot_order.clear", target_kind="lpar")
 def hmc_clear_lpar_boot_order(
     system_name_or_uuid: str,
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
     *,
     ownership_override: bool = False,
     profile: str | None = None,
@@ -693,7 +693,7 @@ def hmc_clear_lpar_boot_order(
 
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.
-        lpar_uuid: UUID of the logical partition.
+        lpar_name_or_uuid: Name or UUID of the logical partition.
         ownership_override: Skip ownership-token validation when true.
         profile: Configured HMC profile, or the default when omitted.
     """
@@ -703,7 +703,7 @@ def hmc_clear_lpar_boot_order(
             result = await clear_lpar_boot_order(
                 hmc,
                 system_name_or_uuid=system_name_or_uuid,
-                lpar_uuid=lpar_uuid,
+                lpar_name_or_uuid=lpar_name_or_uuid,
                 ownership_override=ownership_override,
             )
             return result

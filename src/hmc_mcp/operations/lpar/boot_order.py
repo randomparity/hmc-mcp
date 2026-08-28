@@ -12,17 +12,21 @@ from ...documents import (
     build_clear_boot_order_document,
 )
 from ...errors import HMCError
+from ...resource_identity import resolve_lpar_uuid
 from .errors import translate_lpar_write_error
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_names
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
 
 _logger = logging.getLogger(__name__)
 
 async def read_lpar_boot_order(
     hmc: HMCClient,
     system_name_or_uuid: str,
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
 ) -> dict[str, Any]:
     """Read current, pending, and last-used boot-device state for an LPAR."""
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     lpar = await hmc.get_logical_partition(lpar_uuid)
     if not lpar:
         raise ValueError(f"LPAR {lpar_uuid!r} not found")
@@ -42,7 +46,7 @@ async def read_lpar_boot_order(
 async def set_lpar_boot_order(
     hmc: HMCClient,
     system_name_or_uuid: str,
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
     devices: list[str],
     *,
     ownership_override: bool = False,
@@ -58,10 +62,10 @@ async def set_lpar_boot_order(
     if not devices:
         raise ValueError("Boot order must contain at least one device")
 
-    _, lpar_name = await resolve_and_authorize_lpar_names(
+    lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
-        lpar_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
 
@@ -74,7 +78,7 @@ async def set_lpar_boot_order(
 
     _logger.info(
         "Set boot order for LPAR %s (%s) to: %s",
-        lpar_name,
+        lpar_name_or_uuid,
         lpar_uuid,
         ", ".join(devices),
     )
@@ -85,15 +89,15 @@ async def set_lpar_boot_order(
 async def clear_lpar_boot_order(
     hmc: HMCClient,
     system_name_or_uuid: str,
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
     *,
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Restore the HMC default boot order on the LPAR's next activation."""
-    _, lpar_name = await resolve_and_authorize_lpar_names(
+    lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
-        lpar_uuid,
+        lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
 
@@ -106,7 +110,7 @@ async def clear_lpar_boot_order(
 
     _logger.info(
         "Cleared boot order for LPAR %s (%s) (restored defaults)",
-        lpar_name,
+        lpar_name_or_uuid,
         lpar_uuid,
     )
 

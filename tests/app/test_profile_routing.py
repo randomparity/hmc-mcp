@@ -293,7 +293,7 @@ def test_nickname_reaches_client_from_env(tmp_path, monkeypatch):
             "hmc_set_lpar_boot_order",
             {
                 "system_name_or_uuid": "sys-1",
-                "lpar_uuid": "11111111-2222-3333-4444-555555555555",
+                "lpar_name_or_uuid": "11111111-2222-3333-4444-555555555555",
                 "devices": ["network"],
             },
         ),
@@ -301,7 +301,7 @@ def test_nickname_reaches_client_from_env(tmp_path, monkeypatch):
             "hmc_clear_lpar_boot_order",
             {
                 "system_name_or_uuid": "sys-1",
-                "lpar_uuid": "11111111-2222-3333-4444-555555555555",
+                "lpar_name_or_uuid": "11111111-2222-3333-4444-555555555555",
             },
         ),
     ],

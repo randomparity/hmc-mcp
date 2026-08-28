@@ -22,7 +22,7 @@ from .app import (
 
 def lpars_read_boot_order(
     system_name: str = typer.Argument(..., help="Managed system name"),
-    lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
+    lpar_name_or_uuid: str = typer.Argument(..., help="Logical partition name or UUID"),
 ) -> None:
     """Read current, pending, and last-used boot-device state for an LPAR.
 
@@ -33,7 +33,7 @@ def lpars_read_boot_order(
         lambda hmc: read_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name,
-            lpar_uuid=lpar_uuid,
+            lpar_name_or_uuid=lpar_name_or_uuid,
         )
     )
 
@@ -42,7 +42,7 @@ def lpars_read_boot_order(
 
 def lpars_set_boot_order(
     system_name: str = typer.Argument(..., help="Managed system name"),
-    lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
+    lpar_name_or_uuid: str = typer.Argument(..., help="Logical partition name or UUID"),
     devices: str = typer.Argument(
         ..., help="Ordered boot device list (comma-separated: cd,disk,network)"
     ),
@@ -72,7 +72,7 @@ def lpars_set_boot_order(
         lambda hmc: set_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name,
-            lpar_uuid=lpar_uuid,
+            lpar_name_or_uuid=lpar_name_or_uuid,
             devices=device_list,
             ownership_override=ownership_override,
         )
@@ -84,7 +84,7 @@ def lpars_set_boot_order(
 
 def lpars_clear_boot_order(
     system_name: str = typer.Argument(..., help="Managed system name"),
-    lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
+    lpar_name_or_uuid: str = typer.Argument(..., help="Logical partition name or UUID"),
     *,
     ownership_override: bool = typer.Option(
         False, "--ownership-override", help="Skip ownership token validation"
@@ -99,7 +99,7 @@ def lpars_clear_boot_order(
         lambda hmc: clear_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name,
-            lpar_uuid=lpar_uuid,
+            lpar_name_or_uuid=lpar_name_or_uuid,
             ownership_override=ownership_override,
         )
     )

@@ -213,7 +213,11 @@ async def test_read_lpar_boot_order_returns_named_boot_state():
         }
     }
 
-    result = await read_lpar_boot_order(hmc, "system-a", "lpar-1")
+    with patch(
+        "hmc_mcp.operations.lpar.boot_order.resolve_lpar_uuid",
+        new=AsyncMock(return_value="lpar-1"),
+    ) as resolve:
+        result = await read_lpar_boot_order(hmc, "system-a", "aix-db")
 
     assert result == {
         "lpar_uuid": "lpar-1",
@@ -223,6 +227,9 @@ async def test_read_lpar_boot_order_returns_named_boot_state():
         "last_booted_device_string": "disk",
     }
     hmc.get_logical_partition.assert_awaited_once_with("lpar-1")
+    resolve.assert_awaited_once_with(
+        hmc, "aix-db", system_name_or_uuid="system-a"
+    )
 
 
 @pytest.mark.asyncio
@@ -230,8 +237,12 @@ async def test_read_lpar_boot_order_rejects_missing_lpar():
     hmc = AsyncMock()
     hmc.get_logical_partition.return_value = None
 
-    with pytest.raises(ValueError, match="LPAR 'missing' not found"):
-        await read_lpar_boot_order(hmc, "system-a", "missing")
+    with patch(
+        "hmc_mcp.operations.lpar.boot_order.resolve_lpar_uuid",
+        new=AsyncMock(return_value="missing"),
+    ):
+        with pytest.raises(ValueError, match="LPAR 'missing' not found"):
+            await read_lpar_boot_order(hmc, "system-a", "missing")
 
 
 @pytest.mark.asyncio
@@ -244,11 +255,11 @@ async def test_set_lpar_boot_order_authorizes_before_forwarding_payload():
 
     async def authorize(*args, **kwargs):
         events.append(("authorize", args[1:], kwargs))
-        return "system-a", "aix-db"
+        return "lpar-1"
 
     with (
         patch(
-            "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_names",
+            "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
             side_effect=authorize,
         ) as authorization,
         patch(
@@ -283,11 +294,11 @@ async def test_clear_lpar_boot_order_propagates_default_ownership_override():
 
     async def authorize(*args, **kwargs):
         events.append(("authorize", args[1:], kwargs))
-        return "system-a", "aix-db"
+        return "lpar-1"
 
     with (
         patch(
-            "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_names",
+            "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
             side_effect=authorize,
         ),
         patch(
@@ -319,8 +330,8 @@ async def test_boot_order_mutations_translate_hmc_not_acceptable(operation: str)
     )
 
     with patch(
-        "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_names",
-        new=AsyncMock(return_value=("system-a", "aix-db")),
+        "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
+        new=AsyncMock(return_value="lpar-1"),
     ):
         with pytest.raises(HMCError, match="Not Acceptable") as exc_info:
             if operation == "set":

@@ -395,6 +395,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: `read_lpar_boot_order`, `set_lpar_boot_order`, and
+  `clear_lpar_boot_order` now accept a system-scoped LPAR name or UUID.
 - Changed: SSH affinity result types and workflows now live in
   `operations.ssh_affinity`; `operations.ssh_network` is limited to network inventory
   and vNIC mutation.
