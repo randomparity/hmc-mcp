@@ -351,8 +351,6 @@ def update_hmc_job(source: ConsoleUpdateSource) -> str:
             f"Unknown console update parameter(s): {', '.join(sorted(unknown))}. "
             f"Recognised parameters: {', '.join(sorted(_CONSOLE_UPDATE_KEYS))}."
         )
-    if "MediaType" not in source:
-        raise ValueError("Console update source is missing required 'MediaType'.")
     return build_job_request(
         "UpdateManagementConsole",
         "ManagementConsole",

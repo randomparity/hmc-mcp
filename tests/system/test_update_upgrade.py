@@ -50,11 +50,6 @@ def test_update_hmc_job_xml():
     assert "MediaType" in xml
 
 
-def test_update_hmc_job_requires_media_type():
-    with pytest.raises(ValueError, match="missing required 'MediaType'"):
-        update_hmc_job({"ServerHostOrIP": "repo.example.com"})
-
-
 def test_update_hmc_job_rejects_unknown_parameter():
     with pytest.raises(ValueError, match="Unknown console update parameter.*type"):
         update_hmc_job({"MediaType": "NFS", "type": "nfs"})
