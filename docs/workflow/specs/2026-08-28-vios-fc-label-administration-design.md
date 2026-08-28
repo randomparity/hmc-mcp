@@ -71,10 +71,12 @@ unique nonblank lower-case attribute names, and requires every later CSV row to 
 width. Empty output and the exact HMC `No results were found.` sentinel return `[]`; malformed
 output raises an actionable error rather than returning partial rows.
 
-A mutation receipt is a dictionary containing `operation`, `system_name`, `label`, `port_name`,
-`vios_name`, `vios_id`, `action`, and `output`. Fields irrelevant to an operation are absent, not
-null. `output` is the stripped HMC stdout and may be empty. The receipt proves what was dispatched;
-it does not claim post-command state or idempotency that the documented commands do not establish.
+A mutation receipt is a dictionary containing the applicable subset of `operation`, `system_name`,
+`label`, `port_name`, `vios_name`, `vios_id`, `vios_names`, `vios_ids`, `action`, `new_name`, and
+`output`. A create or membership change includes exactly the member list it dispatched; a rename
+includes `new_name`. Fields irrelevant to an operation are absent, not null. `output` is the
+stripped HMC stdout and may be empty. The receipt proves what was dispatched; it does not claim
+post-command state or idempotency that the documented commands do not establish.
 
 ## Command construction and data flow
 
@@ -171,8 +173,9 @@ quoted data. A controlled fault changes one expected command and proves the new 
 the implementation is retained.
 
 MCP tests assert names, schemas, effects, operation names, managed-system targets, authorization,
-and receipts. CLI tests assert registration, JSON output, confirmation refusal, and that prompts do
-not contaminate stdout. Existing adapter tests assert their public signatures remain unchanged.
+and receipts, including exact member lists and rename targets. CLI tests assert registration, JSON
+output, confirmation refusal, and that prompts do not contaminate stdout. Existing adapter tests
+assert their public signatures remain unchanged.
 Generated tool documentation is refreshed with `just tool-docs` and checked with
 `just tool-docs-check`. Focused tests run red before implementation and green afterward, followed
 by `just verify` and `uv run --no-sync prek run --all-files` bare.
