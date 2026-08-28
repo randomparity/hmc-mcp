@@ -11,7 +11,7 @@ from ...documents import PARTITION_TYPES, LparResources
 from ...operations.lpar.core import LparCreation
 from ...operations.lpar.workflows import create_lpar
 from ...ssh.lpar import validate_caller_token
-from ..runtime import _client, _run
+from ..runtime import _with_client
 from ..output import _print_json, _usage_error, console, err_console
 from .config import _load_pcie_assignments
 
@@ -99,22 +99,20 @@ def lpars_create(
     )
     assignments = _load_pcie_assignments(pcie_assignments)
 
-    async def _go():
-        async with _client() as hmc:
-            return await create_lpar(
-                hmc,
-                system,
-                LparCreation(
-                    name,
-                    partition_type,
-                    resources,
-                    partition_id=partition_id,
-                    caller_token=caller_token,
-                ),
-                assignments,
-            )
-
-    result = _run(_go)
+    result = _with_client(
+        lambda hmc: create_lpar(
+            hmc,
+            system,
+            LparCreation(
+                name,
+                partition_type,
+                resources,
+                partition_id=partition_id,
+                caller_token=caller_token,
+            ),
+            assignments,
+        )
+    )
 
     console.print(f"[green]Created LPAR '{name}'[/green]")
     _print_json(result.lpar)

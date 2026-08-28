@@ -15,7 +15,7 @@ from ...operations.lpar.core import (
 )
 from ...operations.partition_state import PartitionState
 from ...resource_identity import ResourceNotFoundError
-from ..runtime import _client, _run, _with_client
+from ..runtime import _with_client
 from ..output import _first_field, _output, _partition_not_found, _print_json, console
 
 
@@ -25,11 +25,9 @@ def lpars_summary(
 ) -> None:
     """One-call summary: state, RMC, memory/CPU, OS details, adapter count, description."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await lpar_summary(hmc, None, name_or_uuid)
-
-    summary = asdict(_run(_go))
+    summary = asdict(
+        _with_client(lambda hmc: lpar_summary(hmc, None, name_or_uuid))
+    )
 
     if as_json:
         _print_json(summary)
@@ -118,14 +116,13 @@ def lpars_state(
 ) -> None:
     """Print just the current state of an LPAR."""
 
-    async def _go():
-        async with _client() as hmc:
-            try:
-                return await get_lpar_state(hmc, name_or_uuid)
-            except ResourceNotFoundError:
-                return None
+    async def state_or_none(hmc):
+        try:
+            return await get_lpar_state(hmc, name_or_uuid)
+        except ResourceNotFoundError:
+            return None
 
-    state = _run(_go)
+    state = _with_client(state_or_none)
 
     if state is None:
         _partition_not_found(name_or_uuid)

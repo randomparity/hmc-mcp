@@ -17,7 +17,7 @@ from ..operations.systems import (
     list_systems,
     power_system,
 )
-from .runtime import _client, _run, _with_client
+from .runtime import _with_client
 from .output import _first_field, _output, _print_json, console, err_console
 
 
@@ -26,11 +26,7 @@ def systems_health(
 ) -> None:
     """Show exception-only health across the managed estate."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await fleet_health(hmc)
-
-    result = asdict(_run(_go))
+    result = asdict(_with_client(fleet_health))
     if as_json:
         _print_json(result)
         return
@@ -106,18 +102,16 @@ def systems_power_on(
     if not yes and not typer.confirm(f"Really PowerOn system {name_or_uuid}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await power_system(
-                hmc,
-                name_or_uuid,
-                power_on=True,
-                wait=wait,
-                timeout_seconds=timeout,
-                poll_interval=interval,
-            )
-
-    job = _run(_go)
+    job = _with_client(
+        lambda hmc: power_system(
+            hmc,
+            name_or_uuid,
+            power_on=True,
+            wait=wait,
+            timeout_seconds=timeout,
+            poll_interval=interval,
+        )
+    )
 
     console.print(f"[green]Submitted PowerOn for {name_or_uuid}[/green]")
     _print_json(job)
@@ -141,19 +135,17 @@ def systems_power_off(
     if not yes and not typer.confirm(f"Really {op} system {name_or_uuid}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await power_system(
-                hmc,
-                name_or_uuid,
-                power_on=False,
-                immediate=immediate,
-                wait=wait,
-                timeout_seconds=timeout,
-                poll_interval=interval,
-            )
-
-    job = _run(_go)
+    job = _with_client(
+        lambda hmc: power_system(
+            hmc,
+            name_or_uuid,
+            power_on=False,
+            immediate=immediate,
+            wait=wait,
+            timeout_seconds=timeout,
+            poll_interval=interval,
+        )
+    )
 
     console.print(f"[green]Submitted {op} for {name_or_uuid}[/green]")
     _print_json(job)
@@ -165,11 +157,7 @@ def systems_summary(
 ) -> None:
     """One-call summary: state, MTMS, firmware, LPAR counts, free memory/CPU, VIOS count."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await system_summary(hmc, name_or_uuid)
-
-    result = asdict(_run(_go))
+    result = asdict(_with_client(lambda hmc: system_summary(hmc, name_or_uuid)))
     if as_json:
         _print_json(result)
         return
@@ -197,11 +185,7 @@ def systems_capacity(
 ) -> None:
     """Capacity report: memory/CPU totals and free resources per managed system."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await capacity_report(hmc)
-
-    report = [asdict(item) for item in _run(_go)]
+    report = [asdict(item) for item in _with_client(capacity_report)]
     if as_json:
         _print_json(report)
         return
@@ -245,11 +229,10 @@ def systems_find_placement(
 ) -> None:
     """Find managed systems with enough free resources for a new LPAR."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await find_placement(hmc, memory, procs)
-
-    candidates = _run(_go)
+    candidates = [
+        asdict(item)
+        for item in _with_client(lambda hmc: find_placement(hmc, memory, procs))
+    ]
     if as_json:
         _print_json(candidates)
         return

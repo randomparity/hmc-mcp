@@ -753,7 +753,7 @@ def test_lpars_summary_renders_numeric_zero(monkeypatch):
         [],
     )
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.lpar.inventory._run", lambda _operation: summary
+        "hmc_mcp.cli_commands.lpar.inventory._with_client", lambda _operation: summary
     )
 
     result = RUNNER.invoke(cli.app, ["lpars", "summary", "zero-lpar"])
