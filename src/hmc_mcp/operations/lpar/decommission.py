@@ -138,7 +138,7 @@ def _extract_target_uuid(link: Any) -> str | None:
     return link.rsplit("/LogicalPartition/", 1)[-1].strip("/") or None
 
 
-def _matching_child_uuid(
+def _children_matching_uuid(
     children: list[dict[str, Any]], lpar_name_or_uuid: str
 ) -> list[dict[str, Any]]:
     normalized_selector = lpar_name_or_uuid.casefold()
@@ -150,7 +150,7 @@ def _matching_child_uuid(
     ]
 
 
-def _matching_child_name(
+def _children_matching_name(
     children: list[dict[str, Any]], lpar_name_or_uuid: str
 ) -> list[dict[str, Any]]:
     return [
@@ -251,12 +251,12 @@ async def _resolve_target_lpar(
 ) -> dict[str, Any]:
     children = await hmc.list_logical_partitions(system_uuid)
     if is_uuid(lpar_name_or_uuid):
-        matches = _matching_child_uuid(children, lpar_name_or_uuid)
+        matches = _children_matching_uuid(children, lpar_name_or_uuid)
         if len(matches) == 1:
             return matches[0]
         raise _missing_target_error(system_uuid, lpar_name_or_uuid)
 
-    matches = _matching_child_name(children, lpar_name_or_uuid)
+    matches = _children_matching_name(children, lpar_name_or_uuid)
     if len(matches) == 1:
         return matches[0]
     if not matches:
