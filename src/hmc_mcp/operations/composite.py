@@ -97,33 +97,10 @@ async def lpar_summary(
     lpar_name_or_uuid: str,
     system_name_or_uuid: str | None = None,
 ) -> LparSummary:
-    """One-call LPAR summary: state, RMC, memory/CPU, OS, adapter count, description.
+    """Compose partition details and adapter inventory into one summary.
 
-    Composes data from three HMC endpoints in a single call:
-
-    1. ``GET /rest/api/uom/LogicalPartition/{uuid}`` — main partition data
-       (state, memory, CPU, OS version, partition type / ID).
-    2. ``GET /rest/api/uom/LogicalPartition/{uuid}/ClientNetworkAdapter`` —
-       client network adapters attached to the partition (count returned).
-
-    Accepts either a PartitionName (exact match) or a UUID.
-
-    Returns a flat summary dict with the most useful fields:
-
-    - ``state`` / ``rmc_state`` — current PartitionState and RMC status.
-    - ``current_memory_mb`` / ``desired_memory_mb`` — active and profile memory.
-    - ``current_proc_units`` / ``desired_proc_units`` — active and profile CPU.
-    - ``desired_vcpus`` / ``dedicated_procs`` — virtual processors or dedicated CPUs.
-    - ``os_version`` / ``os_type`` — OS details reported by the HMC.
-    - ``client_network_adapter_count`` — number of client network adapters.
-    - ``description`` — partition description if set.
-    - ``mapped_storage`` — always ``null``; resolving vSCSI-mapped storage
-      requires a VIOS UUID hop (vSCSI adapter → ``vios_partition_id`` →
-      ``list_vios`` + PartitionID match → ``get_vios_storage_detail``) and is
-      out of scope for this best-effort summary. List VIOS resources for per-VIOS
-      storage mappings.
-
-    Raises ``ValueError`` when the partition cannot be found.
+    Raises ``ValueError`` when the partition cannot be found. ``mapped_storage``
+    remains unset because resolving it requires a separate VIOS inventory hop.
     """
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
@@ -211,30 +188,9 @@ def _system_summary(
 
 
 async def system_summary(hmc: HMCClient, system_name_or_uuid: str) -> SystemSummary:
-    """One-call managed system summary: state, MTMS, firmware, LPAR counts, free resources, VIOS count.
+    """Compose system, partition, and VIOS inventory into one summary.
 
-    Composes data from three HMC endpoints in a single call:
-
-    1. ``GET /rest/api/uom/ManagedSystem/{uuid}`` — main system data
-       (state, MTMS, firmware version, total memory/CPU).
-    2. ``GET /rest/api/uom/ManagedSystem/{uuid}/LogicalPartition`` — LPAR list,
-       counted by PartitionState.
-    3. ``GET /rest/api/uom/ManagedSystem/{uuid}/VirtualIOServer`` — VIOS count.
-
-    Accepts either a SystemName (exact match) or a UUID.
-
-    Returns a flat summary dict with the most useful fields:
-
-    - ``state`` — current system State (operating, standby, ...).
-    - ``mtms`` — machine type/model/serial (MachineTypeModelSerialNumber).
-    - ``firmware_version`` — system firmware version string.
-    - ``total_memory_mb`` / ``free_memory_mb`` — total assignable and free memory.
-    - ``total_proc_units`` / ``free_proc_units`` — total configurable and free CPU.
-    - ``lpar_count`` — total number of LPARs.
-    - ``lpar_states`` — dict mapping PartitionState → count.
-    - ``vios_count`` — number of Virtual I/O Servers.
-
-    Raises ``ValueError`` when the system cannot be found.
+    Raises ``ValueError`` when the managed system cannot be found.
     """
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     system, lpars, vios_list = await _fetch_system_summary_data(hmc, system_uuid)
