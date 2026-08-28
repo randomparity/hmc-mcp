@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import shlex
-from typing import Any, Literal, get_args
+from typing import Any, Literal, TypedDict, get_args
 
 from ..config import HMCConfig
 from .transport import HMCCLIError, run_hmc_command
@@ -24,6 +24,14 @@ _IO_SLOT_PCI_CLASS = {
 }
 PciClass = Literal["all", "eth", "sas", "san", "nvme"]
 _VALID_PCI_CLASSES = frozenset(get_args(PciClass))
+
+
+class ViosIdentity(TypedDict):
+    """Required fields in the strict VIOS identity projection."""
+
+    name: str
+    lpar_id: str
+    lpar_env: str
 
 
 async def list_io_slots(
@@ -374,7 +382,7 @@ async def read_vios_identity(
     config: HMCConfig,
     system_name: str,
     vios_name: str,
-) -> dict[str, str]:
+) -> ViosIdentity:
     """Return the unique strict identity row for a named VIOS candidate."""
     fields = ",".join(_VIOS_IDENTITY_FIELDS)
     command = (
@@ -389,7 +397,12 @@ async def read_vios_identity(
         raise ValueError(
             f"VIOS identity read for {vios_name!r} returned {len(rows)} rows; expected 1"
         )
-    return rows[0]
+    row = rows[0]
+    return ViosIdentity(
+        name=row["name"],
+        lpar_id=row["lpar_id"],
+        lpar_env=row["lpar_env"],
+    )
 
 
 async def add_vnic_backing(
@@ -460,5 +473,3 @@ def validate_sriov_mode(mode: SriovMode) -> SriovMode:
 
 # LPAR profile backup/restore/sync and I/O slot assignment (bkprofdata /
 # rstprofdata / chsyscfg — no REST equivalent)
-
-
