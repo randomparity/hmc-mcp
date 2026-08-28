@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -571,7 +572,7 @@ async def _aiter_file_chunks(
     closed by the caller, which is what guarantees the descriptor is released on
     every outcome rather than at some later finalization of this generator.
     """
-    while chunk := handle.read(chunk_size):
+    while chunk := await asyncio.to_thread(handle.read, chunk_size):
         yield chunk
 
 

@@ -3,6 +3,7 @@
 import functools
 import hashlib
 import socket
+import threading
 from collections.abc import AsyncIterator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,8 +18,9 @@ from hmc_mcp.config import parse_iso_url_allowlist
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.storage import (
     UPLOAD_CHUNK_SIZE,
-    upload_iso,
+    _aiter_file_chunks,
     _download_iso_from_url,
+    upload_iso,
 )
 
 # Test constants
@@ -577,6 +579,24 @@ async def test_upload_iso_streams_the_staged_file_in_bounded_chunks(
     assert result["sha256"] == hashlib.sha256(payload).hexdigest()
     staged, _, _ = download.return_value
     assert not staged.exists()
+
+
+@pytest.mark.asyncio
+async def test_file_chunk_reads_run_off_the_event_loop_thread():
+    event_loop_thread = threading.get_ident()
+
+    class ThreadCheckingHandle:
+        def __init__(self) -> None:
+            self.remaining = [b"first", b"second", b""]
+
+        def read(self, size: int) -> bytes:
+            assert threading.get_ident() != event_loop_thread
+            assert size == UPLOAD_CHUNK_SIZE
+            return self.remaining.pop(0)
+
+    chunks = [chunk async for chunk in _aiter_file_chunks(ThreadCheckingHandle())]
+
+    assert chunks == [b"first", b"second"]
 
 
 @pytest.mark.asyncio
