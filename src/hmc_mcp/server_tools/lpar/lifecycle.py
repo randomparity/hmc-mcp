@@ -10,7 +10,6 @@ from ..._app import (
     with_client,
     run_sync,
 )
-from ...errors import HMCError
 from hmc_mcp.operations.ownership import list_lpar_ownership
 from ...operations.affinity import (
     ProvisionAffinityAssessment,
@@ -38,7 +37,6 @@ from ...operations.lpar.boot_order import (
     set_lpar_boot_order,
 )
 from ...operations.lpar.dlpar import modify_lpar, set_lpar_memory, set_lpar_processors
-from ...operations.lpar.errors import translate_lpar_write_error
 from ...operations.lpar.workflows import create_lpar
 from ...operations.lpar.assignments import (
     LparPcieAssignments,
@@ -225,22 +223,17 @@ def hmc_rename_lpar(
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            try:
-                _, updated = await rename_lpar(
-                    hmc,
-                    system_name_or_uuid,
-                    lpar_name_or_uuid,
-                    new_name,
-                    ownership_override=ownership_override,
-                )
-            except HMCError as exc:
-                translate_lpar_write_error(exc)
-                raise
-            return updated
+    async def renamed(hmc):
+        _, updated = await rename_lpar(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            new_name,
+            ownership_override=ownership_override,
+        )
+        return updated
 
-    return run_sync(_go)
+    return with_client(renamed, profile=profile)
 
 
 @tool(effect="mutate", operation="lpar.dlpar_proc", target_kind="lpar")

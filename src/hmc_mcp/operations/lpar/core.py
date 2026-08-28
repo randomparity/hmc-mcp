@@ -15,6 +15,7 @@ from hmc_mcp.operations.affinity import (
     validate_affinity_request,
 )
 from hmc_mcp.operations.partition_state import PARTITION_STATES, PartitionState
+from hmc_mcp.operations.lpar.errors import translate_lpar_write_error
 
 from ...client import HMCClient
 from ...resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
@@ -510,7 +511,11 @@ async def rename_lpar(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
-    updated = await hmc.modify_logical_partition(
-        lpar_uuid, build_lpar_document(name=new_name)
-    )
+    try:
+        updated = await hmc.modify_logical_partition(
+            lpar_uuid, build_lpar_document(name=new_name)
+        )
+    except HMCError as exc:
+        translate_lpar_write_error(exc)
+        raise
     return lpar_uuid, updated
