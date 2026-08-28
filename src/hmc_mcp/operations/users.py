@@ -8,7 +8,6 @@ from ..client import HMCClient
 from ..documents import (
     AuthenticationType,
     build_hmc_user_document,
-    build_remote_access_document,
 )
 
 
@@ -103,5 +102,4 @@ async def configure_remote_access(
     values: dict[str, str | int | bool] | None,
     clear_fields: list[str] | None,
 ) -> dict[str, Any] | None:
-    build_remote_access_document(values, clear_fields)
     return await hmc.configure_remote_access(console_uuid, values, clear_fields)

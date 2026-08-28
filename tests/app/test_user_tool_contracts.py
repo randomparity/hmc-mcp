@@ -136,18 +136,15 @@ def test_modify_user_tool_preserves_explicit_clear_values() -> None:
 
 def test_delete_user_tool_returns_identified_confirmation() -> None:
     client = MagicMock()
+    client.delete_hmc_user = AsyncMock(return_value=None)
     context = _client_context(client)
-    operation = AsyncMock(return_value=None)
 
-    with (
-        patch.object(server_users, "client_from_env", return_value=context),
-        patch.object(server_users, "delete_user", operation),
-    ):
+    with patch.object(server_users, "client_from_env", return_value=context):
         result = server_users.hmc_delete_user(
             "console-1", "profile-1", profile="lab"
         )
 
-    operation.assert_awaited_once_with(client, "console-1", "profile-1")
+    client.delete_hmc_user.assert_awaited_once_with("console-1", "profile-1")
     context.__aexit__.assert_awaited_once()
     assert result == "Deleted HMC user profile profile-1"
 
@@ -165,18 +162,21 @@ def test_remote_access_tool_preserves_value_and_clear_semantics(
     clear_fields: list[str] | None,
 ) -> None:
     client = MagicMock()
+    client.configure_remote_access = AsyncMock(
+        return_value={"Resource": {"LdapEnabled": False}}
+    )
     context = _client_context(client)
-    operation = AsyncMock(return_value={"Resource": {"LdapEnabled": False}})
 
-    with (
-        patch.object(server_users, "client_from_env", return_value=context) as factory,
-        patch.object(server_users, "configure_remote_access", operation),
-    ):
+    with patch.object(
+        server_users, "client_from_env", return_value=context
+    ) as factory:
         result = server_users.hmc_configure_remote_access(
             "console-1", values, clear_fields, profile="security"
         )
 
     factory.assert_called_once_with("security")
-    operation.assert_awaited_once_with(client, "console-1", values, clear_fields)
+    client.configure_remote_access.assert_awaited_once_with(
+        "console-1", values, clear_fields
+    )
     context.__aexit__.assert_awaited_once()
     assert result == {"Resource": {"LdapEnabled": False}}

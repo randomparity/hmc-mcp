@@ -205,6 +205,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- `create_user` and `modify_user` now expose the documented user-profile fields as
+  explicit typed keyword parameters instead of accepting an untyped `**fields` bag.
+- User deletion and remote-access MCP tools now call the client boundary directly;
+  remote-access validation and document merging have one owner in the client layer.
+
 - `provision_lpar` now requires `partition_type` and all subsequent workflow
   controls as keyword arguments. The HMC client, system/name selectors, network,
   storage, and resource payload remain positional; boolean and policy controls can
