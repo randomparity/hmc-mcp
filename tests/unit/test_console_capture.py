@@ -240,14 +240,19 @@ async def test_remote_close_stops_the_capture():
 @pytest.mark.asyncio
 async def test_transport_failure_yields_error_stop_reason_and_still_releases():
     class ExplodingStdout(FakeStdout):
+        def __init__(self):
+            super().__init__(BANNER)
+
         async def read(self, size: int) -> bytes:
+            if self._chunks:
+                return await super().read(size)
             raise ConnectionResetError("TCP dropped")
 
     connection = FakeConnection([FakeProcess()])
     connection._processes[0].stdout = ExplodingStdout()
     capture = await _run_capture(connection)
     assert capture.stop_reason == "error"
-    assert capture.data == b""
+    assert capture.data == BANNER
     # P3: the HMC does not auto-release after a transport failure.
     assert len(capture.release_calls) >= 1
 
@@ -389,6 +394,87 @@ async def test_cancellation_still_runs_release_to_completion():
         with pytest.raises(asyncio.CancelledError):
             await task
     assert any(cmd.startswith("rmvterm ") for cmd in seen_commands)
+
+
+@pytest.mark.asyncio
+async def test_cancellation_during_acquisition_releases_proven_session():
+    entered = asyncio.Event()
+    finish = asyncio.Event()
+    process = FakeProcess(BANNER, None)
+    connection = FakeConnection([])
+
+    async def blocked_create_process(command: str, **kwargs):
+        connection.create_process_calls.append({"command": command, **kwargs})
+        entered.set()
+        await finish.wait()
+        return process
+
+    connection.create_process = blocked_create_process
+    release = AsyncMock(return_value=True)
+    with (
+        patch(
+            "hmc_mcp.ssh.console.open_hmc_connection",
+            AsyncMock(return_value=connection),
+        ),
+        patch("hmc_mcp.ssh.console._release_uncancellable", release),
+    ):
+        task = asyncio.create_task(
+            capture_lpar_console(
+                _client(),
+                "sys1",
+                "lp1",
+                **_capture_kwargs(duration_seconds=30.0, idle_timeout_seconds=30.0),
+            )
+        )
+        await entered.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    release.assert_awaited_once_with(make_config(), "sys1", "lp1")
+    assert connection.closed is True
+
+
+@pytest.mark.asyncio
+async def test_cancellation_during_contended_acquisition_never_releases_holder():
+    entered = asyncio.Event()
+    finish = asyncio.Event()
+    connection = FakeConnection([])
+
+    async def blocked_create_process(command: str, **kwargs):
+        connection.create_process_calls.append({"command": command, **kwargs})
+        entered.set()
+        await finish.wait()
+        return FakeProcess(CONTENTION)
+
+    connection.create_process = blocked_create_process
+    release = AsyncMock(return_value=True)
+    with (
+        patch(
+            "hmc_mcp.ssh.console.open_hmc_connection",
+            AsyncMock(return_value=connection),
+        ),
+        patch("hmc_mcp.ssh.console._release_uncancellable", release),
+    ):
+        task = asyncio.create_task(
+            capture_lpar_console(
+                _client(),
+                "sys1",
+                "lp1",
+                **_capture_kwargs(duration_seconds=30.0, idle_timeout_seconds=30.0),
+            )
+        )
+        await entered.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    release.assert_not_awaited()
+    assert connection.closed is True
 
 
 # ---------------------------------------------------------------------------

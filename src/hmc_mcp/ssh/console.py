@@ -235,6 +235,7 @@ async def _collect_output(
     duration_seconds: float,
     max_bytes: int,
     idle_timeout_seconds: float,
+    initial_data: bytes = b"",
 ) -> tuple[bytes, StopReason]:
     """Read the stream until one of the three client-side bounds fires (P8).
 
@@ -243,10 +244,12 @@ async def _collect_output(
     still runs, since P3 showed the HMC never reclaims the vterm itself.
     """
     loop = asyncio.get_running_loop()
-    buf = bytearray()
+    buf = bytearray(initial_data)
     deadline = loop.time() + duration_seconds
     idle_deadline = loop.time() + idle_timeout_seconds
     while True:
+        if len(buf) >= max_bytes:
+            return bytes(buf), "max_bytes"
         now = loop.time()
         if now >= deadline:
             return bytes(buf), "duration"
@@ -268,8 +271,6 @@ async def _collect_output(
             return bytes(buf), "remote-close"
         buf += chunk
         idle_deadline = loop.time() + idle_timeout_seconds
-        if len(buf) >= max_bytes:
-            return bytes(buf), "max_bytes"
 
 
 async def _release_uncancellable(
@@ -452,6 +453,58 @@ async def _open_capture_stream(
     return connection, process
 
 
+async def _acquire_capture_stream(
+    config: HMCConfig, command: str, stdin: _SealedStdin
+) -> tuple[Any, Any, bytes]:
+    """Open ``mkvterm`` and wait for proof that this caller acquired the slot."""
+    connection, process = await _open_capture_stream(config, command, stdin)
+    try:
+        async with asyncio.timeout(_RELEASE_PROBE_SECONDS):
+            data = bytearray()
+            while True:
+                chunk = await process.stdout.read(_CHUNK)
+                if not chunk:
+                    raise HMCCLIError(
+                        "mkvterm exited before confirming console acquisition"
+                    )
+                data += chunk
+                if HELD_SENTINEL in data:
+                    raise ConsoleHeldError(
+                        "Another session already holds the console; "
+                        "the capture never force-closes another holder's session."
+                    )
+                if ACQUIRED_SENTINEL in data:
+                    return connection, process, bytes(data)
+    except TimeoutError as exc:
+        connection.close()
+        raise HMCCLIError(
+            "mkvterm did not confirm console acquisition within "
+            f"{_RELEASE_PROBE_SECONDS:g} seconds"
+        ) from exc
+    except BaseException:
+        connection.close()
+        raise
+
+
+async def _await_acquisition(
+    config: HMCConfig, command: str, stdin: _SealedStdin
+) -> tuple[Any, Any, bytes, bool]:
+    """Shield the ownership handshake and report whether cancellation arrived."""
+    task = asyncio.create_task(_acquire_capture_stream(config, command, stdin))
+    cancelled = False
+    while True:
+        try:
+            connection, process, data = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+            continue
+        except BaseException:
+            if cancelled:
+                raise asyncio.CancelledError from None
+            raise
+        return connection, process, data, cancelled
+
+
 async def capture_lpar_console(
     hmc: HMCClient,
     system_name: str,
@@ -493,10 +546,25 @@ async def capture_lpar_console(
     stdin = _SealedStdin()
     connection: Any = None
     try:
-        connection, process = await _open_capture_stream(config, command, stdin)
+        connection, process, initial_data, cancelled = await _await_acquisition(
+            config, command, stdin
+        )
+        if cancelled:
+            released = await _release_uncancellable(config, system_name, lpar_name)
+            logger.warning(
+                "console acquisition on %s/%s was cancelled; released=%s",
+                system_name,
+                lpar_name,
+                released,
+            )
+            raise asyncio.CancelledError
         try:
             data, stop_reason = await _collect_output(
-                process, duration_seconds, max_bytes, idle_timeout_seconds
+                process,
+                duration_seconds,
+                max_bytes,
+                idle_timeout_seconds,
+                initial_data,
             )
         except asyncio.CancelledError:
             released = await _release_uncancellable(config, system_name, lpar_name)
