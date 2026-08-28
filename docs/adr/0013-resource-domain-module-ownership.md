@@ -19,8 +19,8 @@ Presentation adapters are grouped by resource domain:
   own Typer commands. `cli_commands/app.py` owns the shared Typer application
   and presentation helpers; resource modules register commands on that application.
 - `server.py` and `cli.py` are composition entry points, not domain owners.
-- `client/` owns REST transport operations, while the `ssh_*.py` modules own
-  operations implemented through the HMC CLI.
+- `client/` owns REST transport operations, while modules under `ssh/` own HMC
+  CLI transport and resource operations.
 - Shared workflows and policies used by both presentations belong in
   presentation-neutral `operations/` modules.
 - `resource_identity.py` owns REST-facing name/UUID resolution.
