@@ -139,7 +139,8 @@ comma-bearing list pair and `+`/`-` suffixes. `shlex.quote` owns only the remote
 
 2. In the same test module, add parser cases for dynamic headers, reordered/unknown columns,
    quoted CSV values, blank output, exact `No results were found.`, blank/duplicate headers,
-   malformed CSV, and row-width drift. Expected valid result:
+   uppercase or mixed-case headers, whitespace-padded header names, malformed CSV, and row-width
+   drift. Expected valid result:
 
    ```python
    [{"name": "fabric-a", "vios_names": "vios-a,vios-b", "future": "kept"}]
@@ -165,9 +166,11 @@ comma-bearing list pair and `+`/`-` suffixes. `shlex.quote` owns only the remote
    exists: `_nonblank`, `_single_vios_selector`, `_member_selector`, `_parse_label_rows`,
    `_receipt`, and `_run_mutation`. Use `build_attribute_record` for every `-i` value, passing the
    one list attribute through `quoted={attribute}` and keeping it final. Use `build_filter` for
-   list filters. Validate label/system standalone values for blank/control input, and record-bound
-   values through the existing builder. Construct fixed tokens in code and `shlex.quote` every
-   caller-derived standalone argument, filter, and completed record.
+   list filters. `_parse_label_rows` must validate all header names as unique, nonblank lower-case
+   identifiers without surrounding whitespace before producing any row. Validate label/system
+   standalone values for blank/control input, and record-bound values through the existing
+   builder. Construct fixed tokens in code and `shlex.quote` every caller-derived standalone
+   argument, filter, and completed record.
 
 6. Run `uv run --no-sync pytest tests/vios/test_vios_labels.py -q`. Expect all Task 1 tests green.
    Make one controlled fault by changing the expected FC-port set operation from `-o s` to `-o a`,
@@ -291,13 +294,17 @@ List commands accept `--json`. Mutation commands accept `--yes`; group member in
 1. Add direct `CliRunner` tests to `tests/app/test_cli_commands.py`. Patch the Task 2 operation
    functions at the CLI module boundary. Assert command registration/help, repeated member option
    preservation, list JSON, mutation receipt JSON, confirmation refusal without dispatch, `--yes`
-   dispatch, and prompts/confirmation echoes on stderr rather than JSON stdout. Run only the new
-   tests by their node IDs and expect import/command failures.
+   dispatch, payload-complete confirmation text, and prompts/confirmation echoes on stderr rather
+   than JSON stdout. Confirmation assertions cover FC port plus selected VIOS identity and label,
+   group label plus complete member family/list, old plus new label for rename, and the named group
+   removal target. Run only the new tests by their node IDs and expect import/command failures.
 
 2. Implement `src/hmc_mcp/cli_commands/vios_labels.py`. Reuse the established `run`, `ssh_config`,
    `output`, `print_json`, and stderr confirmation pattern from `cli_commands/vnic.py`; do not add a
-   second validator. Each mutation prompt names the system, operation, and one label/port target
-   without echoing credentials. `register_commands(vios_app)` installs exactly the seven names.
+   second validator. Each mutation prompt names the system and complete operation-relevant payload:
+   FC port, selected VIOS identity, and label for set/remove; group label and full member family/list
+   for create/member changes; old and new labels for rename; and the group label for removal. It
+   never echoes credentials. `register_commands(vios_app)` installs exactly the seven names.
 
 3. Modify `src/hmc_mcp/cli.py` to import `vios_labels` and register it once with `vios_app`.
    Re-run the new CLI node IDs and `uv run --no-sync pytest tests/scripts/test_smoke_cli_groups.py
