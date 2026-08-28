@@ -8,7 +8,7 @@ import typer
 from rich.table import Table
 
 from ..operations.composite import lpar_summary
-from ..operations.lpar import PartitionState
+from ..operations.lpar.core import PartitionState
 from ..resource_identity import is_uuid
 from .app import (
     _client,

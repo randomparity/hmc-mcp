@@ -26,7 +26,7 @@ from ..documents import (
     PowerOnLparStartPolicy,
 )
 from ..operations.systems import ManagedSystemState, modify_system, power_system
-from ..operations.lpar import PartitionState
+from ..operations.lpar.core import PartitionState
 
 
 tool, register_tools, tool_security = tool_module()

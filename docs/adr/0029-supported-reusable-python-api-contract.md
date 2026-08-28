@@ -179,13 +179,11 @@ names are internal everywhere and are never inventoried.
     Domain A over exported *functions*, which a type is not.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
   none.
-- `operations.lpar` — operations: none; types: `AssignmentResult`, `AttachDiskResult`,
-  `DecommissionResult`, `DedicatedPcieAssignment`, `LparPcieAssignments`,
-  `LparPcieWorkflowResult`, `ProvisionNetwork`, `ProvisionResult`, `ProvisionStorage`,
-  `SriovLogicalPortAssignment`, `VnicAssignment`, `WorkflowStep`,
-  `apply_lpar_pcie_assignments`, `apply_validated_lpar_pcie_assignments`,
-  `attach_disk_to_lpar`, `decommission_lpar`, `prevalidate_lpar_pcie_assignments`,
-  `provision_lpar`; excluded synchronous: none.
+- `operations.lpar` — operations: none; types: none; excluded synchronous: none.
+- `operations.lpar.assignments` — exports: `AssignmentResult`, `DedicatedPcieAssignment`,
+  `LparPcieAssignments`, `LparPcieWorkflowResult`, `SriovLogicalPortAssignment`,
+  `VnicAssignment`, `WorkflowStep`, `apply_lpar_pcie_assignments`,
+  `apply_validated_lpar_pcie_assignments`, `prevalidate_lpar_pcie_assignments`.
 - `operations.lpar.boot_order` — exports: `clear_lpar_boot_order`,
   `read_lpar_boot_order`, `set_lpar_boot_order`.
 - `operations.lpar.configuration` — exports: `configure_lpar_msp`,
@@ -193,8 +191,11 @@ names are internal everywhere and are never inventoried.
 - `operations.lpar.core` — exports: `LparCreation`, `LparCreationResult`,
   `LparPowerResult`, `ProcessorCompatibilityMode`, `create_and_stamp_lpar`, `delete_lpar`,
   `power_lpar`, `rename_lpar`.
+- `operations.lpar.decommission` — exports: `DecommissionResult`, `decommission_lpar`.
 - `operations.lpar.dlpar` — exports: `modify_lpar`, `set_lpar_memory`,
   `set_lpar_processors`.
+- `operations.lpar.provision` — exports: `AttachDiskResult`, `ProvisionNetwork`,
+  `ProvisionResult`, `ProvisionStorage`, `attach_disk_to_lpar`, `provision_lpar`.
 - `operations.lpar.workflows` — exports: `create_lpar`.
 - `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,

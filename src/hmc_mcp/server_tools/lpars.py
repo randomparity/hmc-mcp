@@ -27,7 +27,7 @@ from ..documents import (
     PartitionType,
 )
 from ..operations.lpar.decommission import DecommissionResult, decommission_lpar
-from ..operations.lpar import (
+from ..operations.lpar.core import (
     LparCreation,
     LparPowerOnOutcome,
     activation_allows_assessment,

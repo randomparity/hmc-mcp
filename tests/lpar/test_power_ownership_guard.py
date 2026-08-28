@@ -20,7 +20,7 @@ from hmc_mcp.cli_commands import lpars as cli_lpars
 from hmc_mcp.operations.lpar import provision as operations_provision
 from hmc_mcp.server_tools import lpars as server_lpars
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.lpar import power_lpar
+from hmc_mcp.operations.lpar.core import power_lpar
 from hmc_mcp.ssh.transport import HMCCLIError
 
 LPAR_UUID = "11111111-1111-1111-1111-111111111111"

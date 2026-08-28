@@ -23,7 +23,7 @@ from ..operations.lpar.assignments import (
     LparPcieAssignments,
 )
 from ..operations.lpar.decommission import decommission_lpar
-from ..operations.lpar import (
+from ..operations.lpar.core import (
     LparCreation,
     ProcessorCompatibilityMode,
     delete_lpar,

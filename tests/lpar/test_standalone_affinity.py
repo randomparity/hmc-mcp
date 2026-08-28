@@ -17,7 +17,7 @@ from hmc_mcp.operations.affinity import (
     assess_post_activation_affinity,
     classify_affinity_outcome,
 )
-from hmc_mcp.operations.lpar import (
+from hmc_mcp.operations.lpar.core import (
     LparPowerResult,
     activation_allows_assessment,
 )

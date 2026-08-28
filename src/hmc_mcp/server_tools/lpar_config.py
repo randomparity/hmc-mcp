@@ -39,7 +39,7 @@ from ..operations.lpar.configuration import (
     configure_lpar_msp,
     configure_lpar_processor_compatibility,
 )
-from ..operations.lpar import ProcessorCompatibilityMode
+from ..operations.lpar.core import ProcessorCompatibilityMode
 
 
 tool, register_tools, tool_security = tool_module()

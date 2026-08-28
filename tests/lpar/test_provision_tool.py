@@ -19,7 +19,7 @@ from conftest import JOB_ENTRY, assert_no_mutating_requests
 from hmc_mcp.documents import LparResources
 from hmc_mcp.jobs import JobOutcome
 from hmc_mcp.operations.lpar.assignments import WorkflowStep
-from hmc_mcp.operations.lpar import LparPowerResult
+from hmc_mcp.operations.lpar.core import LparPowerResult
 from hmc_mcp.operations.lpar.provision import (
     ProvisionAffinityAssessment,
     ProvisionNetwork,

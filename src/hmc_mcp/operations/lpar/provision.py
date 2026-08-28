@@ -21,7 +21,7 @@ from ..affinity import (
     assess_post_activation_affinity,
     validate_affinity_request,
 )
-from . import (
+from .core import (
     LparCreation,
     LparCreationResult,
     create_and_stamp_lpar,

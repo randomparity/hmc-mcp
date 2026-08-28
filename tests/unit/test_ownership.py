@@ -973,7 +973,7 @@ def test_set_lpar_ownership_description_restamps_failed_create_stamp():
 
 
 from hmc_mcp.errors import HMCError  # noqa: E402
-from hmc_mcp.operations.lpar import LparCreation, create_and_stamp_lpar  # noqa: E402
+from hmc_mcp.operations.lpar.core import LparCreation, create_and_stamp_lpar  # noqa: E402
 from hmc_mcp.documents import LparResources  # noqa: E402
 from hmc_mcp.ssh.transport import HMCCLIError  # noqa: E402
 

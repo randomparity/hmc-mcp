@@ -360,7 +360,10 @@ def test_vios_backup_and_restore_schemas_pin_the_supported_contracts():
 
 
 def test_parameter_normalization_contract_is_schema_pinned():
-    from hmc_mcp.operations.lpar import PARTITION_STATES, PROCESSOR_COMPATIBILITY_MODES
+    from hmc_mcp.operations.lpar.core import (
+        PARTITION_STATES,
+        PROCESSOR_COMPATIBILITY_MODES,
+    )
     from hmc_mcp.operations.pcm import PCM_CATEGORIES
     from hmc_mcp.operations.systems import MANAGED_SYSTEM_STATES
 

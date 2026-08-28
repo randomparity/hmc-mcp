@@ -18,7 +18,7 @@ from .app import (
 )
 from ..jobs import validate_wait_timing
 from ..operations.vios import power_vios
-from ..operations.lpar import PartitionState
+from ..operations.lpar.core import PartitionState
 
 
 @vios_app.command("list")
