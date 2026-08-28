@@ -38,7 +38,9 @@ _RFC3339 = re.compile(
 class SnapshotValidationError(ValueError):
     """A safe, actionable snapshot validation diagnostic."""
 
-    def __init__(self, operation: str, pointer: str, rule: str, correction: str):
+    def __init__(
+        self, operation: str, pointer: str, rule: str, correction: str
+    ) -> None:
         super().__init__(
             f"{operation} failed at {pointer}: {rule}. Suggested correction: {correction}"
         )
@@ -291,9 +293,7 @@ class LparSnapshot(_Value):
             if action not in {"none", "warn", "fail"}:
                 raise ValueError(f"{name} action must be none, warn, or fail")
         elif capability.unavailable_reason is None or observation is not None:
-            raise ValueError(
-                f"unsupported {name} requires a reason and no observation"
-            )
+            raise ValueError(f"unsupported {name} requires a reason and no observation")
 
     def _check_observation(
         self, name: str, value: ObservationEnvelope | None, media_type: str

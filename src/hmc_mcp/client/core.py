@@ -226,17 +226,13 @@ def _normalize_platform_update_response(payload: Any) -> dict[str, Any]:
                 raise _platform_response_error("Result ParameterName")
             if not isinstance(value, str):
                 raise _platform_response_error("Result ParameterValue")
-            normalized_results.append(
-                {"ParameterName": name, "ParameterValue": value}
-            )
+            normalized_results.append({"ParameterName": name, "ParameterValue": value})
         resource["Results"] = {"JobParameter": normalized_results}
 
     normalized: dict[str, Any] = {"UUID": job_id.strip(), "Resource": resource}
     if isinstance(self_link, str):
         normalized["link"] = self_link.strip()
     return normalized
-
-
 
 
 class HMCClient(
@@ -258,7 +254,7 @@ class HMCClient(
             systems = await hmc.list_managed_systems()
     """
 
-    def __init__(self, config: HMCConfig):
+    def __init__(self, config: HMCConfig) -> None:
         config.validate_credentials()
         self.config = config
         self._session_token: str | None = None
@@ -535,6 +531,7 @@ class HMCClient(
         resp = await self._request("DELETE", path, headers=self._uom_headers(None))
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
+
     # Brokered file upload helpers (/rest/api/web/File/)
     #
     # HMC uses a two-step brokered file protocol to import ISOs:
@@ -545,7 +542,9 @@ class HMCClient(
     #
     # Reference: project-pim/cli/utils/iso_util.py (create_iso_path pattern)
 
-    async def _broker_file_create(self, vios_uuid: str, vg_uuid: str, filename: str) -> str:
+    async def _broker_file_create(
+        self, vios_uuid: str, vg_uuid: str, filename: str
+    ) -> str:
         """Create a brokered file handle and return its URI."""
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         create_xml = build_brokered_file_document(filename=filename)
