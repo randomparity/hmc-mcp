@@ -1850,6 +1850,16 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         assert "lpar_name_or_uuid" in parameters
         assert "lpar_uuid" not in parameters
     for operation_name in (
+        "list_dedicated_slots",
+        "set_sriov_adapter_mode",
+        "list_sriov_adapters",
+        "list_sriov_physical_ports",
+        "list_sriov_logical_ports",
+    ):
+        parameters = inspect.signature(getattr(api, operation_name)).parameters
+        assert "system_name_or_uuid" in parameters
+        assert "system" not in parameters
+    for operation_name in (
         "get_system_memopt_score",
         "list_resource_group_memopt_scores",
         "plan_lpar_memopt_scores",
@@ -1928,7 +1938,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # System and VIOS power operations now use power_on like the LPAR operation.
     # VIOS operations now share system-before-partition selector order.
     # Boot-order operations now accept a system-scoped LPAR name or UUID.
-    expected_digest = "048609f537cd13ec143323c7619469bda1d32968c68740a8795a578491f97195"  # pragma: allowlist secret
+    # PCIe inventory operations now name their system selector explicitly.
+    expected_digest = "f33ee831cb0016ecafec7ad5c61fe540598b0043e5006e27b96b673b23b3fa2a"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
