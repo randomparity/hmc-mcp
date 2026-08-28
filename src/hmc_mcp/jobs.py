@@ -234,7 +234,7 @@ async def wait_for_submitted_job(
             "UUID, JobID, or polling link"
         )
     return await client.wait_for_job(
-        identifier, timeout_seconds, poll_interval, job_href=job.get("link")
+        identifier, timeout_seconds, poll_interval, job_href=_job_href(job)
     )
 
 

@@ -301,6 +301,20 @@ async def test_wait_for_submitted_job_forwards_identifier_link_and_timing() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("link", [42, "  "])
+async def test_wait_for_submitted_job_ignores_malformed_link(link) -> None:
+    client = AsyncMock()
+    client.wait_for_job.return_value = {"Status": "COMPLETED"}
+
+    result = await wait_for_submitted_job(
+        client, {"UUID": "job-2", "link": link}, True, 90, 3
+    )
+
+    assert result == {"Status": "COMPLETED"}
+    client.wait_for_job.assert_awaited_once_with("job-2", 90, 3, job_href=None)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("job", [None, {"UUID": 42}, {}, {"link": "  "}])
 async def test_wait_for_submitted_job_rejects_unpollable_response(job) -> None:
     client = AsyncMock()
