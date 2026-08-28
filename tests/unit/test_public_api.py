@@ -289,7 +289,6 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "delete_user",
         "modify_user",
         "modify_system",
-        "ManagedSystemState",
         "get_system",
         "list_systems",
         "power_system",
@@ -1977,7 +1976,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Capacity and summary memory contracts now use the accurate MiB suffix.
     # DecommissionResult now exposes its blast-radius record types.
     # PartitionState now lives at the shared operations layer used by LPAR and VIOS.
-    expected_digest = "0fb334c2a53d6d8863a4ba407a06343ece63b2b85802f8cdcbc79da97dcf53c5"  # pragma: allowlist secret
+    expected_digest = "1c11fffe6f1b96b8bb23e4b23da09f912a234b8f1ea933a3222606a83b6e721f"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -2123,21 +2122,6 @@ _FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[object, ...]] = {
     "LuType": ("THIN", "THICK"),
     "MetricKind": ("processed", "aggregated"),
     "MemoryMirroringMode": ("none", "sys_firmware_only"),
-    "ManagedSystemState": (
-        "operating",
-        "power off",
-        "standby",
-        "initializing",
-        "error",
-        "error - dump in progress",
-        "error - terminated",
-        "incomplete",
-        "pending authentication - password updates required",
-        "failed authentication",
-        "recovery",
-        "no connection",
-        "on demand recovery",
-    ),
     "OsType": ("aix", "linux", "ibmi"),
     "PartitionType": ("AIX/Linux", "OS400", "Virtual IO Server"),
     "PartitionState": (

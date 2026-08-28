@@ -12,7 +12,6 @@ from ..operations.capacity import capacity_report, find_placement
 from ..operations.composite import system_summary
 from ..operations.health import fleet_health
 from ..operations.systems import (
-    ManagedSystemState,
     get_system,
     list_systems,
     power_system,
@@ -48,7 +47,7 @@ def systems_health(
 
 
 def systems_list(
-    state: ManagedSystemState | None = typer.Option(
+    state: str | None = typer.Option(
         None, "--state", help="Filter by State (server-side search)"
     ),
     as_json: bool = typer.Option(False, "--json"),

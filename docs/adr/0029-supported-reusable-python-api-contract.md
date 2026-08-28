@@ -244,7 +244,7 @@ names are internal everywhere and are never inventoried.
   `unmount_optical_media`, `upload_iso`; types: `StorageMapResult`; excluded synchronous:
   `validate_logical_unit_create`, `validate_logical_unit_wait`.
 - `operations.systems` — operations: `get_system`, `list_systems`, `modify_system`,
-  `power_system`; types: `ManagedSystemState`; excluded synchronous: none.
+  `power_system`; types: none; excluded synchronous: none.
 - `operations.templates` — operations: `deploy_partition_template`, `get_partition_template`,
   `list_partition_templates`; types: none; excluded synchronous: none.
 - `operations.update_models` — operations: none; types: `ConsoleUpdateMediaType`,

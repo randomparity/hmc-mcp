@@ -363,7 +363,6 @@ def test_parameter_normalization_contract_is_schema_pinned():
     from hmc_mcp.operations.lpar.core import PROCESSOR_COMPATIBILITY_MODES
     from hmc_mcp.operations.partition_state import PARTITION_STATES
     from hmc_mcp.operations.pcm import PCM_CATEGORIES
-    from hmc_mcp.operations.systems import MANAGED_SYSTEM_STATES
 
     by_name = _tools_by_name()
     replacements = {
@@ -422,7 +421,6 @@ def test_parameter_normalization_contract_is_schema_pinned():
         assert properties["mac_address"]["default"] is None
 
     enum_contracts = {
-        ("hmc_list_systems", "state"): MANAGED_SYSTEM_STATES,
         ("hmc_list_lpars", "state"): PARTITION_STATES,
         ("hmc_list_vios", "state"): PARTITION_STATES,
         ("hmc_set_lpar_proc_compat", "mode"): PROCESSOR_COMPATIBILITY_MODES,

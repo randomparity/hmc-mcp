@@ -19,7 +19,6 @@ from ..documents import (
     PowerOnLparStartPolicy,
 )
 from ..operations.systems import (
-    ManagedSystemState,
     get_system,
     list_systems,
     modify_system,
@@ -72,7 +71,7 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
 
 @tool(effect="read", operation="system.list", target_kind="console")
 def hmc_list_systems(
-    state: ManagedSystemState | None = None,
+    state: str | None = None,
     profile: str | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:

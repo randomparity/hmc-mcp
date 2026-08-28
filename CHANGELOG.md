@@ -409,6 +409,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: `list_systems` accepts any exact HMC state string; removed the
+  misleading finite `ManagedSystemState` facade type and tool-schema enum.
 - Changed: `get_vios` now accepts the required VIOS selector first and makes its
   optional managed-system scope keyword-only.
 - Added: `DecommissionBlastRadius` and `DecommissionAdapterRecord` type the

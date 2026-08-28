@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from ..client import HMCClient
 from ..documents import (
@@ -19,42 +19,8 @@ from ..jobs import (
     wait_for_submitted_job,
 )
 
-ManagedSystemState = Literal[
-    "operating",
-    "power off",
-    "standby",
-    "initializing",
-    "error",
-    "error - dump in progress",
-    "error - terminated",
-    "incomplete",
-    "pending authentication - password updates required",
-    "failed authentication",
-    "recovery",
-    "no connection",
-    "on demand recovery",
-]
-MANAGED_SYSTEM_STATES: frozenset[ManagedSystemState] = frozenset(
-    {
-        "operating",
-        "power off",
-        "standby",
-        "initializing",
-        "error",
-        "error - dump in progress",
-        "error - terminated",
-        "incomplete",
-        "pending authentication - password updates required",
-        "failed authentication",
-        "recovery",
-        "no connection",
-        "on demand recovery",
-    }
-)
-
-
 async def list_systems(
-    hmc: HMCClient, state: ManagedSystemState | None = None
+    hmc: HMCClient, state: str | None = None
 ) -> list[dict[str, Any]]:
     """List managed systems, using server-side state filtering when requested."""
     if state is not None:

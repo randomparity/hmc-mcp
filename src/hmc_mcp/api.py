@@ -229,7 +229,6 @@ from .operations.storage import (
     upload_iso,
 )
 from hmc_mcp.operations.systems import (
-    ManagedSystemState,
     get_system,
     list_systems,
     modify_system,
@@ -516,7 +515,6 @@ __all__ = [
     "delete_user",
     "modify_user",
     "modify_system",
-    "ManagedSystemState",
     "get_system",
     "list_systems",
     "power_system",
