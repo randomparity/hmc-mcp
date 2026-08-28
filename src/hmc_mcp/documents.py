@@ -1153,24 +1153,7 @@ def _build_pending_boot_string(devices: list[str]) -> str:
 
 @escapes_string_arguments
 def build_boot_order_document(devices: list[str]) -> str:
-    """Build a LogicalPartition document to set LPAR boot order.
-
-    This document sets the PendingBootString which controls the boot device
-    priority for the next LPAR boot. Changes take effect on the next activation
-    (no reboot is required - this is a profile-only change).
-
-    Args:
-        devices: Ordered list of boot device selectors (cd, disk, network). Validated against BOOT_DEVICE_SELECTORS.
-                 The first device is tried first, then the second, etc.
-
-    Returns:
-        XML document for POST to /rest/api/uom/LogicalPartition/{uuid}.
-
-    Example:
-        >>> xml = build_boot_order_document(["network", "cd", "disk"])
-        >>> "PendingBootString" in xml
-        True
-    """
+    """Set boot-device priority for the LPAR's next activation."""
     pending_boot_string = _build_pending_boot_string(devices)
 
     body = f"""  <PendingBootString kb="CUR" kxe="false">{pending_boot_string}</PendingBootString>"""
@@ -1180,14 +1163,7 @@ def build_boot_order_document(devices: list[str]) -> str:
 
 @escapes_string_arguments
 def build_clear_boot_order_document() -> str:
-    """Build a LogicalPartition document to clear LPAR boot order.
-
-    This document clears the PendingBootString, restoring the HMC default
-    boot behavior. Changes take effect on the next activation.
-
-    Returns:
-        XML document for POST to /rest/api/uom/LogicalPartition/{uuid}.
-    """
+    """Restore the HMC's default boot order on the LPAR's next activation."""
     body = """  <PendingBootString kb="CUR" kxe="false"></PendingBootString>"""
 
     return _lpar_envelope(body)
