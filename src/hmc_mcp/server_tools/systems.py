@@ -12,8 +12,6 @@ from .._app import (
 )
 from ..client.client_factory import client_from_env
 from ..resource_identity import (
-    is_uuid,
-    resolve_lpar_uuid,
     resolve_system_uuid,
     resolve_vios_uuid,
 )
@@ -32,7 +30,12 @@ from ..operations.systems import (
     modify_system,
     power_system,
 )
-from ..operations.lpar.core import PartitionState
+from ..operations.lpar.core import (
+    PartitionState,
+    get_lpar,
+    get_lpar_state,
+    list_lpars,
+)
 
 
 tool, register_tools, tool_security = tool_module()
@@ -126,17 +129,9 @@ def hmc_list_lpars(
             and parsed; omitted returns all entries. This client-side cap does not
             reduce HMC work or network transfer.
     """
-    if system_name_or_uuid is not None and state is not None:
-        raise ValueError("Provide at most one of system_name_or_uuid or state")
-
     async def _go():
         async with client_from_env(profile) as hmc:
-            if system_name_or_uuid is not None:
-                system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-                return await hmc.list_logical_partitions(system_uuid)
-            if state is not None:
-                return await hmc.search_uom("LogicalPartition", "PartitionState", state)
-            return await hmc.list_logical_partitions(None)
+            return await list_lpars(hmc, system_name_or_uuid, state)
 
     return run_limited_collection(_go, limit)
 
@@ -158,15 +153,10 @@ def hmc_get_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            if is_uuid(lpar_name_or_uuid):
-                return await hmc.get_logical_partition(lpar_name_or_uuid)
-            system_uuid = (
-                await resolve_system_uuid(hmc, system_name_or_uuid)
-                if system_name_or_uuid is not None
-                else None
-            )
-            return await hmc.find_partition_by_name(
-                lpar_name_or_uuid, system_uuid=system_uuid
+            return await get_lpar(
+                hmc,
+                lpar_name_or_uuid,
+                system_name_or_uuid=system_name_or_uuid,
             )
 
     return run_sync(_go)
@@ -189,11 +179,10 @@ def hmc_get_lpar_state(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(
-                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
-            )
-            return await hmc.get_quick_property(
-                "LogicalPartition", lpar_uuid, "PartitionState"
+            return await get_lpar_state(
+                hmc,
+                lpar_name_or_uuid,
+                system_name_or_uuid=system_name_or_uuid,
             )
 
     return run_sync(_go)

@@ -8,15 +8,18 @@ import typer
 from rich.table import Table
 
 from ..operations.composite import lpar_summary
-from ..operations.lpar.core import PartitionState
-from ..resource_identity import is_uuid
+from ..operations.lpar.core import (
+    PartitionState,
+    get_lpar,
+    get_lpar_state,
+    list_lpars,
+)
 from .app import (
     _client,
     _first_field,
     _output,
     _partition_not_found,
     _print_json,
-    _resolve_partition_uuid,
     _run,
     _with_client,
     console,
@@ -75,7 +78,7 @@ def lpars_summary(
 
 def lpars_list(
     system: str | None = typer.Option(
-        None, "--system", "-s", help="Restrict to this managed system UUID"
+        None, "--system", "-s", help="Restrict to this managed system name or UUID"
     ),
     state: PartitionState | None = typer.Option(
         None, "--state", help="Filter by PartitionState (server-side search)"
@@ -84,12 +87,7 @@ def lpars_list(
 ) -> None:
     """List logical partitions."""
 
-    if state is not None:
-        lpars = _with_client(
-            lambda hmc: hmc.search_uom("LogicalPartition", "PartitionState", state)
-        )
-    else:
-        lpars = _with_client(lambda hmc: hmc.list_logical_partitions(system))
+    lpars = _with_client(lambda hmc: list_lpars(hmc, system, state))
 
     table = None
     if not as_json:
@@ -115,13 +113,7 @@ def lpars_show(
 ) -> None:
     """Show one LPAR, looked up by name (exact) or by UUID."""
 
-    lpar = _with_client(
-        lambda hmc: (
-            hmc.get_logical_partition(name_or_uuid)
-            if is_uuid(name_or_uuid)
-            else hmc.find_partition_by_name(name_or_uuid)
-        )
-    )
+    lpar = _with_client(lambda hmc: get_lpar(hmc, name_or_uuid))
 
     if lpar is None:
         _partition_not_found(name_or_uuid)
@@ -135,12 +127,12 @@ def lpars_state(
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
-            if uuid is None:
-                return None
-            return await hmc.get_quick_property(
-                "LogicalPartition", uuid, "PartitionState"
-            )
+            try:
+                return await get_lpar_state(hmc, name_or_uuid)
+            except ValueError as exc:
+                if str(exc).startswith("No LPAR named "):
+                    return None
+                raise
 
     state = _run(_go)
 

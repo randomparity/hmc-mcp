@@ -12,7 +12,7 @@ from hmc_mcp.operations.affinity import (
 )
 
 from ...client import HMCClient
-from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
+from ...resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
 from ...documents import (
     Keylock,
     LparResources,
@@ -96,6 +96,61 @@ PROCESSOR_COMPATIBILITY_MODES: frozenset[ProcessorCompatibilityMode] = frozenset
         "POWER11",
     }
 )
+
+
+async def list_lpars(
+    hmc: HMCClient,
+    system_name_or_uuid: str | None = None,
+    state: PartitionState | None = None,
+) -> list[dict[str, Any]]:
+    """List LPARs, optionally scoped to one system or one partition state."""
+    if system_name_or_uuid is not None and state is not None:
+        raise ValueError("Provide at most one of system_name_or_uuid or state")
+    if state is not None:
+        if state not in PARTITION_STATES:
+            allowed = ", ".join(sorted(PARTITION_STATES))
+            raise ValueError(f"state must be one of: {allowed}")
+        return await hmc.search_uom("LogicalPartition", "PartitionState", state)
+    system_uuid = (
+        await resolve_system_uuid(hmc, system_name_or_uuid)
+        if system_name_or_uuid is not None
+        else None
+    )
+    return await hmc.list_logical_partitions(system_uuid)
+
+
+async def get_lpar(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
+) -> dict[str, Any] | None:
+    """Get one LPAR by UUID or by an optionally system-scoped exact name."""
+    if is_uuid(lpar_name_or_uuid):
+        return await hmc.get_logical_partition(lpar_name_or_uuid)
+    system_uuid = (
+        await resolve_system_uuid(hmc, system_name_or_uuid)
+        if system_name_or_uuid is not None
+        else None
+    )
+    return await hmc.find_partition_by_name(
+        lpar_name_or_uuid, system_uuid=system_uuid
+    )
+
+
+async def get_lpar_state(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
+) -> str | None:
+    """Return the current state of one system-scoped LPAR selector."""
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
+    return await hmc.get_quick_property(
+        "LogicalPartition", lpar_uuid, "PartitionState"
+    )
 
 
 
