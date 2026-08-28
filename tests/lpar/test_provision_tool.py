@@ -22,7 +22,7 @@ from hmc_mcp.operations.lpar.assignments import WorkflowStep
 from hmc_mcp.operations.lpar.core import LparPowerResult
 from hmc_mcp.operations.lpar.provision import (
     ProvisionAffinityAssessment,
-    ProvisionNetwork,
+    ProvisionAdapters,
     ProvisionStorage,
     _power_on,
 )
@@ -274,7 +274,7 @@ def _provision_args(**overrides):
     args = dict(
         system_name_or_uuid=SYSTEM_UUID,
         name="web01",
-        network=ProvisionNetwork(
+        network=ProvisionAdapters(
             port_vlan_id=VLAN_ID, vios_partition_id=7, vios_slot=11
         ),
         storage=ProvisionStorage(vios_uuid=VIOS_UUID, storage_name="lv_boot"),

@@ -362,7 +362,7 @@ churn and only the genuine composites carry an explicit declaration.
 
 Eight tools declare `exhaustive_targets=False`:
 
-- **`hmc_provision_lpar`** — the nested `vios_uuid` above, plus `ProvisionNetwork.vios_partition_id`.
+- **`hmc_provision_lpar`** — the nested `vios_uuid` above, plus `ProvisionAdapters.vios_partition_id`.
 - **`hmc_backup_lpar_profiles`** and **`hmc_restore_lpar_profiles`** — both act on an arbitrary
   HMC-side `file_path` (the backup with `force=True` overwriting whatever is there), a console
   filesystem object no `TargetKind` names. ADR 0036 already placed `file_path` outside every grant;
@@ -708,7 +708,7 @@ operator would otherwise discover as an unexplained denial.
 ## Considered & rejected
 
 - **Extend `build_targets` to descend into structured parameters**, so `hmc_provision_lpar`'s
-  `ProvisionStorage.vios_uuid` and `ProvisionNetwork.vios_partition_id` become real selectors and
+  `ProvisionStorage.vios_uuid` and `ProvisionAdapters.vios_partition_id` become real selectors and
   the tool becomes narrowable. This fixes the cause where `exhaustive_targets` refuses the case, and
   it is the better end state. Rejected here as more machinery than this entry needs and more than
   the issue asks for: #223's own words are that "unsupported composite behaviour … fail[s] closed",

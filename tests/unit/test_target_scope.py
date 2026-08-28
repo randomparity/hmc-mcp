@@ -602,8 +602,8 @@ class _ProvisionStorage:
 
 
 @dataclass(frozen=True)
-class _ProvisionNetwork:
-    """As `operations_provision.ProvisionNetwork`: an int slot number."""
+class _ProvisionAdapters:
+    """As `operations_provision.ProvisionAdapters`: an int slot number."""
 
     vios_partition_id: int = 3
 
@@ -637,7 +637,7 @@ def test_a_nested_selector_reads_the_caller_supplied_object():
         {
             "system_name_or_uuid": "sys-a",
             "storage": _ProvisionStorage(vios_uuid="vios-uuid-1"),
-            "network": _ProvisionNetwork(vios_partition_id=5),
+            "network": _ProvisionAdapters(vios_partition_id=5),
         },
     )
     assert extracted == (
@@ -681,7 +681,7 @@ def test_a_none_field_value_is_absent():
         {
             "system_name_or_uuid": "sys-a",
             "storage": _ProvisionStorage(vios_uuid=None),
-            "network": _ProvisionNetwork(),
+            "network": _ProvisionAdapters(),
         },
     )
     assert extracted[1] == ("vios", "storage.vios_uuid", ABSENT)

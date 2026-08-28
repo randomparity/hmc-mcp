@@ -8,7 +8,7 @@ from ..._app import with_client
 from ...documents import LparResources, PartitionType
 from ...operations.affinity import ProvisionAffinityAssessment
 from ...operations.lpar.provision import (
-    ProvisionNetwork,
+    ProvisionAdapters,
     ProvisionResult,
     ProvisionStorage,
     provision_lpar,
@@ -41,7 +41,7 @@ tool, register_tools, tool_security = tool_module()
 def hmc_provision_lpar(
     system_name_or_uuid: str,
     name: str,
-    network: ProvisionNetwork,
+    network: ProvisionAdapters,
     storage: ProvisionStorage,
     resources: LparResources = LparResources(
         min_memory=256,

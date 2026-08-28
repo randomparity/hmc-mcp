@@ -48,7 +48,7 @@ from .assignments import (
 
 
 @dataclass(frozen=True)
-class ProvisionNetwork:
+class ProvisionAdapters:
     """Virtual Ethernet and vSCSI attachment inputs."""
 
     port_vlan_id: int = field(
@@ -491,7 +491,7 @@ async def _preflight_provision_request(
     hmc: HMCClient,
     system_name_or_uuid: str,
     name: str,
-    network: ProvisionNetwork,
+    network: ProvisionAdapters,
     storage: ProvisionStorage,
     assignments: LparPcieAssignments,
     caller_token: str | None,
@@ -560,7 +560,7 @@ async def provision_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str,
     name: str,
-    network: ProvisionNetwork,
+    network: ProvisionAdapters,
     storage: ProvisionStorage,
     resources: LparResources,
     *,

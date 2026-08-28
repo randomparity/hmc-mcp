@@ -16,7 +16,7 @@ from ...documents import (
     StorageKind,
 )
 from ...operations.lpar.provision import (
-    ProvisionNetwork,
+    ProvisionAdapters,
     ProvisionStorage,
     provision_lpar,
 )
@@ -104,7 +104,7 @@ def lpars_provision(
                 hmc,
                 system_name_or_uuid=system,
                 name=name,
-                network=ProvisionNetwork(port_vlan_id, vios_partition_id, vios_slot),
+                network=ProvisionAdapters(port_vlan_id, vios_partition_id, vios_slot),
                 storage=ProvisionStorage(
                     vios_uuid,
                     storage_name,

@@ -195,7 +195,7 @@ names are internal everywhere and are never inventoried.
   `DecommissionBlastRadius`, `DecommissionResult`, `decommission_lpar`.
 - `operations.lpar.dlpar` — exports: `modify_lpar`, `set_lpar_memory`,
   `set_lpar_processors`.
-- `operations.lpar.provision` — exports: `AttachDiskResult`, `ProvisionNetwork`,
+- `operations.lpar.provision` — exports: `AttachDiskResult`, `ProvisionAdapters`,
   `ProvisionResult`, `ProvisionStorage`, `attach_disk_to_lpar`, `provision_lpar`.
 - `operations.lpar.workflows` — exports: `create_lpar`.
 - `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,

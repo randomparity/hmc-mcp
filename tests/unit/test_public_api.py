@@ -208,7 +208,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "attach_disk_to_lpar",
         "provision_lpar",
         "ProvisionAffinityAssessment",
-        "ProvisionNetwork",
+        "ProvisionAdapters",
         "ProvisionStorage",
         "ProvisionResult",
         "AttachDiskResult",
@@ -1970,6 +1970,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # VIOS mutations share system-before-partition selector order; get_vios
     # makes its optional system scope keyword-only after the required selector.
     # Virtual-disk creation now uses capacity_mib at every public layer.
+    # ProvisionAdapters replaces the network-only name for its mixed adapter inputs.
     # Boot-order operations now accept a system-scoped LPAR name or UUID.
     # PCIe inventory operations now name their system selector explicitly.
     # Cluster and shared-storage-pool inventory joined the reusable facade.
@@ -1979,7 +1980,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Capacity and summary memory contracts now use the accurate MiB suffix.
     # DecommissionResult now exposes its blast-radius record types.
     # PartitionState now lives at the shared operations layer used by LPAR and VIOS.
-    expected_digest = "3f09b9f208c10e29770b8790a3e50c73fe347d5efc7b5ee72c7e421cd0a6164e"  # pragma: allowlist secret
+    expected_digest = "e85db0d749457dddd98880820ce7e8bb87aaad1945337fa7aabbd7bf78389014"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

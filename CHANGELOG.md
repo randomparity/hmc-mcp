@@ -409,6 +409,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: `ProvisionNetwork` is replaced by `ProvisionAdapters`, reflecting that
+  the model configures both virtual Ethernet and the VIOS-side vSCSI adapter.
 - Changed: `create_virtual_disk` now names its mebibyte value `capacity_mib`,
   matching the CLI and MCP tool boundary.
 - Changed: `list_systems` accepts any exact HMC state string; removed the

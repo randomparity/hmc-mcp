@@ -21,7 +21,7 @@ from hmc_mcp.authorization.access_policy import AccessPolicyError
 from hmc_mcp.config import config_dir
 from hmc_mcp.authorization.connection_scope import ConnectionScopeError
 from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
-from hmc_mcp.operations.lpar.provision import ProvisionNetwork, ProvisionStorage
+from hmc_mcp.operations.lpar.provision import ProvisionAdapters, ProvisionStorage
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.authorization.target_scope import TargetScopeError
 
@@ -358,7 +358,7 @@ def test_a_table_grant_still_never_reaches_provision_lpar():
     well_formed = {
         "system_name_or_uuid": "sys-1",
         "name": "new-lpar",
-        "network": ProvisionNetwork(port_vlan_id=1, vios_partition_id=3, vios_slot=2),
+        "network": ProvisionAdapters(port_vlan_id=1, vios_partition_id=3, vios_slot=2),
         "storage": ProvisionStorage(vios_uuid="vios-uuid-1", storage_name="rootvg"),
         "profile": "lab",
     }

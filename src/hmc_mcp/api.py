@@ -168,7 +168,7 @@ from hmc_mcp.operations.lpar.assignments import (
 )
 from hmc_mcp.operations.lpar.provision import (
     AttachDiskResult,
-    ProvisionNetwork,
+    ProvisionAdapters,
     ProvisionResult,
     ProvisionStorage,
     attach_disk_to_lpar,
@@ -434,7 +434,7 @@ __all__ = [
     "attach_disk_to_lpar",
     "provision_lpar",
     "ProvisionAffinityAssessment",
-    "ProvisionNetwork",
+    "ProvisionAdapters",
     "ProvisionStorage",
     "ProvisionResult",
     "AttachDiskResult",
