@@ -167,7 +167,7 @@ def test_mcp_logical_tool_forwards_every_selector(monkeypatch) -> None:
     context.__aenter__.return_value = client
     with (
         patch(
-            "hmc_mcp.server_tools.system_resources.client_from_env",
+            "hmc_mcp._app.client_from_env",
             return_value=context,
         ),
         patch(
@@ -203,7 +203,7 @@ def test_other_mcp_inventory_tools_return_serialized_results(monkeypatch) -> Non
         context.__aenter__.return_value = _client()
         with (
             patch(
-                "hmc_mcp.server_tools.system_resources.client_from_env",
+                "hmc_mcp._app.client_from_env",
                 return_value=context,
             ),
             patch(
