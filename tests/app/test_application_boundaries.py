@@ -113,8 +113,10 @@ def test_create_mcp_returns_independent_complete_applications():
 def test_operations_do_not_import_application_modules():
     package = Path(__file__).parents[2] / "src" / "hmc_mcp"
     forbidden = {"_app", "server", "hmc_mcp._app", "hmc_mcp.server"}
+    operation_modules = sorted((package / "operations").rglob("*.py"))
+    assert operation_modules, "operation boundary guard discovered no modules"
 
-    for path in package.glob("operations_*.py"):
+    for path in operation_modules:
         tree = ast.parse(path.read_text(), filename=str(path))
         imports = {
             node.module
