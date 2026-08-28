@@ -1115,10 +1115,7 @@ def lpars_read_boot_order(
     system_name: str = typer.Argument(..., help="Managed system name"),
     lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
 ) -> None:
-    """Read an LPAR's boot order state (pending and current).
-
-    Returns the boot device order for the LPAR, including both the pending
-    boot string (next boot) and the current boot device list.
+    """Read current, pending, and last-used boot-device state for an LPAR.
 
     Example:
         lpars read-boot-order system1 aaaa0000-0000-0000-0000-000000000001
@@ -1146,22 +1143,11 @@ def lpars_set_boot_order(
         False, "--ownership-override", help="Skip ownership token validation"
     ),
 ) -> None:
-    """Set an LPAR's boot order to a validated device selector list.
-
-    Sets the PendingBootString to an ordered list of boot device selectors.
-    Changes take effect on the next LPAR activation (no reboot required).
-
-    Args:
-        system_name: Managed system name.
-        lpar_uuid: UUID of the logical partition.
-        devices: Ordered list of boot device selectors (cd, disk, network),
-                 comma-separated. The first device is tried first, then the second, etc.
-        ownership_override: If True, skip ownership token validation.
+    """Set the pending boot order used on the LPAR's next activation.
 
     Example:
         lpars set-boot-order system1 lpar-uuid-123 "network,cd,disk"
     """
-    # Parse and validate device list
     device_list = [d.strip() for d in devices.split(",") if d.strip()]
 
     for device in device_list:
@@ -1197,10 +1183,7 @@ def lpars_clear_boot_order(
         False, "--ownership-override", help="Skip ownership token validation"
     ),
 ) -> None:
-    """Clear an LPAR's boot order (restore HMC defaults).
-
-    Clears the PendingBootString, restoring the default boot behavior.
-    Changes take effect on the next LPAR activation (no reboot required).
+    """Restore the HMC default boot order on the LPAR's next activation.
 
     Example:
         lpars clear-boot-order system1 aaaa0000-0000-0000-0000-000000000001

@@ -23,27 +23,7 @@ async def read_lpar_boot_order(
     system_name_or_uuid: str,
     lpar_uuid: str,
 ) -> dict[str, Any]:
-    """Read an LPAR's boot order state (pending and current).
-
-    Returns the boot device order for the LPAR, including both the pending
-    boot string (next boot) and the current boot device list.
-
-    Args:
-        hmc: HMC client instance.
-        system_name_or_uuid: CLI name or UUID of the system.
-        lpar_uuid: UUID of the LPAR.
-
-    Returns:
-        Dictionary with boot order information containing:
-        - lpar_uuid: UUID of the LPAR
-        - lpar_name: Name of the LPAR
-        - pending_boot_string: The PendingBootString for the next boot
-        - boot_device_list: The current BootDeviceList
-        - last_booted_device_string: The device used on last boot
-
-    Raises:
-        ValueError: If the LPAR cannot be resolved or found.
-    """
+    """Read current, pending, and last-used boot-device state for an LPAR."""
     lpar = await hmc.get_logical_partition(lpar_uuid)
     if not lpar:
         raise ValueError(f"LPAR {lpar_uuid!r} not found")
@@ -68,25 +48,7 @@ async def set_lpar_boot_order(
     *,
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
-    """Set an LPAR's boot order to a validated device selector list.
-
-    Sets the PendingBootString to an ordered list of boot device selectors.
-    Changes take effect on the next LPAR activation (no reboot required).
-
-    Args:
-        hmc: HMC client instance.
-        system_name_or_uuid: CLI name or UUID of the system.
-        lpar_uuid: UUID of the LPAR.
-        devices: Ordered list of boot device selectors (cd, disk, network).
-        ownership_override: If True, skip ownership token validation.
-
-    Returns:
-        Updated LPAR resource if successful, None otherwise.
-
-    Raises:
-        ValueError: If device selectors are invalid or LPAR cannot be resolved.
-    """
-    # Validate device selectors
+    """Set the pending boot order used on the LPAR's next activation."""
     for device in devices:
         if device not in BOOT_DEVICE_SELECTORS:
             raise ValueError(
@@ -129,23 +91,7 @@ async def clear_lpar_boot_order(
     *,
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
-    """Clear an LPAR's boot order (restore HMC defaults).
-
-    Clears the PendingBootString, restoring the default boot behavior.
-    Changes take effect on the next LPAR activation (no reboot required).
-
-    Args:
-        hmc: HMC client instance.
-        system_name_or_uuid: CLI name or UUID of the system.
-        lpar_uuid: UUID of the LPAR.
-        ownership_override: If True, skip ownership token validation.
-
-    Returns:
-        Updated LPAR resource if successful, None otherwise.
-
-    Raises:
-        ValueError: If LPAR cannot be resolved.
-    """
+    """Restore the HMC default boot order on the LPAR's next activation."""
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     system_name, lpar_name = await resolve_lpar_ownership_names(
         hmc, system_uuid, system_name_or_uuid, lpar_uuid

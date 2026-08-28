@@ -139,8 +139,8 @@ only the transport boundary.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `set_lpar_boot_order` | `operations/lpar/boot_order.py:63` | guarded (`:104`) | — |
-| `clear_lpar_boot_order` | `operations/lpar/boot_order.py:125` | guarded (`:153`) | — |
+| `set_lpar_boot_order` | `operations/lpar/boot_order.py:43` | guarded (`:66`) | — |
+| `clear_lpar_boot_order` | `operations/lpar/boot_order.py:87` | guarded (`:99`) | — |
 | `assign_dedicated_pcie_slot` | `operations/pcie.py:183` | guarded (`:223`, via `_authorize_pcie_profile_request`) | — |
 | `unassign_dedicated_pcie_slot` | `operations/pcie.py:203` | guarded (`:223`) | — |
 | `assign_sriov_logical_port` | `operations/pcie.py:520` | guarded (`:371`, via `_resolve_lpar`) | — |
