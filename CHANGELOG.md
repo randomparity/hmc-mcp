@@ -29,6 +29,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Added
 
+- `StorageMapResult` records the authorized LPAR UUID beside the resource returned by
+  `map_storage`, so library and CLI callers no longer resolve the partition independently
+  before the guarded storage operation (ADR 0104).
 - Opt-in ADR 0011 ownership guard on LPAR power operations (#371, ADR 0092 §4): the new
   `authorize_power_operations` setting (`HMC_AUTHORIZE_POWER_OPERATIONS`, TOML profile key
   `authorize_power_operations`) defaults to `false`, leaving the `power_lpar` call path
@@ -375,6 +378,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `StorageMapResult`; `map_storage` now returns this concrete result instead of the
+  mapped resource alone.
 - Added: `upgrade_vios`, splitting VIOS upgrades from `update_vios`; `update_vios` now accepts
   only `VIOSUpdateSource` and has no `kind` mode selector.
 - Removed: `add_vios_adapter`; use the explicit `add_vscsi_adapter` or `add_vfc_adapter`

@@ -26,9 +26,9 @@ from ..operations.storage import (
     list_storage_mappings,
     list_volume_groups,
     map_storage,
+    StorageMapResult,
     upload_iso,
 )
-from ..resource_identity import resolve_lpar_uuid
 from .app import (
     _client,
     _first_field,
@@ -221,23 +221,21 @@ def storage_map(
 
     async def _go():
         async with _client() as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
-            result = await map_storage(
+            return await map_storage(
                 hmc,
                 None,
                 vios,
-                lpar_uuid,
+                lpar,
                 kind=kind,
                 storage_name=disk,
                 target=target,
                 ownership_override=ownership_override,
             )
-            return lpar_uuid, result
 
-    lpar_uuid, result = _run(_go)
+    result: StorageMapResult = _run(_go)
 
-    console.print(f"[green]Mapped '{disk}'[/green] to {lpar_uuid}")
-    _print_json(result)
+    console.print(f"[green]Mapped '{disk}'[/green] to {result.lpar_uuid}")
+    _print_json(asdict(result))
 
 
 @storage_app.command("create-media-repo")

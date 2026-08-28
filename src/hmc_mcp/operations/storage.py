@@ -8,6 +8,7 @@ import os
 import re
 import sys
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 from typing import Any, BinaryIO
@@ -31,6 +32,14 @@ from ..jobs import (
 from .lpar.ownership import resolve_and_authorize_lpar_mutation
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class StorageMapResult:
+    """Authorized LPAR identity and the resulting VIOS storage resource."""
+
+    lpar_uuid: str
+    resource: dict[str, Any] | None
 
 # HTTP download configuration
 CONNECT_TIMEOUT = 30.0
@@ -119,7 +128,7 @@ async def map_storage(
     storage_name: str,
     target: str | None = None,
     ownership_override: bool = False,
-) -> dict[str, Any] | None:
+) -> StorageMapResult:
     vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
@@ -127,9 +136,10 @@ async def map_storage(
         system_name_or_uuid,
         ownership_override=ownership_override,
     )
-    return await hmc.map_storage_to_lpar(
+    resource = await hmc.map_storage_to_lpar(
         vios_uuid, kind, storage_name, lpar_uuid, target
     )
+    return StorageMapResult(lpar_uuid, resource)
 
 
 async def create_media_repository(

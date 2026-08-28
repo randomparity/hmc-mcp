@@ -235,7 +235,7 @@ names are internal everywhere and are never inventoried.
   `delete_media_repository`, `delete_optical_media`, `delete_virtual_disk`,
   `detach_storage_mapping`, `get_media_repository`, `list_optical_mappings`, `list_optical_media`,
   `list_storage_mappings`, `list_volume_groups`, `map_storage`, `mount_optical_media`,
-  `unmount_optical_media`, `upload_iso`; types: none; excluded synchronous:
+  `unmount_optical_media`, `upload_iso`; types: `StorageMapResult`; excluded synchronous:
   `validate_logical_unit_create`, `validate_logical_unit_wait`.
 - `operations.systems` — operations: `modify_system`, `power_system`; types: none; excluded
   synchronous: none.

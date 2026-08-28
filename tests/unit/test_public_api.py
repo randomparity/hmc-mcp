@@ -250,9 +250,10 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "list_volume_groups",
         "create_volume_group",
         "create_virtual_disk",
-        "delete_virtual_disk",
-        "map_storage",
-        "upload_iso",
+            "delete_virtual_disk",
+            "map_storage",
+            "StorageMapResult",
+            "upload_iso",
         "create_media_repository",
         "create_optical_media",
         "delete_media_repository",
@@ -1870,9 +1871,11 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # qualified annotation paths without changing exported names or signatures.
     # Replacing add_vios_adapter's boolean mode with explicit vSCSI and vFC
     # operations changed the supported facade manifest.
+    # Returning StorageMapResult from map_storage exposes the authorized LPAR UUID
+    # without making callers resolve the selector independently.
     # Splitting VIOS upgrades into upgrade_vios removed update_vios's mode
     # selector and added the explicit operation to the facade.
-    expected_digest = "85b9fddb5c1927c4e59a872ac4210e41a2ec76b15d47bad3a15dd6bf63ea4bdf"  # pragma: allowlist secret
+    expected_digest = "2522ae80ff32f648e4d4cb71d4feb26074ebe8fc5688a6f23bd769f7747788f1"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
