@@ -115,6 +115,7 @@ class _VnicReadback:
     vnic_succeeded: bool
     backing_succeeded: bool
     errors: tuple[str, ...]
+    cause: Exception | None
 
 
 class VnicCapabilityError(RuntimeError):
@@ -591,10 +592,12 @@ async def _read_vnic_state_after_mutation(config: HMCConfig, system: str, lpar: 
     backings: tuple[VnicBackingSnapshot, ...] = ()
     v_ok = b_ok = False
     errors: list[str] = []
+    cause: Exception | None = None
     try:
         vnics = _parse_vnic_snapshots(await list_vnic_rows(config, system, lpar))
         v_ok = True
     except Exception as error:
+        cause = error
         errors.append(f"vNIC reconciliation read failed: {error}")
     try:
         backings = tuple(
@@ -602,8 +605,9 @@ async def _read_vnic_state_after_mutation(config: HMCConfig, system: str, lpar: 
         )
         b_ok = True
     except Exception as error:
+        cause = cause or error
         errors.append(f"backing reconciliation read failed: {error}")
-    return _VnicReadback(vnics, backings, v_ok, b_ok, tuple(errors))
+    return _VnicReadback(vnics, backings, v_ok, b_ok, tuple(errors), cause)
 
 
 def _add_payload(selector: VnicBackingSelector) -> str:
@@ -790,6 +794,7 @@ async def add_vnic(
     payload = _add_payload(selector)
     output = ""
     errors: list[str] = []
+    mutation_error: Exception | None = None
     try:
         output = await add_vnic_backing(
             hmc.config,
@@ -799,11 +804,16 @@ async def add_vnic(
             port_vlan_id,
         )
     except Exception as error:
+        mutation_error = error
         errors.append(f"mutation failed: {error}")
     readback = await _read_vnic_state_after_mutation(hmc.config, context.system_name, context.lpar_name)
     result = _reconcile_add(context, readback, selector, port_vlan_id, output, errors)
     if result.errors:
-        raise VnicPartialError("vNIC add could not be fully verified", result)
+        partial = VnicPartialError("vNIC add could not be fully verified", result)
+        cause = mutation_error or readback.cause
+        if cause is not None:
+            raise partial from cause
+        raise partial
     return result
 
 
@@ -859,14 +869,20 @@ async def remove_vnic(
     )
     output = ""
     errors: list[str] = []
+    mutation_error: Exception | None = None
     try:
         output = await remove_vnic_slot(hmc.config, system_name, lpar_name, slot_num)
     except Exception as error:
+        mutation_error = error
         errors.append(f"mutation failed: {error}")
     readback = await _read_vnic_state_after_mutation(hmc.config, system_name, lpar_name)
     result = _reconcile_remove(
         selected, correlated, selector, slot_num, readback, output, errors
     )
     if result.errors:
-        raise VnicPartialError("vNIC remove could not be fully verified", result)
+        partial = VnicPartialError("vNIC remove could not be fully verified", result)
+        cause = mutation_error or readback.cause
+        if cause is not None:
+            raise partial from cause
+        raise partial
     return result

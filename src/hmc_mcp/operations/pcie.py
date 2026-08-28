@@ -569,10 +569,14 @@ async def assign_sriov_logical_port(
         or after.capacity_percent != capacity
         or profile_after != profile_before
     ):
-        raise SriovLogicalPortPartialError(
+        partial = SriovLogicalPortPartialError(
             f"assignment could not be verified: {error or readback.error or 'readback mismatch'}",
             result,
         )
+        cause = error or readback.error
+        if cause is not None:
+            raise partial from cause
+        raise partial
     return result
 
 
@@ -645,10 +649,14 @@ async def unassign_sriov_logical_port(
         "unassign", "profile", True, selector, None, None, before, after, output
     )
     if error or read_error or after != "none":
-        raise SriovLogicalPortPartialError(
+        partial = SriovLogicalPortPartialError(
             f"unassignment could not be verified: {error or read_error or 'readback mismatch'}",
             result,
         )
+        cause = error or read_error
+        if cause is not None:
+            raise partial from cause
+        raise partial
     return result
 
 

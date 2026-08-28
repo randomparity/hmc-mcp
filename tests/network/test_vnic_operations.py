@@ -706,6 +706,12 @@ async def test_add_reconciliation_decision_table(
         with pytest.raises(VnicPartialError) as caught:
             await call
         result = caught.value.result
+        expected_cause = mutation_error
+        if expected_cause is None and isinstance(vnic_after, Exception):
+            expected_cause = vnic_after
+        if expected_cause is None and isinstance(backing_after, Exception):
+            expected_cause = backing_after
+        assert caught.value.__cause__ is expected_cause
 
     assert result.changed is expected_changed
     assert result.vnic_after_read_succeeded is not isinstance(vnic_after, Exception)

@@ -233,3 +233,5 @@ async def test_assign_wraps_post_dispatch_read_failure(monkeypatch):
         )
     assert caught.value.result.changed is True
     assert caught.value.result.effective_after is None
+    assert isinstance(caught.value.__cause__, RuntimeError)
+    assert str(caught.value.__cause__) == "read failed"
