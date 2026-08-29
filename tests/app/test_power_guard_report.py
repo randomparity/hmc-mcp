@@ -18,6 +18,7 @@ import pytest
 from fastmcp import Client
 
 import hmc_mcp.config as config_module
+import hmc_mcp.server_tools.permissions as permissions_module
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.authorization.connection_scope import selected_connection
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
@@ -232,6 +233,53 @@ def test_one_report_reads_the_config_document_once_for_multiple_profiles(
 
     assert guards["guarded"].authorize_power_operations is True
     assert guards["open"].authorize_power_operations is False
+    assert reads == 1
+
+
+def test_one_report_samples_the_ambient_host_gate_once(monkeypatch, tmp_path):
+    """A concurrent environment change cannot bypass the shared snapshot."""
+    _write_config(
+        tmp_path,
+        """
+        [profiles.a]
+        host = "hmc-a.example.com"
+        user = "admin"
+        [profiles.b]
+        host = "hmc-b.example.com"
+        user = "admin"
+        """,
+    )
+    policy = _policy([
+        {
+            "effects": ["read"],
+            "connections": ["a", "b"],
+            "targets": "all-targets",
+        }
+    ])
+    host_checks = iter([None, "changed.example.com"])
+    checks = 0
+
+    def changing_host(name):
+        nonlocal checks
+        assert name == "HMC_HOST"
+        checks += 1
+        return next(host_checks)
+
+    original = config_module._read_config_document
+    reads = 0
+
+    def counting_reader(path):
+        nonlocal reads
+        reads += 1
+        return original(path)
+
+    monkeypatch.setattr(permissions_module, "env_var_value", changing_host)
+    monkeypatch.setattr(config_module, "_read_config_document", counting_reader)
+
+    guards = resolve_power_guards(policy)
+
+    assert [guard.connection for guard in guards] == ["a", "b"]
+    assert checks == 1
     assert reads == 1
 
 

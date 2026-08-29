@@ -489,11 +489,12 @@ def resolve_power_guards(
     else:
         for grant in policy.grants:
             connections.update(grant.connections)
-    if env_var_value("HMC_HOST"):
+    ambient_host = env_var_value("HMC_HOST")
+    if ambient_host:
         connections &= {None}
     ordered = sorted(connections, key=lambda name: (name is not None, name or ""))
     document: _ConfigDocument | Exception | None = None
-    if ordered and not env_var_value("HMC_HOST"):
+    if ordered and not ambient_host:
         try:
             document = _load_config_document()
         except Exception as exc:  # noqa: BLE001 — classified per connection below
