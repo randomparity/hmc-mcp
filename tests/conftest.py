@@ -119,14 +119,10 @@ def no_ambient_hmc_settings(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def reset_audit_memento_override_dedup():
-    """Give every test an empty ``config`` override-warning dedup set (#546).
+    """Give every test a fresh ``config`` override-warning flag (#546).
 
-    The set is process-global by design — it is what keeps the warning to one
-    line per override state in a served process, where a fresh ``HMCConfig`` is
-    built inside every tool body. In a test session that same lifetime makes the
-    first test to construct a config under a given ``(agent_id, audit_memento)``
-    pair silence every later one, so a test that asserts the warning fires would
-    pass or fail on collection order.
+    The flag is process-global by design: a served process builds a fresh config
+    inside every tool body, while the diagnostic has information only once.
 
     Cleared at setup as well as teardown, and autouse rather than opted into,
     for the reason ``isolate_audit_logging`` gives just below: the tests that
@@ -135,9 +131,9 @@ def reset_audit_memento_override_dedup():
     explicit ``server_permissions._reported_unresolved.clear()`` in
     ``tests/app/test_power_guard_report.py``.
     """
-    config._reported_memento_overrides.clear()
+    config._reported_memento_override = False
     yield
-    config._reported_memento_overrides.clear()
+    config._reported_memento_override = False
 
 
 def _restore_fastmcp_logger() -> None:

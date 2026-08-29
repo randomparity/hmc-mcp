@@ -491,12 +491,8 @@ def test_audit_memento_override_logs_once_per_process(caplog):
     assert "HMC_AGENT_ID is set" in records[0].getMessage()
 
 
-def test_audit_memento_override_logs_again_for_a_changed_override(caplog):
-    """Deduplication keys on the override state, so a changed one still surfaces.
-
-    Silencing per call site rather than per state would hide exactly the event an
-    operator needs to see: the value they just changed still being discarded.
-    """
+def test_audit_memento_override_logs_once_across_changed_values(caplog):
+    """The process-level diagnostic does not grow with caller-controlled values."""
     with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
         HMCConfig.from_mapping({"agent_id": "agent-one", "audit_memento": "mine"})
         HMCConfig.from_mapping({"agent_id": "agent-one", "audit_memento": "mine"})
@@ -504,14 +500,12 @@ def test_audit_memento_override_logs_again_for_a_changed_override(caplog):
         HMCConfig.from_mapping({"agent_id": "agent-two", "audit_memento": "yours"})
 
     messages = [record.getMessage() for record in caplog.records]
-    assert len(messages) == 3
+    assert len(messages) == 1
     assert "'agent-one'" in messages[0] and "'mine'" in messages[0]
-    assert "'agent-two'" in messages[1] and "'mine'" in messages[1]
-    assert "'agent-two'" in messages[2] and "'yours'" in messages[2]
 
 
-class _SlowMembershipMap(dict):
-    """A record whose membership test yields *after* answering.
+class _SlowFalse:
+    """A false flag whose truth test yields before answering.
 
     Threads racing the real record never interleave here: nothing between the
     membership test and the insert releases the GIL, so the first thread through
@@ -523,10 +517,9 @@ class _SlowMembershipMap(dict):
     shape that silently made this test unable to fail.
     """
 
-    def __contains__(self, item: object) -> bool:
-        present = super().__contains__(item)
+    def __bool__(self) -> bool:
         time.sleep(0.02)
-        return present
+        return False
 
 
 def test_audit_memento_override_warns_once_across_concurrent_threads(
@@ -541,7 +534,7 @@ def test_audit_memento_override_warns_once_across_concurrent_threads(
     emit, turning "once per state" into O(concurrency).
     """
     monkeypatch.setattr(
-        config_module, "_reported_memento_overrides", _SlowMembershipMap()
+        config_module, "_reported_memento_override", _SlowFalse()
     )
     workers = 8
     ready = threading.Barrier(workers)
@@ -559,52 +552,6 @@ def test_audit_memento_override_warns_once_across_concurrent_threads(
 
     records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
     assert len(records) == 1
-
-
-def test_audit_memento_override_dedup_set_is_capped(monkeypatch):
-    """The retained state cannot grow without bound on the library path.
-
-    ``HMCConfig`` is an `hmc_mcp.api` export and both fields are ordinary
-    constructor arguments, so a multi-agent host varying ``agent_id`` per agent
-    mints a fresh override state on every construction — and the set is what keeps
-    each ``audit_memento`` string alive after its config is collected.
-    """
-    monkeypatch.setattr(config_module, "_MAX_REPORTED_MEMENTO_OVERRIDES", 8)
-    for index in range(32):
-        HMCConfig.from_mapping(
-            {"agent_id": f"agent-{index}", "audit_memento": "mine"}
-        )
-        assert len(config_module._reported_memento_overrides) <= 8
-
-
-def test_audit_memento_override_never_floods_a_state_permanently(caplog, monkeypatch):
-    """No override state may warn on every construction for the life of a process.
-
-    Two overflow policies get this wrong in opposite directions, and both hand
-    back the pre-throttle rate. Refusing to record past the cap can never suppress
-    the state it refused, so that state warns forever; clearing wholesale makes
-    every state miss at once. Evicting keeps the invariant that anything reported
-    is recorded, so a state warns again only if its reuse gap exceeds the cap.
-
-    The cap is monkeypatched down: what is under test is the overflow policy, and
-    1024 constructions per round would buy nothing but runtime.
-    """
-    monkeypatch.setattr(config_module, "_MAX_REPORTED_MEMENTO_OVERRIDES", 8)
-    filler = [(f"agent-{index}", "mine") for index in range(8)]
-
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
-        for agent_id, memento in filler:
-            HMCConfig.from_mapping({"agent_id": agent_id, "audit_memento": memento})
-        assert len(caplog.records) == len(filler)
-
-        before = len(caplog.records)
-        for _ in range(20):
-            HMCConfig.from_mapping(
-                {"agent_id": "agent-late", "audit_memento": "mine"}
-            )
-
-    assert len(caplog.records) - before == 1
-    assert len(config_module._reported_memento_overrides) == 8
 
 
 def test_audit_memento_override_repeat_is_recoverable_at_debug(caplog):
@@ -639,11 +586,8 @@ def test_audit_memento_override_throttles_across_every_profile_in_the_file(
     connection, and a connection is a profile key, so a single call can build one
     config per profile in the operator's ``config.toml`` — each carrying that
     profile's own ``audit_memento``. That is the path #546 names, and it is the
-    one where the number of distinct override states is a property of the file
-    rather than of a caller's kwargs. A cap below the profile count would return
-    the flood here while every ``from_mapping`` test still passed, so the record
-    count is what this asserts — not that the cap happens to be large enough,
-    which would fail on the precondition and never measure the behaviour.
+    one where many distinct values are constructed in one request. The single
+    record proves the process-level throttle survives that served path.
     """
     profiles = 96
     body = "".join(
@@ -660,7 +604,7 @@ def test_audit_memento_override_throttles_across_every_profile_in_the_file(
                 build_config(profile=f"p{index}")
 
     records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
-    assert len(records) == profiles
+    assert len(records) == 1
 
 
 # ---------------------------------------------------------------------------

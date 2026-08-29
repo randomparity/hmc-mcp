@@ -395,13 +395,12 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   exact-case, and folding them would let a variant nothing reads suppress the `.env` line
   spelling them canonically.
 - The diagnostic that `HMC_AGENT_ID` is discarding a custom `HMC_AUDIT_MEMENTO` now logs once
-  per distinct `(agent_id, audit_memento)` state instead of once per `HMCConfig` construction
-  (#546). Repeats are available at `DEBUG`, retained state is capped at 1024 with oldest-first
-  eviction, and concurrent construction cannot duplicate the warning-level record. The redundant
+  per process instead of once per `HMCConfig` construction (#546). Repeats are available at
+  `DEBUG`, and concurrent construction cannot duplicate the warning-level record. The redundant
   `warnings.warn` emission was removed: after #534 the package log record reaches ADR 0043's
   bounded served sink, while Python warnings still write synchronously to fd 2 outside it.
-  **Operator-visible change:** a long-lived server emits one bounded diagnostic per override
-  state rather than one log line per tool call plus a separate Python warning.
+  **Operator-visible change:** a long-lived server emits one bounded diagnostic rather than one
+  log line per tool call plus a separate Python warning.
 
 ### Removed
 

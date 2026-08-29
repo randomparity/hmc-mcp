@@ -36,45 +36,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _logger = logging.getLogger(__name__)
 
 
-#: Largest number of override states :data:`_reported_memento_overrides` retains.
-#: The record exists to suppress a repeated warning, and must not become a way to
-#: retain memory without bound: ``HMCConfig`` is an ``hmc_mcp.api`` export and both
-#: fields are ordinary constructor arguments, so a library host varying
-#: ``agent_id`` per agent mints a fresh state on every construction, and
-#: ``audit_memento`` has no length validation, so an entry is unbounded in size as
-#: well as in count.
-#:
-#: Sized for the served path rather than against it. One permissions call resolves
-#: a guard per granted connection and a connection is a profile key, so a single
-#: call can construct one config per profile in the operator's ``config.toml``,
-#: each carrying that profile's ``audit_memento``. The count that has to fit is
-#: therefore the whole profile file, not the one profile a request selected, and
-#: 1024 is far above any hand-written one.
-_MAX_REPORTED_MEMENTO_OVERRIDES = 1024
+#: Whether :meth:`HMCConfig._warn_audit_memento_override` has reported in this
+#: process. Changing the values does not change the diagnostic's information:
+#: ``agent_id`` still overrides the configured memento.
+_reported_memento_override = False
 
-#: Override states :meth:`HMCConfig._warn_audit_memento_override` has already
-#: reported, as ``(agent_id, audit_memento)`` keys. A dict used as an
-#: insertion-ordered set: process-global and outliving any individual
-#: ``HMCConfig``, since what it throttles is one warning per *config*, repeated
-#: once per construction.
-#:
-#: **Full means evict the oldest, never refuse to record.** A policy that declines
-#: to record past the cap can never suppress the state it declined, so that state
-#: warns on every construction for the life of the process; clearing wholesale
-#: instead makes every state miss at once. Both hand back the pre-throttle rate —
-#: the failure this function exists to remove, reintroduced by its own overflow
-#: policy. Evicting keeps the invariant that anything reported is recorded, so no
-#: state can flood permanently; a state warns again only if its reuse gap exceeds
-#: the cap, which is why insertion order is what gets evicted.
-#:
-_reported_memento_overrides: dict[tuple[str, str], None] = {}
-
-#: Serialises the check-then-act on :data:`_reported_memento_overrides`. Config
+#: Serialises the check-then-act on :data:`_reported_memento_override`. Config
 #: construction is not confined to the event-loop thread — the permissions path
 #: resolves its guards in a worker thread, one config per granted connection — so
 #: without this two racers both miss the membership test and both emit. Held only
-#: across the membership test, the insert and the eviction; logging is outside it,
-#: so a slow handler cannot block a config being built on another thread.
+#: across the flag check and update; logging is outside it, so a slow handler cannot
+#: block a config being built on another thread.
 _override_report_lock = threading.Lock()
 
 
@@ -339,22 +311,16 @@ class HMCConfig(BaseSettings):
         ``hmc-mcp:<agent_id>`` and the custom ``audit_memento`` is ignored, which
         an operator reading HMC audit logs has no other way to discover.
 
-        Said **once per override state**, not once per construction.
+        Said **once per process**, not once per construction.
         :func:`build_config` builds a fresh ``HMCConfig`` inside every tool body,
         so an unthrottled emission here runs at a rate the MCP client owns while
         the message is identical every time. The package logger is bound to the
         bounded served sink; a separate ``warnings.warn`` would bypass it and is
         deliberately not emitted (#546).
 
-        The key is the ``(agent_id, audit_memento)`` pair rather than this call
-        site, so an operator who *changes* either value still gets a line for the
-        new state; keying on the site would hide exactly the event worth seeing.
-        The record is bounded and evicts in insertion order — see
-        :data:`_MAX_REPORTED_MEMENTO_OVERRIDES` — because the pair is
-        caller-supplied on the library path. The repeat is logged at ``DEBUG``,
-        matching ``server_permissions._log_unresolved``: an operator who raises the
-        level recovers the per-call evidence rather than having to read the HMC's
-        own audit log to see that the override is still in force.
+        A repeat is logged at ``DEBUG``, matching
+        ``server_permissions._log_unresolved``: an operator who raises the level
+        can still confirm that the override remains in force.
 
         Recording under :data:`_override_report_lock` makes the promise hold under
         concurrency. Configs are built off the event-loop thread, so an
@@ -363,7 +329,7 @@ class HMCConfig(BaseSettings):
         """
         if not (self.agent_id and self.audit_memento != "hmc-mcp"):
             return self
-        override = (self.agent_id, self.audit_memento)
+        global _reported_memento_override
         msg = (
             f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
             f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
@@ -371,12 +337,10 @@ class HMCConfig(BaseSettings):
             f"hmc-mcp:{self.agent_id}"
         )
         with _override_report_lock:
-            if override in _reported_memento_overrides:
+            if _reported_memento_override:
                 _logger.debug(msg)
                 return self
-            _reported_memento_overrides[override] = None
-            if len(_reported_memento_overrides) > _MAX_REPORTED_MEMENTO_OVERRIDES:
-                del _reported_memento_overrides[next(iter(_reported_memento_overrides))]
+            _reported_memento_override = True
         _logger.warning(msg)
         return self
 
