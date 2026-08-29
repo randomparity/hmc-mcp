@@ -32,23 +32,27 @@ Interfaces:
 
 Steps:
 
-1. Add parameterized tests over `"\t"`, `"\r"`, and `"\n"` embedded in an otherwise valid job
-   link. Call each operations entry point and the served `hmc_wait_for_job`, expect `ValueError`
+1. Add parameterized tests over `"\t"`, `"\r"`, and `"\n"` at the leading, embedded, and trailing
+   positions of an otherwise valid job link. Call each operations entry point, expect `ValueError`
    matching a fixed `job_href` control-character message, and assert the client mock was not
-   awaited.
-2. Run
+   awaited. Exercise served propagation through both `hmc_get_job` and `hmc_wait_for_job` with all
+   three controls and at least one edge-position case.
+2. Replace the obsolete `test_job_href_cannot_forge_a_log_record` expectation that an LF-bearing
+   `hmc_get_job` call succeeds. Preserve its safety assertion by requiring the fixed `ValueError`
+   message not to contain the hostile value, and assert no request or hostile log record occurs.
+3. Run
    `uv run --no-sync pytest tests/unit/test_operations_jobs.py tests/app/test_server_tools.py -q`;
    expect the new cases to fail because `_clean_job_href` currently returns the control-bearing
    string.
-3. In `_clean_job_href`, return `None` for the existing null/blank cases, reject when any of
+4. In `_clean_job_href`, return `None` for the existing null/blank cases, reject when any of
    `"\t\r\n"` occurs in the original non-null string, and otherwise return `job_href.strip()`.
    Keep the error message fixed; do not interpolate the hostile input.
-4. Replace the obsolete mismatch explanation in `_clean_job_href`'s docstring with the
+5. Replace the obsolete mismatch explanation in `_clean_job_href`'s docstring with the
    reject-before-parse invariant.
-5. Re-run both focused modules; expect all tests to pass.
-6. Run the existing #529 and #532 focused tests in that module by their test names; expect all to
+6. Re-run both focused modules; expect all tests to pass.
+7. Run the existing #529 and #532 focused tests in that module by their test names; expect all to
    pass without changed assertions.
-7. Commit the production change and unit proof with subject
+8. Commit the production change and unit proof with subject
    `fix: reject parser-deleted job href controls`.
 
 Acceptance: all three controls fail before a client read; valid and blank links retain their prior
