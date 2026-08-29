@@ -4,6 +4,12 @@
 
 Accepted (2026-08-19)
 
+> **Amended (2026-08-26, issue #534):** the `hmc_mcp` logger namespace joins this sink. It had
+> never been on it — only the reserved `hmc_mcp.audit` logger and (through ADR 0051) the
+> third-party set were — so this record's "every stderr write this package makes" was false for
+> every other `hmc_mcp.*` logger. The Consequences clause that overstated it is corrected in
+> place and the amendment section at the end records what changed; the rest is unchanged history.
+
 ## Context
 
 ADR 0040 put one audit record on `sys.stderr` per authorization decision, written synchronously
@@ -138,14 +144,119 @@ pipe buffer it is standing in for.
   traceback of no fixed length — the 0.5 MiB figure is a typical case rather than a ceiling,
   and the bound on outstanding writes is the part that keeps the server answering. #330's
   amendment to ADR 0051 widens it again: `uvicorn`, `uvicorn.access` and `mcp` join the
-  `fastmcp` logger on this queue, on both transports, so every stderr write the served process
-  makes through a logger now goes through the sink. Neither record claims fd 2 has a *single*
-  writer — rich's startup banner and `Handler.handleError` still write directly, both recorded
-  as residuals in ADR 0051 — but no log *record* reaches fd 2 any other way.
+  `fastmcp` logger on this queue, on both transports. That still left this package's *own*
+  non-audit loggers off the sink, which is #534 and the amendment below; with it, a served
+  process with no operator handler of its own puts every logger it writes through —
+  third-party or `hmc_mcp.*` — on this queue. Neither record claims fd 2 has a *single*
+  writer, and neither claims the guarantee survives an operator's own handler: on
+  `hmc_mcp` as on `hmc_mcp.audit`, an attached handler takes the records and its
+  blocking behaviour is the operator's, per the clause above. Three direct writers remain, and
+  they bound what "through a logger" means: rich's startup banner and `Handler.handleError`,
+  both recorded as residuals in ADR 0051, and `warnings.warn` — see the amendment below, which
+  names it. A namespace outside the bound set with no handler of its own — `asyncio`, say —
+  still walks to `logging.lastResort`.
 - **A process that never installs the sink is unchanged.** `logging.lastResort` writes
   synchronously at `WARNING`, so a CLI ownership-override record still blocks on an undrained
   stderr. No dispatch path exists in such a process, and `install_audit_sink` runs on every serve
   path, so the exposure #269 describes is closed where it exists.
+
+## Amendment (#534): the `hmc_mcp` namespace joins the sink
+
+**`server.install_package_stderr_sink` binds the `hmc_mcp` logger to this queue, and
+`_serve_application` calls it beside `install_audit_sink`.** The record's own reasoning already
+covered these writes; only the wiring was missing. `install_audit_sink` bound `hmc_mcp.audit`
+alone, ADR 0051 bound the third-party set, and a record on any other `hmc_mcp.*` logger found
+zero handlers in its `callHandlers` walk and went to `logging.lastResort` — a `StreamHandler` on
+fd 2, synchronous and unbounded, without ADR 0051's prefix or its escaping. Twenty-one
+`WARNING`-or-above call sites across six modules were on that route — `config`,
+`server_permissions`, `operations_jobs`, `operations_lpar`, `operations_templates` and
+`console_capture`. #534 names two. Only `_log_unresolved` is throttled, by #470's dedup set,
+added *because* the route was unbounded.
+
+One binding on the namespace covers every producer in it, present and future, because
+`callHandlers` reaches a parent's handler. Three choices inside it:
+
+- **Prefix `hmc_mcp: `, through the same `StreamSafeFormatter`** the third-party bindings use.
+  A rendered `str(ConfigError)` carries the config path and the profile inventory, and a TOML
+  quoted key can put a newline in either, so this package's own text needs the marking and the
+  control-character escaping as much as a foreign package's does.
+- **No handler is displaced, and no level is set.** ADR 0051's wholesale removal answers a
+  problem that does not exist here — nothing but an operator attaches a handler to `hmc_mcp` —
+  so the sink goes on only when the logger is bare, which also makes a second call add nothing.
+  That makes `hmc_mcp` a second operator attachment point, carrying the two unenforced
+  constraints ADR 0040 wrote down for the audit one: a handler attached here must not write to
+  `sys.stdout`, which under stdio is the JSON-RPC stream, and it is called on the dispatch
+  path — the `_log_unresolved` line runs inside a tool call — so one that blocks there blocks
+  the call, which is the failure this record exists to remove and which it cannot fix from here.
+- **`propagate` is left alone**, which is where this parts company with
+  `install_audit_sink`. ADR 0040 clears the flag on the reserved logger because a record goes
+  out there on *every authorized call*, so one `StreamHandler(sys.stdout)` above it corrupts
+  the protocol stream on every call. Extending that to this namespace was considered and
+  rejected: it would take all twenty-one diagnostic sites out of an operator's own centralized
+  logging the moment they serve — silently, and under `--http` too, where stdout carries no
+  protocol at all. The defect #534 names needs a handler on the walk and nothing else, and a
+  duplicate rendering into a destination the operator chose is a far smaller cost than losing
+  the records there. **The cost is named rather than waved at:** the marker and the escaping
+  are properties of the handler this installs, not of the stream, so an ancestor handler
+  pointed at stderr renders a second copy of each record unmarked and unescaped — the shape
+  `logging.basicConfig()` leaves. That is unchanged from before this amendment, since the same
+  record reached the same handler the same way, and it is the operator's own act; it is
+  documented in `docs/authorization-audit.md` beside the stdout hazard rather than being
+  presented as closed. Clearing `propagate` would close it, and would take the records out of
+  the operator's logging to do so — that is the trade, and it is taken the other way.
+- **The level is left at `NOTSET`, and this is not volume-neutral for the queue.** The floor is
+  unchanged at the shipped default — root at `WARNING`, the level `logging.lastResort`
+  enforced. What changes is how much reaches *this sink*: a record that previously found an
+  operator's root handler never consulted `lastResort` and never entered the queue at all, and
+  now enters it as well. With root below `WARNING` that additionally includes records
+  `lastResort` discarded outright, and `_log_unresolved`'s repeat branch is `DEBUG` on every
+  call. Accepted rather than pinned at `WARNING` on the handler: a hard floor with no lever
+  would put these records out of reach of an operator who deliberately lowered the level.
+
+`hmc_mcp.audit` is unaffected — its own `propagate = False` keeps it off the parent handler, so
+the audit stream stays bare one-line JSON with no prefix and no second rendering. The tests are
+in `tests/app/test_connection_authorization.py`, and `tests/conftest.py` clears the handler
+between tests so a serving test cannot take a later test's `hmc_mcp.*` records onto the sink.
+
+**More producers on a shared bound, and one of them is client-rate.** ADR 0051 recorded that
+its added producers reach the 1024-slot capacity sooner and narrow the security-observability
+window; this adds the rest of the `hmc_mcp` namespace on the same terms, onto a queue whose
+other occupant is the authorization trail. Against a destination that has stopped draining,
+package diagnostics can displace audit records — reproduced, with a full pipe and a burst of
+`hmc_mcp.config` warnings evicting the next authorization record. Accepted on this record's own
+trade, a droppable trail that keeps serving over a complete one that stops, and bounded by the
+same precondition: a destination nobody is draining, which under stdio is the client harming
+itself. ADR 0051's reading of the drop counter is unchanged and still governs — `count` is
+items lost, not records lost.
+
+The sizing is one site, and it has an owner. `HMCConfig._warn_audit_memento_override` is
+unthrottled and `common.build_config` runs inside each tool body, so in a deployment setting
+both `HMC_AGENT_ID` and a custom `HMC_AUDIT_MEMENTO` it emits per tool call, at a rate the MCP
+client owns. Throttling it is #546, which also owns the second half of that function:
+`warnings.warn` beside the log record, which `logging` never sees and which
+`warnings.showwarning` writes straight to `sys.stderr` unmarked and unbounded — under default
+warning filters once per process, per construction for a caller who sets
+`simplefilter("always")`. This amendment does not reach that mechanism and does not claim to.
+
+**Which channel a non-audit `hmc_mcp.*` record uses.** This sink carries three grammars, not
+two, and the third is the one a caller is most likely to reach for by mistake:
+
+1. **Audit records** — one line of ASCII JSON on the reserved `hmc_mcp.audit` logger, ADR 0040's
+   schema. A record belongs here only if it is an authorization decision in that schema:
+   machine-parsed, and carrying the stability rule the schema carries.
+2. **Prefixed prose** — any `hmc_mcp.*` module logger, which since this amendment lands on the
+   queue marked `hmc_mcp: ` and control-character-escaped.
+3. **Bare prose** — `server._warn`, which submits through `audit.write_diagnostic` with no
+   formatter at all, so its lines carry neither the marker nor the escaping.
+
+**A new non-audit record uses grammar 2, the module logger.** Grammar 3 is not a general
+diagnostic channel: `_warn` exists for the fixed startup lines this package writes in full,
+before `.run()`, and an unmarked line at column 0 is exactly what `StreamSafeFormatter` was
+added to stop. Anything that interpolates a value — a setting, a path, a name from a config
+file — needs the marking and the escaping, so it goes on a module logger even when it is
+emitted at startup beside `_warn`'s lines. That is the answer for #533's startup announcement
+of the effective `authorize_power_operations`: a module logger, not `_warn`, and not the audit
+stream.
 
 ## Considered & rejected
 

@@ -428,7 +428,23 @@ Three things to know if you consume this stream:
   [ADR 0051](adr/0051-fastmcp-logging-through-the-bounded-sink.md) FastMCP's own records
   arrive on the same queue as these — one concise line for a denial, a plain traceback for
   a genuine handler bug — and its startup banner is written straight to the stream by
-  `rich` before serving begins.
+  `rich` before serving begins. Since #534 this package's own non-audit diagnostics arrive
+  there too, each physical line prefixed `hmc_mcp: `, which is a marker chosen so it cannot
+  begin a JSON object. `hmc_mcp` is a second attachment point on the same terms as
+  `hmc_mcp.audit` above — attach a handler to it and the server leaves yours in place instead
+  of installing its own — with one difference, and it is the difference that matters here:
+  `propagate` is left alone on `hmc_mcp`, where `hmc_mcp.audit` clears it. So a handler you
+  already have *above* `hmc_mcp` keeps receiving these records after a serve, and if it writes
+  to stderr it puts a **second, unmarked and unescaped** copy of each on this stream. That copy
+  is the one that can carry a newline out of an interpolated value and place text at column 0.
+  It is not new — the same record reached the same handler the same way before #534 — but the
+  marker is a property of this package's own handler, not of the stream, and a consumer
+  hardening on it must know that. Do not attach a stderr handler above `hmc_mcp` in a
+  deployment whose stderr is parsed. One writer is unmarked with no operator handler
+  involved: `warnings.warn`, which this package uses beside the log record for the
+  `HMC_AGENT_ID` / `HMC_AUDIT_MEMENTO` override and which `logging` never sees, so it reaches
+  neither the marker nor the queue. Under default warning filters that is two unmarked lines
+  at column 0 once per process. #546 tracks it.
 
 ## What this is not
 

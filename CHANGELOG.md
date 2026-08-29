@@ -427,6 +427,26 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   absent-element empty semantics), superseding the issue's N×SSH sketch, and the
   parse-failure honesty policy (#375). Also corrects the disproven "not exposed via REST"
   claim in `get_lpar_description`'s docstring.
+- A served process now routes its own `hmc_mcp.*` log records through ADR 0043's bounded stderr
+  sink (#534, ADR 0043 amendment). Only the reserved `hmc_mcp.audit` logger and the third-party
+  set were on it, so a warning from any other module — `hmc_mcp.config`'s audit-memento override,
+  `hmc_mcp.server_permissions`' unresolved-profile line — reached fd 2 through
+  `logging.lastResort`: synchronous, unbounded, and unescaped. Those *log records* now carry
+  the `hmc_mcp:` producer prefix and are drop-counted like every other line on the queue.
+  `warnings.warn` is a separate mechanism and is not covered — the audit-memento override
+  emits one of each, and its warning still goes straight to `sys.stderr` unmarked (#546, which
+  also owns throttling that site's log record).
+  **What an operator sees change:** the prefix, and — if you route `hmc_mcp.*` into your own
+  logging — a second rendering, because `propagate` is deliberately left alone here, unlike on
+  `hmc_mcp.audit`. Your handlers keep receiving these records exactly as before; the sink is an
+  added destination, not a replacement. A handler you attach to `hmc_mcp` itself is left in
+  place and takes the records instead of the sink, with the two constraints
+  `docs/authorization-audit.md` states for a handler on `hmc_mcp.audit`: it must not write to
+  `sys.stdout` under stdio, and it is called on the dispatch path, so one that blocks there
+  blocks the call. Nothing changes for a library or CLI process, which installs no sink. The
+  `WARNING` floor is unchanged at the shipped default; what grows is the sink's share of the
+  1024-slot queue it shares with the audit trail, since these records did not enter it at all
+  before.
 
 ### Facade manifest
 

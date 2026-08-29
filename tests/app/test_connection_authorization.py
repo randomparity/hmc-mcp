@@ -15,6 +15,8 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
+from conftest import make_config
+
 from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.server_tools import command as server_command
 from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
@@ -1034,6 +1036,129 @@ def test_a_hostile_tool_error_cannot_forge_an_audit_record(denial_filter, capsys
             f"a tool error forged a parseable audit record: {line!r}"
         )
     assert "hmc said" in err, "the text must still reach the operator"
+
+
+PACKAGE_LOGGER = logging.getLogger("hmc_mcp")
+
+
+def _handlers_the_walk_finds(name: str) -> list[logging.Handler]:
+    """Reproduce ``Logger.callHandlers``' ancestor walk for *name*.
+
+    The defect #534 names is invisible to a handler-set assertion on one logger:
+    ``callHandlers`` consults ``logging.lastResort`` when the *whole walk* finds
+    zero handlers, so the only faithful pin is the walk itself.
+    """
+    found: list[logging.Handler] = []
+    logger: logging.Logger | None = logging.getLogger(name)
+    while logger is not None:
+        found.extend(logger.handlers)
+        logger = logger.parent if logger.propagate else None
+    return found
+
+
+def test_the_served_path_binds_the_package_namespace_to_the_sink():
+    """#534: ``hmc_mcp.*`` is a producer on ADR 0043's queue like the rest.
+
+    One handler, none of it on fd 2 directly, rendering under this package's own
+    producer prefix — the same three properties #330 pins for the third-party set.
+    """
+    _serve(_policy(LAB_ONLY))
+
+    assert len(PACKAGE_LOGGER.handlers) == 1
+    handler = PACKAGE_LOGGER.handlers[0]
+    assert not _targets_stderr(handler)
+    assert _formatter_prefix(handler) == "hmc_mcp: "
+
+
+def test_last_resort_is_unreachable_for_a_non_audit_package_logger(capsys):
+    """#534's acceptance, on the mechanism rather than on a symptom.
+
+    ``hmc_mcp.server_permissions`` is the producer #470 added, and before this
+    change its walk found nothing: no handler on itself, none on ``hmc_mcp``, none
+    on root, so the record went to ``logging.lastResort`` — synchronous, unbounded,
+    and unprefixed. Root is cleared first so a stray handler cannot make the walk
+    succeed for a reason this change did not supply.
+    """
+    logging.root.handlers[:] = []
+
+    _serve(_policy(LAB_ONLY))
+
+    found = _handlers_the_walk_finds("hmc_mcp.server_permissions")
+    assert found, "the walk must find a handler, or lastResort writes the record"
+    assert logging.lastResort not in found
+    assert not any(_targets_stderr(each) for each in found)
+
+    logging.getLogger("hmc_mcp.server_permissions").warning("an unresolved profile")
+
+    assert "hmc_mcp: WARNING: an unresolved profile" in _stderr(capsys)
+
+
+def test_a_config_warning_reaches_stderr_through_the_sink(capsys):
+    """The other producer #534 names, driven through the code that emits it.
+
+    ``HMCConfig._warn_audit_memento_override`` predates ``server_permissions`` on
+    this route and is undeduplicated, so it is the one that would flood fd 2.
+    """
+    _serve(_policy(LAB_ONLY))
+
+    with pytest.warns(UserWarning):
+        make_config(agent_id="agent-1", audit_memento="custom")
+
+    captured = _stderr(capsys)
+    assert "hmc_mcp: WARNING: HMC_AGENT_ID is set" in captured
+
+
+def test_the_package_binding_leaves_the_audit_stream_unprefixed(capsys):
+    """#534's one carve-out: ``hmc_mcp.audit`` keeps its own contract.
+
+    Its ``propagate = False`` is what keeps the parent handler off the audit
+    stream, so the record stays bare one-line JSON and arrives exactly once.
+    """
+    _serve(_policy(LAB_ONLY))
+
+    audit_logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
+    assert audit_logger.propagate is False
+    assert len(audit_logger.handlers) == 1
+    assert audit_logger.handlers[0].formatter is None
+
+    audit_logger.warning('{"event": "authorization", "outcome": "denied"}')
+
+    captured = _stderr(capsys)
+    assert "hmc_mcp: " not in captured
+    assert captured.count('"event": "authorization"') == 1
+
+
+def test_installing_the_package_sink_twice_leaves_one_handler():
+    """Idempotence, from the same defer-to-what-is-there rule the audit sink uses."""
+    from hmc_mcp.server import install_package_stderr_sink
+
+    install_package_stderr_sink()
+    install_package_stderr_sink()
+
+    assert len(PACKAGE_LOGGER.handlers) == 1
+
+
+def test_the_package_binding_leaves_an_ancestor_handler_receiving(capsys):
+    """The binding adds a destination; it does not take one away.
+
+    Unlike ``install_audit_sink`` this leaves ``propagate`` alone, so an operator
+    who routes `hmc_mcp.*` into their own centralized logging still gets these
+    records after a serve — the alternative loses them silently, including under
+    `--http`, where the stdout hazard ADR 0040 names does not even exist. Pinned
+    against a root handler because that is the shape an operator's `basicConfig`
+    leaves, and it is what would have gone quiet.
+    """
+    received: list[str] = []
+    catcher = logging.Handler()
+    catcher.emit = lambda record: received.append(record.getMessage())  # type: ignore[method-assign]
+    logging.root.handlers[:] = [catcher]
+
+    _serve(_policy(LAB_ONLY))
+    logging.getLogger("hmc_mcp.config").warning("a package warning")
+
+    assert received == ["a package warning"]
+    assert "hmc_mcp: WARNING: a package warning" in _stderr(capsys)
+    assert logging.getLogger("hmc_mcp").propagate is True
 
 
 def test_an_unexpected_handler_error_still_renders_its_traceback(denial_filter, capsys):

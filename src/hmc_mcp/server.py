@@ -280,14 +280,21 @@ def install_denial_log_filter() -> None:
 #: reaches them by propagation.
 _FASTMCP_LOGGER_NAME: Final = "fastmcp"
 
-#: How a FastMCP record renders once its ``RichHandler``s are gone. Taken from
-#: ``configure_logging``'s non-rich branch, which is FastMCP's own answer to
-#: rendering these records without ``rich``. Installing a ``Formatter`` at all is
-#: the load-bearing part: ``logging.Formatter.format`` is what appends
-#: ``exc_info``'s traceback, and without one the sink-backed handler would render
-#: the bare message and silently undo ADR 0046's guarantee that a genuine handler
-#: bug keeps its traceback.
-_FASTMCP_LINE_FORMAT: Final = "%(levelname)s: %(message)s"
+#: How a record renders on the sink, for both bindings below. The string is taken
+#: from FastMCP's ``configure_logging`` non-rich branch — its own answer to
+#: rendering these records without ``rich`` — and reused for the ``hmc_mcp``
+#: namespace rather than a second one invented for it. Installing a ``Formatter``
+#: at all is the load-bearing part, and it is load-bearing for both: it is
+#: ``logging.Formatter.format`` that appends ``exc_info``'s traceback, so without
+#: one the sink-backed handler renders the bare message and drops the traceback —
+#: undoing ADR 0046's guarantee for a FastMCP handler bug, and losing the cause on
+#: this package's own ``exc_info=`` call sites the same way.
+_SINK_LINE_FORMAT: Final = "%(levelname)s: %(message)s"
+
+#: This package's own logger namespace, and the parent of every logger in it
+#: except the one ``audit.AUDIT_LOGGER_NAME`` reserves — which sets ``propagate = False`` at
+#: import, so binding here never touches its stream. ADR 0043 amendment (#534).
+_PACKAGE_LOGGER_NAME: Final = "hmc_mcp"
 
 #: The third-party loggers the served path binds to ADR 0043's sink (ADR 0051,
 #: widened by #330). Each gets its own handler and its own producer-named prefix;
@@ -372,11 +379,65 @@ def install_third_party_stderr_sinks() -> None:
         for existing in logger.handlers[:]:
             logger.removeHandler(existing)
         handler = sink_handler()
-        handler.setFormatter(StreamSafeFormatter(_FASTMCP_LINE_FORMAT, f"{name}: "))
+        handler.setFormatter(StreamSafeFormatter(_SINK_LINE_FORMAT, f"{name}: "))
         logger.addHandler(handler)
         if name in _UVICORN_LEVEL_LOGGERS:
             logger.setLevel(logging.INFO)
             logger.propagate = False
+
+
+def install_package_stderr_sink() -> None:
+    """Put this package's own non-audit log records on ADR 0043's queue. Idempotent.
+
+    ADR 0043 decided that every stderr write this package makes goes onto the
+    bounded queue, and ADR 0051 widened the queue to the third-party loggers. The
+    `hmc_mcp` namespace itself was on neither: ``install_audit_sink`` binds the
+    reserved audit logger alone, so a record on any other
+    ``hmc_mcp.*`` logger found no handler in its ``callHandlers`` walk and fell
+    through to ``logging.lastResort`` — a ``StreamHandler`` on fd 2 that writes
+    synchronously and unbounded, without the prefix or the escaping. That is #534,
+    and this closes it: the one binding covers every current and future producer
+    in the namespace, because ``callHandlers`` reaches a parent's handler.
+
+    **Shaped like ``install_audit_sink``, not like the third-party install.** No
+    handler is removed. The third-party install takes the list wholesale because
+    FastMCP attaches ``RichHandler``s on fd 2 that must go; nothing attaches a
+    handler here but an operator, and displacing theirs would be a liberty with no
+    defect behind it. So the sink goes on only when the logger is bare, which is
+    also what makes a second call add nothing — and either way the walk finds a
+    handler, so ``logging.lastResort`` is unreachable. That makes this logger a
+    second operator attachment point, with the two unenforced constraints ADR 0040
+    wrote down for the audit one: such a handler must not write to ``sys.stdout``,
+    and it is called on the dispatch path — ``_log_unresolved`` emits inside a tool
+    call — so one that blocks there blocks the call, which this cannot fix from here.
+
+    **``propagate`` is left alone**, unlike ``install_audit_sink``. ADR 0040 clears
+    the flag on the reserved logger because a record goes out there on every
+    authorized call, so a ``StreamHandler(sys.stdout)`` above it puts one into the
+    JSON-RPC stream on every call. This namespace carries ordinary library
+    diagnostics, and clearing the flag for them would take every ``hmc_mcp.*``
+    record out of an operator's own centralized logging the moment they serve —
+    silently, and on ``--http`` too, where stdout carries no protocol at all. The
+    defect this closes needs a handler on the walk, nothing more. So an operator's
+    root handler keeps receiving these records and renders them a second time,
+    which is the accepted cost; the stdout hazard is the one ADR 0040 already tells
+    them about, and it is neither created nor widened here.
+
+    **No level is set**, so at the shipped default — root at ``WARNING`` — the floor
+    is the one ``logging.lastResort`` enforced. It is not volume-neutral for this
+    sink: a record that previously reached an operator's root handler *instead* of
+    ``lastResort`` never entered the queue at all, and now enters it as well. With
+    root below ``WARNING`` that includes records ``lastResort`` used to discard
+    outright, and ``_log_unresolved``'s repeat branch is ``DEBUG`` on every call.
+    See the queue-pressure clause in ADR 0043's amendment.
+    """
+    logger = logging.getLogger(_PACKAGE_LOGGER_NAME)
+    if not logger.handlers:
+        handler = sink_handler()
+        handler.setFormatter(
+            StreamSafeFormatter(_SINK_LINE_FORMAT, f"{_PACKAGE_LOGGER_NAME}: ")
+        )
+        logger.addHandler(handler)
 
 
 def _serve_application(
@@ -409,6 +470,7 @@ def _serve_application(
     if audit_level is not None:
         set_audit_level(audit_level)
     install_audit_sink()
+    install_package_stderr_sink()
     install_third_party_stderr_sinks()
     install_denial_log_filter()
     _warn(_startup_warnings(tool_count, access_policy, enable_arbitrary_command))

@@ -149,8 +149,9 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   closed. For a `ConfigError` the full message goes to the server's log instead,
   because it names every profile and nickname key in your `config.toml` — **once
   per process**, on the first call that hits that failure, since the tool's call
-  rate belongs to the MCP client; restart the server to see it again. That line is
-  written outside the bounded stderr sink of ADR 0043 (#534). For a
+  rate belongs to the MCP client; restart the server to see it again. In a served
+  process that line goes through the bounded stderr sink of ADR 0043, prefixed
+  `hmc_mcp:` like every other diagnostic on it (#534). For a
   `ValidationError` there is no fuller message anywhere, in the report or the log:
   pydantic quotes the value it rejected, and a bad `password` would then be in
   your log, so you get the field name and read the value from the config source
