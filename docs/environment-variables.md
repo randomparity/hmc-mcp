@@ -299,15 +299,6 @@ Some readers do **not** fold case. Two of them are deliberate:
   `HMC_*` name, so a case-variant export of that name is the likely way to hit
   it.
 
-One is not deliberate, and is worth knowing for that reason: the power-guard
-report's connection inventory reads `HMC_HOST` exact-case
-([#552](https://github.com/randomparity/hmc-mcp/issues/552)), while the dispatch
-path it describes folds. Under a case-variant export
-`hmc_effective_permissions` can list a `power_ownership_guards` row for a
-connection dispatch will never select — which matters here because the
-[Notes](#notes) send you to that tool, rather than to your shell, to check
-whether the guard took effect.
-
 ### Isolated construction
 
 Use `HMCConfig.from_mapping(values)` when a setting must come from `values` or
