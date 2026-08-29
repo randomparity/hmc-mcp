@@ -5,6 +5,7 @@ import logging
 import os
 import select
 import sys
+import warnings
 from dataclasses import dataclass
 
 import fastmcp  # noqa: F401 — imported for its import-time logging configuration
@@ -35,7 +36,8 @@ _PRISTINE_FASTMCP = (
 )
 
 _THIRD_PARTY_LOGGERS = tuple(
-    logging.getLogger(name) for name in ("uvicorn", "uvicorn.access", "mcp")
+    logging.getLogger(name)
+    for name in ("uvicorn", "uvicorn.access", "mcp", "py.warnings")
 )
 #: Pristine state of the loggers #330's install binds beyond ``fastmcp``: captured
 #: at collection like ``_PRISTINE_FASTMCP``, though for these it is simply "empty,
@@ -52,6 +54,7 @@ _PRISTINE_THIRD_PARTY = tuple(
 #: empty rather than applying a snapshot. Only the handler list: the install leaves
 #: ``propagate`` and the level alone, so nothing else about it moves.
 _PACKAGE_LOGGER = logging.getLogger("hmc_mcp")
+_PRISTINE_SHOWWARNING = warnings.showwarning
 
 
 @pytest.fixture(autouse=True)
@@ -192,6 +195,8 @@ def isolate_audit_logging():
     left behind by a serving test would take a later test's ``hmc_mcp.*`` records
     onto the sink and out of whatever that test meant to read them from.
     """
+    logging.captureWarnings(False)
+    warnings.showwarning = _PRISTINE_SHOWWARNING
     _restore_fastmcp_logger()
     _restore_third_party_loggers()
     logger = logging.getLogger(AUDIT_LOGGER_NAME)
@@ -207,6 +212,8 @@ def isolate_audit_logging():
     try:
         yield
     finally:
+        logging.captureWarnings(False)
+        warnings.showwarning = _PRISTINE_SHOWWARNING
         logger.handlers[:] = saved_handlers
         logger.setLevel(saved_level)
         logger.propagate = saved_propagate

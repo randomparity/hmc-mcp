@@ -769,9 +769,9 @@ def test_the_served_path_takes_fastmcps_handlers_off_fd_2(capsys):
     assert "a fastmcp line" in _stderr(capsys)
 
 
-#: Every logger the served path binds to ADR 0043's sink (#330): the original
-#: ``fastmcp`` takeover plus the three namespaces the amendment added.
-SUNK_LOGGERS = ("fastmcp", "uvicorn", "uvicorn.access", "mcp")
+#: Every external logger the served path binds to ADR 0043's sink: the original
+#: ``fastmcp`` takeover, #330's three namespaces, and #550's warning bridge.
+SUNK_LOGGERS = ("fastmcp", "uvicorn", "uvicorn.access", "mcp", "py.warnings")
 
 
 def test_installing_the_sink_twice_leaves_one_handler_per_logger():
@@ -783,6 +783,66 @@ def test_installing_the_sink_twice_leaves_one_handler_per_logger():
 
     for name in SUNK_LOGGERS:
         assert len(logging.getLogger(name).handlers) == 1
+
+
+def test_served_warnings_use_the_bounded_escaped_sink(capsys, monkeypatch):
+    """#550: capture replaces the default fd-2 writer on the served path."""
+    called = []
+    monkeypatch.setattr(warnings, "showwarning", lambda *args, **kwargs: called.append(args))
+
+    _serve(_policy(LAB_ONLY))
+    with warnings.catch_warnings():
+        warnings.simplefilter("always")
+        warnings.warn("unsafe\x1bwarning", UserWarning)
+
+    captured = _stderr(capsys)
+    assert called == []
+    assert "py.warnings: WARNING:" in captured
+    assert "unsafe\\x1bwarning" in captured
+    assert "\x1b" not in captured
+
+
+def test_library_warnings_keep_the_default_showwarning(monkeypatch):
+    """#550: importing and composing without serving do not capture warnings."""
+    called = []
+    monkeypatch.setattr(warnings, "showwarning", lambda *args, **kwargs: called.append(args))
+
+    create_mcp(_policy(LAB_ONLY))
+    with warnings.catch_warnings():
+        warnings.simplefilter("always")
+        warnings.warn("library warning", UserWarning)
+
+    assert len(called) == 1
+
+
+def test_warning_capture_can_be_reinstalled_after_test_isolation(capsys, monkeypatch):
+    """#550: disabling capture clears logging's saved-callback sentinel."""
+    first = []
+
+    def first_callback(*args, **kwargs):
+        first.append(args)
+
+    monkeypatch.setattr(warnings, "showwarning", first_callback)
+    _serve(_policy(LAB_ONLY))
+    warnings.warn("first served warning", UserWarning)
+    assert warnings.showwarning is not first_callback
+
+    logging.captureWarnings(False)
+    second = []
+
+    def second_callback(*args, **kwargs):
+        second.append(args)
+
+    monkeypatch.setattr(warnings, "showwarning", second_callback)
+    _serve(_policy(LAB_ONLY))
+    warnings.warn("second served warning", UserWarning)
+
+    assert warnings.showwarning is not second_callback
+    assert first == []
+    assert second == []
+    captured = _stderr(capsys)
+    assert "first served warning" in captured
+    assert "second served warning" in captured
 
 
 def test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled(
