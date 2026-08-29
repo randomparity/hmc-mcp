@@ -345,12 +345,14 @@ async def wait_for_job(
     successfully instead of raising, so accepting it outright would let a
     momentary one — a proxy reload, a failover — be reported as a vanished job to
     a consumer the ADR expects to act on that destructively. The wait re-reads
-    once, one poll interval later, and reports ``found=False`` only if the second
-    read agrees. That confirming read is owed even when the disappearance lands on
-    the last poll before the deadline, so a wait can run one poll interval past
-    ``timeout_seconds`` rather than return an unconfirmed vanish. A job missing
-    from the *first* read is reported immediately: there is no earlier observation
-    to contradict it.
+    once after ``min(poll_interval, timeout_seconds)``, and reports
+    ``found=False`` only if the second read agrees. That confirming read is owed
+    even when the disappearance lands on the last poll before the deadline. The
+    delay is therefore not shortened by the deadline remainder, while an interval
+    larger than the timeout is capped at one timeout. These are poll-schedule
+    bounds; time awaiting HMC reads retains the client's separate HTTP timeout. A
+    job missing from the *first* read is reported immediately: there is no earlier
+    observation to contradict it, including in zero-timeout single-poll mode.
 
     The disappearance is returned as a bare ``found=False``: the outcome does not
     carry the status observed on the poll before, because ``found=False`` means
@@ -390,11 +392,14 @@ async def wait_for_job(
                 last_status,
             )
         remaining = deadline - loop.time()
-        if remaining <= 0:
-            if not rereading:
+        if rereading:
+            # Preserve temporal separation without letting an oversized interval
+            # dominate a short wait. Zero timeout cannot reach this state because
+            # its only read has no earlier observation to contradict.
+            sleep_seconds = min(poll_interval, timeout_seconds)
+        else:
+            if remaining <= 0:
                 break
-            # The confirming read is owed, so it outlives the deadline by one
-            # interval rather than shipping an unconfirmed "your job is gone".
-            remaining = poll_interval
-        await asyncio.sleep(min(poll_interval, remaining))
+            sleep_seconds = min(poll_interval, remaining)
+        await asyncio.sleep(sleep_seconds)
     return outcome
