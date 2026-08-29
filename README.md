@@ -181,10 +181,12 @@ See [`docs/environment-variables.md`](docs/environment-variables.md) for the
 full reference, including descriptions and usage notes.
 
 HMCs ship self-signed certificates, so TLS verification is off by default and
-`hmc-mcp` warns on every logon while it stays off. To verify the HMC
-certificate, install its CA locally and set `HMC_VERIFY_SSL=true`
-(`--verify-ssl`) — otherwise the HMC credentials are at risk of
-man-in-the-middle interception.
+`hmc-mcp` emits `TLSVerificationDisabledWarning` once per HMC host and
+`verify_ssl` setting source per process while it stays off. Reusable Python
+consumers can import that category from `hmc_mcp.api` and filter it without
+suppressing unrelated `UserWarning`s. To verify the HMC certificate, install
+its CA locally and set `HMC_VERIFY_SSL=true` (`--verify-ssl`) — otherwise the
+HMC credentials are at risk of man-in-the-middle interception.
 
 ## HMC version compatibility
 

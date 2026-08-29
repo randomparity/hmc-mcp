@@ -135,6 +135,13 @@ VerifySSLSource = Literal[
     "field-default",
 ]
 
+
+class TLSVerificationDisabledWarning(UserWarning):
+    """Warning emitted when HMC TLS certificate verification is disabled."""
+
+
+_reported_tls_warning_keys: set[tuple[str, VerifySSLSource]] = set()
+
 #: The closed vocabulary, derived rather than restated — as ``audit.REASONS`` is from
 #: ``audit.Reason``. ``audit`` imports nothing from ``hmc_mcp``, so its TLS record
 #: builder still takes a plain ``str``; the narrowing lives here, at the only place
@@ -344,18 +351,23 @@ class HMCClient(
     async def logon(self) -> str:
         """Authenticate and store the X-API-Session token.
 
-        Emits a one-time warning when TLS certificate verification is disabled
-        so the MITM exposure of the credentials in flight is never silent.
+        Emits one warning per ``(host, verify_ssl source)`` per process when TLS
+        certificate verification is disabled, so the MITM exposure of the
+        credentials in flight is never silent.
         """
         if not self.config.verify_ssl:
-            warnings.warn(
-                "TLS certificate verification is disabled (verify_ssl=False). "
-                "HMC credentials travel over an unverified TLS connection and "
-                "can be intercepted by a man-in-the-middle. Install the HMC's "
-                "CA locally and set HMC_VERIFY_SSL=true (or --verify-ssl) to "
-                "enable verification.",
-                stacklevel=2,
-            )
+            warning_key = (self.config.host, _verify_ssl_source(self.config))
+            if warning_key not in _reported_tls_warning_keys:
+                warnings.warn(
+                    "TLS certificate verification is disabled (verify_ssl=False). "
+                    "HMC credentials travel over an unverified TLS connection and "
+                    "can be intercepted by a man-in-the-middle. Install the HMC's "
+                    "CA locally and set HMC_VERIFY_SSL=true (or --verify-ssl) to "
+                    "enable verification.",
+                    TLSVerificationDisabledWarning,
+                    stacklevel=2,
+                )
+                _reported_tls_warning_keys.add(warning_key)
         body = build_logon_request_document(
             user=self.config.user, password=self.config.password
         )

@@ -13,7 +13,8 @@ import respx
 from defusedxml import ElementTree as DET
 
 from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.client.core import HMCClient
+from hmc_mcp.client import core as client_core
+from hmc_mcp.client.core import HMCClient, TLSVerificationDisabledWarning
 from hmc_mcp.errors import HMCError
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCTransportError
@@ -341,9 +342,62 @@ async def test_logon_with_test_config_is_silent_by_default(mock_hmc):
 @pytest.mark.asyncio
 async def test_logon_warns_when_verify_ssl_disabled(mock_hmc):
     """Logon with verify_ssl=False emits an explicit MITM warning."""
-    with pytest.warns(UserWarning, match="certificate verification is disabled"):
+    with pytest.warns(
+        TLSVerificationDisabledWarning,
+        match="certificate verification is disabled",
+    ):
         async with HMCClient(make_config(verify_ssl=False)):
             pass
+
+
+@pytest.mark.asyncio
+async def test_tls_warning_is_emitted_once_per_host_and_setting_source(
+    monkeypatch,
+):
+    monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
+
+    async def logon(client):
+        client._logon_once = AsyncMock(return_value="token")
+        await client.logon()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        await logon(HMCClient(make_config(host="first.test", verify_ssl=False)))
+        await logon(HMCClient(make_config(host="first.test", verify_ssl=False)))
+        await logon(HMCClient(make_config(host="second.test", verify_ssl=False)))
+        await logon(
+            HMCClient(
+                HMCConfig.from_mapping(
+                    {
+                        "host": "first.test",
+                        "user": "hscroot",
+                        "password": "abc123",  # pragma: allowlist secret
+                    }
+                )
+            )
+        )
+
+    tls_warnings = [
+        warning
+        for warning in caught
+        if warning.category is TLSVerificationDisabledWarning
+    ]
+    assert len(tls_warnings) == 3
+
+
+@pytest.mark.asyncio
+async def test_tls_warning_promoted_to_error_does_not_consume_the_key(monkeypatch):
+    monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
+    client = HMCClient(make_config(verify_ssl=False))
+    client._logon_once = AsyncMock(return_value="token")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", TLSVerificationDisabledWarning)
+        with pytest.raises(TLSVerificationDisabledWarning):
+            await client.logon()
+
+    with pytest.warns(TLSVerificationDisabledWarning):
+        await client.logon()
 
 
 @pytest.mark.asyncio

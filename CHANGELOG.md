@@ -430,6 +430,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: `TLSVerificationDisabledWarning` lets reusable Python consumers filter
+  the TLS-disabled logon warning without suppressing unrelated `UserWarning`s.
 - Added: `ManagedSystemPatch` and `LpmMigrationRequest` replace recurring scalar
   option groups in `modify_system`, `validate_lpar_migration`, `migrate_lpar`,
   and `migrate_lpar_with_affinity_preflight`.
