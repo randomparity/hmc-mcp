@@ -236,8 +236,8 @@ def test_one_report_reads_the_config_document_once_for_multiple_profiles(
     assert reads == 1
 
 
-def test_one_report_samples_the_ambient_host_gate_once(monkeypatch, tmp_path):
-    """A concurrent environment change cannot bypass the shared snapshot."""
+def test_snapshot_decision_reuses_the_resolver_host_sample(monkeypatch, tmp_path):
+    """The resolver cannot skip its snapshot after keeping named connections."""
     _write_config(
         tmp_path,
         """
