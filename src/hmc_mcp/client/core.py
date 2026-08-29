@@ -270,6 +270,7 @@ class HMCClient(
         self._legacy_port_fallback = (
             config.port == 443 and "port" not in config.model_fields_set
         )
+        self._verify_ssl_source = _verify_ssl_source(config)
         if not self.config.verify_ssl:
             # #379. Once per construction — not per request, which would flood
             # the sink, and not per process, which would miss a later client
@@ -277,7 +278,7 @@ class HMCClient(
             # it is the CLI user's channel; this is the durable record's.
             audit.record_tls_verification_disabled(
                 host=self.config.host,
-                source=_verify_ssl_source(self.config),
+                source=self._verify_ssl_source,
             )
         # X-Audit-Memento is evaluated once at construction time — this is safe
         # because each tool invocation creates a new HMCClient (via asyncio.run(_go)).
@@ -358,7 +359,7 @@ class HMCClient(
         credentials in flight is never silent.
         """
         if not self.config.verify_ssl:
-            warning_key = (self.config.host, _verify_ssl_source(self.config))
+            warning_key = (self.config.host, self._verify_ssl_source)
             with _tls_warning_lock:
                 if warning_key not in _reported_tls_warning_keys:
                     warnings.warn(

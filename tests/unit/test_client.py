@@ -388,6 +388,34 @@ async def test_tls_warning_is_emitted_once_per_host_and_setting_source(
 
 
 @pytest.mark.asyncio
+async def test_tls_warning_key_retains_the_construction_time_source(monkeypatch):
+    monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
+    monkeypatch.setenv("HMC_VERIFY_SSL", "false")
+    environment_client = HMCClient(
+        HMCConfig(host="hmc.test", user="hscroot", password="abc123")
+    )
+
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+    explicit_client = HMCClient(make_config(host="hmc.test", verify_ssl=False))
+    for client in (environment_client, explicit_client):
+        client._logon_once = AsyncMock(return_value="token")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", TLSVerificationDisabledWarning)
+        await environment_client.logon()
+        await explicit_client.logon()
+
+    await environment_client._http.aclose()
+    await explicit_client._http.aclose()
+    tls_warnings = [
+        warning
+        for warning in caught
+        if warning.category is TLSVerificationDisabledWarning
+    ]
+    assert len(tls_warnings) == 2
+
+
+@pytest.mark.asyncio
 async def test_tls_warning_promoted_to_error_does_not_consume_the_key(monkeypatch):
     monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
     client = HMCClient(make_config(verify_ssl=False))
