@@ -30,8 +30,7 @@ from ..authorization.access_policy import (
     AllTargets,
     Grant,
 )
-from ..config import build_config
-from ..config import ConfigError, HMCConfig
+from ..config import ConfigError, HMCConfig, build_config, env_var_value
 from ..tool_registry import (
     Authorize,
     ToolSecurity,
@@ -498,7 +497,7 @@ def resolve_power_guards(
     else:
         for grant in policy.grants:
             connections.update(grant.connections)
-    if os.environ.get("HMC_HOST"):
+    if env_var_value("HMC_HOST"):
         connections &= {None}
     ordered = sorted(connections, key=lambda name: (name is not None, name or ""))
     return tuple(_power_guard(name, reported_unresolved) for name in ordered)

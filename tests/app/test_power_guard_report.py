@@ -17,6 +17,7 @@ import pytest
 from fastmcp import Client
 
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
+from hmc_mcp.authorization.connection_scope import selected_connection
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.server_tools.permissions import build_effective_permissions, resolve_power_guards
 
@@ -461,7 +462,27 @@ def test_an_ambient_host_collapses_the_reported_set_to_the_default(
     assert [guard.connection for guard in guards] == [DEFAULT_CONNECTION_TOKEN]
 
 
-def test_an_ambient_host_with_no_default_grant_reports_nothing():
+@pytest.mark.parametrize("name", ["hmc_host", "Hmc_Host"])
+def test_an_ambient_host_case_variant_collapses_report_like_dispatch(
+    monkeypatch, name
+):
+    monkeypatch.setenv(name, "hmc-c.example.com")
+    policy = _policy([
+        {
+            "effects": ["read"],
+            "connections": ["<default>", "guarded"],
+            "targets": "all-targets",
+        }
+    ])
+
+    guards = resolve_power_guards(policy)
+
+    assert selected_connection("guarded", tool="hmc_get_metrics") is None
+    assert [guard.connection for guard in guards] == [DEFAULT_CONNECTION_TOKEN]
+
+
+@pytest.mark.parametrize("name", ["HMC_HOST", "hmc_host", "Hmc_Host"])
+def test_an_ambient_host_with_no_default_grant_reports_nothing(name):
     """The collapse is an intersection, not a substitution.
 
     Every token becomes the default connection, and a policy that does not grant
@@ -473,8 +494,19 @@ def test_an_ambient_host_with_no_default_grant_reports_nothing():
     ])
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setenv("HMC_HOST", "hmc-c.example.com")
+        patch.setenv(name, "hmc-c.example.com")
         assert resolve_power_guards(policy) == ()
+
+
+def test_an_empty_ambient_host_does_not_collapse_named_connections(monkeypatch):
+    monkeypatch.setenv("hmc_host", "")
+    policy = _policy([
+        {"effects": ["read"], "connections": ["lab"], "targets": "all-targets"}
+    ])
+
+    guards = resolve_power_guards(policy)
+
+    assert [guard.connection for guard in guards] == ["lab"]
 
 
 def test_a_connection_no_grant_names_is_not_reported():
