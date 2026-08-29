@@ -173,6 +173,15 @@ fd 2, synchronous and unbounded, without ADR 0051's prefix or its escaping. Twen
 `console_capture`. #534 names two. Only `_log_unresolved` is throttled, by #470's dedup set,
 added *because* the route was unbounded.
 
+## Amendment (#550): served Python warnings join the sink
+
+**`_serve_application` enables `logging.captureWarnings(True)` after binding
+`py.warnings` to this queue.** Python's default `warnings.showwarning` writes directly to
+stderr, so warning records previously bypassed the queue, producer prefix, control escaping,
+and drop accounting. Capture is installed only after the process is established as a server;
+imports and `create_mcp` remain unchanged. The bridge is process-global for the served process,
+including dependency warnings. Tests restore both the bridge and logger state between cases.
+
 One binding on the namespace covers every producer in it, present and future, because
 `callHandlers` reaches a parent's handler. Three choices inside it:
 

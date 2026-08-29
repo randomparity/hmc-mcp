@@ -302,7 +302,13 @@ _PACKAGE_LOGGER_NAME: Final = "hmc_mcp"
 #: their own ``LOGGING_CONFIG`` would have given them, because the lever this
 #: takes -- ``log_config=None`` -- runs no ``dictConfig`` at all. ``fastmcp`` and
 #: ``mcp`` stay handlers-only: neither sits inside another bound namespace.
-_THIRD_PARTY_LOGGERS: Final = ("fastmcp", "uvicorn", "uvicorn.access", "mcp")
+_THIRD_PARTY_LOGGERS: Final = (
+    "fastmcp",
+    "uvicorn",
+    "uvicorn.access",
+    "mcp",
+    "py.warnings",
+)
 
 #: The uvicorn namespaces whose level the install pins to INFO. Access records are
 #: emitted at INFO, and with no ``dictConfig`` they would inherit root's WARNING --
@@ -472,6 +478,9 @@ def _serve_application(
     install_audit_sink()
     install_package_stderr_sink()
     install_third_party_stderr_sinks()
+    # The standard warning path writes directly to stderr. Capture only after the
+    # process is known to be serving and py.warnings has its bounded handler.
+    logging.captureWarnings(True)
     install_denial_log_filter()
     _warn(_startup_warnings(tool_count, access_policy, enable_arbitrary_command))
     return application

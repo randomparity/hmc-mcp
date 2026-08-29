@@ -29,6 +29,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- Route Python warnings in served deployments through the bounded, producer-prefixed stderr
+  logging sink while leaving non-served library warning behavior unchanged (#550).
 - `modify_system` now accepts a cohesive `ManagedSystemPatch`, and the LPM
   validation and migration operations accept `LpmMigrationRequest` for their
   destination-specific inputs. Shared wait and authorization controls remain
