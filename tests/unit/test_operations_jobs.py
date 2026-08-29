@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -704,6 +705,78 @@ async def test_wait_for_job_confirms_a_disappearance_that_lands_on_the_deadline(
 
     assert route.call_count == 3
     assert (outcome.found, outcome.status) == (True, "COMPLETED_OK")
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_does_not_compress_the_confirmation_interval(
+    monkeypatch, mock_hmc
+) -> None:
+    now = 0.0
+    read_times: list[float] = []
+    responses = [
+        httpx.Response(200, text=_job_entry("RUNNING")),
+        httpx.Response(404, text="Unknown job"),
+        httpx.Response(404, text="Unknown job"),
+    ]
+
+    def respond(_: httpx.Request) -> httpx.Response:
+        read_times.append(now)
+        return responses.pop(0)
+
+    mock_hmc.get(_GLOBAL_PATH).mock(side_effect=respond)
+    loop = MagicMock()
+    loop.time.side_effect = lambda: now
+
+    async def advance(delay: float) -> None:
+        nonlocal now
+        now += delay
+
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    monkeypatch.setattr(asyncio, "sleep", AsyncMock(side_effect=advance))
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await wait_for_job(
+            hmc, _JOB_ID, timeout_seconds=3, poll_interval=2
+        )
+
+    assert outcome.found is False
+    assert read_times == [0.0, 2.0, 4.0]
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_caps_an_oversized_confirmation_interval(
+    monkeypatch, mock_hmc
+) -> None:
+    now = 0.0
+    read_times: list[float] = []
+    responses = [
+        httpx.Response(200, text=_job_entry("RUNNING")),
+        httpx.Response(404, text="Unknown job"),
+        httpx.Response(404, text="Unknown job"),
+    ]
+
+    def respond(_: httpx.Request) -> httpx.Response:
+        read_times.append(now)
+        return responses.pop(0)
+
+    mock_hmc.get(_GLOBAL_PATH).mock(side_effect=respond)
+    loop = MagicMock()
+    loop.time.side_effect = lambda: now
+
+    async def advance(delay: float) -> None:
+        nonlocal now
+        now += delay
+
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    monkeypatch.setattr(asyncio, "sleep", AsyncMock(side_effect=advance))
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await wait_for_job(
+            hmc, _JOB_ID, timeout_seconds=2, poll_interval=5
+        )
+
+    assert outcome.found is False
+    assert read_times == [0.0, 2.0, 4.0]
 
 
 @pytest.mark.asyncio

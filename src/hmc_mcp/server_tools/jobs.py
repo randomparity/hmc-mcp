@@ -144,9 +144,12 @@ def hmc_wait_for_job(
     link that stopped resolving while the job runs. Re-read by ``job_id`` alone
     before acting on absence (ADR 0093).
 
-    ``timeout_seconds`` is a soft bound: the confirming re-read is owed past the
-    deadline, so the call can return a whole ``poll_interval`` late. Keep
-    ``poll_interval`` well under ``timeout_seconds``.
+    ``timeout_seconds`` is a soft bound: an owed confirming re-read waits a full
+    ``poll_interval`` when that interval fits within the timeout, even if the
+    deadline is nearer. A larger interval is capped at ``timeout_seconds``, so the
+    poll schedule extends by at most one interval and at most one timeout. Time
+    awaiting HMC reads remains subject to the client's separate HTTP timeout.
+    ``timeout_seconds=0`` still performs one poll and owes no confirming read.
 
     ``job_href`` on the result is the link to persist for the next call — the one
     you passed when it resolved, otherwise the successful read's own link, null
