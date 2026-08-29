@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 
 import pytest
 from fastmcp import Client
@@ -44,7 +45,9 @@ def no_native_config(monkeypatch, tmp_path):
     """
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
-    monkeypatch.delenv("HMC_HOST", raising=False)
+    for name in tuple(os.environ):
+        if name.casefold() == "hmc_host":
+            monkeypatch.delenv(name)
 
 
 def _write_config(tmp_path, body: str) -> None:
