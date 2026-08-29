@@ -13,6 +13,7 @@ import asyncio
 import logging
 from dataclasses import replace
 from typing import Any
+from urllib.parse import urlsplit
 
 from hmc_mcp.client.core import HMCClient
 from ..errors import HMCError
@@ -222,7 +223,11 @@ def _select_persisted_job_href(
         return None
     if link is not None:
         return link
-    return None if outcome.job_href == dead_link else outcome.job_href
+    if dead_link is not None and urlsplit(outcome.job_href or "").path == urlsplit(
+        dead_link
+    ).path:
+        return None
+    return outcome.job_href
 
 
 def _warn_if_another_job_answered(
