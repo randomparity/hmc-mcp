@@ -12,7 +12,8 @@ Reject any caller-supplied `job_href` containing TAB (`U+0009`), LF (`U+000A`), 
 in `_clean_job_href`, before `urlparse` can delete those characters. Continue trimming ordinary
 surrounding whitespace and echo the resulting cleaned string when its request resolves. This keeps
 the existing contract: callers may persist the same relative or absolute link spelling they
-submitted, while every character in that returned spelling was present when validation began.
+submitted, while URL parsing cannot silently delete a character between cleaning that spelling and
+deriving the path the client validates.
 
 Normalizing the handle to the parsed path is not needed. It would discard the caller's accepted
 absolute/relative spelling, host, query, and fragment and would amend the persisted representation
@@ -70,8 +71,8 @@ of stale and rediscovered links by parsed resource path.
 
 1. No TAB, CR, or LF-bearing `job_href` reaches URL parsing or an HMC request through either job
    polling operation.
-2. Every accepted supplied `job_href` returned in a `JobOutcome` is the same cleaned string that
-   was passed to client path validation.
+2. Every accepted supplied `job_href` returned in a `JobOutcome` is the same cleaned string from
+   which the client derived the validated request path; host, query, and fragment remain unchecked.
 3. The served tool describes the validated echo without the obsolete mismatch caveat.
 4. Existing path-equivalence and confirming-read timing behavior remains unchanged and tested.
 
