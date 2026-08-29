@@ -22,8 +22,8 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import threading
 import tomllib
-import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +34,20 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _logger = logging.getLogger(__name__)
+
+
+#: Whether :meth:`HMCConfig._warn_audit_memento_override` has reported in this
+#: process. Changing the values does not change the diagnostic's information:
+#: ``agent_id`` still overrides the configured memento.
+_reported_memento_override = False
+
+#: Serialises the check-then-act on :data:`_reported_memento_override`. Config
+#: construction is not confined to the event-loop thread — the permissions path
+#: resolves its guards in a worker thread, one config per granted connection — so
+#: without this two racers both miss the membership test and both emit. Held only
+#: across the flag check and update; logging is outside it, so a slow handler cannot
+#: block a config being built on another thread.
+_override_report_lock = threading.Lock()
 
 
 def validate_agent_id(agent_id: str) -> None:
@@ -291,21 +305,43 @@ class HMCConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _warn_audit_memento_override(self) -> "HMCConfig":
-        """Warn when HMC_AGENT_ID is set and HMC_AUDIT_MEMENTO has been customised.
+        """Say once that HMC_AGENT_ID is discarding a custom HMC_AUDIT_MEMENTO.
 
-        When both are set, effective_audit_memento returns ``hmc-mcp:<agent_id>``
-        and ignores the custom audit_memento.  Emitting a warning at construction
-        time prevents silent surprises in HMC audit logs.
+        When both are set, :attr:`effective_audit_memento` returns
+        ``hmc-mcp:<agent_id>`` and the custom ``audit_memento`` is ignored, which
+        an operator reading HMC audit logs has no other way to discover.
+
+        Said **once per process**, not once per construction.
+        :func:`build_config` builds a fresh ``HMCConfig`` inside every tool body,
+        so an unthrottled emission here runs at a rate the MCP client owns while
+        the message is identical every time. The package logger is bound to the
+        bounded served sink; a separate ``warnings.warn`` would bypass it and is
+        deliberately not emitted (#546).
+
+        A repeat is logged at ``DEBUG``, matching
+        ``server_permissions._log_unresolved``: an operator who raises the level
+        can still confirm that the override remains in force.
+
+        Recording under :data:`_override_report_lock` makes the promise hold under
+        concurrency. Configs are built off the event-loop thread, so an
+        unsynchronised check-then-act lets each racer miss and emit, delivering
+        O(concurrency) where the promise says one.
         """
-        if self.agent_id and self.audit_memento != "hmc-mcp":
-            msg = (
-                f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
-                f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
-                "ignored — X-Audit-Memento is always sent as "
-                f"hmc-mcp:{self.agent_id}"
-            )
-            warnings.warn(msg, UserWarning, stacklevel=2)
-            _logger.warning(msg)
+        if not (self.agent_id and self.audit_memento != "hmc-mcp"):
+            return self
+        global _reported_memento_override
+        msg = (
+            f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
+            f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
+            "ignored — X-Audit-Memento is always sent as "
+            f"hmc-mcp:{self.agent_id}"
+        )
+        with _override_report_lock:
+            if _reported_memento_override:
+                _logger.debug(msg)
+                return self
+            _reported_memento_override = True
+        _logger.warning(msg)
         return self
 
     @property

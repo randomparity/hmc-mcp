@@ -5,9 +5,11 @@ All tests use tmp_path and monkeypatch — no test touches the real user home.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import threading
+import time
 import warnings
 from pathlib import Path
 from types import MappingProxyType
@@ -15,6 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
+from hmc_mcp import config as config_module
 from hmc_mcp.config import build_config
 from hmc_mcp.config import (
     ConfigError,
@@ -427,8 +430,8 @@ def test_agent_id_set_prefixes_audit_memento():
 def test_agent_id_overrides_audit_memento_field():
     # When agent_id is set, effective_audit_memento uses hmc-mcp:<agent_id>
     # regardless of the audit_memento field.
-    # Setting both also emits a UserWarning at construction time.
-    with pytest.warns(UserWarning, match="HMC_AGENT_ID is set"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         cfg = HMCConfig.from_mapping({"agent_id": "bob", "audit_memento": "custom"})
     assert cfg.effective_audit_memento == "hmc-mcp:bob"
 
@@ -458,6 +461,150 @@ def test_agent_id_from_env(monkeypatch):
     cfg = HMCConfig()
     assert cfg.agent_id == "env-agent"
     assert cfg.effective_audit_memento == "hmc-mcp:env-agent"
+
+
+# ---------------------------------------------------------------------------
+# The override diagnostic is logged once per state through the bounded served
+# sink and never emitted through Python's warnings channel (issue #546).
+# ---------------------------------------------------------------------------
+
+
+def test_audit_memento_override_does_not_use_python_warnings():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        for _ in range(5):
+            HMCConfig.from_mapping({"agent_id": "loop-agent", "audit_memento": "mine"})
+
+    assert caught == []
+
+
+def test_audit_memento_override_logs_once_per_process(caplog):
+    """The bounded log record is emitted once for an unchanged state."""
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+        for _ in range(5):
+            HMCConfig.from_mapping(
+                {"agent_id": "log-agent", "audit_memento": "mine"}
+            )
+
+    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    assert len(records) == 1
+    assert "HMC_AGENT_ID is set" in records[0].getMessage()
+
+
+def test_audit_memento_override_logs_once_across_changed_values(caplog):
+    """The process-level diagnostic does not grow with caller-controlled values."""
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+        HMCConfig.from_mapping({"agent_id": "agent-one", "audit_memento": "mine"})
+        HMCConfig.from_mapping({"agent_id": "agent-one", "audit_memento": "mine"})
+        HMCConfig.from_mapping({"agent_id": "agent-two", "audit_memento": "mine"})
+        HMCConfig.from_mapping({"agent_id": "agent-two", "audit_memento": "yours"})
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert len(messages) == 1
+    assert "'agent-one'" in messages[0] and "'mine'" in messages[0]
+
+
+class _SlowFalse:
+    """A false flag whose truth test yields before answering.
+
+    Threads racing the real record never interleave here: nothing between the
+    membership test and the insert releases the GIL, so the first thread through
+    completes both before another is scheduled and the assertion holds whether or
+    not the code synchronises. The sleep opens that window deliberately — and it
+    has to come after ``super().__contains__``, not before. Sleeping first would
+    hand the first thread time to finish its insert, so every later thread would
+    then see ``True`` and the window would close rather than open, which is the
+    shape that silently made this test unable to fail.
+    """
+
+    def __bool__(self) -> bool:
+        time.sleep(0.02)
+        return False
+
+
+def test_audit_memento_override_warns_once_across_concurrent_threads(
+    caplog, monkeypatch
+):
+    """"At most once per state" must hold off the event-loop thread too.
+
+    ``server_permissions`` resolves guards under ``asyncio.to_thread`` and builds
+    one config per granted connection, so concurrent ``hmc_effective_permissions``
+    calls reach the validator from several worker threads at once. An
+    unsynchronised check-then-act lets each of them miss the membership test and
+    emit, turning "once per state" into O(concurrency).
+    """
+    monkeypatch.setattr(
+        config_module, "_reported_memento_override", _SlowFalse()
+    )
+    workers = 8
+    ready = threading.Barrier(workers)
+
+    def build() -> None:
+        ready.wait()
+        HMCConfig.from_mapping({"agent_id": "race-agent", "audit_memento": "mine"})
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+        threads = [threading.Thread(target=build) for _ in range(workers)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    assert len(records) == 1
+
+
+def test_audit_memento_override_repeat_is_recoverable_at_debug(caplog):
+    """The suppressed repeat stays reachable by raising the log level.
+
+    Dropping it at every level leaves an operator no local way to confirm the
+    override is still discarding their configured memento — ``hmc-mcp config
+    show`` prints the raw field, not the effective one, so the only other
+    evidence is the HMC's own audit log across the wire. ``_log_unresolved`` in
+    ``server_permissions`` demotes its repeat for the same reason.
+    """
+    with caplog.at_level(logging.DEBUG, logger="hmc_mcp.config"):
+        for _ in range(3):
+            HMCConfig.from_mapping(
+                {"agent_id": "debug-agent", "audit_memento": "mine"}
+            )
+
+    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    assert [record.levelno for record in records] == [
+        logging.WARNING,
+        logging.DEBUG,
+        logging.DEBUG,
+    ]
+
+
+def test_audit_memento_override_throttles_across_every_profile_in_the_file(
+    profile_home, monkeypatch, caplog
+):
+    """The throttle must survive the served path, not just direct construction.
+
+    One ``hmc_effective_permissions`` call resolves a guard per granted
+    connection, and a connection is a profile key, so a single call can build one
+    config per profile in the operator's ``config.toml`` — each carrying that
+    profile's own ``audit_memento``. That is the path #546 names, and it is the
+    one where many distinct values are constructed in one request. The single
+    record proves the process-level throttle survives that served path.
+    """
+    profiles = 96
+    body = "".join(
+        f'\n[profiles.p{index}]\nhost = "hmc{index}.example.com"\n'
+        f'audit_memento = "memento-{index}"\n'
+        for index in range(profiles)
+    )
+    _write_toml(config_dir() / "config.toml", f'default_profile = "p0"\n{body}')
+    monkeypatch.setenv("HMC_AGENT_ID", "fleet-agent")
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+        for _ in range(3):
+            for index in range(profiles):
+                build_config(profile=f"p{index}")
+
+    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    assert len(records) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1020,16 +1167,12 @@ def test_from_mapping_runs_field_validators():
 
 
 def test_from_mapping_runs_model_validators_once(monkeypatch):
-    """The audit-memento override warning still fires, and exactly once.
-
-    Once matters: an implementation that built an isolated instance and then
-    re-validated it into an HMCConfig would emit two warnings per construction.
-    """
+    """The audit-memento override diagnostic still logs exactly once."""
     monkeypatch.delenv("HMC_AGENT_ID", raising=False)
-    with pytest.warns(UserWarning, match="HMC_AGENT_ID is set") as caught:
+    with patch.object(config_module._logger, "warning") as warning:
         cfg = HMCConfig.from_mapping({"agent_id": "row-agent", "audit_memento": "mine"})
 
-    assert len(caught) == 1
+    warning.assert_called_once()
     assert cfg.effective_audit_memento == "hmc-mcp:row-agent"
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+import warnings
 from types import SimpleNamespace
 
 import pytest
@@ -1093,15 +1094,16 @@ def test_last_resort_is_unreachable_for_a_non_audit_package_logger(capsys):
     assert "hmc_mcp: WARNING: an unresolved profile" in _stderr(capsys)
 
 
-def test_a_config_warning_reaches_stderr_through_the_sink(capsys):
+def test_a_config_warning_reaches_stderr_only_through_the_sink(capsys):
     """The other producer #534 names, driven through the code that emits it.
 
-    ``HMCConfig._warn_audit_memento_override`` predates ``server_permissions`` on
-    this route and is undeduplicated, so it is the one that would flood fd 2.
+    The bounded package logger owns the diagnostic; Python warnings must not add a
+    synchronous write to fd 2 beside it.
     """
     _serve(_policy(LAB_ONLY))
 
-    with pytest.warns(UserWarning):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         make_config(agent_id="agent-1", audit_memento="custom")
 
     captured = _stderr(capsys)

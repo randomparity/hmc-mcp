@@ -394,6 +394,13 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `HMC_PROFILE` and a profile's `password_env` target carry the prefix but are read
   exact-case, and folding them would let a variant nothing reads suppress the `.env` line
   spelling them canonically.
+- The diagnostic that `HMC_AGENT_ID` is discarding a custom `HMC_AUDIT_MEMENTO` now logs once
+  per process instead of once per `HMCConfig` construction (#546). Repeats are available at
+  `DEBUG`, and concurrent construction cannot duplicate the warning-level record. The redundant
+  `warnings.warn` emission was removed: after #534 the package log record reaches ADR 0043's
+  bounded served sink, while Python warnings still write synchronously to fd 2 outside it.
+  **Operator-visible change:** a long-lived server emits one bounded diagnostic rather than one
+  log line per tool call plus a separate Python warning.
 
 ### Removed
 
@@ -433,9 +440,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `hmc_mcp.server_permissions`' unresolved-profile line — reached fd 2 through
   `logging.lastResort`: synchronous, unbounded, and unescaped. Those *log records* now carry
   the `hmc_mcp:` producer prefix and are drop-counted like every other line on the queue.
-  `warnings.warn` is a separate mechanism and is not covered — the audit-memento override
-  emits one of each, and its warning still goes straight to `sys.stderr` unmarked (#546, which
-  also owns throttling that site's log record).
+  `warnings.warn` is a separate mechanism and is not covered; #546 removes the redundant
+  audit-memento warning while throttling that site's bounded log record.
   **What an operator sees change:** the prefix, and — if you route `hmc_mcp.*` into your own
   logging — a second rendering, because `propagate` is deliberately left alone here, unlike on
   `hmc_mcp.audit`. Your handlers keep receiving these records exactly as before; the sink is an
