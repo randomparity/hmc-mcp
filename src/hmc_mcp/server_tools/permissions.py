@@ -30,7 +30,14 @@ from ..authorization.access_policy import (
     AllTargets,
     Grant,
 )
-from ..config import ConfigError, HMCConfig, build_config, env_var_value
+from ..config import (
+    ConfigError,
+    HMCConfig,
+    _ConfigDocument,
+    _load_config_document,
+    build_config,
+    env_var_value,
+)
 from ..tool_registry import (
     Authorize,
     ToolSecurity,
@@ -371,7 +378,9 @@ def _guard_source(config: HMCConfig) -> tuple[str, str | None]:
 
 
 def _power_guard(
-    profile: str | None, reported_unresolved: set[tuple[str, str]]
+    profile: str | None,
+    reported_unresolved: set[tuple[str, str]],
+    document: _ConfigDocument | Exception | None = None,
 ) -> PowerOwnershipGuard:
     """Resolve the guard for one connection the way a tool call would.
 
@@ -411,7 +420,9 @@ def _power_guard(
     """
     connection = DEFAULT_CONNECTION_TOKEN if profile is None else profile
     try:
-        config = build_config(profile=profile)
+        if isinstance(document, Exception):
+            raise document
+        config = build_config(profile=profile, document=document)
     except ConfigError as exc:
         _log_unresolved(reported_unresolved, connection, "ConfigError", str(exc))
         return PowerOwnershipGuard(connection, None, "unresolved", "ConfigError")
@@ -452,30 +463,12 @@ def resolve_power_guards(
     ``docs/environment-variables.md`` singles out as the fail-open direction, and
     which this report is now the recommended way to see.
 
-    Reads the environment and the filesystem, so it is called per request rather
-    than folded into the registration: an edited ``config.toml`` changes what the
-    *next* tool call resolves, and this reports that call, not the startup.
-
-    One cost of resolving through ``build_config`` per connection is recorded
-    rather than designed around — routing the reads through the resolution every
-    tool entry point runs is the property the whole report rests on, and a
-    private faster path would forfeit it. **The report is not a snapshot:** each
-    connection re-reads and re-parses ``config.toml``, so a file edited mid-call
-    can yield rows read from different versions of it. The blocking reads
-    themselves are not on the event loop; the tool handler awaits this in a
-    thread.
-
-    That cost is unbounded and driven by the caller, which is a denial-of-service
-    consequence and is accepted here rather than only noted. A client holding the
-    ``read`` effect class — the minimum that can reach this tool at all, and a
-    grant that cannot withhold it — can loop the call and drive one whole-file
-    read, one TOML parse, and one full validator run per granted connection per
-    iteration; under a generated ``legacy-equivalent`` policy that count is every
-    profile key in the file. The saturation is self-directed: nothing else in
-    ``src/`` uses the default thread executor. Reading the document once and
-    resolving each connection from it would remove the amplification and the torn
-    window together, but only by leaving ``build_config`` — the property the
-    report rests on. #536 owns that trade.
+    Reads the environment and the filesystem per request rather than at
+    registration. One invocation reads and parses at most one configuration
+    document, then resolves every profile through ``build_config`` from that
+    snapshot. An edit therefore changes the next call while every row in one
+    report comes from the same document version. The blocking read remains off
+    the event loop; the tool handler awaits this function in a thread.
 
     **Constructing a config re-runs ``HMCConfig``'s model validators.** The
     ``audit_memento`` collision warning among them is undeduplicated, so a
@@ -499,7 +492,15 @@ def resolve_power_guards(
     if env_var_value("HMC_HOST"):
         connections &= {None}
     ordered = sorted(connections, key=lambda name: (name is not None, name or ""))
-    return tuple(_power_guard(name, reported_unresolved) for name in ordered)
+    document: _ConfigDocument | Exception | None = None
+    if ordered and not env_var_value("HMC_HOST"):
+        try:
+            document = _load_config_document()
+        except Exception as exc:  # noqa: BLE001 — classified per connection below
+            document = exc
+    return tuple(
+        _power_guard(name, reported_unresolved, document) for name in ordered
+    )
 
 
 def build_effective_permissions(

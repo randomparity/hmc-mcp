@@ -1345,6 +1345,34 @@ def test_case_variant_export_beats_a_profile_boolean(
     assert build_config(profile="guarded").authorize_power_operations is False
 
 
+def test_build_config_uses_a_supplied_document_without_resolving_a_path(monkeypatch):
+    """An invocation snapshot changes only the source of the parsed mapping."""
+    document = config_module._ConfigDocument(
+        Path("snapshot-config.toml"),
+        {
+            "profiles": {
+                "guarded": {
+                    "host": "toml-hmc.example.com",
+                    "user": "toml-user",
+                    "authorize_power_operations": True,
+                }
+            }
+        },
+    )
+
+    def unexpected_resolution():
+        pytest.fail("a supplied document resolved the filesystem path")
+
+    monkeypatch.setattr(config_module, "resolve_config_path", unexpected_resolution)
+    monkeypatch.setenv("HMC_USER", "env-user")
+
+    config = build_config(profile="guarded", document=document)
+
+    assert config.host == "toml-hmc.example.com"
+    assert config.user == "env-user"
+    assert config.authorize_power_operations is True
+
+
 @pytest.mark.parametrize("env_name", ["hmc_user", "Hmc_User"])
 def test_case_variant_export_beats_a_profile_string(
     profile_home, monkeypatch, env_name

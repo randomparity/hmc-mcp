@@ -17,6 +17,7 @@ import os
 import pytest
 from fastmcp import Client
 
+import hmc_mcp.config as config_module
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.authorization.connection_scope import selected_connection
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
@@ -94,6 +95,54 @@ def test_a_malformed_config_file_is_reported_as_unresolved(
     assert "TOML parse error" in caplog.records[0].message
 
 
+def test_one_malformed_document_is_classified_for_every_connection(
+    monkeypatch, tmp_path, caplog
+):
+    """A shared read failure retains one unresolved row per connection."""
+    _write_config(tmp_path, "[profiles.a\nhost = 'h'\n")
+    policy = _policy([
+        {
+            "effects": ["read"],
+            "connections": ["a", "b"],
+            "targets": "all-targets",
+        }
+    ])
+    original = config_module._read_config_document
+    reads = 0
+
+    def counting_reader(path):
+        nonlocal reads
+        reads += 1
+        return original(path)
+
+    monkeypatch.setattr(config_module, "_read_config_document", counting_reader)
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_tools.permissions"):
+        guards = resolve_power_guards(policy)
+
+    assert [(guard.connection, guard.detail) for guard in guards] == [
+        ("a", "ConfigError"),
+        ("b", "ConfigError"),
+    ]
+    assert reads == 1
+    assert len(caplog.records) == 2
+
+
+def test_snapshot_path_failures_keep_the_existing_classification(monkeypatch):
+    """Snapshot creation must not normalize build_config's path failures."""
+
+    def fail_path_resolution():
+        raise RuntimeError("cannot find home")
+
+    monkeypatch.setattr(config_module, "resolve_config_path", fail_path_resolution)
+
+    (guard,) = resolve_power_guards(None)
+
+    assert guard.authorize_power_operations is None
+    assert guard.source == "unresolved"
+    assert guard.detail == "RuntimeError"
+
+
 def test_an_environment_variable_is_reported_as_such(monkeypatch):
     """The variable is the setting that cannot be selected around, so name it."""
     monkeypatch.setenv("HMC_AUTHORIZE_POWER_OPERATIONS", "true")
@@ -141,6 +190,92 @@ def test_a_profile_key_is_reported_against_only_the_profile_that_carries_it(tmp_
     assert guards["guarded"].source == "profile"
     assert guards["open"].authorize_power_operations is False
     assert guards["open"].source == "default"
+
+
+def test_one_report_reads_the_config_document_once_for_multiple_profiles(
+    monkeypatch, tmp_path
+):
+    """All rows in one report come from one parsed document snapshot."""
+    _write_config(
+        tmp_path,
+        """
+        default_profile = "guarded"
+
+        [profiles.guarded]
+        host = "hmc-a.example.com"
+        user = "admin"
+        authorize_power_operations = true
+
+        [profiles.open]
+        host = "hmc-b.example.com"
+        user = "admin"
+        """,
+    )
+    policy = _policy([
+        {
+            "effects": ["read"],
+            "connections": ["guarded", "open"],
+            "targets": "all-targets",
+        }
+    ])
+    original = config_module._read_config_document
+    reads = 0
+
+    def counting_reader(path):
+        nonlocal reads
+        reads += 1
+        return original(path)
+
+    monkeypatch.setattr(config_module, "_read_config_document", counting_reader)
+
+    guards = _by_connection(resolve_power_guards(policy))
+
+    assert guards["guarded"].authorize_power_operations is True
+    assert guards["open"].authorize_power_operations is False
+    assert reads == 1
+
+
+def test_separate_reports_read_fresh_config_documents(monkeypatch, tmp_path):
+    """The invocation snapshot is not retained between report calls."""
+    original = config_module._read_config_document
+    reads = 0
+
+    def counting_reader(path):
+        nonlocal reads
+        reads += 1
+        return original(path)
+
+    monkeypatch.setattr(config_module, "_read_config_document", counting_reader)
+    policy = _policy([
+        {"effects": ["read"], "connections": ["guarded"], "targets": "all-targets"}
+    ])
+    _write_config(
+        tmp_path,
+        """
+        default_profile = "guarded"
+        [profiles.guarded]
+        host = "hmc-a.example.com"
+        user = "admin"
+        authorize_power_operations = true
+        """,
+    )
+
+    first = resolve_power_guards(policy)
+    _write_config(
+        tmp_path,
+        """
+        default_profile = "guarded"
+        [profiles.guarded]
+        host = "hmc-a.example.com"
+        user = "admin"
+        authorize_power_operations = false
+        """,
+    )
+    second = resolve_power_guards(policy)
+
+    assert first[0].authorize_power_operations is True
+    assert second[0].authorize_power_operations is False
+    assert reads == 2
 
 
 def test_the_environment_variable_overrides_every_profile(monkeypatch, tmp_path):
@@ -485,6 +620,19 @@ def test_an_ambient_host_case_variant_collapses_report_like_dispatch(
 
 
 @pytest.mark.parametrize("name", ["HMC_HOST", "hmc_host", "Hmc_Host"])
+def test_an_ambient_host_does_not_read_the_config_document(monkeypatch, name):
+    def unexpected_read(path):
+        pytest.fail(f"environment-only resolution read {path}")
+
+    monkeypatch.setattr(config_module, "_read_config_document", unexpected_read)
+    monkeypatch.setenv(name, "hmc-c.example.com")
+
+    guards = resolve_power_guards(None)
+
+    assert [guard.connection for guard in guards] == [DEFAULT_CONNECTION_TOKEN]
+
+
+@pytest.mark.parametrize("name", ["HMC_HOST", "hmc_host", "Hmc_Host"])
 def test_an_ambient_host_with_no_default_grant_reports_nothing(name):
     """The collapse is an intersection, not a substitution.
 
@@ -499,6 +647,16 @@ def test_an_ambient_host_with_no_default_grant_reports_nothing(name):
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv(name, "hmc-c.example.com")
         assert resolve_power_guards(policy) == ()
+
+
+def test_an_empty_connection_set_does_not_read_the_config_document(monkeypatch):
+    def unexpected_read(path):
+        pytest.fail(f"empty report read {path}")
+
+    monkeypatch.setattr(config_module, "_read_config_document", unexpected_read)
+    policy = _policy([])
+
+    assert resolve_power_guards(policy) == ()
 
 
 def test_an_empty_ambient_host_does_not_collapse_named_connections(monkeypatch):
