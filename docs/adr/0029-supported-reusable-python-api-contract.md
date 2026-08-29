@@ -131,7 +131,7 @@ names are internal everywhere and are never inventoried.
 <!-- ADR-0029-INVENTORY:BEGIN -->
 
 - `client.client_adapters` — exports: `AdapterType`.
-- `client.core` — exports: `HMCClient`.
+- `client.core` — exports: `HMCClient`, `TLSVerificationDisabledWarning`.
 - `config` — exports: `ConfigError`, `HMCConfig`, `load_profile`.
   - Note: `load_profile` is synchronous and exported all the same. It is a configuration
     constructor, not a domain operation, and the synchronous-exclusion reason above does not

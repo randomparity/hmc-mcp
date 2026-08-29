@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from collections.abc import Mapping
 from typing import Any, Literal, get_args
 import re
+from threading import Lock
 from urllib.parse import quote, unquote, urlparse
 
 from ..audit import records as audit
@@ -134,6 +135,14 @@ VerifySSLSource = Literal[
     "environment:HMC_VERIFY_SSL",
     "field-default",
 ]
+
+
+class TLSVerificationDisabledWarning(UserWarning):
+    """Warning emitted when HMC TLS certificate verification is disabled."""
+
+
+_reported_tls_warning_keys: set[tuple[str, VerifySSLSource]] = set()
+_tls_warning_lock = Lock()
 
 #: The closed vocabulary, derived rather than restated — as ``audit.REASONS`` is from
 #: ``audit.Reason``. ``audit`` imports nothing from ``hmc_mcp``, so its TLS record
@@ -261,6 +270,7 @@ class HMCClient(
         self._legacy_port_fallback = (
             config.port == 443 and "port" not in config.model_fields_set
         )
+        self._verify_ssl_source = _verify_ssl_source(config)
         if not self.config.verify_ssl:
             # #379. Once per construction — not per request, which would flood
             # the sink, and not per process, which would miss a later client
@@ -268,7 +278,7 @@ class HMCClient(
             # it is the CLI user's channel; this is the durable record's.
             audit.record_tls_verification_disabled(
                 host=self.config.host,
-                source=_verify_ssl_source(self.config),
+                source=self._verify_ssl_source,
             )
         # X-Audit-Memento is evaluated once at construction time — this is safe
         # because each tool invocation creates a new HMCClient (via asyncio.run(_go)).
@@ -344,18 +354,24 @@ class HMCClient(
     async def logon(self) -> str:
         """Authenticate and store the X-API-Session token.
 
-        Emits a one-time warning when TLS certificate verification is disabled
-        so the MITM exposure of the credentials in flight is never silent.
+        Emits one warning per ``(host, verify_ssl source)`` per process when TLS
+        certificate verification is disabled, so the MITM exposure of the
+        credentials in flight is never silent.
         """
         if not self.config.verify_ssl:
-            warnings.warn(
-                "TLS certificate verification is disabled (verify_ssl=False). "
-                "HMC credentials travel over an unverified TLS connection and "
-                "can be intercepted by a man-in-the-middle. Install the HMC's "
-                "CA locally and set HMC_VERIFY_SSL=true (or --verify-ssl) to "
-                "enable verification.",
-                stacklevel=2,
-            )
+            warning_key = (self.config.host, self._verify_ssl_source)
+            with _tls_warning_lock:
+                if warning_key not in _reported_tls_warning_keys:
+                    warnings.warn(
+                        "TLS certificate verification is disabled (verify_ssl=False). "
+                        "HMC credentials travel over an unverified TLS connection and "
+                        "can be intercepted by a man-in-the-middle. Install the HMC's "
+                        "CA locally and set HMC_VERIFY_SSL=true (or --verify-ssl) to "
+                        "enable verification.",
+                        TLSVerificationDisabledWarning,
+                        stacklevel=2,
+                    )
+                    _reported_tls_warning_keys.add(warning_key)
         body = build_logon_request_document(
             user=self.config.user, password=self.config.password
         )
