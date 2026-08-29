@@ -394,38 +394,14 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `HMC_PROFILE` and a profile's `password_env` target carry the prefix but are read
   exact-case, and folding them would let a variant nothing reads suppress the `.env` line
   spelling them canonically.
-- The warning that `HMC_AGENT_ID` is discarding a custom `HMC_AUDIT_MEMENTO` is now emitted
-  once per override state instead of once per `HMCConfig` construction (#546), and its
-  `warnings.warn` half carries the new `AuditMementoOverrideWarning` category instead of a
-  bare `UserWarning`. `common.build_config` builds a fresh config inside every tool body, so
-  the **log** half fired on every MCP tool call, at a rate the client owns. That record does
-  not currently reach ADR 0043's bounded stderr sink — nothing binds the `hmc_mcp` logger
-  namespace to it, so it goes to fd 2 through `logging.lastResort`, unbounded and without
-  ADR 0051's prefix and escaping; #534 is the change that binds the namespace, after which
-  the same record would compete for queue slots with the ADR 0040 authorization trail. The
-  **warn** half repeated only for a caller who had widened the filters: under Python's
-  default `default` action it already rendered once per process, because `stacklevel=2`
-  inside a pydantic validator puts the `__warningregistry__` in pydantic's frame and every
-  call site shares it. Both halves are now throttled together on the `(agent_id,
-  audit_memento)` pair, so an operator who changes either value still gets a line for the new
-  state and the two channels cannot disagree about how often it was reported. The set of
-  reported states is capped at 1024 and stops growing rather than resetting at the cap, so a
-  library host varying `agent_id` per agent cannot retain memory without bound and an overflow
-  costs the throttle only for the states that overflowed. The cap is sized against the served
-  path, not the library one: one `hmc_effective_permissions` call resolves a guard per granted
-  connection and a connection is a profile key, so a single call can build one config per
-  profile in the operator's `config.toml`, each with its own `audit_memento`.
-  **Operator-visible change:** in a long-lived server the message now appears once rather
-  than per call. The new category subclasses `UserWarning`, so a consumer catching or
-  filtering the broad category is unaffected; one that wants to silence only this line can
-  filter on `AuditMementoOverrideWarning`, which is exported from `hmc_mcp.api` (ADR 0029)
-  rather than only from `hmc_mcp.config`. Two adjacent gaps this change does not close now
-  have owners: rerouting the package's `warnings.warn` output into the bounded sink is #550
-  (blocked on #534), and the same uncategorised, unthrottled shape in `client.py`'s
-  `verify_ssl=False` warning is #551. A third, #553, corrects
-  `server_permissions.resolve_power_guards`'s docstring, which records this flood as live and
-  deliberately unfiltered — true when written, false once this lands; that file is left
-  untouched here because #534 owns it while in flight.
+- The diagnostic that `HMC_AGENT_ID` is discarding a custom `HMC_AUDIT_MEMENTO` now logs once
+  per distinct `(agent_id, audit_memento)` state instead of once per `HMCConfig` construction
+  (#546). Repeats are available at `DEBUG`, retained state is capped at 1024 with oldest-first
+  eviction, and concurrent construction cannot duplicate the warning-level record. The redundant
+  `warnings.warn` emission was removed: after #534 the package log record reaches ADR 0043's
+  bounded served sink, while Python warnings still write synchronously to fd 2 outside it.
+  **Operator-visible change:** a long-lived server emits one bounded diagnostic per override
+  state rather than one log line per tool call plus a separate Python warning.
 
 ### Removed
 
@@ -465,9 +441,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `hmc_mcp.server_permissions`' unresolved-profile line — reached fd 2 through
   `logging.lastResort`: synchronous, unbounded, and unescaped. Those *log records* now carry
   the `hmc_mcp:` producer prefix and are drop-counted like every other line on the queue.
-  `warnings.warn` is a separate mechanism and is not covered — the audit-memento override
-  emits one of each, and its warning still goes straight to `sys.stderr` unmarked (#546, which
-  also owns throttling that site's log record).
+  `warnings.warn` is a separate mechanism and is not covered; #546 removes the redundant
+  audit-memento warning while throttling that site's bounded log record.
   **What an operator sees change:** the prefix, and — if you route `hmc_mcp.*` into your own
   logging — a second rendering, because `propagate` is deliberately left alone here, unlike on
   `hmc_mcp.audit`. Your handlers keep receiving these records exactly as before; the sink is an
@@ -698,18 +673,6 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `hmc_mcp.snapshot.SnapshotConfiguration` with no supported import path to name it. This
   records the manifest catching up, not a new capability. No type moved modules and no value set
   changed.
-- Added: `AuditMementoOverrideWarning` (#546), the warning category the `HMC_AGENT_ID` /
-  `HMC_AUDIT_MEMENTO` override warning is now raised with. It does **not** move the frozen
-  public signature digest: like `ConfigError`, it inherits a constructor `inspect.signature`
-  cannot render, so it contributes no digest entry. It is exported because ADR 0029 makes
-  `hmc_mcp.api` the only supported import path, and a filter target reachable only from
-  `hmc_mcp.config` would be one this project may move without a compatibility release — a
-  consumer told to `filterwarnings` on the category needs a name that holds still. This is
-  the first exported warning category, a third fieldless class kind beyond `HMCClient` and
-  the error types, and ADR 0029's amendment records what is supported about one: the name,
-  and that it subclasses `UserWarning` so an existing broad filter keeps catching it. Its
-  inherited constructor is not part of that surface. Renaming it, reparenting it away from
-  `UserWarning`, or raising the site with a different category are each manifest changes.
 - Fixed: `set_sriov_adapter_mode` appeared twice in `hmc_mcp.api.__all__` (#446). The name is
   imported once, so the duplicate was inert at runtime, but ADR 0029 calls `__all__` an
   exhaustive manifest and a repeated entry makes it malformed. The export set is unchanged.

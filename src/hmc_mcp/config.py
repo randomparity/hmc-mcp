@@ -24,7 +24,6 @@ import os
 import sys
 import threading
 import tomllib
-import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,70 +36,45 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _logger = logging.getLogger(__name__)
 
 
-class AuditMementoOverrideWarning(UserWarning):
-    """``HMC_AGENT_ID`` is discarding a custom ``HMC_AUDIT_MEMENTO``.
-
-    A category of its own so a consumer can silence exactly this warning —
-    ``warnings.filterwarnings("ignore", category=AuditMementoOverrideWarning)``
-    — without also silencing every other ``UserWarning`` its process raises. It
-    subclasses ``UserWarning`` rather than replacing it, so a caller that already
-    catches the broad category keeps catching this.
-
-    Re-exported from ``hmc_mcp.api``, which ADR 0029 makes the only supported
-    import path for a library consumer: a filter target reachable only from
-    ``hmc_mcp.config`` would be one the compatibility contract lets us move.
-    """
-
-
 #: Largest number of override states :data:`_reported_memento_overrides` retains.
-#: The set exists to suppress a repeated warning, so it must not become a way to
+#: The record exists to suppress a repeated warning, and must not become a way to
 #: retain memory without bound: ``HMCConfig`` is an ``hmc_mcp.api`` export and both
 #: fields are ordinary constructor arguments, so a library host varying
 #: ``agent_id`` per agent mints a fresh state on every construction, and
 #: ``audit_memento`` has no length validation, so an entry is unbounded in size as
 #: well as in count.
 #:
-#: Sized for the served path rather than against it. One ``hmc_effective_permissions``
-#: call resolves a guard per granted connection, and a connection is a profile key,
-#: so a single call can construct one config per profile in the operator's
-#: ``config.toml`` — each carrying that profile's ``audit_memento``. The count that
-#: has to fit is therefore the operator's whole profile file, not the one profile a
-#: request selected, and 1024 is far above any hand-written one.
+#: Sized for the served path rather than against it. One permissions call resolves
+#: a guard per granted connection and a connection is a profile key, so a single
+#: call can construct one config per profile in the operator's ``config.toml``,
+#: each carrying that profile's ``audit_memento``. The count that has to fit is
+#: therefore the whole profile file, not the one profile a request selected, and
+#: 1024 is far above any hand-written one.
 _MAX_REPORTED_MEMENTO_OVERRIDES = 1024
 
 #: Override states :meth:`HMCConfig._warn_audit_memento_override` has already
-#: reported, as ``(agent_id, audit_memento)`` pairs. Process-global and outliving
-#: any individual ``HMCConfig``, since what it throttles is one warning per
-#: *config*, repeated once per construction.
+#: reported, as ``(agent_id, audit_memento)`` keys. A dict used as an
+#: insertion-ordered set: process-global and outliving any individual
+#: ``HMCConfig``, since what it throttles is one warning per *config*, repeated
+#: once per construction.
 #:
-#: **At the cap the set stops taking on new states; it is never cleared.** Every
-#: state already recorded stays suppressed, and only states beyond the cap warn on
-#: each construction. Clearing wholesale instead would make *every* state miss, so a
-#: working set one past the cap would return the emission rate to exactly where it
-#: was before this function was throttled — the failure this whole change removes,
-#: reintroduced by its own overflow policy. Eviction cannot do better either:
-#: round-robin one past the cap is the Belady worst case for LRU and FIFO alike.
-#: Declining to grow is the one policy that degrades in proportion to the overflow.
+#: **Full means evict the oldest, never refuse to record.** A policy that declines
+#: to record past the cap can never suppress the state it declined, so that state
+#: warns on every construction for the life of the process; clearing wholesale
+#: instead makes every state miss at once. Both hand back the pre-throttle rate —
+#: the failure this function exists to remove, reintroduced by its own overflow
+#: policy. Evicting keeps the invariant that anything reported is recorded, so no
+#: state can flood permanently; a state warns again only if its reuse gap exceeds
+#: the cap, which is why insertion order is what gets evicted.
 #:
-#: The cost is that after the cap a genuinely new override state is reported on
-#: every construction rather than once. Reaching it takes 1024 distinct states in
-#: one process, at which point bounding the memory is the more important guarantee.
-#:
-#: This throttle sits *above* the ``warnings`` filters — a consumer running
-#: ``simplefilter("always")`` or ``PYTHONWARNINGS=always`` still gets one warning
-#: per state, not one per construction. That is the point of it, but it means the
-#: filters are not the whole story for this category, and the only reset is this
-#: private name. Nothing supported exposes one; if a consumer ever needs to
-#: observe the warning again, that is the decision to make then.
-_reported_memento_overrides: set[tuple[str, str]] = set()
+_reported_memento_overrides: dict[tuple[str, str], None] = {}
 
 #: Serialises the check-then-act on :data:`_reported_memento_overrides`. Config
-#: construction is not confined to the event-loop thread — ``server_permissions``
-#: resolves guards under ``asyncio.to_thread``, one config per granted connection
-#: — so without this two racers both miss the membership test and both emit.
-#: Held only across the membership test, the cap check and the insert; the log and
-#: warning calls are made outside it, so a slow handler cannot block a config
-#: being built on another thread.
+#: construction is not confined to the event-loop thread — the permissions path
+#: resolves its guards in a worker thread, one config per granted connection — so
+#: without this two racers both miss the membership test and both emit. Held only
+#: across the membership test, the insert and the eviction; logging is outside it,
+#: so a slow handler cannot block a config being built on another thread.
 _override_report_lock = threading.Lock()
 
 
@@ -366,95 +340,44 @@ class HMCConfig(BaseSettings):
         an operator reading HMC audit logs has no other way to discover.
 
         Said **once per override state**, not once per construction.
-        ``common.build_config`` builds a fresh ``HMCConfig`` inside every tool
-        body, so an unthrottled emission here runs at a rate the MCP client owns
-        and the message is identical every time.
+        :func:`build_config` builds a fresh ``HMCConfig`` inside every tool body,
+        so an unthrottled emission here runs at a rate the MCP client owns while
+        the message is identical every time. The package logger is bound to the
+        bounded served sink; a separate ``warnings.warn`` would bypass it and is
+        deliberately not emitted (#546).
 
-        The log half is what actually repeated per call. It reaches fd 2 through
-        ``logging.lastResort`` — nothing binds the ``hmc_mcp`` namespace to
-        ADR 0043's bounded stderr sink today, so the write is unbounded,
-        synchronous, and without ADR 0051's prefix and escaping. #534 will bind
-        the namespace, at which point this record would instead compete for slots
-        on that queue with the ADR 0040 authorization trail; the throttle is worth
-        having on either channel, and this docstring describes the one in force.
-
-        The ``warnings.warn`` half repeats only for a caller who has widened the
-        filters. Under the default ``default`` action it already rendered once per
-        process, because ``stacklevel=2`` inside a pydantic validator puts the
-        ``__warningregistry__`` in pydantic's frame and every call site shares it;
-        a caller running ``simplefilter("always")`` got it per construction. Both
-        halves are throttled together so the two channels cannot disagree about
-        how many times the override was reported.
-
-        The dedup key is the ``(agent_id, audit_memento)`` pair rather than this
-        call site, so an operator who *changes* either value still gets a line for
-        the new state; keying on the site would hide exactly the event worth
-        seeing. The retained set is capped — see
+        The key is the ``(agent_id, audit_memento)`` pair rather than this call
+        site, so an operator who *changes* either value still gets a line for the
+        new state; keying on the site would hide exactly the event worth seeing.
+        The record is bounded and evicts in insertion order — see
         :data:`_MAX_REPORTED_MEMENTO_OVERRIDES` — because the pair is
-        caller-supplied on the library path and would otherwise grow without
-        bound; past the cap the set stops growing rather than resetting, so an
-        overflow costs the throttle only for the states that overflowed.
-        ``_log_unresolved`` in ``server_permissions`` throttles for the
-        same reason but not by the same mechanism: it demotes the repeat to
-        ``DEBUG``, where this drops it. Its repeat carries a *distinct* ``reason``
-        worth recovering at a raised level; this one is a verbatim re-render of a
-        state ``effective_audit_memento`` reports deterministically and the
-        ``X-Audit-Memento`` header carries on every request.
+        caller-supplied on the library path. The repeat is logged at ``DEBUG``,
+        matching ``server_permissions._log_unresolved``: an operator who raises the
+        level recovers the per-call evidence rather than having to read the HMC's
+        own audit log to see that the override is still in force.
 
-        The order is mark, log, warn, and the mark is taken under
-        :data:`_override_report_lock`. Marking before ``warnings.warn`` is what
-        makes the throttle survive an error filter: under ``PYTHONWARNINGS=error``
-        the call raises, and a raise does not stop the server. Marking afterwards
-        would leave the state unrecorded on every raising construction, and the
-        log line beside it would then write to fd 2 once per MCP tool call, at the
-        client-owned rate — exactly the flood this function was changed to remove,
-        surviving in full under a hardened posture. Logging before the warn keeps
-        the record from being lost to the raise.
-
-        Where that raise lands depends on the path. ``_app._run`` does not catch,
-        so on most tool bodies it becomes a tool error result and the server keeps
-        serving. On the permissions path it is swallowed instead:
-        ``server_permissions._power_guard`` wraps ``build_config`` in a broad
-        ``except Exception``, and ``AuditMementoOverrideWarning`` is an
-        ``Exception``, so the first ``hmc_effective_permissions`` call under an
-        error filter reports ``authorize_power_operations`` as unresolved with
-        ``AuditMementoOverrideWarning`` as the detail. That is a misreport, and it
-        is one this throttle *shortens*: before the throttle every construction
-        raised, so under an error filter that guard read unresolved permanently.
-        Now it reads unresolved once and correctly thereafter.
-
-        The visible consequence, then, is that under an error filter only the first
-        construction of a given override state raises. That is what "warned once
-        per state" means when warnings are errors — and a bounded one-off naming
-        the exact misconfiguration is a better outcome than an unbounded write to
-        the descriptor ADR 0043 exists to stop blocking on.
-
-        The lock is what makes "at most once per state" true rather than
-        approximate. ``server_permissions`` resolves guards under
-        ``asyncio.to_thread`` and builds one config per granted connection, so
-        concurrent ``hmc_effective_permissions`` calls reach this validator from
-        several worker threads at once; an unsynchronised check-then-act would let
-        each of them miss the membership test and emit. The duplicates would be
-        harmless — CPython's set operations are individually atomic, so nothing is
-        lost or corrupted — but the promise would read "once per state" and deliver
-        O(concurrency), and the cap's own check-then-act has the same shape.
+        Recording under :data:`_override_report_lock` makes the promise hold under
+        concurrency. Configs are built off the event-loop thread, so an
+        unsynchronised check-then-act lets each racer miss and emit, delivering
+        O(concurrency) where the promise says one.
         """
         if not (self.agent_id and self.audit_memento != "hmc-mcp"):
             return self
         override = (self.agent_id, self.audit_memento)
-        with _override_report_lock:
-            if override in _reported_memento_overrides:
-                return self
-            if len(_reported_memento_overrides) < _MAX_REPORTED_MEMENTO_OVERRIDES:
-                _reported_memento_overrides.add(override)
         msg = (
             f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
             f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
             "ignored — X-Audit-Memento is always sent as "
             f"hmc-mcp:{self.agent_id}"
         )
+        with _override_report_lock:
+            if override in _reported_memento_overrides:
+                _logger.debug(msg)
+                return self
+            _reported_memento_overrides[override] = None
+            if len(_reported_memento_overrides) > _MAX_REPORTED_MEMENTO_OVERRIDES:
+                del _reported_memento_overrides[next(iter(_reported_memento_overrides))]
         _logger.warning(msg)
-        warnings.warn(msg, AuditMementoOverrideWarning, stacklevel=2)
         return self
 
     @property
