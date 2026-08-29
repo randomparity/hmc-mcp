@@ -727,7 +727,6 @@ def test_every_exported_owned_class_is_a_model_shape_or_declared_fieldless() -> 
     already reaches past dataclasses and Pydantic elsewhere (``jobs`` defines
     ``TypedDict`` sources), so pin what may legitimately carry no readable fields:
     ``HMCClient``, whose supported surface is a lifecycle allowlist, and the errors.
-
     """
     unreadable = sorted(
         name
@@ -743,6 +742,7 @@ def test_every_exported_owned_class_is_a_model_shape_or_declared_fieldless() -> 
         "either they are models in a shape `_model_field_hints` does not know, or "
         "the ADR must record why they expose no supported fields"
     )
+
 
 def _supported_models(owned: dict[tuple[str, str], object]) -> list[type]:
     """Close *owned* over model fields, returning every owned model it reached.
@@ -1853,7 +1853,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             unrenderable.add(name)
     # Falling out of this loop is how an export leaves the freeze in silence, and it
     # is how `InstallHandle` would have left it (#468). Name the ones that do rather
-    # than passing over them: each subclasses a built-in exception or warning and inherits a
+    # than passing over them: each subclasses a built-in exception and inherits a
     # constructor `inspect.signature` cannot read, which is the same absence the
     # Decision's own constructor clause records. The set adds no digest entry, so it
     # costs no recomputation — it fails the next time an export falls into the hole
