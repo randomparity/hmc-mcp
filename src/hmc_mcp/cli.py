@@ -53,6 +53,7 @@ from .cli_commands import (
     templates,
     vnic,
     vios,
+    vios_labels,
 )
 from .cli_commands.lpar import (
     config as lpar_config,
@@ -95,6 +96,7 @@ def _register_commands() -> None:
         (templates, templates_app),
         (vnic, network_app),
         (vios, vios_app),
+        (vios_labels, vios_app),
     )
     for module, group in registrations:
         module.register_commands(group)

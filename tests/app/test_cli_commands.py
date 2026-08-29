@@ -32,6 +32,7 @@ from hmc_mcp.cli_commands import runtime as cli_runtime
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
 from hmc_mcp.cli_commands import pcie as cli_pcie
 from hmc_mcp.cli_commands import vnic as cli_vnic
+from hmc_mcp.cli_commands import vios_labels as cli_vios_labels
 from hmc_mcp.operations import ownership as lpar_ownership
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
@@ -3125,6 +3126,171 @@ def test_vios_power_off_declined_confirm_aborts(fake_hmc):
     assert result.exit_code == 1
     assert "Aborted" in result.stderr
     assert fake_hmc.calls == []
+
+
+def _patch_vios_label_cli(
+    monkeypatch, operation_name: str, result: object
+) -> AsyncMock:
+    operation = AsyncMock(return_value=result)
+    monkeypatch.setattr(cli_vios_labels, operation_name, operation)
+    monkeypatch.setattr(
+        cli_vios_labels, "ssh_config", lambda: HMCConfig.from_mapping({})
+    )
+    return operation
+
+
+def test_vios_label_commands_are_registered():
+    result = RUNNER.invoke(cli.app, ["vios", "--help"])
+    assert result.exit_code == 0, result.output
+    for name in (
+        "list-fc-port-labels",
+        "set-fc-port-label",
+        "remove-fc-port-label",
+        "list-vfc-group-labels",
+        "create-vfc-group-label",
+        "update-vfc-group-label",
+        "remove-vfc-group-label",
+    ):
+        assert name in result.stdout
+
+
+def test_vios_list_fc_port_labels_json(monkeypatch):
+    operation = _patch_vios_label_cli(
+        monkeypatch, "list_vios_fc_port_labels", [{"port_name": "fcs0"}]
+    )
+    result = RUNNER.invoke(
+        cli.app,
+        ["vios", "list-fc-port-labels", "system-a", "--vios-id", "2", "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [{"port_name": "fcs0"}]
+    operation.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("arguments", "operation_name", "prompt_parts"),
+    [
+        (
+            [
+                "set-fc-port-label",
+                "system-a",
+                "fcs0",
+                "label-a",
+                "--vios-name",
+                "vios-a",
+            ],
+            "set_vios_fc_port_label",
+            ["system-a", "fcs0", "vios-a", "label-a"],
+        ),
+        (
+            ["remove-fc-port-label", "system-a", "fcs0", "--vios-id", "2"],
+            "remove_vios_fc_port_label",
+            ["system-a", "fcs0", "vios_id=2"],
+        ),
+        (
+            [
+                "create-vfc-group-label",
+                "system-a",
+                "group-a",
+                "--vios-name",
+                "a",
+                "--vios-name",
+                "b",
+            ],
+            "create_vios_vfc_group_label",
+            ["system-a", "group-a", "vios_names=['a', 'b']"],
+        ),
+        (
+            [
+                "update-vfc-group-label",
+                "system-a",
+                "group-a",
+                "--action",
+                "rename",
+                "--new-name",
+                "group-b",
+            ],
+            "update_vios_vfc_group_label",
+            ["system-a", "group-a", "group-b"],
+        ),
+        (
+            ["remove-vfc-group-label", "system-a", "group-a"],
+            "remove_vios_vfc_group_label",
+            ["system-a", "group-a"],
+        ),
+    ],
+)
+def test_vios_label_mutations_confirm_on_stderr_and_emit_json(
+    monkeypatch, arguments: list[str], operation_name: str, prompt_parts: list[str]
+):
+    operation = _patch_vios_label_cli(
+        monkeypatch, operation_name, {"operation": "done"}
+    )
+    result = RUNNER.invoke(cli.app, ["vios", *arguments], input="y\n")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"operation": "done"}
+    assert all(part in result.stderr for part in prompt_parts)
+    operation.assert_awaited_once()
+
+
+def test_vios_label_declined_confirmation_does_not_dispatch(monkeypatch):
+    operation = _patch_vios_label_cli(monkeypatch, "remove_vios_fc_port_label", {})
+    result = RUNNER.invoke(
+        cli.app,
+        ["vios", "remove-fc-port-label", "system-a", "fcs0", "--vios-name", "a"],
+        input="n\n",
+    )
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    operation.assert_not_awaited()
+
+
+def test_vios_label_confirmation_escapes_control_characters(monkeypatch):
+    operation = _patch_vios_label_cli(monkeypatch, "set_vios_fc_port_label", {})
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "vios",
+            "set-fc-port-label",
+            "system-a",
+            "fcs0",
+            "safe\nspoofed-target",
+            "--vios-name",
+            "vios-a",
+        ],
+        input="n\n",
+    )
+    assert result.exit_code == 1
+    assert "safe\\nspoofed-target" in result.stderr
+    assert "safe\nspoofed-target" not in result.stderr
+    operation.assert_not_awaited()
+
+
+def test_vios_group_members_and_yes_are_preserved(monkeypatch):
+    operation = _patch_vios_label_cli(
+        monkeypatch, "update_vios_vfc_group_label", {"operation": "add"}
+    )
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "vios",
+            "update-vfc-group-label",
+            "system-a",
+            "group-a",
+            "--action",
+            "add-members",
+            "--vios-id",
+            "2",
+            "--vios-id",
+            "3",
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    assert json.loads(result.stdout) == {"operation": "add"}
+    assert operation.await_args.args[3] == "add-members"
+    assert operation.await_args.kwargs["vios_ids"] == [2, 3]
 
 
 # --------------------------------------------------------------------------- #

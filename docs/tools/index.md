@@ -4,15 +4,15 @@
 
 This reference covers every tool the server registers, including the ones a default deployment does not expose. It is generated from the server's tool registry, so it cannot drift from what the code registers.
 
-- **149** tools are registered.
-- **148** are exposed by a default deployment.
+- **156** tools are registered.
+- **155** are exposed by a default deployment.
 
 | Effect class | Tools |
 | --- | --- |
 | `arbitrary-command` | 1 |
-| `destructive` | 29 |
-| `mutate` | 48 |
-| `read` | 71 |
+| `destructive` | 31 |
+| `mutate` | 51 |
+| `read` | 73 |
 
 ## Domains
 
@@ -52,6 +52,7 @@ This reference covers every tool the server registers, including the ones a defa
 | `upgrade` | 1 | [upgrade.md](upgrade.md) |
 | `user` | 5 | [user.md](user.md) |
 | `vios` | 10 | [vios.md](vios.md) |
+| `vios_label` | 7 | [vios_label.md](vios_label.md) |
 | `vnic` | 3 | [vnic.md](vnic.md) |
 
 ## Not exposed by default
@@ -84,6 +85,7 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_create_optical_media` | `mutate` | [media.md](media.md) |
 | `hmc_create_user` | `mutate` | [user.md](user.md) |
 | `hmc_create_vios` | `mutate` | [vios.md](vios.md) |
+| `hmc_create_vios_vfc_group_label` | `mutate` | [vios_label.md](vios_label.md) |
 | `hmc_create_virtual_disk` | `mutate` | [storage.md](storage.md) |
 | `hmc_create_virtual_network` | `mutate` | [network.md](network.md) |
 | `hmc_create_volume_group` | `mutate` | [storage.md](storage.md) |
@@ -154,6 +156,8 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_list_users` | `read` | [user.md](user.md) |
 | `hmc_list_vios` | `read` | [vios.md](vios.md) |
 | `hmc_list_vios_backups` | `read` | [vios.md](vios.md) |
+| `hmc_list_vios_fc_port_labels` | `read` | [vios_label.md](vios_label.md) |
+| `hmc_list_vios_vfc_group_labels` | `read` | [vios_label.md](vios_label.md) |
 | `hmc_list_virtual_networks` | `read` | [network.md](network.md) |
 | `hmc_list_virtual_switches` | `read` | [network.md](network.md) |
 | `hmc_list_vnics` | `read` | [vnic.md](vnic.md) |
@@ -184,6 +188,8 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_read_lpar_boot_order` | `read` | [boot_order.md](boot_order.md) |
 | `hmc_remote_restart_lpar` | `destructive` | [lpar.md](lpar.md) |
 | `hmc_remove_memory_pool` | `destructive` | [memory_pool.md](memory_pool.md) |
+| `hmc_remove_vios_fc_port_label` | `destructive` | [vios_label.md](vios_label.md) |
+| `hmc_remove_vios_vfc_group_label` | `destructive` | [vios_label.md](vios_label.md) |
 | `hmc_remove_vnic` | `destructive` | [vnic.md](vnic.md) |
 | `hmc_rename_lpar` | `mutate` | [lpar.md](lpar.md) |
 | `hmc_restore_lpar_profiles` | `destructive` | [lpar_profile.md](lpar_profile.md) |
@@ -196,6 +202,7 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_set_minimum_affinity_policy` | `mutate` | [lpar.md](lpar.md) |
 | `hmc_set_pcm_preferences` | `mutate` | [pcm.md](pcm.md) |
 | `hmc_set_sriov_adapter_mode` | `mutate` | [sriov.md](sriov.md) |
+| `hmc_set_vios_fc_port_label` | `mutate` | [vios_label.md](vios_label.md) |
 | `hmc_snapshot_assess_affinity` | `read` | [snapshot.md](snapshot.md) |
 | `hmc_snapshot_capture` | `read` | [snapshot.md](snapshot.md) |
 | `hmc_snapshot_inspect` | `read` | [snapshot.md](snapshot.md) |
@@ -207,6 +214,7 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_unmount_optical_media` | `destructive` | [media.md](media.md) |
 | `hmc_update_console_software` | `destructive` | [update.md](update.md) |
 | `hmc_update_firmware` | `destructive` | [update.md](update.md) |
+| `hmc_update_vios_vfc_group_label` | `mutate` | [vios_label.md](vios_label.md) |
 | `hmc_upload_iso` | `mutate` | [media.md](media.md) |
 | `hmc_vios_update` | `destructive` | [update.md](update.md) |
 | `hmc_vios_upgrade` | `destructive` | [upgrade.md](upgrade.md) |

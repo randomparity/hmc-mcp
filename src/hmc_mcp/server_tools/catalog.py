@@ -23,6 +23,7 @@ from hmc_mcp.server_tools import (
     updates,
     users,
     vios,
+    vios_labels,
     vnic,
 )
 from hmc_mcp.server_tools.lpar import configuration, lifecycle, profiles, provision
@@ -38,6 +39,7 @@ TOOL_MODULES = (
     health,
     lifecycle,
     vios,
+    vios_labels,
     adapters,
     storage,
     network,

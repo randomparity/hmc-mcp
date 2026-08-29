@@ -848,11 +848,15 @@ def test_the_scan_finds_every_known_site():
 
     assert by_label["-i"] == {
         "create_lpar_via_cli",
+        "create_vios_vfc_group_label",
+        "remove_vios_fc_port_label",
         "set_lpar_description",
         "set_lpar_msp",
         "set_lpar_proc_compat",
         "set_minimum_affinity_policy_cli",
+        "set_vios_fc_port_label",
         "sync_lpar_profile",
+        "update_vios_vfc_group_label",
         "_change_profile_io_slot",
         "unassign_sriov_logical_port_profile",
     }
@@ -879,6 +883,8 @@ def test_the_scan_finds_every_known_site():
         "get_lpar_proc_compat",
         "query_minimum_affinity_policy",
         "list_vios_backups",
+        "list_vios_fc_port_labels",
+        "list_vios_vfc_group_labels",
         "_capture_lpar_cli_dump",
             "_lpar_environment",
         "restore_lpar_baseline",
