@@ -59,6 +59,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Added
 
+- Serve startup now submits a warning-level `power-ownership-guard` audit record for every
+  policy-reachable connection, preserving the effective guard value when the permissions
+  inspection tool is withheld (#533, ADR 0107).
 - Seven bounded SSH-backed VIOS label tools list, set, and remove individual FC-port
   labels and list, create, update, and remove individual vFC group labels using the
   POWER10 and POWER11 `lslabelvios`/`labelvios` grammar. They do not expose MSP,

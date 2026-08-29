@@ -286,6 +286,27 @@ It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and no
 nulls: the record is not an access-policy decision, and it is also emitted on the Python
 API path, where no policy connection exists to name.
 
+### `event: "power-ownership-guard"`
+
+Emitted once at `serve` startup for every connection the selected access policy can route.
+Always `WARNING`, so the shipped audit threshold retains both the enforced (`true`) and
+fail-open (`false`) states even when the policy withholds `hmc_effective_permissions`.
+
+```json
+{"time":"2026-08-28T18:00:00+00:00","event":"power-ownership-guard","connection":"lab","authorize_power_operations":true,"source":"environment","detail":null}
+```
+
+`connection`, `authorize_power_operations`, `source`, and `detail` are the same closed
+per-connection values reported by `hmc_effective_permissions`. An unreadable connection emits
+`authorize_power_operations: null`, `source: "unresolved"`, and a bounded exception-class
+`detail`; configuration paths, values, and exception messages are not recorded. Resolution and
+audit delivery failures do not prevent startup.
+
+On stdio, the launching MCP host owns stderr and can read these records. Withholding
+`hmc_effective_permissions` therefore withholds this inventory from MCP protocol calls, not from
+the operator-trusted launcher. Use an HTTP deployment with operator-controlled server logs when
+the MCP client must not own the audit descriptor.
+
 <!-- The `source` values below are read by tests/test_authorization_audit_doc.py and held
      to `client.VERIFY_SSL_SOURCES`. Keep them a comma-and-`or` run introduced by the
      words "where the effective setting came from"; that clause is the anchor. -->
