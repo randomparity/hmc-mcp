@@ -4,7 +4,8 @@
 
 Accepted (2026-08-25). Amended 2026-08-26 by issue #474 — see *Amendment (#474)* below: the two
 job tools now read through `operations.jobs`, so the MCP surface gains the distinction this
-record's Consequences section said it did not.
+record's Consequences section said it did not. Amended 2026-08-28 by issue #532 to bound the
+delay before a confirming disappearance read.
 
 ## Context
 
@@ -216,11 +217,19 @@ paragraph is scoped to failures that propagate as `HMCError`, where the caller k
 wrong. A job missing from the *first* read is still reported immediately — there is no earlier
 observation for it to contradict.
 
-The confirming read is **owed**, which makes `timeout_seconds` a soft bound: a disappearance seen
-on the last poll before the deadline extends the wait by one poll interval rather than shipping an
-unconfirmed vanish. The alternative — honour the deadline strictly and skip the confirmation —
-would put the hole exactly where every bounded wait ends, and this ADR's own recommended usage
-chops a multi-hour install into many bounded waits, so it would fire routinely.
+The confirming read is **owed**, which makes `timeout_seconds` a soft bound. For a positive
+timeout, it runs after `min(poll_interval, timeout_seconds)`. This preserves the full poll interval
+whenever the interval fits within the caller's timeout, including when the deadline falls partway
+through that interval. When `poll_interval` is larger than the timeout, the timeout caps the
+confirmation delay: the call therefore finishes no later than both one poll interval after its
+deadline and twice its timeout **on the poll schedule**. Those bounds exclude time spent awaiting
+HMC reads; each request keeps the client's independently configured HTTP timeout.
+`timeout_seconds=0` remains exactly one poll, so a missing first read returns immediately and no
+confirming read is owed because the wait never observed the job.
+
+Honouring the deadline strictly and skipping the confirmation would put the hole exactly where
+every bounded wait ends. Always sleeping the uncapped poll interval would preserve separation but
+let an agent-supplied interval make a short wait overshoot without a timeout-relative bound.
 
 Once accepted, the disappearance is returned as a bare `found=False`. The status observed on
 the poll before is not carried on the outcome: `found=False` means the HMC produced no entry, and
