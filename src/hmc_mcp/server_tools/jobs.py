@@ -151,12 +151,10 @@ def hmc_wait_for_job(
     ``job_href`` on the result is the link to persist for the next call — the one
     you passed when it resolved, otherwise the successful read's own link, null
     when nothing resolved. If you passed a link and get ``found`` true with a null
-    ``job_href``, that link was retired; drop it. A retired link spelled
-    differently from the HMC's own SELF link can survive there anyway, so poll by
-    ``job_id`` alone whenever a stored link is suspect. An echoed link is your
-    own input returned verbatim — only its path is ever requested, and host,
-    query, fragment and control characters are unchecked — so do not dereference
-    it as something the HMC attested.
+    ``job_href``, that link was retired; drop it. An echoed link is your own input
+    returned verbatim — only its path is ever requested, and host, query, fragment
+    and control characters are unchecked — so do not dereference it as something
+    the HMC attested.
 
     A supplied ``job_href`` decides **which job is read**: its path is fetched
     directly and checked only for addressing a job resource, so a mispaired handle

@@ -340,10 +340,10 @@ would change clause 5's stop condition and belongs in its own decision.
 
 Further residuals stay open, each named in the tool docstrings rather than fixed here.
 
-Clause 2's promise that a re-persisted `job_href` is never a link known not to resolve also fails
-on `wait_for_job` when the caller's spelling of the link differs from the HMC's own —
-`operations.jobs._handle` compares them as raw strings — so the `hmc_wait_for_job` docstring states
-the weaker guarantee until #529 closes it.
+> **Amended by #529** (2026-08-28). A retired link is compared with a rediscovered SELF link by
+> resource path, so relative and absolute spellings of the same job resource cannot reintroduce a
+> link already proven stale. The caller's exact spelling is still echoed when it resolves, and an
+> unrelated valid link advertised by a successful global-path read is still returned.
 
 Clause 5's confirming re-read is owed a full poll interval past the deadline, but the loop shortens
 it to whatever remains when the disappearance is seen with less than an interval left — which is

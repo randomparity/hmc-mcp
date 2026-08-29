@@ -400,6 +400,27 @@ async def test_get_job_confirms_a_stale_link_against_the_global_path(
 
 
 @pytest.mark.asyncio
+async def test_get_job_drops_a_stale_link_with_an_equivalent_absolute_spelling(
+    mock_hmc,
+) -> None:
+    """A retired resource stays retired when the response makes its link absolute."""
+    mock_hmc.get(_SELF_HREF).mock(
+        return_value=httpx.Response(404, text="Unknown job")
+    )
+    absolute_self_href = f"https://hmc.test:443{_SELF_HREF}"
+    mock_hmc.get(_GLOBAL_PATH).mock(
+        return_value=httpx.Response(
+            200, text=_job_entry("RUNNING", self_href=absolute_self_href)
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
+
+    assert (outcome.found, outcome.job_href) == (True, None)
+
+
+@pytest.mark.asyncio
 async def test_wait_for_job_drops_a_stale_link_after_confirming_it_once(
     mock_hmc, caplog
 ) -> None:
