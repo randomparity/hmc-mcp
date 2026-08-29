@@ -177,6 +177,8 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   startup; see [Authorization audit records](authorization-audit.md#event-power-ownership-guard).
   This is the structured operator channel for the effective value when the inspection tool is
   unavailable, subject to the audit stream's documented best-effort delivery and drop semantics.
+  In stdio deployments the launching MCP host owns stderr and can read these records; withholding
+  the tool removes the MCP protocol response, not visibility from that operator-trusted launcher.
 
   When the setting is off, `power_lpar` reads no ownership token and opens no SSH
   connection — the call path is exactly what it was before this setting existed.

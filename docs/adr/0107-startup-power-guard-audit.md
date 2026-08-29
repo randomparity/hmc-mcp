@@ -21,6 +21,8 @@ unreadable configuration produces an `unresolved` record rather than preventing 
 
 The record contains only `connection`, `authorize_power_operations`, `source`, and `detail`.
 It does not add an MCP-visible channel or expose configuration paths or credentials.
+For stdio, the launching process owns stderr and can observe the audit record; the launcher is
+therefore an operator-trusted principal even when the MCP policy withholds the inspection tool.
 
 ## Consequences
 
@@ -29,6 +31,8 @@ policy can route, even when the inspection tool is absent. Delivery remains best
 the audit sink's documented non-persistence and drop semantics. Startup performs one bounded
 config document read and may emit multiple warning-level records. The audit event vocabulary
 grows additively.
+Withholding the inspection tool no longer withholds connection names or guard states from the
+stdio launcher; it still withholds them from MCP protocol calls.
 
 ## Considered & rejected
 

@@ -489,6 +489,9 @@ def test_the_served_escape_hatch_denies_a_withheld_connection(monkeypatch):
     opened: list[str] = []
     _seal_every_outbound_path(monkeypatch, opened)
     application = _serve(_policy(LAB_ONLY + ESCAPE_HATCH_GRANT))
+    # Serve startup now resolves the effective ownership guard once per reachable
+    # connection (#533). This assertion owns the denied dispatch, not bootstrap.
+    opened.clear()
 
     with pytest.raises(ToolError) as error:
         _call(application, "hmc_run_command", {"cmd": "lssyscfg", "profile": "prod"})

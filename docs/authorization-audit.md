@@ -302,6 +302,11 @@ per-connection values reported by `hmc_effective_permissions`. An unreadable con
 `detail`; configuration paths, values, and exception messages are not recorded. Resolution and
 audit delivery failures do not prevent startup.
 
+On stdio, the launching MCP host owns stderr and can read these records. Withholding
+`hmc_effective_permissions` therefore withholds this inventory from MCP protocol calls, not from
+the operator-trusted launcher. Use an HTTP deployment with operator-controlled server logs when
+the MCP client must not own the audit descriptor.
+
 <!-- The `source` values below are read by tests/test_authorization_audit_doc.py and held
      to `client.VERIFY_SSL_SOURCES`. Keep them a comma-and-`or` run introduced by the
      words "where the effective setting came from"; that clause is the anchor. -->

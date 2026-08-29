@@ -23,12 +23,14 @@ is best-effort and subject to the audit stream's documented drops.
 
 ## Security and privacy
 
-The existing trust boundary is operator-authored environment/TOML to an operator-owned audit
-stream. No boundary is added or widened toward MCP clients. The resolver already removes
-paths, values, and validation messages from returned rows; the record copies only that closed
-shape. Configuration content, credentials, hostnames, and exception text are forbidden.
-Audit sink failure continues to drop diagnostics without affecting startup. Authentication,
-policy enforcement, and the policy's ability to withhold tools are out of scope and unchanged.
+Operator-authored environment/TOML crosses into the audit stream. Under stdio, the process that
+launched the MCP server owns stderr and can therefore observe these startup records even when
+its MCP access policy withholds `hmc_effective_permissions`; that disclosure is the completion
+criterion's necessary surfaced channel, not a second MCP tool or protocol response. Deployments
+must treat the launcher as an operator-trusted principal. The resolver removes paths, values,
+and validation messages from rows; records copy only that closed shape. Configuration content,
+credentials, hostnames, and exception text are forbidden. Audit sink failure continues to drop
+diagnostics without affecting startup. Authentication and policy enforcement are unchanged.
 
 ## Acceptance tests
 
