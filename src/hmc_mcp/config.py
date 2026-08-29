@@ -392,6 +392,14 @@ class NoProfileSelectedError(ConfigError):
     """Raised when no argument, environment variable, or default selects a profile."""
 
 
+@dataclass(frozen=True)
+class _ConfigDocument:
+    """One invocation's resolved path and parsed configuration document."""
+
+    path: Path | None
+    data: dict[str, Any]
+
+
 def resolve_config_path() -> Path | None:
     """Return the platform-native config.toml path, or None when absent.
 
@@ -487,6 +495,13 @@ def _read_config_document(path: Path) -> dict[str, Any]:
         raise ConfigError(
             f"{path}: TOML parse error: document nesting is too deep"
         ) from exc
+
+
+def _load_config_document() -> _ConfigDocument:
+    """Resolve and read one fresh configuration document snapshot."""
+    path = resolve_config_path()
+    data = {} if path is None else _read_config_document(path)
+    return _ConfigDocument(path, data)
 
 
 def _coerce_profiles(raw: Any, path: str | Path | None) -> dict[str, Any]:
@@ -890,7 +905,12 @@ def load_profile(
     return _load_profile_from_document(doc, path, profile)
 
 
-def build_config(profile: str | None = None, **overrides: Any) -> HMCConfig:
+def build_config(
+    profile: str | None = None,
+    *,
+    document: _ConfigDocument | None = None,
+    **overrides: Any,
+) -> HMCConfig:
     """Build configuration from CLI options, environment, and a TOML profile.
 
     Environment-only construction is used when nothing selects a profile. Errors
@@ -900,10 +920,14 @@ def build_config(profile: str | None = None, **overrides: Any) -> HMCConfig:
 
     explicit_host = filtered.get("host")
     if not explicit_host and not env_var_value("HMC_HOST"):
-        config_path = resolve_config_path()
+        config_path = document.path if document is not None else resolve_config_path()
         if config_path is not None or profile or os.environ.get("HMC_PROFILE"):
             try:
-                base = load_profile(profile=profile)
+                base = (
+                    _load_profile_from_document(document.data, document.path, profile)
+                    if document is not None
+                    else load_profile(profile=profile)
+                )
                 if filtered:
                     merged = {
                         key: getattr(base, key) for key in base.model_fields_set
