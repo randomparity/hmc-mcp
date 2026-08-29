@@ -151,6 +151,71 @@ def _authorize(grants=None, tool="hmc_power_off_lpar", **arguments):
     return None
 
 
+def test_serve_records_every_effective_power_guard(records, lab_profile):
+    lab_profile.write_text(
+        "[profiles.lab]\n"
+        'host = "lab.invalid"\n'
+        "authorize_power_operations = true\n"
+        "\n[profiles.prod]\n"
+        'host = "prod.invalid"\n'
+        "authorize_power_operations = false\n"
+    )
+    policy = _policy(
+        [
+            {
+                "tools": ["hmc_power_off_lpar"],
+                "connections": ["lab", "prod"],
+                "targets": "all-targets",
+            }
+        ]
+    )
+    assert not policy.permits_tool("hmc_effective_permissions")
+
+    application = server_app._serve_application(False, policy)
+
+    assert application is not None
+    assert [
+        record for record in records if record["event"] == "power-ownership-guard"
+    ] == [
+        {
+            "time": records[-2]["time"],
+            "event": "power-ownership-guard",
+            "connection": "lab",
+            "authorize_power_operations": True,
+            "source": "profile",
+            "detail": None,
+        },
+        {
+            "time": records[-1]["time"],
+            "event": "power-ownership-guard",
+            "connection": "prod",
+            "authorize_power_operations": False,
+            "source": "profile",
+            "detail": None,
+        },
+    ]
+
+
+def test_serve_records_an_unresolved_power_guard_without_failing(records, lab_profile):
+    lab_profile.write_text("this is not valid toml [[[\n")
+    policy = _policy(
+        [
+            {
+                "tools": ["hmc_power_off_lpar"],
+                "connections": ["lab"],
+                "targets": "all-targets",
+            }
+        ]
+    )
+
+    application = server_app._serve_application(False, policy)
+
+    assert application is not None
+    assert records[-1]["authorize_power_operations"] is None
+    assert records[-1]["source"] == "unresolved"
+    assert records[-1]["detail"] == "ConfigError"
+
+
 def test_a_permitted_call_emits_one_record_describing_it(records):
     """Spec 16."""
     assert _authorize() is None

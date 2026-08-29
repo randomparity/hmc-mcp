@@ -77,6 +77,7 @@ Event = Literal[
     "install-attempted",
     "ownership-denied",
     "ownership-override",
+    "power-ownership-guard",
     "records-dropped",
     "tls-verification-disabled",
 ]
@@ -441,6 +442,29 @@ def record_tls_verification_disabled(*, host: str, source: str) -> None:
             "event": event,
             "host": _value(host),
             "source": _value(source),
+        }
+
+    emit(_DENY_LEVEL, build)
+
+
+def record_power_ownership_guard(
+    *,
+    connection: str,
+    authorize_power_operations: bool | None,
+    source: str,
+    detail: str | None,
+) -> None:
+    """Emit the effective ownership guard for one startup connection."""
+
+    def build() -> dict[str, Any]:
+        event: Event = "power-ownership-guard"
+        return {
+            "time": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            "connection": _value(connection),
+            "authorize_power_operations": authorize_power_operations,
+            "source": _value(source),
+            "detail": _value(detail),
         }
 
     emit(_DENY_LEVEL, build)

@@ -62,6 +62,7 @@ from ._app import (
     create_mcp as _create_base_mcp,
 )
 from .authorization.access_policy import AccessPolicy, unboundable_effect_tools
+from .audit import records as audit
 from .audit.sink import (
     StreamSafeFormatter,
     install_audit_sink,
@@ -80,6 +81,7 @@ from .server_tools.command import (
 from .server_tools.permissions import (
     TOOL_NAME as PERMISSIONS_TOOL_NAME,
     register_permissions_tool,
+    resolve_power_guards,
 )
 
 
@@ -482,6 +484,13 @@ def _serve_application(
     # process is known to be serving and py.warnings has its bounded handler.
     logging.captureWarnings(True)
     install_denial_log_filter()
+    for guard in resolve_power_guards(access_policy):
+        audit.record_power_ownership_guard(
+            connection=guard.connection,
+            authorize_power_operations=guard.authorize_power_operations,
+            source=guard.source,
+            detail=guard.detail,
+        )
     _warn(_startup_warnings(tool_count, access_policy, enable_arbitrary_command))
     return application
 

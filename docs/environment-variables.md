@@ -171,14 +171,12 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   and it is another reason to set `HMC_AUTHORIZE_POWER_OPERATIONS` rather than the
   TOML key.
 
-  One limit remains, and it is a tradeoff rather than advice: an access policy that
-  does not grant `hmc_effective_permissions` withholds the tool, and then neither
-  route answers for the running process — but the tool also discloses the whole
-  policy to the MCP client (ADR 0037). Weigh those against each other for your
-  deployment. There is no second in-process channel for the value today: with the
-  tool withheld, `config show` and its three limits above are all that is left.
-  #533 tracks announcing the effective value at `serve` startup, which would not
-  depend on the tool being granted.
+  An access policy can withhold `hmc_effective_permissions` when disclosing the whole policy to
+  the MCP client is inappropriate (ADR 0037). The served process still emits one
+  `power-ownership-guard` record per reachable connection to the operator-owned audit stream at
+  startup; see [Authorization audit records](authorization-audit.md#event-power-ownership-guard).
+  This is the structured operator channel for the effective value when the inspection tool is
+  unavailable, subject to the audit stream's documented best-effort delivery and drop semantics.
 
   When the setting is off, `power_lpar` reads no ownership token and opens no SSH
   connection — the call path is exactly what it was before this setting existed.

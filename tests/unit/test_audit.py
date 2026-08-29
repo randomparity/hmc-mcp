@@ -69,6 +69,8 @@ Not spec-numbered, each pinning something a review round found:
   test_the_tls_record_carries_host_and_source          (#379)
   test_an_empty_tls_host_renders_empty_and_is_bounded  (#379)
   test_a_long_tls_source_stays_bounded                 (#379)
+  test_the_power_guard_record_carries_the_effective_value (#533, ADR 0107)
+  test_the_power_guard_record_is_emitted_at_warning       (#533, ADR 0107)
 
 #543, the attribution read's agreement with the loader that stamps the LPARs:
 
@@ -492,6 +494,7 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
         "install-attempted",
         "ownership-denied",
         "ownership-override",
+        "power-ownership-guard",
         "records-dropped",
         "tls-verification-disabled",
     }
@@ -517,6 +520,14 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
     lines = _capture()
     audit.record_install_attempted(
         system="s", partition="p", log_path="/l", host="hmc.test", agent_id="a"
+    )
+    emitted.add(_one(lines)["event"])
+    lines = _capture()
+    audit.record_power_ownership_guard(
+        connection="lab",
+        authorize_power_operations=True,
+        source="profile",
+        detail=None,
     )
     emitted.add(_one(lines)["event"])
     emitted.add(json.loads(audit_sink._drop_marker(1))["event"])
@@ -701,6 +712,57 @@ def test_a_long_tls_source_stays_bounded():
     lines = _capture()
     audit.record_tls_verification_disabled(host="hmc.test", source="s" * 500)
     assert len(_one(lines)["source"]) == audit.MAX_VALUE_LENGTH
+
+
+def test_the_power_guard_record_carries_the_effective_value():
+    lines = _capture()
+    audit.record_power_ownership_guard(
+        connection="lab",
+        authorize_power_operations=False,
+        source="profile",
+        detail=None,
+    )
+    record = _one(lines)
+    assert list(record) == [
+        "time",
+        "event",
+        "connection",
+        "authorize_power_operations",
+        "source",
+        "detail",
+    ]
+    assert record == {
+        "time": record["time"],
+        "event": "power-ownership-guard",
+        "connection": "lab",
+        "authorize_power_operations": False,
+        "source": "profile",
+        "detail": None,
+    }
+
+
+def test_the_power_guard_record_is_emitted_at_warning():
+    levels: list[int] = []
+    messages: list[str] = []
+
+    class _Level(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            levels.append(record.levelno)
+            messages.append(record.getMessage())
+
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
+    logger.addHandler(_Level())
+    logger.setLevel(logging.INFO)
+    audit.record_power_ownership_guard(
+        connection="c" * 500,
+        authorize_power_operations=None,
+        source="s" * 500,
+        detail="d" * 500,
+    )
+    assert levels == [logging.WARNING]
+    record = json.loads(messages[0])
+    for field in ("connection", "source", "detail"):
+        assert len(record[field]) == audit.MAX_VALUE_LENGTH
 
 
 def test_the_install_record_names_the_target_and_the_log_path():
