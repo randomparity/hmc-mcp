@@ -22,7 +22,7 @@ Spec item -> node id:
 
 The inventory guard below is per-module by construction, as the one in
 ``tests/unit/test_audit.py`` is: it reads this file and asserts every node id named
-above still exists. R11/R11a live in ``tests/app/test_cli_config.py`` and R1-R5b in
+above still exists. R11/R11a live in ``tests/app/test_cli_commands/config.py`` and R1-R5b in
 ``tests/app/test_fail_closed_startup.py``, each with its own header and guard.
 """
 
@@ -34,7 +34,7 @@ from pathlib import Path
 
 import pytest
 
-from hmc_mcp.access_policy import (
+from hmc_mcp.authorization.access_policy import (
     ALL_TARGETS_TOKEN,
     DEFAULT_CONNECTION_TOKEN,
     AccessPolicyError,
@@ -42,7 +42,7 @@ from hmc_mcp.access_policy import (
     compile_access_policy,
 )
 from hmc_mcp.config import ConfigError
-from hmc_mcp.legacy_policy import (
+from hmc_mcp.cli_commands.legacy_policy import (
     GENERATED_SOURCE,
     LEGACY_POLICY_NAME,
     compile_legacy_policy,

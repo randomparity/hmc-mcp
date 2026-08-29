@@ -4,7 +4,7 @@
 
 Add four stable system-scoped inventory contracts, backed by the one read projection admitted by
 ADR 0053 and explicit unavailable results for the three selector-only SR-IOV families. A strict SSH
-boundary returns rows; `operations_pcie.py` owns immutable models and normalization; Python, MCP,
+boundary returns rows; `operations/pcie.py` owns immutable models and normalization; Python, MCP,
 and CLI adapters only serialize and present those models.
 
 Tech stack: Python 3.13, immutable dataclasses, `Decimal`, Typer, FastMCP, pytest, `uv`.
@@ -19,10 +19,10 @@ Tech stack: Python 3.13, immutable dataclasses, `Decimal`, Typer, FastMCP, pytes
 ## File map
 
 - `src/hmc_mcp/ssh_commands.py`: exact dedicated-slot command and strict row parser call.
-- `src/hmc_mcp/operations_pcie.py`: result/model schemas and four system-selector-aware operations.
+- `src/hmc_mcp/operations/pcie.py`: result/model schemas and four system-selector-aware operations.
 - `src/hmc_mcp/api.py`: supported reusable exports.
-- `src/hmc_mcp/server_system_resources.py`, `src/hmc_mcp/server.py`: MCP adapters/exports.
-- `src/hmc_mcp/cli_network.py`: CLI commands and rendering.
+- `src/hmc_mcp/server_tools/system_resources.py`, `src/hmc_mcp/server.py`: MCP adapters/exports.
+- `src/hmc_mcp/cli_commands/network.py`: CLI commands and rendering.
 - `tests/system/test_normalized_pcie_inventory.py`: SSH and normalization behavior.
 - `tests/unit/test_pcie_inventory_contract.py`: models, API, MCP, and CLI contracts.
 - `README.md`: public command/tool/schema documentation.
@@ -89,7 +89,7 @@ security metadata targeting `managed_system`.
    forwarding, and serialized available/unavailable shapes.
 2. Run `uv run pytest -q tests/unit/test_pcie_inventory_contract.py`; expect failures because the
    exports/tools are absent.
-3. Implement the API exports and thin MCP adapters using `_ssh_with_client` and `asdict`.
+3. Implement the API exports and thin MCP adapters using `ssh_with_client` and `asdict`.
 4. Run the unit contract tests and `uv run python scripts/smoke_mcp.py`; expect all tests and the
    handshake to pass. Commit as `feat: expose normalized PCIe inventory tools`.
 

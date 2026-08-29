@@ -6,6 +6,6 @@
 
 | Tool | Effect | Operation | Target | Summary |
 | --- | --- | --- | --- | --- |
-| `hmc_get_job` | `read` | `job.get` | `job` | Get one HMC job by UUID, optionally using its submission SELF link. |
+| `hmc_get_job` | `read` | `job.get` | `job` | Get one HMC job by UUID or JobID, optionally using its submission SELF link. |
 | `hmc_list_recent_jobs` | `read` | `job.list` | `console` | List recent jobs. |
 | `hmc_wait_for_job` | `read` | `job.wait` | `job` | Poll a job and return its normalized status, timeout, and error outcome. |

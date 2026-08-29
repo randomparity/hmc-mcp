@@ -54,13 +54,13 @@ Shared type aliases expose finite schemas at the public boundary:
 
 - `PcmCategory`: `ManagedSystem` or `LogicalPartition`, used by all six PCM tools and
   their presentation-neutral operations;
-- `ManagedSystemState`: the documented HMC managed-system states used by the system list
-  filter;
 - `PartitionState`: documented partition states used by the LPAR and VIOS list filters;
 - `ProcessorCompatibilityMode`: `default` plus the POWER modes supported across the
   README's HMC V8–V11 compatibility range.
 
 The aliases constrain MCP and CLI schemas but do not add redundant runtime validators.
+Managed-system state filters deliberately remain open strings because HMC can return
+exact state values beyond a client-side documented vocabulary.
 Processor-mode documentation continues to direct callers to
 `hmc_get_proc_compat_modes`, because each managed system supports only a subset.
 

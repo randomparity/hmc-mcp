@@ -4,7 +4,7 @@
 PlatformUpdate job.
 
 **Architecture:** `jobs.py` owns explicit payload types and the pure JSON envelope builder.
-`client.py` owns the JSON PUT transport. `server_updates.py` gates HMC compatibility, resolves the
+`client.py` owns the JSON PUT transport. `server_tools/updates.py` gates HMC compatibility, resolves the
 target, submits, and optionally waits through existing lifecycle helpers.
 
 **Tech stack:** Python 3.11+, strict Pydantic models, HTTPX, pytest/respx, FastMCP.
@@ -47,7 +47,7 @@ tested; empty adapter lists and all-NoUpdate/no-adapter requests fail.
 
 ## Task 2: Add narrow JSON job submission
 
-**Files:** modify `src/hmc_mcp/client.py`; modify `tests/system/test_update_upgrade.py`.
+**Files:** modify `src/hmc_mcp/client/__init__.py`; modify `tests/system/test_update_upgrade.py`.
 
 **Interfaces:** define
 `HMCClient.submit_platform_update(system_uuid: str, job_request: Mapping[str, Any]) -> dict[str, Any] | None`.
@@ -73,7 +73,7 @@ Acceptance: the JSON boundary is exact and XML callers do not change.
 
 ## Task 3: Replace the firmware tool behavior
 
-**Files:** modify `src/hmc_mcp/server_updates.py`; modify `tests/app/test_server_tools.py`; modify
+**Files:** modify `src/hmc_mcp/server_tools/updates.py`; modify `tests/app/test_server_tools.py`; modify
 `tests/system/test_update_upgrade.py`; modify `tests/app/test_tool_security.py` where schema assertions
 name the old argument; modify `tests/unit/test_job_lifecycle.py` where the obsolete repository schema
 is imported and asserted.

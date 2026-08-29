@@ -124,8 +124,8 @@ that remains entirely on the NIM master. Any OS-install automation therefore
 needs NIM-master credentials regardless of what the HMC is asked to do.
 
 **Tool disposition is out of scope here.** `hmc_install_lpar_os`
-(`src/hmc_mcp/server_vios.py:193`, endpoint `:253`) and `hmc_install_vios`
-(`src/hmc_mcp/server_vios.py:127`, endpoint `:182`) POST to operations that no
+(`src/hmc_mcp/server_tools/vios.py:193`, endpoint `:253`) and `hmc_install_vios`
+(`src/hmc_mcp/server_tools/vios.py:127`, endpoint `:182`) POST to operations that no
 surveyed HMC advertises — they are phantom tools, not under-parameterized
 ones. Their removal or rework is tracked in issue #410 (operator decision
 pending); this ADR deliberately changes no source code.

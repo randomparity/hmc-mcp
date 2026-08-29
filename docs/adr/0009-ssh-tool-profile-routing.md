@@ -10,7 +10,7 @@ Issue #127 (part of epic #123) extends per-call profile routing from
 REST-backed tools (ADR 0008) to SSH-backed tools. Before this change the
 SSH layer always derives credentials from the environment defaults:
 
-- `_ssh_with_client` in `_app.py` constructs `HMCConfig(_env_file=None)` with
+- `ssh_with_client` in `_app.py` constructs `HMCConfig(_env_file=None)` with
   no profile argument.
 - `run_hmc_cli` in `ssh.py` constructs `HMCConfig()` unconditionally.
 - The two REST-first/SSH-fallback resolvers (`_resolve_system_name`,
@@ -18,7 +18,7 @@ SSH layer always derives credentials from the environment defaults:
   resolution for SSH tools also uses the wrong client when a caller-supplied
   profile differs from the env default.
 
-ADR 0008 explicitly excluded `_ssh_with_client` and `run_hmc_cli`, deferring
+ADR 0008 explicitly excluded `ssh_with_client` and `run_hmc_cli`, deferring
 them to this issue.
 
 ## Decision
@@ -26,11 +26,11 @@ them to this issue.
 ### Public API change
 
 Add `profile: str | None = None` as the *last* keyword parameter on every
-`@mcp.tool` function whose body calls `_ssh_with_client` or `run_hmc_cli`
-directly. The three tool bodies in `server_vios.py` and `server_system.py`
+`@mcp.tool` function whose body calls `ssh_with_client` or `run_hmc_cli`
+directly. The three tool bodies in `server_tools/vios.py` and `server_tools/system.py`
 that call `run_hmc_cli` directly are updated to pass the profile through.
 
-### `_ssh_with_client` signature
+### `ssh_with_client` signature
 
 Add `profile: str | None = None` as a keyword-only parameter. Propagate it to:
 
@@ -57,7 +57,7 @@ and pass it in.
 `asyncio.run` loop that was already entered by the tool. `load_profile` is a
 synchronous I/O call; invoking it inside the already-running event loop would
 require a thread-pool escape. Accepting a pre-built config avoids that complexity
-and keeps the call-site pattern symmetric with `_ssh_with_client`.
+and keeps the call-site pattern symmetric with `ssh_with_client`.
 
 ### No cross-call state
 
@@ -79,7 +79,7 @@ same as the config-file owner. No per-caller authorization check is added.
   removed.
 - `run_hmc_cli` grows an optional `config` parameter; callers that omit it
   continue to work unchanged.
-- `_ssh_with_client` grows a `profile` keyword parameter; existing call sites
+- `ssh_with_client` grows a `profile` keyword parameter; existing call sites
   that do not pass it continue to work unchanged.
 
 ## Considered & rejected

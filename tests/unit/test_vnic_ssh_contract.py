@@ -5,7 +5,7 @@ import shlex
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.ssh_commands import (
+from hmc_mcp.ssh.network import (
     add_vnic_backing,
     list_vnic_backing_rows,
     list_vnic_rows,
@@ -36,7 +36,7 @@ async def test_list_vnic_rows_requests_exact_fields(monkeypatch, config) -> None
         calls.append(command)
         return output
 
-    monkeypatch.setattr("hmc_mcp.ssh_commands.run_hmc_command", fake_run)
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", fake_run)
     rows = await list_vnic_rows(config, "system one", "client one")
 
     assert rows[0]["slot_num"] == "2"
@@ -65,7 +65,7 @@ async def test_list_vnic_backing_rows_accepts_hmc_empty_result(
     async def fake_run(_config, _command: str) -> str:
         return "No results were found.\n"
 
-    monkeypatch.setattr("hmc_mcp.ssh_commands.run_hmc_command", fake_run)
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", fake_run)
     assert await list_vnic_backing_rows(config, "system") == []
 
 
@@ -83,7 +83,7 @@ async def test_list_vnic_backing_rows_requests_exact_fields(
         calls.append(command)
         return fields + "\n"
 
-    monkeypatch.setattr("hmc_mcp.ssh_commands.run_hmc_command", fake_run)
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", fake_run)
     assert await list_vnic_backing_rows(config, "system one") == []
     assert shlex.split(calls[0]) == [
         "lshwres",
@@ -107,7 +107,7 @@ async def test_collectors_reject_malformed_rows(
     async def fake_run(_config, _command: str) -> str:
         return output
 
-    monkeypatch.setattr("hmc_mcp.ssh_commands.run_hmc_command", fake_run)
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", fake_run)
     with pytest.raises(ValueError):
         await list_vnic_backing_rows(config, "system")
 
@@ -120,7 +120,7 @@ async def test_read_vios_identity_requires_exactly_one_row(monkeypatch, config) 
         calls.append(_command)
         return "name,lpar_id,lpar_env\nvios,100,vioserver\n"
 
-    monkeypatch.setattr("hmc_mcp.ssh_commands.run_hmc_command", fake_run)
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", fake_run)
     assert await read_vios_identity(config, "system", "vios") == {
         "name": "vios",
         "lpar_id": "100",
@@ -148,7 +148,7 @@ async def test_add_vnic_uses_p_and_quotes_whole_payload(monkeypatch, config) -> 
         calls.append(command)
         return "added"
 
-    monkeypatch.setattr("hmc_mcp.ssh_commands.run_hmc_command", fake_run)
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", fake_run)
     result = await add_vnic_backing(
         config, "system one", "client one", "sriov/vios name/100/1/1/2; touch nope", 7
     )
@@ -179,7 +179,7 @@ async def test_add_vnic_backing_quotes_a_multi_device_list(monkeypatch, config) 
         calls.append(command)
         return "added"
 
-    monkeypatch.setattr("hmc_mcp.ssh_commands.run_hmc_command", fake_run)
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", fake_run)
     result = await add_vnic_backing(
         config, "system-a", "client-a", "sriov/vios1/1/0/2,sriov/vios2/2/0/2", 7
     )
@@ -197,7 +197,7 @@ async def test_add_vnic_backing_refuses_record_structure_in_a_device(
     monkeypatch, config
 ) -> None:
     """`=` inside a device value is refused; only the comma is quotable."""
-    from hmc_mcp.ssh import HMCCLIError
+    from hmc_mcp.ssh.transport import HMCCLIError
 
     with pytest.raises(HMCCLIError, match="equals sign"):
         await add_vnic_backing(config, "system-a", "client-a", "sriov/dev=1", 7)
@@ -211,7 +211,7 @@ async def test_remove_vnic_uses_p_and_s(monkeypatch, config) -> None:
         calls.append(command)
         return "removed"
 
-    monkeypatch.setattr("hmc_mcp.ssh_commands.run_hmc_command", fake_run)
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", fake_run)
     assert (
         await remove_vnic_slot(config, "system one", "client one", "slot one")
         == "removed"

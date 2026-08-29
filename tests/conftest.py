@@ -12,8 +12,8 @@ import httpx
 import pytest
 import respx
 
-from hmc_mcp import audit
-from hmc_mcp.audit import AUDIT_LOGGER_NAME
+from hmc_mcp.audit import sink as audit_sink
+from hmc_mcp.audit.sink import AUDIT_LOGGER_NAME
 from hmc_mcp.config import HMCConfig
 
 
@@ -78,12 +78,41 @@ def default_power_ownership_guard_off(monkeypatch):
     Every casing, not just the canonical one: `HMCConfig` leaves
     pydantic-settings' `case_sensitive` at its `False` default, so a developer or
     CI runner exporting `hmc_authorize_power_operations` sets the field exactly
-    as the upper-case spelling does — and `server_permissions` reads the casing
+    as the upper-case spelling does — and `server_tools.permissions` reads the casing
     itself to decide the reported `source`. Clearing only the exact name leaves
     both observable in the tests that pin them.
     """
     spellings = [n for n in os.environ if n.upper() == "HMC_AUTHORIZE_POWER_OPERATIONS"]
     for name in spellings:
+        monkeypatch.delenv(name, raising=False)
+
+
+#: `HMC_*` variables the suite depends on being unset. Not all thirteen fields —
+#: only the names a test actually asserts the absence of, each demonstrated to red
+#: the suite when exported.
+_UNSET_FOR_TESTS = ("HMC_AGENT_ID", "HMC_SCHEMA_VERSION", "HMC_ISO_URL_ALLOWLIST")
+
+
+@pytest.fixture(autouse=True)
+def no_ambient_hmc_settings(monkeypatch):
+    """Give every test an unset value for each of those, in every casing.
+
+    The same hazard as the fixture above, and #543 widened it: `agent_id` reaches
+    the `X-Audit-Memento` header, the ADR 0011 ownership stamp, and — since the
+    authorization record's attribution stopped reading the variable exact-case —
+    the ADR 0040 audit stream as well. A developer or CI runner exporting
+    `hmc_agent_id`, which is the export #543 exists because operators make, turns
+    every one of those into a value the assertions do not expect, and the failure
+    message names a claimant rather than a casing. `hmc_schema_version` and
+    `hmc_iso_url_allowlist` reached the client's header tests and
+    `from_mapping`'s isolation test the same way.
+
+    A test that wants one of these sets it in its own body, which runs after this.
+    """
+    # Folded down, matching pydantic-settings: an upper-fold both misses spellings
+    # the loader reads and matches spellings it ignores.
+    wanted = {name.lower() for name in _UNSET_FOR_TESTS}
+    for name in [n for n in os.environ if n.lower() in wanted]:
         monkeypatch.delenv(name, raising=False)
 
 
@@ -107,7 +136,7 @@ def _restore_third_party_loggers() -> None:
 def isolate_audit_logging():
     """Give every test a pristine ``hmc_mcp.audit`` logger, and restore it after.
 
-    ``audit.install_audit_sink`` mutates process-global state: it sets
+    ``audit_sink.install_audit_sink`` mutates process-global state: it sets
     ``propagate = False`` unconditionally, attaches a handler, and sets a level.
     Several tests call it directly, and ``server._serve_application`` calls it too
     — which ``tests/app/test_capability_ceiling.py`` and
@@ -175,11 +204,11 @@ def isolate_audit_logging():
         # `flush`/`drain`.
         stderr, sys.stderr = sys.stderr, io.StringIO()
         try:
-            audit._SINK.drain(audit._DRAIN_TIMEOUT)
+            audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT)
         finally:
             sys.stderr = stderr
-        with audit._SINK._state:
-            audit._SINK._dropped = 0
+        with audit_sink._sink()._state:
+            audit_sink._sink()._dropped = 0
 
 
 @dataclass
@@ -237,7 +266,7 @@ def full_stderr_pipe():
         yield FullPipe(stream=stream, read_fd=read_fd, capacity=capacity)
     finally:
         os.close(read_fd)
-        audit._SINK.drain(audit._DRAIN_TIMEOUT)
+        audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT)
         try:
             stream.close()
         except OSError:
@@ -311,9 +340,23 @@ def mock_uuid_resolution(
         )
     )
     if lpar_uuid is not None:
+        lpar_entry = LPAR_ENTRY.format(uuid=lpar_uuid, name=lpar_name)
         router.get(f"/rest/api/uom/LogicalPartition/{lpar_uuid}").mock(
+            return_value=httpx.Response(200, text=lpar_entry)
+        )
+        feed_entry = (
+            lpar_entry.split("?>", 1)[1]
+            .strip()
+            .replace(' xmlns="http://www.w3.org/2005/Atom"', "", 1)
+        )
+        router.get(f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition").mock(
             return_value=httpx.Response(
-                200, text=LPAR_ENTRY.format(uuid=lpar_uuid, name=lpar_name)
+                200,
+                text=(
+                    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                    '<feed xmlns="http://www.w3.org/2005/Atom">'
+                    f"{feed_entry}</feed>"
+                ),
             )
         )
 

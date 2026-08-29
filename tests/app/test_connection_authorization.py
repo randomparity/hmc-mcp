@@ -17,10 +17,15 @@ from fastmcp.exceptions import ToolError
 
 from conftest import make_config
 
-from hmc_mcp import audit, server_command, server_lpars
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
-from hmc_mcp.legacy_policy import compile_legacy_policy
-from hmc_mcp.dispatch_scope import dispatch_authorizer
+from hmc_mcp.audit import sink as audit_sink
+from hmc_mcp.server_tools import command as server_command
+from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
+from hmc_mcp.authorization.access_policy import (
+    DEFAULT_CONNECTION_TOKEN,
+    compile_access_policy,
+)
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.tool_registry import ToolSecurity, authorized
 
@@ -125,8 +130,8 @@ def _registered(application) -> dict:
 
 
 # Every name a handler could reach an HMC through, patched at *every* module
-# that rebound it at import. Patching only `hmc_mcp.common.build_config` proves
-# nothing: `server_vios`, `server_command`, and `_app` each hold their own
+# that rebound it at import. Patching only `hmc_mcp.config.build_config` proves
+# nothing: `server_tools.vios`, `server_command`, and `_app` each hold their own
 # reference, so a call through one of those would sail past an unpatched source
 # module and the test would still be green.
 _OUTBOUND_NAMES = ("build_config", "client_from_env", "run_hmc_cli", "run_hmc_command")
@@ -138,7 +143,7 @@ def _seal_every_outbound_path(monkeypatch, opened: list[str]):
     import pkgutil
 
     import hmc_mcp
-    from hmc_mcp import client as client_module
+    from hmc_mcp.client import core as client_module
 
     def _forbidden(label):
         def _refuse(*args, **kwargs):
@@ -151,11 +156,12 @@ def _seal_every_outbound_path(monkeypatch, opened: list[str]):
     monkeypatch.setattr("httpx.AsyncClient.__init__", _forbidden("httpx.AsyncClient"))
 
     sealed = 0
-    for info in pkgutil.iter_modules(hmc_mcp.__path__):
-        module = importlib.import_module(f"hmc_mcp.{info.name}")
+    for info in pkgutil.walk_packages(hmc_mcp.__path__, prefix="hmc_mcp."):
+        module = importlib.import_module(info.name)
+        label = info.name.removeprefix("hmc_mcp.")
         for name in _OUTBOUND_NAMES:
             if callable(getattr(module, name, None)):
-                monkeypatch.setattr(module, name, _forbidden(f"{info.name}.{name}"))
+                monkeypatch.setattr(module, name, _forbidden(f"{label}.{name}"))
                 sealed += 1
     assert sealed > 10, f"only {sealed} outbound bindings sealed; the sweep missed"
 
@@ -220,7 +226,7 @@ def test_a_permitted_call_reaches_the_handler(monkeypatch):
         reached.append(profile)
         raise RuntimeError("stop before any HMC request")
 
-    monkeypatch.setattr(server_lpars, "client_from_env", _capture)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _capture)
 
     application = create_mcp(_policy(LAB_ONLY))
     with pytest.raises(ToolError):
@@ -403,7 +409,7 @@ def test_compositions_authorize_independently(monkeypatch):
         reached.append(profile)
         raise RuntimeError("stop before any HMC request")
 
-    monkeypatch.setattr(server_lpars, "client_from_env", _capture)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _capture)
 
     restricted = create_mcp(_policy(LAB_ONLY))
     # A policy granting the connection the call selects, standing in for the
@@ -561,7 +567,7 @@ def test_the_permissions_site_routes_through_the_shared_helper(monkeypatch):
     that this site honours the same contract as the other two rather than
     deciding for itself.
     """
-    from hmc_mcp import server_permissions
+    from hmc_mcp.server_tools import permissions as server_permissions
 
     calls: list[tuple] = []
     real = server_permissions.authorized
@@ -642,9 +648,10 @@ def _stderr(capsys) -> str:
     width, so an assertion against the unnormalized text asserts against the
     terminal size of whoever ran it.
     """
-    from hmc_mcp import audit
 
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
+        "the sink must settle, not stall"
+    )
     return " ".join(capsys.readouterr().err.split())
 
 
@@ -1016,9 +1023,9 @@ def test_a_hostile_tool_error_cannot_forge_an_audit_record(denial_filter, capsys
     with pytest.raises(ToolError):
         _call(application, "hostile", {})
 
-    from hmc_mcp import audit
-
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
+        "the sink must settle, not stall"
+    )
     err = capsys.readouterr().err
     for line in err.splitlines():
         try:
@@ -1109,7 +1116,7 @@ def test_the_package_binding_leaves_the_audit_stream_unprefixed(capsys):
     """
     _serve(_policy(LAB_ONLY))
 
-    audit_logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    audit_logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     assert audit_logger.propagate is False
     assert len(audit_logger.handlers) == 1
     assert audit_logger.handlers[0].formatter is None

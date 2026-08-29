@@ -1,15 +1,16 @@
 """Tests for VIOS lifecycle tools: create, delete, install (CLI bridge)."""
 
-import httpx
-import pytest
 from unittest.mock import patch
 
+import httpx
+import pytest
+
+from hmc_mcp.documents import LparResources, build_vios_document
 from hmc_mcp.errors import HMCError
-from hmc_mcp.ssh_commands import (
+from hmc_mcp.ssh.install import (
     INSTALLIOS_PID_PREFIX,
     build_installios_command,
 )
-from hmc_mcp.documents import LparResources, build_vios_document
 
 BASE = "https://hmc.test"
 
@@ -136,7 +137,7 @@ def _mock_resolution(mock_hmc) -> None:
 
 def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
     """The public VIOS target is resolved before the install submission."""
-    from hmc_mcp.server import hmc_install_vios
+    from hmc_mcp.server_tools.vios import hmc_install_vios as hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -148,7 +149,7 @@ def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
         submitted["cmd"] = cmd
         return f"{INSTALLIOS_PID_PREFIX}4242\n"
 
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", new=fake_run_hmc_command):
+    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fake_run_hmc_command):
         result = hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)
 
     assert result["partition"] == "vios1"
@@ -170,7 +171,7 @@ def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
 
 def test_install_vios_tool_rejects_invalid_arguments_before_any_io(monkeypatch):
     """Validator failures raise before an SSH session is opened."""
-    from hmc_mcp.server import hmc_install_vios
+    from hmc_mcp.server_tools.vios import hmc_install_vios as hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -188,7 +189,7 @@ def test_install_vios_tool_rejects_invalid_arguments_before_any_io(monkeypatch):
 
 
 def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc):
-    from hmc_mcp.server import hmc_install_vios
+    from hmc_mcp.server_tools.vios import hmc_install_vios as hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -203,14 +204,14 @@ def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc
     async def fail(config, cmd):  # pragma: no cover — must never be reached
         raise AssertionError("run_installios must not be called")
 
-    with patch("hmc_mcp.operations_install.run_installios", new=fail):
+    with patch("hmc_mcp.operations.install.run_installios", new=fail):
         with pytest.raises(ValueError, match="No VIOS named"):
             hmc_install_vios("nosuchvios", "sys1", **_INSTALL_KWARGS)
 
 
 def test_install_vios_ssh_failure_surfaces_as_cli_error(monkeypatch, mock_hmc):
     """A failed installios submission raises HMCError out of the tool."""
-    from hmc_mcp.server import hmc_install_vios
+    from hmc_mcp.server_tools.vios import hmc_install_vios as hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -220,6 +221,6 @@ def test_install_vios_ssh_failure_surfaces_as_cli_error(monkeypatch, mock_hmc):
     async def fail(config, cmd):
         raise HMCError("SSH command timed out after 30s")
 
-    with patch("hmc_mcp.ssh_commands.run_hmc_command", new=fail):
+    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fail):
         with pytest.raises(HMCError, match="timed out"):
             hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)

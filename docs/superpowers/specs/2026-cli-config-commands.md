@@ -66,10 +66,10 @@ access are unchanged from the loader (ADR-0006).
 
 | File | Role |
 |---|---|
-| `src/hmc_mcp/cli_config.py` | New — the `config_app` Typer and three command bodies |
-| `src/hmc_mcp/cli_app.py` | Add `config_app = typer.Typer(...)`, `app.add_typer(config_app, name="config")` |
+| `src/hmc_mcp/cli_commands/config.py` | New — the `config_app` Typer and three command bodies |
+| `src/hmc_mcp/cli_commands/app.py` | Add `config_app = typer.Typer(...)`, `app.add_typer(config_app, name="config")` |
 | `src/hmc_mcp/cli.py` | Add `from . import cli_config` import (side-effect: registers commands) |
-| `tests/app/test_cli_config.py` | New — all test cases for the config commands |
+| `tests/app/test_cli_commands/config.py` | New — all test cases for the config commands |
 
 ### `config init`
 

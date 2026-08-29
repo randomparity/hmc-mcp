@@ -5,12 +5,24 @@ import pytest
 
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient
-from hmc_mcp.operations_storage import (
+from hmc_mcp.client.core import HMCClient
+from hmc_mcp.operations.storage import (
     get_media_repository,
     list_optical_media,
     unmount_optical_media,
 )
+
+
+@pytest.fixture(autouse=True)
+def _authorize_lpar_mutations(monkeypatch):
+    async def authorize(hmc, system, lpar, **_kwargs):
+        from hmc_mcp.resource_identity import resolve_lpar_uuid
+
+        return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation", authorize
+    )
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 VG_UUID = "vg-uuid-0001"
@@ -54,7 +66,7 @@ async def test_get_media_repository_operation(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_WITH_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        result = await get_media_repository(hmc, VIOS_UUID, VG_UUID)
+        result = await get_media_repository(hmc, None, VIOS_UUID, VG_UUID)
 
     assert route.called
     assert result is not None
@@ -91,7 +103,7 @@ async def test_list_optical_media_operation(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=vg_entry_with_media))
 
     async with HMCClient(make_config()) as hmc:
-        media_list = await list_optical_media(hmc, VIOS_UUID, VG_UUID)
+        media_list = await list_optical_media(hmc, None, VIOS_UUID, VG_UUID)
 
     assert route.called
     assert len(media_list) == 1
@@ -106,7 +118,7 @@ async def test_get_media_repository_none_propagates(mock_hmc):
     ).mock(return_value=httpx.Response(404, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        result = await get_media_repository(hmc, VIOS_UUID, "missing-vg")
+        result = await get_media_repository(hmc, None, VIOS_UUID, "missing-vg")
 
     assert route.called
     assert result is None
@@ -120,7 +132,7 @@ async def test_list_optical_media_empty_propagates(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_EMPTY))
 
     async with HMCClient(make_config()) as hmc:
-        media_list = await list_optical_media(hmc, VIOS_UUID, VG_UUID)
+        media_list = await list_optical_media(hmc, None, VIOS_UUID, VG_UUID)
 
     assert route.called
     assert media_list == []
@@ -134,6 +146,7 @@ VIOS_DOC_WITH_OPTICAL_MAPPINGS = f"""<?xml version="1.0" encoding="UTF-8" standa
   <id>urn:uuid:{VIOS_UUID}</id>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <UUID>{VIOS_UUID}</UUID>
       <PartitionName>vios1</PartitionName>
       <AssociatedManagedSystem rel="related"
         href="https://hmc/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
@@ -197,7 +210,9 @@ async def test_unmount_optical_media_removes_the_named_mapping_for_that_lpar(moc
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        result = await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, "rhel9.iso")
+        result = await unmount_optical_media(
+            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+        )
 
     assert result is None
     body = _posted_document(post)
@@ -221,7 +236,9 @@ async def test_unmount_optical_media_preserves_the_backing_iso(mock_hmc):
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, "rhel9.iso")
+        await unmount_optical_media(
+            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+        )
 
     body = _posted_document(post)
     assert "VirtualOpticalMedia" in body
@@ -251,7 +268,9 @@ async def test_unmount_optical_media_currently_no_ops_when_no_mapping_matches(mo
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, "aix73.iso")
+        await unmount_optical_media(
+            hmc, None, VIOS_UUID, LPAR_UUID, media_name="aix73.iso"
+        )
 
     assert not post.called
 
@@ -280,7 +299,9 @@ async def test_unmount_optical_media_substring_selector_matches_a_sibling_prefix
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, "rhel9.iso")
+        await unmount_optical_media(
+            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+        )
 
     body = _posted_document(post)
     assert "mapping-optical-backup" not in body, (
@@ -320,14 +341,16 @@ async def test_unmount_optical_media_resolves_vios_and_lpar_names(mock_hmc):
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        await unmount_optical_media(hmc, "vios1", "lpar1", "rhel9.iso")
+        await unmount_optical_media(
+            hmc, None, "vios1", "lpar1", media_name="rhel9.iso"
+        )
 
     assert "mapping-optical-target" not in _posted_document(post)
 
 
 def test_detach_optical_mapping_alias_is_gone():
     """Issue #362: the duplicate name is removed outright, with no shim."""
-    import hmc_mcp.operations_storage as ops
+    import hmc_mcp.operations.storage as ops
 
     assert not hasattr(ops, "detach_optical_mapping")
 
@@ -341,7 +364,8 @@ def test_unmount_docstrings_carry_both_halves_of_the_selector_caveat():
     and a wrongly detached boot disk, and nothing else in the suite asserts they
     still say so. Same contract as tests/app/test_user_tool_contracts.py.
     """
-    from hmc_mcp import operations_storage, server_storage
+    from hmc_mcp.server_tools import storage as server_storage
+    from hmc_mcp.operations import storage as operations_storage
 
     for handler in (
         server_storage.hmc_unmount_optical_media,

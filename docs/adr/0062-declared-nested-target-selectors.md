@@ -12,7 +12,7 @@ the declaration half of #260; the grant half waits on #259.
 ADR 0039 made `hmc_provision_lpar` grantable only under `targets =
 "all-targets"` because two of the identities it mutates arrive one level below
 the handler signature — `ProvisionStorage.vios_uuid` and
-`ProvisionNetwork.vios_partition_id` — where `build_targets` could not see them
+`ProvisionAdapters.vios_partition_id` — where `build_targets` could not see them
 and `selected_targets` could not read them. The record's own rejected
 alternative named the end state: let both become real selectors and the tool
 becomes narrowable. It was rejected there because extraction had never yet been

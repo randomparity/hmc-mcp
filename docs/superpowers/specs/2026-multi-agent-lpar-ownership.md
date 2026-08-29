@@ -31,7 +31,7 @@ audit log. This spec covers Phase 0 (per-agent attribution) and Phase 1
      `HMCCLIError` or `asyncssh` errors (best-effort).
    - Uses `datetime.date.today().isoformat()` for the date; no timezone conversion.
 
-3. **`hmc_create_lpar`** (in `server_power.py`) stamps the ownership token
+3. **`hmc_create_lpar`** (in `server_tools/power.py`) stamps the ownership token
    immediately after a successful REST create *or* CLI fallback create. The tool
    wraps its return in a dict:
    ```python
@@ -41,12 +41,12 @@ audit log. This spec covers Phase 0 (per-agent attribution) and Phase 1
    The existing `dict[str, Any] | None` return type becomes `dict[str, Any]`
    (never `None`; the `lpar` key may be `None` on HMC versions that return no body).
 
-4. **`hmc_provision_lpar`** (in `server_provision.py`) stamps after the "create"
+4. **`hmc_provision_lpar`** (in `server_tools/provision.py`) stamps after the "create"
    step succeeds (LPAR UUID is known). Stamp is best-effort: failure appends to
    `warnings` and sets `ownership_stamped: False` in the result. Does not prevent
    subsequent provisioning steps.
 
-5. **`hmc_deploy_partition_template`** (in `server_templates.py`) stamps after
+5. **`hmc_deploy_partition_template`** (in `server_tools/templates.py`) stamps after
    the deploy job completes. Because this tool submits an async job, stamping is
    only attempted when `wait=True` and the job reaches a terminal `COMPLETED`
    state. When `wait=False`, no stamping is attempted and a note is added to the
@@ -123,7 +123,7 @@ inject `agent_id` at runtime.
 
 ## Notes and Follow-ups
 
-- **REST `Description` discrepancy** (`server_composite.py:44` reads
+- **REST `Description` discrepancy** (`server_tools/composite.py:44` reads
   `res.get("Description")`; `ssh.py:521` says description is not exposed via
   REST): `hmc_lpar_summary` already returns the description via REST when the HMC
   includes it. An agent reading the description for ownership checks should

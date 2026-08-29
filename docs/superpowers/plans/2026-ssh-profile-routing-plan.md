@@ -10,15 +10,15 @@
 
 ## Phase 1 — Tests first (TDD red → green)
 
-### Task 1.1 — Write failing tests for profile routing in `_ssh_with_client`
+### Task 1.1 — Write failing tests for profile routing in `ssh_with_client`
 
 **File:** `tests/unit/test_ssh_profile_routing.py` (new)
 
 **What to test:**
-- `_ssh_with_client` with `profile="dev"`: the `HMCConfig` passed to `run_hmc_command` has the `dev` profile's host/user.
-- `_ssh_with_client` REST resolver (`_resolve_system_name`) calls `client_from_env(profile)` with the supplied profile.
-- `_ssh_with_client` SSH fallback: when `httpx.HTTPError` is raised by the REST leg, the fallback SSH call uses the same `config`.
-- `_ssh_with_client` with `profile=None`: behavior unchanged from today (env-default HMC).
+- `ssh_with_client` with `profile="dev"`: the `HMCConfig` passed to `run_hmc_command` has the `dev` profile's host/user.
+- `ssh_with_client` REST resolver (`_resolve_system_name`) calls `client_from_env(profile)` with the supplied profile.
+- `ssh_with_client` SSH fallback: when `httpx.HTTPError` is raised by the REST leg, the fallback SSH call uses the same `config`.
+- `ssh_with_client` with `profile=None`: behavior unchanged from today (env-default HMC).
 - Two calls with different profiles produce independent `HMCConfig` values (no shared state).
 
 **Acceptance criteria:**
@@ -56,8 +56,8 @@
 
 **What to test:**
 - `hmc_run_command(cmd, profile="dev")` routes SSH to the dev-profile host.
-- One `server_vios.py` tool (`hmc_restore_vios`) with `profile="dev"` uses dev-profile config.
-- One `server_cli.py` tool (`hmc_list_memory_pools`) with `profile="dev"` passes profile through `_ssh_with_client`.
+- One `server_tools/vios.py` tool (`hmc_restore_vios`) with `profile="dev"` uses dev-profile config.
+- One `server_tools/cli.py` tool (`hmc_list_memory_pools`) with `profile="dev"` passes profile through `ssh_with_client`.
 - All existing `test_ssh_quoting.py` tests still pass (backward-compat guard).
 
 ---
@@ -79,7 +79,7 @@
 
 ---
 
-### Task 2.2 — Extend `_ssh_with_client` in `_app.py`
+### Task 2.2 — Extend `ssh_with_client` in `_app.py`
 
 **File:** `src/hmc_mcp/_app.py`  
 **Lines affected:** ~289-309
@@ -106,9 +106,9 @@
 
 ---
 
-### Task 2.4 — Add `profile` to `hmc_run_command` in `server_system.py`
+### Task 2.4 — Add `profile` to `hmc_run_command` in `server_tools/system.py`
 
-**File:** `src/hmc_mcp/server_system.py`  
+**File:** `src/hmc_mcp/server_tools/systems.py`
 **Lines affected:** ~22-36
 
 **Changes:**
@@ -118,9 +118,9 @@
 
 ---
 
-### Task 2.5 — Add `profile` to VIOS tools in `server_vios.py`
+### Task 2.5 — Add `profile` to VIOS tools in `server_tools/vios.py`
 
-**File:** `src/hmc_mcp/server_vios.py`  
+**File:** `src/hmc_mcp/server_tools/vios.py`
 **Lines affected:** ~221-272
 
 Three tools call `run_hmc_cli` directly: `hmc_list_vios_backups`, `hmc_backup_vios`, `hmc_restore_vios`.
@@ -132,13 +132,13 @@ For each:
 
 ---
 
-### Task 2.6 — Add `profile` to all `_ssh_with_client` callers
+### Task 2.6 — Add `profile` to all `ssh_with_client` callers
 
-**Files:** `server_cli.py` (10 tools), `server_network.py` (6 tools), `server_profiles.py` (4 tools)
+**Files:** `server_tools/cli.py` (10 tools), `server_tools/network.py` (6 tools), `server_tools/profiles.py` (4 tools)
 
 **Pattern (identical for every tool):**
 1. Add `profile: str | None = None` as last parameter.
-2. Pass `profile=profile` to `_ssh_with_client(...)`.
+2. Pass `profile=profile` to `ssh_with_client(...)`.
 
 No other logic changes in these files.
 
@@ -192,13 +192,13 @@ restores previous behavior completely; no migration or config-file change is nee
 
 | File | Change type |
 |---|---|
-| `src/hmc_mcp/_app.py` | Extend `_ssh_with_client`, `_resolve_system_name`, `_resolve_lpar_name` |
+| `src/hmc_mcp/_app.py` | Extend `ssh_with_client`, `_resolve_system_name`, `_resolve_lpar_name` |
 | `src/hmc_mcp/ssh.py` | Extend `run_hmc_cli` |
-| `src/hmc_mcp/server_system.py` | Add `profile` to `hmc_run_command` |
-| `src/hmc_mcp/server_vios.py` | Add `profile` to 3 tools |
-| `src/hmc_mcp/server_cli.py` | Add `profile` to 10 tools |
-| `src/hmc_mcp/server_network.py` | Add `profile` to 6 tools |
-| `src/hmc_mcp/server_profiles.py` | Add `profile` to 4 tools |
+| `src/hmc_mcp/server_tools/system.py` | Add `profile` to `hmc_run_command` |
+| `src/hmc_mcp/server_tools/vios.py` | Add `profile` to 3 tools |
+| `src/hmc_mcp/server_tools/cli.py` | Add `profile` to 10 tools |
+| `src/hmc_mcp/server_tools/network.py` | Add `profile` to 6 tools |
+| `src/hmc_mcp/server_tools/profiles.py` | Add `profile` to 4 tools |
 | `tests/unit/test_ssh_profile_routing.py` | New test file |
 | `docs/adr/0009-ssh-tool-profile-routing.md` | New ADR |
 | `docs/superpowers/specs/2026-ssh-profile-routing-spec.md` | New spec |

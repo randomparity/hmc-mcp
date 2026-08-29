@@ -8,7 +8,7 @@ Accepted (2026-08-20)
 
 `upload_iso` downloads the caller's ISO to a temp file with care: 8 KiB chunks,
 a running SHA-256, and the size bound checked inside the loop
-(`operations_storage.py:374-385`). Nothing is held in memory. It then read the
+(`operations/storage.py:374-385`). Nothing is held in memory. It then read the
 file back in one call and handed the result to the broker:
 
 ```python
@@ -18,7 +18,7 @@ await hmc._broker_file_upload(broker_uri, content)
 ```
 
 The only size gate on that read is the one the download already applied:
-`MAX_DOWNLOAD_SIZE_BYTES = 100 * 1024 * 1024 * 1024` (`operations_storage.py:29`)
+`MAX_DOWNLOAD_SIZE_BYTES = 100 * 1024 * 1024 * 1024` (`operations/storage.py:29`)
 — 100 GiB. Read from source at `61c3026`: no second check exists anywhere
 between the download call and the read. So any file that passed the download
 bound became a single allocation of its own size. A 20 GiB AIX or Linux install

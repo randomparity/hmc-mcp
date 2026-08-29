@@ -42,7 +42,7 @@ slot_num: str) -> str`.
 
 ## Task 2: Implement verified orchestration
 
-**Files:** modify `src/hmc_mcp/operations_ssh_network.py` and
+**Files:** modify `src/hmc_mcp/operations/ssh_network.py` and
 `tests/network/test_vnic_operations.py`; directly consume ADR 0056 inventory collectors and target
 LPAR authorization.
 
@@ -84,7 +84,7 @@ and types.
 
 ## Task 3: Replace every presentation surface
 
-**Files:** modify `src/hmc_mcp/server_network.py`, `src/hmc_mcp/cli_network.py`,
+**Files:** modify `src/hmc_mcp/server_tools/network.py`, `src/hmc_mcp/cli_commands/network.py`,
 `src/hmc_mcp/api.py`, `tests/network/test_vnics.py`, `tests/app/test_cli_commands.py`,
 `tests/app/test_capabilities.py`, `tests/unit/test_public_api.py`, and directly related security
 schema tests `tests/app/test_tool_security.py` and `tests/unit/test_ssh_quoting.py`.

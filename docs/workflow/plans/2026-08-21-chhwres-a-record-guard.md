@@ -158,7 +158,7 @@ migrate 13 sites), `tests/unit/test_i_record_grammar.py` (filter unit tests), co
 tests that pin exact strings.
 
 **Interfaces**: consumes Task 1's `_validated_value`; `build_filter` is exported for
-`server_vios.py` and `scripts/live_test_runner.py` (Task 4) and the guard (Task 5).
+`server_tools/vios.py` and `scripts/live_test_runner.py` (Task 4) and the guard (Task 5).
 
 1. Failing tests first:
 
@@ -385,14 +385,14 @@ async def test_add_vnic_backing_refuses_record_structure_in_a_device():
 **Acceptance**: new tests green; the recorded single-device command bytes are unchanged
 (existing tests pin them).
 
-## Task 4 — `server_vios.py` and `scripts/live_test_runner.py` filter sites
+## Task 4 — `server_tools/vios.py` and `scripts/live_test_runner.py` filter sites
 
-**Files**: `src/hmc_mcp/server_vios.py` :390, `scripts/live_test_runner.py` :407, :1159, :1892.
+**Files**: `src/hmc_mcp/server_tools/vios.py` :390, `scripts/live_test_runner.py` :407, :1159, :1892.
 
 **Interfaces**: imports `build_filter` from `hmc_mcp.ssh_commands` (the script already imports
 `validate_lpar_description` from there).
 
-1. `server_vios.py`:
+1. `server_tools/vios.py`:
 
 ```python
                 f"lsviosbk --filter {shlex.quote(build_filter([('vios_uuids', uuid)]))} "
@@ -415,11 +415,11 @@ async def test_add_vnic_backing_refuses_record_structure_in_a_device():
 ```
 
    Imports, per file: `scripts/live_test_runner.py` — add `import shlex` if absent and extend
-   its existing `hmc_mcp.ssh_commands` import with `build_filter`; `src/hmc_mcp/server_vios.py`
+   its existing `hmc_mcp.ssh_commands` import with `build_filter`; `src/hmc_mcp/server_tools/vios.py`
    — `shlex` is already imported (:9), add a new `from .ssh_commands import build_filter`
    (no cycle: ssh_commands imports neither server_vios nor anything that reaches it).
 
-3. `uv run --no-sync python -c "import hmc_mcp.server_vios"` and
+3. `uv run --no-sync python -c "import hmc_mcp.server_tools.vios"` and
    `uv run --no-sync python -m py_compile scripts/live_test_runner.py` both succeed.
 4. Commit: `feat: route remaining filter sites through build_filter`.
 
@@ -457,7 +457,7 @@ deliberate narrowing of the spec's per-site-test promise to the ssh_commands sur
      `read_sriov_lpar_state`, `read_sriov_profile_ports`, `list_fc_ports`, `list_sea_adapters`,
      `list_vnics`, `list_vnic_rows`, `read_vios_identity`, and the description, msp,
      `lpar_env`, and proc-compat probe functions (13 in ssh_commands.py);
-     `hmc_list_vios_backups` in server_vios.py :390; and the three live_test_runner
+     `hmc_list_vios_backups` in server_tools/vios.py :390; and the three live_test_runner
      functions at :407/:1159/:1892.
    - Both new selections inherit `_docstring_nodes` exclusion and the
      outside-function-literal refusal (extend

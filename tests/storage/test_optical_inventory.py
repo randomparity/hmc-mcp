@@ -2,14 +2,15 @@
 
 import httpx
 import pytest
-
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient, HMCError
+from hmc_mcp.client.core import HMCClient
+from hmc_mcp.errors import HMCError
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 SYS_UUID = "00000000-0000-0000-0000-000000000099"
 LPAR_UUID = "00000000-0000-0000-0000-000000000001"
+
 
 # Minimal VirtualIOServer GET response for create_optical_mapping tests.
 # Must include AssociatedManagedSystem href (to extract SYS_UUID) and
@@ -21,6 +22,7 @@ VIOS_GET_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <content>
       <VirtualIOServer xmlns="{UOM_NS}" schemaVersion="V1_0">
         <Metadata><Atom/></Metadata>
+        <UUID>{VIOS_UUID}</UUID>
         <AssociatedManagedSystem href="https://hmc.test:12443/rest/api/uom/ManagedSystem/{SYS_UUID}" rel="related"/>
         <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
           <Metadata><Atom/></Metadata>
@@ -156,48 +158,30 @@ async def test_list_optical_mappings_propagates_bad_request(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_create_optical_mapping_submits_document(mock_hmc):
-    """create_optical_mapping GETs the VIOS, appends mapping, POSTs to system-scoped endpoint."""
-    # Step 1: GET the full VIOS document
-    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
-        return_value=httpx.Response(200, text=VIOS_GET_FEED)
+    """create_optical_mapping submits a focused document to the VIOS endpoint."""
+    post_route = mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(200, text=CREATE_MAPPING_RESPONSE)
     )
-    # Step 2: POST the modified document to the system-scoped endpoint
-    post_route = mock_hmc.post(
-        f"/rest/api/uom/ManagedSystem/{SYS_UUID}/VirtualIOServer/{VIOS_UUID}"
-    ).mock(return_value=httpx.Response(200, text=CREATE_MAPPING_RESPONSE))
 
     config = make_config()
     async with HMCClient(config) as hmc:
-        result = await hmc.create_optical_mapping(VIOS_UUID, "test.iso", LPAR_UUID)
+        result = await hmc.create_optical_mapping(
+            VIOS_UUID,
+            "test.iso",
+            LPAR_UUID,
+            target_device="cd1",
+        )
 
     assert post_route.called
     req_body = post_route.calls.last.request.content.decode()
     assert "VirtualOpticalMedia" in req_body
     assert "test.iso" in req_body
     assert LPAR_UUID in req_body
+    assert "<TargetDevice" in req_body
+    assert ">cd1</TargetDevice>" in req_body
     assert result is not None
     assert result["UUID"] == "mapping-uuid-new-001"
     assert result["Storage"]["VirtualOpticalMedia"]["MediaName"] == "test.iso"
-
-
-@pytest.mark.asyncio
-async def test_create_optical_mapping_preserves_permissive_system_link(mock_hmc):
-    """Issue #403 strict detach parsing does not narrow existing optical responses."""
-    response = VIOS_GET_FEED.replace(
-        f"/ManagedSystem/{SYS_UUID}\"", f"/ManagedSystem/{SYS_UUID}/details\""
-    )
-    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
-        return_value=httpx.Response(200, text=response)
-    )
-    posted = mock_hmc.post(
-        f"/rest/api/uom/ManagedSystem/{SYS_UUID}/VirtualIOServer/{VIOS_UUID}"
-    ).mock(return_value=httpx.Response(200, text=CREATE_MAPPING_RESPONSE))
-
-    async with HMCClient(make_config()) as hmc:
-        await hmc.create_optical_mapping(VIOS_UUID, "test.iso", LPAR_UUID)
-
-    assert posted.called
-
 
 # VIOS document containing one optical mapping for LPAR_UUID / test.iso
 VIOS_GET_FEED_WITH_MAPPING = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -206,6 +190,7 @@ VIOS_GET_FEED_WITH_MAPPING = f"""<?xml version="1.0" encoding="UTF-8" standalone
     <content>
       <VirtualIOServer xmlns="{UOM_NS}" schemaVersion="V1_0">
         <Metadata><Atom/></Metadata>
+        <UUID>{VIOS_UUID}</UUID>
         <AssociatedManagedSystem href="https://hmc.test:12443/rest/api/uom/ManagedSystem/{SYS_UUID}" rel="related"/>
         <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
           <Metadata><Atom/></Metadata>

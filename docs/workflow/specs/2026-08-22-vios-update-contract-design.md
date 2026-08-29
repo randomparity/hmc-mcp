@@ -58,7 +58,7 @@ nested value does not overwrite it.
 `src/hmc_mcp/jobs.py` defines `VIOSUpdateSource` and `VIOSUpgradeSource`, their
 runtime key/value sets, operation-specific validation, documented builders,
 and a small result-parameter extractor. Existing `RepositorySource` remains
-owned by firmware. `src/hmc_mcp/server_updates.py` selects the builder and
+owned by firmware. `src/hmc_mcp/server_tools/updates.py` selects the builder and
 operation, validates before opening a client, encodes the resolved identifier,
 submits through the shared wait lifecycle, and projects `stdOut` only from a
 waited terminal result.

@@ -35,7 +35,7 @@ answered definitively:
 
 ## Decision
 
-`operations_lpar` gains one presentation-neutral async operation:
+`operations.lpar` gains one presentation-neutral async operation:
 
 ```python
 async def list_lpar_ownership(

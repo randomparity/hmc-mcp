@@ -27,8 +27,8 @@ isolation (no data destruction).
 
 ## Decision
 
-Add `hmc_provision_lpar` in a new `server_provision.py` module (following the
-domain-module pattern of `server_power.py`, `server_storage.py`, etc.). The
+Add `hmc_provision_lpar` in a new `server_tools/provision.py` module (following the
+domain-module pattern of `server_tools/power.py`, `server_tools/storage.py`, etc.). The
 tool composes the already-implemented client methods:
 
 1. **Preconditions** (always, including dry-run):
@@ -60,7 +60,7 @@ tool composes the already-implemented client methods:
    }
    ```
 
-`lpars provision` CLI command in `cli_lpars.py` wraps the tool (thin adapter,
+`lpars provision` CLI command in `cli_commands/lpars.py` wraps the tool (thin adapter,
 same arguments, `--dry-run` flag).
 
 ## Capability annotation
@@ -71,11 +71,11 @@ operation) is correct.
 
 ## Consequences
 
-- One new source file: `src/hmc_mcp/server_provision.py`.
+- One new source file: `src/hmc_mcp/server_tools/provision.py`.
 - `server.py` gains one re-export: `hmc_provision_lpar`.
 - `_app.py` READ_ONLY_TOOLS and DESTRUCTIVE_TOOLS sets are **not** modified
   (the tool is intentionally untagged).
-- `cli_lpars.py` gains the `lpars provision` sub-command.
+- `cli_commands/lpars.py` gains the `lpars provision` sub-command.
 - Tests in `tests/lpar/test_provision_tool.py` cover the full workflow, dry-run
   path, precondition failures, and partial step failures.
 - README: new row in the **Mutating / lifecycle** table; six-step example
@@ -90,7 +90,7 @@ burden on agents and operators who must maintain intermediate state.
 partial-failure state on a real system is complex and operator-specific; manual
 rollback is the correct contract.
 
-**Implement in `server_power.py`.** That module covers power-lifecycle
+**Implement in `server_tools/power.py`.** That module covers power-lifecycle
 operations (create/modify/power-on/off/delete). Provisioning spans adapters,
 storage, and power — a new module keeps concerns separated and matches the
 file-scope hint in the issue.

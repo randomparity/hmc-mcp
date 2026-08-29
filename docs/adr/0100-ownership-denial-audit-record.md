@@ -7,7 +7,7 @@ Accepted (2026-08-26)
 ## Context
 
 The ADR 0011 ownership guard records the exception and not the rule it enforces. In
-`src/hmc_mcp/operations_lpar.py`, `_audit_lpar_ownership_override` is called from the two
+`src/hmc_mcp/operations/ownership.py`, `_audit_lpar_ownership_override` is called from the two
 override paths — `authorize_lpar_mutation` and `_authorize_lpar_ownership_description` —
 and emits one `ownership-override` record at `WARNING`. The two denial branches in
 `_authorize_lpar_ownership_description` raise `PermissionError` with no audit call: a
@@ -126,9 +126,9 @@ So a new *call site* of an existing entry point inherits the record for free —
 fourteen do — while a new *entry point* is a type error until its author adds an
 `audit.OwnershipOperation` member and the matching row in `docs/authorization-audit.md`.
 
-`operations_lpar` still never resolves the reserved logger — it calls the `audit`
+`operations.lpar` still never resolves the reserved logger — it calls the `audit`
 builder, exactly as the override path does, which is what
-`test_operations_lpar_does_not_resolve_the_audit_logger` pins.
+`test_operations.lpar_does_not_resolve_the_audit_logger` pins.
 
 ### 5. The document and its guard
 

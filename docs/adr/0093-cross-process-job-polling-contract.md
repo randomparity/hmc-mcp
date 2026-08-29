@@ -3,7 +3,7 @@
 ## Status
 
 Accepted (2026-08-25). Amended 2026-08-26 by issue #474 — see *Amendment (#474)* below: the two
-job tools now read through `operations_jobs`, so the MCP surface gains the distinction this
+job tools now read through `operations.jobs`, so the MCP surface gains the distinction this
 record's Consequences section said it did not.
 
 ## Context
@@ -14,7 +14,7 @@ happened to one. None is usable by a supported library consumer:
 - `jobs.wait_for_submitted_job` (`src/hmc_mcp/jobs.py:219`) lives in `jobs.py`, which ADR 0029's
   selection rule does not reach — the rule governs `operations_*.py` modules
   (`docs/adr/0029-supported-reusable-python-api-contract.md:47-49`).
-- `HMCClient.get_job` (`src/hmc_mcp/client.py:904`) and `HMCClient.wait_for_job` (`:931`) are
+- `HMCClient.get_job` (`src/hmc_mcp/client/core.py:904`) and `HMCClient.wait_for_job` (`:931`) are
   inherited mixin methods outside the supported lifecycle allowlist, which ADR 0029 fixes at
   exactly `__init__`, `__aenter__`, `__aexit__`, `is_logged_on`, `logon`, and `logoff` (`:39-45`).
   They remain callable, but "may change without a compatibility release".
@@ -35,9 +35,9 @@ from any other transport failure. A restarted worker cannot tell "still running"
 
 ## Decision
 
-### 1. Two operations in `operations_jobs`
+### 1. Two operations in `operations.jobs`
 
-`src/hmc_mcp/operations_jobs.py` owns exactly two presentation-neutral asynchronous operations,
+`src/hmc_mcp/operations/jobs.py` owns exactly two presentation-neutral asynchronous operations,
 both exported from `hmc_mcp.api`:
 
 ```python
@@ -132,16 +132,16 @@ extensions are explicitly not a package contract (ADR 0029 `:109-113`). Consumer
 The type is shared, and the polling reading of its fields is scoped to this decision's two
 operations. `jobs.job_outcome` has six other callers, all of them *submitting* operations
 reporting a submission rather than a poll, and they do not satisfy the handle promise:
-`operations_provision.py:300` and `operations_lpar.py:339` pass the literal `"PowerOn"` as the
-identifier, and `operations_lpm.py:261` and `operations_decommission.py:466` fall back to `""`
+`operations/provision.py:300` and `operations/lpar/core.py:339` pass the literal `"PowerOn"` as the
+identifier, and `operations/lpm.py:261` and `operations/decommission.py:466` fall back to `""`
 when a submission returned no identifier. Their `found=False` means "this submission returned no
-job entry", not "the HMC reaped it", and `operations_lpm._finish_job` pairs it with
+job entry", not "the HMC reaped it", and `operations.lpm._finish_job` pairs it with
 `timed_out=False` for a fire-and-forget submission — a combination clause 4's table does not
 cover, because that table describes a poll.
 
 Making all seven producers satisfy one reading would mean rewriting five call sites and their
 tests for no consumer that asked for it, so this ADR bounds the claim instead: the handle and
-`found` semantics below apply to outcomes returned by `operations_jobs`, and both `JobOutcome`'s
+`found` semantics below apply to outcomes returned by `operations.jobs`, and both `JobOutcome`'s
 docstring and the changelog say so. A consumer polls a `job_id` that came from a polling operation
 or from the HMC's own submission response — never one a submitting operation labelled.
 
@@ -265,7 +265,7 @@ freshly constructed client, which is what unblocks worker-restart-tolerant long-
 `JobOutcome`'s field set becomes a compatibility promise: adding, removing, or renaming a field is
 now a minor release under ADR 0029, where before it was an internal edit.
 
-ADR 0029's inventory gains an `operations_jobs` entry, and the mechanical facade-drift test added by
+ADR 0029's inventory gains an `operations.jobs` entry, and the mechanical facade-drift test added by
 issue #363 now covers the module: both coroutines must stay exported or the test fails.
 
 The residual gap is the *first* identifier. A caller that submits work through an existing operation
@@ -287,8 +287,8 @@ raises on the 404 these operations translate. The MCP surface does not gain the 
 running distinction here; only `hmc_mcp.api` does.
 
 > **Amended by #474** (2026-08-26). **The two sentences above no longer hold.** `hmc_wait_for_job`
-> polls through `operations_jobs.wait_for_job` and `hmc_get_job` reads through
-> `operations_jobs.get_job`, so the MCP surface has the reaped-versus-running distinction too. See
+> polls through `operations.jobs.wait_for_job` and `hmc_get_job` reads through
+> `operations.jobs.get_job`, so the MCP surface has the reaped-versus-running distinction too. See
 > *Amendment (#474)* below; the rest of this Consequences section stands.
 
 The submitting tools' own docstrings describe
@@ -296,10 +296,10 @@ neither field: five presentation docstrings are outside this decision's surface,
 that pass. Until it lands, an agent reading `found` off a submission report has the tool docstring
 of `hmc_wait_for_job` and this ADR, and nothing on the tool it actually called.
 
-## Amendment (#474): the MCP job tools read through `operations_jobs`
+## Amendment (#474): the MCP job tools read through `operations.jobs`
 
-`hmc_wait_for_job` polls `operations_jobs.wait_for_job` and `hmc_get_job` reads
-`operations_jobs.get_job`; neither calls `HMCClient` any more. Clause 3's "polling reading" of
+`hmc_wait_for_job` polls `operations.jobs.wait_for_job` and `hmc_get_job` reads
+`operations.jobs.get_job`; neither calls `HMCClient` any more. Clause 3's "polling reading" of
 `JobOutcome` therefore covers what `hmc_wait_for_job` returns, because it now *is* an outcome one
 of clause 4's two operations produced.
 
@@ -342,7 +342,7 @@ Further residuals stay open, each named in the tool docstrings rather than fixed
 
 Clause 2's promise that a re-persisted `job_href` is never a link known not to resolve also fails
 on `wait_for_job` when the caller's spelling of the link differs from the HMC's own —
-`operations_jobs._handle` compares them as raw strings — so the `hmc_wait_for_job` docstring states
+`operations.jobs._handle` compares them as raw strings — so the `hmc_wait_for_job` docstring states
 the weaker guarantee until #529 closes it.
 
 Clause 5's confirming re-read is owed a full poll interval past the deadline, but the loop shortens
@@ -359,9 +359,9 @@ mismatch #537 owns. Normalizing the echo to the requested path would change the 
 shape clause 2 fixes, so the `hmc_wait_for_job` docstring says instead that an echoed link is the
 caller's own input rather than something the HMC attested.
 
-The same unsanitized value reaches `operations_jobs`' own warning records, and nothing binds a
+The same unsanitized value reaches `operations.jobs`' own warning records, and nothing binds a
 handler to the `hmc_mcp` logger, so they fall to `logging.lastResort` and land raw on the stderr
-stream ADR 0040 defines as one JSON record per line. Serving these tools from `operations_jobs` is
+stream ADR 0040 defines as one JSON record per line. Serving these tools from `operations.jobs` is
 what first makes those sites reachable with caller-controlled input, so this change closes it:
 every warning that interpolates the link uses `%r`. ADR 0051's Context weighed only HMC-returned
 text at that boundary; binding `hmc_mcp` to a `StreamSafeFormatter` sink is the general fix and is
@@ -378,7 +378,7 @@ read as absent. ADR clause 2 settled that trade at the operations layer on the s
 warning log; an MCP caller cannot read that log, so both tool docstrings now tell a caller who
 supplied a `job_href` to re-read by identifier alone before acting on absence.
 
-And the CLI (`cli_jobs`) still calls `HMCClient` directly and still has the older contract; #526
+And the CLI (`cli_commands.jobs`) still calls `HMCClient` directly and still has the older contract; #526
 owns that pass, because the CLI's output contract is its own decision.
 
 ## Considered & rejected

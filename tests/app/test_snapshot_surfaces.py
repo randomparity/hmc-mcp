@@ -8,15 +8,15 @@ import pytest
 from typer.testing import CliRunner
 
 from hmc_mcp import cli
-from hmc_mcp.affinity_assessment import (
+from hmc_mcp.operations.affinity import (
     AffinityAssessmentInput,
     assess_affinity,
 )
 from datetime import UTC, datetime
-from hmc_mcp.cli_snapshot import _publish
+from hmc_mcp.cli_commands.snapshot import _publish
 from hmc_mcp.server import TOOL_SECURITY
-from hmc_mcp.server_snapshot import hmc_snapshot_inspect
-from hmc_mcp.server_snapshot import hmc_snapshot_assess_affinity
+from hmc_mcp.server_tools.snapshot import hmc_snapshot_inspect
+from hmc_mcp.server_tools.snapshot import hmc_snapshot_assess_affinity
 
 RUNNER = CliRunner()
 
@@ -61,7 +61,7 @@ def test_mcp_affinity_assessment_delegates_and_serializes(monkeypatch) -> None:
         return expected
 
     monkeypatch.setattr(
-        "hmc_mcp.server_snapshot.assess_snapshot_affinity", fake_assessment
+        "hmc_mcp.server_tools.snapshot.assess_snapshot_affinity", fake_assessment
     )
     result = hmc_snapshot_assess_affinity(
         "{}", 90, 94, regression_threshold=5, optimization_threshold=5
@@ -107,7 +107,7 @@ def test_cli_affinity_assessment_prints_shared_result(
         return result_value
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_snapshot.assess_snapshot_affinity", fake_assessment
+        "hmc_mcp.cli_commands.snapshot.assess_snapshot_affinity", fake_assessment
     )
     result = RUNNER.invoke(
         cli.app,
@@ -185,10 +185,10 @@ def test_cli_capture_existing_destination_is_concise(
     destination = tmp_path / "snapshot.json"
     destination.write_text("original", encoding="utf-8")
     monkeypatch.setattr(
-        "hmc_mcp.cli_snapshot._run",
+        "hmc_mcp.cli_commands.snapshot.run",
         lambda operation: SimpleNamespace(format="hmc-mcp.lpar-snapshot", version=1),
     )
-    monkeypatch.setattr("hmc_mcp.cli_snapshot.serialize_snapshot", lambda value: "{}")
+    monkeypatch.setattr("hmc_mcp.cli_commands.snapshot.serialize_snapshot", lambda value: "{}")
     result = RUNNER.invoke(
         cli.app,
         ["snapshot", "capture", "sys", "aix", "default", "--output", str(destination)],

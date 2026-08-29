@@ -4,7 +4,7 @@
 two `lpars` CLI commands.
 
 **Architecture:** `ssh_commands.py` owns the fixed-verb HMC CLI commands and
-parsing; `operations_ssh_network.py` owns selector-aware workflows shared by
+parsing; `operations/ssh_network.py` owns selector-aware workflows shared by
 the MCP and CLI adapters; `hmc_mcp.api` exports those async operations under
 ADR 0029; both presentations delegate to the shared operations.
 Verified live on hmc5.labda.sva.de (P9 9009 systems): default output is
@@ -53,8 +53,8 @@ coroutines.
 
 ## Task 2: Shared operations, facade, MCP tools, registration, re-exports
 
-**Files:** modify `src/hmc_mcp/operations_ssh_network.py`, the `hmc_mcp.api`
-facade and contract inventory/tests, `src/hmc_mcp/server_lpar_config.py`,
+**Files:** modify `src/hmc_mcp/operations/ssh_network.py`, the `hmc_mcp.api`
+facade and contract inventory/tests, `src/hmc_mcp/server_tools/lpar_config.py`,
 `src/hmc_mcp/_app.py`, and `src/hmc_mcp/server.py`; extend
 `tests/lpar/test_memopt_score.py`.
 
@@ -82,7 +82,7 @@ list[dict[str, str]]`, both `_READ_ONLY`.
 
 ## Task 3: CLI mirroring and README
 
-**Files:** modify `src/hmc_mcp/cli_lpars.py`,
+**Files:** modify `src/hmc_mcp/cli_commands/lpars.py`,
 `tests/app/test_cli_commands.py`, `README.md`.
 
 **Interfaces:** `hmc-mcp lpars memopt-score LPAR SYSTEM [--json]` and

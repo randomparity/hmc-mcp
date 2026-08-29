@@ -3,8 +3,10 @@
 import asyncio
 import json
 import logging
+import threading
 import traceback
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -12,8 +14,10 @@ import pytest
 import respx
 from defusedxml import ElementTree as DET
 
-from hmc_mcp import audit
-from hmc_mcp.client import HMCClient, HMCError
+from hmc_mcp.audit import sink as audit_sink
+from hmc_mcp.client import core as client_core
+from hmc_mcp.client.core import HMCClient, TLSVerificationDisabledWarning
+from hmc_mcp.errors import HMCError
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCTransportError
 from hmc_mcp.jobs import build_job_request
@@ -340,9 +344,124 @@ async def test_logon_with_test_config_is_silent_by_default(mock_hmc):
 @pytest.mark.asyncio
 async def test_logon_warns_when_verify_ssl_disabled(mock_hmc):
     """Logon with verify_ssl=False emits an explicit MITM warning."""
-    with pytest.warns(UserWarning, match="certificate verification is disabled"):
+    with pytest.warns(
+        TLSVerificationDisabledWarning,
+        match="certificate verification is disabled",
+    ):
         async with HMCClient(make_config(verify_ssl=False)):
             pass
+
+
+@pytest.mark.asyncio
+async def test_tls_warning_is_emitted_once_per_host_and_setting_source(
+    monkeypatch,
+):
+    monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
+
+    async def logon(client):
+        client._logon_once = AsyncMock(return_value="token")
+        await client.logon()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        await logon(HMCClient(make_config(host="first.test", verify_ssl=False)))
+        await logon(HMCClient(make_config(host="first.test", verify_ssl=False)))
+        await logon(HMCClient(make_config(host="second.test", verify_ssl=False)))
+        await logon(
+            HMCClient(
+                HMCConfig.from_mapping(
+                    {
+                        "host": "first.test",
+                        "user": "hscroot",
+                        "password": "abc123",  # pragma: allowlist secret
+                    }
+                )
+            )
+        )
+
+    tls_warnings = [
+        warning
+        for warning in caught
+        if warning.category is TLSVerificationDisabledWarning
+    ]
+    assert len(tls_warnings) == 3
+
+
+@pytest.mark.asyncio
+async def test_tls_warning_key_retains_the_construction_time_source(monkeypatch):
+    monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
+    monkeypatch.setenv("HMC_VERIFY_SSL", "false")
+    environment_client = HMCClient(
+        HMCConfig(host="hmc.test", user="hscroot", password="abc123")
+    )
+
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+    explicit_client = HMCClient(make_config(host="hmc.test", verify_ssl=False))
+    for client in (environment_client, explicit_client):
+        client._logon_once = AsyncMock(return_value="token")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", TLSVerificationDisabledWarning)
+        await environment_client.logon()
+        await explicit_client.logon()
+
+    await environment_client._http.aclose()
+    await explicit_client._http.aclose()
+    tls_warnings = [
+        warning
+        for warning in caught
+        if warning.category is TLSVerificationDisabledWarning
+    ]
+    assert len(tls_warnings) == 2
+
+
+@pytest.mark.asyncio
+async def test_tls_warning_promoted_to_error_does_not_consume_the_key(monkeypatch):
+    monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
+    client = HMCClient(make_config(verify_ssl=False))
+    client._logon_once = AsyncMock(return_value="token")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", TLSVerificationDisabledWarning)
+        with pytest.raises(TLSVerificationDisabledWarning):
+            await client.logon()
+
+    with pytest.warns(TLSVerificationDisabledWarning):
+        await client.logon()
+
+
+def test_concurrent_logons_emit_one_tls_warning(monkeypatch):
+    monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
+    first_warning_entered = threading.Event()
+    second_warning_entered = threading.Event()
+    warning_calls = 0
+    calls_lock = threading.Lock()
+
+    def slow_warning(*args, **kwargs):
+        nonlocal warning_calls
+        with calls_lock:
+            warning_calls += 1
+            call_number = warning_calls
+        if call_number == 1:
+            first_warning_entered.set()
+            second_warning_entered.wait(timeout=0.2)
+        else:
+            second_warning_entered.set()
+
+    async def logon():
+        client = HMCClient(make_config(verify_ssl=False))
+        client._logon_once = AsyncMock(return_value="token")
+        await client.logon()
+        await client._http.aclose()
+
+    monkeypatch.setattr(client_core.warnings, "warn", slow_warning)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(asyncio.run, logon()) for _ in range(2)]
+        for future in futures:
+            future.result()
+
+    assert first_warning_entered.is_set()
+    assert warning_calls == 1
 
 
 @pytest.mark.asyncio
@@ -376,7 +495,7 @@ def _capture_audit() -> list[dict]:
         def emit(self, record: logging.LogRecord) -> None:
             events.append(json.loads(record.getMessage()))
 
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.addHandler(_Collect())
     logger.setLevel(logging.INFO)
     logger.propagate = False
@@ -459,6 +578,33 @@ def test_tls_audit_record_names_where_the_setting_came_from(
     assert caught[0]["host"] == "hmc.test"
     # No credential material in the record — construction-time state only.
     assert "abc123" not in json.dumps(caught[0])
+
+
+@pytest.mark.parametrize("env_name", ["hmc_verify_ssl", "Hmc_Verify_Ssl"])
+def test_tls_audit_record_names_the_environment_for_a_case_variant_export(
+    monkeypatch, env_name
+):
+    """#531. pydantic-settings folded the variant in, so the record must name it.
+
+    The vocabulary keeps the canonical spelling — it names the knob, not the
+    operator's spelling of it — but reading only that spelling would report
+    ``explicit-argument`` for a value nothing in the call supplied.
+    """
+    monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
+    monkeypatch.setenv(env_name, "false")
+    caught = _capture_audit()
+
+    HMCClient(
+        HMCConfig(
+            host="hmc.test",
+            user="hscroot",
+            password="abc123",  # pragma: allowlist secret
+            _env_file=None,
+        )
+    )
+
+    assert len(caught) == 1
+    assert caught[0]["source"] == "environment:HMC_VERIFY_SSL"
 
 
 @pytest.mark.parametrize(

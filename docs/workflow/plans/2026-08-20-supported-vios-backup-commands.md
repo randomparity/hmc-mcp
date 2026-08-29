@@ -93,7 +93,7 @@ without making a real HMC call.
 
 ## Task 2: Implement resolution, validation, and supported commands
 
-**Files:** Modify `src/hmc_mcp/server_vios.py`.
+**Files:** Modify `src/hmc_mcp/server_tools/vios.py`.
 
 **Interfaces:** Consume `HMCClient`, `is_uuid`, `resolve_vios_uuid`, `run_hmc_cli`, and
 `build_config`. Provide the exact public functions from Task 1. Keep

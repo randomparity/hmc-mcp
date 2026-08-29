@@ -7,7 +7,7 @@ import pytest
 
 from conftest import JOB_ENTRY, make_config
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCTransportError
 from hmc_mcp.jobs import deploy_partition_template_job
 

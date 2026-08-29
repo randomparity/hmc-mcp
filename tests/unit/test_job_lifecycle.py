@@ -12,14 +12,16 @@ from hmc_mcp.jobs import (
     FAILED_JOB_STATUSES,
     SUCCESSFUL_JOB_STATUSES,
     TERMINAL_JOB_STATUSES,
-    PlatformUpdateParameter,
-    VIOSUpdateSource,
-    VIOSUpgradeSource,
     job_identifier,
     job_outcome,
     validate_wait_timing,
     vios_stdout,
     wait_for_submitted_job,
+)
+from hmc_mcp.operations.update_models import (
+    PlatformUpdateParameter,
+    VIOSUpdateSource,
+    VIOSUpgradeSource,
 )
 
 _SUCCESSFUL_TERMINAL_STATUSES = {"COMPLETED", "COMPLETED_OK"}
@@ -296,6 +298,20 @@ async def test_wait_for_submitted_job_forwards_identifier_link_and_timing() -> N
 
     assert result == {"Status": "COMPLETED"}
     client.wait_for_job.assert_awaited_once_with("job-2", 90, 3, job_href="/jobs/job-2")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("link", [42, "  "])
+async def test_wait_for_submitted_job_ignores_malformed_link(link) -> None:
+    client = AsyncMock()
+    client.wait_for_job.return_value = {"Status": "COMPLETED"}
+
+    result = await wait_for_submitted_job(
+        client, {"UUID": "job-2", "link": link}, True, 90, 3
+    )
+
+    assert result == {"Status": "COMPLETED"}
+    client.wait_for_job.assert_awaited_once_with("job-2", 90, 3, job_href=None)
 
 
 @pytest.mark.asyncio

@@ -17,7 +17,7 @@ annotations.
 
 ### Task 1: Write failing tests for `hmc_systems`, `hmc_lpars`, `hmc_vios`
 
-**What:** Add tests for the three new tools that replace the tools in `server_system.py`.
+**What:** Add tests for the three new tools that replace the tools in `server_tools/system.py`.
 The tests must fail before the implementations exist (red phase of TDD).
 
 **Files touched:**
@@ -102,11 +102,11 @@ Add to `READ_ONLY_TOOLS`:
 
 ---
 
-### Task 4: Implement `hmc_systems` and `hmc_lpars` and `hmc_vios` in `server_system.py`
+### Task 4: Implement `hmc_systems` and `hmc_lpars` and `hmc_vios` in `server_tools/system.py`
 
 **What:** Replace the 7 existing tools with 3 unified tools.
 
-**File touched:** `src/hmc_mcp/server_system.py`
+**File touched:** `src/hmc_mcp/server_tools/system.py`
 
 **Replace:**
 - `hmc_list_systems` + `hmc_get_system` → `hmc_systems(system_uuid: str | None = None) -> Any`
@@ -164,11 +164,11 @@ def hmc_vios(
 
 ---
 
-### Task 5: Implement `hmc_shared_storage_pools` in `server_storage.py`
+### Task 5: Implement `hmc_shared_storage_pools` in `server_tools/storage.py`
 
 **What:** Replace `hmc_list_shared_storage_pools` + `hmc_get_shared_storage_pool` with one tool.
 
-**File touched:** `src/hmc_mcp/server_storage.py`
+**File touched:** `src/hmc_mcp/server_tools/storage.py`
 
 **Implementation:**
 
@@ -187,11 +187,11 @@ def hmc_shared_storage_pools(ssp_uuid: str | None = None) -> Any:
 
 ---
 
-### Task 6: Implement `hmc_partition_templates` in `server_templates.py`
+### Task 6: Implement `hmc_partition_templates` in `server_tools/templates.py`
 
 **What:** Replace `hmc_list_partition_templates` + `hmc_get_partition_template` with one tool.
 
-**File touched:** `src/hmc_mcp/server_templates.py`
+**File touched:** `src/hmc_mcp/server_tools/templates.py`
 
 **Implementation:**
 
@@ -210,11 +210,11 @@ def hmc_partition_templates(template_uuid: str | None = None) -> Any:
 
 ---
 
-### Task 7: Implement `hmc_users` in `server_users.py`
+### Task 7: Implement `hmc_users` in `server_tools/users.py`
 
 **What:** Replace `hmc_list_users` + `hmc_get_user` with one tool.
 
-**File touched:** `src/hmc_mcp/server_users.py`
+**File touched:** `src/hmc_mcp/server_tools/users.py`
 
 **Implementation:**
 

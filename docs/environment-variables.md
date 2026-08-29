@@ -107,10 +107,9 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   every other profile stays unguarded, including a second profile pointing at the
   same HMC, and both the MCP tools and the CLI take a caller-supplied profile
   selector. `HMC_AUTHORIZE_POWER_OPERATIONS` overrides every profile's TOML value,
-  so it is the setting that cannot be selected around — **spelled exactly**. The
-  profile loader drops a TOML key only when the variable's exact upper-case name
-  is in the environment, so a lower- or mixed-case export does not override a
-  profile that carries the key (#531).
+  so it is the setting that cannot be selected around — in any casing, see
+  [Variable names are matched without regard to
+  case](#variable-names-are-matched-without-regard-to-case).
 
   **Check that it actually took — ask the server, not the shell.** This setting
   fails **open**, and a mistyped profile key or environment variable is dropped
@@ -120,24 +119,22 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   name, each carrying the effective post-precedence `authorize_power_operations`
   value — `true` means the ownership guard is **enforced** — and the `source` that
   supplied it: `environment`, `profile`, or `default`. `default` is the answer
-  that means *nothing you wrote arrived*, which is the case a bare
-  `false` cannot distinguish. It also covers one case that is not your memory's
-  fault: a `config.toml` that exists but cannot be read, parsed, or resolved to a
-  profile is discarded on the default connection with no error and no log line
-  from this report, and every setting in it reverts to its built-in default. **If
-  you have a `config.toml` and the default connection reads `default`, suspect the
-  file itself** before you go looking for a typo in the key. A read or parse
-  failure is not silent everywhere: `hmc_list_configured_hosts` surfaces it by
-  name, with the line and column, and the same `read` grant that reaches this
-  report reaches that tool. Only a file that parses but resolves to no profile —
-  a missing `default_profile`, an `HMC_PROFILE` naming nothing — is silent on
-  every channel.
+  that means no profile or environment value supplied the setting, which is the
+  case a bare `false` cannot distinguish. A missing `default_profile` with no
+  explicit profile selection legitimately takes this environment/default path.
+  An unreadable, malformed, or invalid `config.toml`, or an explicit
+  `HMC_PROFILE` that names nothing, instead reports the connection as
+  `unresolved`; authored configuration is never silently discarded.
 
   A fourth value, `ambiguous`, means a **case variant** of
-  `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: only the exact upper-case
-  spelling is dropped from a profile's keys before the config is built, so a
-  variant loses to a profile there and wins where no profile is read — and nothing
-  in the server can tell which happened. Fix the spelling.
+  `HMC_AUTHORIZE_POWER_OPERATIONS` is exported. It over-reports
+  ([#547](https://github.com/randomparity/hmc-mcp/issues/547)): it was
+  introduced when a variant lost to a profile on one resolution path and won on
+  the other, and the fix for
+  [#531](https://github.com/randomparity/hmc-mcp/issues/531) removed that
+  divergence — a variant now drops the profile's key on both paths, so the value
+  came from the environment and `environment` is the truthful label. Read
+  `ambiguous` as `environment`, and fix the spelling.
 
   **With `HMC_HOST` set, expect fewer rows than your policy has connections.** Every
   connection token collapses to the default one at dispatch, so the report carries at
@@ -252,6 +249,56 @@ environment's `agent_id`.
 (constructor args > `HMC_*` > TOML profile > field default). That ordering is
 deliberate — it is how an operator overrides a committed profile for one
 invocation — and it applies to every field the profile omits as well.
+
+### Variable names are matched without regard to case
+
+`HMCConfig` leaves pydantic-settings' `case_sensitive` at its `False` default, so
+`hmc_host=…` and `Hmc_Host=…` reach the `host` field exactly as `HMC_HOST=…`
+does. Every precedence statement on this page holds for any casing, including
+the `HMC_AUTHORIZE_POWER_OPERATIONS` claim in the [Notes](#notes): a case variant
+beats the profile's TOML key for every field in the [Reference](#reference)
+table, and a case variant of `HMC_HOST` skips the TOML profile in the same way
+the canonical spelling does. The names are written in upper case throughout
+because that is the convention, not because the loader requires it. Setting two
+casings of the same variable at once resolves to the **last** of them in the
+process environment's own order — pydantic-settings folds the environment into
+one case-blind mapping, so the later entry overwrites the earlier. Do not rely
+on that ordering: export one spelling.
+
+The authorization audit record's `attribution` folds the same way, so casing no
+longer splits the trail: whichever spelling of `HMC_AGENT_ID` you export, the
+ADR 0040 record names the claimant the ADR 0011 ownership stamp and the
+`X-Audit-Memento` header carry ([#543](https://github.com/randomparity/hmc-mcp/issues/543)).
+`audit.py` imports nothing from the package by design and so carries its own copy
+of the fold, which a test pins against `config.env_var_value` directly.
+
+**Exported, though — a profile's `agent_id` is a different matter.** `audit.py`
+reads the environment and nothing else, which ADR 0040 decided deliberately: no
+module on the authorization decision path may name the variable, and reading it
+through `HMCConfig` would apply the validators that reject the malformed values
+most worth recording. So an `agent_id` that comes from a `config.toml` profile
+key rather than from the environment stamps the LPARs and sets the header while
+the authorization records still show no claimant. Export `HMC_AGENT_ID` — in any
+casing — when you want the whole trail attributed.
+
+Some readers do **not** fold case. Two of them are deliberate:
+
+- **`HMC_PROFILE` is matched exactly** on POSIX. It is not an `HMCConfig` field;
+  `load_profile()` reads it directly to pick a profile, so no case-insensitive
+  settings loader is involved. A lower-case `hmc_profile` export selects no
+  profile; selection falls back to `default_profile`, or to environment
+  variables alone when the file names none. On Windows this does not apply: the
+  OS folds every environment variable name to upper case, so `hmc_profile` *is*
+  `HMC_PROFILE` there and selects the profile it names.
+- **A profile's `password_env` value names a variable read exact-case.**
+  `load_profile()` looks the name up in `os.environ` directly, and correctly so:
+  `password_env` points at an operator-chosen variable rather than at an
+  `HMCConfig` field, so there is no field name to fold it onto. Unlike the one
+  above, this one **fails hard** instead of degrading — a name that is not
+  present exactly as written raises `password_env=… is not set`, and the
+  connection never opens. The templates in this repository always give it an
+  `HMC_*` name, so a case-variant export of that name is the likely way to hit
+  it.
 
 ### Isolated construction
 

@@ -194,13 +194,13 @@ already handles env vars via `env_prefix`.
 
 ---
 
-## Phase 4 — Update cli_app.py: add --profile option
+## Phase 4 — Update cli_commands/app.py: add --profile option
 
 **Task:** Add a `--profile` / `HMC_PROFILE` option to the root CLI callback.
 Thread the profile through `_client()` and `_ssh_config()` via
 `client_from_env`.
 
-**Files touched:** `src/hmc_mcp/cli_app.py`
+**Files touched:** `src/hmc_mcp/cli_commands/app.py`
 
 **Changes:**
 
@@ -251,7 +251,7 @@ the profile loader is an additive path. See Phase 3 note in full plan below.
 
 ## Phase 5 — Update _app.py
 
-**Task:** `_ssh_with_client` calls `HMCConfig()` directly (line 308). Pass
+**Task:** `ssh_with_client` calls `HMCConfig()` directly (line 308). Pass
 `_env_file=None` to prevent any `.env` loading (belt-and-suspenders — env_file
 is already removed in Phase 2, but the explicit `None` is a no-op and clarifies
 intent).

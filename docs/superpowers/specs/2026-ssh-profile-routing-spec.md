@@ -15,7 +15,7 @@ operations to a different HMC using a profile — they all go to the env-default
 
 Three independent manifestations:
 
-1. `_ssh_with_client()` in `_app.py` constructs `HMCConfig(_env_file=None)` directly,
+1. `ssh_with_client()` in `_app.py` constructs `HMCConfig(_env_file=None)` directly,
    ignoring any `profile` argument.
 2. `run_hmc_cli()` in `ssh.py` constructs `HMCConfig()` unconditionally.
 3. `_resolve_system_name()` and `_resolve_lpar_name()` call `client_from_env()` with no
@@ -31,13 +31,13 @@ Every SSH-backing `@mcp.tool` function gains `profile: str | None = None` as its
 last keyword parameter. Callers that omit it observe identical behavior to today.
 
 **Affected tool files:**
-- `server_cli.py` — 10 tools via `_ssh_with_client`
-- `server_network.py` — 6 tools via `_ssh_with_client`
-- `server_profiles.py` — 4 tools via `_ssh_with_client`
-- `server_vios.py` — 3 tools calling `run_hmc_cli` directly
-- `server_system.py` — 1 tool (`hmc_run_command`) calling `run_hmc_cli` directly
+- `server_tools/cli.py` — 10 tools via `ssh_with_client`
+- `server_tools/network.py` — 6 tools via `ssh_with_client`
+- `server_tools/profiles.py` — 4 tools via `ssh_with_client`
+- `server_tools/vios.py` — 3 tools calling `run_hmc_cli` directly
+- `server_tools/system.py` — 1 tool (`hmc_run_command`) calling `run_hmc_cli` directly
 
-### `_ssh_with_client(fn, *, system_name_or_uuid, lpar_name_or_uuid, profile)`
+### `ssh_with_client(fn, *, system_name_or_uuid, lpar_name_or_uuid, profile)`
 
 - Add `profile: str | None = None` keyword-only parameter.
 - Replace `config = HMCConfig(_env_file=None)` with `config = client_from_env(profile).config`.
@@ -71,7 +71,7 @@ config = client_from_env(profile).config
 return _run(lambda: run_hmc_cli(cmd, config))
 ```
 
-This is the same pattern used in `_ssh_with_client` and avoids any issue with calling
+This is the same pattern used in `ssh_with_client` and avoids any issue with calling
 synchronous I/O inside the event loop.
 
 ---
@@ -90,7 +90,7 @@ synchronous I/O inside the event loop.
 
 | Scenario | Test |
 |---|---|
-| Direct SSH uses supplied profile | `_ssh_with_client` passes profile-sourced config to SSH |
+| Direct SSH uses supplied profile | `ssh_with_client` passes profile-sourced config to SSH |
 | REST resolution uses supplied profile | `client_from_env(profile)` called by `_resolve_system_name` |
 | SSH fallback uses supplied profile | Transport failure falls back via SSH with same config |
 | `run_hmc_cli` uses supplied config | Config passed through to `run_hmc_command` |

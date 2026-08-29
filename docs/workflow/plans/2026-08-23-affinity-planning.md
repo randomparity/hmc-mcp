@@ -42,7 +42,7 @@ mistaken; malformed HMC responses fail rather than masquerade as scores.
 
 ## Task 2: Shared operations and MCP contract
 
-**Files:** `src/hmc_mcp/operations_ssh_network.py`, `src/hmc_mcp/server_lpar_config.py`,
+**Files:** `src/hmc_mcp/operations/ssh_network.py`, `src/hmc_mcp/server_tools/lpar_config.py`,
 `src/hmc_mcp/server.py`, `src/hmc_mcp/api.py`, `docs/adr/0029-supported-reusable-python-api-contract.md`,
 `tests/lpar/test_affinity_planning.py`, `tests/app/test_target_authorization.py`,
 `tests/unit/test_tool_registry.py`, `tests/unit/test_public_api.py`,
@@ -69,7 +69,7 @@ shared operations, and the reusable facade contains no presentation imports.
 
 ## Task 3: CLI, live runner, and documentation
 
-**Files:** `src/hmc_mcp/cli_lpars.py`, `tests/app/test_cli_commands.py`,
+**Files:** `src/hmc_mcp/cli_commands/lpars.py`, `tests/app/test_cli_commands.py`,
 `scripts/live_test_runner.py`, `tests/test_live_runner.py`, `README.md`.
 
 **Interfaces:** commands `lpars system-memopt-score SYSTEM`, `lpars plan-memopt-scores SYSTEM`, and

@@ -19,10 +19,13 @@ from typing import get_args, get_type_hints
 import pytest
 from pydantic import BaseModel
 
-from hmc_mcp import server_command, server_permissions, server_vios, tool_registry
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.dispatch_scope import dispatch_authorizer
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp import tool_registry
+from hmc_mcp.server_tools import command as server_command
+from hmc_mcp.server_tools import permissions as server_permissions
+from hmc_mcp.server_tools import vios as server_vios
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_MODULES, TOOL_SECURITY, create_mcp
 from hmc_mcp.tool_registry import (
     EFFECTS,
@@ -362,7 +365,7 @@ EXPECTED_TARGET_ARGUMENTS = {
     "cluster_uuid": "cluster",
     "ssp_uuid": "shared_storage_pool",
     "console_uuid": "console",
-    "job_uuid": "job",
+    "job_id": "job",
     "template_uuid": "template",
     "draft_template_uuid": "template",
     "policy_name": "password_policy",
@@ -380,7 +383,7 @@ def test_the_argument_table_matches_its_independent_expectation():
     [
         ("hmc_get_available_hmc_ptfs", {("console", "console_uuid")}),
         ("hmc_update_console_software", {("console", "console_uuid")}),
-        ("hmc_get_job", {("job", "job_uuid")}),
+        ("hmc_get_job", {("job", "job_id")}),
         ("hmc_get_partition_template", {("template", "template_uuid")}),
         ("hmc_get_shared_storage_pool", {("shared_storage_pool", "ssp_uuid")}),
         ("hmc_processed_metrics", {("metric_resource", "resource_name_or_uuid")}),
@@ -441,6 +444,7 @@ DESTRUCTIVE_WITHOUT_PREFIX = frozenset(
         "hmc_update_console_software",
         "hmc_update_firmware",
         "hmc_vios_update",
+        "hmc_vios_upgrade",
     }
 )
 
@@ -472,6 +476,7 @@ def test_software_and_firmware_update_tools_are_destructive():
     for name in (
         "hmc_update_console_software",
         "hmc_vios_update",
+        "hmc_vios_upgrade",
         "hmc_update_firmware",
     ):
         assert TOOL_SECURITY[name].effect == "destructive", name
@@ -562,12 +567,19 @@ def test_legacy_classification_sets_are_gone():
             assert not hasattr(module, removed), f"{module.__name__}.{removed}"
 
 
-# A handler's connection routes through exactly these three helpers. Every one
-# of them resolves an HMCConfig from `common.build_config`, so a call that omits
+# A handler's connection routes through exactly these shared helpers. Every one
+# of them resolves an HMCConfig from `config.build_config`, so a call that omits
 # the handler's declared connection argument reaches the deployment default
 # whatever the caller — and the access policy — named.
 _CONNECTION_BUILDERS = frozenset(
-    {"build_config", "client_from_env", "_ssh_with_client"}
+    {
+        "build_config",
+        "client_from_env",
+        "run_limited_collection",
+        "ssh_with_client",
+        "with_config",
+        "with_client",
+    }
 )
 
 # `host` is deliberately singled out: `build_config` skips the whole profile
@@ -704,7 +716,7 @@ def _assert_builder_call(call: ast.Call, argument: str | None, where: str) -> No
     # `client_from_env(profile='some-other-profile')` routes somewhere the
     # authorization never decided about, and the keyword arm is the only one
     # available to the SSH family, whose `profile` is keyword-only on
-    # `_app._ssh_with_client`. The keyword's own name is not constrained: a tool
+    # `_app.ssh_with_client`. The keyword's own name is not constrained: a tool
     # declaring `connection_argument="connection"` writes `profile=connection`.
     supplied = [*call.args, *(keyword.value for keyword in call.keywords)]
     assert argument is not None and any(
@@ -814,10 +826,11 @@ def test_every_handler_routes_the_connection_argument_it_declares():
     the call does not make. That is a fail-open, and it is what
     ``hmc_set_lpar_boot_order`` and ``hmc_clear_lpar_boot_order`` did before #222.
 
-    The check is static and follows same-module helpers down the call chain,
-    which is how the metrics, vios, and composite tools reach their client. It
-    does not follow a helper imported from another module, a ``functools.partial``,
-    or a callable held in a variable; ADR 0038 records that residual.
+        The check is static and follows same-module helpers down the call chain,
+        while recognizing the shared connection builders imported from ``_app``.
+        It does not follow any other helper imported from another module, a
+        ``functools.partial``, or a callable held in a variable; ADR 0038 records
+        that residual.
 
     The two tools that declare *no* connection argument are checked in the same
     pass, from the other side: entering the walk with no selector, the first
@@ -828,7 +841,7 @@ def test_every_handler_routes_the_connection_argument_it_declares():
     root = Path(server_command.__file__).parent
     checked: set[str] = set()
 
-    for path in sorted(root.glob("server_*.py")):
+    for path in sorted(root.rglob("*.py")):
         functions = _module_functions(ast.parse(path.read_text(encoding="utf-8")))
         for name in sorted(functions.keys() & set(TOOL_SECURITY)):
             _assert_handler_routes(
@@ -1428,7 +1441,7 @@ def test_every_handler_reads_the_target_selectors_it_declares():
     unread: dict[str, list[str]] = {}
     checked: set[str] = set()
 
-    for path in sorted(root.glob("server_*.py")):
+    for path in sorted(root.rglob("*.py")):
         functions = _module_functions(ast.parse(path.read_text(encoding="utf-8")))
         for name in sorted(functions.keys() & set(TOOL_SECURITY)):
             body = functions[name]
@@ -1620,6 +1633,7 @@ def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
         "hmc_update_firmware": (True, ["platform_update"]),
         "hmc_upload_iso": (True, ["iso_source"]),
         "hmc_vios_update": (True, ["repository"]),
+        "hmc_vios_upgrade": (True, ["repository"]),
     }
     # The two tables must stay disjoint, or the decision above would silently
     # contradict the one UNBOUNDED_ARGUMENTS encodes: a name cannot both be
@@ -1714,7 +1728,7 @@ def test_restore_vios_scope_and_backup_name_containment_are_independent(monkeypa
     escapes = ["../other/x.tar", "..", "-operation"]
 
     with patch(
-        "hmc_mcp.ssh.asyncssh.connect",
+        "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=AssertionError("reached the SSH layer"),
     ):
         for escape in escapes:

@@ -4,8 +4,8 @@
 
 - `src/hmc_mcp/documents.py`: replace legacy builders and models with UOM
   `UserProfile` and `ManagementConsole` RemoteAccess builders.
-- `src/hmc_mcp/client_users.py`: replace web paths with nested UOM resources.
-- `src/hmc_mcp/server_users.py`: expose the replacement tool contracts and
+- `src/hmc_mcp/client/client_users.py`: replace web paths with nested UOM resources.
+- `src/hmc_mcp/server_tools/users.py`: expose the replacement tool contracts and
   remove password-policy/legacy LDAP tools.
 - `src/hmc_mcp/server.py`, `src/hmc_mcp/xmlutil.py`: update exports and stale
   surface descriptions.

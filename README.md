@@ -181,10 +181,12 @@ See [`docs/environment-variables.md`](docs/environment-variables.md) for the
 full reference, including descriptions and usage notes.
 
 HMCs ship self-signed certificates, so TLS verification is off by default and
-`hmc-mcp` warns on every logon while it stays off. To verify the HMC
-certificate, install its CA locally and set `HMC_VERIFY_SSL=true`
-(`--verify-ssl`) — otherwise the HMC credentials are at risk of
-man-in-the-middle interception.
+`hmc-mcp` emits `TLSVerificationDisabledWarning` once per HMC host and
+`verify_ssl` setting source per process while it stays off. Reusable Python
+consumers can import that category from `hmc_mcp.api` and filter it without
+suppressing unrelated `UserWarning`s. To verify the HMC certificate, install
+its CA locally and set `HMC_VERIFY_SSL=true` (`--verify-ssl`) — otherwise the
+HMC credentials are at risk of man-in-the-middle interception.
 
 ## HMC version compatibility
 
@@ -773,10 +775,10 @@ For example, a system-firmware update is:
 }
 ```
 
-`hmc_vios_update` uses IBM's operation-specific parameter names. Every source
-requires `ResourceType`. Updates accept `HMC`, `NFS`, `SFTP`, `USB`, or
-`IBMWebsite` and may include `RestartVIOS`; upgrades accept `HMC`, `NFS`,
-`SFTP`, or `USB` and require `Disks`. For example:
+`hmc_vios_update` uses IBM's `UpdateVIOS` parameter names. Every source requires
+`ResourceType`; updates accept `HMC`, `NFS`, `SFTP`, `USB`, or `IBMWebsite` and may
+include `RestartVIOS`. `hmc_vios_upgrade` accepts the `HMC`, `NFS`, `SFTP`, and `USB`
+upgrade sources, each of which requires `Disks`.
 
 HMC sources require `Name`, NFS/SFTP sources require `ServerHostOrIP` and
 `RemoteDirectory`, USB sources require `USBDevice`, and every upgrade requires
@@ -785,7 +787,6 @@ HMC sources require `Name`, NFS/SFTP sources require `ServerHostOrIP` and
 ```json
 {
   "vios_name_or_uuid": "vios1",
-  "kind": "update",
   "repository": {
     "ResourceType": "NFS",
     "ServerHostOrIP": "repo.example.com",
@@ -925,38 +926,27 @@ src/hmc_mcp/
   config.py      # pydantic-settings config (TOML profile + env vars + CLI flags)
   xmlutil.py     # defusedxml Atom-feed -> dict parsing
   errors.py      # HMCError (shared by client and its mixins)
-  error_translation.py       # presentation-neutral wording for identified HMC failures
-  client.py      # async HMCClient: session, transport, uom helpers, jobs
-  client_*.py    # per-domain mixins (users, systems, lpars, storage, pcm, ...)
-  client_parse.py# defusedxml wrappers tagging failures with the HMC call
-  common.py      # shared HMCClient/config helpers for tool definitions
-  operations_*.py# workflows and policies shared by MCP and CLI presentations
-  affinity_assessment.py     # evidence-first, read-only LPAR NUMA-affinity assessment
-  snapshot.py    # version-1 portable LPAR snapshot values and local I/O
-  ssh.py         # transport-only asyncssh session and command execution
-  ssh_commands.py# resource operations implemented with the HMC CLI
-  ssh_selectors.py           # public resource selectors for the HMC SSH commands
-  console_capture.py         # bounded, non-interactive LPAR console capture (mkvterm)
+  client/        # HMCClient, domain mixins, response parsing, and PCM payload builders
+  resource_identity.py      # managed-system, partition, and VIOS name/UUID resolution
+  operations/    # shared workflows; ownership.py owns protocol and name resolution
+    lpar/         # LPAR lifecycle, configuration, and DLPAR operations
+  server_tools/  # MCP tool adapters grouped by resource family
+  cli_commands/  # Typer command groups, CLI policy generation, and shared application state
+  snapshots/     # portable LPAR snapshot models, affinity assessment, and operations
+  ssh/            # asyncssh transport plus HMC CLI operations by resource family
+    ssh/*.py       # transport, shared parsing, and resource-specific commands
+  ssh/console.py             # bounded, non-interactive LPAR console capture (mkvterm)
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
-  pcm.py         # PCM metrics/preferences parsing + XML documents
-  access_policy.py           # server access policy: TOML loading, validation, compilation
-  legacy_policy.py           # the legacy-equivalent access policy, built and compiled
-  dispatch_scope.py          # the dispatch-boundary authorization decision
-  target_scope.py            # dispatch-time authorization of the targets a call names
-  connection_scope.py        # dispatch-time authorization of the connection a call selects
-  audit.py       # one audit record per authorization decision: vocabulary, rendering, sink
+  authorization/             # access policy and dispatch-time scope enforcement
+  audit/         # audit records plus non-blocking diagnostic transport
   tool_registry.py           # local MCP tool collection, each tool carrying ToolSecurity
   _app.py        # shared FastMCP instance, sync-run and SSH helpers, entry points
-  server.py      # thin aggregator importing every server_*.py tool module
-  server_*.py    # resource-domain @mcp.tool definitions (systems, lpars, VIOS, ...)
-  server_lpar_config.py      # SSH-only LPAR configuration handlers
-  server_system_resources.py # SSH-only managed-system resource handlers
-  cli.py         # thin aggregator importing every cli_*.py command module
-  cli_app.py     # root Typer app, GlobalOpts/GLOBALS, shared CLI helpers
-  cli_*.py       # per-domain CLI commands (systems, lpars, storage, ...)
+  server.py      # MCP composition, startup validation, logging, and serving bootstrap
+  cli.py         # thin aggregator importing every cli_commands/ registration module
 tests/           # pytest + respx, no real HMC needed
-scripts/         # smoke/manual harnesses
+scripts/         # repository guardrails, generators, test runners, smoke checks,
+                 # and live-test harnesses
 ```
 
 ## Notes on the HMC API

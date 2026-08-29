@@ -2,7 +2,7 @@
 
 The document builders and client methods are covered in test_dlpar.py and
 test_power.py; these tests call the actual ``@mcp.tool`` functions in
-``server_lpars`` against the respx ``mock_hmc`` router so the
+``server_tools.lpar.lifecycle`` against the respx ``mock_hmc`` router so the
 argument->URL and argument->XML mapping in the tool bodies is exercised.
 LPAR create/modify and LPAR power-on/off are covered in
 ``tests/app/test_server_tools.py``; the delete-LPAR precondition guard is
@@ -13,33 +13,42 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-
-from hmc_mcp.client import HMCError
-from hmc_mcp.documents import LparResources
-from hmc_mcp.server import (
-    hmc_dlpar_mem,
-    hmc_dlpar_proc,
-    hmc_modify_system,
-    hmc_power_off_system,
-    hmc_power_off_vios,
-    hmc_power_on_system,
-    hmc_power_on_vios,
-)
 from conftest import JOB_ENTRY, SYSTEM_ENTRY
 
+from hmc_mcp.errors import HMCError
+from hmc_mcp.documents import LparResources
+from hmc_mcp.operations.systems import power_system
+from hmc_mcp.server_tools.lpar.lifecycle import (
+    hmc_dlpar_mem as hmc_dlpar_mem,
+)
+from hmc_mcp.server_tools.lpar.lifecycle import (
+    hmc_dlpar_proc as hmc_dlpar_proc,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_modify_system as hmc_modify_system,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_power_off_system as hmc_power_off_system,
+)
+from hmc_mcp.server_tools.systems import (
+    hmc_power_on_system as hmc_power_on_system,
+)
+from hmc_mcp.server_tools.vios import (
+    hmc_power_off_vios as hmc_power_off_vios,
+)
+from hmc_mcp.server_tools.vios import (
+    hmc_power_on_vios as hmc_power_on_vios,
+)
 
-def test_power_off_rejects_invalid_wait_timing_before_client_creation(monkeypatch):
-    called = False
 
-    def unexpected_client(*_args, **_kwargs):
-        nonlocal called
-        called = True
-        raise AssertionError("client must not be created")
-
-    monkeypatch.setattr("hmc_mcp.server_systems.client_from_env", unexpected_client)
+@pytest.mark.asyncio
+async def test_power_system_operation_rejects_invalid_wait_timing():
+    hmc = AsyncMock()
     with pytest.raises(ValueError, match="timeout_seconds"):
-        hmc_power_off_system(SYSTEM_UUID, wait=True, timeout_seconds=-1)
-    assert called is False
+        await power_system(
+            hmc, SYSTEM_UUID, power_on=False, wait=True, timeout_seconds=-1
+        )
+    hmc.power_off_system.assert_not_awaited()
 
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
@@ -96,7 +105,7 @@ def _partition_feed() -> str:
 def _unowned_partition():
     """Patch the SSH ownership read to report a partition with no ADR 0011 stamp."""
     return patch(
-        "hmc_mcp.operations_lpar.get_lpar_description",
+        "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(return_value=""),
     )
 
@@ -202,7 +211,7 @@ def test_dlpar_without_a_system_selector_discovers_the_owner_and_writes(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     read = AsyncMock(return_value="")
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.operations.ownership.get_lpar_description", new=read):
         result = tool(LPAR_UUID, LparResources(desired_procs=1.0, desired_memory=2048))
 
     assert result["Resource"]["PartitionName"] == "lpar1"
@@ -224,7 +233,7 @@ def test_dlpar_without_a_system_selector_refuses_a_foreign_owner(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     with patch(
-        "hmc_mcp.operations_lpar.get_lpar_description",
+        "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
     ):
         with pytest.raises(PermissionError, match="ownership_override=true"):
@@ -251,7 +260,7 @@ def test_dlpar_override_without_a_selector_needs_no_discovery(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.operations.ownership.get_lpar_description", new=read):
         tool(
             LPAR_UUID,
             LparResources(desired_procs=1.0, desired_memory=2048),
@@ -270,7 +279,7 @@ def test_dlpar_proc_refuses_a_foreign_owned_partition(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     with patch(
-        "hmc_mcp.operations_lpar.get_lpar_description",
+        "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
     ):
         with pytest.raises(PermissionError, match="ownership_override=true"):
@@ -291,7 +300,7 @@ def test_dlpar_mem_ownership_override_reaches_the_write(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with patch("hmc_mcp.operations.ownership.get_lpar_description", new=read):
         hmc_dlpar_mem(
             LPAR_UUID,
             LparResources(desired_memory=4096),

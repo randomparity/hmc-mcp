@@ -25,7 +25,7 @@ Spec item -> node id:
   L1   test_serve_without_a_policy_exits_2_as_a_subprocess
   L2   test_the_documented_migration_works_end_to_end
 
-R11 and R11a live in tests/app/test_cli_config.py; R7-R10, R9a and R9b in
+R11 and R11a live in tests/app/test_cli_commands/config.py; R7-R10, R9a and R9b in
 tests/unit/test_legacy_policy.py. Each of the three modules carries its own header and
 its own inventory guard, because the guard pattern reads ``__file__`` and cannot span
 modules. R16, R16a-R16d and R17 are documentation requirements with no node id.
@@ -49,10 +49,10 @@ import typer
 from typer.testing import CliRunner
 
 from hmc_mcp import server as server_module
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli import app
-from hmc_mcp.dispatch_scope import dispatch_authorizer
-from hmc_mcp.legacy_policy import LEGACY_POLICY_NAME, compile_legacy_policy
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
+from hmc_mcp.cli_commands.legacy_policy import LEGACY_POLICY_NAME, compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
 REPO_ROOT = Path(__file__).parents[2]
@@ -273,8 +273,8 @@ def test_a_denial_bounds_the_callers_own_token():
     client. ADR 0041 is what makes that path universal rather than opt-in, which is why
     it is closed here rather than left to the layer that has always had it.
     """
-    from hmc_mcp.audit import MAX_VALUE_LENGTH
-    from hmc_mcp.connection_scope import ConnectionScopeError
+    from hmc_mcp.audit.records import MAX_VALUE_LENGTH
+    from hmc_mcp.authorization.connection_scope import ConnectionScopeError
 
     authorize = dispatch_authorizer(_legacy_policy())
     oversized = "z" * (MAX_VALUE_LENGTH * 40)
@@ -320,7 +320,7 @@ def test_a_mixed_effect_grant_warns_at_startup():
     operator already looks for what a compiled policy means for this run, so
     that is where the dead subset is named.
     """
-    from hmc_mcp.access_policy import compile_access_policy
+    from hmc_mcp.authorization.access_policy import compile_access_policy
 
     policy = compile_access_policy(
         {
@@ -361,10 +361,10 @@ def test_error_text_survives_square_brackets(capsys):
     empty string, so the generator's most important diagnostic named a key the operator
     could not see.
     """
-    from hmc_mcp.cli_app import _fail
+    from hmc_mcp.cli_commands.output import fail
 
     with pytest.raises(typer.Exit):
-        _fail(ValueError('came from a [profiles." prod"] key in config.toml'))
+        fail(ValueError('came from a [profiles." prod"] key in config.toml'))
 
     assert '[profiles." prod"]' in _unstyle(capsys.readouterr().err)
 
@@ -375,10 +375,10 @@ def test_error_text_survives_a_closing_tag_shape(capsys):
     `_check_entries` renders the offending value under `repr()`, so a profile key like
     `[/prod]` reaches this helper as literal text and must not be parsed as markup.
     """
-    from hmc_mcp.cli_app import _usage_error
+    from hmc_mcp.cli_commands.output import usage_error
 
     with pytest.raises(typer.Exit):
-        _usage_error("connections entry '[/prod]' is empty or padded")
+        usage_error("connections entry '[/prod]' is empty or padded")
 
     assert "'[/prod]'" in _unstyle(capsys.readouterr().err)
 

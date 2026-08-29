@@ -565,6 +565,9 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     assert "uv pip install --no-deps --python .wheel-venv/bin/python" in body
     assert '"${wheels[0]}[app]"' in body
     assert "import hmc_mcp" in body
+    assert "from hmc_mcp.api import HMCClient" in body
+    assert "from hmc_mcp.client import HMCClient" not in body
+    assert 'HMCClient.__module__ == "hmc_mcp.client.core"' in body
     assert "is_relative_to(environment)" in body
     assert ".wheel-venv/bin/hmc-mcp --help" in body
     # Group help pages are rendered off the tree the installed wheel builds, so
@@ -593,7 +596,7 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "name: release-wheel-amd64-py3.13" in body
     assert "uv pip install --python .library-wheel-venv/bin/python" in body
     assert '            "${wheels[0]}"' in body
-    assert "from hmc_mcp.api import capacity_report" in body
+    assert "from hmc_mcp.api import CapacitySummary, capacity_report" in body
     assert "import hmc_mcp.api" not in body
     for package in ("fastmcp", "mcp", "rich", "typer"):
         assert f'assert find_spec("{package}") is None' in body
@@ -611,8 +614,12 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "async def list_managed_systems(" in body
     assert "async def list_logical_partitions(" in body
     assert "asyncio.run(capacity_report(FakeHMC()))" in body
-    assert '"system_name": "p10"' in body
+    assert "CapacitySummary(" in body
+    assert 'system_name="p10"' in body
     assert "assert report ==" in body
+    for field in ("total_memory_mib", "assigned_memory_mib", "free_memory_mib"):
+        assert f"{field}=" in body
+        assert field.replace("_mib", "_mb") not in body
     assert "[app]" not in body
     assert "uv export" not in body
     assert "--no-deps" not in body
@@ -635,7 +642,11 @@ def test_github_ci_exercises_each_declared_range_floor() -> None:
     assert '            "${wheels[0]}"' in body
     assert "uv venv" in body
     # The exercised surface is the bare installed API, not the app extra.
-    assert "from hmc_mcp.api import capacity_report" in body
+    assert "from hmc_mcp.api import CapacitySummary, capacity_report" in body
+    assert "CapacitySummary(" in body
+    for field in ("total_memory_mib", "assigned_memory_mib", "free_memory_mib"):
+        assert f"{field}=" in body
+        assert field.replace("_mib", "_mb") not in body
     assert "[app]" not in body
     assert "scripts/smoke_mcp.py" not in body
     # Held here since narrowing the library-wheel-smoke match stopped its body
@@ -979,6 +990,9 @@ def _write_gate_project(root: Path, report: dict, covered: int) -> None:
         'pythonpath = ["."]\n'
         'addopts = "--cov=gatepkg --cov-report="\n'
         "\n"
+        "[tool.coverage.run]\n"
+        "branch = true\n"
+        "\n"
         "[tool.coverage.report]\n" + report_toml + "\n"
     )
 
@@ -1008,8 +1022,9 @@ def test_coverage_gate_declares_one_exact_floor() -> None:
     project = _project_toml()
     addopts = project["tool"]["pytest"]["ini_options"]["addopts"]
 
-    assert floor == 90
+    assert floor == 90.5
     assert report["precision"] >= 2
+    assert project["tool"]["coverage"]["run"] == {"branch": True}
     # Without a measured source nothing consults fail_under at all. Token, not
     # substring: "--cov=hmc_mcp/config.py" contains "--cov=hmc_mcp" and would
     # narrow the measured source to one file, giving a total near 100%.
@@ -1019,7 +1034,14 @@ def test_coverage_gate_declares_one_exact_floor() -> None:
     # Each of these silently disarms the gate: a command-line floor or precision
     # overrides the configured one, --no-cov switches measurement off, and
     # --cov-config sends coverage.py to a different file entirely.
-    for flag in ("--cov-fail-under", "--no-cov", "--cov-precision", "--cov-config"):
+    for flag in (
+        "--cov-fail-under",
+        "--no-cov",
+        "--cov-precision",
+        "--cov-config",
+        "--cov-branch",
+        "--cov-no-branch",
+    ):
         assert flag not in addopts, flag
     # A denominator key disarms the gate without touching the floor: it drops
     # statements from the total rather than covering them. Measured on the probe
@@ -1129,6 +1151,8 @@ def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
             "--cov-fail-under",
             "--cov-precision",
             "--cov-config",
+            "--cov-branch",
+            "--cov-no-branch",
             "COVERAGE_RCFILE",
         ):
             assert flag not in text, f"{name}: {flag}"

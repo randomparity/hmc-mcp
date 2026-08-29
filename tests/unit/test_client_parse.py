@@ -9,7 +9,7 @@ preferences paths); these unit tests pin the tagging contract directly.
 import pytest
 from defusedxml import ElementTree as DET
 
-from hmc_mcp.client_parse import _find_text, _metric_links
+from hmc_mcp.client.client_parse import _find_text, _metric_links
 from hmc_mcp.errors import HMCError
 
 

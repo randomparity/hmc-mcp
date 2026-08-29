@@ -29,9 +29,9 @@ _SOURCE_ROOT = _REPO_ROOT / "src" / "hmc_mcp"
 _SECTION_HEADING = "### 3. Classification"
 _NEXT_SECTION_HEADING = "### 4."
 
-# `hmc_backup_lpar_profiles` (`server_profiles.py:35`, `:86`) — a bare `:86` continues
+# `hmc_backup_lpar_profiles` (`server_tools/profiles.py:35`, `:86`) — a bare `:86` continues
 # the file named by the citation before it in the same row.
-_CITATION = re.compile(r"`(?:([\w.]+\.py))?:(\d+)`")
+_CITATION = re.compile(r"`(?:([\w./]+\.py))?:(\d+)`")
 _BACKTICKED = re.compile(r"`([^`]+)`")
 
 # §3 carried 41 checkable rows when this guard landed. The floor catches a parser that

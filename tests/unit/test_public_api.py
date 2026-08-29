@@ -28,12 +28,11 @@ from typing import (
 
 import pytest
 
-import hmc_mcp
 from hmc_mcp import api
-from hmc_mcp.client_contracts import PcmClient
-from hmc_mcp.client_templates import TemplatesMixin
+from hmc_mcp import operations
+from hmc_mcp.client.client_contracts import PcmClient, TemplatesClient
 
-# ADR 0029's Decision section selects, from each ``operations_*`` module, "every non-underscore
+# ADR 0029's Decision section selects, from each ``operations.*`` module, "every non-underscore
 # top-level coroutine function the module itself defines, and each package-owned input, result,
 # enum, or literal-alias type appearing in a selected function's public signature". Both halves
 # are keyed by ``(defining module, name)``: two ``operations_*`` modules may define the same
@@ -43,7 +42,16 @@ from hmc_mcp.client_templates import TemplatesMixin
 # the ADR text excluding it — ``_ADR_CITATION`` enforces the citation, so "internal" is not an
 # acceptable excuse. The tests below also reject entries that no longer describe a real omission,
 # so neither mapping can silently accumulate dead excuses.
-ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {}
+ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {
+    (
+        "hmc_mcp.operations.jobs",
+        "list_jobs",
+    ): "ADR 0029 excludes this adapter-facing inventory boundary from the reusable facade",
+    (
+        "hmc_mcp.operations.pcie",
+        "require_admitted_environment",
+    ): "ADR 0029 excludes this shared admission-policy guard from domain operations",
+}
 ADR_0029_TYPE_EXCLUSIONS: dict[tuple[str, str], str] = {}
 
 
@@ -66,7 +74,7 @@ _ADR_0029_PATH = (
 )
 _INVENTORY_BEGIN = "<!-- ADR-0029-INVENTORY:BEGIN -->"
 _INVENTORY_END = "<!-- ADR-0029-INVENTORY:END -->"
-_INVENTORY_ENTRY = re.compile(r"^- `([a-z_][a-z0-9_]*)` — (.+)$")
+_INVENTORY_ENTRY = re.compile(r"^- `([a-z_][a-z0-9_.]*)` — (.+)$")
 _INVENTORY_CLAUSE = re.compile(
     r"^(operations|types|excluded synchronous|exports): (.+)$"
 )
@@ -81,14 +89,37 @@ SUPPORTED_CLIENT_LIFECYCLE = frozenset(
 )
 
 
+def test_package_initializers_do_not_define_compatibility_manifests() -> None:
+    """Keep ``hmc_mcp.api`` as the package's only curated import boundary."""
+    package_root = Path(__file__).resolve().parents[2] / "src/hmc_mcp"
+    offenders = []
+    for path in package_root.rglob("__init__.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if any(
+            isinstance(node, (ast.Assign, ast.AnnAssign))
+            and any(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in (
+                    node.targets if isinstance(node, ast.Assign) else [node.target]
+                )
+            )
+            for node in tree.body
+        ):
+            offenders.append(path.relative_to(package_root).as_posix())
+
+    assert offenders == []
+
+
 def test_public_api_exports_the_adr_inventory() -> None:
     assert api.__all__ == [
         "HMCClient",
+        "TLSVerificationDisabledWarning",
         "AffinityAssessmentInput",
         "AffinityAssessmentResult",
         "AffinityClassification",
         "AffinityEvidence",
         "CapturedPolicyState",
+        "PostActivationAffinityAssessment",
         "PolicyState",
         "HMCConfig",
         "ConfigError",
@@ -98,30 +129,41 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "HMCCLIError",
         "list_adapters",
         "add_network_adapter",
-        "add_vios_adapter",
+        "add_vfc_adapter",
+        "add_vscsi_adapter",
         "delete_adapter",
         "AdapterResult",
         "AdapterType",
+        "CapacitySummary",
         "capacity_report",
         "find_placement",
         "lpar_summary",
+        "LparSummary",
         "system_summary",
+        "SystemSummary",
         "decommission_lpar",
+        "DecommissionAdapterRecord",
+        "DecommissionBlastRadius",
         "DecommissionResult",
         "fleet_health",
         "FleetHealthResult",
         "install_lpar_os",
         "install_vios",
         "InstallHandle",
+        "InstallRequest",
         "assess_post_activation_affinity",
         "authorize_decommission_lpar_ownership_snapshot",
         "authorize_lpar_mutation",
+        "resolve_and_authorize_lpar_mutation",
+        "resolve_and_authorize_lpar_names",
         "resolve_lpar_ownership_names",
         "list_lpar_ownership",
         "stamp_created_lpar_ownership",
         "create_and_stamp_lpar",
+        "create_lpar",
         "set_lpar_ownership_description",
         "delete_lpar",
+        "modify_lpar",
         "power_lpar",
         "rename_lpar",
         "set_lpar_processors",
@@ -129,9 +171,14 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "LparCreation",
         "LparCreationResult",
         "LparPowerResult",
+        "PartitionState",
+        "ProcessorCompatibilityMode",
         "read_lpar_boot_order",
         "set_lpar_boot_order",
         "clear_lpar_boot_order",
+        "configure_lpar_msp",
+        "configure_lpar_processor_compatibility",
+        "synchronize_lpar_profile",
         "BootDeviceSelector",
         "migrate_lpar",
         "migrate_lpar_with_affinity_preflight",
@@ -139,11 +186,14 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "abort_lpar_migration",
         "recover_lpar_migration",
         "remote_restart_lpar",
+        "validate_lpar_migration",
         "RemoteRestartOperation",
         "LpmResult",
         "LpmAffinityPreflightRequest",
+        "LpmMigrationRequest",
         "LpmAffinityPreflightOutcome",
         "LpmAffinityMigrationResult",
+        "VirtualNetworkResult",
         "list_virtual_switches",
         "list_virtual_networks",
         "create_virtual_network",
@@ -182,14 +232,17 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "attach_disk_to_lpar",
         "provision_lpar",
         "ProvisionAffinityAssessment",
-        "ProvisionNetwork",
+        "ProvisionAdapters",
         "ProvisionStorage",
         "ProvisionResult",
         "AttachDiskResult",
         "LparResources",
+        "MemoryMirroringMode",
         "PartitionType",
         "OsType",
         "Keylock",
+        "PowerOffPolicy",
+        "PowerOnLparStartPolicy",
         "SharingMode",
         "list_fc_ports",
         "get_lpar_memopt_score",
@@ -218,7 +271,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "remove_vnic",
         "SriovMode",
         "AssignmentResult",
-        "AssignmentStep",
+        "WorkflowStep",
         "DedicatedPcieAssignment",
         "LparPcieAssignments",
         "LparPcieWorkflowResult",
@@ -227,10 +280,14 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "apply_lpar_pcie_assignments",
         "prevalidate_lpar_pcie_assignments",
         "list_volume_groups",
+        "list_clusters",
+        "list_shared_storage_pools",
+        "get_shared_storage_pool",
         "create_volume_group",
         "create_virtual_disk",
         "delete_virtual_disk",
         "map_storage",
+        "StorageMapResult",
         "upload_iso",
         "create_media_repository",
         "create_optical_media",
@@ -248,11 +305,52 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "StorageKind",
         "LuType",
         "DeviceType",
+        "AuthenticationType",
+        "CreateUserRequest",
+        "ModifyUserPatch",
+        "configure_remote_access",
+        "create_user",
+        "delete_user",
+        "modify_user",
+        "modify_system",
+        "get_system",
+        "ManagedSystemPatch",
+        "list_systems",
         "power_system",
         "list_partition_templates",
         "get_partition_template",
         "deploy_partition_template",
+        "list_vios_backups",
+        "list_vios",
+        "get_vios",
+        "backup_vios",
+        "create_vios",
+        "delete_vios",
+        "restore_vios",
         "power_vios",
+        "BackupType",
+        "RestoreBackupType",
+        "list_available_hmc_ptfs",
+        "update_console_software",
+        "update_firmware",
+        "update_vios",
+        "upgrade_vios",
+        "ConsoleUpdateMediaType",
+        "ConsoleUpdateSource",
+        "IOAdapterUpdateModel",
+        "PlatformUpdateParameter",
+        "SriovAdapterUpdate",
+        "SystemFirmwareUpdateModel",
+        "VIOSPlatformUpdate",
+        "VIOSUpdateHMCSource",
+        "VIOSUpdateIBMWebsiteSource",
+        "VIOSUpdateNFSSource",
+        "VIOSUpdateSFTPSource",
+        "VIOSUpdateUSBSource",
+        "VIOSUpgradeHMCSource",
+        "VIOSUpgradeNFSSource",
+        "VIOSUpgradeSFTPSource",
+        "VIOSUpgradeUSBSource",
         "capture_lpar_console",
         "ConsoleCapture",
         "ConsoleHeldError",
@@ -260,7 +358,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "LparSnapshot",
         "SnapshotInspection",
         "SnapshotValidationError",
-        "HmcIdentity",
+        "HMCIdentity",
         "SystemIdentity",
         "LparIdentity",
         "SnapshotSource",
@@ -283,11 +381,13 @@ def test_public_api_exports_the_adr_inventory() -> None:
 
 
 def _operations_modules() -> dict[str, ModuleType]:
-    """Every ``hmc_mcp.operations_*`` module ADR 0029's selection rule governs."""
+    """Every ``hmc_mcp.operations.*`` module ADR 0029's selection rule governs."""
     return {
-        f"hmc_mcp.{found.name}": import_module(f"hmc_mcp.{found.name}")
-        for found in pkgutil.iter_modules(hmc_mcp.__path__)
-        if found.name.startswith("operations_")
+        f"hmc_mcp.operations.{found.name}": import_module(
+            f"hmc_mcp.operations.{found.name}"
+        )
+        for found in pkgutil.iter_modules(operations.__path__)
+        if not found.name.startswith("_")
     }
 
 
@@ -297,7 +397,7 @@ def _selected_operations(modules: dict[str, ModuleType]) -> set[tuple[str, str]]
     A coroutine an operation module merely imported is owned by the module that
     defined it, so ``__module__`` decides ownership and no name is selected twice.
     Selection is keyed by ``(module, name)`` rather than by bare name: two
-    ``operations_*`` modules defining the same public name are two distinct
+    ``operations.*`` modules defining the same public name are two distinct
     obligations, and a bare-name key would let exporting either one discharge both.
     """
     selected: set[tuple[str, str]] = set()
@@ -412,6 +512,16 @@ def _is_literal_subscript(node: ast.AST) -> bool:
     return isinstance(value, ast.Name) and value.id == "Literal"
 
 
+def _is_annotated_subscript(node: ast.AST) -> bool:
+    """Whether *node* subscripts ``Annotated`` from the typing namespace."""
+    if not isinstance(node, ast.Subscript):
+        return False
+    value = node.value
+    if isinstance(value, ast.Attribute):
+        return value.attr == "Annotated"
+    return isinstance(value, ast.Name) and value.id == "Annotated"
+
+
 def _annotation_paths(annotation: str, *, origin: str = "") -> set[tuple[str, ...]]:
     """Every dotted path an annotation's source text refers to.
 
@@ -435,12 +545,17 @@ def _annotation_paths(annotation: str, *, origin: str = "") -> set[tuple[str, ..
         ) from exc
 
     paths: set[tuple[str, ...]] = set()
-    literal_slices = {
+    ignored_nodes = {
         id(node.slice) for node in ast.walk(tree) if _is_literal_subscript(node)
     }
+    for node in ast.walk(tree):
+        if not _is_annotated_subscript(node):
+            continue
+        elements = node.slice.elts if isinstance(node.slice, ast.Tuple) else ()
+        ignored_nodes.update(id(element) for element in elements[1:])
     skip: set[int] = set()
     for node in ast.walk(tree):
-        if id(node) in literal_slices:
+        if id(node) in ignored_nodes:
             skip |= {id(child) for child in ast.walk(node)}
     for node in ast.walk(tree):
         if id(node) in skip:
@@ -846,10 +961,9 @@ _CLEAN_FAULTS = {
 def test_adr_0029_selection_rule_rejects_undeclared_operations() -> None:
     """The guard above is only worth its place if it reddens; prove that it does.
 
-    ``ADR_0029_OPERATION_EXCLUSIONS`` is empty, so the real check exercises the
-    clean path only. Drive the same helpers with a synthetic operations module.
+    Drive the same helpers with a synthetic operations module.
     """
-    module = ModuleType("hmc_mcp.operations_synthetic")
+    module = ModuleType("hmc_mcp.operations.synthetic")
 
     async def stray_operation(hmc: object) -> None: ...
 
@@ -859,13 +973,13 @@ def test_adr_0029_selection_rule_rejects_undeclared_operations() -> None:
 
     def sync_helper(hmc: object) -> None: ...
 
-    borrowed_operation.__module__ = "hmc_mcp.operations_storage"
+    borrowed_operation.__module__ = "hmc_mcp.operations.storage"
     for value in (stray_operation, _private_operation, sync_helper):
         value.__module__ = module.__name__
     for value in (stray_operation, borrowed_operation, _private_operation, sync_helper):
         setattr(module, value.__name__, value)
 
-    stray = ("hmc_mcp.operations_synthetic", "stray_operation")
+    stray = ("hmc_mcp.operations.synthetic", "stray_operation")
 
     # Only the public coroutine the module itself defines is selected.
     selected = _selected_operations({module.__name__: module})
@@ -896,8 +1010,8 @@ def test_adr_0029_selection_survives_a_name_two_modules_define() -> None:
     There is no collision in the package today, which is why this is proven
     synthetically rather than against the real modules.
     """
-    first = ModuleType("hmc_mcp.operations_first")
-    second = ModuleType("hmc_mcp.operations_second")
+    first = ModuleType("hmc_mcp.operations.first")
+    second = ModuleType("hmc_mcp.operations.second")
     for module in (first, second):
 
         async def collide(hmc: object) -> None: ...
@@ -907,14 +1021,14 @@ def test_adr_0029_selection_survives_a_name_two_modules_define() -> None:
 
     selected = _selected_operations({m.__name__: m for m in (first, second)})
     assert selected == {
-        ("hmc_mcp.operations_first", "collide"),
-        ("hmc_mcp.operations_second", "collide"),
+        ("hmc_mcp.operations.first", "collide"),
+        ("hmc_mcp.operations.second", "collide"),
     }
 
-    exported_one = {("hmc_mcp.operations_first", "collide")}
+    exported_one = {("hmc_mcp.operations.first", "collide")}
     assert _selection_faults(selected, exported_one, {})[
         "selected but not exported or excluded"
-    ] == ["hmc_mcp.operations_second:collide"]
+    ] == ["hmc_mcp.operations.second:collide"]
 
 
 @dataclass(frozen=True)
@@ -927,7 +1041,7 @@ class SyntheticResult:
 
 # Reassigned after ``@dataclass`` runs, not before: the decorator resolves field types
 # through ``sys.modules[cls.__module__]`` and would fail on a name that is not one.
-SyntheticResult.__module__ = "hmc_mcp.operations_typed"
+SyntheticResult.__module__ = "hmc_mcp.operations.typed"
 SyntheticFlavour = Literal["thin", "thick"]
 
 
@@ -946,8 +1060,8 @@ class SyntheticSnapshot:
     flavour: SyntheticFlavour
 
 
-SyntheticNested.__module__ = "hmc_mcp.operations_typed"
-SyntheticSnapshot.__module__ = "hmc_mcp.operations_typed"
+SyntheticNested.__module__ = "hmc_mcp.operations.typed"
+SyntheticSnapshot.__module__ = "hmc_mcp.operations.typed"
 
 
 class SyntheticPartialError(Exception):
@@ -967,8 +1081,8 @@ class SyntheticPartialError(Exception):
         self.flavour = flavour
 
 
-SyntheticPartialError.__module__ = "hmc_mcp.operations_typed"
-SyntheticPartialError.__init__.__module__ = "hmc_mcp.operations_typed"
+SyntheticPartialError.__module__ = "hmc_mcp.operations.typed"
+SyntheticPartialError.__init__.__module__ = "hmc_mcp.operations.typed"
 
 
 def test_adr_0029_type_rule_reddens_end_to_end(
@@ -983,7 +1097,7 @@ def test_adr_0029_type_rule_reddens_end_to_end(
     module is registered because a real owned class always reaches its own module
     through ``sys.modules``, and the field half looks it up there.
     """
-    module = ModuleType("hmc_mcp.operations_typed")
+    module = ModuleType("hmc_mcp.operations.typed")
 
     async def synthetic_operation(
         hmc: object, flavour: SyntheticFlavour
@@ -998,8 +1112,8 @@ def test_adr_0029_type_rule_reddens_end_to_end(
         {(module.__name__, "synthetic_operation")}, {module.__name__: module}
     )
     assert faults["selected but not exported or excluded"] == [
-        "hmc_mcp.operations_typed:SyntheticFlavour",
-        "hmc_mcp.operations_typed:SyntheticResult",
+        "hmc_mcp.operations.typed:SyntheticFlavour",
+        "hmc_mcp.operations.typed:SyntheticResult",
     ]
 
 
@@ -1013,7 +1127,7 @@ def test_adr_0029_type_rule_descends_into_owned_model_fields(
     the shape #482 found twelve models and seven aliases deep — a facade correct under
     the old signature-only walk still leaves both unnameable by a consumer.
     """
-    module = ModuleType("hmc_mcp.operations_typed")
+    module = ModuleType("hmc_mcp.operations.typed")
 
     async def snapshot_operation(hmc: object) -> SyntheticSnapshot: ...
 
@@ -1028,9 +1142,9 @@ def test_adr_0029_type_rule_descends_into_owned_model_fields(
         {(module.__name__, "snapshot_operation")}, {module.__name__: module}
     )
     assert faults["selected but not exported or excluded"] == [
-        "hmc_mcp.operations_typed:SyntheticFlavour",
-        "hmc_mcp.operations_typed:SyntheticNested",
-        "hmc_mcp.operations_typed:SyntheticSnapshot",
+        "hmc_mcp.operations.typed:SyntheticFlavour",
+        "hmc_mcp.operations.typed:SyntheticNested",
+        "hmc_mcp.operations.typed:SyntheticSnapshot",
     ]
 
 
@@ -1045,7 +1159,7 @@ def test_adr_0029_type_rule_reaches_an_exported_errors_constructor(
     all (#502). Driving it with an empty operation set isolates this half, so every
     fault below arrives through ``__init__`` and through nothing else.
     """
-    module = ModuleType("hmc_mcp.operations_typed")
+    module = ModuleType("hmc_mcp.operations.typed")
     module.SyntheticFlavour = SyntheticFlavour  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, module.__name__, module)
     monkeypatch.setattr(
@@ -1055,8 +1169,8 @@ def test_adr_0029_type_rule_reaches_an_exported_errors_constructor(
 
     faults = _unexported_owned_types(set(), {})
     assert faults["selected but not exported or excluded"] == [
-        "hmc_mcp.operations_typed:SyntheticFlavour",
-        "hmc_mcp.operations_typed:SyntheticResult",
+        "hmc_mcp.operations.typed:SyntheticFlavour",
+        "hmc_mcp.operations.typed:SyntheticResult",
     ]
 
 
@@ -1071,7 +1185,7 @@ def test_adr_0029_type_rule_requires_a_manifest_entry_not_a_bare_binding(
     distinction has no live case and stays unproven — and therefore free to be
     weakened back — unless a synthetic one drives it.
     """
-    module = ModuleType("hmc_mcp.operations_typed")
+    module = ModuleType("hmc_mcp.operations.typed")
 
     async def synthetic_operation(hmc: object) -> SyntheticResult: ...
 
@@ -1086,12 +1200,12 @@ def test_adr_0029_type_rule_requires_a_manifest_entry_not_a_bare_binding(
         {(module.__name__, "synthetic_operation")}, {module.__name__: module}
     )
     assert faults["selected but not exported or excluded"] == [
-        "hmc_mcp.operations_typed:SyntheticResult"
+        "hmc_mcp.operations.typed:SyntheticResult"
     ]
 
 
 def test_owned_type_walk_reaches_nested_and_callable_annotations() -> None:
-    pcm_resource = import_module("hmc_mcp.operations_pcm").PcmResource
+    pcm_resource = import_module("hmc_mcp.operations.pcm").PcmResource
     collected: dict[tuple[str, str], object] = {}
     _collect_owned_types(list[pcm_resource | None], collected)
     # A ``Callable`` parameter list is a plain list, not a subscripted generic.
@@ -1100,9 +1214,9 @@ def test_owned_type_walk_reaches_nested_and_callable_annotations() -> None:
     _collect_owned_types(dict[str, object], collected)
     # Nor does an underscore-private owned type: ADR 0029 keeps it internal.
     _collect_owned_types(
-        type("_Internal", (), {"__module__": "hmc_mcp.operations_pcm"}), collected
+        type("_Internal", (), {"__module__": "hmc_mcp.operations.pcm"}), collected
     )
-    assert collected == {("hmc_mcp.operations_pcm", "PcmResource"): pcm_resource}
+    assert collected == {("hmc_mcp.operations.pcm", "PcmResource"): pcm_resource}
 
     # A ``TypeVar`` names no type either; its bound is walked in its place.
     from_bound: dict[tuple[str, str], object] = {}
@@ -1117,10 +1231,10 @@ def test_literal_alias_clause_reads_paths_the_resolved_hints_lose(
 
     A dotted reference and a quoted forward reference each name an alias as surely as
     a bare name does. Both are attributed to the module that *defines* the alias, not
-    the one whose operation consumes it: ``operations_lpm`` names
+    the one whose operation consumes it: ``operations.lpm`` names
     ``RemoteRestartOperation`` and ``jobs`` owns it.
     """
-    lpm = import_module("hmc_mcp.operations_lpm")
+    lpm = import_module("hmc_mcp.operations.lpm")
     jobs = import_module("hmc_mcp.jobs")
 
     async def dotted(hmc: object, operation: jobs.RemoteRestartOperation) -> None: ...
@@ -1178,9 +1292,9 @@ def test_annotation_walk_names_the_operation_when_an_annotation_will_not_parse()
 ):
     """An unreadable signature is a guard failure, and must report as one."""
     with pytest.raises(FacadeContractError) as error:
-        _annotation_paths("not a valid annotation", origin="operations_x.do_thing")
+        _annotation_paths("not a valid annotation", origin="operations.x.do_thing")
 
-    assert "operations_x.do_thing" in str(error.value)
+    assert "operations.x.do_thing" in str(error.value)
     assert "not a valid annotation" in str(error.value)
 
 
@@ -1192,15 +1306,15 @@ def test_literal_alias_clause_unwraps_annotated_and_stops_at_the_package_edge() 
     assert _literal_alias(namespace, ("Absent",)) is None
 
     # An alias a module imports from outside the package is no facade export:
-    # ``operations_pcm`` takes ``Literal`` itself from ``typing``.
-    pcm = import_module("hmc_mcp.operations_pcm")
+    # ``operations.pcm`` takes ``Literal`` itself from ``typing``.
+    pcm = import_module("hmc_mcp.operations.pcm")
     assert _defining_module(pcm, "Literal") is None
-    assert _defining_module(pcm, "PcmCategory") == "hmc_mcp.operations_pcm"
+    assert _defining_module(pcm, "PcmCategory") == "hmc_mcp.operations.pcm"
 
 
 def test_literal_alias_clause_rejects_an_evaluated_annotation() -> None:
     """The clause rests on the future import; a module without it must not go quiet."""
-    module = ModuleType("hmc_mcp.operations_evaluated")
+    module = ModuleType("hmc_mcp.operations.evaluated")
 
     async def evaluated(hmc: object) -> None: ...
 
@@ -1272,7 +1386,7 @@ def test_operations_modules_define_no_unselectable_operation_shapes() -> None:
 
 
 def test_unselectable_shape_detector_recognises_each_shape() -> None:
-    module = ModuleType("hmc_mcp.operations_shapes")
+    module = ModuleType("hmc_mcp.operations.shapes")
 
     async def owned(hmc: object) -> None: ...
 
@@ -1285,7 +1399,7 @@ def test_unselectable_shape_detector_recognises_each_shape() -> None:
     streamer.__module__ = module.__name__
     # A factory in another module stamps its own ``__module__`` on what it builds, and
     # that module does not publish the result under this name.
-    elsewhere.__module__ = "hmc_mcp.operations_storage"
+    elsewhere.__module__ = "hmc_mcp.operations.storage"
     module.owned = owned  # type: ignore[attr-defined]
     module.streamer = streamer  # type: ignore[attr-defined]
     module.factory_built = elsewhere  # type: ignore[attr-defined]
@@ -1295,10 +1409,10 @@ def test_unselectable_shape_detector_recognises_each_shape() -> None:
     module.map_storage = api.map_storage  # type: ignore[attr-defined]
 
     assert _unselectable_operation_shapes({module.__name__: module}) == {
-        "functools.partial": ["hmc_mcp.operations_shapes:partial_built"],
-        "asynchronous generator": ["hmc_mcp.operations_shapes:streamer"],
+        "functools.partial": ["hmc_mcp.operations.shapes:partial_built"],
+        "asynchronous generator": ["hmc_mcp.operations.shapes:streamer"],
         "coroutine its declared module does not publish": [
-            "hmc_mcp.operations_shapes:factory_built"
+            "hmc_mcp.operations.shapes:factory_built"
         ],
     }
 
@@ -1455,7 +1569,7 @@ def _entries_from(
     return _adr_0029_inventory()
 
 
-_PROBE_ENTRY = "- `operations_vios` — operations: `power_vios`."
+_PROBE_ENTRY = "- `operations.vios` — operations: `power_vios`."
 _PROBE_NOTE = "  - Note: narrative the parser passes over."
 
 _REJECTED_FENCE_BODIES = {
@@ -1484,7 +1598,7 @@ def test_inventory_parser_rejects_text_that_is_not_a_note(
     reopened the swallow, and a fake clause rode in behind a note.
     """
     assert _entries_from(monkeypatch, tmp_path, _PROBE_ENTRY) == {
-        "operations_vios": {"operations": ["power_vios"]}
+        "operations.vios": {"operations": ["power_vios"]}
     }
     # A blank line before a note, and a second paragraph inside one, are ordinary
     # markdown and stay legal — a note ends by dedenting, not at the first blank line.
@@ -1492,7 +1606,7 @@ def test_inventory_parser_rejects_text_that_is_not_a_note(
         f"{_PROBE_ENTRY}\n\n{_PROBE_NOTE}\n    wrapped narrative.",
         f"{_PROBE_ENTRY}\n{_PROBE_NOTE}\n\n    a second paragraph of narrative.",
     ):
-        assert set(_entries_from(monkeypatch, tmp_path, legal)) == {"operations_vios"}
+        assert set(_entries_from(monkeypatch, tmp_path, legal)) == {"operations.vios"}
 
     accepted = []
     for label, body in _REJECTED_FENCE_BODIES.items():
@@ -1517,7 +1631,12 @@ def _expected_inventory() -> dict[str, dict[str, list[str]]]:
         if module_name not in modules:
             expected[short] = {"exports": imported}
             continue
-        operations = sorted(n for m, n in selected if m == module_name)
+        operations = sorted(
+            name
+            for selected_module, name in selected
+            if selected_module == module_name
+            and (selected_module, name) not in ADR_0029_OPERATION_EXCLUSIONS
+        )
         expected[short] = {
             "operations": operations,
             "types": sorted(set(imported) - set(operations)),
@@ -1575,7 +1694,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
 def test_runtime_httpx_annotations_remain_resolvable() -> None:
     assert get_type_hints(PcmClient)["_http"].__module__ == "httpx"
     assert get_type_hints(PcmClient._request)["return"].__module__ == "httpx"
-    assert get_type_hints(TemplatesMixin)["_http"].__module__ == "httpx"
+    assert get_type_hints(TemplatesClient._request)["return"].__module__ == "httpx"
 
 
 def _typed_dict_text(exported: type) -> str:
@@ -1600,20 +1719,49 @@ def _typed_dict_text(exported: type) -> str:
     return f"({keys})"
 
 
+def _normalize_optional_annotations(rendered: str) -> str:
+    """Render ``Optional[T]`` as ``T | None`` without assuming T's bracket depth."""
+    marker = "Optional["
+    while marker in rendered:
+        start = rendered.index(marker)
+        cursor = start + len(marker)
+        depth = 1
+        while depth:
+            character = rendered[cursor]
+            if character == "[":
+                depth += 1
+            elif character == "]":
+                depth -= 1
+            cursor += 1
+        inner = rendered[start + len(marker) : cursor - 1]
+        rendered = f"{rendered[:start]}{inner} | None{rendered[cursor:]}"
+    return rendered
+
+
 def _signature_text(exported: object) -> str:
     """One exported name's signature, rendered the same on every supported interpreter.
 
     `inspect` writes an `Annotated` annotation as `typing.Annotated[...]` on 3.11 and
-    as `Annotated[...]` from 3.12 on. The digest below is a single frozen constant
-    checked against 3.11 through 3.14, so an interpreter-dependent rendering makes it
-    unfreezable — invisible until #482 put the first `Annotated` field in the manifest,
-    and then a failure on whichever versions did not recompute it. Dropping the
-    qualifier everywhere it appears leaves the annotation's content intact and the
-    text identical across all four.
+    as `Annotated[...]` from 3.12 on. Python 3.14 also renders Pydantic's synthesized
+    optional model fields as ``T | None`` where older interpreters use ``Optional[T]``.
+    The digest below is one frozen constant across 3.11 through 3.14, so both forms are
+    normalized without changing their annotation content.
     """
     if hasattr(exported, "__required_keys__"):  # A ``TypedDict``: see above.
         return _typed_dict_text(exported)
-    return re.sub(r"\btyping\.", "", str(inspect.signature(exported)))
+    rendered = re.sub(r"\btyping\.", "", str(inspect.signature(exported)))
+    return _normalize_optional_annotations(rendered)
+
+
+def test_signature_text_normalizes_optional_union_rendering() -> None:
+    """Pydantic signatures must freeze identically on Python 3.11 through 3.14."""
+    rendered = _signature_text(api.VIOSPlatformUpdate)
+
+    assert "Optional[" not in rendered
+    assert (
+        "ResourceType: Literal['HMC', 'NFS', 'SFTP', 'USB', 'IBMWebsite'] | None"
+        in rendered
+    )
 
 
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
@@ -1643,7 +1791,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         records how each derives the managed system its ownership guard needs
         when the caller omits the optional selector.
         Before that, issue #366 extracted the ``installios`` install
-        orchestration out of the MCP tool bodies into ``operations_install``
+        orchestration out of the MCP tool bodies into ``operations.install``
         and exported ``install_lpar_os`` and ``install_vios``. Both return the
         CLI bridge's detach handle, not an HMC job identifier: ADR 0069 found
         no ``InstallLPAR``/``InstallVIOS`` REST job on any surveyed HMC and
@@ -1705,34 +1853,195 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             unrenderable.add(name)
     # Falling out of this loop is how an export leaves the freeze in silence, and it
     # is how `InstallHandle` would have left it (#468). Name the ones that do rather
-    # than passing over them: each of these four subclasses `ValueError` or
-    # `RuntimeError` and inherits a constructor `inspect.signature` cannot read, which
-    # is the same absence the Decision's own constructor clause records. The set adds
-    # no digest entry, so it costs no recomputation — it fails the next time an export
-    # falls into the hole instead of letting it vanish.
+    # than passing over them: each subclasses a built-in exception and inherits a
+    # constructor `inspect.signature` cannot read, which is the same absence the
+    # Decision's own constructor clause records. The set adds no digest entry, so it
+    # costs no recomputation — it fails the next time an export falls into the hole
+    # instead of letting it vanish.
     assert unrenderable == {
         "ConfigError",
         "PcieAssignmentUnavailableError",
         "SriovLogicalPortCapabilityError",
+        "TLSVerificationDisabledWarning",
         "VnicCapabilityError",
     }
     # At least one manifest entry must carry an `Annotated` field, or the CI matrix
     # stops exercising the interpreter divergence `_signature_text` normalises away.
-    assert "Annotated[str, MinLen" in signatures["HmcIdentity"]
+    assert "Annotated[str, MinLen" in signatures["HMCIdentity"]
     # The same guard for the `TypedDict` branch. A digest is an opaque hash, so a
     # `_typed_dict_text` degraded to empty or partial text would move it once and
     # read as an ordinary manifest move to whoever recomputed it.
     assert signatures["InstallHandle"] == (
         "(system: str, partition: str, pid: int, log_path: str, message: str)"
     )
+    for operation_name in (
+        "create_logical_unit",
+        "delete_logical_unit",
+        "deploy_partition_template",
+    ):
+        parameters = inspect.signature(getattr(api, operation_name)).parameters
+        for control, default in (
+            ("wait", False),
+            ("timeout_seconds", 300),
+            ("poll_interval", 5),
+        ):
+            assert parameters[control].kind is inspect.Parameter.KEYWORD_ONLY
+            assert parameters[control].default == default
+    create_parameters = inspect.signature(api.create_logical_unit).parameters
+    assert create_parameters["cloned_from"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert create_parameters["cloned_from"].default is None
+    for operation_name in api.__all__:
+        member = getattr(api, operation_name)
+        if not inspect.isfunction(member):
+            continue
+        parameters = inspect.signature(member).parameters
+        selectors = {"system_name_or_uuid", "lpar_name_or_uuid"}
+        if not selectors.issubset(parameters):
+            continue
+        selector_names = [name for name in parameters if name in selectors]
+        assert selector_names == ["system_name_or_uuid", "lpar_name_or_uuid"]
+    for operation_name in (
+        "read_lpar_boot_order",
+        "set_lpar_boot_order",
+        "clear_lpar_boot_order",
+    ):
+        parameters = inspect.signature(getattr(api, operation_name)).parameters
+        assert "lpar_name_or_uuid" in parameters
+        assert "lpar_uuid" not in parameters
+    for operation_name in ("add_vscsi_adapter", "add_vfc_adapter"):
+        slot = inspect.signature(getattr(api, operation_name)).parameters["slot_number"]
+        assert slot.kind is inspect.Parameter.KEYWORD_ONLY
+        assert slot.default is None
+    for operation_name in (
+        "list_dedicated_slots",
+        "set_sriov_adapter_mode",
+        "list_sriov_adapters",
+        "list_sriov_physical_ports",
+        "list_sriov_logical_ports",
+    ):
+        parameters = inspect.signature(getattr(api, operation_name)).parameters
+        assert "system_name_or_uuid" in parameters
+        assert "system" not in parameters
+    for operation_name in (
+        "get_system_memopt_score",
+        "list_resource_group_memopt_scores",
+        "plan_lpar_memopt_scores",
+        "plan_resource_group_memopt_scores",
+        "plan_system_memopt_score",
+    ):
+        assert (
+            "system_name_or_uuid"
+            in inspect.signature(getattr(api, operation_name)).parameters
+        )
+    vios_install_parameters = inspect.signature(api.install_vios).parameters
+    assert [
+        name
+        for name in vios_install_parameters
+        if name in {"system_name_or_uuid", "vios_name_or_uuid"}
+    ] == ["system_name_or_uuid", "vios_name_or_uuid"]
+    for operation_name in ("power_lpar", "power_system", "power_vios"):
+        parameters = inspect.signature(getattr(api, operation_name)).parameters
+        assert "power_on" in parameters
+        assert "on" not in parameters
+    for operation_name in (
+        "delete_vios",
+        "power_vios",
+        "update_vios",
+        "upgrade_vios",
+        "list_volume_groups",
+        "create_volume_group",
+        "create_virtual_disk",
+        "delete_virtual_disk",
+        "map_storage",
+        "create_media_repository",
+        "create_optical_media",
+        "list_storage_mappings",
+        "detach_storage_mapping",
+        "delete_media_repository",
+        "delete_optical_media",
+        "get_media_repository",
+        "list_optical_media",
+        "upload_iso",
+        "list_optical_mappings",
+        "mount_optical_media",
+        "unmount_optical_media",
+    ):
+        parameters = inspect.signature(getattr(api, operation_name)).parameters
+        selector_names = [
+            name
+            for name in parameters
+            if name in {"system_name_or_uuid", "vios_name_or_uuid"}
+        ]
+        assert selector_names == ["system_name_or_uuid", "vios_name_or_uuid"]
+    get_vios_parameters = inspect.signature(api.get_vios).parameters
+    assert list(get_vios_parameters)[:2] == ["hmc", "vios_name_or_uuid"]
+    assert get_vios_parameters["system_name_or_uuid"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert get_vios_parameters["system_name_or_uuid"].default is None
+    assert "capacity_mib" in inspect.signature(api.create_virtual_disk).parameters
+    assert "size_mib" not in inspect.signature(api.create_virtual_disk).parameters
+    provision_parameters = inspect.signature(api.provision_lpar).parameters
+    for control in (
+        "partition_type",
+        "power_on",
+        "dry_run",
+        "assignments",
+        "caller_token",
+        "minimum_affinity_policy",
+        "affinity_assessment",
+    ):
+        assert provision_parameters[control].kind is inspect.Parameter.KEYWORD_ONLY
+    unassign_parameters = inspect.signature(api.unassign_sriov_logical_port).parameters
+    assert unassign_parameters["profile_name"].kind is inspect.Parameter.KEYWORD_ONLY
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #468: `InstallHandle` replaces `dict[str, Any]` on both install
+    # Moved when AssignmentStep became the shared WorkflowStep contract.
+    # Before that, provision_lpar made its workflow controls keyword-only.
+    # Before that, update_console_software dropped the permanently refused
+    # ``kind`` selector, and install_vios adopted
+    # system-before-partition selector order,
+    # recomputed over capture_lpar_snapshot dropping a config already owned by
+    # its HMCClient, LPAR operations' standardized selector order,
+    # keyword-only job polling controls, and the SSH-backed operations'
+    # #468: `InstallHandle` replaces `dict[str, Any]` on both install
     # return annotations and contributes its own five-key entry. Recomputed over
     # #482's 717825fb, which added twelve `snapshot` models with their Pydantic
     # constructors and seven literal aliases with the `(*args, **kwargs)` every
     # alias reports, itself recomputed over #446's 960b0376 under the
     # normalisation `_signature_text` applies.
-    expected_digest = "270f9389f83fd828848b636f85ccdc98e9525a3f8efe01e81db6eb4be9cee786"  # pragma: allowlist secret
+    # Moving the update request models beside operations.updates changed their
+    # qualified annotation paths without changing exported names or signatures.
+    # Replacing add_vios_adapter's boolean mode with explicit vSCSI and vFC
+    # operations changed the supported facade manifest.
+    # Returning StorageMapResult from map_storage exposes the authorized LPAR UUID
+    # without making callers resolve the selector independently.
+    # Splitting VIOS upgrades into upgrade_vios removed update_vios's mode
+    # selector and added the explicit operation to the facade.
+    # User mutation operations now name every supported document field instead
+    # of accepting an untyped keyword bag.
+    # PCM metric controls are keyword-only after the resource selector.
+    # PCIe assignment selectors now state their accepted name-or-UUID vocabulary.
+    # Every LPAR operation now places the system selector before the LPAR selector.
+    # VIOS inventory operations and their PartitionState selector joined the facade.
+    # System and VIOS power operations now use power_on like the LPAR operation.
+    # VIOS mutations share system-before-partition selector order; get_vios
+    # makes its optional system scope keyword-only after the required selector.
+    # Virtual-disk creation now uses capacity_mib at every public layer.
+    # ProvisionAdapters replaces the network-only name for its mixed adapter inputs.
+    # SSH-only operations accept HMCConfig directly instead of an unused REST client.
+    # Boot-order operations now accept a system-scoped LPAR name or UUID.
+    # PCIe inventory operations now name their system selector explicitly.
+    # Cluster and shared-storage-pool inventory joined the reusable facade.
+    # VIOS storage operations now accept managed-system scope before the
+    # VIOS selector, making duplicate names unambiguous.
+    # ConsoleCapture now exposes bounded stream-failure context.
+    # Capacity and summary memory contracts now use the accurate MiB suffix.
+    # DecommissionResult now exposes its blast-radius record types.
+    # PartitionState now lives at the shared operations layer used by LPAR and VIOS.
+    # Virtual-network creation now records its resolved parent system UUID.
+    # Cohesive managed-system patch and LPM destination request values replace
+    # their recurring scalar parameter groups.
+    # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
+    # now normalizes it to the declared ``T | None`` form on every supported version.
+    expected_digest = "07d5116d8851c62a65a6711d16196beb10f4758a043542d2c8ee5b8771e11cc4"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -1844,7 +2153,7 @@ def test_hmc_client_supported_lifecycle_members_are_present() -> None:
     } == SUPPORTED_CLIENT_LIFECYCLE
 
 
-_FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[str, ...]] = {
+_FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[object, ...]] = {
     "AdapterType": (
         "ClientNetworkAdapter",
         "VirtualSCSIClientAdapter",
@@ -1858,17 +2167,57 @@ _FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[str, ...]] = {
         "unsupported-data",
         "none",
     ),
+    "AuthenticationType": ("Local", "LDAP", "Kerberos"),
+    "BackupType": ("vios", "viosioconfig", "ssp"),
     "BootDeviceSelector": ("cd", "disk", "network"),
     "CapabilityState": ("available", "capability-unavailable"),
     "CapturedPolicyState": ("configured", "absent", "unsupported", "missing"),
+    "ConsoleUpdateMediaType": (
+        "USB",
+        "NFS",
+        "SFTP",
+        "FTP",
+        "IBMWebsite",
+        "Disk",
+        "VirtualMedia",
+        "CDDVD",
+    ),
     "DeviceType": ("VirtualIO_Disk", "VirtualIO_Image"),
     "Keylock": ("normal", "manual", "auto"),
     "LuType": ("THIN", "THICK"),
     "MetricKind": ("processed", "aggregated"),
+    "MemoryMirroringMode": ("none", "sys_firmware_only"),
     "OsType": ("aix", "linux", "ibmi"),
     "PartitionType": ("AIX/Linux", "OS400", "Virtual IO Server"),
+    "PartitionState": (
+        "running",
+        "not activated",
+        "starting",
+        "shutting down",
+        "stopping",
+        "open firmware",
+        "error",
+        "migrating",
+        "suspended",
+        "resuming",
+        "unknown",
+    ),
     "PcmCategory": ("ManagedSystem", "LogicalPartition"),
     "PolicyState": ("configured", "absent", "unsupported"),
+    "PowerOffPolicy": (0, 1),
+    "PowerOnLparStartPolicy": ("autostart", "userinit", "autorecovery"),
+    "ProcessorCompatibilityMode": (
+        "default",
+        "POWER5",
+        "POWER6",
+        "POWER6+",
+        "POWER7",
+        "POWER8",
+        "POWER9_Base",
+        "POWER9",
+        "POWER10",
+        "POWER11",
+    ),
     "RemoteRestartOperation": (
         "validate",
         "recover",
@@ -1876,6 +2225,7 @@ _FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[str, ...]] = {
         "cleanup",
         "cancel",
     ),
+    "RestoreBackupType": ("viosioconfig", "ssp"),
     "ResourceKind": (
         "dedicated_slot",
         "sriov_adapter",
@@ -1934,9 +2284,9 @@ loaded = sorted(
     if name.split('.', 1)[0] in {'fastmcp', 'mcp', 'rich', 'typer'}
     or name == 'hmc_mcp._app'
     or name == 'hmc_mcp.cli'
-    or name.startswith('hmc_mcp.cli_')
+    or name.startswith('hmc_mcp.cli_commands')
     or name == 'hmc_mcp.server'
-    or name.startswith('hmc_mcp.server_')
+    or name.startswith('hmc_mcp.server_tools')
 )
 assert loaded == [], loaded
 """

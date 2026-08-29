@@ -17,13 +17,13 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp.access_policy import AccessPolicyError
+from hmc_mcp.authorization.access_policy import AccessPolicyError
 from hmc_mcp.config import config_dir
-from hmc_mcp.connection_scope import ConnectionScopeError
-from hmc_mcp.dispatch_scope import dispatch_authorizer
-from hmc_mcp.operations_provision import ProvisionNetwork, ProvisionStorage
+from hmc_mcp.authorization.connection_scope import ConnectionScopeError
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
+from hmc_mcp.operations.lpar.provision import ProvisionAdapters, ProvisionStorage
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.target_scope import TargetScopeError
+from hmc_mcp.authorization.target_scope import TargetScopeError
 
 # `lab_profile` is autouse in its own module, so importing it applies it here
 # too — no test in this module names it, and doing so would shadow the import.
@@ -358,7 +358,7 @@ def test_a_table_grant_still_never_reaches_provision_lpar():
     well_formed = {
         "system_name_or_uuid": "sys-1",
         "name": "new-lpar",
-        "network": ProvisionNetwork(port_vlan_id=1, vios_partition_id=3, vios_slot=2),
+        "network": ProvisionAdapters(port_vlan_id=1, vios_partition_id=3, vios_slot=2),
         "storage": ProvisionStorage(vios_uuid="vios-uuid-1", storage_name="rootvg"),
         "profile": "lab",
     }
@@ -608,7 +608,7 @@ def test_the_decision_modules_never_mention_dry_run():
     """
     from pathlib import Path
 
-    from hmc_mcp import connection_scope, dispatch_scope, target_scope
+    from hmc_mcp.authorization import connection_scope, dispatch_scope, target_scope
 
     for module in (dispatch_scope, target_scope, connection_scope):
         source = Path(module.__file__).read_text(encoding="utf-8")
@@ -628,10 +628,10 @@ def test_the_decision_modules_never_mention_dry_run():
 
 
 def test_a_second_argument_cannot_override_the_authorized_selector():
-    """`hmc_get_job` declares `job_uuid` and then lets `job_href` replace it.
+    """`hmc_get_job` declares `job_id` and then lets `job_href` replace it.
 
     `client.get_job` fetches `urlparse(job_href).path` and never reads
-    `job_uuid`, so a table grant would authorize one job identity while the
+    `job_id`, so a table grant would authorize one job identity while the
     server reads another — the exact escape `exhaustive_targets` exists to
     refuse, reached through an argument the *name* tables did not know about.
 
@@ -661,7 +661,7 @@ def test_a_second_argument_cannot_override_the_authorized_selector():
             _authorize(
                 effect_grant,
                 "hmc_get_job",
-                {"job_uuid": "job-1111", "job_href": href, "profile": "lab"},
+                {"job_id": "job-1111", "job_href": href, "profile": "lab"},
             )
 
     # `all-targets` still reaches it, so #225's legacy exposure is unaffected.
@@ -670,7 +670,7 @@ def test_a_second_argument_cannot_override_the_authorized_selector():
         _authorize(
             wide,
             "hmc_get_job",
-            {"job_uuid": "job-1111", "job_href": None, "profile": "lab"},
+            {"job_id": "job-1111", "job_href": None, "profile": "lab"},
         )
         is None
     )

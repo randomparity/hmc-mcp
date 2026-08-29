@@ -53,8 +53,8 @@ returning `list[dict[str, object]]` or a package-owned capability sentinel consu
 
 ## Task 2: Add the shared result envelope and MCP/API adapters
 
-**Files:** modify `src/hmc_mcp/operations_ssh_network.py`,
-`src/hmc_mcp/server_lpar_config.py`, `src/hmc_mcp/_app.py`, `src/hmc_mcp/server.py`,
+**Files:** modify `src/hmc_mcp/operations/ssh_network.py`,
+`src/hmc_mcp/server_tools/lpar_config.py`, `src/hmc_mcp/_app.py`, `src/hmc_mcp/server.py`,
 `src/hmc_mcp/api.py`, `tests/lpar/test_resource_group_affinity.py`,
 `tests/app/test_application_boundaries.py`, and `tests/app/test_tool_security.py`.
 
@@ -76,7 +76,7 @@ from the spec. Task 3 consumes both operations and selector.
 
 ## Task 3: Add CLI and live-runner paths
 
-**Files:** modify `src/hmc_mcp/cli_lpars.py`, `scripts/live_test_runner.py`,
+**Files:** modify `src/hmc_mcp/cli_commands/lpars.py`, `scripts/live_test_runner.py`,
 `tests/app/test_cli_commands.py`, and `tests/test_live_runner.py`.
 
 **Interfaces:** consume Task 2's two async operations and

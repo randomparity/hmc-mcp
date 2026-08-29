@@ -21,7 +21,7 @@ The missing piece is:
 2. Threading the caller-supplied value (or `None`) to every `client_from_env()`
    call inside that tool's body.
 3. Fixing the three direct `HMCConfig()` constructions used on REST paths as
-   CLI-fallback branches (`server_power.py:156`, `server_provision.py:227`)
+   CLI-fallback branches (`server_tools/power.py:156`, `server_tools/provision.py:227`)
    so the selected profile's credentials are used there too.
 
 ## Decision
@@ -52,15 +52,15 @@ by direct inline patterns in the tool body, or the helpers are extended to accep
   they already accept `hmc` as a client parameter, so no signature change is
   needed there — callers simply pass the profile-aware client.
 
-### `_ssh_with_client` exclusion
+### `ssh_with_client` exclusion
 
-`_ssh_with_client` in `_app.py` is excluded from this change; SSH routing
+`ssh_with_client` in `_app.py` is excluded from this change; SSH routing
 is scoped to #127.
 
 ### Direct `HMCConfig()` fallback paths
 
-The CLI-fallback branches in `server_power.py` (create-LPAR-via-CLI) and
-`server_provision.py` (provision-LPAR fallback) construct `HMCConfig()` directly.
+The CLI-fallback branches in `server_tools/power.py` (create-LPAR-via-CLI) and
+`server_tools/provision.py` (provision-LPAR fallback) construct `HMCConfig()` directly.
 These are changed to `client_from_env(profile).config` — i.e., they derive
 the config from the same profile the tool selected, so the fallback path uses the
 same credentials as the REST path it fell back from.
@@ -72,7 +72,7 @@ of constructing a new one.
 
 ### `ssh.run_hmc_command` exclusion
 
-`ssh.run_hmc_command` (the SSH-only path in `server_cli.py`) is excluded; it
+`ssh.run_hmc_command` (the SSH-only path in `server_tools/cli.py`) is excluded; it
 is owned by #127.
 
 ## Consequences

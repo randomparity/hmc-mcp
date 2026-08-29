@@ -2,8 +2,8 @@
 
 import pytest
 
-from hmc_mcp.operations_capacity import find_placement, system_capacity
-from hmc_mcp.operations_composite import _system_summary
+from hmc_mcp.operations.capacity import find_placement, system_capacity
+from hmc_mcp.operations.composite import _system_summary
 
 
 SYSTEM = {
@@ -67,7 +67,7 @@ class _CapacityClient:
 @pytest.mark.asyncio
 async def test_find_placement_orders_smallest_sufficient_capacity_first():
     result = await find_placement(
-        _CapacityClient(), desired_memory_mb=4096, desired_proc_units=1
+        _CapacityClient(), desired_memory_mib=4096, desired_proc_units=1
     )
 
-    assert [candidate["system_uuid"] for candidate in result] == ["tight", "roomy"]
+    assert [candidate.system_uuid for candidate in result] == ["tight", "roomy"]

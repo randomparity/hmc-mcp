@@ -4,7 +4,7 @@
 
 **Goal:** Add `hmc_list_configured_hosts` read-only MCP tool and clean up the repo-root `.env` documentation artifacts.
 
-**Architecture:** Single tool function in `server_system.py` that reads the platform-native TOML config file (raw `tomllib.loads`, key-presence-only for secrets), registers itself in `READ_ONLY_TOOLS`, and returns structured profile metadata. README and `.env.example` updates complete the configuration contract.
+**Architecture:** Single tool function in `server_tools/system.py` that reads the platform-native TOML config file (raw `tomllib.loads`, key-presence-only for secrets), registers itself in `READ_ONLY_TOOLS`, and returns structured profile metadata. README and `.env.example` updates complete the configuration contract.
 
 **Tech Stack:** Python 3.12+, tomllib (stdlib), FastMCP, pytest, uv
 
@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- All imports and code follow existing module conventions (see `server_system.py` for tool pattern)
+- All imports and code follow existing module conventions (see `server_tools/system.py` for tool pattern)
 - No new environment variables; `HMC_*` field count stays at 10
 - Secret values never appear in tool output; only key-presence booleans
 - `HMCConfig` defaults for `port` (12443) and `verify_ssl` (False) are read from `HMCConfig.model_fields`, not hardcoded
@@ -24,10 +24,10 @@
 
 ---
 
-## Task 1: Add `hmc_list_configured_hosts` to `server_system.py` and `_app.py`
+## Task 1: Add `hmc_list_configured_hosts` to `server_tools/system.py` and `_app.py`
 
 **Files:**
-- Modify: `src/hmc_mcp/server_system.py` — add the tool function
+- Modify: `src/hmc_mcp/server_tools/system.py` — add the tool function
 - Modify: `src/hmc_mcp/_app.py` — add tool name to `READ_ONLY_TOOLS`
 - Modify: `src/hmc_mcp/server.py` — export the new function
 
@@ -52,17 +52,17 @@
   }
   ```
 
-- [ ] **Step 1: Locate the insertion point in `server_system.py`**
+- [ ] **Step 1: Locate the insertion point in `server_tools/system.py`**
 
-  Read `src/hmc_mcp/server_system.py` lines 1–30 to understand the import block, then find `hmc_console_info` — the new tool goes after it.
+  Read `src/hmc_mcp/server_tools/system.py` lines 1–30 to understand the import block, then find `hmc_console_info` — the new tool goes after it.
 
   ```bash
-  grep -n "hmc_console_info\|^@mcp.tool\|^def hmc_\|^import\|^from" src/hmc_mcp/server_system.py | head -30
+  grep -n "hmc_console_info\|^@mcp.tool\|^def hmc_\|^import\|^from" src/hmc_mcp/server_tools/system.py | head -30
   ```
 
-- [ ] **Step 2: Add required imports to `src/hmc_mcp/server_system.py`**
+- [ ] **Step 2: Add required imports to `src/hmc_mcp/server_tools/system.py`**
 
-  The current import block in `server_system.py` does NOT include `tomllib`, `Path`, `HMCConfig`, or `resolve_config_path`. Add these three lines to the standard-library / relative-import section at the top of the file (after the existing `from __future__ import annotations` line, before the first `from ._app import` line):
+  The current import block in `server_tools/system.py` does NOT include `tomllib`, `Path`, `HMCConfig`, or `resolve_config_path`. Add these three lines to the standard-library / relative-import section at the top of the file (after the existing `from __future__ import annotations` line, before the first `from ._app import` line):
 
   ```python
   import tomllib
@@ -76,17 +76,17 @@
 
   Verify the imports are present before continuing:
   ```bash
-  head -20 src/hmc_mcp/server_system.py
+  head -20 src/hmc_mcp/server_tools/system.py
   ```
 
   Then confirm the module still imports cleanly:
   ```bash
-  uv run python -c "import hmc_mcp.server_system"
+  uv run python -c "import hmc_mcp.server_tools.system"
   ```
 
   Expected: exits 0 with no output.
 
-- [ ] **Step 3: Add the tool function to `src/hmc_mcp/server_system.py`**
+- [ ] **Step 3: Add the tool function to `src/hmc_mcp/server_tools/system.py`**
 
   Insert after the `hmc_console_info` function body:
 
@@ -190,7 +190,7 @@
 - [ ] **Step 7: Commit**
 
   ```bash
-  git add src/hmc_mcp/server_system.py src/hmc_mcp/_app.py src/hmc_mcp/server.py
+  git add src/hmc_mcp/server_tools/system.py src/hmc_mcp/_app.py src/hmc_mcp/server.py
   git commit -m "feat(mcp): add hmc_list_configured_hosts read-only tool (#128)"
   ```
 
@@ -199,14 +199,14 @@
 ## Task 2: Unit tests for `hmc_list_configured_hosts`
 
 **Files:**
-- Create: `tests/unit/test_server_hosts.py`
+- Create: `tests/unit/test_server_tools/hosts.py`
 
 **Interfaces:**
-- Consumes: `hmc_list_configured_hosts` from `hmc_mcp.server_system`; `resolve_config_path` from `hmc_mcp.config`
+- Consumes: `hmc_list_configured_hosts` from `hmc_mcp.server_tools.system`; `resolve_config_path` from `hmc_mcp.config`
 
 - [ ] **Step 1: Write the test file**
 
-  Create `tests/unit/test_server_hosts.py`:
+  Create `tests/unit/test_server_tools/hosts.py`:
 
   ```python
   """Tests for hmc_list_configured_hosts (issue #128).
@@ -222,7 +222,7 @@
 
   import pytest
 
-  from hmc_mcp.server_system import hmc_list_configured_hosts
+  from hmc_mcp.server_tools.system import hmc_list_configured_hosts
 
 
   # ---------------------------------------------------------------------------
@@ -238,9 +238,9 @@
   def _patch_config_path(tmp_path, content: str | None):
       """Context manager: patch resolve_config_path to return a tmp file or None."""
       if content is None:
-          return patch("hmc_mcp.server_system.resolve_config_path", return_value=None)
+          return patch("hmc_mcp.server_tools.system.resolve_config_path", return_value=None)
       cfg = _write_toml(tmp_path / "config.toml", content)
-      return patch("hmc_mcp.server_system.resolve_config_path", return_value=cfg)
+      return patch("hmc_mcp.server_tools.system.resolve_config_path", return_value=cfg)
 
 
   # ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@
 
   def test_no_config_file(tmp_path):
       """Returns empty profiles list when no config file exists."""
-      with patch("hmc_mcp.server_system.resolve_config_path", return_value=None):
+      with patch("hmc_mcp.server_tools.system.resolve_config_path", return_value=None):
           result = hmc_list_configured_hosts()
       assert result == {"profiles": [], "config_file": None}
 
@@ -413,7 +413,7 @@
       """TOML parse error → ValueError whose message includes the config path."""
       cfg = tmp_path / "config.toml"
       cfg.write_text("this is [[not valid toml]]\n", encoding="utf-8")
-      with patch("hmc_mcp.server_system.resolve_config_path", return_value=cfg):
+      with patch("hmc_mcp.server_tools.system.resolve_config_path", return_value=cfg):
           with pytest.raises(ValueError, match="TOML parse error"):
               hmc_list_configured_hosts()
 
@@ -426,7 +426,7 @@
       """PermissionError reading config file → ValueError with path and OS error."""
       cfg = tmp_path / "config.toml"
       cfg.write_text("[profiles.x]\nhost = 'h'\nuser = 'u'\n", encoding="utf-8")
-      with patch("hmc_mcp.server_system.resolve_config_path", return_value=cfg), \
+      with patch("hmc_mcp.server_tools.system.resolve_config_path", return_value=cfg), \
            patch.object(Path, "read_text", side_effect=PermissionError("Permission denied")):
           with pytest.raises(ValueError, match="cannot read config file"):
               hmc_list_configured_hosts()
@@ -479,10 +479,10 @@
 - [ ] **Step 2: Run the new tests**
 
   ```bash
-  uv run pytest tests/unit/test_server_hosts.py -v
+  uv run pytest tests/unit/test_server_tools/hosts.py -v
   ```
 
-  Expected: all tests pass. If a test fails because the implementation isn't quite right, fix the implementation in `server_system.py` and re-run.
+  Expected: all tests pass. If a test fails because the implementation isn't quite right, fix the implementation in `server_tools/system.py` and re-run.
 
 - [ ] **Step 3: Run the full test suite**
 
@@ -495,7 +495,7 @@
 - [ ] **Step 4: Commit**
 
   ```bash
-  git add tests/unit/test_server_hosts.py
+  git add tests/unit/test_server_tools/hosts.py
   git commit -m "test: unit tests for hmc_list_configured_hosts (#128)"
   ```
 
@@ -649,7 +649,7 @@
 | Spec section | Task covering it |
 |---|---|
 | §2.1 `hmc_list_configured_hosts` per-profile fields | Task 1 + Task 2 (tests 1–3) |
-| §2.2 Implementation location (`server_system.py`) | Task 1 |
+| §2.2 Implementation location (`server_tools/system.py`) | Task 1 |
 | §2.3 Secret-redaction: raw dict forwarding forbidden | Task 1 (build), Task 2 test 4 (paranoid check) |
 | §2.3 `port`/`verify_ssl` from `HMCConfig.model_fields` | Task 1, Task 2 test 10 |
 | §2.3 `PermissionError` → `ValueError` | Task 1, Task 2 test 9 |
