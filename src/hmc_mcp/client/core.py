@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from collections.abc import Mapping
 from typing import Any, Literal, get_args
 import re
+from threading import Lock
 from urllib.parse import quote, unquote, urlparse
 
 from ..audit import records as audit
@@ -141,6 +142,7 @@ class TLSVerificationDisabledWarning(UserWarning):
 
 
 _reported_tls_warning_keys: set[tuple[str, VerifySSLSource]] = set()
+_tls_warning_lock = Lock()
 
 #: The closed vocabulary, derived rather than restated — as ``audit.REASONS`` is from
 #: ``audit.Reason``. ``audit`` imports nothing from ``hmc_mcp``, so its TLS record
@@ -357,17 +359,18 @@ class HMCClient(
         """
         if not self.config.verify_ssl:
             warning_key = (self.config.host, _verify_ssl_source(self.config))
-            if warning_key not in _reported_tls_warning_keys:
-                warnings.warn(
-                    "TLS certificate verification is disabled (verify_ssl=False). "
-                    "HMC credentials travel over an unverified TLS connection and "
-                    "can be intercepted by a man-in-the-middle. Install the HMC's "
-                    "CA locally and set HMC_VERIFY_SSL=true (or --verify-ssl) to "
-                    "enable verification.",
-                    TLSVerificationDisabledWarning,
-                    stacklevel=2,
-                )
-                _reported_tls_warning_keys.add(warning_key)
+            with _tls_warning_lock:
+                if warning_key not in _reported_tls_warning_keys:
+                    warnings.warn(
+                        "TLS certificate verification is disabled (verify_ssl=False). "
+                        "HMC credentials travel over an unverified TLS connection and "
+                        "can be intercepted by a man-in-the-middle. Install the HMC's "
+                        "CA locally and set HMC_VERIFY_SSL=true (or --verify-ssl) to "
+                        "enable verification.",
+                        TLSVerificationDisabledWarning,
+                        stacklevel=2,
+                    )
+                    _reported_tls_warning_keys.add(warning_key)
         body = build_logon_request_document(
             user=self.config.user, password=self.config.password
         )

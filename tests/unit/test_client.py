@@ -3,8 +3,10 @@
 import asyncio
 import json
 import logging
+import threading
 import traceback
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -398,6 +400,40 @@ async def test_tls_warning_promoted_to_error_does_not_consume_the_key(monkeypatc
 
     with pytest.warns(TLSVerificationDisabledWarning):
         await client.logon()
+
+
+def test_concurrent_logons_emit_one_tls_warning(monkeypatch):
+    monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
+    first_warning_entered = threading.Event()
+    second_warning_entered = threading.Event()
+    warning_calls = 0
+    calls_lock = threading.Lock()
+
+    def slow_warning(*args, **kwargs):
+        nonlocal warning_calls
+        with calls_lock:
+            warning_calls += 1
+            call_number = warning_calls
+        if call_number == 1:
+            first_warning_entered.set()
+            second_warning_entered.wait(timeout=0.2)
+        else:
+            second_warning_entered.set()
+
+    async def logon():
+        client = HMCClient(make_config(verify_ssl=False))
+        client._logon_once = AsyncMock(return_value="token")
+        await client.logon()
+        await client._http.aclose()
+
+    monkeypatch.setattr(client_core.warnings, "warn", slow_warning)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(asyncio.run, logon()) for _ in range(2)]
+        for future in futures:
+            future.result()
+
+    assert first_warning_entered.is_set()
+    assert warning_calls == 1
 
 
 @pytest.mark.asyncio
