@@ -126,16 +126,6 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   `HMC_PROFILE` that names nothing, instead reports the connection as
   `unresolved`; authored configuration is never silently discarded.
 
-  A fourth value, `ambiguous`, means a **case variant** of
-  `HMC_AUTHORIZE_POWER_OPERATIONS` is exported. It over-reports
-  ([#547](https://github.com/randomparity/hmc-mcp/issues/547)): it was
-  introduced when a variant lost to a profile on one resolution path and won on
-  the other, and the fix for
-  [#531](https://github.com/randomparity/hmc-mcp/issues/531) removed that
-  divergence — a variant now drops the profile's key on both paths, so the value
-  came from the environment and `environment` is the truthful label. Read
-  `ambiguous` as `environment`, and fix the spelling.
-
   **With `HMC_HOST` set, expect fewer rows than your policy has connections.** Every
   connection token collapses to the default one at dispatch, so the report carries at
   most the `<default>` row — the named ones vanish because nothing can reach them. An

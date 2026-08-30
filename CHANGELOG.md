@@ -210,14 +210,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   key or environment variable is dropped silently and is otherwise indistinguishable from a
   correct `false`; each entry carries the `source` that supplied the value — `environment`,
   `profile`, or `default`, where `default` is the answer that means nothing the operator
-  wrote arrived. A fourth value, `ambiguous`, reports that a **case variant** of
-  `HMC_AUTHORIZE_POWER_OPERATIONS` is exported: pydantic-settings matches a variant
-  case-insensitively while the profile loader drops only the exact upper-case spelling, so a
-  variant loses to a profile on one resolution path and wins on the other, and nothing in the
-  server can tell which happened. **The #531 fix in this same release removes that
-  divergence**, so `ambiguous` ships over-reporting: a variant now drops the profile's key on
-  both paths and `environment` is the truthful label. Read `ambiguous` as `environment`;
-  #547 tracks removing the value. `hmc-mcp config show` could not answer
+  wrote arrived. Environment names are matched case-insensitively, so exact and variant
+  spellings both report `environment` and override the profile consistently (#547, ADR 0110).
+  `hmc-mcp config show` could not answer
   either deployment the documentation
   recommends: it exits 1 with no `config.toml`, and it reads the invoking shell's environment
   rather than the served process's. The entry keeps the setting's own name and polarity —
@@ -463,6 +458,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: removed the stale `ambiguous` literal alternative from
+  `PowerOwnershipGuard.source`; exact and case-variant environment spellings now report
+  `environment` in both the MCP response and startup audit schema. No `hmc_mcp.api.__all__`
+  export changed.
 - No facade export changes for `install-submitted`; the event vocabulary is an internal
   audit-stream contract and `InstallHandle` is unchanged.
 - Added: `TLSVerificationDisabledWarning` lets reusable Python consumers filter
