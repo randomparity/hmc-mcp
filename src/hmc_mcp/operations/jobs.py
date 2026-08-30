@@ -87,8 +87,8 @@ def _clean_job_href(job_href: str | None) -> str | None:
     href, so echoing one back as if it were a usable link would be a lie.
 
     ``urlsplit`` deletes TAB, CR, and LF before path validation. Reject them here
-    so the client validates and requests the exact cleaned spelling returned to
-    the caller.
+    so the client validates and requests the path derived from the exact cleaned
+    spelling returned to the caller.
     """
     if job_href and any(control in job_href for control in "\t\r\n"):
         raise ValueError("job_href must not contain TAB, CR, or LF")
