@@ -749,12 +749,12 @@ async def test_list_lpars_for_system(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_quick_property(mock_hmc):
-    mock_hmc.get("/rest/api/uom/LogicalPartition/lpar-uuid/quick/PartitionState").mock(
+    mock_hmc.get("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/quick/PartitionState").mock(
         return_value=httpx.Response(200, text=QUICK_STATE)
     )
     async with HMCClient(make_config()) as hmc:
         state = await hmc.get_quick_property(
-            "LogicalPartition", "lpar-uuid", "PartitionState"
+            "LogicalPartition", "33333333-3333-3333-3333-333333333333", "PartitionState"
         )
     assert state == "running"
 
@@ -817,12 +817,12 @@ async def test_search_uom_error_names_encoded_request_path(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_submit_power_on_job(mock_hmc):
-    route = mock_hmc.put("/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn").mock(
+    route = mock_hmc.put("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/do/PowerOn").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
-            "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn",
+            "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/do/PowerOn",
             build_job_request("PowerOn", "LogicalPartition"),
         )
     assert route.called
@@ -886,7 +886,7 @@ async def test_managed_system_serialization_failure_is_not_empty_inventory(mock_
 
 CREATED_LPAR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:new-lpar-uuid</id>
+  <id>urn:uuid:new-33333333-3333-3333-3333-333333333333</id>
   <title>LogicalPartition:newlpar</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -926,14 +926,14 @@ async def test_create_logical_partition(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_modify_logical_partition(mock_hmc):
-    route = mock_hmc.post("/rest/api/uom/LogicalPartition/lpar-uuid").mock(
+    route = mock_hmc.post("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333").mock(
         return_value=httpx.Response(200, text=CREATED_LPAR)
     )
     from hmc_mcp.documents import LparResources, build_lpar_document
 
     xml = build_lpar_document(name=None, resources=LparResources(desired_memory=2048))
     async with HMCClient(make_config()) as hmc:
-        updated = await hmc.modify_logical_partition("lpar-uuid", xml)
+        updated = await hmc.modify_logical_partition("33333333-3333-3333-3333-333333333333", xml)
     assert route.called
     assert "2048" in route.calls.last.request.content.decode()
     assert updated is not None
@@ -941,17 +941,17 @@ async def test_modify_logical_partition(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_delete_logical_partition(mock_hmc):
-    route = mock_hmc.delete("/rest/api/uom/LogicalPartition/lpar-uuid").mock(
+    route = mock_hmc.delete("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333").mock(
         return_value=httpx.Response(204)
     )
     async with HMCClient(make_config()) as hmc:
-        await hmc.delete_logical_partition("lpar-uuid")
+        await hmc.delete_logical_partition("33333333-3333-3333-3333-333333333333")
     assert route.called
 
 
 ADAPTER_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:adapter-uuid-1</id>
+  <id>urn:uuid:44444444-4444-4444-4444-444444444444</id>
   <title>ClientNetworkAdapter</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ClientNetworkAdapter xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -966,11 +966,11 @@ ADAPTER_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 @pytest.mark.asyncio
 async def test_add_network_adapter(mock_hmc):
     route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/ClientNetworkAdapter"
+        "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/ClientNetworkAdapter"
     ).mock(return_value=httpx.Response(201, text=ADAPTER_ENTRY))
     async with HMCClient(make_config()) as hmc:
         adapter = await hmc.add_network_adapter(
-            "lpar-uuid", port_vlan_id=100, slot_number=9
+            "33333333-3333-3333-3333-333333333333", port_vlan_id=100, slot_number=9
         )
     assert route.called
     body = route.calls.last.request.content.decode()
@@ -982,10 +982,10 @@ async def test_add_network_adapter(mock_hmc):
 @pytest.mark.asyncio
 async def test_add_vscsi_adapter(mock_hmc):
     route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/VirtualSCSIClientAdapter"
+        "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/VirtualSCSIClientAdapter"
     ).mock(return_value=httpx.Response(201, text=ADAPTER_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        await hmc.add_vscsi_adapter("lpar-uuid", vios_partition_id=1, vios_slot=5)
+        await hmc.add_vscsi_adapter("33333333-3333-3333-3333-333333333333", vios_partition_id=1, vios_slot=5)
     body = route.calls.last.request.content.decode()
     assert "VirtualSCSIClientAdapter" in body
     assert "RemoteLogicalPartitionID" in body and "RemoteSlotNumber" in body
@@ -994,10 +994,10 @@ async def test_add_vscsi_adapter(mock_hmc):
 @pytest.mark.asyncio
 async def test_add_vfc_adapter(mock_hmc):
     route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/VirtualFibreChannelClientAdapter"
+        "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/VirtualFibreChannelClientAdapter"
     ).mock(return_value=httpx.Response(201, text=ADAPTER_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        await hmc.add_vfc_adapter("lpar-uuid", vios_partition_id=1, vios_slot=6)
+        await hmc.add_vfc_adapter("33333333-3333-3333-3333-333333333333", vios_partition_id=1, vios_slot=6)
     body = route.calls.last.request.content.decode()
     assert "VirtualFibreChannelClientAdapter" in body
     assert "ConnectingPartitionID" in body and "ConnectingVirtualSlotNumber" in body
@@ -1005,12 +1005,12 @@ async def test_add_vfc_adapter(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_list_adapters(mock_hmc):
-    mock_hmc.get("/rest/api/uom/LogicalPartition/lpar-uuid/ClientNetworkAdapter").mock(
+    mock_hmc.get("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/ClientNetworkAdapter").mock(
         return_value=httpx.Response(200, text=ADAPTER_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
         adapters = await hmc.list_child(
-            "LogicalPartition", "lpar-uuid", "ClientNetworkAdapter"
+            "LogicalPartition", "33333333-3333-3333-3333-333333333333", "ClientNetworkAdapter"
         )
     assert len(adapters) == 1
     assert adapters[0]["ResourceType"] == "ClientNetworkAdapter"
@@ -1019,11 +1019,11 @@ async def test_list_adapters(mock_hmc):
 @pytest.mark.asyncio
 async def test_delete_adapter(mock_hmc):
     route = mock_hmc.delete(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/ClientNetworkAdapter/adapter-uuid-1"
+        "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/ClientNetworkAdapter/44444444-4444-4444-4444-444444444444"
     ).mock(return_value=httpx.Response(204))
     async with HMCClient(make_config()) as hmc:
         await hmc.delete_child(
-            "LogicalPartition", "lpar-uuid", "ClientNetworkAdapter", "adapter-uuid-1"
+            "LogicalPartition", "33333333-3333-3333-3333-333333333333", "ClientNetworkAdapter", "44444444-4444-4444-4444-444444444444"
         )
     assert route.called
 
@@ -1031,7 +1031,7 @@ async def test_delete_adapter(mock_hmc):
 VG_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:vg-uuid-1</id>
+    <id>urn:uuid:22222222-2222-2222-2222-222222222221</id>
     <title>VolumeGroup:vg_1</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -1046,7 +1046,7 @@ VG_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 VG_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:vg-uuid-1</id>
+  <id>urn:uuid:22222222-2222-2222-2222-222222222221</id>
   <title>VolumeGroup:vg_1</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -1058,7 +1058,7 @@ VG_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 VIOS_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:vios-uuid-1</id>
+  <id>urn:uuid:11111111-1111-1111-1111-111111111111-1</id>
   <title>VirtualIOServer:vios1</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -1071,11 +1071,11 @@ VIOS_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 @pytest.mark.asyncio
 async def test_list_volume_groups(mock_hmc):
-    mock_hmc.get("/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup").mock(
+    mock_hmc.get("/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup").mock(
         return_value=httpx.Response(200, text=VG_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        vgs = await hmc.list_volume_groups("vios-uuid")
+        vgs = await hmc.list_volume_groups("11111111-1111-1111-1111-111111111111")
     assert len(vgs) == 1
     assert vgs[0]["Resource"]["GroupName"] == "vg_1"
     assert vgs[0]["Resource"]["FreeSpace"] == "51200"
@@ -1083,11 +1083,11 @@ async def test_list_volume_groups(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_create_volume_group(mock_hmc):
-    route = mock_hmc.put("/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup").mock(
+    route = mock_hmc.put("/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup").mock(
         return_value=httpx.Response(201, text=VG_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
-        vg = await hmc.create_volume_group("vios-uuid", "vg_1", ["hdisk10"])
+        vg = await hmc.create_volume_group("11111111-1111-1111-1111-111111111111", "vg_1", ["hdisk10"])
     assert route.called
     body = route.calls.last.request.content.decode()
     assert "vg_1" in body and "hdisk10" in body
@@ -1097,27 +1097,27 @@ async def test_create_volume_group(mock_hmc):
 @pytest.mark.asyncio
 async def test_create_virtual_disk(mock_hmc):
     route = mock_hmc.post(
-        "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid"
+        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        await hmc.create_virtual_disk("vios-uuid", "vg-uuid", "lv_boot", 51200)
+        await hmc.create_virtual_disk("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "lv_boot", 51200)
     body = route.calls.last.request.content.decode()
     assert "VirtualDisks" in body and "lv_boot" in body and "51200" in body
 
 
 @pytest.mark.asyncio
 async def test_map_storage_to_lpar(mock_hmc):
-    route = mock_hmc.post("/rest/api/uom/VirtualIOServer/vios-uuid").mock(
+    route = mock_hmc.post("/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111").mock(
         return_value=httpx.Response(200, text=VIOS_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
         await hmc.map_storage_to_lpar(
-            "vios-uuid", "VirtualDisk", "lv_boot", "lpar-uuid"
+            "11111111-1111-1111-1111-111111111111", "VirtualDisk", "lv_boot", "33333333-3333-3333-3333-333333333333"
         )
     body = route.calls.last.request.content.decode()
     assert "VirtualSCSIMapping" in body
     assert "lv_boot" in body
-    assert "LogicalPartition/lpar-uuid" in body
+    assert "LogicalPartition/33333333-3333-3333-3333-333333333333" in body
 
 
 JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1485,7 +1485,7 @@ JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </entry>
 """
 
-_JOB_HREF = "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/job-uuid-999"
+_JOB_HREF = "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/do/PowerOn/Job/job-uuid-999"
 
 
 @pytest.mark.asyncio

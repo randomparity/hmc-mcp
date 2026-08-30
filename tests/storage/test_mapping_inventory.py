@@ -39,7 +39,7 @@ MAPPINGS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
               </VirtualDisk>
             </Storage>
             <TargetDevice>vhost0</TargetDevice>
-            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/lpar-uuid-001"/>
+            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333330001"/>
           </VirtualSCSIMapping>
           <VirtualSCSIMapping>
             <Metadata><Atom/></Metadata>
@@ -49,7 +49,7 @@ MAPPINGS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
                 <VolumeName>hdisk5</VolumeName>
               </PhysicalVolume>
             </Storage>
-            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/lpar-uuid-002"/>
+            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333330002"/>
           </VirtualSCSIMapping>
         </VirtualSCSIMappings>
       </VirtualIOServer>
@@ -87,7 +87,7 @@ OPTICAL_MAPPINGS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"
                 <MediaName>aix72.iso</MediaName>
               </VirtualOpticalMedia>
             </Storage>
-            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/lpar-uuid-001"/>
+            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333330001"/>
           </VirtualSCSIMapping>
           <VirtualSCSIMapping>
             <Metadata><Atom/></Metadata>
@@ -97,7 +97,7 @@ OPTICAL_MAPPINGS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"
                 <MediaName>rhel8.iso</MediaName>
               </VirtualOpticalMedia>
             </Storage>
-            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/lpar-uuid-002"/>
+            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333330002"/>
           </VirtualSCSIMapping>
         </VirtualSCSIMappings>
       </VirtualIOServer>
@@ -178,13 +178,13 @@ async def test_list_storage_mappings_filters_by_lpar(mock_hmc):
 
     config = make_config()
     async with HMCClient(config) as hmc:
-        mappings = await hmc.list_storage_mappings(VIOS_UUID, "lpar-uuid-002")
+        mappings = await hmc.list_storage_mappings(VIOS_UUID, "33333333-3333-3333-3333-333333330002")
 
     assert len(mappings) == 1
     assert mappings[0]["UUID"] == "mapping-uuid-pv-001"
     assert (
         mappings[0]["AssociatedLogicalPartition"]["href"]
-        == "/rest/api/uom/LogicalPartition/lpar-uuid-002"
+        == "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333330002"
     )
 
 
@@ -192,8 +192,8 @@ async def test_list_storage_mappings_filters_by_lpar(mock_hmc):
 @pytest.mark.parametrize(
     "lpar_href",
     [
-        "/rest/api/uom/LogicalPartition/lpar-uuid-001",
-        "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-uuid-001",
+        "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333330001",
+        "https://hmc.test:12443/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333330001",
     ],
     ids=["relative", "absolute"],
 )
@@ -202,7 +202,7 @@ async def test_list_optical_mappings_filters_by_exact_lpar_path(
 ):
     """Relative and absolute hrefs identify the same exact LPAR path."""
     feed = OPTICAL_MAPPINGS_FEED.replace(
-        "/rest/api/uom/LogicalPartition/lpar-uuid-001", lpar_href
+        "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333330001", lpar_href
     )
     mock_hmc.get(VIOS_PATH).mock(
         return_value=httpx.Response(200, text=feed)
@@ -210,7 +210,7 @@ async def test_list_optical_mappings_filters_by_exact_lpar_path(
 
     config = make_config()
     async with HMCClient(config) as hmc:
-        mappings = await hmc.list_optical_mappings(VIOS_UUID, "lpar-uuid-001")
+        mappings = await hmc.list_optical_mappings(VIOS_UUID, "33333333-3333-3333-3333-333333330001")
 
     assert len(mappings) == 1
     assert mappings[0]["Storage"]["VirtualOpticalMedia"]["MediaName"] == "aix72.iso"
@@ -251,6 +251,11 @@ def test_delete_storage_mapping_serializes_default_uom_namespace_in_fresh_proces
             async def _request(self, *_args, **kwargs):
                 print(kwargs["content"])
                 return SimpleNamespace(status_code=200)
+
+            async def _request_with_uuid_path_arguments(
+                self, *args, uuid_path_arguments, **kwargs
+            ):
+                return await self._request(*args, **kwargs)
 
         asyncio.run(
             FakeClient().delete_storage_mapping({VIOS_UUID!r}, "mapping-1")

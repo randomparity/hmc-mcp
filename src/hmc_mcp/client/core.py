@@ -28,6 +28,7 @@ from ..documents import (
 )
 from ..errors import HMCError, HMCTransportError
 from ..jobs import TERMINAL_JOB_STATUSES
+from ..resource_identity import is_uuid
 
 from .client_adapters import AdaptersMixin
 from .client_cluster import ClusterMixin
@@ -485,6 +486,20 @@ class HMCClient(
                 f"{method.upper()} {path} failed before the HMC returned a response: {exc}"
             ) from exc
 
+    async def _request_with_uuid_path_arguments(
+        self,
+        method: str,
+        path: str,
+        *,
+        uuid_path_arguments: Mapping[str, str],
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Validate UUID-only path arguments before entering the transport."""
+        for argument, value in uuid_path_arguments.items():
+            if not is_uuid(value):
+                raise HMCError(f"{argument} must be a UUID")
+        return await self._request(method, path, **kwargs)
+
     def _uom_headers(
         self,
         resource_type: str | None,
@@ -503,10 +518,13 @@ class HMCClient(
         path: str,
         resource_type: str | None = None,
         include_schema_version: bool = True,
+        *,
+        uuid_path_arguments: Mapping[str, str] | None = None,
     ) -> str:
-        resp = await self._request(
+        resp = await self._request_with_uuid_path_arguments(
             "GET",
             path,
+            uuid_path_arguments=uuid_path_arguments or {},
             headers=self._uom_headers(resource_type, include_schema_version),
         )
         if resp.status_code == 204:
@@ -521,10 +539,18 @@ class HMCClient(
         body: str | bytes,
         resource_type: str | None = None,
         include_schema_version: bool = True,
+        *,
+        uuid_path_arguments: Mapping[str, str] | None = None,
     ) -> str:
         headers = self._uom_headers(resource_type, include_schema_version)
         headers["Content-Type"] = headers["Accept"]
-        resp = await self._request("POST", path, content=body, headers=headers)
+        resp = await self._request_with_uuid_path_arguments(
+            "POST",
+            path,
+            uuid_path_arguments=uuid_path_arguments or {},
+            content=body,
+            headers=headers,
+        )
         if resp.status_code not in (200, 201, 202):
             raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
         return resp.text
@@ -535,16 +561,34 @@ class HMCClient(
         body: str | bytes,
         resource_type: str | None = None,
         include_schema_version: bool = True,
+        *,
+        uuid_path_arguments: Mapping[str, str] | None = None,
     ) -> str:
         headers = self._uom_headers(resource_type, include_schema_version)
         headers["Content-Type"] = headers["Accept"]
-        resp = await self._request("PUT", path, content=body, headers=headers)
+        resp = await self._request_with_uuid_path_arguments(
+            "PUT",
+            path,
+            uuid_path_arguments=uuid_path_arguments or {},
+            content=body,
+            headers=headers,
+        )
         if resp.status_code not in (200, 201, 202, 204):
             raise HMCError(f"PUT {path} failed", resp.status_code, resp.text)
         return resp.text
 
-    async def _delete(self, path: str) -> None:
-        resp = await self._request("DELETE", path, headers=self._uom_headers(None))
+    async def _delete(
+        self,
+        path: str,
+        *,
+        uuid_path_arguments: Mapping[str, str] | None = None,
+    ) -> None:
+        resp = await self._request_with_uuid_path_arguments(
+            "DELETE",
+            path,
+            uuid_path_arguments=uuid_path_arguments or {},
+            headers=self._uom_headers(None),
+        )
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
 
@@ -564,9 +608,10 @@ class HMCClient(
         """Create a brokered file handle and return its URI."""
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         create_xml = build_brokered_file_document(filename=filename)
-        resp = await self._request(
+        resp = await self._request_with_uuid_path_arguments(
             "POST",
             path,
+            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
             content=create_xml,
             headers={"Content-Type": MEDIA_UOM, "Accept": MEDIA_UOM},
         )
@@ -652,7 +697,12 @@ class HMCClient(
         import_xml = build_linked_optical_media_document(
             media_name=media_name, broker_uri=broker_uri
         )
-        resp = await self._post(path, import_xml, resource_type="VolumeGroup")
+        resp = await self._post(
+            path,
+            import_xml,
+            resource_type="VolumeGroup",
+            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+        )
         return resp if resp else ""
 
     async def _broker_file_cleanup(self, broker_uri: str) -> None:
@@ -761,7 +811,9 @@ class HMCClient(
         path = f"/rest/api/uom/{resource_type}/{uuid}"
         if group:
             path += f"?group={group}"
-        xml = await self._get(path, resource_type)
+        xml = await self._get(
+            path, resource_type, uuid_path_arguments={"uuid": uuid}
+        )
         if not xml:
             return None
         entries = _parse_feed(xml, path)
@@ -776,7 +828,12 @@ class HMCClient(
         a typed uom+xml Accept header causes HTTP 406.
         """
         path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{property_name}"
-        resp = await self._request("GET", path, headers={"Accept": "*/*"})
+        resp = await self._request_with_uuid_path_arguments(
+            "GET",
+            path,
+            uuid_path_arguments={"uuid": uuid},
+            headers={"Accept": "*/*"},
+        )
         if resp.status_code == 204:
             return None
         if resp.status_code != 200:
@@ -809,7 +866,11 @@ class HMCClient(
     ) -> list[dict[str, Any]]:
         """GET /rest/api/uom/{parent}/{uuid}/{child} and parse the feed."""
         path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}"
-        xml = await self._get(path, child_type)
+        xml = await self._get(
+            path,
+            child_type,
+            uuid_path_arguments={"parent_uuid": parent_uuid},
+        )
         return _parse_feed(xml, path) if xml else []
 
     async def create_child(
@@ -822,7 +883,11 @@ class HMCClient(
         """
         path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}"
         xml = await self._put(
-            path, child_xml, resource_type=child_type, include_schema_version=False
+            path,
+            child_xml,
+            resource_type=child_type,
+            include_schema_version=False,
+            uuid_path_arguments={"parent_uuid": parent_uuid},
         )
         entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
@@ -832,7 +897,11 @@ class HMCClient(
     ) -> None:
         """DELETE a child resource instance."""
         await self._delete(
-            f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}/{child_uuid}"
+            f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}/{child_uuid}",
+            uuid_path_arguments={
+                "parent_uuid": parent_uuid,
+                "child_uuid": child_uuid,
+            },
         )
 
     async def get_uom_path(

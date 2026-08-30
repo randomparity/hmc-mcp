@@ -95,14 +95,24 @@ class StorageMixin:
         present, so we deliberately omit the schema-version header here.
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup"
-        xml = await self._get(path, "VolumeGroup", include_schema_version=False)
+        xml = await self._get(
+            path,
+            "VolumeGroup",
+            include_schema_version=False,
+            uuid_path_arguments={"vios_uuid": vios_uuid},
+        )
         return _parse_feed(xml, path) if xml else []
 
     async def get_volume_group(
         self: StorageClient, vios_uuid: str, vg_uuid: str
     ) -> dict[str, Any] | None:
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        xml = await self._get(path, "VolumeGroup", include_schema_version=False)
+        xml = await self._get(
+            path,
+            "VolumeGroup",
+            include_schema_version=False,
+            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+        )
         if not xml:
             return None
         entries = _parse_feed(xml, path)
@@ -118,7 +128,13 @@ class StorageMixin:
 
         xml = build_volume_group_document(name, physical_volumes)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup"
-        resp = await self._put(path, xml, resource_type="VolumeGroup", include_schema_version=False)
+        resp = await self._put(
+            path,
+            xml,
+            resource_type="VolumeGroup",
+            include_schema_version=False,
+            uuid_path_arguments={"vios_uuid": vios_uuid},
+        )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
@@ -139,7 +155,11 @@ class StorageMixin:
         xml = build_virtual_disk_document(disk_name, capacity_mib)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         resp = await self._post(
-            path, xml, resource_type="VolumeGroup", include_schema_version=False
+            path,
+            xml,
+            resource_type="VolumeGroup",
+            include_schema_version=False,
+            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -157,7 +177,11 @@ class StorageMixin:
         xml = build_virtual_disk_delete_document(disk_name)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         resp = await self._post(
-            path, xml, resource_type="VolumeGroup", include_schema_version=False
+            path,
+            xml,
+            resource_type="VolumeGroup",
+            include_schema_version=False,
+            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -186,7 +210,11 @@ class StorageMixin:
         )
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
         resp = await self._post(
-            path, xml, resource_type="VirtualIOServer", include_schema_version=False
+            path,
+            xml,
+            resource_type="VirtualIOServer",
+            include_schema_version=False,
+            uuid_path_arguments={"vios_uuid": vios_uuid, "lpar_uuid": lpar_uuid},
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -203,7 +231,15 @@ class StorageMixin:
         Requests the documented ``ViosSCSIMapping`` extended group.
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
-        xml = await self._get(path, "VirtualIOServer")
+        uuid_arguments = {
+            "vios_uuid": vios_uuid,
+            **({"lpar_uuid": lpar_uuid} if lpar_uuid is not None else {}),
+        }
+        xml = await self._get(
+            path,
+            "VirtualIOServer",
+            uuid_path_arguments=uuid_arguments,
+        )
         if not xml:
             return []
 
@@ -242,7 +278,10 @@ class StorageMixin:
 
         get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
         vios_xml = await self._get(
-            get_path, "VirtualIOServer", include_schema_version=False
+            get_path,
+            "VirtualIOServer",
+            include_schema_version=False,
+            uuid_path_arguments={"vios_uuid": vios_uuid},
         )
         if not vios_xml:
             raise HMCError(f"GET {get_path} returned empty response", 200, "")
@@ -282,9 +321,13 @@ class StorageMixin:
         post_path = (
             f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer/{vios_uuid}"
         )
-        response = await self._request(
+        response = await self._request_with_uuid_path_arguments(
             "POST",
             post_path,
+            uuid_path_arguments={
+                "system_uuid": system_uuid,
+                "vios_uuid": vios_uuid,
+            },
             content=ET.tostring(vios_elem, encoding="unicode"),
             headers={
                 "Accept": "*/*",
@@ -308,7 +351,12 @@ class StorageMixin:
         so subsequent serialisation round-trips cleanly.
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        raw = await self._get(path, "VolumeGroup", include_schema_version=False)
+        raw = await self._get(
+            path,
+            "VolumeGroup",
+            include_schema_version=False,
+            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+        )
         if not raw:
             raise HMCError(f"GET {path} returned empty body", 200, "")
 
@@ -356,7 +404,13 @@ class StorageMixin:
             "Content-Type": f"{MEDIA_UOM}; type=VolumeGroup",
         }
         body = ET.tostring(vg_elem, encoding="unicode", xml_declaration=False)
-        resp = await self._request("POST", path, content=body, headers=headers)
+        resp = await self._request_with_uuid_path_arguments(
+            "POST",
+            path,
+            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+            content=body,
+            headers=headers,
+        )
         if resp.status_code not in (200, 201, 202):
             raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
         entries = _parse_feed(resp.text, path) if resp.text else []
@@ -613,7 +667,12 @@ class StorageMixin:
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         try:
-            xml = await self._get(path, "VolumeGroup", include_schema_version=False)
+            xml = await self._get(
+                path,
+                "VolumeGroup",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+            )
         except HMCError as exc:
             if exc.status_code == 404:
                 return None
@@ -640,7 +699,12 @@ class StorageMixin:
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         try:
-            xml = await self._get(path, "VolumeGroup", include_schema_version=False)
+            xml = await self._get(
+                path,
+                "VolumeGroup",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+            )
         except HMCError as exc:
             if exc.status_code == 404:
                 return []
@@ -682,7 +746,15 @@ class StorageMixin:
         details and client LPAR information. Use lpar_uuid to scope mappings to a single LPAR.
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
-        xml = await self._get(path, "VirtualIOServer")
+        uuid_arguments = {
+            "vios_uuid": vios_uuid,
+            **({"lpar_uuid": lpar_uuid} if lpar_uuid is not None else {}),
+        }
+        xml = await self._get(
+            path,
+            "VirtualIOServer",
+            uuid_path_arguments=uuid_arguments,
+        )
         if not xml:
             return []
 
@@ -739,6 +811,7 @@ class StorageMixin:
             document,
             resource_type="VirtualIOServer",
             include_schema_version=False,
+            uuid_path_arguments={"vios_uuid": vios_uuid, "lpar_uuid": lpar_uuid},
         )
         entries = _parse_feed(response, path) if response else []
         return entries[0].get("Resource", entries[0]) if entries else None

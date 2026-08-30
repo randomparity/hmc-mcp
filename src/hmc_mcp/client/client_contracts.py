@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 # Element is a type contract only; client implementations parse inbound XML
 # through defusedxml.
 from xml.etree.ElementTree import Element  # nosec B405
@@ -36,6 +37,8 @@ class LparsClient(Protocol):
         path: str,
         resource_type: str | None = None,
         include_schema_version: bool = True,
+        *,
+        uuid_path_arguments: Mapping[str, str] | None = None,
     ) -> str: ...
 
     async def _post(
@@ -44,6 +47,8 @@ class LparsClient(Protocol):
         body: str | bytes,
         resource_type: str | None = None,
         include_schema_version: bool = True,
+        *,
+        uuid_path_arguments: Mapping[str, str] | None = None,
     ) -> str: ...
 
     async def _put(
@@ -52,9 +57,16 @@ class LparsClient(Protocol):
         body: str | bytes,
         resource_type: str | None = None,
         include_schema_version: bool = True,
+        *,
+        uuid_path_arguments: Mapping[str, str] | None = None,
     ) -> str: ...
 
-    async def _delete(self, path: str) -> None: ...
+    async def _delete(
+        self,
+        path: str,
+        *,
+        uuid_path_arguments: Mapping[str, str] | None = None,
+    ) -> None: ...
 
     async def list_logical_partitions(
         self, system_uuid: str | None = None
@@ -120,11 +132,22 @@ class StorageClient(Protocol):
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any: ...
 
+    async def _request_with_uuid_path_arguments(
+        self,
+        method: str,
+        path: str,
+        *,
+        uuid_path_arguments: Mapping[str, str],
+        **kwargs: Any,
+    ) -> Any: ...
+
     async def _get(
         self,
         path: str,
         resource_type: str | None = None,
         include_schema_version: bool = True,
+        *,
+        uuid_path_arguments: Mapping[str, str] | None = None,
     ) -> str: ...
 
     async def _post(
@@ -133,6 +156,8 @@ class StorageClient(Protocol):
         body: str | bytes,
         resource_type: str | None = None,
         include_schema_version: bool = True,
+        *,
+        uuid_path_arguments: Mapping[str, str] | None = None,
     ) -> str: ...
 
     async def _put(
@@ -141,9 +166,16 @@ class StorageClient(Protocol):
         body: str | bytes,
         resource_type: str | None = None,
         include_schema_version: bool = True,
+        *,
+        uuid_path_arguments: Mapping[str, str] | None = None,
     ) -> str: ...
 
-    async def _delete(self, path: str) -> None: ...
+    async def _delete(
+        self,
+        path: str,
+        *,
+        uuid_path_arguments: Mapping[str, str] | None = None,
+    ) -> None: ...
 
     def get_lpar_link(self, lpar_uuid: str) -> str: ...
 

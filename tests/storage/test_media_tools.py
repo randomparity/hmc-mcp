@@ -3,7 +3,7 @@
 import httpx
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
-VG_UUID = "vg-uuid-0001"
+VG_UUID = "22222222-2222-2222-2222-222222220001"
 
 
 def _hmc_env(monkeypatch) -> None:
@@ -120,12 +120,12 @@ def test_get_media_repository_not_found(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
 
     route = mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/missing-uuid"
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/99999999-9999-9999-9999-999999999999"
     ).mock(return_value=httpx.Response(404, text=""))
 
     from hmc_mcp.server_tools.storage import hmc_get_media_repository
 
-    result = hmc_get_media_repository(VIOS_UUID, "missing-uuid")
+    result = hmc_get_media_repository(VIOS_UUID, "99999999-9999-9999-9999-999999999999")
 
     assert route.called
     assert result is None
