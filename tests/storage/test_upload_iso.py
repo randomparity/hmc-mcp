@@ -25,7 +25,7 @@ from hmc_mcp.operations.storage import (
 
 # Test constants
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
-VG_UUID = "vg-uuid-002"
+VG_UUID = "22222222-2222-2222-2222-222222220002"
 MEDIA_NAME = "test_image.iso"
 ISO_HOST = "images.test"
 ISO_URL = f"https://{ISO_HOST}/test_image.iso"

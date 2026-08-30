@@ -392,22 +392,26 @@ async def test_templates_mixin_routes_deployment_job():
 @pytest.mark.asyncio
 async def test_storage_mixin_routes_schema_sensitive_operations():
     client = StorageHarness()
+    vios_uuid = "11111111-1111-1111-1111-111111111111"
+    vg_uuid = "22222222-2222-2222-2222-222222222222"
 
     assert client.get_lpar_link("lpar-1") == (
         "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-1"
     )
-    assert await client.list_volume_groups("vios-1") == []
-    assert await client.create_virtual_disk("vios-1", "vg-1", "disk", 1024) is None
+    assert await client.list_volume_groups(vios_uuid) == []
+    assert await client.create_virtual_disk(vios_uuid, vg_uuid, "disk", 1024) is None
 
     client._get.assert_awaited_once_with(
-        "/rest/api/uom/VirtualIOServer/vios-1/VolumeGroup",
+        f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup",
         "VolumeGroup",
         include_schema_version=False,
+        uuid_path_arguments={"vios_uuid": vios_uuid},
     )
     client._post.assert_awaited_once()
     assert client._post.await_args.kwargs == {
         "resource_type": "VolumeGroup",
         "include_schema_version": False,
+        "uuid_path_arguments": {"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
     }
 
 

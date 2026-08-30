@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
-from hmc_mcp.client.core import HMCClient
+if TYPE_CHECKING:
+    from hmc_mcp.client.core import HMCClient
 
 # Canonical UUID shape: 8-4-4-4-12 hex groups. Any 36-char dash-containing
 # string is NOT a UUID (system/partition names can collide with that shape), so

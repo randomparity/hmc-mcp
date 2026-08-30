@@ -28,15 +28,15 @@ def _authorize_lpar_mutations(monkeypatch):
     )
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
-VG_UUID = "vg-uuid-0001"
+VG_UUID = "22222222-2222-2222-2222-222222220001"
 
 VG_ENTRY_WITH_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:vg-uuid-0001</id>
+  <id>urn:uuid:22222222-2222-2222-2222-222222220001</id>
   <title>VolumeGroup:VMLibrary</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <VolumeGroupUUID>vg-uuid-0001</VolumeGroupUUID>
+      <VolumeGroupUUID>22222222-2222-2222-2222-222222220001</VolumeGroupUUID>
       <GroupName>VMLibrary</GroupName>
       <VirtualMediaRepository schemaVersion="V1_0">
         <RepositoryName>VMLibrary</RepositoryName>
@@ -49,11 +49,11 @@ VG_ENTRY_WITH_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 VG_ENTRY_EMPTY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:vg-uuid-0002</id>
+  <id>urn:uuid:22222222-2222-2222-2222-222222220002</id>
   <title>VolumeGroup:vg_data</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <VolumeGroupUUID>vg-uuid-0002</VolumeGroupUUID>
+      <VolumeGroupUUID>22222222-2222-2222-2222-222222220002</VolumeGroupUUID>
       <GroupName>vg_data</GroupName>
     </VolumeGroup>
   </content>
@@ -84,10 +84,10 @@ async def test_list_optical_media_operation(mock_hmc):
     """list_optical_media calls client method and returns optical media list."""
     vg_entry_with_media = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:vg-uuid-0001</id>
+  <id>urn:uuid:22222222-2222-2222-2222-222222220001</id>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <VolumeGroupUUID>vg-uuid-0001</VolumeGroupUUID>
+      <VolumeGroupUUID>22222222-2222-2222-2222-222222220001</VolumeGroupUUID>
       <VirtualMediaRepository schemaVersion="V1_0">
         <RepositoryName>VMLibrary</RepositoryName>
         <RepositorySize>40960</RepositorySize>
@@ -117,11 +117,13 @@ async def test_list_optical_media_operation(mock_hmc):
 async def test_get_media_repository_none_propagates(mock_hmc):
     """get_media_repository propagates None when repository not found."""
     route = mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/missing-vg"
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/99999999-9999-9999-9999-999999999999"
     ).mock(return_value=httpx.Response(404, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        result = await get_media_repository(hmc, None, VIOS_UUID, "missing-vg")
+        result = await get_media_repository(
+            hmc, None, VIOS_UUID, "99999999-9999-9999-9999-999999999999"
+        )
 
     assert route.called
     assert result is None

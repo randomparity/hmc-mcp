@@ -252,6 +252,11 @@ def test_delete_storage_mapping_serializes_default_uom_namespace_in_fresh_proces
                 print(kwargs["content"])
                 return SimpleNamespace(status_code=200)
 
+            async def _request_with_uuid_path_arguments(
+                self, *args, uuid_path_arguments, **kwargs
+            ):
+                return await self._request(*args, **kwargs)
+
         asyncio.run(
             FakeClient().delete_storage_mapping({VIOS_UUID!r}, "mapping-1")
         )

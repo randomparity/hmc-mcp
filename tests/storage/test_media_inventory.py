@@ -9,11 +9,11 @@ from hmc_mcp.client.core import HMCClient
 
 VG_ENTRY_WITH_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:vg-uuid-0001</id>
+  <id>urn:uuid:22222222-2222-2222-2222-222222220001</id>
   <title>VolumeGroup:VMLibrary</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <VolumeGroupUUID>vg-uuid-0001</VolumeGroupUUID>
+      <VolumeGroupUUID>22222222-2222-2222-2222-222222220001</VolumeGroupUUID>
       <GroupName>VMLibrary</GroupName>
       <VirtualMediaRepository schemaVersion="V1_0">
         <Metadata><Atom/></Metadata>
@@ -39,11 +39,11 @@ VG_ENTRY_WITH_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 VG_ENTRY_EMPTY_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:vg-uuid-0002</id>
+  <id>urn:uuid:22222222-2222-2222-2222-222222220002</id>
   <title>VolumeGroup:VMLibrary</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <VolumeGroupUUID>vg-uuid-0002</VolumeGroupUUID>
+      <VolumeGroupUUID>22222222-2222-2222-2222-222222220002</VolumeGroupUUID>
       <GroupName>VMLibrary</GroupName>
       <VirtualMediaRepository schemaVersion="V1_0">
         <Metadata><Atom/></Metadata>
@@ -57,11 +57,11 @@ VG_ENTRY_EMPTY_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 VG_ENTRY_WITHOUT_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:vg-uuid-0003</id>
+  <id>urn:uuid:22222222-2222-2222-2222-222222220003</id>
   <title>VolumeGroup:data</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <VolumeGroupUUID>vg-uuid-0003</VolumeGroupUUID>
+      <VolumeGroupUUID>22222222-2222-2222-2222-222222220003</VolumeGroupUUID>
       <GroupName>data</GroupName>
     </VolumeGroup>
   </content>
@@ -73,11 +73,11 @@ VG_ENTRY_WITHOUT_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"
 async def test_get_media_repository(mock_hmc):
     """get_media_repository returns the repository with capacity and media."""
     route = mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid-0001"
+        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222220001"
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_WITH_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_media_repository("vios-uuid", "vg-uuid-0001")
+        result = await hmc.get_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222220001")
 
     assert route.called
     assert result is not None
@@ -94,11 +94,11 @@ async def test_get_media_repository(mock_hmc):
 async def test_get_media_repository_empty(mock_hmc):
     """get_media_repository handles a repository with no optical media."""
     route = mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid-0002"
+        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222220002"
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_EMPTY_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_media_repository("vios-uuid", "vg-uuid-0002")
+        result = await hmc.get_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222220002")
 
     assert route.called
     assert result is not None
@@ -116,11 +116,11 @@ async def test_get_media_repository_empty(mock_hmc):
 async def test_get_media_repository_not_found(mock_hmc):
     """get_media_repository returns None when repository doesn't exist."""
     route = mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/missing-uuid"
+        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/99999999-9999-9999-9999-999999999999"
     ).mock(return_value=httpx.Response(404, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_media_repository("vios-uuid", "missing-uuid")
+        result = await hmc.get_media_repository("11111111-1111-1111-1111-111111111111", "99999999-9999-9999-9999-999999999999")
 
     assert route.called
     assert result is None
@@ -130,11 +130,11 @@ async def test_get_media_repository_not_found(mock_hmc):
 async def test_get_media_repository_absent_from_existing_volume_group(mock_hmc):
     """An existing volume group without a repository is not a repository."""
     route = mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid-0003"
+        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222220003"
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_WITHOUT_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_media_repository("vios-uuid", "vg-uuid-0003")
+        result = await hmc.get_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222220003")
 
     assert route.called
     assert result is None
@@ -144,11 +144,11 @@ async def test_get_media_repository_absent_from_existing_volume_group(mock_hmc):
 async def test_list_optical_media(mock_hmc):
     """list_optical_media extracts and returns optical media entries."""
     route = mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid-0001"
+        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222220001"
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_WITH_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        media_list = await hmc.list_optical_media("vios-uuid", "vg-uuid-0001")
+        media_list = await hmc.list_optical_media("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222220001")
 
     assert route.called
     assert len(media_list) == 2
@@ -164,11 +164,11 @@ async def test_list_optical_media(mock_hmc):
 async def test_list_optical_media_empty(mock_hmc):
     """list_optical_media returns empty list when no media present."""
     route = mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid-0002"
+        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222220002"
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_EMPTY_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        media_list = await hmc.list_optical_media("vios-uuid", "vg-uuid-0002")
+        media_list = await hmc.list_optical_media("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222220002")
 
     assert route.called
     assert media_list == []
@@ -178,11 +178,11 @@ async def test_list_optical_media_empty(mock_hmc):
 async def test_list_optical_media_not_found(mock_hmc):
     """list_optical_media returns empty list when VG doesn't exist."""
     route = mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/missing-uuid"
+        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/99999999-9999-9999-9999-999999999999"
     ).mock(return_value=httpx.Response(404, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        media_list = await hmc.list_optical_media("vios-uuid", "missing-uuid")
+        media_list = await hmc.list_optical_media("11111111-1111-1111-1111-111111111111", "99999999-9999-9999-9999-999999999999")
 
     assert route.called
     assert media_list == []
