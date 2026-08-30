@@ -39,6 +39,7 @@ def _lpar_feed(name: str, uuid: str = LPAR_UUID) -> str:
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>{name}</PartitionName>
+        <PartitionType>Virtual IO Server</PartitionType>
         <PartitionState>not activated</PartitionState>
       </LogicalPartition>
     </content>
@@ -260,6 +261,9 @@ def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc)
         return_value=httpx.Response(200, text=_system_feed("sys1"))
     )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=_lpar_feed("aixprod"))
+    )
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=_lpar_feed("aixprod"))
     )
 
