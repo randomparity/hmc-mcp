@@ -214,7 +214,7 @@ class StorageMixin:
             xml,
             resource_type="VirtualIOServer",
             include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid, "lpar_uuid": lpar_uuid},
+            uuid_path_arguments={"vios_uuid": vios_uuid},
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -231,14 +231,10 @@ class StorageMixin:
         Requests the documented ``ViosSCSIMapping`` extended group.
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
-        uuid_arguments = {
-            "vios_uuid": vios_uuid,
-            **({"lpar_uuid": lpar_uuid} if lpar_uuid is not None else {}),
-        }
         xml = await self._get(
             path,
             "VirtualIOServer",
-            uuid_path_arguments=uuid_arguments,
+            uuid_path_arguments={"vios_uuid": vios_uuid},
         )
         if not xml:
             return []
@@ -746,14 +742,10 @@ class StorageMixin:
         details and client LPAR information. Use lpar_uuid to scope mappings to a single LPAR.
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
-        uuid_arguments = {
-            "vios_uuid": vios_uuid,
-            **({"lpar_uuid": lpar_uuid} if lpar_uuid is not None else {}),
-        }
         xml = await self._get(
             path,
             "VirtualIOServer",
-            uuid_path_arguments=uuid_arguments,
+            uuid_path_arguments={"vios_uuid": vios_uuid},
         )
         if not xml:
             return []
@@ -811,7 +803,7 @@ class StorageMixin:
             document,
             resource_type="VirtualIOServer",
             include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid, "lpar_uuid": lpar_uuid},
+            uuid_path_arguments={"vios_uuid": vios_uuid},
         )
         entries = _parse_feed(response, path) if response else []
         return entries[0].get("Resource", entries[0]) if entries else None

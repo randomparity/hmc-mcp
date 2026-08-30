@@ -50,22 +50,31 @@ semantics are unchanged. Rollback removes the helper and type-only import change
 ## Task 2: Mark UUID-only storage and adapter paths
 
 Files: `src/hmc_mcp/client/client_storage.py`, `src/hmc_mcp/client/client_adapters.py`,
-`src/hmc_mcp/client/core.py`, and `tests/unit/test_request_path_safety.py`.
+`src/hmc_mcp/client/core.py`, `tests/unit/test_request_path_safety.py`,
+`tests/unit/test_client.py`, `tests/unit/test_client_domain_mixins.py`, and the bounded storage
+fixture modules `tests/storage/test_mapping_inventory.py`, `test_media.py`,
+`test_media_inventory.py`, `test_media_operations.py`, `test_media_tools.py`,
+`test_safe_delete.py`, `test_storage_tools.py`, and `test_upload_iso.py`, plus the platform-update
+fixture module `tests/system/test_update_upgrade.py`.
 
 Interfaces:
 
 - Consume `_request_with_uuid_path_arguments` from Task 1.
 - Supply mappings whose keys are the exact public parameter names (`vios_uuid`, `vg_uuid`,
-  `lpar_uuid`, `adapter_uuid`, `system_uuid`, `parent_uuid`, `child_uuid`, or `uuid`) and whose
+  `adapter_uuid`, `system_uuid`, `parent_uuid`, `child_uuid`, or `uuid`) and whose
   values are the interpolated strings. `delete_storage_mapping.mapping_uuid` remains an XML
   identity selector; only its `vios_uuid` and response-derived `system_uuid` enter path metadata.
+  Storage `lpar_uuid` values used only in XML bodies or response filters remain outside path
+  metadata.
 
 Steps:
 
 1. Add parametrized behavior tests for the documented UUID-only methods and a source-enumeration
    regression test that encodes the spec's frozen method/argument inventory and fails while known
    builders still call `_request` without metadata. Include generic UOM/child builders, broker
-   helpers, every listed storage builder, and adapter coverage inherited through child builders.
+   helpers, `submit_platform_update`, every listed storage builder, and adapter coverage inherited
+   through child builders. Migrate readable non-UUID stand-ins only in tests that exercise an
+   inventoried path argument, preserving their original behavior assertions.
    Run the focused pytest command and expect those tests to fail.
 2. Replace only the relevant request calls with the metadata-aware helper or wrapper: GET builders
    pass metadata through `_get`, create/update builders through `_post` or `_put`, deletes through
@@ -90,7 +99,8 @@ Steps:
 1. Run `just verify`; expect exit 0.
 2. Run `uv run --no-sync prek run --all-files`; expect exit 0.
 3. Review `git diff "$(git merge-base HEAD origin/main)"` for scope, sensitive error text, and
-   accidental name validation. Expect only the planned files and necessary generated artifacts.
+   accidental name validation. Expect only the planned implementation, focused test, and bounded
+   fixture-migration files plus necessary generated artifacts.
 
 Acceptance: both required guardrails are green with zero warnings; no generated artifact is stale.
 Rollback: revert the implementation commit and its design commit together.

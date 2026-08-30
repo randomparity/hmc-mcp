@@ -197,6 +197,7 @@ _UUID_PATH_BUILDERS = {
         "delete_child": ("parent_uuid", "child_uuid"),
         "_broker_file_create": ("vios_uuid", "vg_uuid"),
         "_broker_iso_import": ("vios_uuid", "vg_uuid"),
+        "submit_platform_update": ("system_uuid",),
     },
     "StorageMixin": {
         "list_volume_groups": ("vios_uuid",),
@@ -204,15 +205,15 @@ _UUID_PATH_BUILDERS = {
         "create_volume_group": ("vios_uuid",),
         "create_virtual_disk": ("vios_uuid", "vg_uuid"),
         "delete_virtual_disk": ("vios_uuid", "vg_uuid"),
-        "map_storage_to_lpar": ("vios_uuid", "lpar_uuid"),
-        "list_storage_mappings": ("vios_uuid", "lpar_uuid"),
+        "map_storage_to_lpar": ("vios_uuid",),
+        "list_storage_mappings": ("vios_uuid",),
         "delete_storage_mapping": ("vios_uuid", "system_uuid"),
         "_get_vg_raw_xml": ("vios_uuid", "vg_uuid"),
         "_post_vg_xml": ("vios_uuid", "vg_uuid"),
         "get_media_repository": ("vios_uuid", "vg_uuid"),
         "list_optical_media": ("vios_uuid", "vg_uuid"),
         "list_optical_mappings": ("vios_uuid",),
-        "create_optical_mapping": ("vios_uuid", "lpar_uuid"),
+        "create_optical_mapping": ("vios_uuid",),
     },
 }
 
@@ -234,6 +235,22 @@ def test_uuid_only_path_builder_inventory_uses_explicit_metadata(
     source = inspect.getsource(getattr(owner_type, method))
     for argument in arguments:
         assert f'"{argument}": {argument}' in source
+
+
+def test_platform_update_rejects_a_non_uuid_system_before_transport():
+    client = _client()
+    sent: list[str] = []
+
+    async def _forbidden(*args, **kwargs):
+        sent.append("request")
+        raise AssertionError("an invalid system UUID reached the transport")
+
+    client._http.request = _forbidden  # type: ignore[method-assign]
+
+    with pytest.raises(HMCError, match=r"^system_uuid must be a UUID$"):
+        asyncio.run(client.submit_platform_update("not-a-uuid", {}))
+
+    assert sent == []
 
 
 # ---------------------------------------------------------------------------

@@ -28,14 +28,17 @@ The authoritative in-scope inventory is:
 
 - generic UOM builders: `get_uom.uuid`, `get_quick_property.uuid`,
   `list_child.parent_uuid`, `create_child.parent_uuid`, and both
-  `delete_child.parent_uuid` and `delete_child.child_uuid`;
+  `delete_child.parent_uuid` and `delete_child.child_uuid`, plus
+  `submit_platform_update.system_uuid`;
 - broker helpers: `_broker_file_create.vios_uuid`, `_broker_file_create.vg_uuid`,
   `_broker_iso_import.vios_uuid`, and `_broker_iso_import.vg_uuid`;
-- storage builders: every interpolated `vios_uuid`, `vg_uuid`, `lpar_uuid`, or `system_uuid` in
+- storage builders: every request-path-interpolated `vios_uuid`, `vg_uuid`, or `system_uuid` in
   `list_volume_groups`, `get_volume_group`, `create_volume_group`, `create_virtual_disk`,
   `delete_virtual_disk`, `map_storage_to_lpar`, `list_storage_mappings`,
   `delete_storage_mapping`, `_get_vg_raw_xml`, `_post_vg_xml`, `get_media_repository`,
-  `list_optical_media`, `list_optical_mappings`, and `create_optical_mapping`;
+  `list_optical_media`, `list_optical_mappings`, and `create_optical_mapping`. The `lpar_uuid`
+  values those methods place in an XML body or use as a local response filter are not request-path
+  arguments and remain outside this contract;
 - adapter methods inherit the generic child-builder guarantees, so `list_adapters.lpar_uuid`,
   `delete_adapter.lpar_uuid`, `delete_adapter.adapter_uuid`, and the three adapter-creation
   methods' `lpar_uuid` values require no second validation site.
@@ -45,6 +48,11 @@ XML and is not interpolated into a request path. Disk, media, volume-group displ
 `resource_type`, `parent_type`, `child_type`, and job identifiers are also absent. The regression
 test asserts this frozen method/argument inventory rather than deriving expectations from whichever
 call sites happen to use the helper.
+
+Existing tests for these methods use readable non-UUID stand-ins. Enforcing the contract requires
+converting only fixtures that exercise an inventoried path argument to canonical UUIDs. Those
+compatibility migrations may occur in the owning storage and client test modules and do not change
+the behavior each test asserts.
 
 ## Data flow and errors
 

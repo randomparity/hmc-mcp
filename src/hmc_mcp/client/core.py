@@ -947,9 +947,10 @@ class HMCClient(
         """PUT one native JSON PlatformUpdate request and normalize its job."""
         system_path_id = quote(system_uuid, safe="")
         path = f"/rest/api/uom/ManagedSystem/{system_path_id}/do/PlatformUpdate"
-        resp = await self._request(
+        resp = await self._request_with_uuid_path_arguments(
             "PUT",
             path,
+            uuid_path_arguments={"system_uuid": system_uuid},
             json=job_request,
             headers={
                 "Content-Type": f"{MEDIA_WEB_JSON}; type=JobRequest",

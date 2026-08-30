@@ -371,7 +371,7 @@ def test_vios_save_file_requires_usable_name(builder, source):
 
 HMC_UUID = "hmc-console-uuid"
 VIOS_UUID = "vios-uuid-111"
-SYS_UUID = "sys-uuid-222"
+SYS_UUID = "66666666-6666-6666-6666-666666666666"
 
 CONSOLE_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
@@ -511,19 +511,19 @@ async def test_submit_platform_update_normalizes_documented_response(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_submit_platform_update_quotes_uuid(mock_hmc):
+async def test_submit_platform_update_rejects_non_uuid_path_input(mock_hmc):
     route = mock_hmc.put(
         "/rest/api/uom/ManagedSystem/allowed%2Fdo%2FShutdownHMC%3Fignored%3D"
         "/do/PlatformUpdate"
     ).mock(return_value=httpx.Response(204))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.submit_platform_update(
-            "allowed/do/ShutdownHMC?ignored=", {"JobRequest": {}}
-        )
+        with pytest.raises(HMCError, match="system_uuid must be a UUID"):
+            await hmc.submit_platform_update(
+                "allowed/do/ShutdownHMC?ignored=", {"JobRequest": {}}
+            )
 
-    assert route.called
-    assert result is None
+    assert not route.called
 
 
 @pytest.mark.asyncio
