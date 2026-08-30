@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 
 import pytest
+from typer.testing import CliRunner
 
+from hmc_mcp import cli
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.documents import LparResources
+from hmc_mcp.operations.lpar.configuration import (
+    configure_lpar_msp,
+    configure_lpar_processor_compatibility,
+    synchronize_lpar_profile,
+)
+from hmc_mcp.server_tools.lpar import configuration as server_configuration
+from hmc_mcp.server_tools.lpar import profiles as server_profiles
 from hmc_mcp.operations.adapters import (
     add_network_adapter,
     add_vfc_adapter,
@@ -28,6 +39,8 @@ from hmc_mcp.operations.storage import (
     mount_optical_media,
     unmount_optical_media,
 )
+from hmc_mcp.server_tools.lpar import lifecycle as server_lifecycle
+from hmc_mcp.cli_commands.lpar import modify as cli_modify
 
 LPAR = "11111111-1111-4111-8111-111111111111"
 VIOS = "22222222-2222-4222-8222-222222222222"
@@ -224,6 +237,186 @@ async def test_optical_ownership_override_bypasses_read_and_writes(
 
     read.assert_not_awaited()
     getattr(hmc, write_method).assert_awaited_once()
+
+
+def test_mcp_resource_modify_rejects_foreign_owner_before_hmc_write() -> None:
+    """The MCP resource-only leg uses the real guard before its POST."""
+    hmc = _real_guard_hmc()
+    with (
+        patch(
+            "hmc_mcp.operations.ownership.get_lpar_description",
+            new=AsyncMock(return_value=FOREIGN_OWNER),
+        ),
+        patch(
+            "hmc_mcp.server_tools.lpar.lifecycle.with_client",
+            side_effect=lambda fn, **_: asyncio.run(fn(hmc)),
+        ),
+        pytest.raises(PermissionError, match="ownership_override=true"),
+    ):
+        server_lifecycle.hmc_modify_lpar(
+            LPAR,
+            resources=LparResources(desired_memory=8192),
+            system_name_or_uuid=SYSTEM_UUID,
+        )
+
+    hmc.modify_logical_partition.assert_not_awaited()
+
+
+def test_cli_resource_modify_rejects_foreign_owner_before_hmc_write() -> None:
+    """The CLI resource-only leg uses the real guard before its POST."""
+    hmc = _real_guard_hmc()
+    context = AsyncMock()
+    context.__aenter__.return_value = hmc
+    with (
+        patch(
+            "hmc_mcp.operations.ownership.get_lpar_description",
+            new=AsyncMock(return_value=FOREIGN_OWNER),
+        ),
+        patch.object(cli_modify, "client", return_value=context),
+        patch.object(cli_modify, "run", side_effect=lambda fn: asyncio.run(fn())),
+    ):
+        result = CliRunner().invoke(
+            cli.app,
+            [
+                "lpars",
+                "modify",
+                LPAR,
+                "--system",
+                SYSTEM_UUID,
+                "--mem",
+                "8192",
+                "--yes",
+            ],
+        )
+        assert result.exit_code != 0
+        assert result.exception is not None
+        assert "ownership_override=true" in str(result.exception)
+
+    hmc.modify_logical_partition.assert_not_awaited()
+
+
+def test_resource_modify_override_skips_ownership_read_and_writes() -> None:
+    """An approved resource override reaches the shared operation's POST."""
+    hmc = _real_guard_hmc()
+    hmc.modify_logical_partition.return_value = {"Resource": {"PartitionName": LPAR_NAME}}
+    with patch(
+        "hmc_mcp.operations.ownership.get_lpar_description",
+        new=AsyncMock(return_value=FOREIGN_OWNER),
+    ) as read, patch(
+        "hmc_mcp.server_tools.lpar.lifecycle.with_client",
+        side_effect=lambda fn, **_: asyncio.run(fn(hmc)),
+    ):
+        server_lifecycle.hmc_modify_lpar(
+            LPAR,
+            resources=LparResources(desired_memory=8192),
+            ownership_override=True,
+        )
+
+    read.assert_not_awaited()
+    hmc.modify_logical_partition.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "write_name", "args"),
+    [
+        (configure_lpar_msp, "set_lpar_msp", (True,)),
+        (configure_lpar_processor_compatibility, "set_lpar_proc_compat", ("POWER9",)),
+        (synchronize_lpar_profile, "sync_lpar_profile", ()),
+    ],
+)
+async def test_config_operations_reject_foreign_owner_before_ssh_write(
+    operation: Operation, write_name: str, args: tuple[object, ...]
+) -> None:
+    """Each extracted configuration mutation checks ownership before its write."""
+    hmc = _real_guard_hmc()
+    write = AsyncMock(return_value="ok")
+
+    with (
+        patch(
+            "hmc_mcp.operations.ownership.get_lpar_description",
+            new=AsyncMock(return_value=FOREIGN_OWNER),
+        ),
+        patch(f"hmc_mcp.operations.lpar.configuration.{write_name}", new=write),
+        pytest.raises(PermissionError, match="ownership_override=true"),
+    ):
+        await operation(hmc, SYSTEM_UUID, LPAR, *args)
+
+    write.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "write_name", "args"),
+    [
+        (configure_lpar_msp, "set_lpar_msp", (True,)),
+        (configure_lpar_processor_compatibility, "set_lpar_proc_compat", ("POWER9",)),
+        (synchronize_lpar_profile, "sync_lpar_profile", ()),
+    ],
+)
+async def test_config_operations_override_skips_ownership_read(
+    operation: Operation, write_name: str, args: tuple[object, ...]
+) -> None:
+    """An approved override bypasses the ownership read and reaches each write."""
+    hmc = _real_guard_hmc()
+    write = AsyncMock(return_value="ok")
+
+    with (
+        patch(
+            "hmc_mcp.operations.ownership.get_lpar_description",
+            new=AsyncMock(return_value=FOREIGN_OWNER),
+        ) as read,
+        patch(f"hmc_mcp.operations.lpar.configuration.{write_name}", new=write),
+    ):
+        await operation(hmc, SYSTEM_UUID, LPAR, *args, ownership_override=True)
+
+    read.assert_not_awaited()
+    write.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("tool", "operation", "args"),
+    [
+        (
+            server_configuration.hmc_set_lpar_msp,
+            "configure_lpar_msp",
+            (SYSTEM_UUID, LPAR, True),
+        ),
+        (
+            server_configuration.hmc_set_lpar_proc_compat,
+            "configure_lpar_processor_compatibility",
+            (SYSTEM_UUID, LPAR, "POWER9"),
+        ),
+        (
+            server_profiles.hmc_sync_lpar_profile,
+            "synchronize_lpar_profile",
+            (SYSTEM_UUID, LPAR),
+        ),
+    ],
+)
+def test_mcp_config_tools_forward_ownership_override(
+    monkeypatch: pytest.MonkeyPatch, tool, operation: str, args: tuple[object, ...]
+) -> None:
+    """MCP wrappers expose and forward the explicit ownership override."""
+    target_module = (
+        server_profiles
+        if tool is server_profiles.hmc_sync_lpar_profile
+        else server_configuration
+    )
+    delegated = AsyncMock(return_value="ok")
+    monkeypatch.setattr(target_module, operation, delegated)
+
+    async def invoke(fn, *, profile=None):
+        return await fn(AsyncMock())
+
+    monkeypatch.setattr(
+        target_module, "with_client", lambda fn, **kwargs: asyncio.run(invoke(fn))
+    )
+    result = tool(*args, ownership_override=True)
+
+    assert result == "ok"
+    delegated.assert_awaited_once()
+    assert delegated.await_args.kwargs["ownership_override"] is True
 
 
 @pytest.mark.asyncio
