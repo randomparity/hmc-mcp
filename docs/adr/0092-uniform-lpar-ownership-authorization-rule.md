@@ -231,7 +231,7 @@ exempt anyway.
 | `deploy_partition_template` (`operations/templates.py:93`) | Creates the partition and stamps it per ADR 0014. |
 | `hmc_capture_lpar_console` (`server_tools/console.py:23`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_backup_lpar_profiles` (`server_tools/lpar/profiles.py:34`) | Reads every profile and writes an HMC-side backup file; it does not mutate a partition or profile. |
-| `hmc_migrate_validate_lpar` (`server_tools/lpm.py:147`) | Calls `validate_lpar_migration`, which submits an LPM validation job and changes nothing. The mutating migration operation has its own guard. |
+| `hmc_migrate_validate_lpar` (`server_tools/lpm.py:151`) | Calls `validate_lpar_migration`, which submits an LPM validation job and changes nothing. The mutating migration operation has its own guard. |
 | `install_lpar_os` (`operations/install.py:227`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation now reads the resolved `LogicalPartition` resource and rejects a non-VIOS type or any state other than `not activated` before composing or submitting the detached command. |
 | `install_vios` (`operations/install.py:310`) | Added by #366. Same reason and preflight: after resolving through the `VirtualIOServer` feed, both name and UUID selectors are checked through the resolved `LogicalPartition` resource for Virtual I/O Server type and `not activated` state before submission. |
 

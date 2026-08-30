@@ -50,7 +50,11 @@ def hmc_migrate_lpar(
     without submitting migration. Set validate_first=False for direct submission.
 
     Set wait=True to block until the job reaches COMPLETED / FAILED / EXCEPTION
-    (or until timeout_seconds elapses).
+    (or until timeout_seconds elapses). The returned ``JobOutcome`` describes
+    this submission: ``found`` is false when the submission returned no job
+    entry, and ``job_href`` is the HMC submission link when one was returned.
+    ``job_id`` may be a synthetic, non-pollable label, so poll only an HMC
+    handle returned in the outcome.
 
     Args:
         lpar_name_or_uuid: Source partition name or UUID.
@@ -160,6 +164,10 @@ def hmc_migrate_validate_lpar(
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars).
     Set wait=True to block until the validation job reaches a terminal state.
+    The returned ``JobOutcome`` describes this submission: ``found`` is false
+    when no job entry was returned, and ``job_href`` is the HMC submission link
+    when available. ``job_id`` may be a synthetic, non-pollable label; poll
+    only an HMC handle returned in the outcome.
 
     Args:
         lpar_name_or_uuid: Source partition name or UUID.
@@ -208,8 +216,11 @@ def hmc_migrate_abort_lpar(
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars).
-    Returns a normalized job outcome. With wait=False, returns after submission;
-    with wait=True, blocks until a terminal state or timeout.
+    Returns a normalized ``JobOutcome`` for this submission. With wait=False,
+    returns after submission; with wait=True, blocks until a terminal state or
+    timeout. ``found`` is false when no job entry was returned, and ``job_href``
+    is the HMC submission link when available. ``job_id`` may be a synthetic,
+    non-pollable label; poll only an HMC handle returned in the outcome.
 
     Args:
         lpar_name_or_uuid: Migrating partition name or UUID.
@@ -252,8 +263,11 @@ def hmc_migrate_recover_lpar(
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars).
-    Returns a normalized job outcome. With wait=False, returns after submission;
-    with wait=True, blocks until a terminal state or timeout.
+    Returns a normalized ``JobOutcome`` for this submission. With wait=False,
+    returns after submission; with wait=True, blocks until a terminal state or
+    timeout. ``found`` is false when no job entry was returned, and ``job_href``
+    is the HMC submission link when available. ``job_id`` may be a synthetic,
+    non-pollable label; poll only an HMC handle returned in the outcome.
 
     Args:
         lpar_name_or_uuid: Failed partition name or UUID.
@@ -300,8 +314,11 @@ def hmc_remote_restart_lpar(
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars).
-    Returns a normalized job outcome. With wait=False, returns after submission;
-    with wait=True, blocks until a terminal state or timeout.
+    Returns a normalized ``JobOutcome`` for this submission. With wait=False,
+    returns after submission; with wait=True, blocks until a terminal state or
+    timeout. ``found`` is false when no job entry was returned, and ``job_href``
+    is the HMC submission link when available. ``job_id`` may be a synthetic,
+    non-pollable label; poll only an HMC handle returned in the outcome.
 
     Args:
         lpar_name_or_uuid: Failed partition name or UUID.
