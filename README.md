@@ -441,8 +441,13 @@ Six things are worth knowing before you run it.
   Nothing in a running server surfaces either gap — `hmc_effective_permissions`
   reports what was registered, which is exactly what the policy produced — so this
   diff is the detection path.
-- **If `serve` reports a policy that will not compile and the generator reports the file
-  already exists**, the file is truncated or corrupt. Delete it and re-run the generator.
+- **If `serve` reports an `unknown tool`, the policy is stale, not corrupt.** Preserve the
+  reviewed deployed policy, then run `config diff-access-policy` against it. Alternatively,
+  run `config init-access-policy --output /tmp/access-policy.new`, review the generated
+  policy's legacy-equivalent breadth, diff it against the deployed policy, and merge the
+  intended changes by hand. A file that cannot be read or parsed as TOML may genuinely be
+  truncated or corrupt; preserve it for review and recovery before generating a scratch copy
+  and manually restoring the reviewed policy decisions.
 - **`config.toml` and `access-policy.toml` are different files with different jobs.**
   `config.toml` holds **HMC connection profiles** — which consoles you can reach, and how.
   `access-policy.toml` holds **server access policies** — what an MCP server may do with
