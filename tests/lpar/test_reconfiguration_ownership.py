@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from unittest.mock import AsyncMock
+from unittest.mock import patch
 
 import pytest
 
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.adapters import (
     add_network_adapter,
     add_vfc_adapter,
@@ -30,6 +32,10 @@ from hmc_mcp.operations.storage import (
 LPAR = "11111111-1111-4111-8111-111111111111"
 VIOS = "22222222-2222-4222-8222-222222222222"
 VG = "33333333-3333-4333-8333-333333333333"
+SYSTEM_NAME = "frame1"
+SYSTEM_UUID = "44444444-4444-4444-8444-444444444444"
+LPAR_NAME = "client1"
+FOREIGN_OWNER = "[hmc-mcp owner:another-agent created:2026-08-14]"
 
 Operation = Callable[[AsyncMock], Awaitable[object]]
 
@@ -138,6 +144,80 @@ async def test_foreign_owner_stops_reconfiguration_before_first_write(
         "lpar_remote_restart",
     ):
         getattr(hmc, method).assert_not_awaited()
+
+
+def _real_guard_hmc() -> AsyncMock:
+    """Configure the client double for the real ownership guard path."""
+    hmc = AsyncMock()
+    hmc.config = HMCConfig.from_mapping(
+        {
+            "host": "hmc.test",
+            "user": "u",
+            "password": "p",
+            "agent_id": "my-agent",
+        }
+    )
+    hmc.get_managed_system.return_value = {"Resource": {"SystemName": SYSTEM_NAME}}
+    hmc.get_logical_partition.return_value = {
+        "Resource": {"PartitionName": LPAR_NAME}
+    }
+    hmc.list_logical_partitions.return_value = [{"UUID": LPAR}]
+    return hmc
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "write_method"),
+    [
+        (mount_optical_media, "create_optical_mapping"),
+        (unmount_optical_media, "delete_optical_mapping"),
+    ],
+)
+async def test_real_guard_rejects_foreign_optical_owner_before_write(
+    operation: Operation, write_method: str
+) -> None:
+    """A foreign token blocks both optical mutations before their HMC write."""
+    hmc = _real_guard_hmc()
+
+    with patch(
+        "hmc_mcp.operations.ownership.get_lpar_description",
+        new=AsyncMock(return_value=FOREIGN_OWNER),
+    ):
+        with pytest.raises(PermissionError, match="ownership_override=true"):
+            await operation(hmc, SYSTEM_UUID, VIOS, LPAR, media_name="aix.iso")
+
+    getattr(hmc, write_method).assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "write_method"),
+    [
+        (mount_optical_media, "create_optical_mapping"),
+        (unmount_optical_media, "delete_optical_mapping"),
+    ],
+)
+async def test_optical_ownership_override_bypasses_read_and_writes(
+    operation: Operation, write_method: str
+) -> None:
+    """An approved override skips the ownership read and reaches the write."""
+    hmc = _real_guard_hmc()
+
+    with patch(
+        "hmc_mcp.operations.ownership.get_lpar_description",
+        new=AsyncMock(return_value=FOREIGN_OWNER),
+    ) as read:
+        await operation(
+            hmc,
+            SYSTEM_UUID,
+            VIOS,
+            LPAR,
+            media_name="aix.iso",
+            ownership_override=True,
+        )
+
+    read.assert_not_awaited()
+    getattr(hmc, write_method).assert_awaited_once()
 
 
 @pytest.mark.asyncio
