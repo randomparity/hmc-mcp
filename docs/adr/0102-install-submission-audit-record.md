@@ -4,6 +4,9 @@
 
 Accepted (2026-08-26)
 
+> **Amended by [ADR 0109](0109-install-submitted-audit-correlation.md)**
+> (2026-08-29): the PID now reaches the reserved audit stream after a successful submit.
+
 ## Context
 
 `install_lpar_os` and `install_vios` submit an irreversible OS install against a
