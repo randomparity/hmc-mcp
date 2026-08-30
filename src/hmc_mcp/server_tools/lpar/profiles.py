@@ -9,12 +9,12 @@ from ..._app import (
     with_client,
 )
 from ...operations.pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
-from ...operations.lpar.configuration import synchronize_lpar_profile
-
-from ...ssh.profiles import (
-    backup_lpar_profiles,
-    restore_lpar_profiles,
+from ...operations.lpar.configuration import (
+    restore_system_lpar_profiles,
+    synchronize_lpar_profile,
 )
+
+from ...ssh.profiles import backup_lpar_profiles
 
 
 # destructive because force=True silently overwrites an existing backup file on the HMC
@@ -87,6 +87,7 @@ def hmc_restore_lpar_profiles(
     file_path: str,
     system_wide_restore_approved: bool = False,
     profile: str | None = None,
+    ownership_override: bool = False,
 ) -> str:
     """Restore LPAR profiles from a backup file via the HMC CLI.
 
@@ -113,6 +114,8 @@ def hmc_restore_lpar_profiles(
         system_wide_restore_approved: Explicit operator approval to overwrite every
             LPAR profile on the selected managed system.
         profile: optional TOML profile name; when omitted the env-default HMC is used.
+        ownership_override: Bypass current and opaque-backup ownership rejection after
+            operator approval; emits an audit record covering every profile.
 
     Returns:
         The raw HMC CLI output."""
@@ -121,11 +124,13 @@ def hmc_restore_lpar_profiles(
             "restoring LPAR profiles overwrites every profile on the managed system; "
             "retry with system_wide_restore_approved=true after operator approval"
         )
-    return ssh_with_client(
-        lambda config, system_name, _: restore_lpar_profiles(
-            config, system_name, file_path
+    return with_client(
+        lambda hmc: restore_system_lpar_profiles(
+            hmc,
+            system_name_or_uuid,
+            file_path,
+            ownership_override=ownership_override,
         ),
-        system_name_or_uuid=system_name_or_uuid,
         profile=profile,
     )
 

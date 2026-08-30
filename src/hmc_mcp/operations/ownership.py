@@ -458,6 +458,54 @@ def authorize_lpar_ownership_description(
     return owner
 
 
+async def _authorize_system_lpar_profile_restore(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    *,
+    ownership_override: bool = False,
+) -> str:
+    """Authorize a system-wide profile restore and return its HMC CLI name."""
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    system_name = await _resolve_system_name(hmc, system_uuid, system_name_or_uuid)
+    if ownership_override:
+        _audit_lpar_ownership_override(hmc, system_name, "*")
+        return system_name
+
+    try:
+        rows = await list_lpar_ownership(hmc, system_uuid)
+    except HMCError as exc:
+        raise ValueError(
+            "LPAR ownership inventory is unavailable; retry after the managed-system "
+            "partition feed recovers"
+        ) from exc
+    for row in rows:
+        lpar_name = row.get("lpar_name")
+        description = row.get("description")
+        if not isinstance(lpar_name, str) or not lpar_name.strip():
+            raise ValueError(
+                "LPAR ownership inventory contains a row without a partition name; "
+                "retry after the inventory is complete"
+            )
+        if description is not None and not isinstance(description, str):
+            raise ValueError(
+                f"LPAR ownership inventory for {lpar_name!r} has an unreadable "
+                "description; retry after the inventory is complete"
+            )
+        authorize_lpar_ownership_description(
+            hmc,
+            system_name,
+            lpar_name,
+            description or "",
+            operation="lpar-profile-restore",
+        )
+
+    raise PermissionError(
+        "current LPAR ownership is clear, but the profile backup may contain "
+        "backup-only definitions; retry with ownership_override=true after "
+        "operator approval"
+    )
+
+
 async def _read_lpar_description_for_authorization(
     hmc: HMCClient, system_name: str, lpar_name: str
 ) -> str:

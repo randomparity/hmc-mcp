@@ -97,11 +97,15 @@ EVENTS: frozenset[str] = frozenset(get_args(Event))
 #: which is why there is no ``connection-selector-unreadable`` reason code.
 State = Literal["present", "absent", "unreadable"]
 
-#: Which ADR 0011 guard entry point refused, on the ``ownership-denied`` record. Two
+#: Which ADR 0011 guard entry point refused, on the ``ownership-denied`` record. Three
 #: members rather than the MCP tool or API function name: threading the caller's name
 #: through would move the frozen public signature digest across two exports and fourteen
 #: call sites, and per-tool granularity is a later issue's (ADR 0100).
-OwnershipOperation = Literal["lpar-mutation", "lpar-decommission-snapshot"]
+OwnershipOperation = Literal[
+    "lpar-mutation",
+    "lpar-decommission-snapshot",
+    "lpar-profile-restore",
+]
 
 #: Derived, as :data:`REASONS` and :data:`EVENTS` are, so
 #: ``tests/test_authorization_audit_doc.py`` holds the document's field row to it in both
