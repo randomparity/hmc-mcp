@@ -14,7 +14,7 @@ from hmc_mcp.operations.pcie import (
 
 def _hmc() -> AsyncMock:
     hmc = AsyncMock()
-    hmc.config = HMCConfig(host="h", user="u", password="p", _env_file=None)
+    hmc.config = HMCConfig(host="h", user="u", password="p")
     return hmc
 
 

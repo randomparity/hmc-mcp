@@ -548,7 +548,7 @@ async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
 ) -> None:
     hmc = _client()
     hmc.config = HMCConfig(
-        host="hmc.test", user="user", agent_id="alice", _env_file=None
+        host="hmc.test", user="user", agent_id="alice"
     )
 
     from hmc_mcp.operations.lpar import decommission as ops
@@ -582,7 +582,7 @@ async def test_decommission_revalidates_changed_owner_before_mutation(
 ) -> None:
     hmc = _client()
     hmc.config = HMCConfig(
-        host="hmc.test", user="user", agent_id="alice", _env_file=None
+        host="hmc.test", user="user", agent_id="alice"
     )
 
     from hmc_mcp.operations.lpar import decommission as ops

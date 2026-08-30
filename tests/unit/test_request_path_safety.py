@@ -26,7 +26,7 @@ from hmc_mcp.errors import HMCError
 
 def _client() -> HMCClient:
     return HMCClient(
-        HMCConfig(host="hmc.test", user="u", password="p", _env_file=None)  # pragma: allowlist secret
+        HMCConfig(host="hmc.test", user="u", password="p")  # pragma: allowlist secret
     )
 
 

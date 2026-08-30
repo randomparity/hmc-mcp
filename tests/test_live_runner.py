@@ -560,7 +560,7 @@ async def test_affinity_live_paths_use_only_current_and_calcscore_commands(monke
         return next(outputs)
 
     monkeypatch.setattr(ssh_affinity, "run_hmc_command", capture)
-    config = HMCConfig(host="h", user="u", _env_file=None)
+    config = HMCConfig(host="h", user="u")
     await ssh_affinity.get_system_memopt_score(config, "sys1")
     await ssh_affinity.plan_lpar_memopt_scores(config, "sys1")
     await ssh_affinity.plan_system_memopt_score(config, "sys1")

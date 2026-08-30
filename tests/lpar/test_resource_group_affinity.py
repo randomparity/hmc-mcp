@@ -28,7 +28,7 @@ from hmc_mcp.ssh.affinity import (
 
 
 def _config() -> HMCConfig:
-    return HMCConfig(host="hmc.test", user="u", password="p", _env_file=None)
+    return HMCConfig(host="hmc.test", user="u", password="p")
 
 
 V11 = "version= Version: 11\n Release: 2\n Service Pack: 1120\n"

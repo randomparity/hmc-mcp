@@ -60,7 +60,12 @@ _PRISTINE_SHOWWARNING = warnings.showwarning
 @pytest.fixture(autouse=True)
 def enable_tls_verification_for_tests(monkeypatch):
     """Keep mocked HMC connections secure unless a test opts out explicitly."""
+    wanted = {f"HMC_{field.upper()}".lower() for field in HMCConfig.model_fields}
+    wanted.add("hmc_profile")
+    for name in [n for n in os.environ if n.lower() in wanted]:
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+    monkeypatch.delenv("HMC_AUTHORIZE_POWER_OPERATIONS", raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -395,7 +400,6 @@ def make_config(**kw) -> HMCConfig:
         "user": "hscroot",
         "password": "abc123",
         "verify_ssl": True,
-        "_env_file": None,  # suppress .env loading so live creds/schema don't bleed in
     }
     defaults.update(kw)
     return HMCConfig(**defaults)
