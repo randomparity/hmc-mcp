@@ -407,10 +407,12 @@ directly. The CLI therefore shares this record's disappearance and polling behav
 tools while keeping its own presentation contract.
 
 For both commands, `found=False` prints `Job <id> not found` to stderr and exits with status 1.
-`jobs wait` stops after the first absent poll instead of waiting until its timeout, and it performs
-exactly the one `get_job` call needed for that observation. A found job retains the existing
-command behavior: `jobs show` prints the serialized outcome, while `jobs wait` prints the status
-followed by that outcome.
+Without `--job-href`, `jobs wait` stops after the first absent poll instead of waiting until its
+timeout, and it performs exactly the one `get_job` call needed for that observation. With a
+supplied link, clause 2's existing confirmation rule still applies: an absent link is checked once
+through the global jobs path before the command reports the job missing. A found job retains the
+existing command behavior: `jobs show` prints the serialized outcome, while `jobs wait` prints the
+status followed by that outcome.
 
 ## Considered & rejected
 
