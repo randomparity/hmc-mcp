@@ -3620,6 +3620,14 @@ def test_jobs_wait(fake_hmc):
     assert fake_hmc.calls == [("get_job", (JOB_UUID,), {"job_href": None})]
 
 
+def test_jobs_wait_not_found_exits_1_after_one_poll(fake_hmc):
+    result = RUNNER.invoke(cli.app, ["jobs", "wait", "ghost"])
+
+    assert result.exit_code == 1
+    assert "not found" in result.stderr
+    assert fake_hmc.calls == [("get_job", ("ghost",), {"job_href": None})]
+
+
 # --------------------------------------------------------------------------- #
 # pcm metrics
 # --------------------------------------------------------------------------- #

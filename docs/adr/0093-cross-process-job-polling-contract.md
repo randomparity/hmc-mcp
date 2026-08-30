@@ -6,7 +6,8 @@ Accepted (2026-08-25). Amended 2026-08-26 by issue #474 — see *Amendment (#474
 job tools now read through `operations.jobs`, so the MCP surface gains the distinction this
 record's Consequences section said it did not. Amended 2026-08-28 by issue #532 to bound the
 delay before a confirming disappearance read. Amended 2026-08-28 by issue #537 to reject the
-three ASCII controls URL parsing deletes before validating a persisted link.
+three ASCII controls URL parsing deletes before validating a persisted link. Amended 2026-08-30
+by issue #526 to apply the operations contract to the CLI job commands.
 
 ## Context
 
@@ -398,8 +399,18 @@ read as absent. ADR clause 2 settled that trade at the operations layer on the s
 warning log; an MCP caller cannot read that log, so both tool docstrings now tell a caller who
 supplied a `job_href` to re-read by identifier alone before acting on absence.
 
-And the CLI (`cli_commands.jobs`) still calls `HMCClient` directly and still has the older contract; #526
-owns that pass, because the CLI's output contract is its own decision.
+## Amendment (#526): the CLI job commands read through `operations.jobs`
+
+`jobs show` reads through `operations.jobs.get_job`, and `jobs wait` polls through
+`operations.jobs.wait_for_job`; neither command calls the corresponding `HMCClient` method
+directly. The CLI therefore shares this record's disappearance and polling behavior with the MCP
+tools while keeping its own presentation contract.
+
+For both commands, `found=False` prints `Job <id> not found` to stderr and exits with status 1.
+`jobs wait` stops after the first absent poll instead of waiting until its timeout, and it performs
+exactly the one `get_job` call needed for that observation. A found job retains the existing
+command behavior: `jobs show` prints the serialized outcome, while `jobs wait` prints the status
+followed by that outcome.
 
 ## Considered & rejected
 
