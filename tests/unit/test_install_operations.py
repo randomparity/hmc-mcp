@@ -21,6 +21,7 @@ from conftest import make_config
 
 from hmc_mcp import api
 from hmc_mcp.audit import sink as audit_sink
+from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.install import (
     InstallHandle,
     InstallRequest,
@@ -54,9 +55,58 @@ def _hmc(**resolutions) -> AsyncMock:
     hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
     hmc.find_partition_by_name.return_value = {"UUID": LPAR_UUID}
     hmc.find_vios_by_name.return_value = {"UUID": LPAR_UUID}
+    hmc.get_logical_partition.return_value = {
+        "Resource": {
+            "PartitionType": "Virtual IO Server",
+            "PartitionState": "not activated",
+        }
+    }
     for name, value in resolutions.items():
         getattr(hmc, name).return_value = value
     return hmc
+
+
+@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("PartitionType", "AIX/Linux", "Virtual I/O Server"),
+        ("PartitionState", "running", "not activated"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_operation_rejects_install_target_before_submission(
+    operation, field, value, message
+):
+    hmc = _hmc()
+    hmc.get_logical_partition.return_value["Resource"][field] = value
+    ssh = _Ssh()
+
+    with _patch_ssh(ssh):
+        with pytest.raises(HMCError, match=message):
+            await operation(
+                hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
+            )
+
+    assert ssh.commands == []
+    hmc.get_logical_partition.assert_awaited_once_with(LPAR_UUID)
+
+
+@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.asyncio
+async def test_uuid_target_rejects_before_ssh_submission(operation):
+    hmc = _hmc(get_managed_system={"Resource": {"SystemName": "sys1"}})
+    hmc.get_logical_partition.return_value["Resource"]["PartitionState"] = "running"
+    ssh = _Ssh()
+
+    with _patch_ssh(ssh):
+        with pytest.raises(HMCError, match="not activated"):
+            await operation(
+                hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), _REQUEST
+            )
+
+    assert ssh.commands == []
+    hmc.get_logical_partition.assert_awaited_once_with(LPAR_UUID)
 
 
 class _Ssh:

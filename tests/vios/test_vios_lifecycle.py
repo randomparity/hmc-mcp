@@ -133,6 +133,9 @@ def _mock_resolution(mock_hmc) -> None:
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
         return_value=httpx.Response(200, text=VIOS_ENTRY)
     )
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{VIOS_UUID}").mock(
+        return_value=httpx.Response(200, text=VIOS_ENTRY)
+    )
 
 
 def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
