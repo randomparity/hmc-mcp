@@ -59,6 +59,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Added
 
+- A warning-level `install-submitted` audit event now carries the remote PID returned by a
+  detached `installios` submission to served operators (#544, ADR 0109).
 - Serve startup now submits a warning-level `power-ownership-guard` audit record for every
   policy-reachable connection, preserving the effective guard value when the permissions
   inspection tool is withheld (#533, ADR 0107).
@@ -461,6 +463,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- No facade export changes for `install-submitted`; the event vocabulary is an internal
+  audit-stream contract and `InstallHandle` is unchanged.
 - Added: `TLSVerificationDisabledWarning` lets reusable Python consumers filter
   the TLS-disabled logon warning without suppressing unrelated `UserWarning`s.
 - Added: `ManagedSystemPatch` and `LpmMigrationRequest` replace recurring scalar

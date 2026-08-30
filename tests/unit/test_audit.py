@@ -492,6 +492,7 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
     assert audit.EVENTS == {
         "authorization",
         "install-attempted",
+        "install-submitted",
         "ownership-denied",
         "ownership-override",
         "power-ownership-guard",
@@ -512,6 +513,11 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
         owner="other",
         host="hmc.test",
         agent_id="a",
+    )
+    emitted.add(_one(lines)["event"])
+    lines = _capture()
+    audit.record_install_submitted(
+        system="s", partition="p", pid=123, log_path="/l", host="hmc.test", agent_id="a"
     )
     emitted.add(_one(lines)["event"])
     lines = _capture()
@@ -819,7 +825,28 @@ def test_the_install_record_is_emitted_at_warning():
     audit.record_install_attempted(
         system="s", partition="p", log_path="/l", host="hmc.test", agent_id="a"
     )
-    assert levels == [logging.WARNING]
+    audit.record_install_submitted(
+        system="s", partition="p", pid=123, log_path="/l", host="hmc.test", agent_id="a"
+    )
+    assert levels == [logging.WARNING, logging.WARNING]
+
+
+def test_the_install_submitted_record_carries_the_remote_pid():
+    lines = _capture()
+    audit.record_install_submitted(
+        system="sys-a",
+        partition="vios-01",
+        pid=4321,
+        log_path="/tmp/hmc-mcp-installios-vios-01.log",
+        host="hmc.test",
+        agent_id="agent-7",
+    )
+    record = _one(lines)
+    assert record["event"] == "install-submitted"
+    assert record["pid"] == 4321
+    assert record["system"] == "sys-a"
+    assert record["partition"] == "vios-01"
+    assert record["log_path"] == "/tmp/hmc-mcp-installios-vios-01.log"
 
 
 def test_the_install_record_is_bounded_and_escaped():

@@ -241,7 +241,7 @@ async def test_unresolvable_uuid_target_raises_before_submitting(operation):
 
 
 def _install_records(text: str) -> list[dict]:
-    """Every ``install-attempted`` record a consumer would parse out of *text*."""
+    """Every install audit record a consumer would parse out of *text*."""
     records = []
     for line in text.splitlines():
         try:
@@ -250,14 +250,14 @@ def _install_records(text: str) -> list[dict]:
             continue
         if (
             isinstance(candidate, dict)
-            and candidate.get("event") == "install-attempted"
+            and candidate.get("event") in {"install-attempted", "install-submitted"}
         ):
             records.append(candidate)
     return records
 
 
-def _one_install_record(text: str) -> dict:
-    records = _install_records(text)
+def _one_install_record(text: str, event: str = "install-attempted") -> dict:
+    records = [record for record in _install_records(text) if record["event"] == event]
     assert len(records) == 1, f"expected one record, got {len(records)}: {text!r}"
     return records[0]
 
@@ -275,6 +275,7 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     ``logging.lastResort``'s threshold too.
     """
     audit_sink.install_audit_sink()
+    audit_sink.set_audit_level(logging.WARNING)
     hmc = _hmc()
     hmc.config = make_config(host="hmc.test", agent_id="agent-7")
 
@@ -288,11 +289,25 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     )
     captured = capsys.readouterr()
     assert captured.out == "", "an audit record must never reach the JSON-RPC stream"
+    records = _install_records(captured.err)
+    assert [record["event"] for record in records] == [
+        "install-attempted",
+        "install-submitted",
+    ]
     record = _one_install_record(captured.err)
     assert (record["system"], record["partition"]) == ("sys1", "target1")
     assert record["log_path"] == result["log_path"]
     assert record["host"] == "hmc.test"
     assert record["attribution"]["claim"] == "agent-7"
+    submitted = _one_install_record(captured.err, "install-submitted")
+    assert submitted["pid"] == result["pid"]
+    assert {
+        key: submitted[key]
+        for key in ("system", "partition", "log_path", "host", "attribution")
+    } == {
+        key: record[key]
+        for key in ("system", "partition", "log_path", "host", "attribution")
+    }
 
 
 @pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
@@ -350,8 +365,13 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
     assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
         "the sink did not settle"
     )
-    record = _one_install_record(capsys.readouterr().err)
+    captured = capsys.readouterr().err
+    record = _one_install_record(captured)
     assert (record["system"], record["partition"]) == ("sys1", "target1")
+    assert not any(
+        record["event"] == "install-submitted"
+        for record in _install_records(captured)
+    )
 
 
 @pytest.mark.parametrize("operation", [install_lpar_os, install_vios])

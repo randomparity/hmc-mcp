@@ -286,6 +286,31 @@ It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and no
 nulls: the record is not an access-policy decision, and it is also emitted on the Python
 API path, where no policy connection exists to name.
 
+### `event: "install-submitted"`
+
+Emitted immediately after the HMC returns the PID for a detached `installios` process.
+Always `WARNING`, so the PID remains visible with only `install_audit_sink` configured and
+when the served audit threshold is `WARNING`. The decision is
+[ADR 0109](adr/0109-install-submitted-audit-correlation.md).
+
+```json
+{"time":"2026-08-29T18:00:01+00:00","event":"install-submitted","system":"sys-a","partition":"vios-01","pid":4321,"log_path":"/tmp/hmc-mcp-installios-vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+```
+
+`pid` is the remote HMC process identifier needed to abort the detached install. The other
+fields have the meanings and shared 128-character string bounds documented for
+`install-attempted`. Correlate the records on `system`, `partition`, `log_path`, `host`, and
+`attribution`, using stream order when identical submissions overlap. The stream does not
+promise one-to-one pairing or an attempt identifier; each success record is independently
+actionable because it carries its own PID and target.
+
+A raised submit emits only `install-attempted`, never `install-submitted`, because the SSH
+failure cannot prove whether a process started. Absence of this success record therefore
+does not prove nothing started. Sink drops and audit filtering also mean absence of either
+record is not proof that no submission occurred.
+
+It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as nulls.
+
 ### `event: "power-ownership-guard"`
 
 Emitted once at `serve` startup for every connection the selected access policy can route.

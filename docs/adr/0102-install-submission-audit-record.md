@@ -4,6 +4,9 @@
 
 Accepted (2026-08-26)
 
+> **Amended by [ADR 0109](0109-install-submitted-audit-correlation.md)**
+> (2026-08-29): the PID now reaches the reserved audit stream after a successful submit.
+
 ## Context
 
 `install_lpar_os` and `install_vios` submit an irreversible OS install against a
@@ -78,19 +81,12 @@ with no trace of any kind today, so `INFO` would silence the record precisely wh
 the only one. `WARNING` also survives `hmc-mcp serve --audit-level WARNING`, the setting
 that drops the `authorization` permit named in the Context.
 
-### 4. The post-submit line stays on the module logger
+### 4. Amended: the post-submit PID reaches the audit stream
 
-The PID it carries is already in the returned `InstallHandle`, so routing it too would put
-a second record per install on the bounded sink for a value the caller already holds. It
-stays a convenience for an embedder that configures the `hmc_mcp` namespace.
-
-Say plainly what that costs, because the caller and the operator are not the same principal
-under `hmc-mcp serve`: there the handle is the tool result and goes to the MCP client — the
-agent that asked for the install — while the operator reads the audit stream. So the PID
-does not reach the operator's trace. With no HMC job on this path, `installios -u` and the
-`log_path` this record does carry are what an operator has; recovering the PID means `ps` on
-the HMC or the log itself. Closing that would mean either a second record or a shape the
-frozen `InstallHandle` does not have, and both are more than this issue authorizes.
+ADR 0109 replaces this section's original decision. The human-readable line remains on the
+module logger for embedders that configure it, and a second structured `install-submitted`
+record now carries the PID on the reserved audit stream after a successful submit. The
+pre-submit record remains necessary for the ambiguous raised-submit case.
 
 ## Consequences
 
@@ -100,10 +96,9 @@ frozen `InstallHandle` does not have, and both are more than this issue authoriz
 - A record is not evidence that an install started; it is evidence that one was attempted.
   Pairing it with an outcome means reading the HMC-side log the record names, which the next
   submission against that partition name truncates.
-- The operator's trace does not carry the in-flight PID, for the reason §4 gives. On a path
-  with no HMC job that PID is the only handle on an install already running, so aborting one
-  after a mistaken or unauthorized submission means reading it off the HMC. Named as a
-  residual rather than closed here; #544 owns it.
+- As amended by ADR 0109, a successful submission adds an `install-submitted` record whose
+  PID is the operator's in-flight abort handle. A raised submit still has only the attempted
+  record because the SSH failure cannot prove whether a process started.
 - A caller can drive these records at attempt rate. Under `hmc-mcp serve` they land on the
   bounded ADR 0043 sink, which drops and says so with a `records-dropped` count; on the
   Python API path the record goes synchronously to stderr through `logging.lastResort` with

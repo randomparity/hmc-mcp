@@ -75,6 +75,7 @@ REASONS: frozenset[str] = frozenset(get_args(Reason))
 Event = Literal[
     "authorization",
     "install-attempted",
+    "install-submitted",
     "ownership-denied",
     "ownership-override",
     "power-ownership-guard",
@@ -401,6 +402,38 @@ def record_install_attempted(
             "event": event,
             "system": _value(system),
             "partition": _value(partition),
+            "log_path": _value(log_path),
+            "host": _value(host),
+            "attribution": _attribution(agent_id, "config:agent_id"),
+        }
+
+    emit(_DENY_LEVEL, build)
+
+
+def record_install_submitted(
+    *,
+    system: str,
+    partition: str,
+    pid: int,
+    log_path: str,
+    host: str,
+    agent_id: str,
+) -> None:
+    """Emit the remote PID after ``installios`` submission succeeds.
+
+    The target and attribution fields match :func:`record_install_attempted`,
+    allowing an operator to correlate the outcome without access to the MCP
+    result. A failed or ambiguous submit emits no outcome record.
+    """
+
+    def build() -> dict[str, Any]:
+        event: Event = "install-submitted"
+        return {
+            "time": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            "system": _value(system),
+            "partition": _value(partition),
+            "pid": pid,
             "log_path": _value(log_path),
             "host": _value(host),
             "attribution": _attribution(agent_id, "config:agent_id"),

@@ -171,9 +171,15 @@ async def _submit_install(
         agent_id=hmc.config.agent_id or "hmc-mcp",
     )
     pid = await run_installios(hmc.config, command)
-    # Stays on the module logger: the PID it adds is already in the returned
-    # handle, so this is a convenience for an embedder that configures the
-    # hmc_mcp namespace, not part of the audit trail (ADR 0102).
+    audit.record_install_submitted(
+        system=system_name,
+        partition=partition_name,
+        pid=pid,
+        log_path=log_path,
+        host=hmc.config.host,
+        agent_id=hmc.config.agent_id or "hmc-mcp",
+    )
+    # Keep the human-readable module log for embedders that configured it.
     _logger.info(
         "Detached installios on %s/%s: pid %s, log %s",
         system_name,
