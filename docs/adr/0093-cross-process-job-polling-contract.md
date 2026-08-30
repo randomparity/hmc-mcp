@@ -300,10 +300,11 @@ running distinction here; only `hmc_mcp.api` does.
 > `operations.jobs.get_job`, so the MCP surface has the reaped-versus-running distinction too. See
 > *Amendment (#474)* below; the rest of this Consequences section stands.
 
-The submitting tools' own docstrings describe
-neither field: five presentation docstrings are outside this decision's surface, so issue #456 owns
-that pass. Until it lands, an agent reading `found` off a submission report has the tool docstring
-of `hmc_wait_for_job` and this ADR, and nothing on the tool it actually called.
+The submitting tools' own docstrings now describe both fields and their submission reading. The
+five presentation docstrings covered by issue #456 state that `found=False` means the submission
+returned no job entry, that `job_href` is the HMC submission link when available, and that
+`job_id` may be a synthetic, non-pollable label. An agent reading a submission report therefore
+has the same distinction on the tool it actually called as in this ADR and `JobOutcome`.
 
 ## Amendment (#474): the MCP job tools read through `operations.jobs`
 
