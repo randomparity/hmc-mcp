@@ -196,6 +196,34 @@ def test_serve_records_every_effective_power_guard(records, lab_profile):
     ]
 
 
+def test_serve_records_a_case_variant_as_environment(
+    records, lab_profile, monkeypatch
+):
+    """Startup audit uses the report's deterministic source vocabulary."""
+    lab_profile.write_text(
+        "[profiles.lab]\n"
+        'host = "lab.invalid"\n'
+        "authorize_power_operations = true\n"
+    )
+    monkeypatch.setenv("hmc_authorize_power_operations", "false")
+    policy = _policy(
+        [
+            {
+                "tools": ["hmc_power_off_lpar"],
+                "connections": ["lab"],
+                "targets": "all-targets",
+            }
+        ]
+    )
+
+    application = server_app._serve_application(False, policy)
+
+    assert application is not None
+    assert records[-1]["authorize_power_operations"] is False
+    assert records[-1]["source"] == "environment"
+    assert records[-1]["detail"] is None
+
+
 def test_serve_records_an_unresolved_power_guard_without_failing(records, lab_profile):
     lab_profile.write_text("this is not valid toml [[[\n")
     policy = _policy(

@@ -261,7 +261,8 @@ def test_snapshot_decision_reuses_the_resolver_host_sample(monkeypatch, tmp_path
 
     def changing_host(name):
         nonlocal checks
-        assert name == "HMC_HOST"
+        if name != "HMC_HOST":
+            return config_module.env_var_value(name)
         checks += 1
         return next(host_checks)
 
@@ -383,41 +384,19 @@ def test_an_ambient_host_makes_a_profile_key_ineffective(monkeypatch, tmp_path):
     assert guards[DEFAULT_CONNECTION_TOKEN].source == "default"
 
 
-def test_a_case_variant_environment_variable_asserts_no_origin(monkeypatch):
-    """Neither probe is honest for both paths, so `source` claims neither.
-
-    `HMCConfig` leaves pydantic-settings' `case_sensitive` at `False`, so on the
-    env-only path a lower-case spelling sets the field and an exact-key probe
-    would fall through to the `model_fields_set` arm and report `profile` — the
-    label an operator reads as "my file took effect" — with no file in existence
-    at all.
-    """
+def test_a_case_variant_environment_variable_reports_environment(monkeypatch):
+    """Case-insensitive config matching and source attribution agree."""
     monkeypatch.setenv("hmc_authorize_power_operations", "true")
 
     (guard,) = resolve_power_guards(None)
 
     assert guard.authorize_power_operations is True
-    assert guard.source == "ambiguous"
-    assert "case variant" in guard.detail
+    assert guard.source == "environment"
+    assert guard.detail is None
 
 
 def test_a_case_variant_overrides_a_profiles_value(monkeypatch, tmp_path):
-    """The mirror case, which #531 inverted.
-
-    `_load_profile_from_document` used to drop a TOML key only when its exact
-    upper-case spelling was a key of `os.environ`, so a case variant left the
-    profile's value in the init kwargs, where pydantic-settings ranked it above
-    the environment. That was the divergence #531 fixed: the loader now folds
-    `HMC_*` names, so the variant drops the profile's key here exactly as it
-    already won on the env-only path, and `authorize_power_operations` is the
-    variable's `false` rather than the profile's `true`.
-
-    `source` stays `ambiguous` and therefore over-reports — with both paths
-    agreeing, `environment` is the truthful label. Removing the value changes a
-    documented literal alternative on the report, so it is tracked separately as
-    #547; this assertion pins the current behaviour so that change is visible
-    when it lands.
-    """
+    """The profile loader and source reporter use the same casing rule."""
     _write_config(
         tmp_path,
         """
@@ -437,7 +416,41 @@ def test_a_case_variant_overrides_a_profiles_value(monkeypatch, tmp_path):
     guards = _by_connection(resolve_power_guards(policy))
 
     assert guards["guarded"].authorize_power_operations is False
-    assert guards["guarded"].source == "ambiguous"
+    assert guards["guarded"].source == "environment"
+    assert guards["guarded"].detail is None
+
+
+@pytest.mark.parametrize(
+    ("first_name", "first_value", "last_name", "last_value", "expected"),
+    [
+        (
+            "HMC_AUTHORIZE_POWER_OPERATIONS",
+            "true",
+            "hmc_authorize_power_operations",
+            "false",
+            False,
+        ),
+        (
+            "hmc_authorize_power_operations",
+            "false",
+            "HMC_AUTHORIZE_POWER_OPERATIONS",
+            "true",
+            True,
+        ),
+    ],
+)
+def test_last_case_insensitive_environment_spelling_wins(
+    monkeypatch, first_name, first_value, last_name, last_value, expected
+):
+    """Source attribution follows pydantic-settings' ordered environment fold."""
+    monkeypatch.setenv(first_name, first_value)
+    monkeypatch.setenv(last_name, last_value)
+
+    (guard,) = resolve_power_guards(None)
+
+    assert guard.authorize_power_operations is expected
+    assert guard.source == "environment"
+    assert guard.detail is None
 
 
 def test_a_connection_that_cannot_be_resolved_is_reported_not_raised(tmp_path, caplog):

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
@@ -120,17 +119,6 @@ _UNRESOLVED_LOG = (
     "built, so its authorize_power_operations is reported as unresolved: %s"
 )
 
-#: Said whole rather than interpolated, so ``detail`` stays closed. Only the
-#: exact upper-case spelling is dropped from a profile's TOML keys before
-#: construction (``config._load_profile_from_document``), so a case variant is
-#: outranked by the profile on that path and wins on the env-only path.
-_CASE_VARIANT_DETAIL = (
-    "a case variant of HMC_AUTHORIZE_POWER_OPERATIONS is set; only the exact "
-    "upper-case spelling overrides a profile's value, so this label does not "
-    "assert where the value came from"
-)
-
-
 @dataclass(frozen=True)
 class PowerOwnershipGuard:
     """The effective ``authorize_power_operations`` for one connection.
@@ -140,8 +128,8 @@ class PowerOwnershipGuard:
     and is observably identical to a correct ``false`` (#470). ``source`` is what
     separates them: a value an operator meant to set reports ``environment`` or
     ``profile``, and one that never arrived reports ``default``. It asserts an
-    origin only where one path can supply it — ``ambiguous`` covers the case
-    neither can be ruled out, and ``detail`` says why.
+    origin only where one path can supply it. Environment names use the same
+    case-insensitive matching as ``HMCConfig``.
 
     The field keeps the setting's own name, and its polarity: ``true`` means the
     ADR 0011 ownership guard is **enforced** on power operations, ``false`` that
@@ -274,31 +262,6 @@ def _targets_enforced(
     return True
 
 
-def _guard_env_spelling() -> str:
-    """How the environment spells the guard variable: exactly, near, or not.
-
-    The two resolution paths disagree about casing, so neither probe alone is
-    honest. On the env-only path ``HMCConfig`` leaves pydantic-settings'
-    ``case_sensitive`` at its ``False`` default, so a lower- or mixed-case
-    spelling sets the field; an exact-key probe would miss it and land on the
-    ``model_fields_set`` arm, reporting ``profile`` for a value no file supplied.
-    On the profile path ``_load_profile_from_document`` drops a TOML key only
-    when its exact upper-case spelling is a key of ``os.environ``, so a case
-    variant leaves the TOML value in the init kwargs, where pydantic-settings
-    ranks it above the environment — and a case-insensitive probe would report
-    ``environment`` for a value the environment lost.
-
-    A probe of ``os.environ`` cannot see which path ran, so ``variant`` is
-    reported as its own state rather than resolved into a guess. That the
-    variable is misspelled at all is the more useful answer either way.
-    """
-    if POWER_GUARD_ENV_VAR in os.environ:
-        return "exact"
-    if any(name.upper() == POWER_GUARD_ENV_VAR for name in os.environ):
-        return "variant"
-    return "absent"
-
-
 def _unresolved_detail(exc: Exception) -> str:
     """A closed description of *exc* for a caller: no message, no input.
 
@@ -353,27 +316,18 @@ def _log_unresolved(
 def _guard_source(config: HMCConfig) -> tuple[str, str | None]:
     """Name what supplied *config*'s guard value, and never assert more.
 
-    ``environment`` needs the exact spelling, which wins on both resolution
-    paths. ``default`` needs the field to be unset, which no path can fake.
-    Between them sits the case-variant state :func:`_guard_env_spelling`
-    isolates: the value came from a profile or from a misspelled variable and
-    nothing here can tell which, so it is reported as ``ambiguous`` rather than
-    as the reassuring ``profile``. An operator who misspelled the variable, saw
-    the guard ignore them, and called this tool to find out why is exactly the
-    reader `source` exists for; ``environment`` would end their search on the
-    wrong answer.
+    ``environment`` uses :func:`env_var_value`, the same case-insensitive,
+    last-match lookup that filters profile values before ``HMCConfig`` is built.
+    ``default`` needs the field to be unset, which no path can fake.
 
     ``default`` covers only a value omitted by both the selected profile and the
     environment. Configuration read, parse, and validation failures reach
     :func:`_power_guard` and are reported as ``unresolved`` instead.
     """
-    spelling = _guard_env_spelling()
-    if spelling == "exact":
+    if env_var_value(POWER_GUARD_ENV_VAR) is not None:
         return "environment", None
     if "authorize_power_operations" not in config.model_fields_set:
         return "default", None
-    if spelling == "variant":
-        return "ambiguous", _CASE_VARIANT_DETAIL
     return "profile", None
 
 
