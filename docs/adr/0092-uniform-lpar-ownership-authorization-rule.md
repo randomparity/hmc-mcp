@@ -310,8 +310,9 @@ discovery failure message names is reachable from the CLI too.
 That shared chain also closes the gap where a partition UUID paired with a
 mismatched selector would read the token off a system the partition does not live
 on: `_verify_partition_on_system` rejects the pairing, and the discovery branch
-matches by UUID. #462 still owns the same gap on the guarded operations that take a
-required selector and do not route through this chain.
+matches by UUID. PR #558 applied this containment to both the optional-selector
+and required-selector guarded chains; issue #462's duplicate-name regression
+coverage records the required-selector boundary.
 
 **The cost, stated.** Guarding `power_lpar` costs **one SSH login plus two REST
 GETs** on every call that does not carry `ownership_override=True`.

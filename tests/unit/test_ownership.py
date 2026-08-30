@@ -219,7 +219,11 @@ def test_resolve_and_authorize_lpar_names_forwards_resolution_and_override(
 
 def test_required_system_rejects_partition_uuid_from_another_system():
     hmc = AsyncMock()
-    hmc.list_logical_partitions.return_value = [{"UUID": "different-lpar-uuid"}]
+    # The foreign system has a same-named partition: name resolution alone
+    # must not make the asserted system appear to contain the UUID.
+    hmc.list_logical_partitions.return_value = [
+        {"UUID": "different-lpar-uuid", "Resource": {"PartitionName": "aix1"}}
+    ]
     resolve_system = AsyncMock(return_value="selected-system-uuid")
     resolve_lpar = AsyncMock(return_value="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     resolve_names = AsyncMock()
@@ -241,6 +245,33 @@ def test_required_system_rejects_partition_uuid_from_another_system():
 
     hmc.list_logical_partitions.assert_awaited_once_with("selected-system-uuid")
     resolve_names.assert_not_awaited()
+    authorize.assert_not_awaited()
+
+
+def test_optional_system_rejects_partition_uuid_from_another_system():
+    hmc = AsyncMock()
+    hmc.list_logical_partitions.return_value = [
+        {"UUID": "different-lpar-uuid", "Resource": {"PartitionName": "aix1"}}
+    ]
+    resolve_system = AsyncMock(return_value="selected-system-uuid")
+    resolve_lpar = AsyncMock(return_value="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    authorize = AsyncMock()
+    with (
+        patch.object(lpar_ownership, "resolve_system_uuid", resolve_system),
+        patch.object(lpar_ownership, "resolve_lpar_uuid", resolve_lpar),
+        patch.object(lpar_ownership, "authorize_lpar_mutation", authorize),
+    ):
+        with pytest.raises(ValueError, match="does not belong to managed system"):
+            asyncio.run(
+                lpar_ownership.resolve_and_authorize_lpar_mutation(
+                    hmc,
+                    "selected-system",
+                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                    ownership_override=False,
+                )
+            )
+
+    hmc.list_logical_partitions.assert_awaited_once_with("selected-system-uuid")
     authorize.assert_not_awaited()
 
 
