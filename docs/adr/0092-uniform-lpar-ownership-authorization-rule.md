@@ -188,8 +188,8 @@ The remaining direct entry points and their guard state are:
 |---|---|---|---|
 | `configure_lpar_msp` | `operations/lpar/configuration.py:28` | guarded (`:25`) | — |
 | `configure_lpar_processor_compatibility` | `operations/lpar/configuration.py:46` | guarded (`:25`) | — |
-| `hmc_modify_lpar` | `server_tools/lpar/lifecycle.py:155` | guarded by `operations/lpar/dlpar.py:35` before any write | #442 |
-| `hmc lpar modify` (CLI) | `cli_commands/lpars.py:596` | guarded by `operations/lpar/dlpar.py:35` before any write | #442 |
+| `hmc_modify_lpar` | `server_tools/lpar/lifecycle.py:155` | guarded by `operations/lpar/dlpar.py:35` before any write | — |
+| `hmc lpar modify` (CLI) | `cli_commands/lpar/modify.py:16` | guarded by `operations/lpar/dlpar.py:35` before any write | — |
 | `detach_storage_mapping` | `operations/storage.py:259` | resolves the mapping's client LPAR and guards it before deletion (`:294`) | #448 |
 
 `hmc_dlpar_proc` and `hmc_dlpar_mem` were rows in this table at `b41e658`. #365
@@ -203,7 +203,9 @@ managed-system name when the caller omits the optional selector.
 resolves and authorizes the partition once before its ordered rename, resource, and
 assignment workflow (`operations/lpar/dlpar.py:35`). Both the MCP tool and CLI command
 delegate their complete workflow to it, so an adapter cannot accidentally place one
-kind of modification on the other side of the authorization boundary.
+kind of modification on the other side of the authorization boundary. Focused tests
+prove that a foreign-owned resources-only modify is rejected before the HMC write
+through both entry points, and that an approved override skips the ownership read.
 
 #### 3.3 Operational — decide explicitly
 
@@ -516,7 +518,7 @@ That asymmetry is why §4 exists at all.
 - Every row marked **unguarded** in §3.1–§3.3 is now a recorded defect against an
   accepted ADR rather than an undocumented inconsistency, and every one carries a
   Tracking issue: #371 implements §4, #372 and #373 are #369's existing sub-issues,
-  #365 covers DLPAR, and #440, #441, #442, #448 and #449 were filed for the rows —
+  #365 covers DLPAR, and #440, #441, #448 and #449 were filed for the rows —
   §3.4b's included — that no #369 sub-issue reached. #369 must not close while any
   Tracking cell reads `none yet`.
 - The #369 enforcement test has a concrete predicate (§5) — enumeration domains,
