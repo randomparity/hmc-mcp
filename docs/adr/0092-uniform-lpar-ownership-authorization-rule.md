@@ -157,8 +157,8 @@ only the transport boundary.
 | `delete_adapter` | `operations/adapters.py:114` | guarded (`:129`) | #372 |
 | `map_storage` | `operations/storage.py:174` | guarded (`:189`) | #372 |
 | `attach_disk_to_lpar` | `operations/lpar/provision.py:318` | guarded before the storage workflow (`:350`) | #372 |
-| `mount_optical_media` | `operations/storage.py:826` | guarded (`:845`) | #440 |
-| `unmount_optical_media` | `operations/storage.py:856` | guarded (`:897`) | #440 |
+| `mount_optical_media` | `operations/storage.py:826` | guarded (`:845`) | — |
+| `unmount_optical_media` | `operations/storage.py:856` | guarded (`:897`) | — |
 | `migrate_lpar` | `operations/lpm.py:340` | guarded after optional validation and before migration submission (`:385`) | #373 |
 | `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:237` | guarded by delegation to `migrate_lpar` | #373 |
 | `abort_lpar_migration` | `operations/lpm.py:405` | guarded (`:421`) | #373 |
