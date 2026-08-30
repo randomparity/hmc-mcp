@@ -149,7 +149,7 @@ async def test_foreign_owner_stops_reconfiguration_before_first_write(
         "delete_adapter",
         "map_storage_to_lpar",
         "create_optical_mapping",
-        "delete_optical_mapping",
+        "delete_storage_mapping",
         "create_virtual_disk",
         "lpar_migrate",
         "lpar_migrate_abort",
@@ -175,6 +175,12 @@ def _real_guard_hmc() -> AsyncMock:
         "Resource": {"PartitionName": LPAR_NAME}
     }
     hmc.list_logical_partitions.return_value = [{"UUID": LPAR}]
+    hmc.list_optical_mappings.return_value = [
+        {
+            "UUID": "mapping-uuid",
+            "Storage": {"VirtualOpticalMedia": {"MediaName": "aix.iso"}},
+        }
+    ]
     return hmc
 
 
@@ -183,7 +189,7 @@ def _real_guard_hmc() -> AsyncMock:
     ("operation", "write_method"),
     [
         (mount_optical_media, "create_optical_mapping"),
-        (unmount_optical_media, "delete_optical_mapping"),
+        (unmount_optical_media, "delete_storage_mapping"),
     ],
 )
 async def test_real_guard_rejects_foreign_optical_owner_before_write(
@@ -207,7 +213,7 @@ async def test_real_guard_rejects_foreign_optical_owner_before_write(
     ("operation", "write_method"),
     [
         (mount_optical_media, "create_optical_mapping"),
-        (unmount_optical_media, "delete_optical_mapping"),
+        (unmount_optical_media, "delete_storage_mapping"),
     ],
 )
 async def test_optical_ownership_override_bypasses_read_and_writes(

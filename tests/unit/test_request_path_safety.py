@@ -193,7 +193,6 @@ def test_a_non_job_link_is_refused(path):
 # which is the argument for guarding the waist rather than the call sites.
 _SUB_RESOURCE_CALLS = (
     ("delete_child", ("LogicalPartition", "AUTH", "ClientNetworkAdapter", "{X}")),
-    ("delete_optical_mapping", ("{X}", "lpar", "media")),
     ("create_virtual_disk", ("AUTH", "{X}", "disk", 1)),
     ("delete_virtual_disk", ("AUTH", "{X}", "disk")),
     ("_get_vg_raw_xml", ("AUTH", "{X}")),
@@ -212,7 +211,7 @@ TRAVERSAL = "../../../LogicalPartition/VICTIM"
     "method, args", _SUB_RESOURCE_CALLS, ids=[name for name, _ in _SUB_RESOURCE_CALLS]
 )
 def test_no_sub_resource_identifier_can_walk_out_of_its_parent(method, args):
-    """One guard at the waist, not thirteen checks at the call sites.
+    """One guard at the waist, not ten checks at the call sites.
 
     Each of these builds `/{Parent}/{authorized}/{Child}/{caller-supplied}` by
     f-string. A dot-segment in the trailing identifier resolves the authorized

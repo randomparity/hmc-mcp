@@ -29,6 +29,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- Optical unmount now resolves an exact LPAR-scoped `MediaName` to one mapping UUID and
+  removes it through the shared ADR-0079 parent-VIOS remover. Empty, absent, ambiguous,
+  or malformed identities fail without a POST; prefixes and incidental mapping text no
+  longer select another device (#439).
 - Route Python warnings in served deployments through the bounded, producer-prefixed stderr
   logging sink while leaving non-served library warning behavior unchanged (#550).
 - `modify_system` now accepts a cohesive `ManagedSystemPatch`, and the LPM

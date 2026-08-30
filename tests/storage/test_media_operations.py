@@ -1,11 +1,14 @@
 """Tests for media repository and optical media operations layer."""
 
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
 
 from conftest import make_config
 
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.storage import (
     get_media_repository,
     list_optical_media,
@@ -182,6 +185,7 @@ VIOS_DOC_WITH_OPTICAL_MAPPINGS = f"""<?xml version="1.0" encoding="UTF-8" standa
 """
 
 _VIOS_GET_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}"
+_MAPPINGS_GET_PATH = f"{_VIOS_GET_PATH}?group=ViosSCSIMapping"
 _VIOS_POST_PATH = (
     f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer/{VIOS_UUID}"
 )
@@ -192,6 +196,121 @@ def _posted_document(post_route) -> str:
     return post_route.calls.last.request.content.decode()
 
 
+def _mock_unmount_reads(mock_hmc, document=VIOS_DOC_WITH_OPTICAL_MAPPINGS):
+    mock_hmc.get(_MAPPINGS_GET_PATH).mock(
+        return_value=httpx.Response(200, text=document)
+    )
+    return mock_hmc.get(_VIOS_GET_PATH).mock(
+        return_value=httpx.Response(200, text=document)
+    )
+
+
+@pytest.mark.asyncio
+async def test_unmount_optical_media_deletes_only_the_exact_mapping_identity():
+    """LPAR-scoped inventory resolves MediaName by equality, never subtree text."""
+    hmc = AsyncMock()
+    hmc.list_optical_mappings.return_value = [
+        {
+            "UUID": "mapping-prefix",
+            "Storage": {
+                "VirtualOpticalMedia": {"MediaName": "rhel9.iso.bak"},
+            },
+        },
+        {
+            "UUID": "mapping-incidental",
+            "Storage": {
+                "VirtualOpticalMedia": {"MediaName": "other.iso"},
+            },
+            "TargetDevice": "rhel9.iso",
+        },
+        {
+            "UUID": "mapping-exact",
+            "Storage": {
+                "VirtualOpticalMedia": {"MediaName": "rhel9.iso"},
+            },
+        },
+    ]
+
+    await unmount_optical_media(
+        hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+    )
+
+    hmc.list_optical_mappings.assert_awaited_once_with(VIOS_UUID, LPAR_UUID)
+    hmc.delete_storage_mapping.assert_awaited_once_with(VIOS_UUID, "mapping-exact")
+
+
+@pytest.mark.asyncio
+async def test_unmount_optical_media_rejects_empty_media_before_inventory():
+    hmc = AsyncMock()
+
+    with pytest.raises(HMCError, match="must not be empty"):
+        await unmount_optical_media(hmc, None, VIOS_UUID, LPAR_UUID, media_name="")
+
+    hmc.list_optical_mappings.assert_not_awaited()
+    hmc.delete_storage_mapping.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unmount_optical_media_rejects_ambiguous_exact_identity():
+    hmc = AsyncMock()
+    hmc.list_optical_mappings.return_value = [
+        {
+            "UUID": mapping_uuid,
+            "Storage": {
+                "VirtualOpticalMedia": {"MediaName": "rhel9.iso"},
+            },
+        }
+        for mapping_uuid in ("mapping-a", "mapping-b")
+    ]
+
+    with pytest.raises(HMCError, match="ambiguous"):
+        await unmount_optical_media(
+            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+        )
+
+    hmc.delete_storage_mapping.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unmount_optical_media_fails_closed_when_exact_mapping_is_absent():
+    hmc = AsyncMock()
+    hmc.list_optical_mappings.return_value = [
+        {
+            "UUID": "mapping-prefix",
+            "Storage": {
+                "VirtualOpticalMedia": {"MediaName": "rhel9.iso.bak"},
+            },
+            "TargetDevice": "rhel9.iso",
+        }
+    ]
+
+    with pytest.raises(HMCError, match="not found"):
+        await unmount_optical_media(
+            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+        )
+
+    hmc.delete_storage_mapping.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unmount_optical_media_rejects_missing_mapping_uuid():
+    hmc = AsyncMock()
+    hmc.list_optical_mappings.return_value = [
+        {
+            "Storage": {
+                "VirtualOpticalMedia": {"MediaName": "rhel9.iso"},
+            },
+        }
+    ]
+
+    with pytest.raises(HMCError, match="invalid UUID identity"):
+        await unmount_optical_media(
+            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+        )
+
+    hmc.delete_storage_mapping.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_unmount_optical_media_removes_the_named_mapping_for_that_lpar(mock_hmc):
     """Unmount drops the addressed mapping and rewrites nothing else.
@@ -200,13 +319,10 @@ async def test_unmount_optical_media_removes_the_named_mapping_for_that_lpar(moc
     operation is a read-modify-write of the whole VirtualIOServer document.
     This asserts what that document says afterwards, not that a call happened.
 
-    Containment holds here because the fixture's names do not overlap; it is
-    not a property the selector enforces. See #439 and the prefix-collision
-    characterization test below.
+    The fixture also carries the same media name on another LPAR, proving the
+    LPAR-scoped inventory identity is part of the selection.
     """
-    mock_hmc.get(_VIOS_GET_PATH).mock(
-        return_value=httpx.Response(200, text=VIOS_DOC_WITH_OPTICAL_MAPPINGS)
-    )
+    _mock_unmount_reads(mock_hmc)
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
@@ -230,9 +346,7 @@ async def test_unmount_optical_media_preserves_the_backing_iso(mock_hmc):
     operation issues no DELETE against the media repository, so the ISO
     container stays available for a later remount.
     """
-    mock_hmc.get(_VIOS_GET_PATH).mock(
-        return_value=httpx.Response(200, text=VIOS_DOC_WITH_OPTICAL_MAPPINGS)
-    )
+    _mock_unmount_reads(mock_hmc)
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
@@ -253,41 +367,27 @@ async def test_unmount_optical_media_preserves_the_backing_iso(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_unmount_optical_media_currently_no_ops_when_no_mapping_matches(mock_hmc):
-    """Characterization: an unmatched media name writes nothing and succeeds.
-
-    This pins today's behavior, it does not endorse it. ADR 0079 decides that a
-    destructive VirtualSCSIMapping removal fails closed when the mapping cannot
-    be proven to exist, and lists "silently succeed when no mapping matches"
-    among its rejected alternatives. The optical path predates that decision and
-    still diverges; #439 owns the reconciliation and flips this assertion.
-    """
-    mock_hmc.get(_VIOS_GET_PATH).mock(
+async def test_unmount_optical_media_fails_without_post_when_mapping_is_absent(mock_hmc):
+    """An unmatched exact identity fails closed without rewriting the VIOS."""
+    mock_hmc.get(_MAPPINGS_GET_PATH).mock(
         return_value=httpx.Response(200, text=VIOS_DOC_WITH_OPTICAL_MAPPINGS)
     )
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        await unmount_optical_media(
-            hmc, None, VIOS_UUID, LPAR_UUID, media_name="aix73.iso"
-        )
+        with pytest.raises(HMCError, match="not found"):
+            await unmount_optical_media(
+                hmc, None, VIOS_UUID, LPAR_UUID, media_name="aix73.iso"
+            )
 
     assert not post.called
 
 
 @pytest.mark.asyncio
-async def test_unmount_optical_media_substring_selector_matches_a_sibling_prefix(
+async def test_unmount_optical_media_preserves_a_sibling_with_a_prefix_name(
     mock_hmc,
 ):
-    """Characterization: the selector is a substring test, so prefixes collide.
-
-    ``delete_optical_mapping`` chooses its victim with ``media_name in
-    ET.tostring(mapping)``, so unmounting ``rhel9.iso`` can remove a mapping
-    backed by ``rhel9.iso.bak`` when that mapping comes first in document order.
-    This is a defect, not a contract: #439 replaces the substring test with
-    element-wise MediaName equality, at which point this test asserts the
-    opposite.
-    """
+    """A strict prefix sibling survives while the exact mapping is removed."""
     doc = VIOS_DOC_WITH_OPTICAL_MAPPINGS.replace(
         "<UUID>mapping-disk-001</UUID>", "<UUID>mapping-optical-backup</UUID>"
     ).replace(
@@ -295,7 +395,7 @@ async def test_unmount_optical_media_substring_selector_matches_a_sibling_prefix
         "<Storage><VirtualOpticalMedia><MediaName>rhel9.iso.bak</MediaName>"
         "</VirtualOpticalMedia></Storage>",
     )
-    mock_hmc.get(_VIOS_GET_PATH).mock(return_value=httpx.Response(200, text=doc))
+    _mock_unmount_reads(mock_hmc, doc)
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
@@ -304,10 +404,8 @@ async def test_unmount_optical_media_substring_selector_matches_a_sibling_prefix
         )
 
     body = _posted_document(post)
-    assert "mapping-optical-backup" not in body, (
-        "known defect (#439): the substring selector removed the .bak sibling"
-    )
-    assert "mapping-optical-target" in body
+    assert "mapping-optical-backup" in body
+    assert "mapping-optical-target" not in body
 
 
 @pytest.mark.asyncio
@@ -335,9 +433,7 @@ async def test_unmount_optical_media_resolves_vios_and_lpar_names(mock_hmc):
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==lpar1)").mock(
         return_value=httpx.Response(200, text=lpar_search)
     )
-    mock_hmc.get(_VIOS_GET_PATH).mock(
-        return_value=httpx.Response(200, text=VIOS_DOC_WITH_OPTICAL_MAPPINGS)
-    )
+    _mock_unmount_reads(mock_hmc)
     post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
@@ -355,29 +451,6 @@ def test_detach_optical_mapping_alias_is_gone():
     assert not hasattr(ops, "detach_optical_mapping")
 
 
-def test_unmount_docstrings_carry_both_halves_of_the_selector_caveat():
-    """The #439 mitigation is prose; pin it so a tidy-up cannot silently drop it.
-
-    ``hmc_unmount_optical_media`` is destructive and its selector can both remove
-    the wrong mapping and silently remove nothing. Until #439 makes the client
-    fail closed, these docstrings are the only thing standing between an agent
-    and a wrongly detached boot disk, and nothing else in the suite asserts they
-    still say so. Same contract as tests/app/test_user_tool_contracts.py.
-    """
-    from hmc_mcp.server_tools import storage as server_storage
-    from hmc_mcp.operations import storage as operations_storage
-
-    for handler in (
-        server_storage.hmc_unmount_optical_media,
-        operations_storage.unmount_optical_media,
-    ):
-        assert handler.__doc__ is not None
-        doc = " ".join(handler.__doc__.split())
-        assert "substring" in doc, f"{handler.__name__}: over-match half missing"
-        assert "boot disk" in doc, f"{handler.__name__}: over-match blast radius missing"
-        assert "no mapping" in doc, f"{handler.__name__}: silent-miss half missing"
-        assert "#439" in doc, f"{handler.__name__}: owning issue missing"
-        assert "list_storage_mappings" in doc, (
-            f"{handler.__name__}: must name the unfiltered inventory, since "
-            "list_optical_mappings cannot see a wrongly removed disk mapping"
-        )
+def test_optical_unmount_reuses_the_storage_mapping_remover():
+    """The client has one parent-VIOS VirtualSCSIMapping remover."""
+    assert not hasattr(HMCClient, "delete_optical_mapping")

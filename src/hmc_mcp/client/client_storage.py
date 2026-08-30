@@ -10,6 +10,7 @@ from __future__ import annotations
 # serialization only. Every inbound HMC response is parsed with defusedxml.
 import xml.etree.ElementTree as ET  # nosec B405
 from typing import Any
+from urllib.parse import urlparse
 
 from defusedxml import ElementTree as DET
 
@@ -30,26 +31,6 @@ import re as _re
 # HMC UOM namespace — used in read-modify-write VolumeGroup operations.
 _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 _ATOM_NS = "http://www.w3.org/2005/Atom"
-
-
-async def _load_vios_document(
-    client: StorageClient, vios_uuid: str
-) -> tuple[str, ET.Element, str]:
-    """Load one VIOS document and return its XML, resource element, and system UUID."""
-    get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-    vios_xml = await client._get(
-        get_path, "VirtualIOServer", include_schema_version=False
-    )
-    if not vios_xml:
-        raise HMCError(f"GET {get_path} returned empty response", 200, "")
-    try:
-        root = DET.fromstring(vios_xml)
-    except DET.ParseError as exc:
-        raise HMCError(
-            "VirtualIOServer GET response is not valid XML", 200, vios_xml
-        ) from exc
-    vios_elem = _find_vios_element(root, vios_uuid)
-    return vios_xml, vios_elem, _extract_system_uuid_from_vios(vios_elem)
 
 
 def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
@@ -256,6 +237,8 @@ class StorageMixin:
         """Detach one mapping through its parent VirtualIOServer document."""
         if not mapping_uuid:
             raise HMCError("Storage mapping UUID must not be empty")
+        ET.register_namespace("", _UOM_NS)
+        ET.register_namespace("atom", _ATOM_NS)
 
         get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
         vios_xml = await self._get(
@@ -729,10 +712,13 @@ class StorageMixin:
 
         if lpar_uuid:
             expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
-            optical_mappings = [
-                m for m in optical_mappings
-                if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("href") == expected_link
-            ]
+            filtered_mappings = []
+            for mapping in optical_mappings:
+                partition = mapping.get("AssociatedLogicalPartition")
+                href = partition.get("href") if isinstance(partition, dict) else None
+                if isinstance(href, str) and urlparse(href).path == expected_link:
+                    filtered_mappings.append(mapping)
+            optical_mappings = filtered_mappings
 
         return optical_mappings
 
@@ -756,59 +742,3 @@ class StorageMixin:
         )
         entries = _parse_feed(response, path) if response else []
         return entries[0].get("Resource", entries[0]) if entries else None
-
-    async def delete_optical_mapping(
-        self: StorageClient,
-        vios_uuid: str,
-        lpar_uuid: str,
-        media_name: str,
-    ) -> None:
-        """Remove the VirtualSCSIMapping for an optical device via read-modify-write.
-
-        VirtualSCSIMapping elements have no UUID-addressable sub-resource on this
-        HMC firmware, so the standard DELETE /VirtualSCSIMapping/{uuid} path does not
-        work.  Instead this method:
-          1. GETs the full VirtualIOServer document.
-          2. Finds the mapping whose AssociatedLogicalPartition href contains
-             lpar_uuid AND whose Storage/VirtualOpticalMedia/MediaName matches
-             media_name.
-          3. Removes that element and POSTs the modified document back.
-
-        The backing VirtualOpticalMedia (ISO container) is preserved.
-        """
-        ET.register_namespace("", _UOM_NS)
-        ET.register_namespace("atom", _ATOM_NS)
-
-        _, vios_elem, sys_uuid = await _load_vios_document(self, vios_uuid)
-
-        mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
-        if mappings_elem is None:
-            return
-
-        to_remove = None
-        for mapping in list(mappings_elem):
-            xml_str = ET.tostring(mapping, encoding="unicode")
-            if lpar_uuid in xml_str and media_name in xml_str:
-                to_remove = mapping
-                break
-
-        if to_remove is None:
-            return
-
-        mappings_elem.remove(to_remove)
-
-        post_path = f"/rest/api/uom/ManagedSystem/{sys_uuid}/VirtualIOServer/{vios_uuid}"
-        body = ET.tostring(vios_elem, encoding="unicode")
-        resp = await self._request(
-            "POST",
-            post_path,
-            content=body,
-            headers={
-                "Accept": "*/*",
-                "Content-Type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
-            },
-        )
-        if resp.status_code not in (200, 201, 202):
-            raise HMCError(
-                f"POST {post_path} failed", resp.status_code, resp.text
-            )
