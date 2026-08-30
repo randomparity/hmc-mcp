@@ -5,7 +5,8 @@
 Accepted (2026-08-25). Amended 2026-08-26 by issue #474 — see *Amendment (#474)* below: the two
 job tools now read through `operations.jobs`, so the MCP surface gains the distinction this
 record's Consequences section said it did not. Amended 2026-08-28 by issue #532 to bound the
-delay before a confirming disappearance read.
+delay before a confirming disappearance read. Amended 2026-08-28 by issue #537 to reject the
+three ASCII controls URL parsing deletes before validating a persisted link.
 
 ## Context
 
@@ -368,6 +369,15 @@ building the path, so the string `_reject_non_job_path` validates is not the one
 mismatch #537 owns. Normalizing the echo to the requested path would change the persisted-handle
 shape clause 2 fixes, so the `hmc_wait_for_job` docstring says instead that an echoed link is the
 caller's own input rather than something the HMC attested.
+
+> **Amended by #537** (2026-08-28). `operations.jobs` rejects TAB, carriage return, and newline in
+> `job_href` before URL parsing. Those are the characters `urllib.parse` deletes before producing
+> the path checked by `_reject_non_job_path`; rejecting them prevents parsing from silently deleting
+> characters between the cleaned caller input and that validated path. The exact cleaned input is
+> then echoed after a successful read. Valid handles retain clause 2's exact relative or absolute
+> spelling, while host, query, and fragment remain unchecked and unrequested. Normalizing every
+> handle to the parsed path was rejected because it would discard those accepted components for all
+> callers to eliminate three invalid control-character cases.
 
 The same unsanitized value reaches `operations.jobs`' own warning records, and nothing binds a
 handler to the `hmc_mcp` logger, so they fall to `logging.lastResort` and land raw on the stderr

@@ -1263,36 +1263,29 @@ def test_get_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     assert result["Resource"]["JobID"] == "job-uuid-999"
 
 
-def test_job_href_cannot_forge_a_log_record(monkeypatch, mock_hmc, caplog):
-    """A newline in a caller-supplied job_href must not reach the log raw.
-
-    ``urlsplit`` deletes CR/LF while building the path, so the string
-    ``_reject_non_job_path`` validates is not the one that gets logged: an
-    embedded newline passes that check untouched. These records land on the
-    stderr stream ADR 0040 defines as one JSON record per line, and both job
-    tools take ``job_href`` straight from the caller.
-    """
+@pytest.mark.parametrize("tool", [hmc_get_job, hmc_wait_for_job])
+@pytest.mark.parametrize("control", ["\t", "\r", "\n"])
+def test_job_tools_reject_parser_deleted_job_href_controls(
+    monkeypatch, mock_hmc, caplog, tool, control
+):
+    """Control-bearing caller input is rejected without a request or log leak."""
     _hmc_env(monkeypatch)
     payload = '{"level":"error","message":"forged"}'
-    forged = f"{_JOB_OP_HREF}\n{payload}"
-    # urlsplit drops the newline, so the request goes to the joined path — while
-    # the raw string, newline intact, is what reaches the log.
-    mock_hmc.get(f"{_JOB_OP_HREF}{payload}").mock(
-        return_value=httpx.Response(404, text="gone")
-    )
-    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(404, text="gone")
-    )
+    forged = f"{_JOB_OP_HREF}{control}{payload}"
 
     with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
-        assert hmc_get_job("job-uuid-999", job_href=forged) is None
+        with pytest.raises(
+            ValueError, match="job_href must not contain TAB, CR, or LF"
+        ) as exc_info:
+            tool("job-uuid-999", job_href=forged)
 
-    assert caplog.records, "the found=False translation is expected to warn"
-    for record in caplog.records:
-        assert "\n" not in record.getMessage()
-    assert any("forged" in r.getMessage() for r in caplog.records), (
-        "the link should still be reported, just escaped"
-    )
+    assert forged not in str(exc_info.value)
+    assert not caplog.records
+    assert not [
+        call
+        for call in mock_hmc.calls
+        if call.request.url.path.startswith("/rest/api/uom/")
+    ]
 
 
 def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):

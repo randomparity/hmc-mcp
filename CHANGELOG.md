@@ -29,6 +29,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- `hmc_get_job` and `hmc_wait_for_job` now reject `job_href` values containing
+  TAB, CR, or LF before any HMC read, so validated and echoed links have the
+  same spelling (#537, ADR 0093).
 - `hmc_set_lpar_description` now accepts HMC-resolved partition names containing spaces or
   semicolons, matching live HMC behavior while retaining attribute-record delimiter checks (#288).
 - Optical unmount now resolves an exact LPAR-scoped `MediaName` to one mapping UUID and
