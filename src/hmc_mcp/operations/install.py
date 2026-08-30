@@ -15,6 +15,7 @@ from typing_extensions import TypedDict
 
 from ..audit import records as audit
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.errors import HMCError
 from ..resource_identity import (
     is_uuid,
     resolve_lpar_uuid,
@@ -124,6 +125,27 @@ def validate_install_request(request: InstallRequest) -> None:
         validate_mac_address(request.mac_address)
 
 
+async def _validate_install_target(hmc: HMCClient, target_uuid: str) -> None:
+    """Reject an install target whose type or state is unsafe for ``installios``."""
+    target = await hmc.get_logical_partition(target_uuid)
+    resource = (target or {}).get("Resource") or {}
+    partition_type = resource.get("PartitionType")
+    if partition_type != "Virtual IO Server":
+        raise HMCError(
+            f"Cannot install on target {target_uuid!r}: partition type is "
+            f"{partition_type!r}; installios requires a Virtual I/O Server.",
+            status_code=409,
+        )
+    state = resource.get("PartitionState")
+    if state != "not activated":
+        raise HMCError(
+            f"Cannot install on target {target_uuid!r}: current state is {state!r}; "
+            "it must be 'not activated' to install. Power it off "
+            "(hmc_power_off_vios) and confirm with hmc_get_lpar_state before retrying.",
+            status_code=409,
+        )
+
+
 async def _submit_install(
     hmc: HMCClient,
     target_name_or_uuid: str,
@@ -138,6 +160,7 @@ async def _submit_install(
     target_uuid = await resolve_target_uuid(
         hmc, target_name_or_uuid, system_name_or_uuid=system_uuid
     )
+    await _validate_install_target(hmc, target_uuid)
     system_name = (
         system_name_or_uuid
         if not is_uuid(system_name_or_uuid)
@@ -232,21 +255,12 @@ async def install_lpar_os(
     Ownership authorization is classified in ADR 0092 §3.4a, which is the
     authoritative record; that row, not this docstring, carries the reasoning.
 
-    **Neither stated precondition is checked here**, and because submission is
-    detached the operation cannot observe whether ``installios`` accepted the
-    target: a returned handle means the process was backgrounded, nothing more.
-
-    - *Partition type.* ``lpar_name_or_uuid`` resolves through the
-      ``LogicalPartition`` feed and a UUID selector is passed through with no
-      lookup at all, so an ordinary partition resolves successfully.
-      ``installios`` refuses a non-Virtual-I/O-Server ``-p`` on the HMC, and
-      that refusal reaches only the install log.
-    - *Power state.* Nothing reads ``PartitionState``. What ``installios`` does
-      against an activated partition is not recorded anywhere in this
-      repository's sources, so an install submitted against a running partition
-      has no locally known outcome.
-
-    Both are tracked by #460, which adds one preflight read covering them.
+    Before composing the command, the operation reads the resolved partition
+    resource and rejects anything that is not a Virtual I/O Server or is not in
+    the ``not activated`` state. This applies to name and UUID selectors, so a
+    returned handle always means the locally checked target passed both stated
+    preconditions; the detached process's later outcome still reaches only the
+    HMC-side log.
 
     Submission is not idempotent, and the log path collides more widely than
     the partition. Nothing detects an install already running against the
@@ -273,6 +287,8 @@ async def install_lpar_os(
         ValueError: If an argument cannot be part of an ``installios``
             invocation, or if a name resolves to no partition or system. Both
             are raised before anything is submitted.
+        HMCError: If the target is not a Virtual I/O Server or is not powered
+            off. The check runs before SSH submission.
         HMCCLIError: Either from mapping a UUID target to its CLI name over
             SSH — no matching ``lssyscfg`` row, or a transport failure on that
             read — or from the submission itself failing or reporting no PID.
@@ -304,12 +320,11 @@ async def install_vios(
     detach handle's fields, the ADR 0092 §3.4a ownership classification, and the
     ``installios`` argument grammar. This operation differs only in resolving
     its target through the ``VirtualIOServer`` feed rather than the
-    ``LogicalPartition`` one, so a *name* selector cannot name a logical
-    partition; a UUID selector is still passed through without a lookup, so the
-    unchecked-precondition caveats and #460 apply to it unchanged — including
-    the power-state one, which no selector shape covers. Submission is not
-    idempotent here either, and the same partition-name-only log-path collision
-    applies across every managed system on the HMC.
+    ``LogicalPartition`` one. Both selector forms then use the resolved
+    ``LogicalPartition`` resource for the same local type and power-state
+    preflight. Submission is not idempotent here either, and the same
+    partition-name-only log-path collision applies across every managed system
+    on the HMC.
 
     Args:
         hmc: Connected client; its configuration also carries the SSH
@@ -325,6 +340,8 @@ async def install_vios(
         ValueError: If an argument cannot be part of an ``installios``
             invocation, or if a name resolves to no VIOS or system. Both are
             raised before anything is submitted.
+        HMCError: If the target is not a Virtual I/O Server or is not powered
+            off. The check runs before SSH submission.
         HMCCLIError: Same two sources as :func:`install_lpar_os` — UUID-to-CLI
             name resolution over SSH, or the submission — and the same
             inability to tell them apart from the exception type.
