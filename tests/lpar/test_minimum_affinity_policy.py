@@ -30,7 +30,7 @@ from hmc_mcp.ssh.affinity import (
 
 
 def _config() -> HMCConfig:
-    return HMCConfig(host="hmc.test", user="u", password="p", _env_file=None)
+    return HMCConfig(host="hmc.test", user="u", password="p")
 
 
 @pytest.mark.asyncio

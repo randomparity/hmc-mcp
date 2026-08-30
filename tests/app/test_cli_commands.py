@@ -91,7 +91,7 @@ class FakeHMC:
 
     def __init__(self):
         self.calls: list[tuple[str, tuple, dict]] = []
-        self.config = HMCConfig(host="hmc.test", user="user", _env_file=None)
+        self.config = HMCConfig.from_mapping({"host": "hmc.test", "user": "user"})
         self.fail_on: str | None = None
         self.fail_status = 500
         self.lpar = {

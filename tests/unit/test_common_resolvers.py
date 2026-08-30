@@ -15,10 +15,10 @@ from hmc_mcp.resource_identity import (
 @pytest.mark.parametrize(
     ("base", "port_is_explicit"),
     [
-        (HMCConfig(host="h", user="u", password="p", _env_file=None), False),
+        (HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"}), False),
         (
-            HMCConfig(
-                host="h", user="u", password="p", port=12443, _env_file=None
+            HMCConfig.from_mapping(
+                {"host": "h", "user": "u", "password": "p", "port": 12443}
             ),
             True,
         ),

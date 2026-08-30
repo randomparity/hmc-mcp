@@ -42,7 +42,6 @@ def _hmc() -> AsyncMock:
         host="h",
         user="u",
         password="p",
-        _env_file=None,  # ty: ignore[unknown-argument]
     )
     return hmc
 

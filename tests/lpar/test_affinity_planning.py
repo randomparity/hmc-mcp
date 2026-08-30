@@ -45,7 +45,7 @@ def _config() -> HMCConfig:
         host="hmc.test",
         user="hscroot",
         password="abc123",  # pragma: allowlist secret
-        _env_file=None,
+
     )
 
 

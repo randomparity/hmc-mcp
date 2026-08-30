@@ -111,7 +111,7 @@ from hmc_mcp.config import HMCConfig  # noqa: E402
 
 
 def _config():
-    return HMCConfig(host="hmc.test", user="u", password="p", _env_file=None)
+    return HMCConfig.from_mapping({"host": "hmc.test", "user": "u", "password": "p"})
 
 
 def test_stamp_returns_token_on_success():
@@ -727,7 +727,7 @@ def test_agent_id_breaking_stamp_grammar_rejected_at_construction(character):
     with pytest.raises(ValueError):
         HMCConfig(
             host="hmc.test", user="u", password="p", agent_id=agent_id,
-            _env_file=None,
+
         )
 
 

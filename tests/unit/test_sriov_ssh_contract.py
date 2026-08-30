@@ -12,7 +12,7 @@ from hmc_mcp.ssh.network import (
 
 
 def _config():
-    return HMCConfig(host="h", user="u", password="p", _env_file=None)
+    return HMCConfig(host="h", user="u", password="p")
 
 
 @pytest.mark.asyncio

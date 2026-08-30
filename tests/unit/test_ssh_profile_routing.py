@@ -39,8 +39,12 @@ PROD_HOST = "prod-hmc.example.com"
 PROD_USER = "produser"
 PROD_PASSWORD = "prodpass"  # pragma: allowlist secret
 
-DEV_CONFIG = HMCConfig(host=DEV_HOST, user=DEV_USER, password=DEV_PASSWORD)
-PROD_CONFIG = HMCConfig(host=PROD_HOST, user=PROD_USER, password=PROD_PASSWORD)
+DEV_CONFIG = HMCConfig.from_mapping(
+    {"host": DEV_HOST, "user": DEV_USER, "password": DEV_PASSWORD}
+)
+PROD_CONFIG = HMCConfig.from_mapping(
+    {"host": PROD_HOST, "user": PROD_USER, "password": PROD_PASSWORD}
+)
 
 
 def _make_ssh_mock(stdout: str = "") -> MagicMock:

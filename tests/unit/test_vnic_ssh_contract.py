@@ -16,7 +16,7 @@ from hmc_mcp.ssh.network import (
 
 @pytest.fixture
 def config() -> HMCConfig:
-    return HMCConfig(host="hmc", user="user", _env_file=None)
+    return HMCConfig(host="hmc", user="user")
 
 
 @pytest.mark.asyncio

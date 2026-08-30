@@ -599,7 +599,7 @@ def test_tls_audit_record_names_the_environment_for_a_case_variant_export(
             host="hmc.test",
             user="hscroot",
             password="abc123",  # pragma: allowlist secret
-            _env_file=None,
+
         )
     )
 

@@ -16,7 +16,7 @@ from hmc_mcp.server_tools.lpar.profiles import tool_security
 
 
 def _config() -> HMCConfig:
-    return HMCConfig(host="h", user="u", password="p", verify_ssl=False, _env_file=None)
+    return HMCConfig(host="h", user="u", password="p", verify_ssl=False)
 
 
 @pytest.mark.parametrize(

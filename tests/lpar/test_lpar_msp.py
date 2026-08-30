@@ -227,7 +227,7 @@ def test_set_lpar_msp_rejects_partition_not_found(monkeypatch, mock_hmc):
 
 def test_set_lpar_msp_ssh_layer_rejects_non_vios():
     """set_lpar_msp (ssh) raises HMCCLIError for non-VIOS — inner guard."""
-    cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
+    cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123")
     env_result = MagicMock()
     env_result.stdout = "aixlinux\n"
     conn = AsyncMock()
