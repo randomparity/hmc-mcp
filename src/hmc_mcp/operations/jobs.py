@@ -81,21 +81,17 @@ def _require_job_id(job_id: str) -> str:
 
 
 def _clean_job_href(job_href: str | None) -> str | None:
-    """Treat a blank link as absent so the returned handle stays truthful.
+    """Reject parser-deleted controls and treat a blank link as absent.
 
     ``HMCClient.get_job`` already falls back to the global jobs path for a blank
     href, so echoing one back as if it were a usable link would be a lie.
 
-    The link is not otherwise sanitized, which is why every warning below
-    interpolates it with ``%r`` rather than ``%s``. ``urlsplit`` *deletes* tab,
-    carriage return and newline while building the path, so the string
-    ``client._reject_non_job_path`` validates is not this one: an embedded
-    newline survives here having passed that check. These records reach the
-    stderr stream ADR 0040 defines as one JSON record per line, and this value is
-    caller-supplied on the ``hmc_get_job`` and ``hmc_wait_for_job`` tools, so a
-    bare ``%s`` would let a caller write a forged record at column 0. ``%r``
-    escapes it.
+    ``urlsplit`` deletes TAB, CR, and LF before path validation. Reject them here
+    so the client validates and requests the exact cleaned spelling returned to
+    the caller.
     """
+    if job_href and any(control in job_href for control in "\t\r\n"):
+        raise ValueError("job_href must not contain TAB, CR, or LF")
     return job_href.strip() if job_href and job_href.strip() else None
 
 

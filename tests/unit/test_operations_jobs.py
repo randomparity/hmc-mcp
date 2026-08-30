@@ -619,6 +619,34 @@ async def test_get_job_reports_a_blank_job_href_as_no_link(mock_hmc) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("operation", [get_job, wait_for_job])
+@pytest.mark.parametrize("control", ["\t", "\r", "\n"])
+@pytest.mark.parametrize("position", ["leading", "embedded", "trailing"])
+async def test_job_operations_reject_parser_deleted_job_href_controls(
+    mock_hmc, operation, control: str, position: str
+) -> None:
+    """The validated and echoed link must have exactly the same spelling."""
+    parts = {
+        "leading": (control, _SELF_HREF),
+        "embedded": (_SELF_HREF[:10], f"{control}{_SELF_HREF[10:]}"),
+        "trailing": (_SELF_HREF, control),
+    }
+    job_href = "".join(parts[position])
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(
+            ValueError, match="job_href must not contain TAB, CR, or LF"
+        ):
+            await operation(hmc, _JOB_ID, job_href=job_href)
+
+    assert not [
+        call
+        for call in mock_hmc.calls
+        if call.request.url.path.startswith("/rest/api/uom/")
+    ]
+
+
+@pytest.mark.asyncio
 async def test_get_job_refuses_a_job_href_that_addresses_another_resource(
     mock_hmc,
 ) -> None:
