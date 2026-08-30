@@ -534,6 +534,45 @@ def test_the_decommission_entry_point_records_its_own_operation(caplog):
     assert records[0]["system"] == "sys2"
 
 
+@pytest.mark.parametrize(
+    "authorize",
+    [
+        lambda h: authorize_lpar_mutation(h, "sys1", "lpar1"),
+        lambda h: authorize_decommission_lpar_ownership_snapshot(
+            h, "sys1", "lpar1", ownership_override=False
+        ),
+    ],
+)
+def test_ssh_ownership_read_failure_names_guard_and_remedy(authorize):
+    """An unavailable ownership precheck tells operators how to proceed."""
+    hmc = type("StubHMC", (), {"config": _config()})()
+    cause = HMCCLIError("SSH command failed: connection refused")
+    with patch(
+        "hmc_mcp.operations.ownership.get_lpar_description",
+        new=AsyncMock(side_effect=cause),
+    ):
+        with pytest.raises(HMCCLIError) as exc_info:
+            asyncio.run(authorize(hmc))
+
+    assert "ADR 0011 ownership precheck" in str(exc_info.value)
+    assert "LPAR 'lpar1'" in str(exc_info.value)
+    assert "managed system 'sys1'" in str(exc_info.value)
+    assert "ownership_override=true" in str(exc_info.value)
+    assert "connection refused" in str(exc_info.value)
+    assert exc_info.value.__cause__ is cause
+
+
+def test_ownership_override_skips_ssh_read():
+    hmc = type("StubHMC", (), {"config": _config()})()
+    with patch(
+        "hmc_mcp.operations.ownership.get_lpar_description", new=AsyncMock()
+    ) as read:
+        asyncio.run(
+            authorize_lpar_mutation(hmc, "sys1", "lpar1", ownership_override=True)
+        )
+    read.assert_not_awaited()
+
+
 def test_a_new_guard_entry_point_cannot_omit_the_operation():
     """ADR 0100 §4. `operation` is required, so forgetting it is a type error.
 

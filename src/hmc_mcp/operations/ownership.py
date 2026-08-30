@@ -458,6 +458,20 @@ def authorize_lpar_ownership_description(
     return owner
 
 
+async def _read_lpar_description_for_authorization(
+    hmc: HMCClient, system_name: str, lpar_name: str
+) -> str:
+    """Read ownership metadata with a remedy for an unavailable SSH precheck."""
+    try:
+        return await get_lpar_description(hmc.config, system_name, lpar_name)
+    except HMCCLIError as exc:
+        raise HMCCLIError(
+            f"ADR 0011 ownership precheck failed for LPAR {lpar_name!r} on "
+            f"managed system {system_name!r}; retry with ownership_override=true "
+            f"after operator approval: {exc}"
+        ) from exc
+
+
 async def authorize_lpar_mutation(
     hmc: HMCClient,
     system_name: str,
@@ -469,7 +483,9 @@ async def authorize_lpar_mutation(
     if ownership_override:
         _audit_lpar_ownership_override(hmc, system_name, lpar_name)
         return
-    description = await get_lpar_description(hmc.config, system_name, lpar_name)
+    description = await _read_lpar_description_for_authorization(
+        hmc, system_name, lpar_name
+    )
     authorize_lpar_ownership_description(
         hmc, system_name, lpar_name, description, operation="lpar-mutation"
     )
@@ -549,7 +565,9 @@ async def authorize_decommission_lpar_ownership_snapshot(
     ownership_override: bool,
 ) -> str | None:
     """Read and authorize one ownership snapshot for LPAR decommission."""
-    description = await get_lpar_description(hmc.config, system_name, lpar_name)
+    description = await _read_lpar_description_for_authorization(
+        hmc, system_name, lpar_name
+    )
     return authorize_lpar_ownership_description(
         hmc,
         system_name,
