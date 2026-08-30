@@ -237,6 +237,8 @@ class StorageMixin:
         """Detach one mapping through its parent VirtualIOServer document."""
         if not mapping_uuid:
             raise HMCError("Storage mapping UUID must not be empty")
+        ET.register_namespace("", _UOM_NS)
+        ET.register_namespace("atom", _ATOM_NS)
 
         get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
         vios_xml = await self._get(

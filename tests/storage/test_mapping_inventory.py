@@ -6,6 +6,10 @@ lpar_uuid filters must match the href key element_to_dict actually
 produces, so both previously-dead paths fire.
 """
 
+import os
+import subprocess
+import sys
+import textwrap
 import xml.etree.ElementTree as ET
 
 import httpx
@@ -229,6 +233,44 @@ async def test_delete_storage_mapping_posts_parent_without_exact_mapping(mock_hm
         for node in root.findall(".//uom:VirtualSCSIMapping/uom:UUID", ns)
     ] == ["mapping-10"]
     assert root.findtext("uom:ResourceMonitoringControlState", namespaces=ns) == "active"
+
+
+def test_delete_storage_mapping_serializes_default_uom_namespace_in_fresh_process():
+    """The shared remover must not depend on another test's namespace registry."""
+    script = textwrap.dedent(
+        f"""
+        import asyncio
+        from types import SimpleNamespace
+
+        from hmc_mcp.client.client_storage import StorageMixin
+
+        class FakeClient(StorageMixin):
+            async def _get(self, *_args, **_kwargs):
+                return {VIOS_PARENT!r}
+
+            async def _request(self, *_args, **kwargs):
+                print(kwargs["content"])
+                return SimpleNamespace(status_code=200)
+
+        asyncio.run(
+            FakeClient().delete_storage_mapping({VIOS_UUID!r}, "mapping-1")
+        )
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+
+    assert "<ns0:" not in result.stdout
+    assert (
+        '<VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/'
+        'firmware/uom/mc/2012_10/">' in result.stdout
+    )
 
 
 @pytest.mark.asyncio
