@@ -122,7 +122,7 @@ against that commit rather than maintained forward.
 | `delete_lpar` | `operations/lpar/core.py:394` | guarded (`:398`) | — |
 | `decommission_lpar` | `operations/lpar/decommission.py:628` | guarded (`:283`, `:654`, `:673`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
 | `rename_lpar` | `operations/lpar/core.py:499` | guarded (`:504`) | — |
-| `set_lpar_ownership_description` | `operations/ownership.py:597` | guarded (`:281`) | — |
+| `set_lpar_ownership_description` | `operations/ownership.py:615` | guarded (`:281`) | — |
 | `synchronize_lpar_profile` | `operations/lpar/configuration.py:11` | guarded (`:25`) | — |
 
 `rename_lpar` is Destructive rather than Reconfiguring because the partition name
