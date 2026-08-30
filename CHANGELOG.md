@@ -29,6 +29,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- `hmc_set_lpar_description` now accepts HMC-resolved partition names containing spaces or
+  semicolons, matching live HMC behavior while retaining attribute-record delimiter checks (#288).
 - Optical unmount now resolves an exact LPAR-scoped `MediaName` to one mapping UUID and
   removes it through the shared ADR-0079 parent-VIOS remover. Empty, absent, ambiguous,
   or malformed identities fail without a POST; prefixes and incidental mapping text no

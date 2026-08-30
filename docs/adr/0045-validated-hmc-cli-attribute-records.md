@@ -66,15 +66,12 @@ verify, so the component that owns the grammar should not be the one that produc
 record.
 
 **The grammar covers record structure and nothing else.** Space and semicolon are *not* record
-structure: IBM's example above passes `name=No comma name` unquoted. `set_lpar_description`
-has always refused both in the LPAR name it writes a description for, and it still does, at that
-one site, unchanged. That rejection is deliberately not moved into the builder. Doing so would
-extend it to `create_lpar_via_cli`, `set_lpar_msp`, `set_lpar_proc_compat`, `sync_lpar_profile`,
-and `assign_profile_io_slot`, whose `lpar_name` and `profile_name` arrive from HMC name
-resolution — so on any HMC with a space in a partition or profile name those five tools would
-stop working, with no caller workaround, over a restriction whose own stated reason ("*may*
-corrupt the parser") is hedged and unverified. Narrowing five public tools is not something a
-record-grammar change gets to do on the way past. See the residual below.
+structure. IBM's example above passes `name=No comma name` unquoted, and the live-HMC probe for
+issue #288 confirmed that partitions named `my lpar` and `lpar;name` can be created, selected,
+and described through `chsyscfg -i`; both descriptions round-tripped exactly. The historical
+one-site rejection in `set_lpar_description` is therefore removed. `shlex.quote` keeps the whole
+record a single shell word, while `build_attribute_record` continues to reject the delimiters
+that the HMC itself parses as record structure.
 
 **`validate_lpar_description` reads the same table.** It keeps raising `ValueError` for a
 description carrying `,`, `=`, or `"`, iterating the builder's own delimiter table rather than
@@ -131,13 +128,12 @@ The same narrowing applies to `profile_name` in `create_lpar_via_cli` and
 `assign_profile_io_slot`. Each of those is a name or an enumerated value on the HMC side; none
 has a documented form containing a record delimiter.
 
-**No tool narrows on anything that is not record structure.** The space and semicolon rejections
-stay where they were, so `hmc_create_lpar`, `hmc_set_lpar_msp`, `hmc_set_lpar_proc_compat`,
-`hmc_sync_lpar_profile`, and `hmc_assign_profile_io_slot` keep accepting every name they accept
-today, including a name with a space. Control characters are the exception, and they are
-structure: a newline can terminate the record and a NUL can truncate it inside the HMC, so the
-partition acted on would differ from the one the caller named. No HMC object name has a
-documented form containing one.
+**No tool narrows on anything that is not record structure.** `set_lpar_description` now joins
+`hmc_create_lpar`, `hmc_set_lpar_msp`, `hmc_set_lpar_proc_compat`, `hmc_sync_lpar_profile`, and
+`hmc_assign_profile_io_slot` in accepting HMC-resolved names containing spaces or semicolons.
+Control characters are the exception, and they are structure: a newline can terminate the record
+and a NUL can truncate it inside the HMC, so the partition acted on would differ from the one the
+caller named. No HMC object name has a documented form containing one.
 
 **`set_lpar_description` changes in three small ways beyond the narrowing.** Its `lpar_name` now
 also refuses `"` and control characters, since it goes through the same builder as every other
@@ -187,11 +183,9 @@ escapes anything inside the record: no IBM source found says it does, so it is *
 and a value containing one still reaches the HMC. If a live HMC ever shows otherwise, the fix is
 one entry in `_RECORD_DELIMITERS`.
 
-The space and semicolon rejection on `set_lpar_description`'s `lpar_name` is itself unverified
-and, for the space, contradicted by IBM's `name=No comma name` example. This change kept it
-rather than widening a public tool's accepted input as a side effect of a security fix. Settling
-it — verify against a live HMC, then either remove it or give it a sourced reason — is issue
-#288.
+Issue #288's live-HMC probe settled the former space and semicolon residual: both characters are
+accepted in partition names and survive the `chsyscfg -i` description path. The client now treats
+them as ordinary value data at that site.
 
 Whether the HMC errors or silently accepts a duplicate attribute is still unverified. It bounds
 how bad the old behaviour was, not whether the new behaviour is correct.
