@@ -180,17 +180,17 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   and nothing to poll. Tool names, parameter lists, and returned payloads are unchanged. Both are
   classified in ADR 0092 §3.4a — outside §1's ownership rule by resource type, since `installios`
   requires a Virtual I/O Server partition and ADR 0011 stamps no token on one.
-  **Consumer note:** submission is not idempotent and neither operation checks the target's
-  partition type. A second concurrent call submits a second detached `installios` against the same
+  **Consumer note:** both operations now preflight the resolved target and reject a non-Virtual
+  I/O Server or any state other than `not activated` before SSH submission. Submission is not
+  idempotent: a second concurrent call submits a second detached `installios` against the same
   partition, and the install log path is keyed on the partition *name* alone — the managed system
   is not part of it, and the redirect truncates — so two same-named partitions on different
   managed systems behind one HMC share one log and destroy each other's only diagnostic record.
   The returned `log_path` is not unique per system; serializing per partition name across every
   managed system on the HMC is the caller's responsibility. A returned handle means the process
-  was backgrounded, not that `installios`
-  accepted the target — a refused non-VIOS target surfaces only in the HMC-side log (#460). Adding
-  a target-type check raises a new `ValueError` but adds no parameter, so it will not move the
-  frozen signature digest.
+  was backgrounded, not that the detached install later completed successfully. The preflight
+  raises `HMCError` for an unsafe type or state, adds no parameter, and therefore does not move
+  the frozen signature digest (#460).
 - `ownership-denied` audit record for a refused ADR 0011 ownership check (#467, ADR 0100).
   The guard recorded approved overrides and nothing else, so an operator reading the stream
   could not tell "nobody tried to mutate a partition they do not own" from "many attempts were
