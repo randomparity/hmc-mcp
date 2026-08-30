@@ -10,6 +10,7 @@ from __future__ import annotations
 # serialization only. Every inbound HMC response is parsed with defusedxml.
 import xml.etree.ElementTree as ET  # nosec B405
 from typing import Any
+from urllib.parse import urlparse
 
 from defusedxml import ElementTree as DET
 
@@ -709,10 +710,13 @@ class StorageMixin:
 
         if lpar_uuid:
             expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
-            optical_mappings = [
-                m for m in optical_mappings
-                if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("href") == expected_link
-            ]
+            filtered_mappings = []
+            for mapping in optical_mappings:
+                partition = mapping.get("AssociatedLogicalPartition")
+                href = partition.get("href") if isinstance(partition, dict) else None
+                if isinstance(href, str) and urlparse(href).path == expected_link:
+                    filtered_mappings.append(mapping)
+            optical_mappings = filtered_mappings
 
         return optical_mappings
 

@@ -185,10 +185,23 @@ async def test_list_storage_mappings_filters_by_lpar(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_list_optical_mappings_filters_by_lpar(mock_hmc):
-    """list_optical_mappings' lpar_uuid filter matches the parsed href key."""
+@pytest.mark.parametrize(
+    "lpar_href",
+    [
+        "/rest/api/uom/LogicalPartition/lpar-uuid-001",
+        "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-uuid-001",
+    ],
+    ids=["relative", "absolute"],
+)
+async def test_list_optical_mappings_filters_by_exact_lpar_path(
+    mock_hmc, lpar_href
+):
+    """Relative and absolute hrefs identify the same exact LPAR path."""
+    feed = OPTICAL_MAPPINGS_FEED.replace(
+        "/rest/api/uom/LogicalPartition/lpar-uuid-001", lpar_href
+    )
     mock_hmc.get(VIOS_PATH).mock(
-        return_value=httpx.Response(200, text=OPTICAL_MAPPINGS_FEED)
+        return_value=httpx.Response(200, text=feed)
     )
 
     config = make_config()
