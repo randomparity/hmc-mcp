@@ -9,7 +9,7 @@ import shlex
 from ..config import HMCConfig
 from .transport import HMCCLIError, run_hmc_command
 from .commands import build_attribute_record, build_filter
-from .description_validation import DESCRIPTION_TARGET_UNSAFE, validate_lpar_description
+from .description_validation import validate_lpar_description
 
 async def get_lpar_description(
     config: HMCConfig,
@@ -61,17 +61,10 @@ async def set_lpar_description(
     corrupt the ``chsyscfg -i`` attribute record; see
     :func:`build_attribute_record`, which enforces the record grammar for both
     fields so the guard cannot be present at one and absent at its neighbour.
-    A space or a semicolon in *lpar_name* is refused too — a restriction this
-    function has always carried and that ADR 0045 deliberately kept here rather
-    than extending to the other records, where it would refuse HMC-legal names.
+    Space and semicolon are ordinary value data, as confirmed by the live-HMC
+    verification recorded in ADR 0045.
     """
     validate_lpar_description(description)
-    for character, (name, reason) in DESCRIPTION_TARGET_UNSAFE.items():
-        if character in lpar_name:
-            raise HMCCLIError(
-                f"LPAR name {lpar_name!r} contains {name} ({character!r}); "
-                f"cannot safely write description via chsyscfg -i ({reason})"
-            )
     record = build_attribute_record([("name", lpar_name), ("description", description)])
     cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
     return await run_hmc_command(config, cmd)
