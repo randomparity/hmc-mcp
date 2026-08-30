@@ -233,6 +233,21 @@ def test_generated_policy_guidance_does_not_pin_a_stale_tool_count() -> None:
     assert not FIXED_TOOL_COUNT.search("31 total non-exhaustive tools")
 
 
+def test_readme_preserves_reviewed_policy_during_recovery() -> None:
+    readme = (ROOT / "README.md").read_text()
+    migration = readme.split("### Migrating to a required access policy", 1)[1].split(
+        "### Detecting access-policy drift", 1
+    )[0]
+
+    assert "unknown tool" in migration
+    assert "TOML" in migration
+    assert "config diff-access-policy" in migration
+    assert "init-access-policy --output" in migration
+    assert "merge" in migration.lower()
+    assert "preserve" in migration.lower()
+    assert "Delete it" not in migration
+
+
 def test_contribution_guide_defines_the_complete_local_path() -> None:
     guide = (ROOT / "CONTRIBUTING.md").read_text()
     local_path = _section(guide, CONTRIBUTING_HEADING, CONTRIBUTING_NEXT)
