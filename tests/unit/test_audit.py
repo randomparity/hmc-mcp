@@ -642,6 +642,15 @@ def test_a_malformed_token_denial_records_a_null_owner():
     assert record["operation"] == "lpar-decommission-snapshot"
 
 
+def test_profile_restore_is_a_distinct_ownership_operation():
+    """A system-wide guard must not claim to be the single-LPAR mutation guard."""
+    assert audit.OWNERSHIP_OPERATIONS == {
+        "lpar-mutation",
+        "lpar-decommission-snapshot",
+        "lpar-profile-restore",
+    }
+
+
 def test_the_denial_record_is_bounded_and_escaped():
     """Every caller-supplied field on it takes the same bound as its siblings.
 

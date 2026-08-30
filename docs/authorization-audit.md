@@ -135,6 +135,10 @@ machine, not a grant, so it is its own field rather than an arm of the
 authorization record's `connection` object. An unset `HMC_HOST` renders as an
 empty string.
 
+For a system-wide profile restore, `lpar` is `"*"`: the approved bypass covers every
+current profile and any backup-only definition, not one named partition. Other override
+records continue to name the individual partition whose ownership check was bypassed.
+
 It carries no `policy`, `decision`, `reason`, or `targets`, and not as nulls —
 an ownership check on a token parsed from an LPAR description is not an
 access-policy decision, and empty fields would read as one.
@@ -150,7 +154,7 @@ these. The decision is [ADR 0100](adr/0100-ownership-denial-audit-record.md).
 |---|---|
 | `time` | UTC, ISO 8601 |
 | `event` | `"ownership-denied"` |
-| `operation` | `lpar-mutation` or `lpar-decommission-snapshot` |
+| `operation` | `lpar-decommission-snapshot`, `lpar-mutation`, or `lpar-profile-restore` |
 | `denial` | `malformed-token` or `foreign-owner` |
 | `system` | the managed system the partition lives on |
 | `lpar` | the partition whose mutation was refused |
@@ -162,11 +166,12 @@ these. The decision is [ADR 0100](adr/0100-ownership-denial-audit-record.md).
 {"time":"2026-08-26T18:00:00+00:00","event":"ownership-denied","operation":"lpar-mutation","denial":"foreign-owner","system":"sys-a","lpar":"db-01","owner":"agent-3","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
 ```
 
-`operation` names which guard entry point refused — `lpar-mutation` covers every
-guarded mutation, `lpar-decommission-snapshot` the ownership read that precedes a
-decommission — and not which MCP tool or API function called it. Per-tool
-granularity is deliberately out of scope; where the caller matters and the transport
-is MCP, join on the `authorization` record for the same call.
+`operation` names which guard entry point refused — `lpar-mutation` covers ordinary
+single-partition mutations, `lpar-decommission-snapshot` the ownership read that
+precedes a decommission, and `lpar-profile-restore` the current-partition checks before
+a system-wide profile restore — and not which MCP tool or API function called it.
+Per-tool granularity is deliberately out of scope; where the caller matters and the
+transport is MCP, join on the `authorization` record for the same call.
 
 `denial` names which of the guard's two rules refused. `foreign-owner` is a
 well-formed token naming another agent, and the record carries *both* halves of the

@@ -140,6 +140,7 @@ def test_restore_lpar_profiles_runs_correct_command(monkeypatch, mock_hmc):
             SYSTEM_UUID,
             "/tmp/lpar_profiles.bak",
             system_wide_restore_approved=True,
+            ownership_override=True,
         )
 
     expected_cmd = f"rstprofdata -m {SYSTEM_NAME} -f /tmp/lpar_profiles.bak"
@@ -156,7 +157,10 @@ def test_restore_lpar_profiles_returns_cli_output(monkeypatch, mock_hmc):
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_restore_lpar_profiles(
-            SYSTEM_UUID, "/tmp/profiles.bak", system_wide_restore_approved=True
+            SYSTEM_UUID,
+            "/tmp/profiles.bak",
+            system_wide_restore_approved=True,
+            ownership_override=True,
         )
 
     assert result == RAW_OUTPUT

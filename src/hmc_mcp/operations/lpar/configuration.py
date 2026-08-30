@@ -3,9 +3,33 @@
 from __future__ import annotations
 
 from hmc_mcp.client.core import HMCClient
-from ...ssh.profiles import set_lpar_msp, set_lpar_proc_compat, sync_lpar_profile
+from ...ssh.profiles import (
+    restore_lpar_profiles,
+    set_lpar_msp,
+    set_lpar_proc_compat,
+    sync_lpar_profile,
+)
 from .core import ProcessorCompatibilityMode
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_names
+from hmc_mcp.operations.ownership import (
+    _authorize_system_lpar_profile_restore,
+    resolve_and_authorize_lpar_names,
+)
+
+
+async def restore_system_lpar_profiles(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    file_path: str,
+    *,
+    ownership_override: bool = False,
+) -> str:
+    """Authorize and restore every LPAR profile on one managed system."""
+    system_name = await _authorize_system_lpar_profile_restore(
+        hmc,
+        system_name_or_uuid,
+        ownership_override=ownership_override,
+    )
+    return await restore_lpar_profiles(hmc.config, system_name, file_path)
 
 
 async def synchronize_lpar_profile(

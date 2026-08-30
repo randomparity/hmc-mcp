@@ -122,8 +122,9 @@ against that commit rather than maintained forward.
 | `delete_lpar` | `operations/lpar/core.py:394` | guarded (`:398`) | — |
 | `decommission_lpar` | `operations/lpar/decommission.py:628` | guarded (`:283`, `:654`, `:673`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
 | `rename_lpar` | `operations/lpar/core.py:499` | guarded (`:504`) | — |
-| `set_lpar_ownership_description` | `operations/ownership.py:615` | guarded (`:281`) | — |
-| `synchronize_lpar_profile` | `operations/lpar/configuration.py:11` | guarded (`:25`) | — |
+| `set_lpar_ownership_description` | `operations/ownership.py:663` | guarded (`:673`) | — |
+| `synchronize_lpar_profile` | `operations/lpar/configuration.py:35` | guarded (`:43`) | — |
+| `restore_system_lpar_profiles` | `operations/lpar/configuration.py:19` | guarded before SSH by `_authorize_system_lpar_profile_restore` (`operations/ownership.py:461`) | #449 |
 
 `rename_lpar` is Destructive rather than Reconfiguring because the partition name
 is the identity every consumer addresses, and the ownership token itself is keyed
@@ -133,7 +134,24 @@ overwrites the token, so it is destructive of the protocol's one artifact.
 the previous profile definition is gone.
 
 `hmc_sync_lpar_profile` delegates to the guarded operation above; the SSH helper is
-only the transport boundary.
+only the transport boundary. `hmc_restore_lpar_profiles` delegates its mutation to
+`restore_system_lpar_profiles`, which checks every current partition reported by the
+selected system's ADR 0071 bulk ownership feed before opening the restore SSH path.
+
+That feed cannot reveal a partition definition present only in the opaque HMC-side
+backup. The explicit `system_wide_restore_approved=true` acknowledgement remains
+accident prevention only; it does not authorize that unknowable remainder. A call
+without `ownership_override=true` therefore fails closed after a clean current-feed
+check, explaining that only the audited override can cover backup-only definitions.
+
+The bulk guard takes `ownership_override: bool = False`. Without an override, an
+unreadable feed or a row missing a partition name or string-or-absent description
+fails closed before SSH. Foreign owners and malformed `[hmc-mcp` tokens are all
+handled by the existing partition-specific denial and audit at the first blocker. An
+absent token or unrelated free text retains ADR 0011's unowned semantics but does not
+remove the opaque-backup refusal. An approved override skips the feed, emits one
+existing `ownership-override` event for the system with `lpar="*"`, and proceeds; the
+wildcard records the operation's actual scope.
 
 #### 3.2 Reconfiguring — guard unconditionally
 
@@ -186,8 +204,8 @@ The remaining direct entry points and their guard state are:
 
 | Entry point | Location | Status | Tracking |
 |---|---|---|---|
-| `configure_lpar_msp` | `operations/lpar/configuration.py:28` | guarded (`:25`) | — |
-| `configure_lpar_processor_compatibility` | `operations/lpar/configuration.py:46` | guarded (`:25`) | — |
+| `configure_lpar_msp` | `operations/lpar/configuration.py:52` | guarded (`:61`) | — |
+| `configure_lpar_processor_compatibility` | `operations/lpar/configuration.py:70` | guarded (`:79`) | — |
 | `hmc_modify_lpar` | `server_tools/lpar/lifecycle.py:155` | guarded by `operations/lpar/dlpar.py:35` before any write | — |
 | `hmc lpar modify` (CLI) | `cli_commands/lpar/modify.py:16` | guarded by `operations/lpar/dlpar.py:35` before any write | — |
 | `detach_storage_mapping` | `operations/storage.py:259` | resolves the mapping's client LPAR and guards it before deletion (`:294`) | #448 |
@@ -220,9 +238,9 @@ CLI, so one decision covers every entry path.
 #### 3.4 Standing exemptions
 
 Operations registered `mutate` or `destructive` that ship without a guard call.
-Together with §3.1–§3.3 this is the list the #369 enforcement test reads (§5). Split
-by why: rows in 3.4a are outside §1's definition, rows in 3.4b are LPAR-mutating and
-exempt anyway.
+Together with §3.1–§3.3 this is the list the #369 enforcement test reads (§5). The
+remaining rows are outside §1's definition; issue #449 removed the final §3.4b
+LPAR-mutating exemption.
 
 **3.4a — outside §1's definition** (no ownership decision to make)
 
@@ -237,18 +255,14 @@ exempt anyway.
 | `install_lpar_os` (`operations/install.py:227`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation now reads the resolved `LogicalPartition` resource and rejects a non-VIOS type or any state other than `not activated` before composing or submitting the detached command. |
 | `install_vios` (`operations/install.py:310`) | Added by #366. Same reason and preflight: after resolving through the `VirtualIOServer` feed, both name and UUID selectors are checked through the resolved `LogicalPartition` resource for Virtual I/O Server type and `not activated` state before submission. |
 
-**3.4b — LPAR-mutating, exempt because the signature cannot express the check**
-
-| Operation | Reason | Tracking |
-|---|---|---|
-| `hmc_restore_lpar_profiles` (`server_tools/lpar/profiles.py:85`) | A per-partition decision is not expressible because the restore rewrites every profile. It therefore requires both a destructive managed-system grant, which produces the authorization audit record, and explicit `system_wide_restore_approved=true` acknowledgement before SSH is opened. | #449 |
-
-**3.4b records a separate administrative authorization contract, not an unguarded
-partition mutation.** A profile backup does not reveal which profiles the restore file
-will replace, so claiming to authorize a caller-supplied subset would be false. The
-managed-system grant establishes the administrator's scope and produces the ordinary
-authorization audit record; the explicit acknowledgement prevents an ordinary
-single-partition workflow from crossing into the system-wide operation accidentally.
+**3.4b — no LPAR-mutating standing exemptions remain.** Issue #449 moved
+`restore_system_lpar_profiles` to §3.1. Because a backup file does not reveal which
+profiles it contains, the guard checks every partition currently present on the
+selected system rather than accepting a caller-supplied subset. Only the explicit
+audited ownership override covers definitions present only in the backup. The
+system-wide acknowledgement remains accident prevention, and the managed-system grant
+remains an additional MCP boundary; neither substitutes for the ownership check on
+direct CLI or Python entry paths.
 
 `hmc_install_lpar_os` is absent from §3.1–§3.3 because §1 puts it out of scope:
 `installios` requires a Virtual I/O Server partition. #366 proposed extracting a NIM
@@ -392,7 +406,7 @@ or **appears in §3.4**. Every part of that — which operations are in scope, w
 guard is, and what "reaches" means — needs definition, or the test cannot be
 written.
 
-**Enumeration domain.** Two domains, checked separately because they are reachable by
+**Enumeration domain.** Three domains, checked separately because they are reachable by
 different means.
 
 - *Domain A — the facade.* Every **function** exported from `hmc_mcp.api.__all__`
@@ -407,6 +421,14 @@ different means.
   CLI row. They cannot be fixed by adding a guard call: §6 requires an operation
   first, at which point they become Domain A and leave Domain B. **Domain B being
   empty is the end state**; until then each row needs a Tracking issue.
+- *Domain C — managed-system-wide LPAR mutations.* The explicit pair
+  `hmc_restore_lpar_profiles` → `restore_system_lpar_profiles`. Its selector is a
+  managed system because every current partition and opaque backup-only definition is
+  in scope, so `target_kind="lpar"` cannot enumerate it. The focused #449 tests execute
+  the tool-to-operation delegation and the operation-to-guard denial path. While the
+  §3 row is present, the citation guard checks that it names the real operation; #369
+  owns exhaustive row-presence enforcement. A future managed-system-wide LPAR mutation
+  must add its own row and focused reachability proof.
 
 **Domain A is enumerated, then partitioned — not filtered by judgement.** "Meets §1"
 is a semantic call no test can compute, so the test must not try. Instead every
@@ -427,12 +449,17 @@ catch the new unclassified operation §6 exists to prevent.
 
 Domain B needs no such partition: `@tool(effect=…, target_kind="lpar")` is
 machine-readable and exhaustively enforced by the existing registry test, so the
-domain enumerates itself.
+domain enumerates itself. Domain C is deliberately explicit because managed-system
+target metadata cannot distinguish an LPAR-profile restore from an ordinary
+managed-system mutation.
 
-**What counts as a guard.** Exactly two callables:
+**What counts as a guard.** Exactly three callables:
 `authorize_lpar_mutation` (`operations/ownership.py:152`) and
-`authorize_decommission_lpar_ownership_snapshot` (`operations/ownership.py:211`). Nothing
-else, and no new one without amending this list.
+`authorize_decommission_lpar_ownership_snapshot` (`operations/ownership.py:211`), plus
+the system-wide `_authorize_system_lpar_profile_restore` (`operations/ownership.py`).
+Nothing else, and no new one without amending this list. The system-wide guard must
+reach `authorize_lpar_ownership_description` for every complete current-feed row;
+calling that parser on an arbitrary value does not independently count as a guard.
 
 **"Reaches" means call-graph reachability, not a direct call.** Six operations in §3
 guard through a private helper — `_authorize_pcie_profile_request`, `_resolve_lpar`,
@@ -546,10 +573,12 @@ That asymmetry is why §4 exists at all.
   an SSH login for nothing. #371 owns the case, and the resolution stays inside §5's
   two mechanisms: the internal call passes `ownership_override=True`, which is
   audited, rather than a third call-site-conditional guard.
-- The §3.4b rows stay unguarded until someone changes the operation signatures
-  (#448, #449). They are visible in the exemption list with their reasons and their
-  Tracking issues rather than absent from the inventory, and the 3.4a/3.4b split
-  keeps "not a mutation" from reading as "a mutation we decided to allow".
+- Issue #449 removes the last §3.4b standing exemption. A non-override restore now
+  pays one bulk REST ownership read, reports the first current foreign or
+  malformed-token blocker, and then fails closed when a clean feed cannot establish
+  the backup's opaque affected set. An
+  approved override skips that dependency and emits one `ownership-override` event
+  with `lpar="*"` before SSH.
 - This ADR touches only `docs/adr/`. ADR 0011 gets no back-reference to 0092 here;
   adding one is a one-line edit that belongs to whichever PR next amends 0011.
 
@@ -565,6 +594,16 @@ single call with no prior state to recover.
 policy boundary does not reach the CLI or `hmc_mcp.api` by design, so a facade
 consumer would have no enforced authorization on any mutation. That is the gap this
 epic exists to close.
+
+**Let a clean current-partition feed authorize a system-wide profile restore.**
+verified: IBM's `rstprofdata` command contract defines a full restore from the backup
+file, while ADR 0036's HMC-side path contract exposes no supported backup-content
+reader. The current feed therefore cannot prove the complete affected set; only the
+existing audited override may cover it.
+
+**Treat `system_wide_restore_approved` as authorization for backup-only data.**
+judgment: that flag prevents accidental invocation and emits no ownership-override
+audit. Reusing it would create a second, unaudited bypass beside §5's one mechanism.
 
 **Cache the ownership token per `(system, lpar)` for a TTL, then guard everything.**
 Removes the cost objection without a configuration field. Rejected: a token can
