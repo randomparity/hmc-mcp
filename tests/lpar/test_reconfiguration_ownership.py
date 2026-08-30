@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from unittest.mock import AsyncMock
 from unittest.mock import patch
@@ -9,6 +10,13 @@ from unittest.mock import patch
 import pytest
 
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.operations.lpar.configuration import (
+    configure_lpar_msp,
+    configure_lpar_processor_compatibility,
+    synchronize_lpar_profile,
+)
+from hmc_mcp.server_tools.lpar import configuration as server_configuration
+from hmc_mcp.server_tools.lpar import profiles as server_profiles
 from hmc_mcp.operations.adapters import (
     add_network_adapter,
     add_vfc_adapter,
@@ -218,6 +226,109 @@ async def test_optical_ownership_override_bypasses_read_and_writes(
 
     read.assert_not_awaited()
     getattr(hmc, write_method).assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "write_name", "args"),
+    [
+        (configure_lpar_msp, "set_lpar_msp", (True,)),
+        (configure_lpar_processor_compatibility, "set_lpar_proc_compat", ("POWER9",)),
+        (synchronize_lpar_profile, "sync_lpar_profile", ()),
+    ],
+)
+async def test_config_operations_reject_foreign_owner_before_ssh_write(
+    operation: Operation, write_name: str, args: tuple[object, ...]
+) -> None:
+    """Each extracted configuration mutation checks ownership before its write."""
+    hmc = _real_guard_hmc()
+    write = AsyncMock(return_value="ok")
+
+    with (
+        patch(
+            "hmc_mcp.operations.ownership.get_lpar_description",
+            new=AsyncMock(return_value=FOREIGN_OWNER),
+        ),
+        patch(f"hmc_mcp.operations.lpar.configuration.{write_name}", new=write),
+        pytest.raises(PermissionError, match="ownership_override=true"),
+    ):
+        await operation(hmc, SYSTEM_UUID, LPAR, *args)
+
+    write.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "write_name", "args"),
+    [
+        (configure_lpar_msp, "set_lpar_msp", (True,)),
+        (configure_lpar_processor_compatibility, "set_lpar_proc_compat", ("POWER9",)),
+        (synchronize_lpar_profile, "sync_lpar_profile", ()),
+    ],
+)
+async def test_config_operations_override_skips_ownership_read(
+    operation: Operation, write_name: str, args: tuple[object, ...]
+) -> None:
+    """An approved override bypasses the ownership read and reaches each write."""
+    hmc = _real_guard_hmc()
+    write = AsyncMock(return_value="ok")
+
+    with (
+        patch(
+            "hmc_mcp.operations.ownership.get_lpar_description",
+            new=AsyncMock(return_value=FOREIGN_OWNER),
+        ) as read,
+        patch(f"hmc_mcp.operations.lpar.configuration.{write_name}", new=write),
+    ):
+        await operation(hmc, SYSTEM_UUID, LPAR, *args, ownership_override=True)
+
+    read.assert_not_awaited()
+    write.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("tool", "operation", "args"),
+    [
+        (
+            server_configuration.hmc_set_lpar_msp,
+            "configure_lpar_msp",
+            (SYSTEM_UUID, LPAR, True),
+        ),
+        (
+            server_configuration.hmc_set_lpar_proc_compat,
+            "configure_lpar_processor_compatibility",
+            (SYSTEM_UUID, LPAR, "POWER9"),
+        ),
+        (
+            server_profiles.hmc_sync_lpar_profile,
+            "synchronize_lpar_profile",
+            (SYSTEM_UUID, LPAR),
+        ),
+    ],
+)
+def test_mcp_config_tools_forward_ownership_override(
+    monkeypatch: pytest.MonkeyPatch, tool, operation: str, args: tuple[object, ...]
+) -> None:
+    """MCP wrappers expose and forward the explicit ownership override."""
+    target_module = (
+        server_profiles
+        if tool is server_profiles.hmc_sync_lpar_profile
+        else server_configuration
+    )
+    delegated = AsyncMock(return_value="ok")
+    monkeypatch.setattr(target_module, operation, delegated)
+
+    async def invoke(fn, *, profile=None):
+        return await fn(AsyncMock())
+
+    monkeypatch.setattr(
+        target_module, "with_client", lambda fn, **kwargs: asyncio.run(invoke(fn))
+    )
+    result = tool(*args, ownership_override=True)
+
+    assert result == "ok"
+    delegated.assert_awaited_once()
+    assert delegated.await_args.kwargs["ownership_override"] is True
 
 
 @pytest.mark.asyncio
