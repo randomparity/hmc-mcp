@@ -4,14 +4,6 @@ from __future__ import annotations
 
 from .commands import _RECORD_DELIMITERS
 
-DESCRIPTION_TARGET_UNSAFE: dict[str, tuple[str, str]] = {
-    " ": (
-        "a space",
-        "a space may make the HMC's internal -i parser tokenise incorrectly",
-    ),
-    ";": ("a semicolon", "a semicolon may corrupt the HMC CLI -i parser"),
-}
-
 
 def validate_lpar_description(description: str) -> None:
     """Raise ``ValueError`` if *description* cannot be written to the HMC."""

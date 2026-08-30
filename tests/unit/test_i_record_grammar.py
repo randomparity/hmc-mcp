@@ -326,16 +326,16 @@ def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
         asyncio.run(ssh_memory.remove_memory_pool(_config(), "sys-a", "pool,extra=1"))
 
 
-@pytest.mark.parametrize(("bad", "wording"), [(" ", "space"), (";", "semicolon")])
-def test_set_lpar_description_keeps_its_historical_lpar_name_rejections(bad, wording):
-    """Space and ';' stay refused where they always were, and only there.
+@pytest.mark.parametrize("name", ["my lpar", "lpar;name"])
+def test_set_lpar_description_quotes_hmc_legal_names(name):
+    """Live HMC testing confirms space and semicolon are ordinary value data."""
+    with patch("hmc_mcp.ssh.profiles.run_hmc_command") as run:
+        asyncio.run(set_lpar_description(_config(), "sys", name, "text"))
 
-    Neither is record structure, so the builder does not refuse them; extending
-    the rejection to the other five records would refuse HMC-legal names on
-    tools that accept them today (ADR 0045).
-    """
-    with pytest.raises(HMCCLIError, match=wording):
-        asyncio.run(set_lpar_description(_config(), "sys", f"lp{bad}ar", "text"))
+    run.assert_called_once_with(
+        _config(),
+        f"chsyscfg -r lpar -m sys -i 'name={name},description=text'",
+    )
 
 
 # ---------------------------------------------------------------------- #

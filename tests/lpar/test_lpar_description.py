@@ -301,19 +301,14 @@ def test_set_lpar_description_rejects_lpar_name_with_equals():
         asyncio.run(set_lpar_description(cfg, "sys", "key=val", "some description"))
 
 
-def test_set_lpar_description_rejects_lpar_name_with_space():
-    """set_lpar_description raises HMCCLIError when lpar_name contains a space."""
-    from hmc_mcp.ssh.profiles import HMCCLIError
-
+@pytest.mark.parametrize("lpar_name", ["my lpar", "lpar;name"])
+def test_set_lpar_description_accepts_hmc_legal_lpar_name(lpar_name):
+    """Space and semicolon remain data inside the quoted ``-i`` record."""
     cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123")
-    with pytest.raises(HMCCLIError, match="space"):
-        asyncio.run(set_lpar_description(cfg, "sys", "my lpar", "some description"))
+    with patch("hmc_mcp.ssh.profiles.run_hmc_command", new_callable=AsyncMock) as run:
+        asyncio.run(set_lpar_description(cfg, "sys", lpar_name, "some description"))
 
-
-def test_set_lpar_description_rejects_lpar_name_with_semicolon():
-    """set_lpar_description raises HMCCLIError when lpar_name contains a semicolon."""
-    from hmc_mcp.ssh.profiles import HMCCLIError
-
-    cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123")
-    with pytest.raises(HMCCLIError, match="semicolon"):
-        asyncio.run(set_lpar_description(cfg, "sys", "lpar;name", "some description"))
+    run.assert_awaited_once_with(
+        cfg,
+        f"chsyscfg -r lpar -m sys -i 'name={lpar_name},description=some description'",
+    )
