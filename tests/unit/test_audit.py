@@ -825,7 +825,10 @@ def test_the_install_record_is_emitted_at_warning():
     audit.record_install_attempted(
         system="s", partition="p", log_path="/l", host="hmc.test", agent_id="a"
     )
-    assert levels == [logging.WARNING]
+    audit.record_install_submitted(
+        system="s", partition="p", pid=123, log_path="/l", host="hmc.test", agent_id="a"
+    )
+    assert levels == [logging.WARNING, logging.WARNING]
 
 
 def test_the_install_submitted_record_carries_the_remote_pid():

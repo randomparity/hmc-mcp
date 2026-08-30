@@ -275,6 +275,7 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     ``logging.lastResort``'s threshold too.
     """
     audit_sink.install_audit_sink()
+    audit_sink.set_audit_level(logging.WARNING)
     hmc = _hmc()
     hmc.config = make_config(host="hmc.test", agent_id="agent-7")
 
@@ -288,6 +289,11 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     )
     captured = capsys.readouterr()
     assert captured.out == "", "an audit record must never reach the JSON-RPC stream"
+    records = _install_records(captured.err)
+    assert [record["event"] for record in records] == [
+        "install-attempted",
+        "install-submitted",
+    ]
     record = _one_install_record(captured.err)
     assert (record["system"], record["partition"]) == ("sys1", "target1")
     assert record["log_path"] == result["log_path"]
