@@ -29,6 +29,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- `hmc_get_job` and `hmc_wait_for_job` now reject `job_href` values containing
+  TAB, CR, or LF before any HMC read, so validated and echoed links have the
+  same spelling (#537, ADR 0093).
 - Optical unmount now resolves an exact LPAR-scoped `MediaName` to one mapping UUID and
   removes it through the shared ADR-0079 parent-VIOS remover. Empty, absent, ambiguous,
   or malformed identities fail without a POST; prefixes and incidental mapping text no
