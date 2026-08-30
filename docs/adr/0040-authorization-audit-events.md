@@ -255,6 +255,10 @@ sink to a party who may not read `config.toml` inherits that disclosure.
 `attribution.source` is the constant `"environment:HMC_AGENT_ID"`, and `attribution.verified` is
 the constant `false`.
 
+> **Amended by ADR 0111.** The exact-case lookup above is stale. `HMC_AGENT_ID` is matched
+> case-insensitively, and the last matching entry in `os.environ` iteration order wins. The value
+> remains a direct, unvalidated environment attribution.
+
 It is read directly from the environment rather than through `HMCConfig`, because that model
 validates `agent_id` — emptiness, a reserved value, a 64-character bound, ASCII printability, and
 a forbidden-character set — and running those on a per-call authorization path buys nothing the
