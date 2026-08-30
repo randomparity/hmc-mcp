@@ -21,7 +21,7 @@ app = [
     "mcp==1.29.0",
     "rich==15.0.0",
     "typer==0.27.1",
-    "uvicorn==0.52.1",
+    "uvicorn==0.52.4",
 ]
 
 [project.urls]
@@ -50,13 +50,13 @@ dev = [
     "detect-secrets==1.5.0",
     "fastmcp-slim[client]==3.4.7",
     "hatchling==1.32.0",
-    "prek==0.4.10",
+    "prek==0.4.14",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
     "respx==0.23.1",
-    "ruff==0.15.22",
-    "ty==0.0.62",
+    "ruff==0.16.4",
+    "ty==0.0.74",
     "zizmor==1.29.0",
 ]
 
