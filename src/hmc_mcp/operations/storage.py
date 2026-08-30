@@ -864,9 +864,10 @@ async def unmount_optical_media(
 ) -> None:
     """Remove the VirtualSCSIMapping for an optical device (unmount).
 
-    Identifies the mapping by lpar + media_name using a read-modify-write pattern
-    against the full VirtualIOServer document.  The backing VirtualOpticalMedia
-    (ISO container) is preserved and can be remounted later.
+    Resolves the LPAR-scoped optical inventory entry whose ``MediaName`` equals
+    ``media_name``, requires one exact mapping UUID, and removes it through the
+    shared VirtualIOServer read-modify-write path. The backing
+    VirtualOpticalMedia (ISO container) is preserved and can be remounted later.
 
     Removing the mapping is the whole unmount as this client implements it:
     mount_optical_media creates a VirtualSCSIMapping with the media referenced
@@ -876,21 +877,16 @@ async def unmount_optical_media(
     VirtualSCSIMapping is not directly addressable; establishing the absence of
     an unload path would need its own live survey, on the ADR 0069 pattern.)
 
-    Selection is currently a substring match over the serialized mapping and
-    does not reject an empty media_name or refuse an ambiguous match, so a
-    partial name can remove a different mapping — including a non-optical one
-    such as a boot disk.  In the other direction, a media_name matching no
-    mapping returns normally without a POST, so returning is not evidence that a
-    mapping was removed.  ADR 0079 rejects both silent success and selection by
-    LPAR and backing-storage name for VirtualSCSIMapping removal; #439 owns the
-    reconciliation.  Until then, verify against list_storage_mappings — not
-    list_optical_mappings, which filters to VirtualOpticalMedia backing and
-    cannot see a wrongly removed disk mapping — captured before and after.
+    Empty, missing, ambiguous, or malformed identities fail without a POST, as
+    required by ADR 0079.
 
     The read-modify-write rewrites the whole VirtualIOServer document from a GET
     snapshot, so another writer's change in that window is lost; ADR 0079 puts
     the duty to serialize concurrent VIOS mapping changes on the caller.
     """
+    if not media_name:
+        raise HMCError("Optical media name must not be empty")
+
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
@@ -900,4 +896,31 @@ async def unmount_optical_media(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
-    await hmc.delete_optical_mapping(vios_uuid, lpar_uuid, media_name)
+    matches: list[dict[str, Any]] = []
+    for mapping in await hmc.list_optical_mappings(vios_uuid, lpar_uuid):
+        if not isinstance(mapping, dict):
+            continue
+        storage = mapping.get("Storage")
+        optical = (
+            storage.get("VirtualOpticalMedia")
+            if isinstance(storage, dict)
+            else None
+        )
+        if isinstance(optical, dict) and optical.get("MediaName") == media_name:
+            matches.append(mapping)
+
+    if not matches:
+        raise HMCError(
+            f"Optical mapping for media {media_name!r} was not found on "
+            f"LPAR {lpar_name_or_uuid!r}"
+        )
+    if len(matches) > 1:
+        raise HMCError(
+            f"Optical mapping for media {media_name!r} on LPAR "
+            f"{lpar_name_or_uuid!r} is ambiguous"
+        )
+
+    mapping_uuid = matches[0].get("UUID")
+    if not isinstance(mapping_uuid, str) or not mapping_uuid.strip():
+        raise HMCError("VirtualSCSIMapping has an invalid UUID identity")
+    await hmc.delete_storage_mapping(vios_uuid, mapping_uuid)
