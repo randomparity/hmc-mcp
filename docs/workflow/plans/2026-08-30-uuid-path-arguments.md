@@ -55,7 +55,8 @@ Files: `src/hmc_mcp/client/client_storage.py`, `src/hmc_mcp/client/client_adapte
 fixture modules `tests/storage/test_mapping_inventory.py`, `test_media.py`,
 `test_media_inventory.py`, `test_media_operations.py`, `test_media_tools.py`,
 `test_safe_delete.py`, `test_storage_tools.py`, and `test_upload_iso.py`, plus the platform-update
-fixture module `tests/system/test_update_upgrade.py`.
+fixture module `tests/system/test_update_upgrade.py` and the body-only compatibility fixture in
+`tests/storage/test_optical_inventory.py`.
 
 Interfaces:
 
