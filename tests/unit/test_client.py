@@ -1112,12 +1112,12 @@ async def test_map_storage_to_lpar(mock_hmc):
     )
     async with HMCClient(make_config()) as hmc:
         await hmc.map_storage_to_lpar(
-            "11111111-1111-1111-1111-111111111111", "VirtualDisk", "lv_boot", "33333333-3333-3333-3333-333333333333"
+            "11111111-1111-1111-1111-111111111111", "VirtualDisk", "lv_boot", "lpar-uuid"
         )
     body = route.calls.last.request.content.decode()
     assert "VirtualSCSIMapping" in body
     assert "lv_boot" in body
-    assert "LogicalPartition/33333333-3333-3333-3333-333333333333" in body
+    assert "LogicalPartition/lpar-uuid" in body
 
 
 JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1485,7 +1485,7 @@ JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </entry>
 """
 
-_JOB_HREF = "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/do/PowerOn/Job/job-uuid-999"
+_JOB_HREF = "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/job-uuid-999"
 
 
 @pytest.mark.asyncio
