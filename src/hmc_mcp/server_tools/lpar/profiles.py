@@ -86,8 +86,8 @@ def hmc_restore_lpar_profiles(
     system_name_or_uuid: str,
     file_path: str,
     system_wide_restore_approved: bool = False,
-    ownership_override: bool = False,
     profile: str | None = None,
+    ownership_override: bool = False,
 ) -> str:
     """Restore LPAR profiles from a backup file via the HMC CLI.
 
@@ -113,9 +113,9 @@ def hmc_restore_lpar_profiles(
         file_path: Path on the HMC filesystem where the backup file is located.
         system_wide_restore_approved: Explicit operator approval to overwrite every
             LPAR profile on the selected managed system.
+        profile: optional TOML profile name; when omitted the env-default HMC is used.
         ownership_override: Bypass current and opaque-backup ownership rejection after
             operator approval; emits an audit record covering every profile.
-        profile: optional TOML profile name; when omitted the env-default HMC is used.
 
     Returns:
         The raw HMC CLI output."""

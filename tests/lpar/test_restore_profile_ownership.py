@@ -173,3 +173,29 @@ def test_tool_delegates_restore_and_override_through_managed_client(monkeypatch)
         "/tmp/profiles.bak",
         ownership_override=True,
     )
+
+
+def test_existing_positional_profile_cannot_become_ownership_override(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    hmc = _hmc()
+    restore = AsyncMock(return_value="restored")
+
+    def run(fn, *, profile=None):
+        captured["profile"] = profile
+        return asyncio.run(fn(hmc))
+
+    monkeypatch.setattr(server_profiles, "with_client", run)
+    monkeypatch.setattr(server_profiles, "restore_system_lpar_profiles", restore)
+
+    result = server_profiles.hmc_restore_lpar_profiles(
+        SYSTEM_UUID, "/tmp/profiles.bak", True, "lab"
+    )
+
+    assert result == "restored"
+    assert captured["profile"] == "lab"
+    restore.assert_awaited_once_with(
+        hmc,
+        SYSTEM_UUID,
+        "/tmp/profiles.bak",
+        ownership_override=False,
+    )
