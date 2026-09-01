@@ -11,6 +11,7 @@ from hmc_mcp.ssh.network import (
     list_sriov_physical_port_rows,
     unassign_sriov_logical_port_profile,
 )
+from hmc_mcp.ssh.transport import HMCCLIError
 
 
 def _config():
@@ -75,7 +76,9 @@ async def test_physical_port_selects_the_sole_populated_level(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("adapter_id", ["0", "-1", "null", "unavailable"])
+@pytest.mark.parametrize(
+    "adapter_id", ["0", "-1", "null", "unavailable", "\u0661", "\uff11"]
+)
 async def test_physical_port_rejects_invalid_adapter_ids_without_ssh(
     monkeypatch, adapter_id
 ):
@@ -86,6 +89,40 @@ async def test_physical_port_rejects_invalid_adapter_ids_without_ssh(
         await list_sriov_physical_port_rows(_config(), "sys", adapter_id)
 
     run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_physical_port_propagates_first_command_error_without_second_read(monkeypatch):
+    error = HMCCLIError("RoCE read refused")
+    run = AsyncMock(side_effect=error)
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+
+    with pytest.raises(HMCCLIError, match="RoCE read refused") as caught:
+        await list_sriov_physical_port_rows(_config(), "sys", "1")
+
+    assert caught.value is error
+    assert run.await_count == 1
+    assert "--level roce" in run.await_args_list[0].args[1]
+
+
+@pytest.mark.asyncio
+async def test_physical_port_propagates_second_command_error_before_parsing(monkeypatch):
+    error = HMCCLIError("ethc read refused")
+    run = AsyncMock(side_effect=["wrong,header\n1,2\n", error])
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+
+    with pytest.raises(HMCCLIError, match="ethc read refused") as caught:
+        await list_sriov_physical_port_rows(_config(), "sys", "1")
+
+    assert caught.value is error
+    assert run.await_count == 2
+    assert [
+        "--level roce" in run.await_args_list[0].args[1],
+        "--level ethc" in run.await_args_list[1].args[1],
+    ] == [
+        True,
+        True,
+    ]
 
 
 @pytest.mark.asyncio

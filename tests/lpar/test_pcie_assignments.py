@@ -1,6 +1,7 @@
 """Declarative PCIe assignment workflow tests."""
 
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -15,7 +16,14 @@ from hmc_mcp.operations.lpar.assignments import (
     apply_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
-from hmc_mcp.operations.pcie import PcieAssignmentUnavailableError
+from hmc_mcp.config import HMCConfig
+from hmc_mcp.operations.pcie import (
+    InventoryResult,
+    InventorySelector,
+    PcieAssignmentUnavailableError,
+    SriovAdapter,
+    list_sriov_physical_ports,
+)
 from hmc_mcp.operations.vnic import VnicBackingSelector
 
 
@@ -29,6 +37,59 @@ def _vnic() -> VnicAssignment:
     return VnicAssignment(
         VnicBackingSelector("vios-a", "100", "1", "1", Decimal("3")), 42
     )
+
+
+def _physical_row(state: str) -> dict[str, str]:
+    return {
+        "adapter_id": "1",
+        "phys_port_id": "1",
+        "phys_port_type": "eth",
+        "phys_port_loc": "U-T1",
+        "state": state,
+        "config_logical_ports": "0",
+        "phys_port_max_logical_ports": "60",
+        "curr_eth_logical_ports": "0",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("state", "availability"), [("1", "up"), ("0", "down")])
+async def test_prevalidation_uses_normalized_physical_port_availability(
+    state: str, availability: str
+) -> None:
+    config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
+    rows = AsyncMock(return_value=[_physical_row(state)])
+    adapter = InventoryResult(
+        "sriov_adapter",
+        "available",
+        "sys",
+        InventorySelector("1"),
+        [SriovAdapter("sys", "1", "sriov", "1", None, None, None, None)],
+        None,
+    )
+    logical = InventoryResult(
+        "sriov_logical_port", "available", "sys", InventorySelector("1", "1"), [], None
+    )
+    with (
+        patch("hmc_mcp.operations.pcie._system_name", AsyncMock(return_value="sys")),
+        patch("hmc_mcp.operations.pcie.require_admitted_environment", AsyncMock()),
+        patch("hmc_mcp.operations.pcie.list_sriov_physical_port_rows", rows),
+        patch("hmc_mcp.operations.lpar.assignments.list_sriov_adapters", AsyncMock(return_value=adapter)),
+        patch("hmc_mcp.operations.lpar.assignments.list_sriov_logical_ports", AsyncMock(return_value=logical)),
+        patch("hmc_mcp.operations.lpar.assignments._existing_capacity", AsyncMock(return_value=Decimal())),
+    ):
+        ports = await list_sriov_physical_ports(config, "sys", "1", "1")
+        assert ports.items[0].availability == availability
+        assignments = LparPcieAssignments(sriov=(_sriov(),))
+        if availability == "up":
+            await prevalidate_lpar_pcie_assignments(
+                SimpleNamespace(config=config), "sys", assignments
+            )
+        else:
+            with pytest.raises(ValueError, match="physical port.*not healthy"):
+                await prevalidate_lpar_pcie_assignments(
+                    SimpleNamespace(config=config), "sys", assignments
+                )
 
 
 def test_request_analysis_returns_capacity_and_unique_vios_requirements() -> None:

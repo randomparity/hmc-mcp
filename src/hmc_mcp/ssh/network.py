@@ -145,7 +145,7 @@ async def list_sriov_physical_port_rows(
         f"--level ethc --filter {shlex.quote(build_filter([('adapter_ids', adapter_id)]))} "
         f"-F {','.join(fields)} --header"
     )
-    if not adapter_id.isdecimal() or int(adapter_id) <= 0:
+    if not adapter_id.isascii() or not adapter_id.isdecimal() or int(adapter_id) <= 0:
         raise ValueError(
             f"adapter_id must be a positive decimal ID, got {adapter_id!r}"
         )

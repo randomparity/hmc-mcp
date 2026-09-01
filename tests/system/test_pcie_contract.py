@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import hashlib
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -141,6 +142,21 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
     assert rows == parse_hmc_delimited_rows(roce_probe["stdout"], roce_probe["fields"])
     assert {row["phys_port_type"] for row in rows} == {"eth"}
     assert run.await_count == 2
+    assert [call.args[1] for call in run.await_args_list] == [
+        "lshwres -r sriov --rsubtype physport -m system-a --level roce "
+        "--filter adapter_ids=1 -F "
+        "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,"
+        "config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header",
+        "lshwres -r sriov --rsubtype physport -m system-a --level ethc "
+        "--filter adapter_ids=1 -F "
+        "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,"
+        "config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header",
+    ]
+    fixture_sha256 = "8c13d5e53c44183a0ade3e26f654aab24593d5f84945902f758186cfee74f597"  # pragma: allowlist secret -- pinned fixture checksum
+    fixture_bytes = (FIXTURES / "power9-v10r3m1060-live-sriov.json").read_bytes()
+    assert hashlib.sha256(fixture_bytes).hexdigest() == fixture_sha256
+    with pytest.raises(AssertionError):
+        assert hashlib.sha256(fixture_bytes + b"perturbed").hexdigest() == fixture_sha256
 
 
 def test_evidence_records_have_closed_versioned_shapes() -> None:
