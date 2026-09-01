@@ -1,4 +1,4 @@
-# ADR 0112: SR-IOV physical-port level selection
+# ADR 0113: SR-IOV physical-port level selection
 
 ## Status
 
@@ -39,7 +39,7 @@ mutation matrix, or captured fixture.
 ## Consequences
 
 Physical-port state inventory works for the two evidence-supported adapter-type
-levels without weakening the version/model boundary. Each read performs two
+levels while retaining the exact version/model admission pair. Each read performs two
 read-only commands so unexpected dual-level output can fail closed. Operators
 get an explicit failure for an invalid adapter selector, unsupported or
 ambiguous adapter type, mismatched adapter identity/type, or unknown state.
@@ -57,7 +57,7 @@ ambiguous adapter type, mismatched adapter identity/type, or unknown state.
   both admitted levels does not distinguish an empty adapter from an unsupported
   type such as plain `eth`.
 - **Remove the family admission check because the read is non-mutating.**
-  judgment: the new evidence supports the existing floor but #557 does not ask
+  judgment: the new evidence supports the existing pair but #557 does not ask
   to redesign the shared capability boundary.
 - **Probe non-positive or symbolic adapter IDs.** verified: issue #573 records
   exit 1 and the HMC invalid-filter diagnostic for `null` and `unavailable`, so

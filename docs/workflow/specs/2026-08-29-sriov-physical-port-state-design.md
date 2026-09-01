@@ -1,7 +1,7 @@
 # SR-IOV physical-port state design
 
 Issue: [#557](https://github.com/randomparity/hmc-mcp/issues/557)  
-Decision: [ADR 0112](../../adr/0112-sriov-physical-port-level-selection.md)
+Decision: [ADR 0113](../../adr/0113-sriov-physical-port-level-selection.md)
 
 ## Scope and outcome
 
@@ -25,8 +25,10 @@ ambiguous. Every accepted row must repeat the requested adapter ID and carry a
 
 `operations.pcie.list_sriov_physical_ports` retains its existing environment
 admission call. It maps state `1` to `up` and `0` to `down` in the existing
-`availability` field. Blank or any other state raises `ValueError`; it is not an
-unknown availability value.
+`availability` field before applying the optional physical-port selector. Blank
+or any other state in any returned row raises `ValueError`, including a malformed
+sibling row that the selector would otherwise omit; it is not an unknown
+availability value.
 
 The captured POWER9 JSON stays byte-for-byte unchanged. Tests load its exact
 command/projection/output contract and supply the companion `ethc` empty result

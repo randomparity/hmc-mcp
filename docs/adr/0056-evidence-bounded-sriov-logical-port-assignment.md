@@ -5,7 +5,7 @@
 Accepted on 2026-08-20. Supersedes ADR 0053 only for the POWER9/HMC V10R3 M1060 SR-IOV
 read projections and mutation cells recorded here.
 
-> **Superseded by [0112](0112-sriov-physical-port-level-selection.md)** (2026-09-01)
+> **Superseded by [0113](0113-sriov-physical-port-level-selection.md)** (2026-09-01)
 > only for physical-port read level selection.
 
 ## Context

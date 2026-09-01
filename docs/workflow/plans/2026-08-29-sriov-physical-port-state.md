@@ -14,8 +14,8 @@ production functions, focused SSH/system tests, and three contract documents.
 
 ## Global constraints
 
-- Preserve HMC V10R3 M1060 and managed-system model 8375-42A as the minimum
-  admitted environment; do not add a dependency or migration.
+- Preserve HMC V10R3 M1060 and managed-system model 8375-42A as the exact
+  admitted environment pair; do not add a dependency or migration.
 - Query only literal `roce` and `ethc` levels with the existing projection and
   adapter filter; the captured POWER9 JSON remains byte-for-byte unchanged.
 - Require a positive decimal adapter ID, exactly one non-empty level, matching
@@ -32,7 +32,7 @@ production functions, focused SSH/system tests, and three contract documents.
 - `tests/unit/test_sriov_ssh_contract.py`: selector, command, and row failures.
 - `tests/system/test_normalized_pcie_inventory.py`: state and admission behavior.
 - `tests/fixtures/pcie/power9-v10r3m1060-live-sriov.json`: read-only evidence.
-- `docs/hmc-cli-cheatsheet.md`, ADR 0056, ADR 0112, and `CHANGELOG.md`: contracts.
+- `docs/hmc-cli-cheatsheet.md`, ADR 0056, ADR 0113, and `CHANGELOG.md`: contracts.
 
 ## Task 1: validate and select the physical-port level
 
@@ -74,17 +74,21 @@ Interfaces:
 
 1. Extend `tests/system/test_normalized_pcie_inventory.py` with rows containing
    state `1` and `0`; assert availability `up` and `down`.
-2. Add a malformed-state test for blank and `2`, and retain the current test
+2. Add malformed-state tests for blank and `2`. Include a red-first case where
+   a requested valid port has state `1` but an unselected sibling row has state
+   `2`; require the entire call to raise `ValueError`. Retain the current test
    proving an unadmitted environment performs no physical-port read.
 3. Run `uv run --no-sync pytest -q --no-cov
    tests/system/test_normalized_pcie_inventory.py`; expect the mapping assertion
    to fail because raw state is currently exposed.
-4. Add a local two-value state map at the operation boundary and raise
-   `ValueError` naming the malformed physical-port state otherwise.
+4. Validate and normalize every returned row with a local two-value state map
+   before applying `physical_port_id` filtering. Raise `ValueError` naming the
+   malformed physical-port state otherwise.
 5. Re-run the focused command; expect all tests to pass, then commit.
 
-Acceptance: public inventory exposes only `up`/`down`; invalid state fails; the
-existing capability-unavailable path remains before physical-port reads.
+Acceptance: public inventory exposes only `up`/`down`; invalid state in any
+returned row fails even when that row is not selected; the existing
+capability-unavailable path remains before physical-port reads.
 
 ## Task 3: preserve and publish the evidence-backed contract
 
