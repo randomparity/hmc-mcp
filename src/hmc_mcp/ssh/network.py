@@ -149,12 +149,10 @@ async def list_sriov_physical_port_rows(
         raise ValueError(
             f"adapter_id must be a positive decimal ID, got {adapter_id!r}"
         )
-    roce_rows = _parse_admitted_rows(
-        await run_hmc_command(config, roce_command), fields
-    )
-    ethc_rows = _parse_admitted_rows(
-        await run_hmc_command(config, ethc_command), fields
-    )
+    roce_output = await run_hmc_command(config, roce_command)
+    ethc_output = await run_hmc_command(config, ethc_command)
+    roce_rows = _parse_admitted_rows(roce_output, fields)
+    ethc_rows = _parse_admitted_rows(ethc_output, fields)
     if roce_rows and ethc_rows:
         raise ValueError("physical port query returned both roce and ethc rows")
     rows = roce_rows or ethc_rows

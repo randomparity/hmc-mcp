@@ -121,6 +121,27 @@ async def test_physical_port_returns_empty_when_both_levels_are_empty(monkeypatc
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("roce_output", "ethc_output"),
+    [
+        ("wrong,header\n1,2\n", "No results were found."),
+        ("No results were found.", "wrong,header\n1,2\n"),
+    ],
+    ids=("malformed-roce", "malformed-ethc"),
+)
+async def test_physical_port_reads_both_levels_before_rejecting_malformed_output(
+    monkeypatch, roce_output, ethc_output
+):
+    run = AsyncMock(side_effect=[roce_output, ethc_output])
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+
+    with pytest.raises(ValueError, match="header does not match"):
+        await list_sriov_physical_port_rows(_config(), "sys", "1")
+
+    assert run.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_exact_sriov_read_and_mutation_commands(monkeypatch):
     run = AsyncMock(
         side_effect=[
