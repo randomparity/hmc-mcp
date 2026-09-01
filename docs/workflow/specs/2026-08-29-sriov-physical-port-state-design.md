@@ -17,8 +17,12 @@ evidence. No migration or adapter mutation is in scope.
 ## Design
 
 `ssh.network.list_sriov_physical_port_rows` validates that `adapter_id` is a
-positive decimal integer before issuing commands. It then runs the same
+non-empty sequence of ASCII digits whose numeric value is greater than zero
+before issuing commands. It then runs the same
 projected, adapter-filtered read at both `--level roce` and `--level ethc`.
+Both commands complete before either successful output is parsed, so malformed
+output still follows the fixed paired-read contract; an `HMCCLIError` stops at
+the command that failed.
 Exactly one level must return rows. Both empty is unsupported; both non-empty is
 ambiguous. Every accepted row must repeat the requested adapter ID.
 `phys_port_type` remains opaque returned HMC data because the captured `roce`
@@ -47,7 +51,7 @@ without modifying captured evidence.
 - Zero rows at both levels raises `SriovLogicalPortCapabilityError` from the
   physical-port inventory operation rather than returning available-empty.
 - Rows at both levels fail as ambiguous.
-- A non-positive adapter ID, mismatched adapter ID, or state outside
+- A non-ASCII, empty, or non-positive adapter ID; mismatched adapter ID; or state outside
   `0`/`1` fails as malformed.
 - Existing version/model rejection still returns capability-unavailable before
   either physical-port command runs.
@@ -59,7 +63,7 @@ The change widens one existing SSH command boundary by adding a second allowed
 literal level. The local operator controls `system_name` and `adapter_id`; the
 authenticated HMC controls stdout. Existing `shlex.quote` encodes the system
 name and `build_filter` plus `shlex.quote` encodes the adapter filter. A
-positive-decimal check bounds the adapter selector before either command. CSV
+ASCII-positive-decimal check bounds the adapter selector before either command. CSV
 shape checks, exact adapter matching, one-nonempty-level cardinality, and
 the two-value state map control HMC output. Failures expose only actionable
 operation context, not credentials. No entry point, authorization decision,
@@ -70,7 +74,7 @@ operation layers own those controls.
 ## Verification
 
 Focused tests prove: `roce` and `ethc` selection, both empty, both non-empty,
-invalid adapter IDs, mismatched adapter identity, state up/down mapping,
+invalid adapter IDs, both-reads-before-parsing malformed output, mismatched adapter identity, state up/down mapping,
 malformed state, unchanged environment rejection, and the existing captured
 fixture contract. Cross-operation coverage proves declarative assignment accepts
 normalized `up`; SSH tests reject non-ASCII decimal selectors without a command;

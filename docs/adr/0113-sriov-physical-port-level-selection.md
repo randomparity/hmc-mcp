@@ -24,7 +24,8 @@ level is not evidence that the adapter has no physical ports.
 ## Decision
 
 For an environment already admitted by ADR 0056, require the requested adapter
-ID to be a positive decimal integer, then query the exact physical-port
+ID to be a non-empty sequence of ASCII digits whose numeric value is greater
+than zero, then query the exact physical-port
 projection at both `roce` and `ethc`. Accept the one non-empty result. If both
 are empty, preserve an empty row result for existing internal consumers and
 have physical-port inventory raise `SriovLogicalPortCapabilityError`; if both

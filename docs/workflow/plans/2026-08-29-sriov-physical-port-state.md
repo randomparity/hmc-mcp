@@ -18,7 +18,8 @@ production functions, focused SSH/system/cross-operation tests, and three contra
   admitted environment pair; do not add a dependency or migration.
 - Query only literal `roce` and `ethc` levels with the existing projection and
   adapter filter; the captured POWER9 JSON remains byte-for-byte unchanged.
-- Require a positive decimal adapter ID, exactly one non-empty level, matching
+- Require a non-empty sequence of ASCII digits whose numeric value is greater
+  than zero for the adapter ID, exactly one non-empty level, matching
   row adapter values, and state values limited to `0` and `1`. Preserve
   `phys_port_type` as opaque HMC data; it does not equal the query level in the
   captured RoCE fixture.
@@ -57,10 +58,13 @@ Interfaces:
    both-empty test that asserts the SSH boundary returns an empty list for its
    existing internal consumers. Include a RoCE row whose `phys_port_type` is
    `eth` and assert it remains accepted, matching the captured fixture.
-4. Implement the minimum validation and two-command selection in
+4. Add red-first parameterized malformed-output cases for `roce` and `ethc`.
+   Assert both commands were awaited in fixed `roce`, then `ethc` order before
+   parsing rejects either output; an `HMCCLIError` may stop at its failed command.
+5. Implement the minimum validation and two-command selection in
    `list_sriov_physical_port_rows`. Keep command construction in that function
-   and use the existing parser for each result.
-5. Re-run the focused command; expect all tests to pass. Temporarily change one
+   and retain both successful outputs before using the existing parser.
+6. Re-run the focused command; expect all tests to pass. Temporarily change one
    accepted level in a test fixture to the opposite value, confirm that test
    fails, restore it, then commit with conventional test/fix history.
 
@@ -142,11 +146,14 @@ Interfaces:
 3. Change only the physical-port comparison in
    `src/hmc_mcp/operations/lpar/assignments.py` to require `up`; rerun the
    focused test and expect green.
-4. Parameterize invalid adapter-ID tests with Arabic-Indic and full-width digits,
-   assert zero SSH reads, and require ASCII decimal digits in the SSH guard.
+4. Parameterize invalid adapter-ID tests with Arabic-Indic and full-width digits
+   and assert zero SSH reads. Run the focused SSH tests and observe them fail,
+   then require ASCII decimal digits in the guard and rerun green.
 5. In the captured-fixture regression, assert the first mocked command equals
    the fixture's exact RoCE command and the second equals the corresponding
-   literal `ethc` companion command. Keep fixture bytes unchanged.
+   literal `ethc` companion command. Prove the assertion bites by temporarily
+   perturbing one expected command token, observing the regression fail, then
+   restore it and rerun green. Keep fixture bytes unchanged.
 6. Run the affected focused suites, `just verify`, and
    `UV_NO_SYNC=1 uv run --no-sync prek run --all-files`; expect exit 0, then
    commit the review fixes as one compatibility slice.
