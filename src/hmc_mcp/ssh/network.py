@@ -135,8 +135,30 @@ async def list_sriov_physical_port_rows(
         "phys_port_max_logical_ports",
         "curr_eth_logical_ports",
     )
-    command = f"lshwres -r sriov --rsubtype physport -m {shlex.quote(system_name)} --level roce --filter {shlex.quote(build_filter([('adapter_ids', adapter_id)]))} -F {','.join(fields)} --header"
-    return _parse_admitted_rows(await run_hmc_command(config, command), fields)
+    roce_command = (
+        f"lshwres -r sriov --rsubtype physport -m {shlex.quote(system_name)} "
+        f"--level roce --filter {shlex.quote(build_filter([('adapter_ids', adapter_id)]))} "
+        f"-F {','.join(fields)} --header"
+    )
+    ethc_command = (
+        f"lshwres -r sriov --rsubtype physport -m {shlex.quote(system_name)} "
+        f"--level ethc --filter {shlex.quote(build_filter([('adapter_ids', adapter_id)]))} "
+        f"-F {','.join(fields)} --header"
+    )
+    if not adapter_id.isascii() or not adapter_id.isdecimal() or int(adapter_id) <= 0:
+        raise ValueError(
+            f"adapter_id must be a positive decimal ID, got {adapter_id!r}"
+        )
+    roce_output = await run_hmc_command(config, roce_command)
+    ethc_output = await run_hmc_command(config, ethc_command)
+    roce_rows = _parse_admitted_rows(roce_output, fields)
+    ethc_rows = _parse_admitted_rows(ethc_output, fields)
+    if roce_rows and ethc_rows:
+        raise ValueError("physical port query returned both roce and ethc rows")
+    rows = roce_rows or ethc_rows
+    if any(row["adapter_id"] != adapter_id for row in rows):
+        raise ValueError(f"physical port row adapter_id does not match {adapter_id!r}")
+    return rows
 
 
 _SRIOV_LOGICAL_FIELDS = (

@@ -227,7 +227,7 @@ async def _validate_sriov_inventory(
             raise ValueError(
                 f"SR-IOV physical port {adapter}/{physical} is unavailable"
             )
-        if ports.items[0].availability != "1":
+        if ports.items[0].availability != "up":
             raise ValueError(
                 f"SR-IOV physical port {adapter}/{physical} is not healthy"
             )

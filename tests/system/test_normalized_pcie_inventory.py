@@ -8,6 +8,7 @@ import pytest
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.pcie import (
+    SriovLogicalPortCapabilityError,
     list_dedicated_slots,
     list_sriov_adapters,
     list_sriov_logical_ports,
@@ -231,6 +232,144 @@ async def test_sriov_inventories_use_admitted_read_projections() -> None:
     assert adapter.selector.adapter_id == "a1"
     assert physical.selector.physical_port_id == "p2"
     assert logical.selector.logical_port_id == "l3"
+
+
+@pytest.mark.asyncio
+async def test_sriov_physical_inventory_normalizes_port_state() -> None:
+    rows = [
+        {
+            "adapter_id": "a1",
+            "phys_port_id": "p1",
+            "state": "1",
+            "phys_port_loc": "U1-T1",
+        },
+        {
+            "adapter_id": "a1",
+            "phys_port_id": "p2",
+            "state": "0",
+            "phys_port_loc": "U1-T2",
+        },
+    ]
+    with (
+        patch(
+            "hmc_mcp.operations.pcie.resolve_ssh_names",
+            AsyncMock(return_value=("sys1", None)),
+        ),
+        patch(
+            "hmc_mcp.operations.pcie.read_sriov_environment",
+            AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
+        ),
+        patch(
+            "hmc_mcp.operations.pcie.list_sriov_physical_port_rows",
+            AsyncMock(return_value=rows),
+        ),
+    ):
+        result = await list_sriov_physical_ports(_config(), "system-uuid", "a1")
+
+    assert [port.availability for port in result.items] == ["up", "down"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["", "2"])
+async def test_sriov_physical_inventory_rejects_malformed_port_state(state: str) -> None:
+    rows = [
+        {
+            "adapter_id": "a1",
+            "phys_port_id": "p1",
+            "state": state,
+            "phys_port_loc": "U1-T1",
+        }
+    ]
+    with (
+        patch(
+            "hmc_mcp.operations.pcie.resolve_ssh_names",
+            AsyncMock(return_value=("sys1", None)),
+        ),
+        patch(
+            "hmc_mcp.operations.pcie.read_sriov_environment",
+            AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
+        ),
+        patch(
+            "hmc_mcp.operations.pcie.list_sriov_physical_port_rows",
+            AsyncMock(return_value=rows),
+        ),
+        pytest.raises(ValueError, match="physical-port state"),
+    ):
+        await list_sriov_physical_ports(_config(), "system-uuid", "a1")
+
+
+@pytest.mark.asyncio
+async def test_sriov_physical_inventory_validates_unselected_port_state() -> None:
+    rows = [
+        {
+            "adapter_id": "a1",
+            "phys_port_id": "p1",
+            "state": "1",
+            "phys_port_loc": "U1-T1",
+        },
+        {
+            "adapter_id": "a1",
+            "phys_port_id": "p2",
+            "state": "2",
+            "phys_port_loc": "U1-T2",
+        },
+    ]
+    with (
+        patch(
+            "hmc_mcp.operations.pcie.resolve_ssh_names",
+            AsyncMock(return_value=("sys1", None)),
+        ),
+        patch(
+            "hmc_mcp.operations.pcie.read_sriov_environment",
+            AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
+        ),
+        patch(
+            "hmc_mcp.operations.pcie.list_sriov_physical_port_rows",
+            AsyncMock(return_value=rows),
+        ),
+        pytest.raises(ValueError, match="physical-port state"),
+    ):
+        await list_sriov_physical_ports(_config(), "system-uuid", "a1", "p1")
+
+
+@pytest.mark.asyncio
+async def test_sriov_physical_inventory_rejects_both_empty_supported_levels() -> None:
+    with (
+        patch(
+            "hmc_mcp.operations.pcie.resolve_ssh_names",
+            AsyncMock(return_value=("sys1", None)),
+        ),
+        patch(
+            "hmc_mcp.operations.pcie.read_sriov_environment",
+            AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
+        ),
+        patch(
+            "hmc_mcp.operations.pcie.list_sriov_physical_port_rows",
+            AsyncMock(return_value=[]),
+        ),
+        pytest.raises(SriovLogicalPortCapabilityError),
+    ):
+        await list_sriov_physical_ports(_config(), "system-uuid", "a1")
+
+
+@pytest.mark.asyncio
+async def test_sriov_physical_inventory_checks_environment_before_port_read() -> None:
+    physical_rows = AsyncMock()
+    with (
+        patch(
+            "hmc_mcp.operations.pcie.resolve_ssh_names",
+            AsyncMock(return_value=("sys1", None)),
+        ),
+        patch(
+            "hmc_mcp.operations.pcie.read_sriov_environment",
+            AsyncMock(return_value=("V9R1", "8375-42A")),
+        ),
+        patch("hmc_mcp.operations.pcie.list_sriov_physical_port_rows", physical_rows),
+    ):
+        result = await list_sriov_physical_ports(_config(), "system-uuid", "a1")
+
+    assert result.capability == "capability-unavailable"
+    physical_rows.assert_not_awaited()
 
 
 @pytest.mark.asyncio
