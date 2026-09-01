@@ -1,0 +1,184 @@
+{
+  "record_kind": "live-capture",
+  "evidence_kind": "sanitized-cross-system-survey",
+  "source_url": "https://github.com/randomparity/hmc-mcp/issues/573#issuecomment-5496542657",
+  "survey_scope": {
+    "hmc_profiles": 6,
+    "managed_systems_approximate": 68,
+    "machine_types": [
+      {"model": "8375-42A", "ethc": true, "roce": true},
+      {"model": "9009-42G", "ethc": false, "roce": true},
+      {"model": "9009-42A", "ethc": true, "roce": false},
+      {"model": "9009-22G", "ethc": false, "roce": true},
+      {"model": "9040-MR9", "ethc": false, "roce": true},
+      {"model": "9043-MRX", "ethc": false, "roce": true},
+      {"model": "9043-MRU", "ethc": false, "roce": false},
+      {"model": "9080-HEU", "ethc": false, "roce": true},
+      {"model": "9080-HEX", "ethc": false, "roce": true},
+      {"model": "9080-M9S", "ethc": false, "roce": true},
+      {"model": "9105-22A", "ethc": false, "roce": true},
+      {"model": "9119-MHE", "ethc": true, "roce": false},
+      {"model": "9028-21B", "ethc": false, "roce": true}
+    ],
+    "hmc_releases": [
+      {
+        "release": "V10R3 M1060",
+        "build": "2408210051"
+      },
+      {
+        "release": "V11R2 SP1120",
+        "build": "2607082225"
+      }
+    ]
+  },
+  "fields": [
+    "adapter_id",
+    "phys_port_id",
+    "phys_port_type",
+    "phys_port_loc",
+    "state",
+    "config_logical_ports",
+    "phys_port_max_logical_ports",
+    "curr_eth_logical_ports"
+  ],
+  "selection_cases": [
+    {
+      "name": "v10r3-m1060-roce-down-state",
+      "hmc_release": "V10R3 M1060",
+      "hmc_build": "2408210051",
+      "system_model": "8375-42A",
+      "adapter_id": "1",
+      "distinguishing_characteristic": "The same 8375-42A model was observed with either adapter class, so the installed card rather than the model determines the level.",
+      "roce": {
+        "exit_status": 0,
+        "stdout": "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports\n1,0,roce,<REDACTED-LOC>-T1,0,0,40,0\n1,1,roce,<REDACTED-LOC>-T2,0,1,40,1\n",
+        "stderr": ""
+      },
+      "ethc": {
+        "exit_status": 0,
+        "stdout": "No results were found.\n",
+        "stderr": ""
+      },
+      "expected_rows": [
+        {
+          "adapter_id": "1",
+          "phys_port_id": "0",
+          "phys_port_type": "roce",
+          "phys_port_loc": "<REDACTED-LOC>-T1",
+          "state": "0",
+          "config_logical_ports": "0",
+          "phys_port_max_logical_ports": "40",
+          "curr_eth_logical_ports": "0"
+        },
+        {
+          "adapter_id": "1",
+          "phys_port_id": "1",
+          "phys_port_type": "roce",
+          "phys_port_loc": "<REDACTED-LOC>-T2",
+          "state": "0",
+          "config_logical_ports": "1",
+          "phys_port_max_logical_ports": "40",
+          "curr_eth_logical_ports": "1"
+        }
+      ]
+    },
+    {
+      "name": "v11r2-ethc-mixed-state",
+      "hmc_release": "V11R2",
+      "hmc_build": "not captured for this system",
+      "system_model": "8375-42A",
+      "adapter_id": "2",
+      "distinguishing_characteristic": "Four ethc ports were returned, including both observed state values.",
+      "roce": {
+        "exit_status": 0,
+        "stdout": "No results were found.\n",
+        "stderr": ""
+      },
+      "ethc": {
+        "exit_status": 0,
+        "stdout": "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports\n2,0,ethc,<REDACTED-LOC>-T1,1,2,16,2\n2,1,ethc,<REDACTED-LOC>-T2,0,0,16,0\n2,2,ethc,<REDACTED-LOC>-T3,0,0,16,0\n2,3,ethc,<REDACTED-LOC>-T4,0,0,16,0\n",
+        "stderr": ""
+      },
+      "expected_rows": [
+        {
+          "adapter_id": "2",
+          "phys_port_id": "0",
+          "phys_port_type": "ethc",
+          "phys_port_loc": "<REDACTED-LOC>-T1",
+          "state": "1",
+          "config_logical_ports": "2",
+          "phys_port_max_logical_ports": "16",
+          "curr_eth_logical_ports": "2"
+        },
+        {
+          "adapter_id": "2",
+          "phys_port_id": "1",
+          "phys_port_type": "ethc",
+          "phys_port_loc": "<REDACTED-LOC>-T2",
+          "state": "0",
+          "config_logical_ports": "0",
+          "phys_port_max_logical_ports": "16",
+          "curr_eth_logical_ports": "0"
+        },
+        {
+          "adapter_id": "2",
+          "phys_port_id": "2",
+          "phys_port_type": "ethc",
+          "phys_port_loc": "<REDACTED-LOC>-T3",
+          "state": "0",
+          "config_logical_ports": "0",
+          "phys_port_max_logical_ports": "16",
+          "curr_eth_logical_ports": "0"
+        },
+        {
+          "adapter_id": "2",
+          "phys_port_id": "3",
+          "phys_port_type": "ethc",
+          "phys_port_loc": "<REDACTED-LOC>-T4",
+          "state": "0",
+          "config_logical_ports": "0",
+          "phys_port_max_logical_ports": "16",
+          "curr_eth_logical_ports": "0"
+        }
+      ]
+    }
+  ],
+  "error_cases": [
+    {
+      "result_class": "malformed-filter",
+      "adapter_id": "null",
+      "hmc_releases": ["V10R3 M1060", "V11R2 SP1120"],
+      "exit_status": 1,
+      "stdout": "An invalid filter value was entered.  The filter pair with the invalid value is \"adapter_ids\".\nPlease correct the filter and retry the command.\n",
+      "stderr": ""
+    },
+    {
+      "result_class": "malformed-filter",
+      "adapter_id": "unavailable",
+      "hmc_releases": ["V10R3 M1060", "V11R2 SP1120"],
+      "exit_status": 1,
+      "stdout": "An invalid filter value was entered.  The filter pair with the invalid value is \"adapter_ids\".\n",
+      "stderr": ""
+    },
+    {
+      "result_class": "unsupported-system-state",
+      "adapter_id": "not applicable",
+      "hmc_releases": ["not captured for these systems"],
+      "exit_status": 1,
+      "stdout": "HSCL9010 This operation is only allowed when the managed system is in the Standby or Operating state.\n",
+      "stderr": ""
+    }
+  ],
+  "observations": {
+    "empty_result": "No results were found.",
+    "empty_result_exit_status": 0,
+    "state_values": {
+      "0": "down",
+      "1": "up"
+    },
+    "both_levels_returned_rows": false,
+    "ambiguity_observed": false,
+    "mutual_exclusion": "Every numeric adapter_id returned rows at exactly one level across the survey.",
+    "applicability": "The same selection behavior was observed on V10R3 M1060 and V11R2 SP1120 across the surveyed Power8, Power9, and Power10 machine types; no version or model exception was found."
+  }
+}

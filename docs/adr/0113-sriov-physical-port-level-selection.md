@@ -15,7 +15,8 @@ M1060 and V11R2 SP1120, and thirteen machine types. Every numeric adapter ID
 returned rows at exactly one of the two levels; the other level returned the
 literal empty-result sentinel at exit zero. Mixed live port states establish
 `1` as up and `0` as down. The evidence does not support the speed threshold
-suggested in #557.
+suggested in #557. The sanitized, version-labelled packet is retained in
+`tests/fixtures/sriov/sriov-physport-selection-v10r3-v11r2.json`.
 
 The adapter inventory admitted by ADR 0056 does not expose a type field that can
 select the level before the physical-port read. An empty result from one valid
