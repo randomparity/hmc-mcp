@@ -34,9 +34,10 @@ Require every returned row to belong to the requested adapter. Treat
 reports `eth`, so equality with the query level is not an evidenced invariant.
 
 Normalize the HMC `state` value in inventory: `1` becomes `up` and `0` becomes
-`down`. Any other value is malformed input and fails closed. Do not change the
-HMC release or managed-system model admission check, logical-port commands,
-mutation matrix, or captured fixture.
+`down`. Any other value is malformed input and fails closed. Existing
+declarative assignment prevalidation consumes normalized `up` rather than raw
+HMC `1`. Do not change the HMC release or managed-system model admission check,
+logical-port commands, mutation matrix, or captured fixture.
 
 ## Consequences
 
@@ -45,6 +46,8 @@ levels while retaining the exact version/model admission pair. Each read perform
 read-only commands so unexpected dual-level output can fail closed. Operators
 get an explicit failure for an invalid adapter selector, unsupported or
 ambiguous adapter type, mismatched adapter identity, or unknown state.
+Declarative SR-IOV and vNIC assignment retains its healthy-port preflight after
+the inventory representation changes.
 
 ## Considered & rejected
 

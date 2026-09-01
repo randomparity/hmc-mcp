@@ -9,8 +9,8 @@ retains environment admission and maps HMC state into the existing public
 inventory model. Python 3.11+, pytest, Ruff, ty, and the repository `just`
 recipes remain the stack.
 
-Expected implementation size: 110–180 changed lines (L) — derived from two
-production functions, focused SSH/system tests, and three contract documents.
+Expected implementation size: 140–220 changed lines (L) — derived from three
+production functions, focused SSH/system/cross-operation tests, and three contract documents.
 
 ## Global constraints
 
@@ -31,8 +31,10 @@ production functions, focused SSH/system tests, and three contract documents.
 
 - `src/hmc_mcp/ssh/network.py`: validate and query both physical-port levels.
 - `src/hmc_mcp/operations/pcie.py`: map `state` to availability.
+- `src/hmc_mcp/operations/lpar/assignments.py`: consume normalized port health.
 - `tests/unit/test_sriov_ssh_contract.py`: selector, command, and row failures.
 - `tests/system/test_normalized_pcie_inventory.py`: state and admission behavior.
+- `tests/lpar/test_pcie_assignments.py`: assignment compatibility with normalized state.
 - `tests/fixtures/pcie/power9-v10r3m1060-live-sriov.json`: read-only evidence.
 - `docs/hmc-cli-cheatsheet.md`, ADR 0056, ADR 0113, and `CHANGELOG.md`: contracts.
 
@@ -122,6 +124,37 @@ Acceptance: source, tests, ADRs, operator docs, and changelog state the same
 contract; the captured fixture is unchanged; all guardrails pass. Rollback is
 the task commits in reverse order and requires no external cleanup.
 
+## Task 4: close branch-review compatibility and boundary findings
+
+Interfaces:
+
+- Consume normalized `SriovPhysicalPort.availability` values `up` and `down` in
+  `_validate_sriov_inventory`; leave `SriovAdapter.availability` on its existing
+  raw `1` contract.
+- Preserve `list_sriov_physical_port_rows` and public operation signatures.
+
+1. Add a failing cross-operation test in `tests/lpar/test_pcie_assignments.py`
+   that drives assignment prevalidation with a real normalized healthy
+   physical-port result and proves `up` is accepted while `down` is rejected.
+2. Run `uv run --no-sync pytest -q --no-cov
+   tests/lpar/test_pcie_assignments.py`; expect the healthy case to fail because
+   prevalidation still compares with raw `1`.
+3. Change only the physical-port comparison in
+   `src/hmc_mcp/operations/lpar/assignments.py` to require `up`; rerun the
+   focused test and expect green.
+4. Parameterize invalid adapter-ID tests with Arabic-Indic and full-width digits,
+   assert zero SSH reads, and require ASCII decimal digits in the SSH guard.
+5. In the captured-fixture regression, assert the first mocked command equals
+   the fixture's exact RoCE command and the second equals the corresponding
+   literal `ethc` companion command. Keep fixture bytes unchanged.
+6. Run the affected focused suites, `just verify`, and
+   `UV_NO_SYNC=1 uv run --no-sync prek run --all-files`; expect exit 0, then
+   commit the review fixes as one compatibility slice.
+
+Acceptance: declarative assignment accepts normalized healthy ports and rejects
+down ports; Unicode decimal selectors run no SSH command; the fixture regression
+anchors both exact commands; all repository gates pass.
+
 ## Durable handoff
 
 - Branch: `feat/sriov-port-state-557`
@@ -129,3 +162,6 @@ the task commits in reverse order and requires no external cleanup.
 - Guardrails: focused pytest commands above, `just verify`, and
   `UV_NO_SYNC=1 uv run --no-sync prek run --all-files`.
 - Open findings and deferrals: none before design review.
+- Authorized scope expansion: `src/hmc_mcp/operations/lpar/assignments.py` and
+  `tests/lpar/test_pcie_assignments.py`, approved by the operator after branch
+  review reproduced the normalized-state compatibility regression.
