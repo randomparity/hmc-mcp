@@ -4,10 +4,13 @@ import ast
 import json
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.ssh.commands import parse_hmc_delimited_rows
+from hmc_mcp.ssh.network import list_sriov_physical_port_rows
 
 ROOT = Path(__file__).parents[2]
 FIXTURES = ROOT / "tests" / "fixtures" / "pcie"
@@ -111,6 +114,33 @@ def _evidence_records() -> list[dict[str, object]]:
     return [
         json.loads((FIXTURES / name).read_text()) for name in sorted(EXPECTED_FIXTURES)
     ]
+
+
+@pytest.mark.asyncio
+async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capture = next(
+        record
+        for record in _evidence_records()
+        if record["record_kind"] == "live-capture"
+        and record["system_model"] == "8375-42A"
+    )
+    roce_probe = next(
+        probe for probe in capture["probes"] if probe["name"] == "physical-ports"
+    )
+    run = AsyncMock(side_effect=[roce_probe["stdout"], "No results were found."])
+    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+
+    rows = await list_sriov_physical_port_rows(
+        HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"}),
+        "system-a",
+        "1",
+    )
+
+    assert rows == parse_hmc_delimited_rows(roce_probe["stdout"], roce_probe["fields"])
+    assert {row["phys_port_type"] for row in rows} == {"eth"}
+    assert run.await_count == 2
 
 
 def test_evidence_records_have_closed_versioned_shapes() -> None:

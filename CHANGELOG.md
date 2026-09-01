@@ -29,6 +29,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- SR-IOV physical-port inventory now queries both evidenced `roce` and `ethc`
+  levels, accepts exactly one non-empty result, and maps HMC states `1` and `0`
+  to `up` and `down` respectively (#557, ADR 0113).
 - `hmc_get_job` and `hmc_wait_for_job` now reject `job_href` values containing
   TAB, CR, or LF before any HMC read, so validated and echoed links have the
   same spelling (#537, ADR 0093).
