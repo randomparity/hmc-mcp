@@ -767,21 +767,28 @@ async def list_sriov_physical_ports(
     if adapter_id is None:
         raise ValueError("adapter_id is required for SR-IOV physical-port inventory")
     rows = await list_sriov_physical_port_rows(config, system_name, adapter_id)
-    items = [
-        SriovPhysicalPort(
-            system_name,
-            row["adapter_id"],
-            row["phys_port_id"],
-            row["state"],
-            row["phys_port_loc"],
-            None,
-            None,
-            None,
-            None,
-        )
-        for row in rows
-        if physical_port_id is None or row["phys_port_id"] == physical_port_id
-    ]
+    if not rows:
+        raise SriovLogicalPortCapabilityError("physical-port inventory is unavailable")
+    state_availability = {"1": "up", "0": "down"}
+    items: list[SriovPhysicalPort] = []
+    for row in rows:
+        availability = state_availability.get(row["state"])
+        if availability is None:
+            raise ValueError(f"malformed physical-port state: {row['state']!r}")
+        if physical_port_id is None or row["phys_port_id"] == physical_port_id:
+            items.append(
+                SriovPhysicalPort(
+                    system_name,
+                    row["adapter_id"],
+                    row["phys_port_id"],
+                    availability,
+                    row["phys_port_loc"],
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            )
     return InventoryResult(
         "sriov_physical_port", "available", system_name, selector, items, None
     )
