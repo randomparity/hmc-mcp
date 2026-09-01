@@ -50,9 +50,28 @@ def test_physical_port_evidence_preserves_live_verification_contract():
         {"release": "V10R3 M1060", "build": "2408210051"},
         {"release": "V11R2 SP1120", "build": "2607082225"},
     ]
-    assert {case["system_model"] for case in evidence["selection_cases"]} == {
-        "8375-42A"
-    }
+    assert evidence["survey_scope"]["machine_types"] == [
+        {"model": "8375-42A", "ethc": True, "roce": True},
+        {"model": "9009-42G", "ethc": False, "roce": True},
+        {"model": "9009-42A", "ethc": True, "roce": False},
+        {"model": "9009-22G", "ethc": False, "roce": True},
+        {"model": "9040-MR9", "ethc": False, "roce": True},
+        {"model": "9043-MRX", "ethc": False, "roce": True},
+        {"model": "9043-MRU", "ethc": False, "roce": False},
+        {"model": "9080-HEU", "ethc": False, "roce": True},
+        {"model": "9080-HEX", "ethc": False, "roce": True},
+        {"model": "9080-M9S", "ethc": False, "roce": True},
+        {"model": "9105-22A", "ethc": False, "roce": True},
+        {"model": "9119-MHE", "ethc": True, "roce": False},
+        {"model": "9028-21B", "ethc": False, "roce": True},
+    ]
+    assert [
+        (case["hmc_release"], case["hmc_build"], case["system_model"])
+        for case in evidence["selection_cases"]
+    ] == [
+        ("V10R3 M1060", "2408210051", "8375-42A"),
+        ("V11R2", "not captured for this system", "8375-42A"),
+    ]
     assert {
         (case["roce"]["exit_status"], case["ethc"]["exit_status"])
         for case in evidence["selection_cases"]

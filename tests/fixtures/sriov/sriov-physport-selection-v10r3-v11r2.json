@@ -5,7 +5,21 @@
   "survey_scope": {
     "hmc_profiles": 6,
     "managed_systems_approximate": 68,
-    "machine_types": 13,
+    "machine_types": [
+      {"model": "8375-42A", "ethc": true, "roce": true},
+      {"model": "9009-42G", "ethc": false, "roce": true},
+      {"model": "9009-42A", "ethc": true, "roce": false},
+      {"model": "9009-22G", "ethc": false, "roce": true},
+      {"model": "9040-MR9", "ethc": false, "roce": true},
+      {"model": "9043-MRX", "ethc": false, "roce": true},
+      {"model": "9043-MRU", "ethc": false, "roce": false},
+      {"model": "9080-HEU", "ethc": false, "roce": true},
+      {"model": "9080-HEX", "ethc": false, "roce": true},
+      {"model": "9080-M9S", "ethc": false, "roce": true},
+      {"model": "9105-22A", "ethc": false, "roce": true},
+      {"model": "9119-MHE", "ethc": true, "roce": false},
+      {"model": "9028-21B", "ethc": false, "roce": true}
+    ],
     "hmc_releases": [
       {
         "release": "V10R3 M1060",
@@ -29,7 +43,7 @@
   ],
   "selection_cases": [
     {
-      "name": "v10r3-m1060-roce-mixed-state",
+      "name": "v10r3-m1060-roce-down-state",
       "hmc_release": "V10R3 M1060",
       "hmc_build": "2408210051",
       "system_model": "8375-42A",
@@ -37,7 +51,7 @@
       "distinguishing_characteristic": "The same 8375-42A model was observed with either adapter class, so the installed card rather than the model determines the level.",
       "roce": {
         "exit_status": 0,
-        "stdout": "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports\n1,0,roce,<REDACTED-LOC>-T1,0,0,40,0\n1,1,roce,<REDACTED-LOC>-T2,1,1,40,1\n",
+        "stdout": "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports\n1,0,roce,<REDACTED-LOC>-T1,0,0,40,0\n1,1,roce,<REDACTED-LOC>-T2,0,1,40,1\n",
         "stderr": ""
       },
       "ethc": {
@@ -61,7 +75,7 @@
           "phys_port_id": "1",
           "phys_port_type": "roce",
           "phys_port_loc": "<REDACTED-LOC>-T2",
-          "state": "1",
+          "state": "0",
           "config_logical_ports": "1",
           "phys_port_max_logical_ports": "40",
           "curr_eth_logical_ports": "1"
@@ -69,9 +83,9 @@
       ]
     },
     {
-      "name": "v11r2-sp1120-ethc-mixed-state",
-      "hmc_release": "V11R2 SP1120",
-      "hmc_build": "2607082225",
+      "name": "v11r2-ethc-mixed-state",
+      "hmc_release": "V11R2",
+      "hmc_build": "not captured for this system",
       "system_model": "8375-42A",
       "adapter_id": "2",
       "distinguishing_characteristic": "Four ethc ports were returned, including both observed state values.",
