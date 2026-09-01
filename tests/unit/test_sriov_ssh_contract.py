@@ -76,14 +76,35 @@ def test_physical_port_evidence_preserves_live_verification_contract():
         (case["roce"]["exit_status"], case["ethc"]["exit_status"])
         for case in evidence["selection_cases"]
     } == {(0, 0)}
+    malformed_filters = [
+        error
+        for error in evidence["error_cases"]
+        if error["result_class"] == "malformed-filter"
+    ]
     assert {
         error["adapter_id"]: (error["exit_status"], error["stderr"])
-        for error in evidence["error_cases"]
+        for error in malformed_filters
     } == {"null": (1, ""), "unavailable": (1, "")}
     assert all(
         'invalid value is "adapter_ids"' in error["stdout"]
-        for error in evidence["error_cases"]
+        for error in malformed_filters
     )
+    unsupported = next(
+        error
+        for error in evidence["error_cases"]
+        if error["result_class"] == "unsupported-system-state"
+    )
+    assert unsupported == {
+        "result_class": "unsupported-system-state",
+        "adapter_id": "not applicable",
+        "hmc_releases": ["not captured for these systems"],
+        "exit_status": 1,
+        "stdout": (
+            "HSCL9010 This operation is only allowed when the managed system is in "
+            "the Standby or Operating state.\n"
+        ),
+        "stderr": "",
+    }
     assert evidence["observations"] == {
         "empty_result": "No results were found.",
         "empty_result_exit_status": 0,
