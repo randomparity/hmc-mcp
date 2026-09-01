@@ -26,10 +26,12 @@ level is not evidence that the adapter has no physical ports.
 For an environment already admitted by ADR 0056, require the requested adapter
 ID to be a positive decimal integer, then query the exact physical-port
 projection at both `roce` and `ethc`. Accept the one non-empty result. If both
-are empty, raise an actionable capability error; if both contain rows, reject
-the result as ambiguous rather than selecting by order. Require every returned
-row to belong to the requested adapter and its `phys_port_type` to equal the
-level that returned it.
+are empty, preserve an empty row result for existing internal consumers and
+have physical-port inventory raise `SriovLogicalPortCapabilityError`; if both
+contain rows, reject the result as ambiguous rather than selecting by order.
+Require every returned row to belong to the requested adapter. Treat
+`phys_port_type` as HMC data rather than a selector: the captured `roce` result
+reports `eth`, so equality with the query level is not an evidenced invariant.
 
 Normalize the HMC `state` value in inventory: `1` becomes `up` and `0` becomes
 `down`. Any other value is malformed input and fails closed. Do not change the
@@ -42,7 +44,7 @@ Physical-port state inventory works for the two evidence-supported adapter-type
 levels while retaining the exact version/model admission pair. Each read performs two
 read-only commands so unexpected dual-level output can fail closed. Operators
 get an explicit failure for an invalid adapter selector, unsupported or
-ambiguous adapter type, mismatched adapter identity/type, or unknown state.
+ambiguous adapter type, mismatched adapter identity, or unknown state.
 
 ## Considered & rejected
 

@@ -20,11 +20,13 @@ evidence. No migration or adapter mutation is in scope.
 positive decimal integer before issuing commands. It then runs the same
 projected, adapter-filtered read at both `--level roce` and `--level ethc`.
 Exactly one level must return rows. Both empty is unsupported; both non-empty is
-ambiguous. Every accepted row must repeat the requested adapter ID and carry a
-`phys_port_type` matching the level that returned it.
+ambiguous. Every accepted row must repeat the requested adapter ID.
+`phys_port_type` remains opaque returned HMC data because the captured `roce`
+fixture reports `eth`; it does not select or validate the query level.
 
 `operations.pcie.list_sriov_physical_ports` retains its existing environment
-admission call. It maps state `1` to `up` and `0` to `down` in the existing
+admission call. An empty result from both levels raises the existing
+`SriovLogicalPortCapabilityError`. It maps state `1` to `up` and `0` to `down` in the existing
 `availability` field before applying the optional physical-port selector. Blank
 or any other state in any returned row raises `ValueError`, including a malformed
 sibling row that the selector would otherwise omit; it is not an unknown
@@ -37,9 +39,10 @@ without modifying captured evidence.
 ## Failure behavior
 
 - A command failure remains an `HMCCLIError` from the SSH boundary.
-- Zero rows at both levels fails as unsupported rather than available-empty.
+- Zero rows at both levels raises `SriovLogicalPortCapabilityError` from the
+  physical-port inventory operation rather than returning available-empty.
 - Rows at both levels fail as ambiguous.
-- A non-positive adapter ID, mismatched adapter ID/type, or state outside
+- A non-positive adapter ID, mismatched adapter ID, or state outside
   `0`/`1` fails as malformed.
 - Existing version/model rejection still returns capability-unavailable before
   either physical-port command runs.
@@ -51,7 +54,7 @@ literal level. The local operator controls `system_name` and `adapter_id`; the
 authenticated HMC controls stdout. Existing `shlex.quote` encodes the system
 name and `build_filter` plus `shlex.quote` encodes the adapter filter. A
 positive-decimal check bounds the adapter selector before either command. CSV
-shape checks, exact adapter/type matching, one-nonempty-level cardinality, and
+shape checks, exact adapter matching, one-nonempty-level cardinality, and
 the two-value state map control HMC output. Failures expose only actionable
 operation context, not credentials. No entry point, authorization decision,
 secret, mutation, network destination, or permission is added. Compromised HMC
@@ -61,7 +64,7 @@ operation layers own those controls.
 ## Verification
 
 Focused tests prove: `roce` and `ethc` selection, both empty, both non-empty,
-invalid adapter IDs, mismatched adapter identity/type, state up/down mapping,
+invalid adapter IDs, mismatched adapter identity, state up/down mapping,
 malformed state, unchanged environment rejection, and the existing captured
 fixture contract.
 Repository gates then run with `just verify` and the all-files hook command.

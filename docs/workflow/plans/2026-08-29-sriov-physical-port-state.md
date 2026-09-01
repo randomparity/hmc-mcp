@@ -19,7 +19,9 @@ production functions, focused SSH/system tests, and three contract documents.
 - Query only literal `roce` and `ethc` levels with the existing projection and
   adapter filter; the captured POWER9 JSON remains byte-for-byte unchanged.
 - Require a positive decimal adapter ID, exactly one non-empty level, matching
-  row adapter/type values, and state values limited to `0` and `1`.
+  row adapter values, and state values limited to `0` and `1`. Preserve
+  `phys_port_type` as opaque HMC data; it does not equal the query level in the
+  captured RoCE fixture.
 - Support the repository's amd64 and arm64 CI targets on Python 3.11–3.14.
 - Guardrails are `just verify` and
   `UV_NO_SYNC=1 uv run --no-sync prek run --all-files`; focused test commands
@@ -49,8 +51,10 @@ Interfaces:
    tests/unit/test_sriov_ssh_contract.py`; expect the new tests to fail because
    only `roce` is queried.
 3. Add tests that expect `ValueError` for adapter IDs `0`, `-1`, `null`, and
-   `unavailable`; both empty; both non-empty; a row whose `adapter_id` differs;
-   and a row whose `phys_port_type` differs from its result level.
+   `unavailable`; both non-empty; and a row whose `adapter_id` differs. Add a
+   both-empty test that asserts the SSH boundary returns an empty list for its
+   existing internal consumers. Include a RoCE row whose `phys_port_type` is
+   `eth` and assert it remains accepted, matching the captured fixture.
 4. Implement the minimum validation and two-command selection in
    `list_sriov_physical_port_rows`. Keep command construction in that function
    and use the existing parser for each result.
@@ -59,8 +63,8 @@ Interfaces:
    fails, restore it, then commit with conventional test/fix history.
 
 Acceptance: invalid selectors run no SSH command; exactly two reads occur for a
-valid selector; exactly one valid result is returned; all malformed,
-unsupported, and ambiguous cases fail with actionable `ValueError` messages.
+valid selector; exactly one valid result is returned; malformed and ambiguous
+cases raise actionable `ValueError`; both empty returns no SSH rows.
 
 ## Task 2: normalize physical-port state
 
@@ -78,6 +82,8 @@ Interfaces:
    a requested valid port has state `1` but an unselected sibling row has state
    `2`; require the entire call to raise `ValueError`. Retain the current test
    proving an unadmitted environment performs no physical-port read.
+   Add a both-empty operation test requiring
+   `SriovLogicalPortCapabilityError` instead of available-empty inventory.
 3. Run `uv run --no-sync pytest -q --no-cov
    tests/system/test_normalized_pcie_inventory.py`; expect the mapping assertion
    to fail because raw state is currently exposed.
@@ -88,7 +94,8 @@ Interfaces:
 
 Acceptance: public inventory exposes only `up`/`down`; invalid state in any
 returned row fails even when that row is not selected; the existing
-capability-unavailable path remains before physical-port reads.
+capability-unavailable path remains before physical-port reads; both supported
+levels empty raises the existing SR-IOV capability exception.
 
 ## Task 3: preserve and publish the evidence-backed contract
 
