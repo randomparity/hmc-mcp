@@ -1,4 +1,6 @@
+import json
 import shlex
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -29,6 +31,57 @@ _PHYSICAL_FIELDS = (
     "curr_eth_logical_ports",
 )
 
+_EVIDENCE_PATH = (
+    Path(__file__).parents[1]
+    / "fixtures"
+    / "sriov"
+    / "sriov-physport-selection-v10r3-v11r2.json"
+)
+
+
+def _selection_cases() -> list[dict[str, object]]:
+    return json.loads(_EVIDENCE_PATH.read_text())["selection_cases"]
+
+
+def test_physical_port_evidence_preserves_live_verification_contract():
+    evidence = json.loads(_EVIDENCE_PATH.read_text())
+
+    assert evidence["survey_scope"]["hmc_releases"] == [
+        {"release": "V10R3 M1060", "build": "2408210051"},
+        {"release": "V11R2 SP1120", "build": "2607082225"},
+    ]
+    assert {case["system_model"] for case in evidence["selection_cases"]} == {
+        "8375-42A"
+    }
+    assert {
+        (case["roce"]["exit_status"], case["ethc"]["exit_status"])
+        for case in evidence["selection_cases"]
+    } == {(0, 0)}
+    assert {
+        error["adapter_id"]: (error["exit_status"], error["stderr"])
+        for error in evidence["error_cases"]
+    } == {"null": (1, ""), "unavailable": (1, "")}
+    assert all(
+        'invalid value is "adapter_ids"' in error["stdout"]
+        for error in evidence["error_cases"]
+    )
+    assert evidence["observations"] == {
+        "empty_result": "No results were found.",
+        "empty_result_exit_status": 0,
+        "state_values": {"0": "down", "1": "up"},
+        "both_levels_returned_rows": False,
+        "ambiguity_observed": False,
+        "mutual_exclusion": (
+            "Every numeric adapter_id returned rows at exactly one level across the "
+            "survey."
+        ),
+        "applicability": (
+            "The same selection behavior was observed on V10R3 M1060 and V11R2 "
+            "SP1120 across the surveyed Power8, Power9, and Power10 machine types; "
+            "no version or model exception was found."
+        ),
+    }
+
 
 def _physical_port_output(adapter_id: str = "1", port_type: str = "roce") -> str:
     return (
@@ -39,33 +92,25 @@ def _physical_port_output(adapter_id: str = "1", port_type: str = "roce") -> str
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("roce_output", "ethc_output", "expected_type"),
-    [
-        (_physical_port_output(port_type="eth"), "No results were found.", "eth"),
-        ("No results were found.", _physical_port_output(port_type="ethc"), "ethc"),
-    ],
+    "case",
+    _selection_cases(),
+    ids=lambda case: case["name"],
 )
 async def test_physical_port_selects_the_sole_populated_level(
-    monkeypatch, roce_output, ethc_output, expected_type
+    monkeypatch, case
 ):
-    run = AsyncMock(side_effect=[roce_output, ethc_output])
+    run = AsyncMock(side_effect=[case["roce"]["stdout"], case["ethc"]["stdout"]])
     monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
 
-    assert await list_sriov_physical_port_rows(_config(), "sys", "1") == [
-        {
-            "adapter_id": "1",
-            "phys_port_id": "0",
-            "phys_port_type": expected_type,
-            "phys_port_loc": "U-T1",
-            "state": "1",
-            "config_logical_ports": "0",
-            "phys_port_max_logical_ports": "60",
-            "curr_eth_logical_ports": "0",
-        }
-    ]
+    assert await list_sriov_physical_port_rows(
+        _config(), "sys", case["adapter_id"]
+    ) == case["expected_rows"]
     commands = [call.args[1] for call in run.await_args_list]
     assert len(commands) == 2
-    expected_filter = f"--filter {shlex.quote(build_filter([('adapter_ids', '1')]))}"
+    expected_filter = (
+        f"--filter "
+        f"{shlex.quote(build_filter([('adapter_ids', case['adapter_id'])]))}"
+    )
     expected_projection = f"-F {','.join(_PHYSICAL_FIELDS)} --header"
     assert all(
         expected_filter in command and expected_projection in command
