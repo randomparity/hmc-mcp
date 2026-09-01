@@ -37,14 +37,11 @@ _EVIDENCE_PATH = (
     / "sriov"
     / "sriov-physport-selection-v10r3-v11r2.json"
 )
-
-
-def _selection_cases() -> list[dict[str, object]]:
-    return json.loads(_EVIDENCE_PATH.read_text())["selection_cases"]
+_EVIDENCE = json.loads(_EVIDENCE_PATH.read_text())
 
 
 def test_physical_port_evidence_preserves_live_verification_contract():
-    evidence = json.loads(_EVIDENCE_PATH.read_text())
+    evidence = _EVIDENCE
 
     assert evidence["survey_scope"]["hmc_releases"] == [
         {"release": "V10R3 M1060", "build": "2408210051"},
@@ -133,7 +130,7 @@ def _physical_port_output(adapter_id: str = "1", port_type: str = "roce") -> str
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "case",
-    _selection_cases(),
+    _EVIDENCE["selection_cases"],
     ids=lambda case: case["name"],
 )
 async def test_physical_port_selects_the_sole_populated_level(
