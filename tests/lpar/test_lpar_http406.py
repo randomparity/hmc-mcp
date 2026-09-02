@@ -16,16 +16,10 @@ from hmc_mcp.documents import LparResources
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.ownership import _resolve_system_name as _system_name
 from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_create_lpar as hmc_create_lpar,
-)
-from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_dlpar_mem as hmc_dlpar_mem,
-)
-from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_dlpar_proc as hmc_dlpar_proc,
-)
-from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_modify_lpar as hmc_modify_lpar,
+    hmc_create_lpar,
+    hmc_dlpar_mem,
+    hmc_dlpar_proc,
+    hmc_modify_lpar,
 )
 from hmc_mcp.ssh.transport import HMCCLIError
 

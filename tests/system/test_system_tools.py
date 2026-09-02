@@ -12,37 +12,19 @@ import pytest
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.server_tools.capacity import (
-    hmc_capacity_report as hmc_capacity_report,
-)
-from hmc_mcp.server_tools.capacity import (
-    hmc_find_placement as hmc_find_placement,
+    hmc_capacity_report,
+    hmc_find_placement,
 )
 from hmc_mcp.server_tools.systems import (
-    hmc_console_info as hmc_console_info,
-)
-from hmc_mcp.server_tools.systems import (
-    hmc_get_lpar as hmc_get_lpar,
-)
-from hmc_mcp.server_tools.systems import (
-    hmc_get_lpar_state as hmc_get_lpar_state,
-)
-from hmc_mcp.server_tools.systems import (
-    hmc_get_system as hmc_get_system,
-)
-from hmc_mcp.server_tools.systems import (
-    hmc_get_vios as hmc_get_vios,
-)
-from hmc_mcp.server_tools.systems import (
-    hmc_list_lpars as hmc_list_lpars,
-)
-from hmc_mcp.server_tools.systems import (
-    hmc_list_resources as hmc_list_resources,
-)
-from hmc_mcp.server_tools.systems import (
-    hmc_list_systems as hmc_list_systems,
-)
-from hmc_mcp.server_tools.systems import (
-    hmc_list_vios as hmc_list_vios,
+    hmc_console_info,
+    hmc_get_lpar,
+    hmc_get_lpar_state,
+    hmc_get_system,
+    hmc_get_vios,
+    hmc_list_lpars,
+    hmc_list_resources,
+    hmc_list_systems,
+    hmc_list_vios,
 )
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"

@@ -15,7 +15,7 @@ import httpx
 
 from hmc_mcp.operations import ownership as lpar_ownership
 from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_list_lpar_ownership as hmc_list_lpar_ownership,
+    hmc_list_lpar_ownership,
 )
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"

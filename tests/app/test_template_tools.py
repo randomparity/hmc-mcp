@@ -14,13 +14,9 @@ from conftest import JOB_ENTRY
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.server_tools.templates import (
-    hmc_deploy_partition_template as hmc_deploy_partition_template,
-)
-from hmc_mcp.server_tools.templates import (
-    hmc_get_partition_template as hmc_get_partition_template,
-)
-from hmc_mcp.server_tools.templates import (
-    hmc_list_partition_templates as hmc_list_partition_templates,
+    hmc_deploy_partition_template,
+    hmc_get_partition_template,
+    hmc_list_partition_templates,
 )
 
 TEMPLATE_UUID = "tmpl-uuid-1"

@@ -8,7 +8,7 @@ import pytest
 from conftest import mock_uuid_resolution
 
 from hmc_mcp.server_tools.pcie import (
-    hmc_set_sriov_adapter_mode as hmc_set_sriov_adapter_mode,
+    hmc_set_sriov_adapter_mode,
 )
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"

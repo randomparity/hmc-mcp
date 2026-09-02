@@ -12,7 +12,7 @@ import pytest
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.server_tools.network import (
-    hmc_create_virtual_network as hmc_create_virtual_network,
+    hmc_create_virtual_network,
 )
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"

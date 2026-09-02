@@ -32,7 +32,7 @@ from hmc_mcp.operations.lpar.provision import (
     ProvisionStorage,
     _power_on,
 )
-from hmc_mcp.server_tools.lpar.provision import hmc_provision_lpar as hmc_provision_lpar
+from hmc_mcp.server_tools.lpar.provision import hmc_provision_lpar
 from hmc_mcp.ssh.affinity import MinimumAffinityPolicy
 from hmc_mcp.ssh.transport import HMCCLIError
 

@@ -7,13 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from conftest import mock_uuid_resolution
 
 from hmc_mcp.server_tools.lpar.configuration import (
-    hmc_get_lpar_proc_compat as hmc_get_lpar_proc_compat,
-)
-from hmc_mcp.server_tools.lpar.configuration import (
-    hmc_set_lpar_proc_compat as hmc_set_lpar_proc_compat,
+    hmc_get_lpar_proc_compat,
+    hmc_set_lpar_proc_compat,
 )
 from hmc_mcp.server_tools.system_resources import (
-    hmc_get_proc_compat_modes as hmc_get_proc_compat_modes,
+    hmc_get_proc_compat_modes,
 )
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"

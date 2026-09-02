@@ -9,7 +9,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from hmc_mcp.server_tools.composite import hmc_system_summary as hmc_system_summary
+from hmc_mcp.server_tools.composite import hmc_system_summary
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID_1 = "00000000-0000-0000-0000-000000000002"

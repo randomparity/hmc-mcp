@@ -53,10 +53,10 @@ from .cli_commands.app import (
     vios_app,
 )
 from .cli_commands.app import (
-    app as app,
+    app as app,  # noqa: PLC0414 - PEP 484 explicit re-export; see the module docstring
 )
 from .cli_commands.app import (
-    main as main,
+    main as main,  # noqa: PLC0414 - PEP 484 explicit re-export; see the module docstring
 )
 from .cli_commands.lpar import (
     config as lpar_config,
@@ -85,8 +85,12 @@ from .cli_commands.lpar import (
 from .cli_commands.lpar import (
     provision as lpar_provision,
 )
-from .cli_commands.output import console as console
-from .cli_commands.runtime import GlobalOpts as GlobalOpts
+from .cli_commands.output import (
+    console as console,  # noqa: PLC0414 - PEP 484 explicit re-export; see the module docstring
+)
+from .cli_commands.runtime import (
+    GlobalOpts as GlobalOpts,  # noqa: PLC0414 - PEP 484 explicit re-export; see the module docstring
+)
 
 
 def _register_commands() -> None:

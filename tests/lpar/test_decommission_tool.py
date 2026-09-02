@@ -19,7 +19,7 @@ from hmc_mcp.operations.lpar.decommission import (
     decommission_lpar,
 )
 from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_decommission_lpar as hmc_decommission_lpar,
+    hmc_decommission_lpar,
 )
 
 SYSTEM_UUID = "11111111-1111-1111-1111-111111111111"

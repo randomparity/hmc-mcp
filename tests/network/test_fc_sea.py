@@ -7,10 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from conftest import mock_uuid_resolution
 
 from hmc_mcp.server_tools.vnic import (
-    hmc_list_fc_ports as hmc_list_fc_ports,
-)
-from hmc_mcp.server_tools.vnic import (
-    hmc_list_sea_adapters as hmc_list_sea_adapters,
+    hmc_list_fc_ports,
+    hmc_list_sea_adapters,
 )
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"

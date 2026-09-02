@@ -13,19 +13,11 @@ from hmc_mcp.operations.network import (
     create_virtual_network,
 )
 from hmc_mcp.server_tools.network import (
-    hmc_create_virtual_network as hmc_create_virtual_network,
-)
-from hmc_mcp.server_tools.network import (
-    hmc_delete_virtual_network as hmc_delete_virtual_network,
-)
-from hmc_mcp.server_tools.network import (
-    hmc_list_network_bridges as hmc_list_network_bridges,
-)
-from hmc_mcp.server_tools.network import (
-    hmc_list_virtual_networks as hmc_list_virtual_networks,
-)
-from hmc_mcp.server_tools.network import (
-    hmc_list_virtual_switches as hmc_list_virtual_switches,
+    hmc_create_virtual_network,
+    hmc_delete_virtual_network,
+    hmc_list_network_bridges,
+    hmc_list_virtual_networks,
+    hmc_list_virtual_switches,
 )
 
 VSWITCH_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
