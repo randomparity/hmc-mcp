@@ -82,7 +82,7 @@ async def stamp_lpar_ownership(
     if caller_token is not None:
         validate_caller_token(caller_token)
     effective_id = agent_id if agent_id else "hmc-mcp"
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today().isoformat()  # noqa: DTZ011 - the ADR 0011 ownership stamp records the operator's local calendar date and is persisted on the HMC; moving it to UTC is not this issue's to make
     description = f"[hmc-mcp owner:{effective_id} created:{today}]"
     if caller_token is not None:
         description = f"{description} [caller {caller_token}]"

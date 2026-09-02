@@ -321,7 +321,7 @@ def test_different_profiles_produce_independent_configs():
 
     def capture_connect(**kwargs):
         configs_seen.append(kwargs["host"])
-        raise Exception("abort after capture")  # abort the SSH connection attempt
+        raise RuntimeError("abort after capture")  # abort the SSH connection attempt
 
     with patch("hmc_mcp._app.build_config") as mock_config:
         # First call: profile="dev" → DEV_CONFIG

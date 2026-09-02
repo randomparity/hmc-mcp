@@ -271,21 +271,21 @@ def _mock_execution_steps(mock_hmc):
 
 
 def _provision_args(**overrides):
-    args = dict(
-        system_name_or_uuid=SYSTEM_UUID,
-        name="web01",
-        network=ProvisionAdapters(
+    args = {
+        "system_name_or_uuid": SYSTEM_UUID,
+        "name": "web01",
+        "network": ProvisionAdapters(
             port_vlan_id=VLAN_ID, vios_partition_id=7, vios_slot=11
         ),
-        storage=ProvisionStorage(vios_uuid=VIOS_UUID, storage_name="lv_boot"),
-        resources=LparResources(
+        "storage": ProvisionStorage(vios_uuid=VIOS_UUID, storage_name="lv_boot"),
+        "resources": LparResources(
             min_memory=256,
             desired_memory=4096,
             max_memory=8192,
             desired_vcpus=1,
             max_vcpus=2,
         ),
-    )
+    }
     if "vg_uuid" in overrides:
         args["storage"] = ProvisionStorage(
             vios_uuid=VIOS_UUID,
@@ -297,20 +297,20 @@ def _provision_args(**overrides):
 
 
 def _affinity_request(**overrides):
-    values = dict(
-        system_name_or_uuid=SYSTEM_UUID,
-        lpar_name="web01",
-        captured_score=80,
-        captured_policy_state="configured",
-        captured_minimum=70,
-        captured_at=datetime(2026, 8, 24, tzinfo=UTC),
-        stale_after_seconds=86400,
-        response="warn",
-        regression_threshold=5,
-        optimization_threshold=5,
-        timeout_seconds=30,
-        poll_interval=1,
-    )
+    values = {
+        "system_name_or_uuid": SYSTEM_UUID,
+        "lpar_name": "web01",
+        "captured_score": 80,
+        "captured_policy_state": "configured",
+        "captured_minimum": 70,
+        "captured_at": datetime(2026, 8, 24, tzinfo=UTC),
+        "stale_after_seconds": 86400,
+        "response": "warn",
+        "regression_threshold": 5,
+        "optimization_threshold": 5,
+        "timeout_seconds": 30,
+        "poll_interval": 1,
+    }
     values.update(overrides)
     return ProvisionAffinityAssessment(**values)
 
@@ -332,7 +332,10 @@ def test_provision_affinity_rejects_foreign_evidence_before_hmc(monkeypatch, moc
     "change",
     [
         {"captured_score": 101},
-        {"captured_at": datetime(2026, 8, 24)},
+        # The naive datetime IS the invalid evidence under test:
+        # operations/affinity.py rejects a captured_at with no tzinfo, so giving
+        # this one a timezone would silently delete the case.
+        {"captured_at": datetime(2026, 8, 24)},  # noqa: DTZ001 - naiveness is the subject
         {"stale_after_seconds": 0},
         {"regression_threshold": -1},
         {"captured_policy_state": "unknown"},

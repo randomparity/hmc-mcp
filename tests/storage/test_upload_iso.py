@@ -776,7 +776,7 @@ async def test_download_iso_from_https_url_success():
     mock_client.stream = MagicMock(return_value=mock_response)
     
     with patch('hmc_mcp.operations.storage.httpx.AsyncClient', return_value=mock_client):
-        temp_file, sha256, size = await _download_iso_from_url(test_url)
+        temp_file, _sha256, size = await _download_iso_from_url(test_url)
         
         assert temp_file.exists()
         assert size == len(test_content)
@@ -864,7 +864,7 @@ async def test_download_iso_cleanup_on_error():
     
     async def mock_aiter_bytes(chunk_size=8192):
         yield b"partial content"
-        raise Exception("Network error during download")
+        raise RuntimeError("Network error during download")
     
     mock_response.aiter_bytes = mock_aiter_bytes
     
@@ -877,7 +877,7 @@ async def test_download_iso_cleanup_on_error():
     mock_client.stream = MagicMock(return_value=mock_response)
     
     with patch('hmc_mcp.operations.storage.httpx.AsyncClient', return_value=mock_client):
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             await _download_iso_from_url(test_url)
         
         # Verify temp file was cleaned up by checking no leftover files

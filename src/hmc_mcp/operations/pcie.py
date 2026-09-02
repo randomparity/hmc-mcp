@@ -228,7 +228,7 @@ async def _authorize_pcie_profile_request(
         raise ValueError("profile_name must not be blank")
     if not drc_index.strip():
         raise ValueError("drc_index must not be blank")
-    system_name, lpar_name = await resolve_and_authorize_lpar_names(
+    _system_name, _lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,

@@ -146,11 +146,10 @@ def lpars_delete(
 
     async def _go():
         async with client() as hmc:
-            if not yes:
-                if not typer.confirm(
-                    f"Permanently DELETE partition '{name_or_uuid}'? This cannot be undone."
-                ):
-                    raise typer.Abort()
+            if not yes and not typer.confirm(
+                f"Permanently DELETE partition '{name_or_uuid}'? This cannot be undone."
+            ):
+                raise typer.Abort()
             return await delete_lpar(
                 hmc,
                 system,

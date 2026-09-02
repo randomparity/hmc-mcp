@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate the MCP tool reference under docs/tools/ from the tool registry.
 
 Usage:

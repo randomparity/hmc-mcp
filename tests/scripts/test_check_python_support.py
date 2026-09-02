@@ -3,6 +3,7 @@ import json
 from http.client import HTTPMessage
 from io import BytesIO
 from pathlib import Path
+from typing import Self
 from urllib.error import HTTPError, URLError
 
 import pytest
@@ -101,7 +102,7 @@ class FakeResponse:
         self.payload = BytesIO(payload)
         self.url = url
 
-    def __enter__(self) -> "FakeResponse":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_args: object) -> None:

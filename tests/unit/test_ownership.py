@@ -121,7 +121,7 @@ def test_stamp_returns_token_on_success():
         token = asyncio.run(
             stamp_lpar_ownership(config, "sys1", "lpar1", agent_id="alice")
         )
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today().isoformat()  # noqa: DTZ011 - mirrors the ownership stamp's own local-date basis in ssh/lpar.py; changing one side alone makes them disagree for part of every day
     assert token == f"[hmc-mcp owner:alice created:{today}]"
     mock_set.assert_awaited_once()
     # verify set_lpar_description was called with the token as the description arg
@@ -157,7 +157,7 @@ def test_stamp_returns_none_on_ssh_error():
 
 def test_token_format():
     config = _config()
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today().isoformat()  # noqa: DTZ011 - mirrors the ownership stamp's own local-date basis in ssh/lpar.py; changing one side alone makes them disagree for part of every day
     with patch(
         "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
     ):
@@ -748,7 +748,7 @@ def test_validate_caller_token_rejects_non_string():
 
 def test_stamp_composes_caller_segment():
     config = _config()
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today().isoformat()  # noqa: DTZ011 - mirrors the ownership stamp's own local-date basis in ssh/lpar.py; changing one side alone makes them disagree for part of every day
     with patch(
         "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
     ) as mock_set:
@@ -767,7 +767,7 @@ def test_stamp_composes_caller_segment():
 
 def test_stamp_without_caller_token_unchanged():
     config = _config()
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today().isoformat()  # noqa: DTZ011 - mirrors the ownership stamp's own local-date basis in ssh/lpar.py; changing one side alone makes them disagree for part of every day
     with patch(
         "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
     ):
@@ -1021,7 +1021,7 @@ def test_set_lpar_ownership_description_rejects_invalid_text(bad):
 def test_set_lpar_ownership_description_restamps_failed_create_stamp():
     """Re-stamp path: an unowned LPAR receives an ADR 0011 + ADR 0064 token."""
     read = AsyncMock(return_value="")
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today().isoformat()  # noqa: DTZ011 - mirrors the ownership stamp's own local-date basis in ssh/lpar.py; changing one side alone makes them disagree for part of every day
     token = f"[hmc-mcp owner:alice created:{today}] [caller JIRA-42]"
     hmc = type(
         "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
@@ -1090,7 +1090,7 @@ def _create_hmc():
 def _run_create(hmc, creation, *, set_description=None):
     """Run create_and_stamp_lpar against stubbed name resolution and SSH write."""
     if set_description is None:
-        today = datetime.date.today().isoformat()
+        today = datetime.date.today().isoformat()  # noqa: DTZ011 - mirrors the ownership stamp's own local-date basis in ssh/lpar.py; changing one side alone makes them disagree for part of every day
         set_description = AsyncMock(
             return_value=f"[hmc-mcp owner:alice created:{today}]"
         )

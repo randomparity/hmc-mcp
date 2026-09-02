@@ -285,7 +285,7 @@ def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc)
     assert result["log_path"] == "/tmp/hmc-mcp-installios-aixprod.log"
     assert "no HMC job exists on this path" in result["message"]
     # The exact command that would have gone over SSH:
-    expected, log_path = build_installios_command(
+    expected, _log_path = build_installios_command(
         install_source="/extra/viosimages/VIOS_4.1/dvdimage.v1.iso",
         client_ip="192.168.1.30",
         subnet_mask="255.255.255.0",

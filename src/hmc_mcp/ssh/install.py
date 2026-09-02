@@ -97,7 +97,7 @@ def validate_install_source(value: str) -> str:
             f"install_source {value!r} starts with '-'; it would be parsed as "
             "an installios flag, not a source path"
         )
-    host, sep, remote_path = value.partition(":")
+    host, sep, _remote_path = value.partition(":")
     if sep and ("/" in host or not host.strip()):
         raise ValueError(
             f"install_source {value!r} looks like an NFS location but its "

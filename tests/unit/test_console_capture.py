@@ -547,7 +547,7 @@ async def test_stdin_is_a_pipe_write_end_that_nothing_can_write():
     assert not hasattr(capture, "stdin")
     writer = _SealedStdin()
     assert not any(
-        name.startswith("write") or name.startswith("send")
+        name.startswith(("write", "send"))
         for name in dir(writer)
         if not name.startswith("_")
     )
@@ -576,7 +576,7 @@ def test_truncation_never_splits_an_incomplete_csi_sequence():
 def test_truncation_backtracks_over_partial_utf8_then_esc():
     data = "aé".encode() + b"\x1b[1;2Hx"
     # The limit lands inside é and inside the CSI sequence: both backtrack.
-    assert _truncate(data, 2) == b"a" == b"a"
+    assert _truncate(data, 2) == b"a"
     # The CSI sequence completes at 'H' (index 8), but the cut must fall
     # before the whole incomplete sequence, i.e. before the ESC at index 3.
     assert _truncate(data, 8) == "aé".encode()

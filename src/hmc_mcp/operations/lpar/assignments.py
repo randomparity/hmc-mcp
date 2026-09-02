@@ -216,7 +216,7 @@ async def _validate_sriov_inventory(
 ) -> None:
     """Validate adapter, port, logical-port, and capacity inventory."""
 
-    for adapter, physical in requested_capacity:
+    for (adapter, physical), requested in requested_capacity.items():
         adapters = await list_sriov_adapters(hmc.config, system, adapter)
         if adapters.capability != "available" or len(adapters.items) != 1:
             raise ValueError(f"SR-IOV adapter {adapter!r} is unavailable")
@@ -237,10 +237,10 @@ async def _validate_sriov_inventory(
                 logical.unavailable_reason or "logical-port inventory unavailable"
             )
         used = await _existing_capacity(hmc, adapters.system, adapter, physical)
-        if used + requested_capacity[adapter, physical] > 100:
+        if used + requested > 100:
             raise ValueError(
                 f"capacity exhausted on {adapter}/{physical}: {used}% used and "
-                f"{requested_capacity[adapter, physical]}% requested"
+                f"{requested}% requested"
             )
 
 

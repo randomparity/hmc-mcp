@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Guard: every generated document under ``docs/`` is current, and the arrangement
 that produces it is intact. See ADR 0098.
 

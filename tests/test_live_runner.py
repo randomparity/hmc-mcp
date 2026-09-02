@@ -639,9 +639,12 @@ def test_every_live_workflow_dispatch_has_exactly_client_and_tool_arguments():
         for node in ast.walk(ast.parse(source)):
             if not isinstance(node, ast.Call):
                 continue
-            if isinstance(node.func, ast.Attribute) and node.func.attr == "call":
-                if len(node.args) != 2:
-                    invalid.append(f"{Path(module.__file__).name}:{node.lineno}")
+            if (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "call"
+                and len(node.args) != 2
+            ):
+                invalid.append(f"{Path(module.__file__).name}:{node.lineno}")
 
     assert invalid == []
 

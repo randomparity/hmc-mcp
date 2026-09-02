@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Self
 from unittest.mock import AsyncMock
 
 import pytest
@@ -175,7 +176,7 @@ class FakeHMC:
                 "<xml><Message>boom</Message></xml>",
             )
 
-    async def __aenter__(self) -> FakeHMC:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *exc_info) -> None:

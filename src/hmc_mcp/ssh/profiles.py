@@ -162,7 +162,7 @@ async def get_proc_compat_modes(
     if not raw.strip():
         return []
     try:
-        values = list(csv.reader([raw.strip()], strict=True))[0]
+        values = next(iter(csv.reader([raw.strip()], strict=True)))
     except csv.Error as error:
         raise HMCCLIError(
             f"malformed processor compatibility mode output: {error}"

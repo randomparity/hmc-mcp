@@ -903,10 +903,9 @@ def test_prose_docstrings_are_excluded_from_selection():
                     isinstance(node, ast.Constant)
                     and isinstance(node.value, str)
                     and "--filter" in node.value
-                ):
-                    if id(node) in skip:
-                        saw_a_docstring = True
-                        assert id(node) not in selected
+                ) and id(node) in skip:
+                    saw_a_docstring = True
+                    assert id(node) not in selected
     assert saw_a_docstring, "precondition lost: no prose docstring names --filter"
 
 
@@ -923,25 +922,12 @@ def _function_from_source(source: str) -> ast.FunctionDef | ast.AsyncFunctionDef
 def test_the_scan_reports_an_unguarded_whole_expression_filter():
     """A synthetic unguarded filter literal fails; a builder-built one passes."""
     unguarded_func = _function_from_source(
-        "\n".join(
-            [
-                "def f(x):",
-                "    cmd = f'lssyscfg -r lpar -m sys --filter {x}'",
-                "    return cmd",
-            ]
-        )
+        "def f(x):\n    cmd = f'lssyscfg -r lpar -m sys --filter {x}'\n    return cmd"
     )
     assert _unguarded_filter_values(unguarded_func)
 
     guarded_func = _function_from_source(
-        "\n".join(
-            [
-                "import shlex",
-                "def f(x):",
-                "    cmd = f'lssyscfg -r lpar -m sys --filter {shlex.quote(build_filter([(\"lpar_names\", x)]))}'",
-                "    return cmd",
-            ]
-        )
+        "import shlex\ndef f(x):\n    cmd = f'lssyscfg -r lpar -m sys --filter {shlex.quote(build_filter([(\"lpar_names\", x)]))}'\n    return cmd"
     )
     assert _unguarded_filter_values(guarded_func) == []
 

@@ -26,7 +26,7 @@ def memory_pools_list(
         return
 
     table = Table(title=f"Memory Pools — {system_name}")
-    for key in pools[0].keys():
+    for key in pools[0]:
         table.add_column(key)
     for pool in pools:
         table.add_row(*pool.values())

@@ -1186,7 +1186,7 @@ def test_a_legacy_ceiling_ships_the_instructions_unqualified():
     """
     from hmc_mcp._app import CEILING_HEADING, INSTRUCTIONS
 
-    instructions, _names_ = _initialize(create_mcp(_legacy()))
+    instructions, _names = _initialize(create_mcp(_legacy()))
 
     assert instructions == INSTRUCTIONS
     assert CEILING_HEADING not in instructions

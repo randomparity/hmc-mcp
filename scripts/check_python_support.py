@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Compare reviewed Python versions with Python's lifecycle dataset."""
 
 from __future__ import annotations

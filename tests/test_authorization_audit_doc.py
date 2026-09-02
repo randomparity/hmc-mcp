@@ -612,7 +612,7 @@ def test_documented_reason_codes_are_exactly_the_audit_vocabulary() -> None:
 
 def test_reason_code_drift_is_caught_in_both_directions() -> None:
     document = _document()
-    dangling = sorted(audit.REASONS)[0]
+    dangling = min(audit.REASONS)
 
     undocumented = document.replace(f"| `{dangling}` |", "| removed |", 1)
     assert undocumented != document
@@ -642,7 +642,7 @@ def test_documented_event_sections_are_exactly_the_audit_vocabulary() -> None:
 
 def test_event_drift_is_caught_in_both_directions() -> None:
     document = _document()
-    dangling = sorted(audit.EVENTS)[0]
+    dangling = min(audit.EVENTS)
 
     undocumented = document.replace(f'### `event: "{dangling}"`', "### removed", 1)
     assert undocumented != document
@@ -699,7 +699,7 @@ def test_field_row_drift_is_caught_in_both_directions(
 ) -> None:
     document = _document()
     cell = _field_row_cell(document, field)
-    dangling = sorted(vocabulary)[0]
+    dangling = min(vocabulary)
 
     #: Un-backticked in place, whichever spelling the cell uses — the run ends at the
     #: first member it no longer recognises, so the rest of the cell still reads.
@@ -792,7 +792,7 @@ def _reason_row_text(document: str, index: int = 0) -> tuple[str, str, str]:
 
 def test_a_drifted_reason_table_decision_is_caught() -> None:
     document = _document()
-    code, decision, written = _reason_row_text(document)
+    code, _decision, written = _reason_row_text(document)
 
     drifted = document.replace(written, f"| `{code}` | retired-decision |", 1)
     assert drifted != document
@@ -821,7 +821,7 @@ def test_documented_connection_states_are_exactly_the_audit_vocabulary() -> None
 def test_connection_state_drift_is_caught_in_both_directions() -> None:
     document = _document()
     states = frozenset(get_args(audit.State))
-    dangling = sorted(states)[0]
+    dangling = min(states)
     sentence = STATE_SENTENCE.search(document)
     assert sentence is not None
 
@@ -1057,7 +1057,7 @@ def test_documented_sample_tls_sources_are_drawn_from_the_client_vocabulary() ->
 
 def test_a_drifted_sample_tls_source_is_caught() -> None:
     document = _document()
-    real = sorted(_sampled_tls_sources(document))[0]
+    real = min(_sampled_tls_sources(document))
 
     drifted, replaced = re.subn(
         rf'"source"\s*:\s*"{re.escape(real)}"', '"source": "retired-source"', document, 1
@@ -1069,7 +1069,7 @@ def test_a_drifted_sample_tls_source_is_caught() -> None:
 
 def test_a_tls_sample_that_lost_its_source_is_caught() -> None:
     document = _document()
-    real = sorted(_sampled_tls_sources(document))[0]
+    real = min(_sampled_tls_sources(document))
 
     stripped, replaced = re.subn(
         rf',\s*"source"\s*:\s*"{re.escape(real)}"', "", document, count=1
@@ -1097,7 +1097,7 @@ def test_an_attribution_source_is_not_read_as_a_tls_source() -> None:
     assert nested, "no attribution sources in the samples to control against"
     assert not nested & client.VERIFY_SSL_SOURCES, nested
 
-    victim = sorted(nested)[0]
+    victim = min(nested)
     reworded, replaced = re.subn(
         rf'"source"\s*:\s*"{re.escape(victim)}"', '"source": "retired-source"', document, 1
     )
@@ -1113,7 +1113,7 @@ def test_a_source_nested_inside_the_tls_sample_is_not_read() -> None:
     nested `source` of its own to catch it out.
     """
     document = _document()
-    real = sorted(_sampled_tls_sources(document))[0]
+    real = min(_sampled_tls_sources(document))
 
     nested, replaced = re.subn(
         rf'"source"\s*:\s*"{re.escape(real)}"',

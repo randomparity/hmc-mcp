@@ -294,7 +294,7 @@ def test_operation_matrix_fails_closed_without_same_family_readback() -> None:
     rows = {
         columns[0]: columns[1:]
         for line in spec.splitlines()
-        if line.startswith("| Assign/unassign") or line.startswith("| Switch adapter")
+        if line.startswith(("| Assign/unassign", "| Switch adapter"))
         if len(columns := [part.strip() for part in line.strip("|").split("|")]) == 5
     }
     assert set(rows) == {

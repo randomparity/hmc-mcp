@@ -13,7 +13,7 @@ import re
 import warnings
 from collections.abc import AsyncIterator, Mapping
 from threading import Lock
-from typing import Any, Literal, get_args
+from typing import Any, Literal, Self, get_args
 from urllib.parse import quote, unquote, urlparse
 
 from ..audit import records as audit
@@ -302,7 +302,7 @@ class HMCClient(
 
     # Session lifecycle
 
-    async def __aenter__(self) -> HMCClient:
+    async def __aenter__(self) -> Self:
         try:
             await self.logon()
         except BaseException:

@@ -478,7 +478,8 @@ def test_serve_without_a_policy_exits_2_as_a_subprocess():
     )
 
     completed = subprocess.run(
-        [executable, "serve"], capture_output=True, text=True, timeout=60
+        [executable, "serve"], capture_output=True, text=True, timeout=60,
+        check=False,
     )
 
     assert completed.returncode == 2
@@ -518,6 +519,7 @@ def test_the_documented_migration_works_end_to_end(tmp_path):
     generated = subprocess.run(
         [executable, "config", "init-access-policy"],
         capture_output=True, text=True, env=env, timeout=120,
+        check=False,
     )
     assert generated.returncode == 0, generated.stderr
 
@@ -539,6 +541,7 @@ def test_the_documented_migration_works_end_to_end(tmp_path):
     again = subprocess.run(
         [executable, "config", "init-access-policy"],
         capture_output=True, text=True, env=env, timeout=120,
+        check=False,
     )
     assert again.returncode == 1
     assert target.read_bytes() == written

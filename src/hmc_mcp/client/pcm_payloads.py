@@ -117,7 +117,7 @@ def newest_metric_link(links: list[dict[str, str]]) -> dict[str, str]:
     def _key(link: dict[str, str]) -> datetime:
         updated = link.get("updated", "")
         try:
-            dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(updated)
         except ValueError:
             return datetime.min.replace(tzinfo=UTC)
         if dt.tzinfo is None:
