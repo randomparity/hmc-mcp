@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Final, Literal, get_args
 
 from .sink import emit
@@ -258,7 +258,7 @@ def record_authorization(
     def build() -> dict[str, Any]:
         event: Event = "authorization"
         return {
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": datetime.now(UTC).isoformat(),
             "event": event,
             "policy": policy,
             "tool": tool,
@@ -307,7 +307,7 @@ def record_ownership_override(
     def build() -> dict[str, Any]:
         event: Event = "ownership-override"
         return {
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": datetime.now(UTC).isoformat(),
             "event": event,
             "system": _value(system),
             "lpar": _value(lpar),
@@ -356,7 +356,7 @@ def record_ownership_denied(
     def build() -> dict[str, Any]:
         event: Event = "ownership-denied"
         return {
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": datetime.now(UTC).isoformat(),
             "event": event,
             "operation": operation,
             "denial": denial,
@@ -402,7 +402,7 @@ def record_install_attempted(
     def build() -> dict[str, Any]:
         event: Event = "install-attempted"
         return {
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": datetime.now(UTC).isoformat(),
             "event": event,
             "system": _value(system),
             "partition": _value(partition),
@@ -433,7 +433,7 @@ def record_install_submitted(
     def build() -> dict[str, Any]:
         event: Event = "install-submitted"
         return {
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": datetime.now(UTC).isoformat(),
             "event": event,
             "system": _value(system),
             "partition": _value(partition),
@@ -475,7 +475,7 @@ def record_tls_verification_disabled(*, host: str, source: str) -> None:
     def build() -> dict[str, Any]:
         event: Event = "tls-verification-disabled"
         return {
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": datetime.now(UTC).isoformat(),
             "event": event,
             "host": _value(host),
             "source": _value(source),
@@ -496,7 +496,7 @@ def record_power_ownership_guard(
     def build() -> dict[str, Any]:
         event: Event = "power-ownership-guard"
         return {
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": datetime.now(UTC).isoformat(),
             "event": event,
             "connection": _value(connection),
             "authorize_power_operations": authorize_power_operations,

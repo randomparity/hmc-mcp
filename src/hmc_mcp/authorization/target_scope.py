@@ -20,8 +20,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
-from hmc_mcp.authorization.access_policy import ALL_TARGETS_TOKEN, AllTargets
 from hmc_mcp.audit.records import MAX_VALUE_LENGTH, Reason, State
+from hmc_mcp.authorization.access_policy import ALL_TARGETS_TOKEN, AllTargets
 from hmc_mcp.tool_registry import TargetKind, TargetSelector, ToolSecurity
 
 

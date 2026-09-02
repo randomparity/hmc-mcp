@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from hmc_mcp.documents import (
-    BootDeviceSelector,
     BOOT_DEVICE_SELECTORS,
+    BootDeviceSelector,
     build_boot_order_document,
     build_clear_boot_order_document,
 )
@@ -16,7 +16,6 @@ from hmc_mcp.operations.lpar.boot_order import (
     read_lpar_boot_order,
     set_lpar_boot_order,
 )
-
 
 # ------------------------------------------------------------------ #
 # build_boot_order_document unit tests
@@ -240,9 +239,8 @@ async def test_read_lpar_boot_order_rejects_missing_lpar():
     with patch(
         "hmc_mcp.operations.lpar.boot_order.resolve_lpar_uuid",
         new=AsyncMock(return_value="missing"),
-    ):
-        with pytest.raises(ValueError, match="LPAR 'missing' not found"):
-            await read_lpar_boot_order(hmc, "system-a", "missing")
+    ), pytest.raises(ValueError, match="LPAR 'missing' not found"):
+        await read_lpar_boot_order(hmc, "system-a", "missing")
 
 
 @pytest.mark.asyncio
@@ -332,12 +330,11 @@ async def test_boot_order_mutations_translate_hmc_not_acceptable(operation: str)
     with patch(
         "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
         new=AsyncMock(return_value="lpar-1"),
-    ):
-        with pytest.raises(HMCError, match="Not Acceptable") as exc_info:
-            if operation == "set":
-                await set_lpar_boot_order(hmc, "system-1", "lpar-1", ["disk"])
-            else:
-                await clear_lpar_boot_order(hmc, "system-1", "lpar-1")
+    ), pytest.raises(HMCError, match="Not Acceptable") as exc_info:
+        if operation == "set":
+            await set_lpar_boot_order(hmc, "system-1", "lpar-1", ["disk"])
+        else:
+            await clear_lpar_boot_order(hmc, "system-1", "lpar-1")
 
     assert exc_info.value.status_code == 406
     assert exc_info.value.body == body

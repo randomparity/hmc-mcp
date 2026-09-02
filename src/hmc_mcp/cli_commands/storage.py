@@ -9,10 +9,12 @@ import typer
 from rich.table import Table
 
 from hmc_mcp.client.core import HMCClient
+
 from ..config import load_profile
 from ..documents import StorageKind
 from ..operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
 from ..operations.storage import (
+    StorageMapResult,
     create_media_repository,
     create_optical_media,
     create_virtual_disk,
@@ -26,11 +28,10 @@ from ..operations.storage import (
     list_storage_mappings,
     list_volume_groups,
     map_storage,
-    StorageMapResult,
     upload_iso,
 )
+from .output import console, first_field, output, print_json, usage_error
 from .runtime import client, run, with_client
-from .output import first_field, output, print_json, usage_error, console
 
 
 def storage_list_vgs(

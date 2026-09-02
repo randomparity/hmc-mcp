@@ -13,9 +13,10 @@ from typing import Protocol
 # imports it here.
 from typing_extensions import TypedDict
 
-from ..audit import records as audit
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
+
+from ..audit import records as audit
 from ..resource_identity import (
     is_uuid,
     resolve_lpar_uuid,
@@ -23,7 +24,6 @@ from ..resource_identity import (
     resolve_system_uuid,
     resolve_vios_uuid,
 )
-from ..ssh.lpar import resolve_lpar_cli_name
 from ..ssh.install import (
     build_installios_command,
     run_installios,
@@ -34,6 +34,7 @@ from ..ssh.install import (
     validate_mac_address,
     validate_vlan_id,
 )
+from ..ssh.lpar import resolve_lpar_cli_name
 
 _logger = logging.getLogger(__name__)
 

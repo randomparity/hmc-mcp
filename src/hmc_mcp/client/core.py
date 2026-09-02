@@ -9,17 +9,14 @@ into :class:`HMCClient` by inheritance.
 
 from __future__ import annotations
 
-import warnings
-from collections.abc import AsyncIterator
-from collections.abc import Mapping
-from typing import Any, Literal, get_args
 import re
+import warnings
+from collections.abc import AsyncIterator, Mapping
 from threading import Lock
+from typing import Any, Literal, get_args
 from urllib.parse import quote, unquote, urlparse
 
 from ..audit import records as audit
-from .client_contracts import httpx
-from .client_parse import _find_text, _parse_feed
 from ..config import HMCConfig, env_var_value
 from ..documents import (
     build_brokered_file_document,
@@ -29,12 +26,13 @@ from ..documents import (
 from ..errors import HMCError, HMCTransportError
 from ..jobs import TERMINAL_JOB_STATUSES
 from ..resource_identity import is_uuid
-
 from .client_adapters import AdaptersMixin
 from .client_cluster import ClusterMixin
+from .client_contracts import httpx
 from .client_lpars import LparsMixin
 from .client_lpm import LpmMixin
 from .client_network import NetworkMixin
+from .client_parse import _find_text, _parse_feed
 from .client_pcm import PcmMixin
 from .client_storage import StorageMixin
 from .client_systems import SystemsMixin
@@ -304,7 +302,7 @@ class HMCClient(
 
     # Session lifecycle
 
-    async def __aenter__(self) -> "HMCClient":
+    async def __aenter__(self) -> HMCClient:
         try:
             await self.logon()
         except BaseException:

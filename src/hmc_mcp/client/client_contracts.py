@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-# Element is a type contract only; client implementations parse inbound XML
-# through defusedxml.
-from xml.etree.ElementTree import Element  # nosec B405
 from importlib import import_module
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Protocol
+
+# Element is a type contract only; client implementations parse inbound XML
+# through defusedxml.
+from xml.etree.ElementTree import Element  # nosec B405
 
 from ..config import HMCConfig
 

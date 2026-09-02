@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
+
 from ...documents import (
     LparResources,
     build_dlpar_mem_document,
@@ -13,14 +15,14 @@ from ...documents import (
 )
 from ...errors import HMCError
 from .assignments import (
-    WorkflowStep,
     LparPcieAssignments,
     LparPcieWorkflowResult,
+    WorkflowStep,
     _apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
 from .errors import translate_lpar_write_error
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
+
 
 async def modify_lpar(
     hmc: HMCClient,

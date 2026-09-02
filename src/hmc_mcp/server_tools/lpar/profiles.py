@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
-from ...tool_registry import tool_module
-
 from ..._app import (
     ssh_with_client,
     with_client,
 )
-from ...operations.pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
 from ...operations.lpar.configuration import (
     restore_system_lpar_profiles,
     synchronize_lpar_profile,
 )
-
+from ...operations.pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
 from ...ssh.profiles import backup_lpar_profiles
-
+from ...tool_registry import tool_module
 
 # destructive because force=True silently overwrites an existing backup file on the HMC
 tool, register_tools, tool_security = tool_module()

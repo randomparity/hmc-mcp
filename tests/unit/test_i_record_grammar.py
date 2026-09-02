@@ -25,7 +25,6 @@ from hmc_mcp.config import HMCConfig
 from hmc_mcp.ssh import memory as ssh_memory
 from hmc_mcp.ssh import network as ssh_network
 from hmc_mcp.ssh import profiles as ssh_profiles
-from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.ssh.commands import (
     build_attribute_record,
     build_filter,
@@ -39,6 +38,7 @@ from hmc_mcp.ssh.profiles import (
     set_lpar_proc_compat,
     sync_lpar_profile,
 )
+from hmc_mcp.ssh.transport import HMCCLIError
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 SCANNED_ROOTS = (_REPO_ROOT / "src" / "hmc_mcp", _REPO_ROOT / "scripts")

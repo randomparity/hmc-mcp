@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import re
-import socket
 import sys
 from collections.abc import Sequence
 from urllib.error import HTTPError, URLError
@@ -106,7 +105,7 @@ def _fetch_payload() -> bytes:
         raise RuntimeError(
             f"failed to fetch Python lifecycle data ({detail}); inspect the authority and retry"
         ) from error
-    except (URLError, socket.timeout, TimeoutError, OSError) as error:
+    except (URLError, TimeoutError, OSError) as error:
         raise RuntimeError(
             "failed to fetch Python lifecycle data; check network availability and retry"
         ) from error

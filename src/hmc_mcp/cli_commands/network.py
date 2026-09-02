@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-
 import typer
 from rich.table import Table
-
-from .runtime import with_client
-from .output import first_field, output, print_json, console
 
 from ..operations.network import (
     create_virtual_network,
@@ -16,6 +12,8 @@ from ..operations.network import (
     list_virtual_networks,
     list_virtual_switches,
 )
+from .output import console, first_field, output, print_json
+from .runtime import with_client
 
 
 def network_list_switches(

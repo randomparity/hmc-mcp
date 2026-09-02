@@ -50,8 +50,8 @@ from typer.testing import CliRunner
 
 from hmc_mcp import server as server_module
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.cli import app
 from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
+from hmc_mcp.cli import app
 from hmc_mcp.cli_commands.legacy_policy import LEGACY_POLICY_NAME, compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 

@@ -11,16 +11,16 @@ import sys
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
 from typing import Any, BinaryIO
-
+from urllib.parse import urlparse
 
 from hmc_mcp.client.core import HMCClient
-from ..config import ISO_URL_ALLOWLIST_HELP
-from ..errors import HMCError
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
+
 from ..client.client_contracts import httpx
-from ..resource_identity import resolve_lpar_uuid, resolve_vios_uuid
+from ..config import ISO_URL_ALLOWLIST_HELP
 from ..documents import StorageKind
+from ..errors import HMCError
 from ..jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
     DEFAULT_JOB_TIMEOUT_SECONDS,
@@ -30,7 +30,7 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
+from ..resource_identity import resolve_lpar_uuid, resolve_vios_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -511,56 +511,55 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
     async with httpx.AsyncClient(
         timeout=timeout,
         follow_redirects=False,
-    ) as client:
-        async with client.stream("GET", url) as response:
-            # Every 3xx, not just httpx's `is_redirect` (which additionally
-            # requires a Location header): a 3xx without one is not a body to
-            # import into a media repository either.
-            if 300 <= response.status_code < 400:
-                raise ValueError(
-                    f"iso_source is refused: {url!r} answered with HTTP "
-                    f"{response.status_code}, a redirect. The ISO must be served "
-                    "at the URL you pass, because a redirect would move the "
-                    "download to a host the operator's allowlist never checked. "
-                    "Pass the URL the ISO is actually served from."
-                )
-            response.raise_for_status()
+    ) as client, client.stream("GET", url) as response:
+        # Every 3xx, not just httpx's `is_redirect` (which additionally
+        # requires a Location header): a 3xx without one is not a body to
+        # import into a media repository either.
+        if 300 <= response.status_code < 400:
+            raise ValueError(
+                f"iso_source is refused: {url!r} answered with HTTP "
+                f"{response.status_code}, a redirect. The ISO must be served "
+                "at the URL you pass, because a redirect would move the "
+                "download to a host the operator's allowlist never checked. "
+                "Pass the URL the ISO is actually served from."
+            )
+        response.raise_for_status()
 
-            import tempfile
+        import tempfile
 
-            fd, temp_path = tempfile.mkstemp(suffix=".iso", prefix="hmc_upload_")
-            temp_file = Path(temp_path)
+        fd, temp_path = tempfile.mkstemp(suffix=".iso", prefix="hmc_upload_")
+        temp_file = Path(temp_path)
 
-            sha256_hash = hashlib.sha256()
-            downloaded_size = 0
+        sha256_hash = hashlib.sha256()
+        downloaded_size = 0
 
+        try:
+            with os.fdopen(fd, "wb") as f:
+                async for chunk in response.aiter_bytes(
+                    chunk_size=DEFAULT_CHUNK_SIZE
+                ):
+                    downloaded_size += len(chunk)
+                    if downloaded_size > MAX_DOWNLOAD_SIZE_BYTES:
+                        raise ValueError(
+                            f"Download size {downloaded_size} bytes exceeds "
+                            f"maximum allowed size of {MAX_DOWNLOAD_SIZE_BYTES} bytes"
+                        )
+
+                    f.write(chunk)
+                    sha256_hash.update(chunk)
+
+            iso_sha256 = sha256_hash.hexdigest()
+            return temp_file, iso_sha256, downloaded_size
+
+        except Exception:
+            # Clean up temp file on any error
             try:
-                with os.fdopen(fd, "wb") as f:
-                    async for chunk in response.aiter_bytes(
-                        chunk_size=DEFAULT_CHUNK_SIZE
-                    ):
-                        downloaded_size += len(chunk)
-                        if downloaded_size > MAX_DOWNLOAD_SIZE_BYTES:
-                            raise ValueError(
-                                f"Download size {downloaded_size} bytes exceeds "
-                                f"maximum allowed size of {MAX_DOWNLOAD_SIZE_BYTES} bytes"
-                            )
-
-                        f.write(chunk)
-                        sha256_hash.update(chunk)
-
-                iso_sha256 = sha256_hash.hexdigest()
-                return temp_file, iso_sha256, downloaded_size
-
-            except Exception:
-                # Clean up temp file on any error
-                try:
-                    temp_file.unlink(missing_ok=True)
-                except OSError:
-                    logger.exception(
-                        "failed to remove incomplete ISO download %s", temp_file
-                    )
-                raise
+                temp_file.unlink(missing_ok=True)
+            except OSError:
+                logger.exception(
+                    "failed to remove incomplete ISO download %s", temp_file
+                )
+            raise
 
 
 async def _aiter_file_chunks(

@@ -21,10 +21,9 @@ from typing import Any, Literal, TypeVar, overload
 
 from fastmcp import FastMCP
 
-from .client.core import HMCClient
 from .client.client_factory import client_from_env
-from .config import build_config
-from .config import HMCConfig
+from .client.core import HMCClient
+from .config import HMCConfig, build_config
 from .ssh.selectors import resolve_ssh_names
 
 _T = TypeVar("_T")

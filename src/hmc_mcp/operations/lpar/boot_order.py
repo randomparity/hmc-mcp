@@ -6,6 +6,8 @@ import logging
 from typing import Any
 
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
+
 from ...documents import (
     BOOT_DEVICE_SELECTORS,
     build_boot_order_document,
@@ -14,7 +16,6 @@ from ...documents import (
 from ...errors import HMCError
 from ...resource_identity import resolve_lpar_uuid
 from .errors import translate_lpar_write_error
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
 
 _logger = logging.getLogger(__name__)
 

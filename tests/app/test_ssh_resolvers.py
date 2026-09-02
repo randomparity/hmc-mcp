@@ -18,13 +18,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from conftest import make_config
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.ssh.lpar import resolve_lpar_cli_name, resolve_system_cli_name
 from hmc_mcp.ssh.selectors import resolve_lpar_name, resolve_system_name
-
-from conftest import make_config
+from hmc_mcp.ssh.transport import HMCCLIError
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"

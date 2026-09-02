@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from .client_contracts import LpmClient
 from ..jobs import (
     RemoteRestartOperation,
     migrate_abort_lpar_job,
@@ -17,6 +16,7 @@ from ..jobs import (
     migrate_validate_lpar_job,
     remote_restart_lpar_job,
 )
+from .client_contracts import LpmClient
 
 
 class LpmMixin:

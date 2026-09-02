@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-
 import typer
 
-from .runtime import client, run, with_client
-from .output import print_json, usage_error, console
 from ..operations.pcm import (
     PcmCategory,
     get_pcm_preferences,
@@ -17,6 +14,8 @@ from ..operations.pcm import (
     validate_pcm_metric_target,
     validate_pcm_preferences_category,
 )
+from .output import console, print_json, usage_error
+from .runtime import client, run, with_client
 
 
 def metrics_prefs(

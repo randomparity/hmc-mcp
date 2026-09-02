@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
-
-from .results import entries, resource as get_resource
+from .results import entries
+from .results import resource as get_resource
 
 if TYPE_CHECKING:
     from live_test_runner import RunState

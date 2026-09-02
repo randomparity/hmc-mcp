@@ -207,7 +207,6 @@ from hmc_mcp import tool_registry
 from hmc_mcp.audit import records as audit
 from hmc_mcp.client import core as client
 
-
 ROOT = Path(__file__).parents[1]
 DOCUMENT = ROOT / "docs" / "authorization-audit.md"
 ENVIRONMENT_DOCUMENT = ROOT / "docs" / "environment-variables.md"

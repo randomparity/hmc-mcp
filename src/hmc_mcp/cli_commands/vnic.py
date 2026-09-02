@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
+import sys
 from contextlib import redirect_stdout
 from dataclasses import asdict
 from decimal import Decimal
-import sys
 
 import typer
-
-from .runtime import run, ssh_config, with_client
-from .output import output, print_json
 
 from ..operations.vnic import (
     VnicBackingSelector,
@@ -21,6 +18,8 @@ from ..operations.vnic import (
     list_vnics,
     remove_vnic,
 )
+from .output import output, print_json
+from .runtime import run, ssh_config, with_client
 
 
 def _confirm_on_stderr(prompt: str) -> bool:

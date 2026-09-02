@@ -7,9 +7,8 @@ from dataclasses import asdict
 import typer
 
 from ..operations import jobs as operations_jobs
-
+from .output import console, err_console, output, print_json, usage_error
 from .runtime import with_client
-from .output import output, print_json, usage_error, console, err_console
 
 
 def jobs_show(

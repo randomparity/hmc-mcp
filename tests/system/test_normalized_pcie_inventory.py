@@ -107,10 +107,9 @@ async def test_dedicated_inventory_rejects_blank_identity() -> None:
         patch(
             "hmc_mcp.operations.pcie.list_dedicated_pcie_slot_rows",
             AsyncMock(return_value=rows),
-        ),
+        ),pytest.raises(ValueError, match="drc_index")
     ):
-        with pytest.raises(ValueError, match="drc_index"):
-            await list_dedicated_slots(_config(), "sys1")
+        await list_dedicated_slots(_config(), "sys1")
 
 
 @pytest.mark.asyncio
@@ -126,10 +125,9 @@ async def test_dedicated_inventory_rejects_whitespace_identity_and_normalizes_op
         patch(
             "hmc_mcp.operations.pcie.list_dedicated_pcie_slot_rows",
             AsyncMock(return_value=rows),
-        ),
+        ),pytest.raises(ValueError, match="drc_index")
     ):
-        with pytest.raises(ValueError, match="drc_index"):
-            await list_dedicated_slots(_config(), "sys1")
+        await list_dedicated_slots(_config(), "sys1")
 
 
 @pytest.mark.asyncio

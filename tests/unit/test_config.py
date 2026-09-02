@@ -18,10 +18,10 @@ from unittest.mock import patch
 import pytest
 
 from hmc_mcp import config as config_module
-from hmc_mcp.config import build_config
 from hmc_mcp.config import (
     ConfigError,
     HMCConfig,
+    build_config,
     config_dir,
     config_inventory,
     env_var_value,

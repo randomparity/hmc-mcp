@@ -14,11 +14,11 @@ from hmc_mcp.ssh.install import (
 
 BASE = "https://hmc.test"
 
-VIOS_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+VIOS_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:00000000-0000-0000-0000-000000000003</id>
   <title>LogicalPartition:vios1</title>
-  <link rel="SELF" href="{base}/rest/api/uom/LogicalPartition/00000000-0000-0000-0000-000000000003"/>
+  <link rel="SELF" href="{BASE}/rest/api/uom/LogicalPartition/00000000-0000-0000-0000-000000000003"/>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <PartitionName>vios1</PartitionName>
@@ -27,7 +27,7 @@ VIOS_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </LogicalPartition>
   </content>
 </entry>
-""".format(base=BASE)
+"""
 
 
 # ---------------------------------------------------------------------- #

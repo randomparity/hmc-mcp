@@ -15,7 +15,7 @@ from __future__ import annotations
 import ipaddress
 import ssl
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -117,7 +117,7 @@ class _MockHMC(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         body = self._drain_body()
-        request_log = getattr(self.server, "request_log")
+        request_log = self.server.request_log
         request_log.append(
             {
                 "path": self.path,
@@ -168,7 +168,7 @@ def _self_signed_cert(tmp_path: Path) -> tuple[str, str]:
 
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cert = (
         x509.CertificateBuilder()
         .subject_name(name)

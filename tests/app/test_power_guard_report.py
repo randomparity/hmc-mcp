@@ -19,10 +19,16 @@ from fastmcp import Client
 
 import hmc_mcp.config as config_module
 import hmc_mcp.server_tools.permissions as permissions_module
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
+from hmc_mcp.authorization.access_policy import (
+    DEFAULT_CONNECTION_TOKEN,
+    compile_access_policy,
+)
 from hmc_mcp.authorization.connection_scope import selected_connection
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.server_tools.permissions import build_effective_permissions, resolve_power_guards
+from hmc_mcp.server_tools.permissions import (
+    build_effective_permissions,
+    resolve_power_guards,
+)
 
 ALL_TOOLS_GRANT = [
     {"effects": ["read"], "connections": ["<default>"], "targets": "all-targets"}

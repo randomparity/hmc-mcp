@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from ..config import HMCConfig
-from .transport import HMCCLIError, run_hmc_command
 from .commands import (
     _parse_lshwres_output,
     build_attribute_record,
@@ -17,6 +16,7 @@ from .commands import (
     parse_hmc_delimited_rows,
 )
 from .profiles import get_proc_compat_modes
+from .transport import HMCCLIError, run_hmc_command
 
 _MEMOPT_SELECTOR_SAFETY_CEILING_BYTES = 4096
 _RESOURCE_GROUP_MEMOPT_MINIMUM_HMC = (11, 1, 1110)

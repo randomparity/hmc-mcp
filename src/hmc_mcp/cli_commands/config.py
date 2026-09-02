@@ -25,16 +25,16 @@ from typing import Any, Final
 import typer
 from rich.markup import escape
 
-from . import runtime as cli_runtime
 from ..authorization.access_policy import AccessPolicyError
-from .output import fail, console, err_console
-from .serve import _policy_file
 from ..config import (
     ConfigError,
-    config_inventory,
     config_dir,
+    config_inventory,
     resolve_config_path,
 )
+from . import runtime as cli_runtime
+from .output import console, err_console, fail
+from .serve import _policy_file
 
 _STARTER_TOML = """\
 # hmc-mcp configuration — see README for the full schema
@@ -244,13 +244,13 @@ def config_init_access_policy(
     ``serve`` runs under: both resolve the file through the same config directory, and
     the connection list is read from that identity's ``config.toml``.
     """
+    from ..server_tools.catalog import TOOL_SECURITY
     from .legacy_policy import (
         LEGACY_POLICY_NAME,
         compile_rendered_policy,
         legacy_connections,
         render_legacy_policy,
     )
-    from ..server_tools.catalog import TOOL_SECURITY
 
     if output is not None:
         target = Path(output)
@@ -384,13 +384,13 @@ def config_diff_access_policy(
     """
     import difflib
 
+    from ..server_tools.catalog import TOOL_SECURITY
     from .legacy_policy import (
         GENERATED_SOURCE,
         compile_rendered_policy,
         legacy_connections,
         render_legacy_policy,
     )
-    from ..server_tools.catalog import TOOL_SECURITY
 
     path = Path(deployed)
 

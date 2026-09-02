@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from ..tool_registry import tool_module
-
 from typing import Any
 
 from .._app import (
@@ -14,7 +12,7 @@ from ..operations.templates import (
     get_partition_template,
     list_partition_templates,
 )
-
+from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-
-import typer
 from typing import Literal, cast
 
-from ...jobs import REMOTE_RESTART_OPERATIONS, RemoteRestartOperation
-from ..runtime import client, run
-from ..output import print_json, console
+import typer
 
-from ...jobs import JobOutcome, validate_wait_timing
+from ...jobs import (
+    REMOTE_RESTART_OPERATIONS,
+    JobOutcome,
+    RemoteRestartOperation,
+    validate_wait_timing,
+)
 from ...operations.lpm import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightRequest,
@@ -19,10 +20,12 @@ from ...operations.lpm import (
     abort_lpar_migration,
     migrate_lpar,
     migrate_lpar_with_affinity_preflight,
-    validate_lpar_migration,
     recover_lpar_migration,
     remote_restart_lpar,
+    validate_lpar_migration,
 )
+from ..output import console, print_json
+from ..runtime import client, run
 
 
 def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) -> None:

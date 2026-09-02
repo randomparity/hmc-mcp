@@ -14,21 +14,21 @@ import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from conftest import make_config
+
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.server_tools import console as server_console
 from hmc_mcp.ssh.console import (
     HELD_SENTINEL,
     MAX_CAPTURE_BYTES,
     MAX_CAPTURE_SECONDS,
     ConsoleCapture,
     ConsoleHeldError,
-    _SealedStdin,
     _probe_released,
+    _SealedStdin,
     _truncate,
     capture_lpar_console,
 )
-from hmc_mcp.server_tools import console as server_console
 
 BANNER = b"\r\n Open in progress  \r\n "
 
@@ -578,7 +578,7 @@ def test_truncation_never_splits_an_incomplete_csi_sequence():
 def test_truncation_backtracks_over_partial_utf8_then_esc():
     data = "aé".encode() + b"\x1b[1;2Hx"
     # The limit lands inside é and inside the CSI sequence: both backtrack.
-    assert _truncate(data, 2) == "a".encode() == b"a"
+    assert _truncate(data, 2) == b"a" == b"a"
     # The CSI sequence completes at 'H' (index 8), but the cut must fall
     # before the whole incomplete sequence, i.e. before the ESC at index 3.
     assert _truncate(data, 8) == "aé".encode()

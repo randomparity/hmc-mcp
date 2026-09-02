@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import ast
-import json
 import importlib.util
+import json
 import os
 import re
 import sys
@@ -13,9 +13,8 @@ from pathlib import Path
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.ssh import affinity as ssh_affinity
 from hmc_mcp.server import TOOL_SECURITY
-
+from hmc_mcp.ssh import affinity as ssh_affinity
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
@@ -102,7 +101,6 @@ def _isolate_runner(monkeypatch) -> None:
         # its handler unwrapped, which is how a live run stops being evidence.
         assert permits is not None and authorize is not None
         assert permits("hmc_run_command") is True
-        return None
 
     monkeypatch.setattr(runner, "configure_arbitrary_command_tool", configure)
 

@@ -128,7 +128,7 @@ def test_add_vnic_rejects_structural_selector_characters():
     """Typed vNIC selectors reject characters that alter HMC payload structure."""
     with pytest.raises(ValueError, match="alter HMC command structure"):
         _validate_vnic_backing_selector(
-            VnicBackingSelector(f"vios,{HOSTILE}", "2", "1", "0", Decimal("2"))
+            VnicBackingSelector(f"vios,{HOSTILE}", "2", "1", "0", Decimal(2))
         )
 
 

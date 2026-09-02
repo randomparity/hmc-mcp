@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from ...tool_registry import tool_module
-
 from typing import Any
+
+from hmc_mcp.operations.ownership import list_lpar_ownership
 
 from ..._app import (
     with_client,
-)
-from hmc_mcp.operations.ownership import list_lpar_ownership
-from ...operations.affinity import (
-    ProvisionAffinityAssessment,
 )
 from ...documents import (
     Keylock,
@@ -19,7 +15,18 @@ from ...documents import (
     OsType,
     PartitionType,
 )
-from ...operations.lpar.decommission import DecommissionResult, decommission_lpar
+from ...operations.affinity import (
+    ProvisionAffinityAssessment,
+)
+from ...operations.lpar.assignments import (
+    LparPcieAssignments,
+    LparPcieWorkflowResult,
+)
+from ...operations.lpar.boot_order import (
+    clear_lpar_boot_order,
+    read_lpar_boot_order,
+    set_lpar_boot_order,
+)
 from ...operations.lpar.core import (
     LparCreation,
     LparPowerOnOutcome,
@@ -28,18 +35,11 @@ from ...operations.lpar.core import (
     power_on_lpar,
     rename_lpar,
 )
-from ...ssh.lpar import validate_caller_token
-from ...operations.lpar.boot_order import (
-    clear_lpar_boot_order,
-    read_lpar_boot_order,
-    set_lpar_boot_order,
-)
+from ...operations.lpar.decommission import DecommissionResult, decommission_lpar
 from ...operations.lpar.dlpar import modify_lpar, set_lpar_memory, set_lpar_processors
 from ...operations.lpar.workflows import create_lpar
-from ...operations.lpar.assignments import (
-    LparPcieAssignments,
-    LparPcieWorkflowResult,
-)
+from ...ssh.lpar import validate_caller_token
+from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

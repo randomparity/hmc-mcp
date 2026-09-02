@@ -23,7 +23,6 @@ from typing import BinaryIO, Never, Protocol
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
-
 PROJECT_NAME = "hmc-mcp"
 PACKAGE_NAME = "hmc_mcp"
 # PEP 561: without this marker in the distribution a type-checker reads every

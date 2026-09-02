@@ -8,7 +8,6 @@ import textwrap
 import tomllib
 from pathlib import Path
 
-
 ROOT = Path(__file__).parents[1]
 TOOL_PINS = {
     "detect-secrets==1.5.0",

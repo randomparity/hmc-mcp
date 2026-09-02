@@ -9,14 +9,13 @@ import logging
 import socket
 from unittest.mock import patch
 
-from hmc_mcp.audit import sink as audit_sink
-
 import pytest
 from click import unstyle
 from fastmcp import FastMCP
 from typer.testing import CliRunner
 
 from hmc_mcp import server as server_app
+from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy
 from hmc_mcp.cli import app
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy

@@ -6,8 +6,8 @@ import typer
 
 from ...jobs import validate_wait_timing
 from ...operations.lpar.core import delete_lpar, power_lpar
+from ..output import console, err_console, print_json
 from ..runtime import client, run
-from ..output import print_json, console, err_console
 
 
 def lpars_power_on(

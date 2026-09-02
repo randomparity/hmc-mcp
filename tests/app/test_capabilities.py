@@ -19,9 +19,10 @@ import httpx
 import pytest
 
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.errors import HMCError
 from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.errors import HMCError
+from hmc_mcp.operations.affinity import ProvisionAffinityAssessment
 from hmc_mcp.server import (
     TOOL_SECURITY,
     create_mcp,
@@ -33,7 +34,6 @@ from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_delete_lpar as hmc_delete_lpar,
 )
 from hmc_mcp.server_tools.vios import hmc_delete_vios as hmc_delete_vios
-from hmc_mcp.operations.affinity import ProvisionAffinityAssessment
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
 # every consumer builds its own. The legacy-equivalent policy registers exactly the
@@ -939,10 +939,10 @@ def test_power_on_lpar_already_running_assessment_does_not_measure(
 # hmc_create_lpar name-collision guard
 # ------------------------------------------------------------------ #
 
-EXISTING_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+EXISTING_LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:{uuid}</id>
+    <id>urn:uuid:{LPAR_UUID}</id>
     <title>LogicalPartition:existing-lpar</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -952,7 +952,7 @@ EXISTING_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </content>
   </entry>
 </feed>
-""".format(uuid=LPAR_UUID)
+"""
 
 EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom"/>

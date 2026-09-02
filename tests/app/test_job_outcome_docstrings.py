@@ -8,7 +8,6 @@ from hmc_mcp.server_tools.lpm import (
     hmc_remote_restart_lpar,
 )
 
-
 SUBMISSION_TOOLS = (
     hmc_migrate_lpar,
     hmc_migrate_validate_lpar,

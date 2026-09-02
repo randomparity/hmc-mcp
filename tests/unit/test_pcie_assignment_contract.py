@@ -11,8 +11,8 @@ from hmc_mcp.operations.pcie import (
     assign_dedicated_pcie_slot,
     unassign_dedicated_pcie_slot,
 )
-from hmc_mcp.ssh.profiles import assign_profile_io_slot, unassign_profile_io_slot
 from hmc_mcp.server_tools.lpar.profiles import tool_security
+from hmc_mcp.ssh.profiles import assign_profile_io_slot, unassign_profile_io_slot
 
 
 def _config() -> HMCConfig:

@@ -6,6 +6,8 @@ domain mixin; this module only defines methods for storage.
 
 from __future__ import annotations
 
+import re as _re
+
 # ElementTree is retained for element construction, traversal, typing, and
 # serialization only. Every inbound HMC response is parsed with defusedxml.
 import xml.etree.ElementTree as ET  # nosec B405
@@ -14,9 +16,6 @@ from urllib.parse import urlparse
 
 from defusedxml import ElementTree as DET
 
-from .client_contracts import StorageClient
-from .client_parse import _parse_feed
-from ..errors import HMCError
 from ..documents import (
     StorageKind,
     build_virtual_disk_delete_document,
@@ -25,8 +24,9 @@ from ..documents import (
     build_volume_group_document,
     build_vscsi_mapping_document,
 )
-
-import re as _re
+from ..errors import HMCError
+from .client_contracts import StorageClient
+from .client_parse import _parse_feed
 
 # HMC UOM namespace — used in read-modify-write VolumeGroup operations.
 _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"

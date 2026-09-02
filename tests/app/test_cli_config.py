@@ -789,7 +789,7 @@ def test_diff_access_policy_shows_a_tool_a_later_release_added(tmp_path, monkeyp
     """
     from dataclasses import replace
 
-    import hmc_mcp.server_tools.catalog as catalog
+    from hmc_mcp.server_tools import catalog
 
     deployed = _generate_and_deploy(tmp_path, monkeypatch)
     drifted = dict(catalog.TOOL_SECURITY)

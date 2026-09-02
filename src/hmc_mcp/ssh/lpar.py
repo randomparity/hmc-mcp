@@ -6,10 +6,10 @@ import shlex
 
 from ..config import HMCConfig
 from ..documents import LparResources
-from .transport import HMCCLIError, run_hmc_command
 from .commands import build_attribute_record
 from .description_validation import validate_lpar_description
 from .profiles import set_lpar_description
+from .transport import HMCCLIError, run_hmc_command
 
 
 def validate_caller_token(token: str) -> None:

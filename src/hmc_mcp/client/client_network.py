@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..documents import build_virtual_network_document
 from .client_contracts import NetworkClient
 from .client_parse import _parse_feed
-from ..documents import build_virtual_network_document
 
 
 class NetworkMixin:

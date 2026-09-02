@@ -41,7 +41,6 @@ from hmc_mcp.authorization.access_policy import (
     AllTargets,
     compile_access_policy,
 )
-from hmc_mcp.config import ConfigError
 from hmc_mcp.cli_commands.legacy_policy import (
     GENERATED_SOURCE,
     LEGACY_POLICY_NAME,
@@ -52,6 +51,7 @@ from hmc_mcp.cli_commands.legacy_policy import (
     legacy_tools,
     render_legacy_policy,
 )
+from hmc_mcp.config import ConfigError
 from hmc_mcp.server import TOOL_SECURITY
 
 DEL = "\x7f"

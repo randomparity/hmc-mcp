@@ -8,12 +8,12 @@ from __future__ import annotations
 
 from typing import Any, Literal, get_args
 
-from .client_contracts import AdaptersClient
 from ..documents import (
     build_client_network_adapter_document,
     build_vfc_adapter_document,
     build_vscsi_adapter_document,
 )
+from .client_contracts import AdaptersClient
 
 AdapterType = Literal[
     "ClientNetworkAdapter",

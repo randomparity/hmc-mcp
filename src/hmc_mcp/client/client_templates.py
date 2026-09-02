@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from .client_contracts import TemplatesClient
-from .client_parse import _parse_feed
 from ..errors import HMCError
 from ..jobs import deploy_partition_template_job
+from .client_contracts import TemplatesClient
+from .client_parse import _parse_feed
 
 
 class TemplatesMixin:

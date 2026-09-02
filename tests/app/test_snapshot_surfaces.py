@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,15 +9,16 @@ import pytest
 from typer.testing import CliRunner
 
 from hmc_mcp import cli
+from hmc_mcp.cli_commands.snapshot import _publish
 from hmc_mcp.operations.affinity import (
     AffinityAssessmentInput,
     assess_affinity,
 )
-from datetime import UTC, datetime
-from hmc_mcp.cli_commands.snapshot import _publish
 from hmc_mcp.server import TOOL_SECURITY
-from hmc_mcp.server_tools.snapshot import hmc_snapshot_inspect
-from hmc_mcp.server_tools.snapshot import hmc_snapshot_assess_affinity
+from hmc_mcp.server_tools.snapshot import (
+    hmc_snapshot_assess_affinity,
+    hmc_snapshot_inspect,
+)
 
 RUNNER = CliRunner()
 

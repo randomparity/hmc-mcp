@@ -14,15 +14,14 @@ import pytest
 
 from hmc_mcp.audit import records as audit
 from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.operations.lpar import core as operations_lpar
-from hmc_mcp.operations import ownership as lpar_ownership
 from hmc_mcp.config import validate_agent_id
+from hmc_mcp.operations import ownership as lpar_ownership
+from hmc_mcp.operations.lpar import core as operations_lpar
 from hmc_mcp.operations.ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     authorize_lpar_mutation,
     resolve_and_authorize_lpar_names,
 )
-
 
 # ---------------------------------------------------------------------------
 # validate_agent_id
@@ -106,8 +105,8 @@ def test_validate_agent_id_control_char():
 # ---------------------------------------------------------------------------
 
 
-from hmc_mcp.ssh.lpar import stamp_lpar_ownership  # noqa: E402 (after validate tests)
 from hmc_mcp.config import HMCConfig  # noqa: E402
+from hmc_mcp.ssh.lpar import stamp_lpar_ownership  # noqa: E402 (after validate tests)
 
 
 def _config():
@@ -581,9 +580,8 @@ def test_ssh_ownership_read_failure_names_guard_and_remedy(authorize):
     with patch(
         "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(side_effect=cause),
-    ):
-        with pytest.raises(HMCCLIError) as exc_info:
-            asyncio.run(authorize(hmc))
+    ), pytest.raises(HMCCLIError) as exc_info:
+        asyncio.run(authorize(hmc))
 
     assert "ADR 0011 ownership precheck" in str(exc_info.value)
     assert "LPAR 'lpar1'" in str(exc_info.value)
@@ -678,9 +676,8 @@ def test_the_denial_still_reaches_stderr_without_a_sink(capsys):
         with patch(
             "hmc_mcp.operations.ownership.get_lpar_description",
             new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
-        ):
-            with pytest.raises(PermissionError):
-                asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
+        ), pytest.raises(PermissionError):
+            asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
         captured = capsys.readouterr()
     finally:
         logging.root.handlers[:] = saved
@@ -704,10 +701,9 @@ def test_the_denial_record_is_bounded_and_escaped(caplog):
             "hmc_mcp.operations.ownership.get_lpar_description",
             new=AsyncMock(return_value=hostile),
         ),
-        caplog.at_level(logging.WARNING),
+        caplog.at_level(logging.WARNING),pytest.raises(PermissionError)
     ):
-        with pytest.raises(PermissionError):
-            asyncio.run(authorize_lpar_mutation(hmc, "A" * 500, "x\ny‮z"))
+        asyncio.run(authorize_lpar_mutation(hmc, "A" * 500, "x\ny‮z"))
 
     raw = [r.getMessage() for r in caplog.records if r.name == audit_sink.AUDIT_LOGGER_NAME]
     assert len(raw) == 1
@@ -805,13 +801,12 @@ def test_stamp_bad_caller_token_raises_unswallowed():
     config = _config()
     with patch(
         "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
-    ) as mock_set:
-        with pytest.raises(ValueError, match="caller_token"):
-            asyncio.run(
-                stamp_lpar_ownership(
-                    config, "sys1", "lpar1", caller_token=""
-                )
+    ) as mock_set, pytest.raises(ValueError, match="caller_token"):
+        asyncio.run(
+            stamp_lpar_ownership(
+                config, "sys1", "lpar1", caller_token=""
             )
+        )
     mock_set.assert_not_awaited()  # rejected before any SSH traffic
 
 
@@ -1043,9 +1038,12 @@ def test_set_lpar_ownership_description_restamps_failed_create_stamp():
 # ---------------------------------------------------------------------------
 
 
-from hmc_mcp.errors import HMCError  # noqa: E402
-from hmc_mcp.operations.lpar.core import LparCreation, create_and_stamp_lpar  # noqa: E402
 from hmc_mcp.documents import LparResources  # noqa: E402
+from hmc_mcp.errors import HMCError  # noqa: E402
+from hmc_mcp.operations.lpar.core import (  # noqa: E402
+    LparCreation,
+    create_and_stamp_lpar,
+)
 from hmc_mcp.ssh.transport import HMCCLIError  # noqa: E402
 
 _STAMP_FAILURES = [

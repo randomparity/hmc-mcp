@@ -5,11 +5,9 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from hmc_mcp.ssh.network import list_io_slots
-
 from conftest import make_config
 
+from hmc_mcp.ssh.network import list_io_slots
 
 IO_SLOT_OUTPUT = (
     "drc_name=U78DA.ND1.ABC1234-P1-C1,pci_class=0200,feature_codes=EN0S,lpar_name=lpar1\n"

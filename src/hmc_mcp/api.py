@@ -7,20 +7,9 @@ authorization, capability checks, or post-mutation reconciliation fail; consult
 an operation's docstring when it defines a narrower failure contract.
 """
 
-from hmc_mcp.client.core import HMCClient, TLSVerificationDisabledWarning
 from hmc_mcp.client.client_adapters import AdapterType
+from hmc_mcp.client.core import HMCClient, TLSVerificationDisabledWarning
 from hmc_mcp.config import ConfigError, HMCConfig, load_profile
-from hmc_mcp.operations.affinity import (
-    AffinityAssessmentInput,
-    AffinityAssessmentResult,
-    AffinityClassification,
-    AffinityEvidence,
-    CapturedPolicyState,
-    PostActivationAffinityAssessment,
-    ProvisionAffinityAssessment,
-    PolicyState,
-    assess_post_activation_affinity,
-)
 from hmc_mcp.documents import (
     AuthenticationType,
     BootDeviceSelector,
@@ -36,17 +25,6 @@ from hmc_mcp.documents import (
 )
 from hmc_mcp.errors import HMCError, HMCTransportError
 from hmc_mcp.jobs import DeviceType, JobOutcome, LuType, RemoteRestartOperation
-from hmc_mcp.operations.ownership import (
-    authorize_decommission_lpar_ownership_snapshot,
-    authorize_lpar_mutation,
-    list_lpar_ownership,
-    resolve_and_authorize_lpar_mutation,
-    resolve_and_authorize_lpar_names,
-    resolve_lpar_ownership_names,
-    set_lpar_ownership_description,
-    stamp_created_lpar_ownership,
-)
-from hmc_mcp.operations.jobs import get_job, wait_for_job
 from hmc_mcp.operations.adapters import (
     AdapterResult,
     add_network_adapter,
@@ -55,6 +33,17 @@ from hmc_mcp.operations.adapters import (
     delete_adapter,
     list_adapters,
 )
+from hmc_mcp.operations.affinity import (
+    AffinityAssessmentInput,
+    AffinityAssessmentResult,
+    AffinityClassification,
+    AffinityEvidence,
+    CapturedPolicyState,
+    PolicyState,
+    PostActivationAffinityAssessment,
+    ProvisionAffinityAssessment,
+    assess_post_activation_affinity,
+)
 from hmc_mcp.operations.capacity import CapacitySummary, capacity_report, find_placement
 from hmc_mcp.operations.composite import (
     LparSummary,
@@ -62,18 +51,34 @@ from hmc_mcp.operations.composite import (
     lpar_summary,
     system_summary,
 )
-from hmc_mcp.operations.lpar.decommission import (
-    DecommissionAdapterRecord,
-    DecommissionBlastRadius,
-    DecommissionResult,
-    decommission_lpar,
-)
 from hmc_mcp.operations.health import FleetHealthResult, fleet_health
 from hmc_mcp.operations.install import (
     InstallHandle,
     InstallRequest,
     install_lpar_os,
     install_vios,
+)
+from hmc_mcp.operations.jobs import get_job, wait_for_job
+from hmc_mcp.operations.lpar.assignments import (
+    AssignmentResult,
+    DedicatedPcieAssignment,
+    LparPcieAssignments,
+    LparPcieWorkflowResult,
+    SriovLogicalPortAssignment,
+    VnicAssignment,
+    WorkflowStep,
+    apply_lpar_pcie_assignments,
+    prevalidate_lpar_pcie_assignments,
+)
+from hmc_mcp.operations.lpar.boot_order import (
+    clear_lpar_boot_order,
+    read_lpar_boot_order,
+    set_lpar_boot_order,
+)
+from hmc_mcp.operations.lpar.configuration import (
+    configure_lpar_msp,
+    configure_lpar_processor_compatibility,
+    synchronize_lpar_profile,
 )
 from hmc_mcp.operations.lpar.core import (
     LparCreation,
@@ -85,21 +90,24 @@ from hmc_mcp.operations.lpar.core import (
     power_lpar,
     rename_lpar,
 )
-from hmc_mcp.operations.partition_state import PartitionState
-from hmc_mcp.operations.lpar.boot_order import (
-    clear_lpar_boot_order,
-    read_lpar_boot_order,
-    set_lpar_boot_order,
-)
-from hmc_mcp.operations.lpar.configuration import (
-    configure_lpar_msp,
-    configure_lpar_processor_compatibility,
-    synchronize_lpar_profile,
+from hmc_mcp.operations.lpar.decommission import (
+    DecommissionAdapterRecord,
+    DecommissionBlastRadius,
+    DecommissionResult,
+    decommission_lpar,
 )
 from hmc_mcp.operations.lpar.dlpar import (
     modify_lpar,
     set_lpar_memory,
     set_lpar_processors,
+)
+from hmc_mcp.operations.lpar.provision import (
+    AttachDiskResult,
+    ProvisionAdapters,
+    ProvisionResult,
+    ProvisionStorage,
+    attach_disk_to_lpar,
+    provision_lpar,
 )
 from hmc_mcp.operations.lpar.workflows import create_lpar
 from hmc_mcp.operations.lpm import (
@@ -111,9 +119,9 @@ from hmc_mcp.operations.lpm import (
     abort_lpar_migration,
     migrate_lpar,
     migrate_lpar_with_affinity_preflight,
-    run_lpm_affinity_preflight,
     recover_lpar_migration,
     remote_restart_lpar,
+    run_lpm_affinity_preflight,
     validate_lpar_migration,
 )
 from hmc_mcp.operations.network import (
@@ -124,16 +132,17 @@ from hmc_mcp.operations.network import (
     list_virtual_networks,
     list_virtual_switches,
 )
-from hmc_mcp.operations.pcm import (
-    MetricKind,
-    PcmCategory,
-    PcmResource,
-    get_pcm_preferences,
-    metric_data,
-    metric_links,
-    resolve_pcm_resource,
-    set_pcm_preferences,
+from hmc_mcp.operations.ownership import (
+    authorize_decommission_lpar_ownership_snapshot,
+    authorize_lpar_mutation,
+    list_lpar_ownership,
+    resolve_and_authorize_lpar_mutation,
+    resolve_and_authorize_lpar_names,
+    resolve_lpar_ownership_names,
+    set_lpar_ownership_description,
+    stamp_created_lpar_ownership,
 )
+from hmc_mcp.operations.partition_state import PartitionState
 from hmc_mcp.operations.pcie import (
     CapabilityState,
     DedicatedSlot,
@@ -143,39 +152,30 @@ from hmc_mcp.operations.pcie import (
     ResourceKind,
     SriovAdapter,
     SriovLogicalPort,
-    SriovPhysicalPort,
-    assign_dedicated_pcie_slot,
-    list_dedicated_slots,
-    list_sriov_adapters,
-    list_sriov_logical_ports,
-    list_sriov_physical_ports,
-    unassign_dedicated_pcie_slot,
     SriovLogicalPortCapabilityError,
     SriovLogicalPortChangeResult,
     SriovLogicalPortPartialError,
     SriovLogicalPortSnapshot,
+    SriovPhysicalPort,
+    assign_dedicated_pcie_slot,
     assign_sriov_logical_port,
+    list_dedicated_slots,
+    list_sriov_adapters,
+    list_sriov_logical_ports,
+    list_sriov_physical_ports,
     set_sriov_adapter_mode,
+    unassign_dedicated_pcie_slot,
     unassign_sriov_logical_port,
 )
-from hmc_mcp.operations.lpar.assignments import (
-    AssignmentResult,
-    WorkflowStep,
-    DedicatedPcieAssignment,
-    LparPcieAssignments,
-    LparPcieWorkflowResult,
-    SriovLogicalPortAssignment,
-    VnicAssignment,
-    apply_lpar_pcie_assignments,
-    prevalidate_lpar_pcie_assignments,
-)
-from hmc_mcp.operations.lpar.provision import (
-    AttachDiskResult,
-    ProvisionAdapters,
-    ProvisionResult,
-    ProvisionStorage,
-    attach_disk_to_lpar,
-    provision_lpar,
+from hmc_mcp.operations.pcm import (
+    MetricKind,
+    PcmCategory,
+    PcmResource,
+    get_pcm_preferences,
+    metric_data,
+    metric_links,
+    resolve_pcm_resource,
+    set_pcm_preferences,
 )
 from hmc_mcp.operations.ssh_affinity import (
     MemoptLparSelector,
@@ -192,45 +192,6 @@ from hmc_mcp.operations.ssh_affinity import (
     plan_system_memopt_score,
     set_minimum_affinity_policy,
 )
-from hmc_mcp.operations.vnic import (
-    VnicBackingSelector,
-    VnicBackingSnapshot,
-    VnicCapabilityError,
-    VnicChangeResult,
-    VnicPartialError,
-    VnicSnapshot,
-    add_vnic,
-    list_fc_ports,
-    list_sea_adapters,
-    list_vnics,
-    remove_vnic,
-)
-from hmc_mcp.ssh.affinity import MinimumAffinityPolicy
-from .operations.storage import (
-    create_logical_unit,
-    create_media_repository,
-    create_optical_media,
-    create_virtual_disk,
-    create_volume_group,
-    delete_logical_unit,
-    delete_media_repository,
-    delete_optical_media,
-    delete_virtual_disk,
-    detach_storage_mapping,
-    get_shared_storage_pool,
-    get_media_repository,
-    list_optical_mappings,
-    list_optical_media,
-    list_clusters,
-    list_shared_storage_pools,
-    list_storage_mappings,
-    list_volume_groups,
-    map_storage,
-    StorageMapResult,
-    mount_optical_media,
-    unmount_optical_media,
-    upload_iso,
-)
 from hmc_mcp.operations.systems import (
     ManagedSystemPatch,
     get_system,
@@ -242,64 +203,6 @@ from hmc_mcp.operations.templates import (
     deploy_partition_template,
     get_partition_template,
     list_partition_templates,
-)
-from hmc_mcp.operations.updates import (
-    list_available_hmc_ptfs,
-    update_console_software,
-    update_firmware,
-    update_vios,
-    upgrade_vios,
-)
-from hmc_mcp.operations.vios import (
-    BackupType,
-    RestoreBackupType,
-    backup_vios,
-    create_vios,
-    delete_vios,
-    get_vios,
-    list_vios,
-    list_vios_backups,
-    power_vios,
-    restore_vios,
-)
-from hmc_mcp.operations.users import (
-    CreateUserRequest,
-    ModifyUserPatch,
-    configure_remote_access,
-    create_user,
-    delete_user,
-    modify_user,
-)
-from hmc_mcp.ssh.transport import HMCCLIError
-from hmc_mcp.ssh.network import SriovMode
-from hmc_mcp.ssh.console import (
-    ConsoleCapture,
-    ConsoleHeldError,
-    StopReason,
-    capture_lpar_console,
-)
-from hmc_mcp.snapshots.operations import (
-    assess_snapshot_affinity,
-    capture_lpar_snapshot,
-    inspect_lpar_snapshot,
-    validate_lpar_snapshot,
-)
-from hmc_mcp.snapshots.models import (
-    HMCIdentity,
-    LparIdentity,
-    LparSnapshot,
-    MemoryProjection,
-    NativeProfile,
-    NormalizedConfiguration,
-    ObservationEnvelope,
-    ProcessorProjection,
-    SnapshotCapability,
-    SnapshotConfiguration,
-    SnapshotInspection,
-    SnapshotObservations,
-    SnapshotSource,
-    SnapshotValidationError,
-    SystemIdentity,
 )
 from hmc_mcp.operations.update_models import (
     ConsoleUpdateMediaType,
@@ -319,8 +222,108 @@ from hmc_mcp.operations.update_models import (
     VIOSUpgradeSFTPSource,
     VIOSUpgradeUSBSource,
 )
+from hmc_mcp.operations.updates import (
+    list_available_hmc_ptfs,
+    update_console_software,
+    update_firmware,
+    update_vios,
+    upgrade_vios,
+)
+from hmc_mcp.operations.users import (
+    CreateUserRequest,
+    ModifyUserPatch,
+    configure_remote_access,
+    create_user,
+    delete_user,
+    modify_user,
+)
+from hmc_mcp.operations.vios import (
+    BackupType,
+    RestoreBackupType,
+    backup_vios,
+    create_vios,
+    delete_vios,
+    get_vios,
+    list_vios,
+    list_vios_backups,
+    power_vios,
+    restore_vios,
+)
+from hmc_mcp.operations.vnic import (
+    VnicBackingSelector,
+    VnicBackingSnapshot,
+    VnicCapabilityError,
+    VnicChangeResult,
+    VnicPartialError,
+    VnicSnapshot,
+    add_vnic,
+    list_fc_ports,
+    list_sea_adapters,
+    list_vnics,
+    remove_vnic,
+)
+from hmc_mcp.snapshots.models import (
+    HMCIdentity,
+    LparIdentity,
+    LparSnapshot,
+    MemoryProjection,
+    NativeProfile,
+    NormalizedConfiguration,
+    ObservationEnvelope,
+    ProcessorProjection,
+    SnapshotCapability,
+    SnapshotConfiguration,
+    SnapshotInspection,
+    SnapshotObservations,
+    SnapshotSource,
+    SnapshotValidationError,
+    SystemIdentity,
+)
+from hmc_mcp.snapshots.operations import (
+    assess_snapshot_affinity,
+    capture_lpar_snapshot,
+    inspect_lpar_snapshot,
+    validate_lpar_snapshot,
+)
+from hmc_mcp.ssh.affinity import MinimumAffinityPolicy
+from hmc_mcp.ssh.console import (
+    ConsoleCapture,
+    ConsoleHeldError,
+    StopReason,
+    capture_lpar_console,
+)
+from hmc_mcp.ssh.network import SriovMode
+from hmc_mcp.ssh.transport import HMCCLIError
 
-__all__ = [
+from .operations.storage import (
+    StorageMapResult,
+    create_logical_unit,
+    create_media_repository,
+    create_optical_media,
+    create_virtual_disk,
+    create_volume_group,
+    delete_logical_unit,
+    delete_media_repository,
+    delete_optical_media,
+    delete_virtual_disk,
+    detach_storage_mapping,
+    get_media_repository,
+    get_shared_storage_pool,
+    list_clusters,
+    list_optical_mappings,
+    list_optical_media,
+    list_shared_storage_pools,
+    list_storage_mappings,
+    list_volume_groups,
+    map_storage,
+    mount_optical_media,
+    unmount_optical_media,
+    upload_iso,
+)
+
+# This list is grouped by subsystem to mirror ADR 0029's inventory block, not sorted.
+# tests/unit/test_public_api.py asserts this exact order.
+__all__ = [  # noqa: RUF022 - grouped by subsystem to mirror ADR 0029, not sorted
     "HMCClient",
     "TLSVerificationDisabledWarning",
     "AffinityAssessmentInput",

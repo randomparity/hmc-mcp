@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 import typer
 
 from ...documents import (
@@ -13,8 +12,8 @@ from ...operations.lpar.boot_order import (
     read_lpar_boot_order,
     set_lpar_boot_order,
 )
+from ..output import console, print_json
 from ..runtime import with_client
-from ..output import print_json, console
 
 
 def lpars_read_boot_order(

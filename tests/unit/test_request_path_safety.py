@@ -19,11 +19,9 @@ import inspect
 import httpx
 import pytest
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.client.core import _reject_dot_segments, _reject_non_job_path
+from hmc_mcp.client.core import HMCClient, _reject_dot_segments, _reject_non_job_path
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
-
 
 UUID_A = "12345678-1234-1234-1234-1234567890ab"
 UUID_B = "ABCDEFAB-CDEF-CDEF-CDEF-ABCDEFABCDEF"

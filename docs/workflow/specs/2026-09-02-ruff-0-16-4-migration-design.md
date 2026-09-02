@@ -165,7 +165,26 @@ because the fixer's cascade surfaces it, so the table's own total is 650.
 | `S110` try-except-pass | 3 | Reviewed. Retained sites get a coded `# noqa: S110` naming why swallowing is the contract. |
 | `G201` logging-exc-info | 3 | Fixed: `logger.error(msg, exc_info=True)` → `logger.exception(msg)`, which emits identical output, so the assertions in `tests/unit/test_audit.py` are unaffected. |
 | `TRY002` raise-vanilla-class | 2 | Fixed: test fault injection raises `RuntimeError`. `B017`'s `pytest.raises(Exception)` at the matching site narrows with it. |
-| Remaining singletons and pairs (`C408`, `FLY002`, `FURB162`, `PIE808`, `PIE810`, `PLR0402`, `RUF015`, `RUF022`, `B009`, `B017`, `FURB167`, `PLC0206`, `PLR1711`, `RET501`, `SIM118`) | 22 | Fixed individually; each is a local rewrite with no contract surface. |
+| `RUF022` unsorted-dunder-all | 1 | **Retained.** Ruff's safe fix sorted `hmc_mcp.api.__all__`, and that list is grouped by subsystem to mirror ADR 0029's inventory block rather than sorted — `tests/unit/test_public_api.py` asserts the exact order, and the mechanical pass turned it red. Order restored, with a coded `# noqa: RUF022` on the assignment. This one was found by the suite rather than by reading, which is why the mechanical pass is gated on `just test` and not on the lint count alone. |
+| Remaining singletons and pairs (`C408`, `FLY002`, `FURB162`, `PIE808`, `PIE810`, `PLR0402`, `RUF015`, `B009`, `B017`, `FURB167`, `PLC0206`, `PLR1711`, `RET501`, `SIM118`) | 21 | Fixed individually; each is a local rewrite with no contract surface. |
+
+### A second contract surface the census could not see
+
+`I001` re-sorts imports, which moves every definition below them. `ADR 0092` §3 cites 44
+definitions by `file.py:line` and `tests/unit/test_adr_0092_citations.py` enforces those
+citations, so the mechanical pass invalidated 38 of them at a stroke. ADR 0092 states the
+duty itself — "a PR that moves a definition cited in §3, §4 or §5 re-verifies that
+`file:line` in the same change" — so re-verifying them is that record's own prescribed
+action rather than an edit to a merged ADR. All 38 are recomputed from the AST.
+
+Two pre-existing citation defects surfaced while doing it and are **not** fixed here,
+because correcting them requires a judgment about what ADR 0092 means that this issue does
+not own: §4 cites `ssh_commands.py` and `ssh.py`, neither of which exists — both were
+renamed under `ssh/` and §4 was never updated — and §5 cites
+`tests/unit/test_public_api.py:309` as its `inspect.isfunction` filter, where that line is
+`"CreateUserRequest",` in both the merge base and this branch. Neither section is enforced
+by a test, which is why both drifted. This change moves no §4 or §5 citation that was
+correct.
 
 ## Threat model
 

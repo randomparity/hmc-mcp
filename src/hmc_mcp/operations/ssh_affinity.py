@@ -13,16 +13,26 @@ from hmc_mcp.ssh.affinity import (
     MemoptResourceGroupSelector,
     MinimumAffinityPolicy,
     MinimumAffinityPolicyQuery,
-    get_lpar_memopt_score as _get_lpar_memopt_score,
-    get_system_memopt_score as _get_system_memopt_score,
-    list_lpar_memopt_scores as _list_lpar_memopt_scores,
-    plan_lpar_memopt_scores as _plan_lpar_memopt_scores,
-    plan_system_memopt_score as _plan_system_memopt_score,
     query_minimum_affinity_policy,
     query_resource_group_memopt_scores,
     set_minimum_affinity_policy_cli,
-    validate_minimum_affinity_policy,
     validate_memopt_scenario,
+    validate_minimum_affinity_policy,
+)
+from hmc_mcp.ssh.affinity import (
+    get_lpar_memopt_score as _get_lpar_memopt_score,
+)
+from hmc_mcp.ssh.affinity import (
+    get_system_memopt_score as _get_system_memopt_score,
+)
+from hmc_mcp.ssh.affinity import (
+    list_lpar_memopt_scores as _list_lpar_memopt_scores,
+)
+from hmc_mcp.ssh.affinity import (
+    plan_lpar_memopt_scores as _plan_lpar_memopt_scores,
+)
+from hmc_mcp.ssh.affinity import (
+    plan_system_memopt_score as _plan_system_memopt_score,
 )
 from hmc_mcp.ssh.selectors import resolve_ssh_names
 

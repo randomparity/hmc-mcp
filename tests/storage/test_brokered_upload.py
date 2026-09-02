@@ -14,9 +14,8 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
-from defusedxml import ElementTree as DET
-
 from conftest import make_config
+from defusedxml import ElementTree as DET
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError

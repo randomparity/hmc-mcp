@@ -12,18 +12,16 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 import respx
+from conftest import LOGON_RESPONSE, make_config
 from defusedxml import ElementTree as DET
 
 from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.client import core as client_core
 from hmc_mcp.client.core import HMCClient, TLSVerificationDisabledWarning
-from hmc_mcp.errors import HMCError
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCTransportError
+from hmc_mcp.errors import HMCError, HMCTransportError
 from hmc_mcp.jobs import build_job_request
 from hmc_mcp.xmlutil import localname
-
-from conftest import LOGON_RESPONSE, make_config
 
 BASE = "https://hmc.test"
 
@@ -184,12 +182,12 @@ async def test_rest_timeout_names_configured_timeout_and_guidance(mock_hmc):
     assert "HMC_TIMEOUT" in message
 
 
-LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>urn:uuid:11111111-1111-1111-1111-111111111111</id>
     <title>LogicalPartition:lpar1</title>
-    <link rel="SELF" href="{base}/rest/api/uom/LogicalPartition/11111111-1111-1111-1111-111111111111"/>
+    <link rel="SELF" href="{BASE}/rest/api/uom/LogicalPartition/11111111-1111-1111-1111-111111111111"/>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>lpar1</PartitionName>
@@ -200,7 +198,7 @@ LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <entry>
     <id>urn:uuid:22222222-2222-2222-2222-222222222222</id>
     <title>LogicalPartition:lpar2</title>
-    <link rel="SELF" href="{base}/rest/api/uom/LogicalPartition/22222222-2222-2222-2222-222222222222"/>
+    <link rel="SELF" href="{BASE}/rest/api/uom/LogicalPartition/22222222-2222-2222-2222-222222222222"/>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>lpar2</PartitionName>
@@ -209,7 +207,7 @@ LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </content>
   </entry>
 </feed>
-""".format(base=BASE)
+"""
 
 QUICK_STATE = "running"
 

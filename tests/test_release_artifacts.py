@@ -1,24 +1,23 @@
-import os
 import base64
 import copy
 import csv
 import hashlib
 import io
+import os
+import re
 import shutil
 import stat
 import struct
 import subprocess
 import tarfile
-import re
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import BinaryIO, Callable
+from typing import BinaryIO
 
 import pytest
-
 import validate_release_artifacts as validator
 from validate_release_artifacts import _read_bounded, main
-
 
 ROOT = Path(__file__).parents[1]
 
@@ -470,9 +469,8 @@ def test_rejects_malformed_zip64_record_offset(tmp_path: Path) -> None:
 
     with pytest.raises(
         validator.ValidationError, match="wheel archive is malformed: ZIP64 record"
-    ):
-        with wheel.open("rb") as stream:
-            validator._preflight_zip_directory(stream, wheel.name)
+    ), wheel.open("rb") as stream:
+        validator._preflight_zip_directory(stream, wheel.name)
 
 
 @pytest.mark.parametrize(

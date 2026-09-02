@@ -17,9 +17,9 @@ from hmc_mcp.server_tools.network import (
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 
-SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+SYSTEM_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:{uuid}</id>
+  <id>urn:uuid:{SYSTEM_UUID}</id>
   <title>ManagedSystem:sys1</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -27,7 +27,7 @@ SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </ManagedSystem>
   </content>
 </entry>
-""".format(uuid=SYSTEM_UUID)
+"""
 
 
 def _hmc_env(monkeypatch) -> None:

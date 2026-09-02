@@ -45,13 +45,15 @@ from hmc_mcp import server as server_app
 from hmc_mcp.audit import records as audit
 from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.authorization import dispatch_scope as authorization_dispatch_scope
-from hmc_mcp.authorization.access_policy import compile_access_policy
+from hmc_mcp.authorization.access_policy import (
+    DEFAULT_CONNECTION_TOKEN,
+    compile_access_policy,
+)
 from hmc_mcp.authorization.connection_scope import ConnectionScopeError
 from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.authorization.target_scope import TargetScopeError
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY
-from hmc_mcp.authorization.target_scope import TargetScopeError
 from hmc_mcp.tool_registry import authorized
 
 SOURCE = "test-access-policy.toml"

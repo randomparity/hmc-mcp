@@ -2,25 +2,30 @@
 
 from __future__ import annotations
 
-from ...tool_registry import tool_module
+from hmc_mcp.operations.ownership import set_lpar_ownership_description
 
 from ..._app import (
     ssh_with_client,
-    with_config,
     with_client,
+    with_config,
 )
+from ...operations.lpar.configuration import (
+    configure_lpar_msp,
+    configure_lpar_processor_compatibility,
+)
+from ...operations.lpar.core import ProcessorCompatibilityMode
 from ...operations.ssh_affinity import (
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
     get_lpar_memopt_score,
     get_minimum_affinity_policy,
-    set_minimum_affinity_policy,
     get_system_memopt_score,
     list_lpar_memopt_scores,
-    plan_lpar_memopt_scores,
-    plan_system_memopt_score,
     list_resource_group_memopt_scores,
+    plan_lpar_memopt_scores,
     plan_resource_group_memopt_scores,
+    plan_system_memopt_score,
+    set_minimum_affinity_policy,
 )
 from ...ssh.affinity import (
     MemoptLparSelector,
@@ -33,13 +38,7 @@ from ...ssh.profiles import (
     get_lpar_msp,
     get_lpar_proc_compat,
 )
-from hmc_mcp.operations.ownership import set_lpar_ownership_description
-from ...operations.lpar.configuration import (
-    configure_lpar_msp,
-    configure_lpar_processor_compatibility,
-)
-from ...operations.lpar.core import ProcessorCompatibilityMode
-
+from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

@@ -1,6 +1,5 @@
-import json
-import socket
 import importlib.util
+import json
 from http.client import HTTPMessage
 from io import BytesIO
 from pathlib import Path
@@ -163,7 +162,7 @@ def test_main_rejects_redirects(
 
 @pytest.mark.parametrize(
     "error",
-    [socket.timeout("timed out"), URLError("offline")],
+    [TimeoutError("timed out"), URLError("offline")],
 )
 def test_main_reports_actionable_network_failures(
     monkeypatch: pytest.MonkeyPatch,

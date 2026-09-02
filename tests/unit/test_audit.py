@@ -175,7 +175,7 @@ def test_every_spec_numbered_test_named_in_the_header_still_exists():
     source = Path(__file__).read_text()
     header = source.split('"""')[1]
     named = set(re.findall(r"\b(test_[a-z_0-9]+)", header))
-    defined = set(re.findall(r"^def (test_[a-z_0-9]+)", source, re.M))
+    defined = set(re.findall(r"^def (test_[a-z_0-9]+)", source, re.MULTILINE))
     assert named, "the header must map spec numbers to node ids"
     missing = named - defined
     assert not missing, f"named in the header but no longer defined: {sorted(missing)}"

@@ -3,30 +3,35 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict
-from datetime import UTC, datetime
 import math
 import re
+from dataclasses import asdict
+from datetime import UTC, datetime
 from typing import Any, Literal, overload
 
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.operations.affinity import (
     AffinityAssessmentInput,
     AffinityAssessmentResult,
     PolicyState,
     assess_affinity,
 )
-
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.resource_identity import resolve_lpar_uuid, resolve_system_name, resolve_system_uuid
 from hmc_mcp.operations.ssh_affinity import (
-    get_minimum_affinity_policy,
     get_lpar_memopt_score,
+    get_minimum_affinity_policy,
     get_system_memopt_score,
     list_resource_group_memopt_scores,
     plan_lpar_memopt_scores,
     plan_resource_group_memopt_scores,
     plan_system_memopt_score,
 )
+from hmc_mcp.resource_identity import (
+    resolve_lpar_uuid,
+    resolve_system_name,
+    resolve_system_uuid,
+)
+from hmc_mcp.ssh.profiles import read_lpar_profile_record
+
 from .models import (
     MINIMUM_AFFINITY_POLICY_MEDIA_TYPE,
     PLACEMENT_MEDIA_TYPE,
@@ -40,17 +45,16 @@ from .models import (
     ObservationEnvelope,
     SnapshotCapability,
     SnapshotConfiguration,
-    SnapshotObservations,
     SnapshotInspection,
+    SnapshotObservations,
     SnapshotSource,
     SystemIdentity,
+    _normalized_from_profile,
+    _parse_profile,
     inspect_snapshot,
     parse_snapshot,
     serialize_snapshot,
-    _normalized_from_profile,
-    _parse_profile,
 )
-from hmc_mcp.ssh.profiles import read_lpar_profile_record
 
 
 def _utcnow() -> datetime:

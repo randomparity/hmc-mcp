@@ -9,22 +9,22 @@ import pytest
 from fastmcp import Client
 from typer.testing import CliRunner
 
-from hmc_mcp.cli_commands.lpar import config as cli_lpars
-from hmc_mcp.server_tools.lpar import configuration as server_lpar_config
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.config import HMCConfig
+from hmc_mcp.cli import app
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.cli_commands.lpar import config as cli_lpars
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.ssh_affinity import (
     ResourceGroupAffinityResult,
     list_resource_group_memopt_scores,
 )
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.cli import app
-from hmc_mcp.ssh.transport import HMCCLIError
+from hmc_mcp.server_tools.lpar import configuration as server_lpar_config
 from hmc_mcp.ssh.affinity import (
     MemoptResourceGroupSelector,
     query_resource_group_memopt_scores,
 )
+from hmc_mcp.ssh.transport import HMCCLIError
 
 
 def _config() -> HMCConfig:

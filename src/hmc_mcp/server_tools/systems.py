@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from ..tool_registry import tool_module
-
 from typing import Any
 
 from .._app import (
@@ -18,6 +16,12 @@ from ..documents import (
     PowerOffPolicy,
     PowerOnLparStartPolicy,
 )
+from ..operations.lpar.core import (
+    get_lpar,
+    get_lpar_state,
+    list_lpars,
+)
+from ..operations.partition_state import PartitionState
 from ..operations.systems import (
     ManagedSystemPatch,
     get_system,
@@ -25,14 +29,8 @@ from ..operations.systems import (
     modify_system,
     power_system,
 )
-from ..operations.lpar.core import (
-    get_lpar,
-    get_lpar_state,
-    list_lpars,
-)
-from ..operations.partition_state import PartitionState
 from ..operations.vios import get_vios, list_vios
-
+from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

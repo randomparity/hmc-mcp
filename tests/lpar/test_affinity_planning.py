@@ -12,16 +12,20 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp.server_tools.lpar import configuration as server_lpar_config
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.config import HMCConfig
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.ssh_affinity import (
     get_system_memopt_score as get_system_memopt_score_operation,
+)
+from hmc_mcp.operations.ssh_affinity import (
     plan_lpar_memopt_scores as plan_lpar_memopt_scores_operation,
+)
+from hmc_mcp.operations.ssh_affinity import (
     plan_system_memopt_score as plan_system_memopt_score_operation,
 )
-from hmc_mcp.ssh.transport import HMCCLIError
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmc_mcp.server_tools.lpar import configuration as server_lpar_config
 from hmc_mcp.ssh.affinity import (
     MemoptLparSelector,
     get_system_memopt_score,
@@ -29,7 +33,7 @@ from hmc_mcp.ssh.affinity import (
     plan_system_memopt_score,
     validate_memopt_scenario,
 )
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmc_mcp.ssh.transport import HMCCLIError
 
 SYSTEM = "p10-system"
 LPAR_ROWS = (

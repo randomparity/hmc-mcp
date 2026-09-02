@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from ..tool_registry import tool_module
-
 from .._app import (
     with_client,
 )
-
-from ..jobs import JobOutcome
+from ..jobs import JobOutcome, RemoteRestartOperation
 from ..operations.lpm import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightRequest,
@@ -16,13 +13,11 @@ from ..operations.lpm import (
     abort_lpar_migration,
     migrate_lpar,
     migrate_lpar_with_affinity_preflight,
-    validate_lpar_migration,
     recover_lpar_migration,
     remote_restart_lpar,
+    validate_lpar_migration,
 )
-
-from ..jobs import RemoteRestartOperation
-
+from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

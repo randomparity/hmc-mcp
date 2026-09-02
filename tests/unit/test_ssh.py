@@ -6,13 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
 import pytest
+from conftest import make_config
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.ssh.transport import HMCCLIError, run_hmc_command
-
-from conftest import make_config
-
 
 # ---------------------------------------------------------------------------
 # Helpers to build a minimal asyncssh mock
@@ -99,9 +97,8 @@ async def test_run_hmc_command_connect_timeout_raises_hmcclierror():
     with patch(
         "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=TimeoutError("timed out"),
-    ):
-        with pytest.raises(HMCCLIError, match="timed out after 300s"):
-            await run_hmc_command(make_config(), "lssyscfg -r sys")
+    ), pytest.raises(HMCCLIError, match="timed out after 300s"):
+        await run_hmc_command(make_config(), "lssyscfg -r sys")
 
 
 @pytest.mark.asyncio
@@ -179,9 +176,8 @@ async def test_run_hmc_command_connect_error_raises_hmcclierror():
     with patch(
         "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=asyncssh.Error("connect", "connection refused"),
-    ):
-        with pytest.raises(HMCCLIError, match="connection refused"):
-            await run_hmc_command(make_config(), "lssyscfg -r sys")
+    ), pytest.raises(HMCCLIError, match="connection refused"):
+        await run_hmc_command(make_config(), "lssyscfg -r sys")
 
 
 def test_hmc_config_ssh_key_field_default():

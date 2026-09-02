@@ -17,14 +17,6 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp.authorization.access_policy import AccessPolicyError
-from hmc_mcp.config import config_dir
-from hmc_mcp.authorization.connection_scope import ConnectionScopeError
-from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
-from hmc_mcp.operations.lpar.provision import ProvisionAdapters, ProvisionStorage
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.authorization.target_scope import TargetScopeError
-
 # `lab_profile` is autouse in its own module, so importing it applies it here
 # too — no test in this module names it, and doing so would shadow the import.
 from test_connection_authorization import (  # noqa: F401 - imported for autouse
@@ -33,6 +25,14 @@ from test_connection_authorization import (  # noqa: F401 - imported for autouse
     _seal_every_outbound_path,
     lab_profile,
 )
+
+from hmc_mcp.authorization.access_policy import AccessPolicyError
+from hmc_mcp.authorization.connection_scope import ConnectionScopeError
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
+from hmc_mcp.authorization.target_scope import TargetScopeError
+from hmc_mcp.config import config_dir
+from hmc_mcp.operations.lpar.provision import ProvisionAdapters, ProvisionStorage
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
 # Two grants that are individually narrow and, combined, would authorize a
 # deletion neither of them describes. This is the fail-open ADR 0036 named and

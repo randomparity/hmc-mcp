@@ -2,24 +2,21 @@
 
 from __future__ import annotations
 
-from ..tool_registry import tool_module
-
 from dataclasses import asdict
 from decimal import Decimal
 from typing import Any
 
 from .._app import (
-    with_config,
     with_client,
+    with_config,
 )
-
 from ..operations.pcie import (
     SriovMode,
     assign_sriov_logical_port,
     set_sriov_adapter_mode,
     unassign_sriov_logical_port,
 )
-
+from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

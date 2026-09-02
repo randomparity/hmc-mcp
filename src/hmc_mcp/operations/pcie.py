@@ -6,9 +6,13 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Generic, Literal, TypeVar
 
-from hmc_mcp.config import HMCConfig
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_names
+from hmc_mcp.operations.pcie_validation import (
+    require_command_safe_text,
+    validate_capacity_percent,
+)
 from hmc_mcp.ssh.network import (
     SriovMode,
     assign_sriov_logical_port_dynamic,
@@ -17,18 +21,13 @@ from hmc_mcp.ssh.network import (
     list_sriov_configured_logical_port_rows,
     list_sriov_physical_port_rows,
     list_sriov_unconfigured_logical_port_rows,
-    read_sriov_lpar_state,
     read_sriov_environment,
+    read_sriov_lpar_state,
     read_sriov_profile_ports,
     unassign_sriov_logical_port_profile,
     validate_sriov_mode,
 )
-from hmc_mcp.operations.pcie_validation import (
-    require_command_safe_text,
-    validate_capacity_percent,
-)
 from hmc_mcp.ssh.selectors import resolve_ssh_names
-
 
 CapabilityState = Literal["available", "capability-unavailable"]
 ResourceKind = Literal[

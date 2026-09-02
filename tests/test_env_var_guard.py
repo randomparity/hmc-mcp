@@ -11,13 +11,12 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 import sys
-from types import ModuleType
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from hmc_mcp.config import HMCConfig
-
 
 ROOT = Path(__file__).parents[1]
 GUARD = ROOT / "scripts" / "check_env_vars.py"

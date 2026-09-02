@@ -59,9 +59,10 @@ from fastmcp.server.server import logger as _fastmcp_logger
 
 from ._app import (
     ceiling_aware_instructions,
+)
+from ._app import (
     create_mcp as _create_base_mcp,
 )
-from .authorization.access_policy import AccessPolicy, unboundable_effect_tools
 from .audit import records as audit
 from .audit.sink import (
     StreamSafeFormatter,
@@ -70,19 +71,22 @@ from .audit.sink import (
     sink_handler,
     write_diagnostic,
 )
+from .authorization.access_policy import AccessPolicy, unboundable_effect_tools
 from .authorization.connection_scope import ConnectionScopeError
 from .authorization.dispatch_scope import dispatch_authorizer
 from .authorization.target_scope import TargetScopeError
 from .server_tools.catalog import TOOL_MODULES, TOOL_SECURITY
-from .tool_registry import Authorize
 from .server_tools.command import (
     configure_arbitrary_command_tool,
 )
 from .server_tools.permissions import (
     TOOL_NAME as PERMISSIONS_TOOL_NAME,
+)
+from .server_tools.permissions import (
     register_permissions_tool,
     resolve_power_guards,
 )
+from .tool_registry import Authorize
 
 
 def _gates(policy: AccessPolicy) -> tuple[Callable[[str], bool], Authorize]:

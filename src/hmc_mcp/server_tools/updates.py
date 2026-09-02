@@ -2,20 +2,10 @@
 
 from __future__ import annotations
 
-from ..tool_registry import tool_module
-
 from typing import Any
 
 from .._app import (
     with_client,
-)
-
-from ..operations.updates import (
-    list_available_hmc_ptfs,
-    update_console_software,
-    update_firmware,
-    update_vios,
-    upgrade_vios,
 )
 from ..operations.update_models import (
     ConsoleUpdateSource,
@@ -23,7 +13,14 @@ from ..operations.update_models import (
     VIOSUpdateSource,
     VIOSUpgradeSource,
 )
-
+from ..operations.updates import (
+    list_available_hmc_ptfs,
+    update_console_software,
+    update_firmware,
+    update_vios,
+    upgrade_vios,
+)
+from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

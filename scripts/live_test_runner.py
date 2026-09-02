@@ -17,42 +17,35 @@ so the updated environment is loaded on restart.
 
 from __future__ import annotations
 
-import asyncio
 import argparse
+import asyncio
 import json
 import os
 import sys
 import traceback
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from fastmcp import Client
-
-
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.config import HMCConfig, env_var_value
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
-from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 from live_test.connectivity import inventory_connectivity
 from live_test.escape_hatch import exercise_cli_escape_hatch
 from live_test.inventory import capture_lpar_baseline
-from live_test.metrics import inspect_metrics_jobs, inspect_metrics_templates
-from live_test.network import inventory_network, mutate_virtual_networking
-from live_test.profiles import inventory_lpar_profiles
-from live_test.storage import inventory_storage
-from live_test.users import administer_test_user, inventory_users
 from live_test.lpar import (
     exercise_lpar_lifecycle,
     mutate_lpar_properties,
     restore_lpar_baseline,
 )
+from live_test.metrics import inspect_metrics_jobs, inspect_metrics_templates
+from live_test.network import inventory_network, mutate_virtual_networking
+from live_test.profiles import inventory_lpar_profiles
 from live_test.provisioning import (
     exercise_storage_provisioning,
     validate_provisioning_dry_run,
 )
+from live_test.storage import inventory_storage
+from live_test.users import administer_test_user, inventory_users
 from live_test.vmedia import (
     IsoHttpServer,
     vmedia_boot_verification,
@@ -63,6 +56,12 @@ from live_test.vmedia import (
     vmedia_teardown,
     vmedia_upload_iso,
 )
+
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.config import HMCConfig, env_var_value
+from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
+from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 
 # ---------------------------------------------------------------------------
 # Pre-run guard: HMC_SCHEMA_VERSION=V1_0 is required for REST write path
@@ -260,7 +259,7 @@ class RunState:
             "subtask": subtask,
             "tool": tool,
             "status": status,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "note": note,
             "data": data if isinstance(data, (dict, list)) else str(data)[:2000],
         }
@@ -325,9 +324,9 @@ SUBTASKS = {
 }
 
 SUBTASK_GROUPS: dict[str, list[int]] = {
-    "round2": list(range(0, 16)),
+    "round2": list(range(16)),
     "vmedia": list(range(16, 23)),
-    "all": list(range(0, 23)),
+    "all": list(range(23)),
 }
 
 
@@ -434,7 +433,7 @@ async def main(
     state = RunState()
     context = state.context
     print(
-        f"Starting live integration tests at {datetime.now(timezone.utc).isoformat()}"
+        f"Starting live integration tests at {datetime.now(UTC).isoformat()}"
     )
     schema_version = env_var_value("HMC_SCHEMA_VERSION") or "(not set)"
     print(f"HMC_SCHEMA_VERSION={schema_version}")

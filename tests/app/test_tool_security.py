@@ -11,22 +11,23 @@ from __future__ import annotations
 import ast
 import asyncio
 from collections.abc import Iterator
-from dataclasses import dataclass, fields as dataclass_fields, is_dataclass
+from dataclasses import dataclass, is_dataclass
+from dataclasses import fields as dataclass_fields
 from pathlib import Path
-from unittest.mock import patch
 from typing import get_args, get_type_hints
+from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel
 
 from hmc_mcp import tool_registry
-from hmc_mcp.server_tools import command as server_command
-from hmc_mcp.server_tools import permissions as server_permissions
-from hmc_mcp.server_tools import vios as server_vios
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_MODULES, TOOL_SECURITY, create_mcp
+from hmc_mcp.server_tools import command as server_command
+from hmc_mcp.server_tools import permissions as server_permissions
+from hmc_mcp.server_tools import vios as server_vios
 from hmc_mcp.tool_registry import (
     EFFECTS,
     REQUIRED_TARGET_ARGUMENTS,

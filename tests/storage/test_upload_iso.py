@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-
 from conftest import make_config
 
 from hmc_mcp.client.core import HMCClient
@@ -41,12 +40,12 @@ VG_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
 def _media_feed(media_name: str | None = None, media_size: int = 0) -> str:
     """Build a VirtualMediaRepository feed response."""
     if media_name is None:
-        return """<?xml version="1.0" encoding="UTF-8"?>
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
 <feed>
   <entry>
     <content>
       <VirtualIOServer>
-        <VolumeGroup UUID="{vg}">
+        <VolumeGroup UUID="{VG_UUID}">
           <VirtualMediaRepository>
             <VMLibrary />
           </VirtualMediaRepository>
@@ -54,7 +53,7 @@ def _media_feed(media_name: str | None = None, media_size: int = 0) -> str:
       </VirtualIOServer>
     </content>
   </entry>
-</feed>""".format(vg=VG_UUID)
+</feed>"""
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <feed>
   <entry>

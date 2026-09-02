@@ -11,9 +11,9 @@ import pytest
 from hmc_mcp.client.client_lpars import LparsMixin
 from hmc_mcp.client.client_lpm import LpmMixin
 from hmc_mcp.client.client_network import NetworkMixin
+from hmc_mcp.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
 from hmc_mcp.client.client_storage import StorageMixin
 from hmc_mcp.client.client_systems import SystemsMixin
-from hmc_mcp.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
 from hmc_mcp.client.client_templates import TemplatesMixin
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError

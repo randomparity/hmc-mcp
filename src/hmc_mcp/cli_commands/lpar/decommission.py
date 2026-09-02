@@ -8,8 +8,8 @@ import typer
 from rich.table import Table
 
 from ...operations.lpar.decommission import decommission_lpar
+from ..output import console, print_json
 from ..runtime import client, run
-from ..output import print_json, console
 
 
 def lpars_decommission(

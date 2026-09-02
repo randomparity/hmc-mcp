@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from ..tool_registry import tool_module
-
 from typing import Any
 
 from .._app import with_client
 from ..operations.composite import lpar_summary, system_summary
-
+from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

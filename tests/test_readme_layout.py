@@ -4,7 +4,6 @@ import fnmatch
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).parents[1]
 PACKAGE = ROOT / "src" / "hmc_mcp"
 LAYOUT_HEADING = "## Layout"

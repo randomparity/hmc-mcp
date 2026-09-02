@@ -21,6 +21,10 @@ from conftest import JOB_ENTRY
 
 from hmc_mcp.documents import LparResources
 from hmc_mcp.errors import HMCError
+from hmc_mcp.operations.update_models import (
+    PlatformUpdateParameter,
+    SystemFirmwareUpdateModel,
+)
 from hmc_mcp.server_tools.command import hmc_run_command as hmc_run_command
 from hmc_mcp.server_tools.jobs import (
     hmc_get_job as hmc_get_job,
@@ -63,7 +67,6 @@ from hmc_mcp.server_tools.updates import (
     hmc_vios_update as hmc_vios_update,
 )
 from hmc_mcp.server_tools.updates import hmc_vios_upgrade as hmc_vios_upgrade
-from hmc_mcp.operations.update_models import PlatformUpdateParameter, SystemFirmwareUpdateModel
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"

@@ -4,28 +4,27 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from unittest.mock import AsyncMock
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
 from hmc_mcp import cli
+from hmc_mcp.cli_commands.lpar import modify as cli_modify
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.documents import LparResources
-from hmc_mcp.operations.lpar.configuration import (
-    configure_lpar_msp,
-    configure_lpar_processor_compatibility,
-    synchronize_lpar_profile,
-)
-from hmc_mcp.server_tools.lpar import configuration as server_configuration
-from hmc_mcp.server_tools.lpar import profiles as server_profiles
 from hmc_mcp.operations.adapters import (
     add_network_adapter,
     add_vfc_adapter,
     add_vscsi_adapter,
     delete_adapter,
 )
+from hmc_mcp.operations.lpar.configuration import (
+    configure_lpar_msp,
+    configure_lpar_processor_compatibility,
+    synchronize_lpar_profile,
+)
+from hmc_mcp.operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
 from hmc_mcp.operations.lpm import (
     LpmMigrationRequest,
     abort_lpar_migration,
@@ -33,14 +32,14 @@ from hmc_mcp.operations.lpm import (
     recover_lpar_migration,
     remote_restart_lpar,
 )
-from hmc_mcp.operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
 from hmc_mcp.operations.storage import (
     map_storage,
     mount_optical_media,
     unmount_optical_media,
 )
+from hmc_mcp.server_tools.lpar import configuration as server_configuration
 from hmc_mcp.server_tools.lpar import lifecycle as server_lifecycle
-from hmc_mcp.cli_commands.lpar import modify as cli_modify
+from hmc_mcp.server_tools.lpar import profiles as server_profiles
 
 LPAR = "11111111-1111-4111-8111-111111111111"
 VIOS = "22222222-2222-4222-8222-222222222222"
@@ -201,9 +200,8 @@ async def test_real_guard_rejects_foreign_optical_owner_before_write(
     with patch(
         "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(return_value=FOREIGN_OWNER),
-    ):
-        with pytest.raises(PermissionError, match="ownership_override=true"):
-            await operation(hmc, SYSTEM_UUID, VIOS, LPAR, media_name="aix.iso")
+    ), pytest.raises(PermissionError, match="ownership_override=true"):
+        await operation(hmc, SYSTEM_UUID, VIOS, LPAR, media_name="aix.iso")
 
     getattr(hmc, write_method).assert_not_awaited()
 

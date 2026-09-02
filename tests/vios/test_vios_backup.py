@@ -527,9 +527,8 @@ def test_backup_vios_refuses_uuid_without_complete_mtms_before_ssh(
     with patch(
         "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=AssertionError("reached the SSH layer"),
-    ):
-        with pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
-            hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
+    ), pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
+        hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
 
 
 @pytest.mark.parametrize(
@@ -576,9 +575,8 @@ def test_backup_vios_refuses_missing_or_blank_nested_mtms_component_before_ssh(
     with patch(
         "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=AssertionError("reached the SSH layer"),
-    ):
-        with pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
-            hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
+    ), pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
+        hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
 
 
 def test_backup_vios_reuses_config_for_rest_and_ssh(monkeypatch):

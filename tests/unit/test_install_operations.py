@@ -16,7 +16,6 @@ from typing import get_type_hints
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from conftest import make_config
 
 from hmc_mcp import api
@@ -28,8 +27,8 @@ from hmc_mcp.operations.install import (
     install_lpar_os,
     install_vios,
 )
-from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.ssh.install import INSTALLIOS_PID_PREFIX, build_installios_command
+from hmc_mcp.ssh.transport import HMCCLIError
 
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
@@ -82,11 +81,10 @@ async def test_operation_rejects_install_target_before_submission(
     hmc.get_logical_partition.return_value["Resource"][field] = value
     ssh = _Ssh()
 
-    with _patch_ssh(ssh):
-        with pytest.raises(HMCError, match=message):
-            await operation(
-                hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
-            )
+    with _patch_ssh(ssh), pytest.raises(HMCError, match=message):
+        await operation(
+            hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
+        )
 
     assert ssh.commands == []
     hmc.get_logical_partition.assert_awaited_once_with(LPAR_UUID)
@@ -99,11 +97,10 @@ async def test_uuid_target_rejects_before_ssh_submission(operation):
     hmc.get_logical_partition.return_value["Resource"]["PartitionState"] = "running"
     ssh = _Ssh()
 
-    with _patch_ssh(ssh):
-        with pytest.raises(HMCError, match="not activated"):
-            await operation(
-                hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), _REQUEST
-            )
+    with _patch_ssh(ssh), pytest.raises(HMCError, match="not activated"):
+        await operation(
+            hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), _REQUEST
+        )
 
     assert ssh.commands == []
     hmc.get_logical_partition.assert_awaited_once_with(LPAR_UUID)
@@ -224,13 +221,12 @@ async def test_operation_rejects_invalid_input_before_any_io(
     hmc = _hmc()
     ssh = _Ssh()
 
-    with _patch_ssh(ssh):
-        with pytest.raises(ValueError, match=message):
-            await operation(
-                hmc,
-                *_operation_args(operation, "target1", "sys1"),
-                replace(_REQUEST, **{field: value}),
-            )
+    with _patch_ssh(ssh), pytest.raises(ValueError, match=message):
+        await operation(
+            hmc,
+            *_operation_args(operation, "target1", "sys1"),
+            replace(_REQUEST, **{field: value}),
+        )
 
     assert ssh.commands == []
     hmc.find_system_by_name.assert_not_awaited()
@@ -250,11 +246,10 @@ async def test_operation_fails_before_submission_for_an_unknown_target(
     hmc = _hmc(**{finder: None})
     ssh = _Ssh()
 
-    with _patch_ssh(ssh):
-        with pytest.raises(ValueError, match=message):
-            await operation(
-                hmc, *_operation_args(operation, "nosuchtarget", "sys1"), _REQUEST
-            )
+    with _patch_ssh(ssh), pytest.raises(ValueError, match=message):
+        await operation(
+            hmc, *_operation_args(operation, "nosuchtarget", "sys1"), _REQUEST
+        )
 
     assert ssh.commands == []
 
@@ -281,11 +276,10 @@ async def test_unresolvable_uuid_target_raises_before_submitting(operation):
     hmc = _hmc(get_managed_system={"Resource": {"SystemName": "sys1"}})
     ssh = _Ssh(name_rows="99999999-9999-4999-8999-999999999999,other\n")
 
-    with _patch_ssh(ssh):
-        with pytest.raises(HMCCLIError, match="Could not resolve"):
-            await operation(
-                hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), _REQUEST
-            )
+    with _patch_ssh(ssh), pytest.raises(HMCCLIError, match="Could not resolve"):
+        await operation(
+            hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), _REQUEST
+        )
 
     assert ssh.commands == ["lssyscfg -r lpar -m sys1 -F UUID,PartitionName"]
 

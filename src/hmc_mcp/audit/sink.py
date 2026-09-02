@@ -15,7 +15,7 @@ import re
 import sys
 import threading
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Final
 
 #: The reserved logger. Only this module resolves it, which makes "the message is
@@ -213,7 +213,7 @@ def _drop_marker(count: int) -> str:
     return (
         json.dumps(
             {
-                "time": datetime.now(timezone.utc).isoformat(),
+                "time": datetime.now(UTC).isoformat(),
                 "event": event,
                 "count": count,
             },

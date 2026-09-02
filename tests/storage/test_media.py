@@ -8,9 +8,8 @@ after the mutation.
 
 import httpx
 import pytest
-from defusedxml.common import EntitiesForbidden
-
 from conftest import make_config
+from defusedxml.common import EntitiesForbidden
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError

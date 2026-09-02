@@ -19,7 +19,7 @@ def test_nonblank_protocol_is_explicitly_weaker_than_command_safe_text() -> None
 
 @pytest.mark.parametrize(
     "value",
-    [Decimal("NaN"), Decimal("0"), Decimal("100.01"), Decimal("1.001")],
+    [Decimal("NaN"), Decimal(0), Decimal("100.01"), Decimal("1.001")],
 )
 def test_capacity_protocol_rejects_invalid_percentages(value: Decimal) -> None:
     with pytest.raises(ValueError, match="capacity_percent"):

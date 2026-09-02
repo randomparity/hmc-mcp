@@ -2,9 +2,8 @@
 
 import httpx
 import pytest
-from pydantic import ValidationError
-
 from conftest import JOB_ENTRY, make_config
+from pydantic import ValidationError
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
@@ -22,7 +21,6 @@ from hmc_mcp.operations.update_models import (
     update_vios_job,
     upgrade_vios_job,
 )
-
 
 # ---------------------------------------------------------------------- #
 # Job builder unit tests
@@ -373,9 +371,9 @@ HMC_UUID = "hmc-console-uuid"
 VIOS_UUID = "vios-uuid-111"
 SYS_UUID = "66666666-6666-6666-6666-666666666666"
 
-CONSOLE_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+CONSOLE_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:{uuid}</id>
+  <id>urn:uuid:{HMC_UUID}</id>
   <title>ManagementConsole</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ManagementConsole xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -383,7 +381,7 @@ CONSOLE_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </ManagementConsole>
   </content>
 </entry>
-""".format(uuid=HMC_UUID)
+"""
 
 
 @pytest.mark.asyncio

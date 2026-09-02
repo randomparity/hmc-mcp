@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-
-from ..tool_registry import tool_module
-
 from typing import Any
 
 from .._app import ssh_with_client, with_config
@@ -18,7 +15,7 @@ from ..operations.pcie import (
 from ..ssh.memory import list_memory_pools, remove_memory_pool
 from ..ssh.network import PciClass, list_io_slots
 from ..ssh.profiles import get_proc_compat_modes
-
+from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

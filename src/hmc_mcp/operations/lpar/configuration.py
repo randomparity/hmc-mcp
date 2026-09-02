@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.operations.ownership import (
+    _authorize_system_lpar_profile_restore,
+    resolve_and_authorize_lpar_names,
+)
+
 from ...ssh.profiles import (
     restore_lpar_profiles,
     set_lpar_msp,
@@ -10,10 +15,6 @@ from ...ssh.profiles import (
     sync_lpar_profile,
 )
 from .core import ProcessorCompatibilityMode
-from hmc_mcp.operations.ownership import (
-    _authorize_system_lpar_profile_restore,
-    resolve_and_authorize_lpar_names,
-)
 
 
 async def restore_system_lpar_profiles(

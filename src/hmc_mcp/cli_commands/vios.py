@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-
 import typer
 from rich.table import Table
 
-from .runtime import run, client, with_client
-from .output import first_field, output, print_json, console
 from ..jobs import validate_wait_timing
-from ..operations.vios import list_vios, power_vios
 from ..operations.partition_state import PartitionState
+from ..operations.vios import list_vios, power_vios
+from .output import console, first_field, output, print_json
+from .runtime import client, run, with_client
 
 
 def vios_list(

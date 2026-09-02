@@ -7,9 +7,10 @@ import re
 import shlex
 
 from ..config import HMCConfig
-from .transport import HMCCLIError, run_hmc_command
 from .commands import build_attribute_record, build_filter
 from .description_validation import validate_lpar_description
+from .transport import HMCCLIError, run_hmc_command
+
 
 async def get_lpar_description(
     config: HMCConfig,

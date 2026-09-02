@@ -2,6 +2,7 @@
 
 import httpx
 import pytest
+from conftest import JOB_ENTRY, make_config
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.jobs import (
@@ -11,9 +12,6 @@ from hmc_mcp.jobs import (
     migrate_validate_lpar_job,
     remote_restart_lpar_job,
 )
-
-from conftest import JOB_ENTRY, make_config
-
 
 # -- job XML builders ---------------------------------------------------- #
 

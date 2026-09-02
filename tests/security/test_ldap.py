@@ -2,9 +2,8 @@
 
 import httpx
 import pytest
-from defusedxml import ElementTree as DET
-
 from conftest import make_config
+from defusedxml import ElementTree as DET
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.documents import build_remote_access_document

@@ -184,7 +184,7 @@ async def load_descriptions() -> dict[str, str | None]:
         permits=policy.permits_tool,
         authorize=dispatch_authorizer(policy),
     )
-    from fastmcp import Client  # noqa: PLC0415 - server extra, imported at use
+    from fastmcp import Client
 
     async with Client(mcp) as client:
         return {tool.name: tool.description for tool in await client.list_tools()}

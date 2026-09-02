@@ -18,7 +18,6 @@ from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.audit.sink import AUDIT_LOGGER_NAME
 from hmc_mcp.config import HMCConfig
 
-
 #: The ``fastmcp`` logger and its handlers as importing ``fastmcp`` leaves them.
 #: Captured at collection time, before any test can serve, because ADR 0051 made
 #: ``server._serve_application`` *replace* those handlers — so unlike the audit
