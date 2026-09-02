@@ -785,7 +785,7 @@ def _load_profile_from_document(
         for k, v in entry.items()
         if env_var_value(env_prefix + k.upper()) is None
     }
-    return HMCConfig(_env_file=None, **filtered_entry)  # ty: ignore[unknown-argument]
+    return HMCConfig(_env_file=None, **filtered_entry)
 
 
 def config_inventory(

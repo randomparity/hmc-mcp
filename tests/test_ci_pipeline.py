@@ -14,7 +14,7 @@ TOOL_PINS = {
     "detect-secrets==1.5.0",
     "prek==0.4.14",
     "ruff==0.15.22",
-    "ty==0.0.62",
+    "ty==0.0.74",
     "zizmor==1.29.0",
 }
 TY_INCLUDE = ["src/hmc_mcp"]
