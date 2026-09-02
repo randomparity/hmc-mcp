@@ -32,7 +32,7 @@ def emit(level: int, build: Callable[[], dict[str, Any]]) -> None:
     try:
         message = json.dumps(build(), ensure_ascii=True)
         logging.getLogger(AUDIT_LOGGER_NAME).log(level, message)
-    except Exception:  # noqa: BLE001 - totality is the audit contract
+    except Exception:  # noqa: BLE001, S110 - totality is the audit contract
         pass
 
 

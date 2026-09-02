@@ -326,12 +326,12 @@ class HMCClient(
         cleanup_error: BaseException | None = None
         try:
             await self.logoff()
-        except BaseException as logoff_error:
+        except BaseException as logoff_error:  # noqa: BLE001 - BaseException is deliberate: the failure is noted on the in-flight exception, and narrowing would swallow CancelledError
             cleanup_error = logoff_error
 
         try:
             await self._http.aclose()
-        except BaseException as close_error:
+        except BaseException as close_error:  # noqa: BLE001 - BaseException is deliberate: the failure is noted on the in-flight exception, and narrowing would swallow CancelledError
             if cleanup_error is None:
                 cleanup_error = close_error
             else:

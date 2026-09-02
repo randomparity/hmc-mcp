@@ -72,7 +72,7 @@ def run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
         return asyncio.run(fn())
     except (typer.Abort, typer.Exit):
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI top-level boundary: every failure becomes fail(exc), never a traceback
         fail(exc)
 
 

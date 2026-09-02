@@ -317,13 +317,13 @@ async def _read_assignment_state(
         if len(matching) > 1:
             raise ValueError("duplicate logical-port inventory rows")
         effective = _snapshot(matching[0]) if matching else None
-    except Exception as caught:
+    except Exception as caught:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         error = caught
     try:
         profile = (
             await read_sriov_profile_ports(config, system_name, lpar_name, profile_name)
         )["sriov_eth_logical_ports"]
-    except Exception as caught:
+    except Exception as caught:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         error = error or caught
     return _SriovAssignmentReadback(effective, profile, error)
 
@@ -541,7 +541,7 @@ async def assign_sriov_logical_port(
             logical_port_id,
             str(capacity),
         )
-    except Exception as caught:
+    except Exception as caught:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         error = caught
     readback = await _read_assignment_state(
         config,
@@ -655,7 +655,7 @@ async def unassign_sriov_logical_port(
         output = await unassign_sriov_logical_port_profile(
             config, system_name, lpar_name, profile_name
         )
-    except Exception as caught:
+    except Exception as caught:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         error = caught
     after = None
     read_error: Exception | None = None
@@ -663,7 +663,7 @@ async def unassign_sriov_logical_port(
         after = (
             await read_sriov_profile_ports(config, system_name, lpar_name, profile_name)
         )["sriov_eth_logical_ports"]
-    except Exception as caught:
+    except Exception as caught:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         read_error = caught
     result = SriovLogicalPortChangeResult(
         operation="unassign",

@@ -359,7 +359,7 @@ async def _apply_validated_lpar_pcie_assignments(
     for index, (name, operation) in enumerate(operations):
         try:
             steps.append(WorkflowStep(name, "ok", await operation()))
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - any step failure becomes a WorkflowStep("error") and skips the rest
             result = getattr(error, "result", str(error))
             steps.append(WorkflowStep(name, "error", result))
             steps.extend(

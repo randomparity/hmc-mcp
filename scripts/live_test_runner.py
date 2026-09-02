@@ -248,7 +248,7 @@ class RunState:
             except json.JSONDecodeError:
                 data = text
             return "PASS", data
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - the harness records any tool failure as a FAIL row; totality is the contract
             return "FAIL", f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
 
     def record(

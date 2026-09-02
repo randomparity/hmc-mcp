@@ -267,7 +267,7 @@ async def _collect_output(
             continue  # loop top decides whether duration or idle fired
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - a mid-capture read failure ends the capture as an error result, not a raise
             logger.error("console stream read failed mid-capture: %s", exc)
             return bytes(buf), "error", _error_detail(exc)
         if not chunk:
@@ -358,7 +358,7 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
             connection, process = await _open_capture_stream(
                 config, mkvterm_command, stdin
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - a probe that cannot start mkvterm is unproven, not fatal
             logger.warning(
                 "release probe for %s/%s could not start mkvterm: %s",
                 system_name,
@@ -383,7 +383,7 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
                     )
                 except TimeoutError:
                     break
-                except Exception:
+                except Exception:  # noqa: BLE001 - transport trouble ends the probe; there is nothing more to learn
                     break  # transport trouble: unproven, nothing more to learn
                 if not chunk:
                     remote_exited = True

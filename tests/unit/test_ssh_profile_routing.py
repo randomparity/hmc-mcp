@@ -338,7 +338,7 @@ def test_different_profiles_produce_independent_configs():
                     system_name_or_uuid=SYSTEM_NAME,
                     profile="dev",
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - the connection is aborted on purpose once the config is captured
                 pass
 
         # Second call: profile="prod" → PROD_CONFIG
@@ -352,7 +352,7 @@ def test_different_profiles_produce_independent_configs():
                     system_name_or_uuid=SYSTEM_NAME,
                     profile="prod",
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - the connection is aborted on purpose once the config is captured
                 pass
 
     assert configs_seen[0] == DEV_HOST
