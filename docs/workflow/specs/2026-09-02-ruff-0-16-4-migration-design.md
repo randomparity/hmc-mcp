@@ -41,14 +41,30 @@ earlier base):
   `tests/unit/test_audit.py` and `tests/unit/test_ownership.py`, whose subject is hostile
   bidirectional text.
 - **R5.** No other rule is configured. No blanket `ignore`, no `exclude`, no bare `# noqa`
-  without a code. Every remaining finding is fixed in code.
+  without a code. Every remaining finding is either fixed in code or carries a **coded,
+  per-site `# noqa: <CODE> - <reason>`** justified in the disposition table below. A site
+  earns the directive only where fixing it would change a contract this issue does not own
+  — an exported error type, persisted metadata, a framework's validator protocol, a
+  cancellation boundary — never because the fix is tedious. Every such site is named in the
+  table: 18 sites are named exactly in advance — `TRY004` 7, `DTZ011` 7, `PLC0414` 4 — and
+  the retained subsets of `BLE001` and `S110` are settled by reading each site during the
+  reviewed pass, since which of those 24 sites re-raise with context is not decidable from
+  the counts alone.
 - **R6.** Safe mechanical fixes land as their own commit, separate from reviewed fixes, so
   the reviewed work is legible on its own.
 - **R7.** `just verify` and `uv run --no-sync prek run --all-files` are green on the final
-  tree. The eight-leg CI matrix is the arbiter and must pass, but no task in the
-  implementation plan can discharge it: the plan ends at a proven local tree, and pushing
-  the branch, opening the pull request, and reading the eight legs belong to the shipping
-  phase that follows. R7's CI arm is therefore owned there, not by the plan.
+  tree. CI is the arbiter and must pass, and "CI" means **all five jobs** in
+  `.github/workflows/ci.yml`, not only the one whose name is `ci`: `ci` (the {amd64, arm64}
+  × py{3.11–3.14} verify matrix, 8 legs), `library-wheel-smoke`, `library-range-floors`,
+  `wheel-smoke` (its own architecture × version matrix), and `python-support-drift`. Two of
+  the four unnamed ones are touched by this diff — `python-support-drift` runs
+  `scripts/check_python_support.py`, which loses a shebang and holds four `TRY004` sites,
+  and `library-range-floors` installs at the declared dependency floors, where a `UP035` or
+  `UP017` modernisation would surface if it assumed a newer floor than `pyproject.toml`
+  declares. A green `ci` matrix alone must not be read as "CI passed". No task in the
+  implementation plan can discharge this: the plan ends at a proven local tree, and pushing
+  the branch, opening the pull request, and reading the jobs belong to the shipping phase
+  that follows. R7's CI arm is owned there, not by the plan.
 - **R8.** Behaviour is preserved. A lint fix that would change what a test asserts, what a
   tool returns, or what an error type is, is not applied as a lint fix; either the code is
   corrected deliberately or the finding is **escalated**, which means exactly this and
@@ -58,7 +74,22 @@ earlier base):
   no one to escalate to, so the written record is the escalation; the run then stops for a
   human with `just lint` still red on that family, and says so. Adding a coded
   `# noqa: <CODE> - <reason>` is permitted only where this design's disposition table
-  already allows one for that family (`BLE001`, `S110`).
+  already allows one for that family (`BLE001`, `S110`, `TRY004`, `DTZ011`, `PLC0414`).
+
+  **One exemption**, because R8 would otherwise forbid a fix the table already assigns: an
+  assertion may move together with the raise when both are the *same test's own fault
+  injection* and no production contract sits on either side. That is the `TRY002` /`B017`
+  pair at `tests/storage/test_upload_iso.py:864` and `:877` — the test raises a bare
+  `Exception` to simulate a network failure and catches it with
+  `pytest.raises(Exception)`; narrowing both to `RuntimeError` together changes nothing the
+  test is for.
+
+  **R8 has a known blind spot, and it is not a safety net.** Its trigger is "a test asserts
+  otherwise", so it cannot see a contract change where the test computes its expected value
+  the same way production does. `DTZ011` is exactly that case — the six test sites build the
+  expected ownership stamp with the same `date.today()` call the source uses, so changing
+  both keeps the suite green while the persisted metadata moves. That family is therefore
+  dispositioned by reading, not by relying on R8 to fire.
 
 ## Configuration surface
 
@@ -113,17 +144,18 @@ because the fixer's cascade surfaces it, so the table's own total is 650.
 | Rule | n | Disposition |
 |---|---:|---|
 | `I001` unsorted-imports | 206 | Safe autofix. |
-| `PLC0414` useless-import-alias | 138 | Split. The 134 sites in `tests/` take the unsafe autofix: each name is used in its own module, so dropping the alias re-arms nothing. The 4 sites in `src/hmc_mcp/cli.py` are genuine PEP 484 re-exports with no in-module use — measured: after the mechanical fix, `--select F401` reports exactly those four — and are handled by giving that module an `__all__` naming them, which satisfies both rules instead of suppressing either. `F401` is never `--fix`ed. |
+| `PLC0414` useless-import-alias | 138 | Split. The 134 sites in `tests/` take the unsafe autofix: each name is used in its own module, so dropping the alias re-arms nothing. The 4 sites in `src/hmc_mcp/cli.py` are genuine PEP 484 re-exports with no in-module use — measured: after the mechanical fix, `--select F401` reports exactly those four — and keep the `X as X` form under a coded `# noqa: PLC0414 - PEP 484 explicit re-export; see the module docstring`. An `__all__` was considered and rejected: in this repository `__all__` is not a neutral idiom — ADR 0029 makes `hmc_mcp.api.__all__` an exhaustive compatibility manifest that `tests/unit/test_public_api.py` parses and `CHANGELOG.md` tracks, so a second one in `hmc_mcp.cli` would invite a reader to treat that module as supported surface. `F401` is never `--fix`ed. |
 | `SIM117` multiple-with-statements | 93 | Only 30 are fixable, and those 30 carry **safe** fixes — measured: `--select SIM117 --fix` without `--unsafe-fixes` reports `Found 93 errors (30 fixed, 63 remaining)`, identical to the `--unsafe-fixes` run. So the mechanical pass consumes them and the reviewed pass inherits 63, which have no fix at any safety level. Those 63 — 92 of the 93 are in `tests/` — are hand restructurings of nested `with` statements, enumerated and committed in file-sized batches. This is the largest hand-edit block in the change. |
 | `FURB157` verbose-decimal-constructor | 31 | Safe autofix. |
-| `BLE001` blind-except | 21 | Reviewed per site. `except Exception` is legitimate where the handler re-raises with context or where totality is the contract (the audit sink); each retained site gets a coded `# noqa: BLE001` with a reason, and the rest narrow the caught type. |
+| `BLE001` blind-except | 21 | Reviewed per site. `except Exception` is legitimate where the handler re-raises with context or where totality is the contract (the audit sink); each retained site gets a coded `# noqa: BLE001` with a reason, and the rest narrow the caught type. Two sites are **retention sites, never narrowing candidates**: `src/hmc_mcp/client/core.py:331` and `:336` catch `BaseException` deliberately, and the docstring above them states the contract — a failing logoff or close is attached to the in-flight exception with `add_note` and never replaces it. Narrowing either to `except Exception` would stop handling `asyncio.CancelledError` and `KeyboardInterrupt`, changing cancellation semantics, and no gate would catch it. |
 | `ISC004` implicit-string-concat-in-collection | 20 | Add the parentheses Ruff asks for. Each site is read to confirm a missing comma is not the actual defect. |
 | `UP032`, `UP017`, `UP037`, `UP035`, `UP041`, `UP012`, `UP033` | 45 | Safe autofix (modernisation). |
 | `RUF100` unused-noqa | 4 after R2 | Three name rules that are not enabled (`S603` ×2, `PLC0415`); one (`BLE001`) whose site now re-raises. Directive removed, rationale kept as a plain comment. |
-| `TRY004` type-check-without-type-error | 12 | Fixed: an `isinstance` guard that fails raises `TypeError`. Public error contracts are checked first; a site whose `ValueError` is asserted by a test is escalated under R8. |
+| `TRY004` type-check-without-type-error | 12 | Split 5 fixed / 7 retained. **Fixed** where no contract rides on the exception type: `scripts/check_python_support.py:45,50,55,58` and `tests/test_live_runner.py:595`. **Retained** with a coded, per-site `# noqa: TRY004 - <reason>` where the rule's premise is false or `ValueError` is the contract: `authorization/access_policy.py:123,139` (inside a Pydantic `@field_validator`, which collects `ValueError` into `ValidationError` and lets `TypeError` escape uncaught — and the code's own comment says one message covers wrong-string *and* wrong-type); `snapshots/operations.py:210,224,234` (reached from `capture_lpar_snapshot`, `inspect_lpar_snapshot`, and `validate_lpar_snapshot`, all in `hmc_mcp.api.__all__`, which ADR 0029 freezes; `tests/unit/test_snapshot_capture.py:220,233` assert the `ValueError`; and rejecting `bool` is a value-domain decision, since `bool` *is* an `int`); `ssh/lpar.py:29` (`validate_caller_token`'s `ValueError` is what `ssh/lpar.py:102`'s best-effort `(HMCCLIError, OSError, ValueError)` boundary depends on, asserted at `tests/unit/test_ownership.py:752`); and `cli_commands/serve.py:53` (the `isinstance` is on the stdlib's return value, not a caller's argument, so `RuntimeError` states an internal invariant correctly). |
 | `PLW1510` subprocess-run-without-check | 9 | Fixed with an explicit `check=False`, which states the existing behaviour rather than changing it. |
 | `FURB192` sorted-min-max | 8 | Fixed: `sorted(x)[0]` → `min(x)`. |
-| `DTZ011`, `DTZ001` | 8 | Fixed: naive `date.today()` / `datetime(...)` gain explicit UTC. `src/hmc_mcp/ssh/lpar.py` stamps ownership dates, so the fix is checked against the stamp format its tests assert. |
+| `DTZ011` call-date-today | 7 | **All seven retained** with a coded `# noqa: DTZ011 - <reason>`. `src/hmc_mcp/ssh/lpar.py:85` builds the ADR 0011 ownership stamp `[hmc-mcp owner:… created:<date>]`, which is persisted on the HMC: moving it from the operator's local calendar date to UTC is an externally visible metadata change that outlives the commit, and it belongs to ADR 0011 rather than to a lint migration. The six sites in `tests/unit/test_ownership.py` (125, 161, 758, 777, 1020, 1086) compute the *expected* stamp with the same call, so they must stay in lockstep — fixing them alone would make them disagree with production for part of every day on any non-UTC host, which is the same defect inverted. Both sides move together or neither does. |
+| `DTZ001` call-datetime-without-tzinfo | 1 | Fixed: the naive `datetime(2026, 8, 24)` fixture in `tests/lpar/test_provision_tool.py:335` gains explicit UTC. Nothing persists it. |
 | `RUF059` unused-unpacked-variable | 7 | Fixed by renaming the unused binding to `_`-prefixed. |
 | `EXE001` shebang-not-executable | 6 | Shebang removed from the six `scripts/` files that carry one; four already do not, and all ten are run as `uv run --no-sync python scripts/<name>.py`. |
 | `PYI034` non-self-return-type | 3 | Safe autofix: `__aenter__` returns `Self`. |

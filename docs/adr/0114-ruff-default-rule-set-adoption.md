@@ -52,8 +52,19 @@ a rule here — and add a `[tool.ruff.lint]` table carrying exactly three entrie
    contain U+202E and U+2028. The rule's premise — that such characters in source are
    unintended — is false for exactly these files.
 
-Every other finding is fixed in code. No rule is disabled repo-wide, no directory is
-excluded, and no bare `# noqa` is added.
+Every other finding is fixed in code, except where fixing it would change a contract this
+record does not own. Those sites keep the behaviour and carry a **coded, per-site
+`# noqa: <CODE> - <reason>`**, which is the fourth and narrowest mechanism: it names the
+rule, states why the rule's premise is false there, and leaves the rule enforced
+everywhere else. The families with such sites are `TRY004` (7 of 12 — a Pydantic validator
+that needs `ValueError` to become a `ValidationError`, three functions whose `ValueError`
+is frozen by ADR 0029's exported manifest, the caller-token guard an ADR 0011 best-effort
+boundary depends on, and one invariant check on a stdlib return value), `DTZ011` (all 7 —
+the ADR 0011 ownership stamp records the operator's local calendar date, and the tests
+that assert it must stay in lockstep), `PLC0414` (4 — PEP 484 explicit re-exports in
+`hmc_mcp.cli`), plus reviewed sites in `BLE001` and `S110`.
+
+No rule is disabled repo-wide, no directory is excluded, and no bare `# noqa` is added.
 
 ## Consequences
 
@@ -75,6 +86,15 @@ comments. Enabling those rules to preserve the directives was rejected below.
 `hmc_mcp.documents.LparResources` and `hmc_mcp.operations.lpar.assignments.LparPcieAssignments`
 are named in configuration by their fully qualified paths, so moving or renaming either
 type silently re-arms `B008` against ten call sites.
+
+**The narrowness this record promises is enforced by review, not by a gate, and that is an
+accepted consequence.** `tests/test_ci_pipeline.py` already asserts a close analogue for
+the type checker — `"rules" not in project["tool"]["ty"]` — and deliberately stops there;
+nothing makes the equivalent assertion about `[tool.ruff.lint]`. So a later change can add
+a blanket `ignore`, an `exclude`, or a bare `# noqa` and every gate stays green. Adding a
+config-shape gate was considered out of scope for the migration that introduces the
+policy; whoever wants one should extend those `pyproject` assertions to pin the
+`[tool.ruff.lint]` table's shape.
 
 The two per-file-ignored modules lose Ruff's only detector for invisible bidirectional and
 control characters, so `tests/unit/test_audit.py` and `tests/unit/test_ownership.py` — and

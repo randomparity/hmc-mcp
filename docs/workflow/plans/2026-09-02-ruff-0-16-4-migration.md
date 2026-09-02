@@ -298,16 +298,18 @@ behaviour regression surfaces against the smallest possible set of concurrent ed
       the next fixer pass would delete the imports, silently narrowing what
       `from hmc_mcp.cli import app` can reach. `scripts/smoke_cli_groups.py` and at least
       six test modules import `app` from there. Do **not** run the mechanical fix on
-      `src/`. Instead, add to `src/hmc_mcp/cli.py`, immediately after its imports:
+      `src/`. Instead, keep all four `X as X` forms exactly as they are and append a coded
+      directive to each of `src/hmc_mcp/cli.py:19`, `:25`, `:36`, and `:37`:
 
       ```python
-      # This module is the explicit composition root (see the module docstring); these
-      # four names are its public surface and are re-exported rather than used here.
-      __all__ = ["GlobalOpts", "app", "console", "main"]
+          app as app,  # noqa: PLC0414 - PEP 484 explicit re-export; see the module docstring
       ```
 
-      then drop the four `X as X` aliases to plain `X` imports. `F401` does not flag a
-      name listed in `__all__`, and `PLC0414` has nothing left to flag.
+      Do **not** add an `__all__` to this module. In this repository `__all__` is not a
+      neutral idiom: ADR 0029 makes `hmc_mcp.api.__all__` an exhaustive compatibility
+      manifest that `tests/unit/test_public_api.py` parses in more than twenty places and
+      that `CHANGELOG.md` tracks under a four-part duty, so a second one in `hmc_mcp.cli`
+      would invite a future reader to treat that module as supported surface.
    c. Run `uv run --no-sync ruff check . --select F401,PLC0414,RUF022,I001 --statistics`.
       `F401`, `PLC0414`, and `RUF022` must be empty. `I001` will **not** be — expect about
       22, because (a) and (b) changed the import sort keys. **If `F401` is non-empty, do
@@ -340,30 +342,71 @@ behaviour regression surfaces against the smallest possible set of concurrent ed
    expect neither. Commit.
 4. `ISC004` (20). Wrap each implicit concatenation in parentheses. Read each site first to
    confirm a missing comma is not the real defect — Ruff offers both readings. Commit.
-5. `TRY004` (12). Change the `isinstance`-guard failures to raise `TypeError`. Before each,
-   run `rg -n '<the message text>' tests/` and confirm no test asserts `ValueError` at that
-   site. **If one does, escalate under R8** — that means, precisely: leave the code
-   unchanged, do not edit the assertion to fit the fix, stop this step, and append the site
+5. `TRY004` (12), pre-dispositioned 5 fixed / 7 retained. The split is settled in the
+   design; do not re-derive it per site.
+
+   a. **Fix** these five to raise `TypeError`: `scripts/check_python_support.py:45`, `:50`,
+      `:55`, `:58`, and `tests/test_live_runner.py:595`. No exported contract or test
+      assertion rides on any of them.
+   b. **Retain** these seven with a coded `# noqa: TRY004 - <reason>` on the `raise` line,
+      the reason taken from the design's table:
+      - `src/hmc_mcp/authorization/access_policy.py:123`, `:139` — inside a Pydantic
+        `@field_validator`, which folds `ValueError` into a `ValidationError` and lets
+        `TypeError` escape uncaught on the authorization surface.
+      - `src/hmc_mcp/snapshots/operations.py:210`, `:224`, `:234` — reached from three
+        `hmc_mcp.api.__all__` exports whose `ValueError` ADR 0029 freezes, and asserted at
+        `tests/unit/test_snapshot_capture.py:220`, `:233`.
+      - `src/hmc_mcp/ssh/lpar.py:29` — `validate_caller_token`'s `ValueError` is what the
+        best-effort `(HMCCLIError, OSError, ValueError)` boundary at `:102` depends on,
+        asserted at `tests/unit/test_ownership.py:752`.
+      - `src/hmc_mcp/cli_commands/serve.py:53` — the `isinstance` tests the stdlib's return
+        value, not a caller's argument, so `RuntimeError` is the correct invariant.
+   c. Run `uv run --no-sync ruff check . --select TRY004,RUF100 --statistics` and expect
+      neither — a `RUF100` here means a directive landed on a line that does not trigger.
+      Run `uv run --no-sync pytest tests/unit/test_snapshot_capture.py
+      tests/unit/test_ownership.py tests/app/ -q` and expect it to pass. Commit.
+
+   **R8 still governs anything this list does not cover.** If a site outside it turns out
+   to have an asserting test, leave the code unchanged, stop this step, and append the site
    to this plan's *Deferrals* section with its `file:line`, the asserting test's
    `file:line`, and the contract in question. An unattended run has no one to escalate to,
-   so that written record *is* the escalation and it is a terminating condition: the run
-   stops with `just lint` still red on `TRY004` and reports exactly that, rather than
-   proceeding. Commit whatever sites were fixed cleanly.
+   so that record *is* the escalation and it terminates the run.
 6. `PLW1510` (9). Add an explicit `check=False` to each `subprocess.run`, stating the
    existing behaviour. Commit.
 7. `FURB192` (8), `DTZ011` (7), `DTZ001` (1), `RUF059` (7), `EXE001` (6), `PYI061` (4),
    `PYI034` (3), `SIM102` (4), `S110` (3), `G201` (3), `TRY002` (2), `B017` (1),
    `PLR0133` (1), and the remaining singletons. Fix each per the design's disposition
-   table. For `PYI061`, Ruff offers no fix, so hand-edit `Literal[None]` → `None` at
+   table, with three exceptions the table settles in advance.
+
+   **`DTZ011` (7) is retained, not fixed** — all seven sites. Put a coded
+   `# noqa: DTZ011 - <reason>` on `src/hmc_mcp/ssh/lpar.py:85` (the ADR 0011 ownership
+   stamp records the operator's local calendar date and is persisted on the HMC) and on
+   `tests/unit/test_ownership.py:125`, `:161`, `:758`, `:777`, `:1020`, `:1086` (they
+   compute the expected stamp with the same call and must stay in lockstep). Fixing the
+   test side alone would make it disagree with production for part of every day on any
+   non-UTC host, and the suite would still pass — which is why this is settled here rather
+   than left to R8, whose trigger cannot see it.
+
+   **`DTZ001` (1) is fixed:** `tests/lpar/test_provision_tool.py:335`'s naive
+   `datetime(2026, 8, 24)` gains explicit UTC. Nothing persists it.
+
+   **`BLE001`'s two `BaseException` sites** at `src/hmc_mcp/client/core.py:331` and `:336`
+   are retention sites, handled in step 3 — never narrowing candidates. Narrowing them to
+   `except Exception` would stop handling `asyncio.CancelledError` and `KeyboardInterrupt`
+   and no gate would catch it.
+
+   For `PYI061`, Ruff offers no fix, so hand-edit `Literal[None]` → `None` at
    `src/hmc_mcp/_app.py:243`, `:253`, and both occurrences on `:263`, then run
    `just typecheck` and expect exit 0 — these are overload signatures, so the type checker
    is the gate. For `EXE001`, delete the
    `#!/usr/bin/env python3` line and the blank line following it from
    `scripts/check_adr_numbering.py`, `scripts/check_env_vars.py`,
    `scripts/check_generated_docs.py`, `scripts/check_nicknames.py`,
-   `scripts/check_python_support.py`, and `scripts/gen_tool_reference.py`. For `DTZ011` in
-   `src/hmc_mcp/ssh/lpar.py`, run `uv run --no-sync pytest tests/unit/test_ownership.py -q`
-   and confirm the stamp format is unchanged. Commit in one or more grouped commits.
+   `scripts/check_python_support.py`, and `scripts/gen_tool_reference.py`. Then run
+   `uv run --no-sync pytest tests/unit/test_ownership.py tests/lpar/test_provision_tool.py -q`
+   and expect it to pass — the ownership stamp must be byte-identical to what it was, since
+   `DTZ011` was retained precisely so it would not move. Commit in one or more grouped
+   commits.
 8. Run `uv run --no-sync ruff check .`. Expect exactly `All checks passed!`.
 
 **Acceptance criteria.** `uv run --no-sync ruff check .` prints `All checks passed!` and
@@ -399,9 +442,11 @@ request reports.
    pass on the final tree.
 
 **Acceptance criteria.** `just verify` exits 0 and `uv run --no-sync prek run --all-files`
-exits 0, both run bare, on the final commit. The eight-leg CI matrix is R7's remaining arm
-and is discharged by the shipping phase that follows this plan, not by this task — see the
-spec's R7.
+exits 0, both run bare, on the final commit. CI is R7's remaining arm and is discharged by
+the shipping phase that follows this plan, not by this task. That phase reads **all five**
+jobs in `.github/workflows/ci.yml` — `ci`, `library-wheel-smoke`, `library-range-floors`,
+`wheel-smoke`, and `python-support-drift` — never the `ci` matrix alone; see the spec's R7
+for why the last two are specifically at risk from this diff.
 
 **Rollback.** A red gate is diagnosed with the narrowing sub-recipes listed in Global
 Constraints, not worked around.
