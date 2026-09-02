@@ -17,13 +17,14 @@ branch is only green at the end.
 **Tech stack.** Python 3.11–3.14, `uv` for dependency management, `just` for recipes,
 `prek` for git hooks, `pytest` for tests, `ruff` for linting, `ty` for type checking.
 
-Expected implementation size: 3000–4000 changed lines (L) — measured, not derived: replaying
+Expected implementation size: 3000–4000 changed lines (L) — measured, not derived, with
+Task 3's own `pyproject.toml` edit already committed and therefore excluded: replaying
 Task 4's `ruff check . --fix` on a throwaway copy of this tree gives
-`220 files changed, 1249 insertions(+), 1279 deletions(-)` (2528 changed lines), and adding
-the `PLC0414` pass plus the auto-fixable 30 of `SIM117` gives
-`242 files changed, 1382 insertions(+), 1412 deletions(-)` (2794) with 213 findings still
-outstanding — including 63 hand `with`-statement restructurings, 21 `BLE001`, 20 `ISC004`,
-and 12 `TRY004`, none of them one-line edits on average. Roughly 250 files.
+`219 files changed, 1231 insertions(+), 1279 deletions(-)` (2510 changed lines), and adding
+the `PLC0414` pass gives `241 files changed, 1364 insertions(+), 1412 deletions(-)` (2776)
+with 212 findings still outstanding — including 63 hand `with`-statement restructurings,
+21 `BLE001`, 20 `ISC004`, and 12 `TRY004`, none of them one-line edits on average. Roughly
+250 files.
 
 ## Global Constraints
 
@@ -32,9 +33,11 @@ Transcribed from the design and from `AGENTS.md`:
 - Ruff is pinned **exactly**: `ruff==0.16.4` in `pyproject.toml`'s `[dependency-groups]
   dev` list and in `TOOL_PINS` in `tests/test_ci_pipeline.py`. A pin that does not equal
   the locked version fails `tests/test_supply_chain.py`.
-- Add the dependency with `uv add --dev --no-sync "ruff==0.16.4"`, then `just setup`.
-  **Never** a bare `uv sync`, a bare `uv run`, or a bare `uv add` — a bare `uv sync`
-  prunes the `app` extra and removes `typer`, which breaks `just typecheck`.
+- **Never** a bare `uv sync`, a bare `uv run`, or a bare `uv add` — a bare `uv sync` prunes
+  the `app` extra and removes `typer`, which breaks `just typecheck`. Do **not** use
+  `uv add` here even in its `--dev --no-sync` form: it would run this workstation's uv,
+  and the next constraint says why that is wrong. Edit the pin by hand and regenerate the
+  lock, as Task 1 does.
 - This workstation has uv 0.12.1; CI pins 0.12.3. Regenerate the lock with
   `uvx uv@0.12.3 lock` so CI's `uv sync --locked` accepts it.
 - Supported Python floor is 3.11, so `typing.Self` and `datetime.UTC` are available
@@ -221,7 +224,7 @@ three entries carries its justification comment in the file.
 Task 5 is legible separately.
 
 **Interfaces.** Consumes the configuration from Task 3. Produces a tree whose remaining
-findings are exactly the ~324 that need review.
+findings are exactly the 325 that need review.
 
 **Steps.**
 
@@ -230,8 +233,9 @@ findings are exactly the ~324 that need review.
    fixer iterates and each pass exposes diagnostics the census never counted; treat them
    as approximate and read step 3's output rather than gating on the exact string.
 2. Run `git --no-pager diff --stat`. Read the file list and confirm nothing outside
-   `scripts/`, `src/`, and `tests/` changed. Expect roughly
-   `220 files changed, 1249 insertions(+), 1279 deletions(-)`.
+   `scripts/`, `src/`, and `tests/` changed — Task 3's `pyproject.toml` edit is already
+   committed, so it must not appear here. Expect roughly
+   `219 files changed, 1231 insertions(+), 1279 deletions(-)`.
 3. Run `uv run --no-sync ruff check . --statistics`. Expect `I001`, `FURB157`, `UP032`,
    `UP017`, `UP037`, `UP035`, `UP041`, `UP012`, `UP033`, `PIE808`, `PLR0402`, `B009`,
    `FURB167`, `PLR1711`, `RET501`, `RUF022`, and `RUF100` to be gone. `PYI061` is **not**
@@ -265,8 +269,18 @@ the design's disposition table; the commit contains no hand edit.
 reviewable edit; they are grouped into commits by family so a reviewer can read one
 decision at a time.
 
-**Interfaces.** Consumes the 324-finding tree Task 4 produced. Produces a tree on which
+**Interfaces.** Consumes the 325-finding tree Task 4 produced. Produces a tree on which
 `uv run --no-sync ruff check .` reports `All checks passed!`.
+
+**The cascade applies here too, not only to Task 4.** Every sub-step below that runs
+`--fix` can expose diagnostics that were not present when it started, and the dominant
+instance is measured: rewriting `X as X` to `X` changes the sort keys isort uses, so the
+`PLC0414` pass alone re-introduces about 22 `I001` findings across 21 test modules and
+`src/hmc_mcp/cli.py` — a family Task 4 had cleared. So **after every sub-step that runs
+`--fix`, re-run `uv run --no-sync ruff check . --fix` and then `--statistics`**, and fold
+the resulting import-sort churn into that family's own commit rather than leaving it for
+step 8 to discover. A rule code that appears in `--statistics` and has no row in the
+design's disposition table is unplanned work: add a row before continuing.
 
 **Steps.** For each family in this order — largest and most mechanical first, so a
 behaviour regression surfaces against the smallest possible set of concurrent edits:
@@ -294,21 +308,24 @@ behaviour regression surfaces against the smallest possible set of concurrent ed
 
       then drop the four `X as X` aliases to plain `X` imports. `F401` does not flag a
       name listed in `__all__`, and `PLC0414` has nothing left to flag.
-   c. Run `uv run --no-sync ruff check . --select F401,PLC0414,RUF022 --statistics` and
-      expect no findings. **If `F401` is non-empty, do not `--fix` it** — a reported
-      `F401` here means a re-export lost its alias without gaining an `__all__` entry, and
-      the fix would delete the export. Read the site and add the name to `__all__`
-      instead.
-   d. Run `uv run --no-sync pytest tests/app/test_cli.py tests/unit/test_public_api.py
-      tests/app/test_application_boundaries.py -q` and expect it to pass. Commit.
-2. `SIM117` (93 census, 63 after the mechanical pass; 92 of 93 in `tests/`). Two steps,
-   because only a third of the family is machine-fixable.
+   c. Run `uv run --no-sync ruff check . --select F401,PLC0414,RUF022,I001 --statistics`.
+      `F401`, `PLC0414`, and `RUF022` must be empty. `I001` will **not** be — expect about
+      22, because (a) and (b) changed the import sort keys. **If `F401` is non-empty, do
+      not `--fix` it** — a reported `F401` here means a re-export lost its alias without
+      gaining an `__all__` entry, and the fix would delete the export. Read the site and
+      add the name to `__all__` instead.
+   d. Clear the sort churn with `uv run --no-sync ruff check . --fix`, then re-run
+      `--statistics` and confirm `I001` is gone and no unplanned rule code appeared.
+   e. Run `uv run --no-sync pytest tests/app/test_cli.py tests/unit/test_public_api.py
+      tests/app/test_application_boundaries.py -q` and expect it to pass. Commit (a)
+      through (d) together — the sort churn belongs to the alias removal that caused it.
+2. `SIM117` (93 census, **63 here**; 92 of 93 in `tests/`). Do **not** run a `--fix` pass
+   for this family: the 30 machine-fixable sites carry *safe* fixes, so Task 4's plain
+   `ruff check . --fix` already took them and a `--select SIM117 --fix` run here reports
+   `Found 63 errors.` with nothing fixed and an empty commit. The 63 that remain have no
+   fix at any safety level and are hand work.
 
-   a. Run `uv run --no-sync ruff check . --select SIM117 --fix --unsafe-fixes`. Expect
-      `Found 93 errors (30 fixed, 63 remaining).` — a second run of the same command
-      fixes nothing further, so do not repeat it expecting progress. Run `just test`.
-      Commit.
-   b. Enumerate what is left with
+   a. Enumerate them with
       `uv run --no-sync ruff check . --select SIM117 --output-format concise`. Each site
       is a nested `with` that becomes one parenthesized `with` holding both context
       managers, preserving order and body exactly. Work through them in file-sized
@@ -382,8 +399,9 @@ request reports.
    pass on the final tree.
 
 **Acceptance criteria.** `just verify` exits 0 and `uv run --no-sync prek run --all-files`
-exits 0, both run bare, on the final commit. The eight-leg CI matrix is green on the pull
-request.
+exits 0, both run bare, on the final commit. The eight-leg CI matrix is R7's remaining arm
+and is discharged by the shipping phase that follows this plan, not by this task — see the
+spec's R7.
 
 **Rollback.** A red gate is diagnosed with the narrowing sub-recipes listed in Global
 Constraints, not worked around.

@@ -45,7 +45,10 @@ earlier base):
 - **R6.** Safe mechanical fixes land as their own commit, separate from reviewed fixes, so
   the reviewed work is legible on its own.
 - **R7.** `just verify` and `uv run --no-sync prek run --all-files` are green on the final
-  tree, and the eight-leg CI matrix passes.
+  tree. The eight-leg CI matrix is the arbiter and must pass, but no task in the
+  implementation plan can discharge it: the plan ends at a proven local tree, and pushing
+  the branch, opening the pull request, and reading the eight legs belong to the shipping
+  phase that follows. R7's CI arm is therefore owned there, not by the plan.
 - **R8.** Behaviour is preserved. A lint fix that would change what a test asserts, what a
   tool returns, or what an error type is, is not applied as a lint fix; either the code is
   corrected deliberately or the finding is **escalated**, which means exactly this and
@@ -95,6 +98,12 @@ implementation re-runs `--statistics` after the mechanical pass and treats any r
 absent from the table below as work that must be dispositioned before the reviewed pass
 begins.
 
+The cascade is not confined to the mechanical pass. Any later `--fix` run cascades the
+same way, and the measured instance is `I001`: rewriting `X as X` to `X` changes the sort
+keys isort uses, so the `PLC0414` pass re-introduces about 22 `I001` findings in a family
+the mechanical pass had cleared. Every fix pass is therefore followed by a re-run of
+`--fix` and `--statistics`, and the churn is committed with the change that caused it.
+
 ## Rule-family dispositions
 
 Every family is fixed in code unless the table says otherwise. Counts are the pre-fix
@@ -105,7 +114,7 @@ because the fixer's cascade surfaces it, so the table's own total is 650.
 |---|---:|---|
 | `I001` unsorted-imports | 206 | Safe autofix. |
 | `PLC0414` useless-import-alias | 138 | Split. The 134 sites in `tests/` take the unsafe autofix: each name is used in its own module, so dropping the alias re-arms nothing. The 4 sites in `src/hmc_mcp/cli.py` are genuine PEP 484 re-exports with no in-module use — measured: after the mechanical fix, `--select F401` reports exactly those four — and are handled by giving that module an `__all__` naming them, which satisfies both rules instead of suppressing either. `F401` is never `--fix`ed. |
-| `SIM117` multiple-with-statements | 93 | Only 30 are auto-fixable, measured: `--select SIM117 --fix --unsafe-fixes` reports `Found 93 errors (30 fixed, 63 remaining)` and a second run fixes nothing. The remaining 63 — 92 of the 93 are in `tests/` — are hand restructurings of nested `with` statements, enumerated and committed in file-sized batches. This is the largest hand-edit block in the change. |
+| `SIM117` multiple-with-statements | 93 | Only 30 are fixable, and those 30 carry **safe** fixes — measured: `--select SIM117 --fix` without `--unsafe-fixes` reports `Found 93 errors (30 fixed, 63 remaining)`, identical to the `--unsafe-fixes` run. So the mechanical pass consumes them and the reviewed pass inherits 63, which have no fix at any safety level. Those 63 — 92 of the 93 are in `tests/` — are hand restructurings of nested `with` statements, enumerated and committed in file-sized batches. This is the largest hand-edit block in the change. |
 | `FURB157` verbose-decimal-constructor | 31 | Safe autofix. |
 | `BLE001` blind-except | 21 | Reviewed per site. `except Exception` is legitimate where the handler re-raises with context or where totality is the contract (the audit sink); each retained site gets a coded `# noqa: BLE001` with a reason, and the rest narrow the caught type. |
 | `ISC004` implicit-string-concat-in-collection | 20 | Add the parentheses Ruff asks for. Each site is read to confirm a missing comma is not the actual defect. |

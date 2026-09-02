@@ -76,6 +76,12 @@ comments. Enabling those rules to preserve the directives was rejected below.
 are named in configuration by their fully qualified paths, so moving or renaming either
 type silently re-arms `B008` against ten call sites.
 
+The two per-file-ignored modules lose Ruff's only detector for invisible bidirectional and
+control characters, so `tests/unit/test_audit.py` and `tests/unit/test_ownership.py` — and
+only those two — can subsequently acquire an *unintended* U+202E or U+2028 with nothing
+objecting. The compensating control is that both files assert on the exact code points
+they carry, so a change to those fixtures fails the suite rather than passing silently.
+
 ## Considered & rejected
 
 - **Freeze the rule set at 0.15.22's defaults with `select = ["E4", "E7", "E9", "F"]`.**
