@@ -55,7 +55,7 @@ dev = [
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
     "respx==0.23.1",
-    "ruff==0.15.22",
+    "ruff==0.16.4",
     "ty==0.0.74",
     "zizmor==1.29.0",
 ]
