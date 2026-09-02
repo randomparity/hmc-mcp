@@ -47,6 +47,17 @@ updates:
         applies-to: "version-updates"
         patterns:
           - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions-dependencies:
+        patterns:
+          - "*"
 """
 
 
@@ -193,6 +204,6 @@ def test_locked_versions_satisfy_the_declared_ranges(requirement: str) -> None:
     )
 
 
-def test_dependabot_updates_uv_dependencies_as_one_cooled_group() -> None:
+def test_dependabot_updates_dependencies_as_cooled_groups() -> None:
     config = ROOT / ".github" / "dependabot.yml"
     assert config.read_text() == DEPENDABOT_CONFIG
