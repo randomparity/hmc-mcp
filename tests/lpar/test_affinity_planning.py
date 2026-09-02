@@ -539,14 +539,14 @@ def test_score_operations_reject_missing_required_fields(operation, stdout, miss
         ),
         (
             plan_lpar_memopt_scores,
-            "lpar_name=web,lpar_id=1,curr_lpar_score=80,"
-            "predicted_lpar_score=,firmware_extension=",
+            ("lpar_name=web,lpar_id=1,curr_lpar_score=80,"
+             "predicted_lpar_score=,firmware_extension="),
             "predicted_lpar_score",
         ),
         (
             plan_lpar_memopt_scores,
-            "predicted_lpar_score,lpar_name=web,lpar_id=1,"
-            "curr_lpar_score=80,firmware_extension=",
+            ("predicted_lpar_score,lpar_name=web,lpar_id=1,"
+             "curr_lpar_score=80,firmware_extension="),
             "predicted_lpar_score",
         ),
     ],

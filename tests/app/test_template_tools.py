@@ -141,8 +141,8 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
     assert result["ownership_stamped"] is None
     assert result["warnings"] == [
-        "ownership stamp not attempted: template deployment does not identify and stamp "
-        "the new LPAR; list partitions to identify it, then set its description"
+        ("ownership stamp not attempted: template deployment does not identify and stamp "
+         "the new LPAR; list partitions to identify it, then set its description")
     ]
 
 

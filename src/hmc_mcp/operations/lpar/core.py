@@ -367,8 +367,8 @@ async def create_and_stamp_lpar(
             lpar=None,
             ownership_stamped=None,
             warnings=(
-                f"ownership stamp skipped for LPAR {creation.name!r}: "
-                "create returned no LPAR body",
+                (f"ownership stamp skipped for LPAR {creation.name!r}: "
+                 "create returned no LPAR body"),
             ),
         )
     ownership_stamped, warnings = await stamp_created_lpar_ownership(

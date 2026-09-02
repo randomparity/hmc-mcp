@@ -137,8 +137,8 @@ async def deploy_partition_template(
             "job": selected_job,
             "ownership_stamped": None,
             "warnings": [
-                "ownership stamp not attempted: template deployment job returned "
-                f"status {status!r}"
+                ("ownership stamp not attempted: template deployment job returned "
+                 f"status {status!r}")
             ],
         }
     if baseline is None:

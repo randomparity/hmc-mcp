@@ -604,8 +604,8 @@ def _flag_payload_problems(
     """
     if not isinstance(literal, ast.JoinedStr):
         return [
-            f"{ast.unparse(literal)} (a command that is not an f-string, "
-            f"so its {flag} payload cannot be traced to {builder_name})"
+            (f"{ast.unparse(literal)} (a command that is not an f-string, "
+             f"so its {flag} payload cannot be traced to {builder_name})")
         ]
     unguarded: list[str] = []
     examined = 0

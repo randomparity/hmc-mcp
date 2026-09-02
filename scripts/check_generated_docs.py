@@ -410,8 +410,8 @@ def _banner_check(path: Path, command: str, generated: bytes) -> list[str]:
     if match is not None and f"just {match['recipe']}" == command:
         return []
     return [
-        f"{path}: produced by `{command}` but its first line does not name that "
-        f"command in a generation banner, so nothing would ever check it"
+        (f"{path}: produced by `{command}` but its first line does not name that "
+         f"command in a generation banner, so nothing would ever check it")
     ]
 
 

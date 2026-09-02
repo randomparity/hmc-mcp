@@ -641,8 +641,8 @@ async def stamp_created_lpar_ownership(
     system_name = await _resolve_system_name(hmc, system_uuid, system_fallback)
     if system_name == system_uuid:
         return None, [
-            f"ownership stamp skipped for LPAR {confirmed_name!r}: "
-            "could not resolve the managed-system name"
+            (f"ownership stamp skipped for LPAR {confirmed_name!r}: "
+             "could not resolve the managed-system name")
         ]
 
     token = await stamp_lpar_ownership(

@@ -378,8 +378,8 @@ _RECORD_DELIMITERS: dict[str, tuple[str, str]] = {
     ),
     '"': (
         "a double quote",
-        "a double quote is the HMC's own escape for a value containing a comma, "
-        "so it opens a quoted region that swallows the attributes after it",
+        ("a double quote is the HMC's own escape for a value containing a comma, "
+         "so it opens a quoted region that swallows the attributes after it"),
     ),
 }
 

@@ -1196,8 +1196,8 @@ def test_best_effort_skip_warning_unchanged_when_system_name_unresolved():
         result = asyncio.run(create_and_stamp_lpar(hmc, "sys1", _creation()))
     assert result.ownership_stamped is None
     assert result.warnings == (
-        "ownership stamp skipped for LPAR 'newlpar': "
-        "could not resolve the managed-system name",
+        ("ownership stamp skipped for LPAR 'newlpar': "
+         "could not resolve the managed-system name"),
     )
 
 
