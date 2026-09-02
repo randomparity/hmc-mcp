@@ -149,9 +149,11 @@ async def _run_capture(connection: FakeConnection, **overrides) -> ConsoleCaptur
 async def test_out_of_range_bounds_are_rejected_before_any_ssh(field, value):
     kwargs = _capture_kwargs()
     kwargs[field] = value
-    with patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()) as connect_mock:
-        with pytest.raises(ValueError, match=field):
-            await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
+    with (
+        patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()) as connect_mock,
+        pytest.raises(ValueError, match=field),
+    ):
+        await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
     connect_mock.assert_not_awaited()
 
 
@@ -160,9 +162,11 @@ async def test_out_of_range_bounds_are_rejected_before_any_ssh(field, value):
 async def test_nan_time_bounds_are_rejected_before_any_ssh(field):
     kwargs = _capture_kwargs()
     kwargs[field] = float("nan")
-    with patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()) as connect_mock:
-        with pytest.raises(ValueError, match=field):
-            await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
+    with (
+        patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()) as connect_mock,
+        pytest.raises(ValueError, match=field),
+    ):
+        await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
     connect_mock.assert_not_awaited()
 
 
@@ -175,16 +179,13 @@ async def test_nan_time_bounds_are_rejected_before_any_ssh(field):
 async def test_contention_sentinel_raises_distinct_error_and_never_releases():
     connection = FakeConnection([FakeProcess(CONTENTION)])
     with (
-        patch(
-            "hmc_mcp.ssh.console.open_hmc_connection",
-            AsyncMock(return_value=connection),
-        ),
+        patch( "hmc_mcp.ssh.console.open_hmc_connection", AsyncMock(return_value=connection), ),
         patch("hmc_mcp.ssh.console.run_hmc_command", AsyncMock()) as release_mock,
+        pytest.raises(ConsoleHeldError) as excinfo,
     ):
-        with pytest.raises(ConsoleHeldError) as excinfo:
-            await capture_lpar_console(
-                _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.05)
-            )
+        await capture_lpar_console(
+            _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.05)
+        )
     assert "already holds" in str(excinfo.value)
     # Exit code was 0 on the real HMC; only the sentinel detects this. And
     # since we never held the vterm, releasing would close the other holder.
@@ -202,19 +203,16 @@ async def test_contention_is_detected_when_it_arrives_midstream():
     # depend on it being the first chunk.
     connection = FakeConnection([FakeProcess(BANNER, CONTENTION)])
     with (
-        patch(
-            "hmc_mcp.ssh.console.open_hmc_connection",
-            AsyncMock(return_value=connection),
-        ),
+        patch( "hmc_mcp.ssh.console.open_hmc_connection", AsyncMock(return_value=connection), ),
         patch("hmc_mcp.ssh.console.run_hmc_command", AsyncMock()),
+        pytest.raises(ConsoleHeldError),
     ):
-        with pytest.raises(ConsoleHeldError):
-            await capture_lpar_console(
-                _client(),
-                "sys1",
-                "lp1",
-                **_capture_kwargs(duration_seconds=0.2, idle_timeout_seconds=0.2),
-            )
+        await capture_lpar_console(
+            _client(),
+            "sys1",
+            "lp1",
+            **_capture_kwargs(duration_seconds=0.2, idle_timeout_seconds=0.2),
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -141,9 +141,11 @@ def test_list_vios_backups_refuses_malformed_csv(monkeypatch, output):
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock(output)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        with pytest.raises(ValueError):
-            hmc_list_vios_backups(VIOS_UUID)
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(ValueError),
+    ):
+        hmc_list_vios_backups(VIOS_UUID)
 
 
 def test_list_vios_backups_resolves_vios_name(monkeypatch):

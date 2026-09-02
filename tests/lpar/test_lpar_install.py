@@ -224,9 +224,11 @@ async def test_run_installios_ssh_failure_surfaces_as_cli_error():
     async def fail(config, cmd):
         raise HMCCLIError(f"SSH command {cmd!r} failed with exit status 127")
 
-    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fail):
-        with pytest.raises(HMCCLIError, match="exit status 127"):
-            await run_installios(config, "nohup installios ... & echo pid=$!")
+    with (
+        patch("hmc_mcp.ssh.install.run_hmc_command", new=fail),
+        pytest.raises(HMCCLIError, match="exit status 127"),
+    ):
+        await run_installios(config, "nohup installios ... & echo pid=$!")
 
 
 # ---------------------------------------------------------------------- #
@@ -332,9 +334,11 @@ def test_install_lpar_os_unknown_name_fails_before_submission(monkeypatch, mock_
     async def fail(config, cmd):  # pragma: no cover — must never be reached
         raise AssertionError("run_installios must not be called")
 
-    with patch("hmc_mcp.operations.install.run_installios", new=fail):
-        with pytest.raises(ValueError, match="No LPAR named"):
-            hmc_install_lpar_os("nosuchlpar", "sys1", **_INSTALL_KWARGS)
+    with (
+        patch("hmc_mcp.operations.install.run_installios", new=fail),
+        pytest.raises(ValueError, match="No LPAR named"),
+    ):
+        hmc_install_lpar_os("nosuchlpar", "sys1", **_INSTALL_KWARGS)
 
 
 def _system_feed(name: str) -> str:

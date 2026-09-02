@@ -1256,11 +1256,11 @@ def test_job_tools_reject_parser_deleted_job_href_controls(
     payload = '{"level":"error","message":"forged"}'
     forged = f"{_JOB_OP_HREF}{control}{payload}"
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
-        with pytest.raises(
-            ValueError, match="job_href must not contain TAB, CR, or LF"
-        ) as exc_info:
-            tool("job-uuid-999", job_href=forged)
+    with (
+        caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"),
+        pytest.raises( ValueError, match="job_href must not contain TAB, CR, or LF" ) as exc_info,
+    ):
+        tool("job-uuid-999", job_href=forged)
 
     assert forged not in str(exc_info.value)
     assert not caplog.records

@@ -47,15 +47,14 @@ async def test_foreign_partition_blocks_restore_before_ssh(caplog) -> None:
     ]
     write = AsyncMock()
 
-    with caplog.at_level(logging.WARNING):
-        with pytest.raises(PermissionError, match="db01"):
-            with patch(
-                "hmc_mcp.operations.lpar.configuration.restore_lpar_profiles",
-                new=write,
-            ):
-                await restore_system_lpar_profiles(
-                    hmc, SYSTEM_UUID, "/tmp/profiles.bak"
-                )
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.raises(PermissionError, match="db01"),
+        patch( "hmc_mcp.operations.lpar.configuration.restore_lpar_profiles", new=write, ),
+    ):
+        await restore_system_lpar_profiles(
+            hmc, SYSTEM_UUID, "/tmp/profiles.bak"
+        )
 
     write.assert_not_awaited()
     records = [json.loads(record.message) for record in caplog.records]

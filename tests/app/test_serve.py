@@ -314,9 +314,11 @@ def test_http_entry_point_gates_the_escape_hatch(enabled, monkeypatch):
 
 
 def test_http_entrypoint_refuses_remote_bind_without_authorization():
-    with patch.object(FastMCP, "run") as run:
-        with pytest.raises(ValueError, match="binds beyond loopback"):
-            server_app.main_http(_legacy(), host="0.0.0.0")
+    with (
+        patch.object(FastMCP, "run") as run,
+        pytest.raises(ValueError, match="binds beyond loopback"),
+    ):
+        server_app.main_http(_legacy(), host="0.0.0.0")
 
     run.assert_not_called()
 

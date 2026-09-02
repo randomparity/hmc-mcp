@@ -62,9 +62,11 @@ async def test_dedicated_slot_reader_accepts_header_only_output() -> None:
     ],
 )
 async def test_dedicated_slot_reader_rejects_schema_drift(output: str) -> None:
-    with patch("hmc_mcp.ssh.network.run_hmc_command", AsyncMock(return_value=output)):
-        with pytest.raises(ValueError, match="header|columns"):
-            await list_dedicated_pcie_slot_rows(_config(), "sys1")
+    with (
+        patch("hmc_mcp.ssh.network.run_hmc_command", AsyncMock(return_value=output)),
+        pytest.raises(ValueError, match="header|columns"),
+    ):
+        await list_dedicated_pcie_slot_rows(_config(), "sys1")
 
 
 @pytest.mark.asyncio

@@ -207,24 +207,22 @@ def test_two_profile_strings_produce_distinct_clients(tmp_path, monkeypatch):
         with (
             patch("hmc_mcp.config.resolve_config_path", side_effect=patched_resolve),
             patch("hmc_mcp.config.resolve_config_path", side_effect=patched_resolve),
+            patch.object(HMCClient, "__aenter__", fake_context_a),
+            patch.object(HMCClient, "__aexit__", fake_context_exit),
+            patch.object(HMCClient, "get_console_info", fake_get_console),
         ):
-            with (
-                patch.object(HMCClient, "__aenter__", fake_context_a),
-                patch.object(HMCClient, "__aexit__", fake_context_exit),
-                patch.object(HMCClient, "get_console_info", fake_get_console),
-            ):
-                from hmc_mcp.client.client_factory import client_from_env
+            from hmc_mcp.client.client_factory import client_from_env
 
-                async def call_a():
-                    async with client_from_env("alpha") as hmc:
-                        return await hmc.get_console_info()
+            async def call_a():
+                async with client_from_env("alpha") as hmc:
+                    return await hmc.get_console_info()
 
-                async def call_b():
-                    async with client_from_env("beta") as hmc:
-                        return await hmc.get_console_info()
+            async def call_b():
+                async with client_from_env("beta") as hmc:
+                    return await hmc.get_console_info()
 
-                task_a, task_b = await asyncio.gather(call_a(), call_b())
-                return task_a, task_b
+            task_a, task_b = await asyncio.gather(call_a(), call_b())
+            return task_a, task_b
 
     result_a, result_b = asyncio.run(run_concurrent())
 

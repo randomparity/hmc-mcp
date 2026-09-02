@@ -207,9 +207,11 @@ def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc
     async def fail(config, cmd):  # pragma: no cover — must never be reached
         raise AssertionError("run_installios must not be called")
 
-    with patch("hmc_mcp.operations.install.run_installios", new=fail):
-        with pytest.raises(ValueError, match="No VIOS named"):
-            hmc_install_vios("nosuchvios", "sys1", **_INSTALL_KWARGS)
+    with (
+        patch("hmc_mcp.operations.install.run_installios", new=fail),
+        pytest.raises(ValueError, match="No VIOS named"),
+    ):
+        hmc_install_vios("nosuchvios", "sys1", **_INSTALL_KWARGS)
 
 
 def test_install_vios_ssh_failure_surfaces_as_cli_error(monkeypatch, mock_hmc):
@@ -224,6 +226,8 @@ def test_install_vios_ssh_failure_surfaces_as_cli_error(monkeypatch, mock_hmc):
     async def fail(config, cmd):
         raise HMCError("SSH command timed out after 30s")
 
-    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fail):
-        with pytest.raises(HMCError, match="timed out"):
-            hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)
+    with (
+        patch("hmc_mcp.ssh.install.run_hmc_command", new=fail),
+        pytest.raises(HMCError, match="timed out"),
+    ):
+        hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)

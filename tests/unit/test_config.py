@@ -996,9 +996,11 @@ def test_load_profile_with_no_platform_config_file(tmp_path, monkeypatch):
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
-    with patch.object(sys, "platform", "linux"):
-        with pytest.raises(ConfigError, match="not found"):
-            _READERS["load_profile"](None)
+    with (
+        patch.object(sys, "platform", "linux"),
+        pytest.raises(ConfigError, match="not found"),
+    ):
+        _READERS["load_profile"](None)
 
 
 def test_profile_reader_rejects_a_non_table_profiles_key(profile_reader, tmp_path):

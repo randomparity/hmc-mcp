@@ -122,9 +122,11 @@ def test_get_lpar_memopt_score_rejects_empty_lpar_name(bad_name):
     cfg = _config()
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
-        with pytest.raises(ValueError, match="lpar_name"):
-            asyncio.run(get_lpar_memopt_score(cfg, SYSTEM_NAME, bad_name))
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        pytest.raises(ValueError, match="lpar_name"),
+    ):
+        asyncio.run(get_lpar_memopt_score(cfg, SYSTEM_NAME, bad_name))
 
     conn.run.assert_not_called()
 
@@ -276,9 +278,11 @@ def test_list_lpar_memopt_scores_rejects_empty_filter_name():
     cfg = _config()
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
-        with pytest.raises(ValueError, match="lpar_name"):
-            asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, "  "))
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        pytest.raises(ValueError, match="lpar_name"),
+    ):
+        asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, "  "))
 
     conn.run.assert_not_called()
 
@@ -289,9 +293,11 @@ def test_list_lpar_memopt_scores_rejects_filter_grammar(bad_name):
     cfg = _config()
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
-        with pytest.raises(HMCCLIError, match="lpar_names"):
-            asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, bad_name))
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        pytest.raises(HMCCLIError, match="lpar_names"),
+    ):
+        asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, bad_name))
 
     conn.run.assert_not_called()
 

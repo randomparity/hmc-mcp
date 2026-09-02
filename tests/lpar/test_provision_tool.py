@@ -921,21 +921,15 @@ def test_provision_policy_rejects_unsupported_system_before_mutation(
 ):
     _hmc_env(monkeypatch)
     with (
-        patch(
-            "hmc_mcp.operations.lpar.provision.resolve_ssh_names",
-            AsyncMock(return_value=("system", None)),
-        ),
-        patch(
-            "hmc_mcp.operations.lpar.provision.require_minimum_affinity_policy_capability",
-            AsyncMock(side_effect=HMCCLIError("POWER11 required")),
-        ),
+        patch( "hmc_mcp.operations.lpar.provision.resolve_ssh_names", AsyncMock(return_value=("system", None)), ),
+        patch( "hmc_mcp.operations.lpar.provision.require_minimum_affinity_policy_capability", AsyncMock(side_effect=HMCCLIError("POWER11 required")), ),
+        pytest.raises(HMCCLIError, match="POWER11"),
     ):
-        with pytest.raises(HMCCLIError, match="POWER11"):
-            hmc_provision_lpar(
-                **_provision_args(
-                    minimum_affinity_policy=MinimumAffinityPolicy(80, "warn")
-                )
+        hmc_provision_lpar(
+            **_provision_args(
+                minimum_affinity_policy=MinimumAffinityPolicy(80, "warn")
             )
+        )
     assert_no_mutating_requests(mock_hmc)
 
 

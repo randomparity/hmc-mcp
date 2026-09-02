@@ -809,9 +809,11 @@ async def test_download_iso_http_error():
     mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.stream = MagicMock(return_value=mock_response)
 
-    with patch('hmc_mcp.operations.storage.httpx.AsyncClient', return_value=mock_client):
-        with pytest.raises(httpx.HTTPStatusError):
-            await _download_iso_from_url(test_url)
+    with (
+        patch('hmc_mcp.operations.storage.httpx.AsyncClient', return_value=mock_client),
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        await _download_iso_from_url(test_url)
 
 
 @pytest.mark.asyncio
@@ -841,10 +843,12 @@ async def test_download_iso_size_limit_exceeded():
     mock_client.stream = MagicMock(return_value=mock_response)
     
     # Patch the size limit to be small
-    with patch('hmc_mcp.operations.storage.MAX_DOWNLOAD_SIZE_BYTES', small_limit):
-        with patch('hmc_mcp.operations.storage.httpx.AsyncClient', return_value=mock_client):
-            with pytest.raises(ValueError, match="exceeds maximum allowed size"):
-                await _download_iso_from_url(test_url)
+    with (
+        patch('hmc_mcp.operations.storage.MAX_DOWNLOAD_SIZE_BYTES', small_limit),
+        patch('hmc_mcp.operations.storage.httpx.AsyncClient', return_value=mock_client),
+        pytest.raises(ValueError, match="exceeds maximum allowed size"),
+    ):
+        await _download_iso_from_url(test_url)
 
 
 

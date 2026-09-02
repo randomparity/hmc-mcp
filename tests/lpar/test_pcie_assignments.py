@@ -178,13 +178,13 @@ async def test_prevalidated_post_create_path_does_not_repeat_inventory() -> None
 @pytest.mark.asyncio
 async def test_public_apply_cannot_bypass_validation() -> None:
     validation = AsyncMock(side_effect=ValueError("unsafe collection"))
-    with patch(
-        "hmc_mcp.operations.lpar.assignments.prevalidate_lpar_pcie_assignments", validation
+    with (
+        patch( "hmc_mcp.operations.lpar.assignments.prevalidate_lpar_pcie_assignments", validation ),
+        pytest.raises(ValueError, match="unsafe collection"),
     ):
-        with pytest.raises(ValueError, match="unsafe collection"):
-            await apply_lpar_pcie_assignments(
-                AsyncMock(), "sys", "lpar", LparPcieAssignments()
-            )
+        await apply_lpar_pcie_assignments(
+            AsyncMock(), "sys", "lpar", LparPcieAssignments()
+        )
     validation.assert_awaited_once()
 
 

@@ -232,15 +232,15 @@ def test_required_system_rejects_partition_uuid_from_another_system():
         patch.object(lpar_ownership, "resolve_lpar_uuid", resolve_lpar),
         patch.object(lpar_ownership, "resolve_lpar_ownership_names", resolve_names),
         patch.object(lpar_ownership, "authorize_lpar_mutation", authorize),
+        pytest.raises(ValueError, match="does not belong to managed system"),
     ):
-        with pytest.raises(ValueError, match="does not belong to managed system"):
-            asyncio.run(
-                resolve_and_authorize_lpar_names(
-                    hmc,
-                    "selected-system",
-                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-                )
+        asyncio.run(
+            resolve_and_authorize_lpar_names(
+                hmc,
+                "selected-system",
+                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             )
+        )
 
     hmc.list_logical_partitions.assert_awaited_once_with("selected-system-uuid")
     resolve_names.assert_not_awaited()
@@ -259,16 +259,16 @@ def test_optional_system_rejects_partition_uuid_from_another_system():
         patch.object(lpar_ownership, "resolve_system_uuid", resolve_system),
         patch.object(lpar_ownership, "resolve_lpar_uuid", resolve_lpar),
         patch.object(lpar_ownership, "authorize_lpar_mutation", authorize),
+        pytest.raises(ValueError, match="does not belong to managed system"),
     ):
-        with pytest.raises(ValueError, match="does not belong to managed system"):
-            asyncio.run(
-                lpar_ownership.resolve_and_authorize_lpar_mutation(
-                    hmc,
-                    "selected-system",
-                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-                    ownership_override=False,
-                )
+        asyncio.run(
+            lpar_ownership.resolve_and_authorize_lpar_mutation(
+                hmc,
+                "selected-system",
+                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                ownership_override=False,
             )
+        )
 
     hmc.list_logical_partitions.assert_awaited_once_with("selected-system-uuid")
     authorize.assert_not_awaited()
@@ -463,14 +463,11 @@ def test_authorize_lpar_mutation_normal_access_has_no_override_audit(caplog):
 def _denied(hmc, description, run, caplog):
     """Run *run* against a stubbed description, expect a refusal, return the records."""
     with (
-        patch(
-            "hmc_mcp.operations.ownership.get_lpar_description",
-            new=AsyncMock(return_value=description),
-        ),
+        patch( "hmc_mcp.operations.ownership.get_lpar_description", new=AsyncMock(return_value=description), ),
         caplog.at_level(logging.WARNING),
+        pytest.raises(PermissionError, match="ownership_override=true"),
     ):
-        with pytest.raises(PermissionError, match="ownership_override=true"):
-            asyncio.run(run(hmc))
+        asyncio.run(run(hmc))
     return _override_records(caplog)
 
 
@@ -928,13 +925,19 @@ def test_set_lpar_ownership_description_rejects_foreign_owned():
         patch("hmc_mcp.operations.ownership.get_lpar_description", new=read),
         patch("hmc_mcp.operations.ownership.set_lpar_description", new=write),
     )
-    with patches[0], patches[1], patches[2], patches[3], patches[4]:
-        with pytest.raises(PermissionError, match="owned by 'bob'"):
-            asyncio.run(
-                lpar_ownership.set_lpar_ownership_description(
-                    hmc, "sys1", "lpar1", "replacement"
-                )
+    with (
+        patches[0],
+        patches[1],
+        patches[2],
+        patches[3],
+        patches[4],
+        pytest.raises(PermissionError, match="owned by 'bob'"),
+    ):
+        asyncio.run(
+            lpar_ownership.set_lpar_ownership_description(
+                hmc, "sys1", "lpar1", "replacement"
             )
+        )
     write.assert_not_awaited()
 
 
@@ -972,17 +975,23 @@ def test_set_lpar_ownership_description_override_bypasses_guard(caplog):
         patch("hmc_mcp.operations.ownership.get_lpar_description", new=read),
         patch("hmc_mcp.operations.ownership.set_lpar_description", new=write),
     )
-    with patches[0], patches[1], patches[2], patches[3], patches[4]:
-        with caplog.at_level(logging.WARNING):
-            result = asyncio.run(
-                lpar_ownership.set_lpar_ownership_description(
-                    hmc,
-                    "sys1",
-                    "lpar1",
-                    "replacement",
-                    ownership_override=True,
-                )
+    with (
+        patches[0],
+        patches[1],
+        patches[2],
+        patches[3],
+        patches[4],
+        caplog.at_level(logging.WARNING),
+    ):
+        result = asyncio.run(
+            lpar_ownership.set_lpar_ownership_description(
+                hmc,
+                "sys1",
+                "lpar1",
+                "replacement",
+                ownership_override=True,
             )
+        )
     assert result == "ok"
     read.assert_not_awaited()
     write.assert_awaited_once()
@@ -1156,15 +1165,15 @@ def test_required_skips_raise_when_system_name_unresolved():
             new=AsyncMock(return_value="sys-uuid"),
         ),
         patch.object(
-                lpar_ownership,
-                "_resolve_system_name",
+            lpar_ownership,
+            "_resolve_system_name",
             new=AsyncMock(return_value="sys-uuid"),  # fallback equals the uuid
         ),
+        pytest.raises(HMCError) as excinfo,
     ):
-        with pytest.raises(HMCError) as excinfo:
-            asyncio.run(
-                create_and_stamp_lpar(hmc, "sys1", _creation(stamp_policy="required"))
-            )
+        asyncio.run(
+            create_and_stamp_lpar(hmc, "sys1", _creation(stamp_policy="required"))
+        )
     message = str(excinfo.value)
     assert "'newlpar'" in message
     assert "lpar-uuid-377" in message

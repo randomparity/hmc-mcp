@@ -262,11 +262,13 @@ async def test_operation_surfaces_a_failed_submission(operation):
     async def fail(config, command):
         raise HMCCLIError(f"SSH command {command!r} failed with exit status 127")
 
-    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fail):
-        with pytest.raises(HMCCLIError, match="exit status 127"):
-            await operation(
-                hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
-            )
+    with (
+        patch("hmc_mcp.ssh.install.run_hmc_command", new=fail),
+        pytest.raises(HMCCLIError, match="exit status 127"),
+    ):
+        await operation(
+            hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
+        )
 
 
 @pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
@@ -400,11 +402,13 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
     async def fail(config, command):
         raise HMCCLIError("SSH command failed with exit status 127")
 
-    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fail):
-        with pytest.raises(HMCCLIError):
-            await operation(
-                hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
-            )
+    with (
+        patch("hmc_mcp.ssh.install.run_hmc_command", new=fail),
+        pytest.raises(HMCCLIError),
+    ):
+        await operation(
+            hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
+        )
 
     assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
         "the sink did not settle"

@@ -70,9 +70,11 @@ async def test_ssh_system_name_raises_when_uuid_missing():
     """A UUID with no matching row raises HMCCLIError, not a silent guess."""
     conn = _make_ssh_mock("00000000-0000-0000-0000-000000000000,other\n")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
-        with pytest.raises(HMCCLIError, match="Could not resolve system UUID"):
-            await resolve_system_cli_name(make_config(), SYSTEM_UUID)
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        pytest.raises(HMCCLIError, match="Could not resolve system UUID"),
+    ):
+        await resolve_system_cli_name(make_config(), SYSTEM_UUID)
 
 
 @pytest.mark.asyncio
@@ -187,8 +189,10 @@ async def test_resolve_system_name_does_not_fall_back_on_rest_status_error(
         return_value=httpx.Response(404, text="not found")
     )
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect") as mock_connect:
-        with pytest.raises(HMCError):
-            await resolve_system_name(make_config(), SYSTEM_UUID)
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect") as mock_connect,
+        pytest.raises(HMCError),
+    ):
+        await resolve_system_name(make_config(), SYSTEM_UUID)
 
     mock_connect.assert_not_called()
