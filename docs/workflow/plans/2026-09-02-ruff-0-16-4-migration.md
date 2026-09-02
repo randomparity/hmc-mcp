@@ -17,9 +17,13 @@ branch is only green at the end.
 **Tech stack.** Python 3.11–3.14, `uv` for dependency management, `just` for recipes,
 `prek` for git hooks, `pytest` for tests, `ruff` for linting, `ty` for type checking.
 
-Expected implementation size: 1600–2600 changed lines (L) — derived from the file map
-below: 206 import-block rewrites, 138 alias removals, 93 `with`-statement merges, and ~212
-smaller per-site edits, plus ~30 lines of configuration.
+Expected implementation size: 3000–4000 changed lines (L) — measured, not derived: replaying
+Task 4's `ruff check . --fix` on a throwaway copy of this tree gives
+`220 files changed, 1249 insertions(+), 1279 deletions(-)` (2528 changed lines), and adding
+the `PLC0414` pass plus the auto-fixable 30 of `SIM117` gives
+`242 files changed, 1382 insertions(+), 1412 deletions(-)` (2794) with 213 findings still
+outstanding — including 63 hand `with`-statement restructurings, 21 `BLE001`, 20 `ISC004`,
+and 12 `TRY004`, none of them one-line edits on average. Roughly 250 files.
 
 ## Global Constraints
 
@@ -221,13 +225,25 @@ findings are exactly the ~324 that need review.
 
 **Steps.**
 
-1. Run `uv run --no-sync ruff check . --fix`. Expect stdout to report `Found 649 errors
-   (325 fixed, 324 remaining).`
+1. Run `uv run --no-sync ruff check . --fix`. Expect stdout to report `Found 666 errors
+   (341 fixed, 325 remaining).` The numbers exceed the 649-finding census because Ruff's
+   fixer iterates and each pass exposes diagnostics the census never counted; treat them
+   as approximate and read step 3's output rather than gating on the exact string.
 2. Run `git --no-pager diff --stat`. Read the file list and confirm nothing outside
-   `scripts/`, `src/`, and `tests/` changed.
+   `scripts/`, `src/`, and `tests/` changed. Expect roughly
+   `220 files changed, 1249 insertions(+), 1279 deletions(-)`.
 3. Run `uv run --no-sync ruff check . --statistics`. Expect `I001`, `FURB157`, `UP032`,
-   `UP017`, `UP037`, `UP035`, `UP041`, `UP012`, `UP033`, `PYI061`, `PIE808`, `PLR0402`,
-   `B009`, `FURB167`, `PLR1711`, `RET501`, `RUF022`, and `RUF100` to be gone.
+   `UP017`, `UP037`, `UP035`, `UP041`, `UP012`, `UP033`, `PIE808`, `PLR0402`, `B009`,
+   `FURB167`, `PLR1711`, `RET501`, `RUF022`, and `RUF100` to be gone. `PYI061` is **not**
+   in that list — Ruff offers no fix for it, so its 4 findings survive and Task 5 owns
+   them.
+3a. **Re-census before the reviewed pass.** Compare every rule code in that
+   `--statistics` output against the design's disposition table. A code the table does not
+   carry is unplanned work: add a row for it to the design, with a disposition, before
+   starting Task 5. The known instance is `PLR0133` (1 site), which the cascade surfaces.
+   Then re-derive Task 5's per-family counts from this output — the counts written into
+   Task 5 below are the pre-fix census and several have moved (`SIM117` is 63 here, not
+   93).
 4. Run `just test`. Expect the compact success summary and exit 0. A failure here means a
    "safe" fix changed behaviour — read the failure and fix the cause, per R8, rather than
    reverting the whole run.
@@ -236,7 +252,8 @@ findings are exactly the ~324 that need review.
    `GIT_EDITOR=true git commit --no-verify -m "style: apply ruff 0.16.4 safe autofixes"`.
 
 **Acceptance criteria.** `just test` and `just typecheck` both exit 0; the remaining
-finding count is 324; the commit contains no hand edit.
+finding count is 325; every rule code in the post-fix `--statistics` output has a row in
+the design's disposition table; the commit contains no hand edit.
 
 **Rollback.** `git revert` the commit.
 
@@ -254,14 +271,52 @@ decision at a time.
 **Steps.** For each family in this order — largest and most mechanical first, so a
 behaviour regression surfaces against the smallest possible set of concurrent edits:
 
-1. `PLC0414` (138). Run `uv run --no-sync ruff check . --select PLC0414 --fix
-   --unsafe-fixes`. Then run `uv run --no-sync ruff check . --select F401 --statistics`
-   and expect no findings: an alias whose name was unused would now be an unused import.
-   Read `src/hmc_mcp/cli.py` by hand — it is a re-export facade, so confirm
-   `uv run --no-sync pytest tests/app/test_cli.py tests/unit/test_public_api.py -q`
-   passes before committing. Commit.
-2. `SIM117` (93). Run `uv run --no-sync ruff check . --select SIM117 --fix
-   --unsafe-fixes`, then `just test`. Commit.
+1. `PLC0414` (138 census: 134 in `tests/`, 4 in `src/hmc_mcp/cli.py`). The two groups are
+   not the same problem and must not take the same command.
+
+   a. Fix the test sites only:
+      `uv run --no-sync ruff check tests scripts --select PLC0414 --fix --unsafe-fixes`.
+      Each of those names is used in its own module, so dropping the alias re-arms
+      nothing.
+   b. `src/hmc_mcp/cli.py` carries the package's four PEP 484 explicit re-exports —
+      `app` (line 19), `main` (25), `console` (36), `GlobalOpts` (37) — and **none of the
+      four is used inside the module**, so the mechanical fix would delete the aliases and
+      the next fixer pass would delete the imports, silently narrowing what
+      `from hmc_mcp.cli import app` can reach. `scripts/smoke_cli_groups.py` and at least
+      six test modules import `app` from there. Do **not** run the mechanical fix on
+      `src/`. Instead, add to `src/hmc_mcp/cli.py`, immediately after its imports:
+
+      ```python
+      # This module is the explicit composition root (see the module docstring); these
+      # four names are its public surface and are re-exported rather than used here.
+      __all__ = ["GlobalOpts", "app", "console", "main"]
+      ```
+
+      then drop the four `X as X` aliases to plain `X` imports. `F401` does not flag a
+      name listed in `__all__`, and `PLC0414` has nothing left to flag.
+   c. Run `uv run --no-sync ruff check . --select F401,PLC0414,RUF022 --statistics` and
+      expect no findings. **If `F401` is non-empty, do not `--fix` it** — a reported
+      `F401` here means a re-export lost its alias without gaining an `__all__` entry, and
+      the fix would delete the export. Read the site and add the name to `__all__`
+      instead.
+   d. Run `uv run --no-sync pytest tests/app/test_cli.py tests/unit/test_public_api.py
+      tests/app/test_application_boundaries.py -q` and expect it to pass. Commit.
+2. `SIM117` (93 census, 63 after the mechanical pass; 92 of 93 in `tests/`). Two steps,
+   because only a third of the family is machine-fixable.
+
+   a. Run `uv run --no-sync ruff check . --select SIM117 --fix --unsafe-fixes`. Expect
+      `Found 93 errors (30 fixed, 63 remaining).` — a second run of the same command
+      fixes nothing further, so do not repeat it expecting progress. Run `just test`.
+      Commit.
+   b. Enumerate what is left with
+      `uv run --no-sync ruff check . --select SIM117 --output-format concise`. Each site
+      is a nested `with` that becomes one parenthesized `with` holding both context
+      managers, preserving order and body exactly. Work through them in file-sized
+      batches, running `uv run --no-sync pytest <that file> -q` after each batch, and
+      commit per batch. This is the largest hand-edit block in the change — roughly 63
+      sites across ~25 test modules — so budget for it rather than treating it as a
+      tail. Finish when `uv run --no-sync ruff check . --select SIM117` reports
+      `All checks passed!`.
 3. `BLE001` (21). Read every site. Where the handler re-raises with context or totality is
    the contract, add `# noqa: BLE001 - <reason>`; otherwise narrow the caught exception
    type. Run `uv run --no-sync ruff check . --select BLE001,RUF100 --statistics` and
@@ -270,12 +325,22 @@ behaviour regression surfaces against the smallest possible set of concurrent ed
    confirm a missing comma is not the real defect — Ruff offers both readings. Commit.
 5. `TRY004` (12). Change the `isinstance`-guard failures to raise `TypeError`. Before each,
    run `rg -n '<the message text>' tests/` and confirm no test asserts `ValueError` at that
-   site; escalate any that does rather than changing the assertion. Commit.
+   site. **If one does, escalate under R8** — that means, precisely: leave the code
+   unchanged, do not edit the assertion to fit the fix, stop this step, and append the site
+   to this plan's *Deferrals* section with its `file:line`, the asserting test's
+   `file:line`, and the contract in question. An unattended run has no one to escalate to,
+   so that written record *is* the escalation and it is a terminating condition: the run
+   stops with `just lint` still red on `TRY004` and reports exactly that, rather than
+   proceeding. Commit whatever sites were fixed cleanly.
 6. `PLW1510` (9). Add an explicit `check=False` to each `subprocess.run`, stating the
    existing behaviour. Commit.
-7. `FURB192` (8), `DTZ011` (7), `DTZ001` (1), `RUF059` (7), `EXE001` (6), `PYI034` (3),
-   `SIM102` (4), `S110` (3), `G201` (3), `TRY002` (2), `B017` (1), and the remaining
-   singletons. Fix each per the design's disposition table. For `EXE001`, delete the
+7. `FURB192` (8), `DTZ011` (7), `DTZ001` (1), `RUF059` (7), `EXE001` (6), `PYI061` (4),
+   `PYI034` (3), `SIM102` (4), `S110` (3), `G201` (3), `TRY002` (2), `B017` (1),
+   `PLR0133` (1), and the remaining singletons. Fix each per the design's disposition
+   table. For `PYI061`, Ruff offers no fix, so hand-edit `Literal[None]` → `None` at
+   `src/hmc_mcp/_app.py:243`, `:253`, and both occurrences on `:263`, then run
+   `just typecheck` and expect exit 0 — these are overload signatures, so the type checker
+   is the gate. For `EXE001`, delete the
    `#!/usr/bin/env python3` line and the blank line following it from
    `scripts/check_adr_numbering.py`, `scripts/check_env_vars.py`,
    `scripts/check_generated_docs.py`, `scripts/check_nicknames.py`,
@@ -285,8 +350,11 @@ behaviour regression surfaces against the smallest possible set of concurrent ed
 8. Run `uv run --no-sync ruff check .`. Expect exactly `All checks passed!`.
 
 **Acceptance criteria.** `uv run --no-sync ruff check .` prints `All checks passed!` and
-exits 0. `just test` exits 0. No bare `# noqa` was added, and every added `# noqa` names a
-rule code and a reason. `git --no-pager diff "$(git merge-base HEAD origin/main)"` shows
+exits 0. `just test` exits 0. `F401` was never `--fix`ed, and `src/hmc_mcp/cli.py` still
+exports `app`, `main`, `console`, and `GlobalOpts` — check with
+`uv run --no-sync python -c "import hmc_mcp.cli as c; print(c.app, c.main, c.console, c.GlobalOpts)"`.
+No bare `# noqa` was added, and every added `# noqa` names a rule code and a reason. The
+*Deferrals* section records every R8 escalation, and an empty section means none occurred. `git --no-pager diff "$(git merge-base HEAD origin/main)"` shows
 no change to `.pre-commit-config.yaml` and no change to `pyproject.toml` beyond Tasks 1
 and 3.
 
@@ -322,5 +390,12 @@ Constraints, not worked around.
 
 ## Deferrals
 
-None recorded yet. Any deferral a review of this design or branch disposes of as
-`deferred-tracked` is added here with its owning record path or tracker issue.
+None recorded yet. Two things land here:
+
+- Any deferral a review of this design or branch disposes of as `deferred-tracked`, with
+  its owning record path or tracker issue.
+- Any **R8 escalation** from Task 5 — a lint fix that would change what a test asserts,
+  what a tool returns, or what an error type is. The entry carries the site's `file:line`,
+  the asserting test's `file:line`, and the contract in question. An entry here is a
+  terminating condition for the run: the branch is reported with `just lint` red on that
+  family and the escalation named, never with the assertion edited to fit the fix.

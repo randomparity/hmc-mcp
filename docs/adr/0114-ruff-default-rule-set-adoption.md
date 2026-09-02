@@ -89,6 +89,17 @@ type silently re-arms `B008` against ten call sites.
   reports 10 `E402` findings at `56224333`, each already carrying a deliberate
   `# noqa: E402`; leaving the rules lapsed turns all ten directives into `RUF100`
   findings whose only fix is deleting them.
+- **Enumerate the enabled rule set explicitly with `select`, instead of tracking defaults.**
+  verified: `uv run --no-sync ruff check . --show-settings` resolves 413 enabled rules at
+  0.16.4, or 431 with the eighteen restored, so the list is writable. This is the one
+  alternative that removes the residual named above — a future default change would then
+  surface as an opt-in rather than as silent removal. judgment: it moves the cost from
+  once per defaults overhaul to once per bump, since a 431-entry list has to be diffed
+  against Ruff's own on every upgrade to stay honest, and a list that drifts is worse than
+  no list. Tracking defaults keeps the repository aligned with upstream's judgment by
+  default and pays a large cost rarely; enumerating pays a small cost always and makes
+  divergence the default outcome. The recurrence the Consequences section concedes is the
+  accepted price of that.
 - **Blanket-`ignore` the largest new families (`I001`, `PLC0414`, `SIM117`, `B008`) to
   bound the diff.** judgment: four `ignore` entries would erase 482 of the 712 findings
   without a claim that the repository's intent differs from any of the four rules, which

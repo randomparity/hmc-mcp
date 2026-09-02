@@ -48,7 +48,14 @@ earlier base):
   tree, and the eight-leg CI matrix passes.
 - **R8.** Behaviour is preserved. A lint fix that would change what a test asserts, what a
   tool returns, or what an error type is, is not applied as a lint fix; either the code is
-  corrected deliberately or the finding is escalated.
+  corrected deliberately or the finding is **escalated**, which means exactly this and
+  nothing looser: leave the code unchanged, stop the task rather than editing the
+  assertion to fit the fix, and write the site into the plan's *Deferrals* section with
+  its `file:line`, the asserting test, and the contract in question. An unattended run has
+  no one to escalate to, so the written record is the escalation; the run then stops for a
+  human with `just lint` still red on that family, and says so. Adding a coded
+  `# noqa: <CODE> - <reason>` is permitted only where this design's disposition table
+  already allows one for that family (`BLE001`, `S110`).
 
 ## Configuration surface
 
@@ -78,18 +85,27 @@ Each entry carries a comment in the file naming why the repository's intent diff
 ADR 0114.
 
 Under that configuration the finding count is **649**, of which **325** are safely
-auto-fixable, leaving roughly **324** for reviewed fixes.
+auto-fixable.
+
+**649 is a pre-fix census, not a work inventory.** Ruff's fixer iterates, so applying the
+safe fixes exposes diagnostics the census never counted: `ruff check . --fix` on this tree
+reports `Found 666 errors (341 fixed, 325 remaining)`, and among the 325 is one `PLR0133`
+that no census row predicted. Every count below is therefore a starting figure. The
+implementation re-runs `--statistics` after the mechanical pass and treats any rule code
+absent from the table below as work that must be dispositioned before the reviewed pass
+begins.
 
 ## Rule-family dispositions
 
-Every family is fixed in code unless the table says otherwise. Counts are under the
-configuration above.
+Every family is fixed in code unless the table says otherwise. Counts are the pre-fix
+census under the configuration above, and sum to 649; `PLR0133` is listed separately
+because the fixer's cascade surfaces it, so the table's own total is 650.
 
 | Rule | n | Disposition |
 |---|---:|---|
 | `I001` unsorted-imports | 206 | Safe autofix. |
-| `PLC0414` useless-import-alias | 138 | Unsafe autofix, then verify. `import x as x` marks a PEP 484 re-export; every site is checked for whether the name is used in-module before the alias is dropped, because dropping it where the name is unused re-arms `F401`. |
-| `SIM117` multiple-with-statements | 93 | Display-only fix; applied by hand or with `--unsafe-fixes`, then verified. Purely structural. |
+| `PLC0414` useless-import-alias | 138 | Split. The 134 sites in `tests/` take the unsafe autofix: each name is used in its own module, so dropping the alias re-arms nothing. The 4 sites in `src/hmc_mcp/cli.py` are genuine PEP 484 re-exports with no in-module use — measured: after the mechanical fix, `--select F401` reports exactly those four — and are handled by giving that module an `__all__` naming them, which satisfies both rules instead of suppressing either. `F401` is never `--fix`ed. |
+| `SIM117` multiple-with-statements | 93 | Only 30 are auto-fixable, measured: `--select SIM117 --fix --unsafe-fixes` reports `Found 93 errors (30 fixed, 63 remaining)` and a second run fixes nothing. The remaining 63 — 92 of the 93 are in `tests/` — are hand restructurings of nested `with` statements, enumerated and committed in file-sized batches. This is the largest hand-edit block in the change. |
 | `FURB157` verbose-decimal-constructor | 31 | Safe autofix. |
 | `BLE001` blind-except | 21 | Reviewed per site. `except Exception` is legitimate where the handler re-raises with context or where totality is the contract (the audit sink); each retained site gets a coded `# noqa: BLE001` with a reason, and the rest narrow the caught type. |
 | `ISC004` implicit-string-concat-in-collection | 20 | Add the parentheses Ruff asks for. Each site is read to confirm a missing comma is not the actual defect. |
@@ -101,7 +117,9 @@ configuration above.
 | `DTZ011`, `DTZ001` | 8 | Fixed: naive `date.today()` / `datetime(...)` gain explicit UTC. `src/hmc_mcp/ssh/lpar.py` stamps ownership dates, so the fix is checked against the stamp format its tests assert. |
 | `RUF059` unused-unpacked-variable | 7 | Fixed by renaming the unused binding to `_`-prefixed. |
 | `EXE001` shebang-not-executable | 6 | Shebang removed from the six `scripts/` files that carry one; four already do not, and all ten are run as `uv run --no-sync python scripts/<name>.py`. |
-| `PYI061`, `PYI034` | 7 | Safe autofix: `Literal[None]` → `None`, `__aenter__` returns `Self`. |
+| `PYI034` non-self-return-type | 3 | Safe autofix: `__aenter__` returns `Self`. |
+| `PYI061` redundant-none-literal | 4 | **No fix available** — Ruff marks it `[ ]`, so the mechanical pass does not touch it. Four hand edits, all in `src/hmc_mcp/_app.py` (lines 243, 253, 263 ×2): `Literal[None]` → `None`. |
+| `PLR0133` comparison-of-constant | 1 | Surfaced by the fixer's cascade rather than by the census. Fixed at the site the post-mechanical `--statistics` reports. |
 | `SIM102` collapsible-if | 4 | Fixed by collapsing. |
 | `S110` try-except-pass | 3 | Reviewed. Retained sites get a coded `# noqa: S110` naming why swallowing is the contract. |
 | `G201` logging-exc-info | 3 | Fixed: `logger.error(msg, exc_info=True)` → `logger.exception(msg)`, which emits identical output, so the assertions in `tests/unit/test_audit.py` are unaffected. |
