@@ -212,15 +212,40 @@ async def read_sriov_lpar_state(
 async def read_sriov_profile_ports(
     config: HMCConfig, system_name: str, lpar_name: str, profile_name: str
 ) -> dict[str, str]:
+    """Return the name and sriov_eth_logical_ports fields for one LPAR profile.
+
+    The ``--header`` flag cannot be used here: the HMC appends the full
+    sub-field schema to the ``sriov_eth_logical_ports`` column name in the
+    header row (``sriov_eth_logical_ports=config_id:adapter_id:...``), which
+    makes the header unequal to the requested field name and causes
+    ``parse_hmc_delimited_rows`` to raise.  Instead, request without
+    ``--header`` and use ``_parse_lshwres_output`` to read the
+    ``name=value,...`` row the HMC returns in that form.
+    """
     fields = ("name", "sriov_eth_logical_ports")
     filters = build_filter([("lpar_names", lpar_name), ("profile_names", profile_name)])
-    command = f"lssyscfg -r prof -m {shlex.quote(system_name)} --filter {shlex.quote(filters)} -F {','.join(fields)} --header"
-    rows = _parse_admitted_rows(await run_hmc_command(config, command), fields)
-    if len(rows) != 1:
+    command = f"lssyscfg -r prof -m {shlex.quote(system_name)} --filter {shlex.quote(filters)} -F {','.join(fields)}"
+    output = await run_hmc_command(config, command)
+    # lssyscfg -r prof -F name,sriov_eth_logical_ports returns positional CSV
+    # (not key=value format), e.g.:
+    #   default_profile,0:1:0:27004001:...:100.0:100.0:...
+    #   default_profile,none
+    # The sriov_eth_logical_ports value itself contains colons but no commas
+    # (multi-port assignments would be comma-separated, but the unassign operation
+    # only handles exactly one port anyway).  Split on the first comma only.
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if len(lines) != 1:
         raise HMCCLIError(
-            f"Expected one SR-IOV profile row for {profile_name!r}; got {len(rows)}"
+            f"Expected one SR-IOV profile row for {profile_name!r}; got {len(lines)}"
         )
-    return rows[0]
+    # Split on the first comma: left side is the profile name, right side is the
+    # sriov_eth_logical_ports value (which may itself contain colons and commas
+    # for multi-port, but for our single-port use the first split is safe).
+    name_part, _, sriov_part = lines[0].partition(",")
+    return {
+        "name": name_part.strip(),
+        "sriov_eth_logical_ports": sriov_part.strip(),
+    }
 
 
 async def assign_sriov_logical_port_dynamic(

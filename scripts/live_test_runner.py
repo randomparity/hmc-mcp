@@ -53,6 +53,7 @@ from live_test.provisioning import (
     exercise_storage_provisioning,
     validate_provisioning_dry_run,
 )
+from live_test.pcie import exercise_sriov_assignment
 from live_test.vmedia import (
     IsoHttpServer,
     vmedia_boot_verification,
@@ -322,12 +323,14 @@ SUBTASKS = {
     20: vmedia_boot_verification,
     21: vmedia_mapping_crossvalidation,
     22: vmedia_teardown,
+    23: exercise_sriov_assignment,
 }
 
 SUBTASK_GROUPS: dict[str, list[int]] = {
     "round2": list(range(0, 16)),
     "vmedia": list(range(16, 23)),
-    "all": list(range(0, 23)),
+    "sriov": [23],
+    "all": list(range(0, 24)),
 }
 
 

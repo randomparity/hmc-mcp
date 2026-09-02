@@ -520,6 +520,12 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
         return hmc
 
     monkeypatch.setattr(cli_runtime, "HMCClient", client_factory)
+    # HMC_HOST env var (any casing) and the real config.toml both leak a host
+    # value into the second bare invocation. Suppress both.
+    for name in tuple(__import__("os").environ):
+        if name.casefold() == "hmc_host":
+            monkeypatch.delenv(name)
+    monkeypatch.setattr("hmc_mcp.config.resolve_config_path", lambda: None)
 
     first = RUNNER.invoke(
         cli.app,
