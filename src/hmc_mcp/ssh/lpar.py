@@ -26,7 +26,7 @@ def validate_caller_token(token: str) -> None:
     tool typing.
     """
     if not isinstance(token, str):
-        raise ValueError(f"caller_token must be a string, got {type(token).__name__}")
+        raise ValueError(f"caller_token must be a string, got {type(token).__name__}")  # noqa: TRY004 - ValueError is what the best-effort boundary below catches, asserted in tests/unit/test_ownership.py
     if not token:
         raise ValueError("caller_token must not be empty")
     if len(token) > 64:

@@ -590,7 +590,7 @@ def _dispatched_tool_names(source: str) -> set[str]:
             continue
         tool = node.args[1] if len(node.args) > 1 else None
         if not (isinstance(tool, ast.Constant) and isinstance(tool.value, str)):
-            raise AssertionError(
+            raise AssertionError(  # noqa: TRY004 - AssertionError is this guard's contract, asserted at tests/test_live_runner.py:630
                 f"line {node.lineno}: call() dispatches a tool name this guard "
                 "cannot read — pass a string literal"
             )

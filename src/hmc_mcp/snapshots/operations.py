@@ -211,7 +211,7 @@ def _text(value: Any, label: str, *, optional: bool = False) -> str | None:
 
 def _positive_int(value: Any, label: str) -> int:
     if isinstance(value, bool) or not isinstance(value, (int, str)):
-        raise ValueError(f"Snapshot capture requires integer {label}")
+        raise ValueError(f"Snapshot capture requires integer {label}")  # noqa: TRY004 - ValueError is the ADR 0029 exported contract, asserted in tests/unit/test_snapshot_capture.py
     if isinstance(value, str) and not value.isdecimal():
         raise ValueError(f"Snapshot capture requires integer {label}")
     try:
@@ -225,7 +225,7 @@ def _positive_int(value: Any, label: str) -> int:
 
 def _runtime_int(value: Any, label: str) -> int | None:
     if isinstance(value, bool):
-        raise ValueError(f"Snapshot capture requires integer {label}")
+        raise ValueError(f"Snapshot capture requires integer {label}")  # noqa: TRY004 - ValueError is the ADR 0029 exported contract, asserted in tests/unit/test_snapshot_capture.py
     if value in (None, 0, "0"):
         return None
     return _positive_int(value, label)
@@ -235,7 +235,7 @@ def _runtime_float(value: Any, label: str) -> float | None:
     if value is None:
         return None
     if isinstance(value, bool):
-        raise ValueError(f"Snapshot capture requires numeric {label}")
+        raise ValueError(f"Snapshot capture requires numeric {label}")  # noqa: TRY004 - ValueError is the ADR 0029 exported contract, asserted in tests/unit/test_snapshot_capture.py
     try:
         result = float(value)
     except (TypeError, ValueError) as exc:

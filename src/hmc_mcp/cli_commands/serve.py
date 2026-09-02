@@ -50,7 +50,7 @@ def _audit_level(value: str | None) -> int | None:
         )
     resolved = logging.getLevelName(name)
     if not isinstance(resolved, int):
-        raise RuntimeError(f"logging did not resolve known level {name!r}")
+        raise RuntimeError(f"logging did not resolve known level {name!r}")  # noqa: TRY004 - the isinstance tests the stdlib's return value, not a caller's argument, so RuntimeError states an internal invariant
     return resolved
 
 
