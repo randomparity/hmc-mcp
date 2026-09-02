@@ -318,7 +318,7 @@ _THIRD_PARTY_LOGGERS: Final = (
 _UVICORN_LEVEL_LOGGERS: Final = ("uvicorn", "uvicorn.access")
 
 #: What ``main_http`` passes FastMCP so the ``uvicorn.Config`` it constructs never
-#: runs uvicorn's own ``configure_logging`` ``dictConfig`` (uvicorn 0.52.1 skips it
+#: runs uvicorn's own ``configure_logging`` ``dictConfig`` (uvicorn 0.52.4 skips it
 #: entirely on a null config, ``config.py:384``): the default ``StreamHandler``
 #: that would otherwise land on fd 2 *after* the sink install never attaches, and
 #: nothing has to re-install after it. Deliberately without ``log_level``: that
