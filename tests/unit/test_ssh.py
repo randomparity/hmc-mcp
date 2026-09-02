@@ -37,7 +37,12 @@ def _make_ssh_mock(stdout: str = "output\n") -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_run_hmc_command_password_auth():
-    """Password auth path: asyncssh.connect called with password, no client_keys."""
+    """Password auth path: asyncssh.connect called with password and key suppression.
+
+    client_keys=[] and preferred_auth='password' are required to skip key
+    negotiation on HMC appliances, which enforce a low MaxAuthTries limit
+    and lock out accounts when every agent key is tried before the password.
+    """
     conn_mock = _make_ssh_mock("lssyscfg output\n")
 
     with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock) as mock_connect:
@@ -48,7 +53,8 @@ async def test_run_hmc_command_password_auth():
     assert call_kwargs["host"] == "hmc.test"
     assert call_kwargs["username"] == "hscroot"
     assert call_kwargs["password"] == "abc123"
-    assert "client_keys" not in call_kwargs
+    assert call_kwargs["client_keys"] == []
+    assert call_kwargs["preferred_auth"] == "password"
     assert result == "lssyscfg output\n"
 
 

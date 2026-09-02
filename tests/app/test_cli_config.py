@@ -771,7 +771,8 @@ def test_diff_access_policy_is_green_when_the_deployed_policy_is_current(
     """#276: exit 0, and no diff hunks, when the deployed document matches this build."""
     deployed = _generate_and_deploy(tmp_path, monkeypatch)
 
-    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
 
     assert result.exit_code == 0, result.output
     assert not [
@@ -818,7 +819,8 @@ def test_diff_access_policy_shows_a_profile_added_after_generation(
         encoding="utf-8",
     )
 
-    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
 
     assert result.exit_code == 1, result.output
     assert '"staging"' in result.output
@@ -860,7 +862,8 @@ def test_diff_access_policy_generation_failure_beats_the_deployed_file_check(
         '[profiles." prod"]\nhost = "a"\n', encoding="utf-8"
     )
 
-    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
 
     assert result.exit_code == 4
     assert "padded" in result.output
