@@ -163,7 +163,7 @@ wildcard records the operation's actual scope.
 | `unassign_dedicated_pcie_slot` | `operations/pcie.py:198` | guarded (`:223`) | — |
 | `assign_sriov_logical_port` | `operations/pcie.py:493` | guarded (`:427`, via `_resolve_lpar`) | — |
 | `unassign_sriov_logical_port` | `operations/pcie.py:588` | guarded (`:612`) | — |
-| `add_vnic` | `operations/vnic.py:596` | guarded (via `_preflight_add:364` → `resolve_and_authorize_lpar_names:371`) | — |
+| `add_vnic` | `operations/vnic.py:596` | guarded (via `_preflight_add:370` → `resolve_and_authorize_lpar_names:377`) | — |
 | `remove_vnic` | `operations/vnic.py:679` | guarded (`:695`) | — |
 | `set_minimum_affinity_policy` | `operations/ssh_affinity.py:191` | guarded (`:201`) | — |
 | `set_lpar_processors` | `operations/lpar/dlpar.py:109` | guarded (`:405`, via `_apply_dlpar_document:397` → `_resolve_and_authorize_lpar:328`) | — |
@@ -176,7 +176,7 @@ wildcard records the operation's actual scope.
 | `map_storage` | `operations/storage.py:174` | guarded (`:189`) | #372 |
 | `attach_disk_to_lpar` | `operations/lpar/provision.py:319` | guarded before the storage workflow (`:351`) | #372 |
 | `mount_optical_media` | `operations/storage.py:825` | guarded (`:844`) | — |
-| `unmount_optical_media` | `operations/storage.py:855` | guarded (`:897`) | — |
+| `unmount_optical_media` | `operations/storage.py:855` | guarded (`:892`) | — |
 | `migrate_lpar` | `operations/lpm.py:341` | guarded after optional validation and before migration submission (`:386`) | #373 |
 | `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:238` | guarded by delegation to `migrate_lpar` | #373 |
 | `abort_lpar_migration` | `operations/lpm.py:406` | guarded (`:422`) | #373 |

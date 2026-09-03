@@ -56,13 +56,21 @@ Every other finding is fixed in code, except where fixing it would change a cont
 record does not own. Those sites keep the behaviour and carry a **coded, per-site
 `# noqa: <CODE> - <reason>`**, which is the fourth and narrowest mechanism: it names the
 rule, states why the rule's premise is false there, and leaves the rule enforced
-everywhere else. The families with such sites are `TRY004` (7 of 12 — a Pydantic validator
-that needs `ValueError` to become a `ValidationError`, three functions whose `ValueError`
-is frozen by ADR 0029's exported manifest, the caller-token guard an ADR 0011 best-effort
-boundary depends on, and one invariant check on a stdlib return value), `DTZ011` (all 7 —
-the ADR 0011 ownership stamp records the operator's local calendar date, and the tests
-that assert it must stay in lockstep), `PLC0414` (4 — PEP 484 explicit re-exports in
-`hmc_mcp.cli`), plus reviewed sites in `BLE001` and `S110`.
+everywhere else. The families with such sites, with the count each contributes:
+
+| Rule | Sites | Why the rule's premise is false there |
+|---|---|---|
+| `BLE001` | 20 | Reviewed per site. Each records why the broad catch is the contract — a readback reconciled by the caller, a diagnostic that must not fail its call, an audit sink whose totality is the point. |
+| `TRY004` | 12 | **All twelve retained, not seven.** Seven are contract-bearing `src/` sites: a Pydantic validator that needs `ValueError` to become a `ValidationError`, three functions whose `ValueError` is frozen by ADR 0029's exported manifest, the caller-token guard an ADR 0011 best-effort boundary depends on, and one invariant check on a stdlib return value. The other five raise the type their own tests assert — four `ValueError` sites in `scripts/check_python_support.py` that `tests/scripts/test_check_python_support.py` parametrizes `pytest.raises(ValueError)` over, and one `AssertionError` in `tests/test_live_runner.py`. |
+| `DTZ011` | 7 | The ADR 0011 ownership stamp records the operator's local calendar date, and the tests that assert it must stay in lockstep. |
+| `PLC0414` | 4 | PEP 484 explicit re-exports in `hmc_mcp.cli`. |
+| `S110` | 3 | Reviewed per site, alongside the `BLE001` directive each sits with. |
+| `RUF022` | 1 | `hmc_mcp.api.__all__` is grouped by subsystem to mirror ADR 0029's inventory block, and `tests/unit/test_public_api.py` asserts that exact order; sorting it breaks the manifest. |
+| `DTZ001` | 1 | A parametrized case in `tests/lpar/test_provision_tool.py` whose naive `datetime` **is** the invalid evidence under test — `operations/affinity.py` rejects a `captured_at` with no tzinfo, so adding one would silently delete the case. |
+
+Counts are directive counts over tracked `.py` files and are checkable with
+`git grep -c '# noqa: <CODE>'`. `RUF100` is enabled and the gate is green, so none of
+these directives is dead.
 
 No rule is disabled repo-wide, no directory is excluded, and no bare `# noqa` is added.
 
