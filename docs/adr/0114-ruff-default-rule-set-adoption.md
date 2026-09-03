@@ -93,8 +93,8 @@ the type checker — `"rules" not in project["tool"]["ty"]` — and deliberately
 nothing makes the equivalent assertion about `[tool.ruff.lint]`. So a later change can add
 a blanket `ignore`, an `exclude`, or a bare `# noqa` and every gate stays green. Adding a
 config-shape gate was considered out of scope for the migration that introduces the
-policy; whoever wants one should extend those `pyproject` assertions to pin the
-`[tool.ruff.lint]` table's shape.
+policy, and **#604 owns it** — it extends those `pyproject` assertions to pin the
+`[tool.ruff.lint]` table's shape. Until it lands, review is the only control.
 
 The two per-file-ignored modules lose Ruff's only detector for invisible bidirectional and
 control characters, so `tests/unit/test_audit.py` and `tests/unit/test_ownership.py` — and
