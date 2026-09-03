@@ -75,7 +75,7 @@ async def run(conn: asyncssh.SSHClientConnection, cmd: str) -> tuple[int, str, s
         if isinstance(stderr, bytes):
             stderr = stderr.decode(errors="replace")
         return result.exit_status or 0, stdout, stderr
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - the probe reports any failure as a result field
         return -1, "", str(exc)
 
 
@@ -170,7 +170,7 @@ async def probe_profile(profile: Profile) -> dict:
 
                 result["queries"][f"[{sys_name}]"] = sys_queries
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - the probe reports any failure as a result field
         result["error"] = str(exc)
     return result
 

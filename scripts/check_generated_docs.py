@@ -155,6 +155,7 @@ def _query(command: list[str], root: Path) -> str:
     """Run a read-only command in *root* and return its stdout, or raise."""
     printable = " ".join(command)
     try:
+        # fixed argv, no shell
         result = subprocess.run(
             command,
             cwd=root,
@@ -279,6 +280,7 @@ def regenerate(command: str, workspace: Path) -> None:
     descendants silently and discards the output.)
     """
     try:
+        # argv from a matched banner, no shell
         process = subprocess.Popen(
             shlex.split(command),
             cwd=workspace,

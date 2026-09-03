@@ -183,6 +183,7 @@ async def load_descriptions() -> dict[str, str | None]:
         permits=policy.permits_tool,
         authorize=dispatch_authorizer(policy),
     )
+    # server extra, imported at use
     from fastmcp import Client
 
     async with Client(mcp) as client:
