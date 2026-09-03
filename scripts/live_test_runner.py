@@ -39,6 +39,7 @@ from live_test.lpar import (
 )
 from live_test.metrics import inspect_metrics_jobs, inspect_metrics_templates
 from live_test.network import inventory_network, mutate_virtual_networking
+from live_test.pcie import exercise_sriov_assignment
 from live_test.profiles import inventory_lpar_profiles
 from live_test.provisioning import (
     exercise_storage_provisioning,
@@ -321,12 +322,14 @@ SUBTASKS = {
     20: vmedia_boot_verification,
     21: vmedia_mapping_crossvalidation,
     22: vmedia_teardown,
+    23: exercise_sriov_assignment,
 }
 
 SUBTASK_GROUPS: dict[str, list[int]] = {
     "round2": list(range(16)),
     "vmedia": list(range(16, 23)),
-    "all": list(range(23)),
+    "sriov": [23],
+    "all": list(range(24)),
 }
 
 

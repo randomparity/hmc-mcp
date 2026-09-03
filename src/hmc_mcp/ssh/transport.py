@@ -16,7 +16,13 @@ class HMCCLIError(HMCError):
 
 
 def _connect_kwargs(config: HMCConfig) -> dict[str, Any]:
-    """Build the ``asyncssh.connect`` keyword arguments for *config*."""
+    """Build the ``asyncssh.connect`` keyword arguments for *config*.
+
+    When authenticating with a password (no ``ssh_key_file`` set) we suppress
+    all local key attempts and request password-only auth.  HMC appliances
+    enforce a low ``MaxAuthTries`` limit; exhausting it with every agent key
+    before the password attempt triggers a lockout (HMC_ACCESS.md).
+    """
     config.validate_credentials(require_password=not config.ssh_key_file)
     connect_kwargs: dict[str, Any] = {
         "host": config.host,
@@ -28,6 +34,8 @@ def _connect_kwargs(config: HMCConfig) -> dict[str, Any]:
         connect_kwargs["password"] = None
     else:
         connect_kwargs["password"] = config.password
+        connect_kwargs["client_keys"] = []
+        connect_kwargs["preferred_auth"] = "password"
     return connect_kwargs
 
 

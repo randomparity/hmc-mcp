@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 
 import pytest
 from fastmcp import Client
@@ -48,10 +49,17 @@ def _policy(grants: list[dict], name: str = "test"):
 def no_native_config(monkeypatch, tmp_path):
     """Point config resolution at an empty directory, not the developer's own.
 
-    Every test here decides for itself whether a `config.toml` exists; without
+    Every test here decides for itself whether a ``config.toml`` exists; without
     this the platform-native path leaks a real one into the report.
+
+    ``sys.platform`` is patched to ``"linux"`` so ``resolve_config_path`` always
+    uses ``XDG_CONFIG_HOME`` regardless of the host OS.  This is the same
+    technique ``test_cli_config.py``'s ``_generate()`` uses.
     """
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    xdg = tmp_path / "xdg"
+    xdg.mkdir()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     for name in tuple(os.environ):
         if name.casefold() == "hmc_host":
@@ -59,7 +67,12 @@ def no_native_config(monkeypatch, tmp_path):
 
 
 def _write_config(tmp_path, body: str) -> None:
-    """Write the config file under the directory `no_native_config` points at."""
+    """Write the config file under the directory ``no_native_config`` points at.
+
+    ``no_native_config`` sets ``XDG_CONFIG_HOME`` to ``tmp_path / "xdg"`` and
+    patches ``sys.platform`` to ``"linux"``, so ``resolve_config_path`` resolves
+    to ``tmp_path / "xdg" / "hmc-mcp" / "config.toml"`` on every OS.
+    """
     directory = tmp_path / "xdg" / "hmc-mcp"
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "config.toml").write_text(body, encoding="utf-8")
