@@ -40,7 +40,11 @@ always reaches cleanup.
 
 Step labels are **ST29–ST34**. The SR-IOV arm is registered as subtask 23 but records rows
 under subtask numbers 23–28, so 24–28 are already taken in the results document; starting at
-29 keeps every row label unique across a full run.
+29 keeps every row label unique across a full run. The consequence is an asymmetry worth
+stating in the module docstring: `--subtask 24` produces a results file in which no row
+carries the number the operator typed. Uniqueness of row labels is the property worth having
+— a collision would silently merge two arms' evidence — and the docstring is where the
+operator finds the mapping.
 
 ### Data structures
 
@@ -98,12 +102,25 @@ arm when it is absent. Then read `lshmc -V` and `lssyscfg -r sys -m <system> -F 
 — the same two facts `ssh/network.py:read_sriov_environment` collects — record both as
 rows so the results file is self-labelling, and SKIP the arm when they fall outside the
 `_ADMITTED_HMC_RELEASE` / `_ADMITTED_SYSTEM_MODEL` envelope, applying the same normalized
-comparison `require_admitted_environment` applies. This gate exists because the arm's
-mutation is raw profile grammar: ADR 0053 records that grammar for the admitted release and
-model and leaves it unprobed elsewhere, and the repository carries a distinct
-`tests/fixtures/pcie/power8-profile-contract.json` precisely because it differs. Without
-the gate an operator pointing `HMC_LIVE_PCIE_SYSTEM` at a Power8 or Power11 system gets a
-real profile mutation instead of the SKIP criterion 5 requires.
+comparison `require_admitted_environment` applies.
+
+Be precise about what that gate does and does not buy, because the records say less than is
+comfortable. ADR 0053 admits the `io_slots` profile-mutation grammar from the **Power8
+documentation** row of its evidence table, and the sole supporting artifact,
+`tests/fixtures/pcie/power8-profile-contract.json`, carries `"hmc_release":
+"not-established"` and `"support": "unknown"`. There is **no** `io_slots` evidence in this
+repository for `V10R3 M1060` / `8375-42A`, or for any other live-verified envelope — that
+envelope is ADR 0056's live SR-IOV capture, which covers SR-IOV projections, not `io_slots`.
+ADR 0053 also states that a field admitted for one family cannot be assumed present in
+another.
+
+So the arm's first mutating run issues a grammar with no admitted evidence for the family it
+runs on. That is the risk this arm exists to retire, and the gate does not remove it: it
+**bounds** it, to the one release/model pair the repository has live-verified for anything,
+where an operator is already running the SR-IOV arm and where the recorded before/after
+strings become the evidence ADR 0053 asks for. Without the gate the same unprobed grammar
+reaches an arbitrary Power8, Power10 or Power11 system as a real profile mutation instead of
+the SKIP criterion 5 requires.
 
 Then call `hmc_list_dedicated_pcie_slots` for the configured system. Select the configured
 `drc_index`, or the first slot whose `owner_lpar` is empty when none is configured. SKIP the
@@ -184,9 +201,17 @@ begins `MANUAL RECOVERY REQUIRED:` and names the exact command an operator must 
 then stops that line of cleanup without attempting any further mutation on it.
 
 The probe partition is a **different partition with its own identity**, so it is handled
-first and independently: its own caller token is read and compared to this run's marker
-before its delete, and a refusal there records recovery evidence without preventing the
-fixture from being cleaned up. Guards A, B and C below govern the fixture only.
+first and independently, and it gets the same two rules the fixture gets rather than a
+weaker pair. Its own caller token is read and compared to this run's marker; the slot is
+removed from *its* profile and the removal confirmed before it is deleted; and the delete
+names the UUID its create returned, falling back to its name only when none was. A refusal
+at any of those records recovery evidence and stops the probe's cleanup **without**
+preventing the fixture's. Guards A, B and C below govern the fixture only.
+
+The hardware-first rule matters most here, not least: on the gate-lifted path the probe is
+the one partition in the whole arm that *provably* holds the dedicated slot at cleanup time,
+because the probe succeeded only by applying the assignment. Deleting it without removing
+the slot is precisely the stranding this design forbids everywhere else.
 
 **Guard A — fixture identity, checked before either mutation.** Re-read the LPAR UUID via
 `hmc_get_lpar` and the ADR 0064 caller token from `hmc_get_lpar_description`, parsed with
@@ -251,6 +276,12 @@ resolved>)`. Two properties, both deliberate:
   named `fixture.lpar_name` has UUID `fixture.lpar_uuid`; deleting by name then re-resolves
   that name, reopening the window the guard just closed. `hmc_delete_lpar` accepts either
   form, so acting on the UUID costs nothing and closes it.
+- **The profile is compared too, not just the identity.** `_read_dedicated_state` has already
+  fetched `io_slots` for this check, so requiring it to still equal the captured baseline is
+  free — and without it, "the delete is refused while the profile differs from the baseline"
+  is enforced only at Guard A's earlier read. A slot added by a concurrent HMC session after
+  that read would otherwise be stranded by this delete, and on the never-assigned path Guard
+  A's read is the *only* profile observation, so the unguarded window is the whole of Guard C.
 - **`ownership_override` stays off.** The fixture was created and stamped by this run, so the
   tool's own description-token ownership check passes on every intended path; setting the
   override would remove the one operation-layer check that survives the escape hatch —
@@ -259,8 +290,8 @@ resolved>)`. Two properties, both deliberate:
   `hmc_assign_dedicated_pcie_slot` refusal row, so the recorded refusal is the one an
   operator would actually see.
 
-The probe partition, when `fixture.probe_created` is set, is deleted before any of this,
-under its own caller-token comparison and the same override-off rule, as described above.
+The probe partition, when `fixture.probe_created` is set, is handled before any of this,
+as described above.
 
 Hardware before partition is the ordering the issue requires, and Guard B's refusal is what
 makes the ordering binding: a delete that ran first — or that ran while the profile still
@@ -307,8 +338,14 @@ The guards are what the tests must bite on. Each of these asserts both the recor
    exists and cleanup performs exactly one delete.
 6. **The create-time probe unexpectedly succeeds** — the probe create returns PASS:
    `probe_created` is set, a `MANUAL RECOVERY REQUIRED:` row names the probe partition, and
-   cleanup reads that partition's own caller token and then deletes it, before the fixture's
-   delete.
+   cleanup reads that partition's own caller token, removes the slot from its profile,
+   confirms the removal, and only then deletes it on its captured UUID — the whole sequence
+   before the fixture's delete.
+6b. **The probe partition carries a foreign caller token** — its description does not name
+   this run's marker: no `io_slots-` and no delete names the probe, the
+   `probe run-marker mismatch` row is FAIL with recovery evidence, **and the fixture is
+   still cleaned up**. The probe is a different partition with its own identity, so its
+   refusal must not block the fixture's cleanup.
 7. The existing-LPAR `hmc_assign_dedicated_pcie_slot` refusal is recorded SKIP, and the arm
    still proceeds to the profile grammar.
 8. Happy path: `io_slots+` then `io_slots-` restores the exact baseline, reassign succeeds,
@@ -336,7 +373,14 @@ The guards are what the tests must bite on. Each of these asserts both the recor
     A Guard B gated on `applied_io_slots is not None` skips the branch and deletes.
 16. **Guard C, identity drift between removal and delete** — identity matched at Guard A and
     the removal succeeded, but the re-read before the delete reports a foreign token: no
-    `hmc_delete_lpar` in the cleanup phase.
+    `hmc_delete_lpar` in the cleanup phase. The happy path makes exactly three description
+    reads — ST32's, Guard A's, Guard C's — so the foreign one must be the third; a fixture
+    that only turns foreign on a fourth read leaves Guard C entirely uncovered.
+16c. **Guard C, profile drift between the last check and the delete** — identity still
+    matches but the profile read Guard C already performs no longer equals the baseline: no
+    `hmc_delete_lpar`, and `profile changed before delete` is recorded. This is what makes
+    "the delete is refused while the profile differs from the captured baseline" true *at*
+    the delete rather than only at Guard A's earlier read.
 17. Nothing was ever assigned — the profile still equals the baseline at cleanup: no
     `chsyscfg` is issued in cleanup, and the LPAR is still deleted (the fixture is this run's
     to remove).
@@ -367,12 +411,14 @@ named tests go red, then revert:
 | Guard A's identity comparison → `if False:` | 9, 10, 11, 20 |
 | `assign_dedicated_slot` returns early on a non-`PASS` command, before its readback | 14 |
 | Guard B's entry → `if fixture.applied_io_slots is not None:` | 15 |
-| Guard B's `applied_io_slots` exact-match → `if False:` | 12 |
+| Guard B's `applied_io_slots` exact-match → `if False:` | 12, 15 |
 | Guard B's post-removal baseline check → `if False:` | 13 |
-| Guard C's re-read comparison → `if False:` | 16 |
+| Guard C's identity comparison → `if False:` | 16 |
+| Guard C's baseline comparison → `if False:` | 16c |
 | `_admit_dedicated_environment` → always return `True` | 2 |
 | `_config_value_safe` → always return `True` | 1b |
-| `_cleanup_probe_partition`'s token comparison → `if False:` | 6 |
+| `_cleanup_probe_partition`'s token comparison → `if False:` | 6b |
+| `_cleanup_probe_partition`'s slot removal → skipped | 6 |
 
 A guard whose neutralization reddens nothing is not covered, whatever its tests appear to
 assert.

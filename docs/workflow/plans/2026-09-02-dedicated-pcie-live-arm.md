@@ -117,6 +117,7 @@ class _DedicatedFixture:
     applied_io_slots: str | None = None
     created: bool = False
     probe_created: bool = False
+    probe_lpar_uuid: str | None = None
 
 @dataclass(frozen=True)
 class _DedicatedState:
@@ -140,8 +141,10 @@ def _change_io_slots_command(fixture: _DedicatedFixture, *, add: bool) -> str: .
 1. Add imports at the top of `scripts/live_test/pcie.py`, beside the existing ones:
    `import os`, `import shlex`, `import uuid`, `from collections.abc import Mapping`, and
    `from hmc_mcp.operations.ownership import parse_lpar_ownership_caller_token`,
-   `from hmc_mcp.ssh.commands import build_attribute_record, build_filter`. Keep the existing
-   `from __future__ import annotations`, `from dataclasses import dataclass`,
+   `from hmc_mcp.ssh.commands import build_attribute_record, build_filter`. Widen the existing
+   dataclasses import to `from dataclasses import dataclass, replace` — cleanup builds a
+   probe-scoped view of the fixture with `replace`. Keep the existing
+   `from __future__ import annotations`,
    `from typing import TYPE_CHECKING`, and `from fastmcp import Client`.
 
    Also import the admitted-environment envelope from the operation that owns it:
@@ -590,6 +593,10 @@ async def create_dedicated_fixture(client, state, fixture) -> bool: ...
            # The gate has been lifted since this arm was written. A partition now
            # exists that nothing else in this run tracks.
            fixture.probe_created = True
+           if isinstance(data, dict) and isinstance(data.get("lpar"), dict):
+               fixture.probe_lpar_uuid = data["lpar"].get("UUID") or data["lpar"].get(
+                   "uuid"
+               )
            state.record(
                30,
                "create-time dedicated assignment unexpectedly succeeded",
@@ -933,11 +940,42 @@ async def exercise_dedicated_pcie_assignment(client, state) -> None: ...
                "remove it by hand once identified.",
            )
            return
+
+       # Hardware before the partition, here too. This is the ONE partition in
+       # the arm that provably holds the dedicated slot at cleanup time — the
+       # probe succeeded only because it was allowed to apply the assignment —
+       # so deleting it without removing the slot is precisely the stranding
+       # ADR 0115 forbids. The probe carries its own profile, so it gets its
+       # own removal command and its own confirming read.
+       probe = replace(
+           fixture, lpar_name=fixture.probe_lpar_name, lpar_uuid=fixture.probe_lpar_uuid
+       )
+       st_rm, data_rm = await state.call(
+           client, "hmc_run_command", cmd=_change_io_slots_command(probe, add=False)
+       )
+       state.record(34, "chsyscfg io_slots- (probe partition)", st_rm, data_rm)
+       after = await _read_profile_io_slots(client, state, probe)
+       if st_rm != "PASS" or after is None or str(fixture.drc_index) in after:
+           state.record(
+               34,
+               "dedicated cleanup: probe slot removal failed",
+               "FAIL",
+               "MANUAL RECOVERY REQUIRED: dedicated slot "
+               f"{fixture.drc_index!r} could not be confirmed removed from the "
+               f"create-time probe partition {fixture.probe_lpar_name!r} on "
+               f"{config.system_name!r} (io_slots={after!r}); the partition was "
+               "NOT deleted, because deleting it would strand the slot. Run "
+               f"`{_change_io_slots_command(probe, add=False)}` and then delete "
+               f"{fixture.probe_lpar_name!r}.",
+           )
+           return
+
+       # Act on the identity, not the name, for the same reason Guard C does.
        st, data = await state.call(
            client,
            "hmc_delete_lpar",
            system_name_or_uuid=config.system_name,
-           lpar_name_or_uuid=fixture.probe_lpar_name,
+           lpar_name_or_uuid=fixture.probe_lpar_uuid or fixture.probe_lpar_name,
        )
        state.record(34, "hmc_delete_lpar (create-time probe partition)", st, data)
        if st != "PASS":
@@ -947,8 +985,7 @@ async def exercise_dedicated_pcie_assignment(client, state) -> None: ...
                "FAIL",
                "MANUAL RECOVERY REQUIRED: the create-time probe partition "
                f"{fixture.probe_lpar_name!r} on {config.system_name!r} still "
-               f"exists, with dedicated slot {fixture.drc_index!r} assigned, and "
-               f"must be removed by hand. Error: {str(data)[:400]}",
+               f"exists and must be removed by hand. Error: {str(data)[:400]}",
            )
 
 
@@ -1084,6 +1121,28 @@ async def exercise_dedicated_pcie_assignment(client, state) -> None: ...
                "NOT deleted; remove it by hand after confirming what it is.",
            )
            return
+       # `_read_dedicated_state` already fetched the profile, so this clause is
+       # free — and without it the "refuse the delete while the profile differs
+       # from the baseline" rule is enforced only at Guard A's earlier read.
+       # A slot added by a concurrent session after that read, or after Guard B's
+       # confirming read, would otherwise be stranded by this delete. On the
+       # never-assigned path Guard A's read is the only profile observation at
+       # all, so this is the whole of the window.
+       if (
+           fixture.baseline_io_slots is not None
+           and final.profile_io_slots != fixture.baseline_io_slots
+       ):
+           state.record(
+               34,
+               "dedicated cleanup: profile changed before delete",
+               "FAIL",
+               "MANUAL RECOVERY REQUIRED: the fixture profile's io_slots is "
+               f"{final.profile_io_slots!r} immediately before the delete, not "
+               f"the captured baseline {fixture.baseline_io_slots!r}; something "
+               "changed it after this run's last check. The partition was NOT "
+               "deleted, because deleting it would strand whatever is assigned.",
+           )
+           return
 
        # Act on the identity Guard C just verified. `hmc_delete_lpar` accepts a
        # UUID or a name; deleting by name would re-resolve the name and reopen
@@ -1206,7 +1265,10 @@ async def exercise_dedicated_pcie_assignment(client, state) -> None: ...
 
 4. Replace the module docstring of `scripts/live_test/pcie.py` so it covers both arms and
    documents the four environment variables. Keep the existing SR-IOV ST23–ST28 paragraph
-   verbatim and append a dedicated ST29–ST34 paragraph plus the configuration table. State
+   verbatim and append a dedicated ST29–ST34 paragraph plus the configuration table. Say
+   plainly that the arm is subtask **24** and records its rows under labels **ST29–ST34**, so
+   an operator running `--subtask 24` is not surprised by a results file in which no row
+   carries 24. State
    in that paragraph that the arm SKIPs outside the ADR 0053-admitted HMC release and system
    model, since an operator reading the variable table is exactly the person who will point
    it at the wrong machine. **The
@@ -1400,6 +1462,10 @@ SR-IOV arm.
        return str(kwargs.get("name", "")).endswith("-createtime")
 
 
+   def _is_probe_name(kwargs: dict[str, Any]) -> bool:
+       return str(kwargs.get("lpar_name_or_uuid", "")).endswith("-createtime")
+
+
    def _probe_refused(_tool: str, kwargs: dict[str, Any], _index: int) -> str:
        """The default: the create-time probe is refused, the fixture create is not."""
        return "FAIL" if _is_probe(kwargs) else "PASS"
@@ -1410,6 +1476,7 @@ SR-IOV arm.
        *,
        description: str | None = None,
        descriptions: list[str] | None = None,
+       probe_description: str | None = None,
        uuid_value: str | None = "fixture-uuid",
        uuids: list[str | None] | None = None,
        ownership_stamped: bool | None = True,
@@ -1442,7 +1509,12 @@ SR-IOV arm.
                return ""
            return slots["io_slots"]
 
-       def get_description(_kwargs: dict[str, Any], index: int) -> str:
+       def get_description(kwargs: dict[str, Any], index: int) -> str:
+           # Keyed on which partition is being asked about, so a test can give the
+           # probe a foreign token while the fixture keeps this run's — the only
+           # way `_cleanup_probe_partition`'s comparison can be made to refuse.
+           if _is_probe_name(kwargs) and probe_description is not None:
+               return probe_description
            if descriptions is not None:
                return descriptions[min(index, len(descriptions) - 1)]
            if description is not None:
@@ -1552,7 +1624,7 @@ SR-IOV arm.
        return state
    ```
 
-3. Write the twenty tests the spec's Testing section lists, in that order, each named for
+3. Write the twenty-one tests the spec's Testing section lists, in that order, each named for
    the guard it exercises. Every guard test asserts **both** a specific recorded row and the
    absence of the forbidden call **within the cleanup phase**. Five written out — the shapes
    every other test follows, plus the two that distinguish a live-state Guard B from a
@@ -1666,7 +1738,7 @@ SR-IOV arm.
        assert row is not None and row[2] == "FAIL"
    ```
 
-   The remaining fifteen follow the same shape. Their fault injections, and which seam each
+   The remaining sixteen follow the same shape. Their fault injections, and which seam each
    drives:
 
    | Spec test | Seam | Injection |
@@ -1675,13 +1747,15 @@ SR-IOV arm.
    | 3 no unassigned slot | response | `_happy_responses(holder, inventory_owner="someone")` |
    | 4 configured DRC absent | env | `env={**_ENV, "HMC_LIVE_PCIE_DRC_INDEX": "999"}` |
    | 5 create-time refusal | default | the default `_probe_refused`; assert the ST30 row is `SKIP`, and that the fixture create still happened |
-   | 6 probe unexpectedly succeeds | status | `statuses={"hmc_create_lpar": "PASS"}`; assert `probe_created`'s FAIL row, a probe-name delete, and that it precedes the fixture delete |
+   | 6 probe unexpectedly succeeds | status | `statuses={"hmc_create_lpar": "PASS"}`; assert `probe_created`'s FAIL row, that the probe's `io_slots-` precedes its delete, that its delete names the probe's UUID, and that the whole probe sequence precedes the fixture delete |
+   | 6b probe carries a foreign token | response | `statuses={"hmc_create_lpar": "PASS"}` plus `probe_description="[hmc-mcp owner:hmc-mcp created:2026-09-02] [caller someone-else]"`; assert the `probe run-marker mismatch` row is FAIL, that no delete and no `io_slots-` names the probe, **and that the fixture is still cleaned up** — the independence property the spec states |
    | 7 assign-tool refusal | status | `statuses={"hmc_assign_dedicated_pcie_slot": "FAIL"}` with a `_REFUSAL` payload; assert `SKIP` and that `io_slots+` was still issued |
    | 9 UUID drift | response | `uuids=["fixture-uuid", "other-uuid"]` — Guard A's read is the second |
    | 11 unreadable identity | status | `statuses={"hmc_get_lpar_description": "FAIL"}` |
    | 12 profile drift | response | a `run_command` whose profile read returns a third value once `io_slots+` has been seen twice (assign and reassign) |
    | 13 removal does not restore | response | a `run_command` whose `io_slots-` returns PASS but leaves the model at `_ASSIGNED` |
-   | 16 identity drift before delete | response | `descriptions=[this run's stamp] * 3 + [foreign stamp]` — Guard A reads early, Guard C reads last |
+   | 16 identity drift before delete | response | `descriptions=[this run's stamp] * 2 + [foreign stamp]`. The happy path makes exactly **three** description reads — ST32's `_read_dedicated_state`, Guard A's, Guard C's — and `get_description` clamps at the last entry, so the foreign stamp must sit at index 2. A fourth entry is unreachable and leaves Guard C uncovered. |
+   | 16c Guard C, profile drift before delete | response | a `run_command` counting its profile reads and returning a foreign `io_slots` value only on the last one, so Guard A and Guard B see the baseline and Guard C does not; assert no delete and the `profile changed before delete` row |
    | 17 nothing ever assigned | response | a `run_command` whose `io_slots+` is a no-op returning PASS; assert no cleanup `io_slots-` **and** that the delete still happens |
    | 18 marker uniqueness | direct | call `pcie._new_run_marker()` twice; assert distinct, and that a fixture's `lpar_name` starts with the prefix |
    | 19 no resolvable UUID | response | `uuid_value=None` |
@@ -1695,7 +1769,7 @@ uv run --no-sync pytest tests/scripts/test_pcie.py -q
 uv run --no-sync ruff check .
 ```
 
-Expect 21 passed and `All checks passed!`.
+Expect 23 passed and `All checks passed!`.
 
 **Acceptance:** every guard test asserts an absent *cleanup* call and a specific recorded
 row, not a run-wide substring scan. To confirm the tests bite, introduce each controlled
@@ -1707,12 +1781,14 @@ whose neutralization reddens nothing is not covered, whatever its tests appear t
 | Guard A's identity comparison → `if False:` | 9, 10, 11, 20 |
 | `assign_dedicated_slot` returns early on a non-`PASS` command, before its readback | 14 |
 | Guard B's entry → `if fixture.applied_io_slots is not None:` | 15 |
-| Guard B's `applied_io_slots` exact-match → `if False:` | 12 |
+| Guard B's `applied_io_slots` exact-match → `if False:` | 12, 15 |
 | Guard B's post-removal baseline check → `if False:` | 13 |
-| Guard C's re-read comparison → `if False:` | 16 |
+| Guard C's identity comparison → `if False:` | 16 |
+| Guard C's baseline comparison → `if False:` | 16c |
 | `_admit_dedicated_environment` → always return `True` | 2 |
 | `_config_value_safe` → always return `True` | 1b |
-| `_cleanup_probe_partition`'s token comparison → `if False:` | 6 |
+| `_cleanup_probe_partition`'s token comparison → `if False:` | 6b |
+| `_cleanup_probe_partition`'s slot removal → skipped | 6 |
 
 **Cleanup:** revert every deliberate fault before committing.
 
@@ -1799,6 +1875,29 @@ place that matters most — the tests that must make the guards refuse:
 - **ADR 0115 and the spec record the `io_slots` byte-stability question** as an expected
   Guard B refusal on the first live run rather than a defect, and refuse to loosen the
   comparison to avoid it.
+
+And from pass 3, which transcribed this plan into runnable code and executed it — the first
+pass to measure rather than reason about the tests:
+
+- **Test 16's injection was unreachable.** The happy path makes exactly three description
+  reads and the fixture clamps at its last entry, so a foreign stamp at index 3 never
+  returned; the test was red against a correct implementation, and neutralising Guard C
+  reddened nothing. The injection is now two matching stamps then the foreign one.
+- **Test 6 never gave the probe a foreign token**, because the description fixture ignored
+  which partition it was asked about. It is now keyed on the name, and test 6b covers the
+  probe's ownership refusal.
+- **The probe delete obeyed neither invariant ADR 0115 declares load-bearing.** It removed no
+  hardware first — from the one partition that provably holds the slot on that path — and it
+  deleted by name. It now removes the slot from the probe's own profile, confirms the
+  removal, and deletes on the UUID the probe's create returned.
+- **Guard C fetched the profile and discarded it**, so "refused while the profile differs
+  from the baseline" was enforced only at Guard A's earlier read. The comparison is now made
+  on the value Guard C already had, closing the window a concurrent session opens.
+- **The ST29 rationale misstated the repository's own records.** ADR 0053 admits the
+  `io_slots` grammar from its **Power8 documentation** row, and the supporting fixture carries
+  `hmc_release: not-established` / `support: unknown`; there is no `io_slots` evidence for
+  `V10R3 M1060` / `8375-42A` or any other live-verified envelope. The gate bounds that risk
+  rather than removing it, and both records now say so.
 
 The dedicated arm is not exercised against hardware by this change; the live PASS/SKIP/FAIL
 matrix is the operator's, per the frozen charter's exclusions.

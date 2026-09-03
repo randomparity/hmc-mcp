@@ -70,13 +70,22 @@ ownership stamp did not land: the caller token is the fact Guard A checks first 
 refuses on unconditionally, so mutating under a partition that carries no token guarantees
 the stranded-slot outcome the guards exist to prevent.
 
-Absent configuration, an unavailable capability, and hardware outside the ADR 0053-admitted
-envelope are all reported as SKIP for the arm, never PASS. The arm reads the HMC release
-and the managed system's type-model before it creates anything, records both as rows so
-every results file is self-labelling, and SKIPs when they fall outside the envelope
-`operations/pcie.py:require_admitted_environment` enforces for the SR-IOV path. Raw profile
-grammar issued at an unprobed release or model would be a real mutation on a machine whose
-grammar ADR 0053 does not record.
+Absent configuration, an unavailable capability, and hardware outside the live-verified
+envelope are all reported as SKIP for the arm, never PASS. The arm reads the HMC release and
+the managed system's type-model before it creates anything, records both as rows so every
+results file is self-labelling, and SKIPs when they fall outside the envelope
+`operations/pcie.py:require_admitted_environment` enforces for the SR-IOV path.
+
+That gate bounds a risk it cannot remove, and the distinction is load-bearing. ADR 0053
+admits the `io_slots` profile-mutation grammar from its **Power8 documentation** row, and the
+sole artifact behind it, `tests/fixtures/pcie/power8-profile-contract.json`, records
+`hmc_release: not-established` and `support: unknown`. No `io_slots` evidence exists in this
+repository for `V10R3 M1060` / `8375-42A` or for any other live-verified envelope, and ADR
+0053 states that a field admitted for one family cannot be assumed present in another. So the
+arm's first mutating run issues an unprobed grammar whatever it runs on — which is exactly the
+gap it exists to close. Confining it to the one pair the repository has live-verified for
+anything keeps the blast radius on the machine an operator is already exercising, rather than
+letting an arbitrary Power8, Power10 or Power11 system receive a real profile mutation.
 
 ## Consequences
 
