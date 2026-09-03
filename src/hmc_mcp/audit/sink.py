@@ -15,7 +15,7 @@ import re
 import sys
 import threading
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Final
 
 #: The reserved logger. Only this module resolves it, which makes "the message is
@@ -32,7 +32,7 @@ def emit(level: int, build: Callable[[], dict[str, Any]]) -> None:
     try:
         message = json.dumps(build(), ensure_ascii=True)
         logging.getLogger(AUDIT_LOGGER_NAME).log(level, message)
-    except Exception:  # noqa: BLE001 - totality is the audit contract
+    except Exception:  # noqa: BLE001, S110 - totality is the audit contract
         pass
 
 
@@ -213,7 +213,7 @@ def _drop_marker(count: int) -> str:
     return (
         json.dumps(
             {
-                "time": datetime.now(timezone.utc).isoformat(),
+                "time": datetime.now(UTC).isoformat(),
                 "event": event,
                 "count": count,
             },

@@ -13,10 +13,8 @@ from hmc_mcp.operations.vnic import (
     VnicPartialError,
 )
 from hmc_mcp.server_tools.vnic import (
-    hmc_add_vnic as hmc_add_vnic,
-)
-from hmc_mcp.server_tools.vnic import (
-    hmc_remove_vnic as hmc_remove_vnic,
+    hmc_add_vnic,
+    hmc_remove_vnic,
 )
 
 

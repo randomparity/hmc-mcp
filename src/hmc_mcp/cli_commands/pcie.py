@@ -8,21 +8,20 @@ from decimal import Decimal
 import typer
 from rich.table import Table
 
-from .runtime import run, ssh_config, with_client
-from .output import output, print_json, console
-
 from ..operations.pcie import (
     assign_dedicated_pcie_slot,
+    assign_sriov_logical_port,
     list_dedicated_slots,
     list_sriov_adapters,
     list_sriov_logical_ports,
     list_sriov_physical_ports,
-    unassign_dedicated_pcie_slot,
-    assign_sriov_logical_port,
     set_sriov_adapter_mode,
+    unassign_dedicated_pcie_slot,
     unassign_sriov_logical_port,
 )
 from ..ssh.network import PciClass, SriovMode, list_io_slots
+from .output import console, output, print_json
+from .runtime import run, ssh_config, with_client
 
 
 def _print_pcie_inventory(result, as_json: bool) -> None:

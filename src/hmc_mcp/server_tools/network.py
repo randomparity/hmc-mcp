@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from ..tool_registry import tool_module
-
 from typing import Any
 
 from .._app import (
     run_limited_collection,
     with_client,
 )
-
 from ..operations.network import (
     create_virtual_network,
     delete_virtual_network,
@@ -18,7 +15,7 @@ from ..operations.network import (
     list_virtual_networks,
     list_virtual_switches,
 )
-
+from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

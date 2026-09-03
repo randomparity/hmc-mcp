@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from hmc_mcp.server_tools.lpar.lifecycle import hmc_create_lpar as hmc_create_lpar
+from hmc_mcp.server_tools.lpar.lifecycle import hmc_create_lpar
 
 BASE = "https://hmc.test"
 SYSTEM_UUID = "aaaa0000-0000-0000-0000-000000000001"

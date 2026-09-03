@@ -21,49 +21,32 @@ from conftest import JOB_ENTRY
 
 from hmc_mcp.documents import LparResources
 from hmc_mcp.errors import HMCError
-from hmc_mcp.server_tools.command import hmc_run_command as hmc_run_command
+from hmc_mcp.operations.update_models import (
+    PlatformUpdateParameter,
+    SystemFirmwareUpdateModel,
+)
+from hmc_mcp.server_tools.command import hmc_run_command
 from hmc_mcp.server_tools.jobs import (
-    hmc_get_job as hmc_get_job,
-)
-from hmc_mcp.server_tools.jobs import (
-    hmc_list_recent_jobs as hmc_list_recent_jobs,
-)
-from hmc_mcp.server_tools.jobs import (
-    hmc_wait_for_job as hmc_wait_for_job,
+    hmc_get_job,
+    hmc_list_recent_jobs,
+    hmc_wait_for_job,
 )
 from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_create_lpar as hmc_create_lpar,
+    hmc_create_lpar,
+    hmc_delete_lpar,
+    hmc_modify_lpar,
+    hmc_power_off_lpar,
+    hmc_power_on_lpar,
+    hmc_rename_lpar,
 )
-from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_delete_lpar as hmc_delete_lpar,
-)
-from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_modify_lpar as hmc_modify_lpar,
-)
-from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_power_off_lpar as hmc_power_off_lpar,
-)
-from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_power_on_lpar as hmc_power_on_lpar,
-)
-from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_rename_lpar as hmc_rename_lpar,
-)
-from hmc_mcp.server_tools.systems import hmc_get_lpar as hmc_get_lpar
+from hmc_mcp.server_tools.systems import hmc_get_lpar
 from hmc_mcp.server_tools.updates import (
-    hmc_get_available_hmc_ptfs as hmc_get_available_hmc_ptfs,
+    hmc_get_available_hmc_ptfs,
+    hmc_update_console_software,
+    hmc_update_firmware,
+    hmc_vios_update,
+    hmc_vios_upgrade,
 )
-from hmc_mcp.server_tools.updates import (
-    hmc_update_console_software as hmc_update_console_software,
-)
-from hmc_mcp.server_tools.updates import (
-    hmc_update_firmware as hmc_update_firmware,
-)
-from hmc_mcp.server_tools.updates import (
-    hmc_vios_update as hmc_vios_update,
-)
-from hmc_mcp.server_tools.updates import hmc_vios_upgrade as hmc_vios_upgrade
-from hmc_mcp.operations.update_models import PlatformUpdateParameter, SystemFirmwareUpdateModel
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
@@ -1273,11 +1256,11 @@ def test_job_tools_reject_parser_deleted_job_href_controls(
     payload = '{"level":"error","message":"forged"}'
     forged = f"{_JOB_OP_HREF}{control}{payload}"
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
-        with pytest.raises(
-            ValueError, match="job_href must not contain TAB, CR, or LF"
-        ) as exc_info:
-            tool("job-uuid-999", job_href=forged)
+    with (
+        caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"),
+        pytest.raises( ValueError, match="job_href must not contain TAB, CR, or LF" ) as exc_info,
+    ):
+        tool("job-uuid-999", job_href=forged)
 
     assert forged not in str(exc_info.value)
     assert not caplog.records

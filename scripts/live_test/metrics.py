@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Client
 
-
 from .results import entries
 
 if TYPE_CHECKING:

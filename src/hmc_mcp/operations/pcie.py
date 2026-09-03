@@ -6,9 +6,13 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Generic, Literal, TypeVar
 
-from hmc_mcp.config import HMCConfig
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_names
+from hmc_mcp.operations.pcie_validation import (
+    require_command_safe_text,
+    validate_capacity_percent,
+)
 from hmc_mcp.ssh.network import (
     SriovMode,
     assign_sriov_logical_port_dynamic,
@@ -17,18 +21,13 @@ from hmc_mcp.ssh.network import (
     list_sriov_configured_logical_port_rows,
     list_sriov_physical_port_rows,
     list_sriov_unconfigured_logical_port_rows,
-    read_sriov_lpar_state,
     read_sriov_environment,
+    read_sriov_lpar_state,
     read_sriov_profile_ports,
     unassign_sriov_logical_port_profile,
     validate_sriov_mode,
 )
-from hmc_mcp.operations.pcie_validation import (
-    require_command_safe_text,
-    validate_capacity_percent,
-)
 from hmc_mcp.ssh.selectors import resolve_ssh_names
-
 
 CapabilityState = Literal["available", "capability-unavailable"]
 ResourceKind = Literal[
@@ -229,7 +228,7 @@ async def _authorize_pcie_profile_request(
         raise ValueError("profile_name must not be blank")
     if not drc_index.strip():
         raise ValueError("drc_index must not be blank")
-    system_name, lpar_name = await resolve_and_authorize_lpar_names(
+    _system_name, _lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
@@ -318,13 +317,13 @@ async def _read_assignment_state(
         if len(matching) > 1:
             raise ValueError("duplicate logical-port inventory rows")
         effective = _snapshot(matching[0]) if matching else None
-    except Exception as caught:
+    except Exception as caught:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         error = caught
     try:
         profile = (
             await read_sriov_profile_ports(config, system_name, lpar_name, profile_name)
         )["sriov_eth_logical_ports"]
-    except Exception as caught:
+    except Exception as caught:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         error = error or caught
     return _SriovAssignmentReadback(effective, profile, error)
 
@@ -542,7 +541,7 @@ async def assign_sriov_logical_port(
             logical_port_id,
             str(capacity),
         )
-    except Exception as caught:
+    except Exception as caught:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         error = caught
     readback = await _read_assignment_state(
         config,
@@ -656,7 +655,7 @@ async def unassign_sriov_logical_port(
         output = await unassign_sriov_logical_port_profile(
             config, system_name, lpar_name, profile_name
         )
-    except Exception as caught:
+    except Exception as caught:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         error = caught
     after = None
     read_error: Exception | None = None
@@ -664,7 +663,7 @@ async def unassign_sriov_logical_port(
         after = (
             await read_sriov_profile_ports(config, system_name, lpar_name, profile_name)
         )["sriov_eth_logical_ports"]
-    except Exception as caught:
+    except Exception as caught:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         read_error = caught
     result = SriovLogicalPortChangeResult(
         operation="unassign",

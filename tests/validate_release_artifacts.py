@@ -23,7 +23,6 @@ from typing import BinaryIO, Never, Protocol
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
-
 PROJECT_NAME = "hmc-mcp"
 PACKAGE_NAME = "hmc_mcp"
 # PEP 561: without this marker in the distribution a type-checker reads every
@@ -407,7 +406,7 @@ def _read_sdist(path: Path) -> tuple[str, dict[str, bytes]]:
 def _parse_message(data: bytes, artifact: str, member: str) -> Message:
     try:
         message = BytesParser(policy=default).parsebytes(data)
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - any parse failure is reported through _fail with the artifact named
         _fail(artifact, f"{member} is malformed: {type(error).__name__}")
     if message.defects:
         _fail(artifact, f"{member} has parser defects")
@@ -429,7 +428,7 @@ def _requirements(message: Message, artifact: str) -> set[str]:
         return {
             str(Requirement(value)) for value in message.get_all("Requires-Dist", [])
         }
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - any parse failure is reported through _fail with the artifact named
         _fail(artifact, f"Requires-Dist is malformed: {type(error).__name__}")
 
 

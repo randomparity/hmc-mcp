@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, fields
 from decimal import Decimal
-import json
 from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner

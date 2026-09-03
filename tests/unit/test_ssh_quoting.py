@@ -28,22 +28,18 @@ from hmc_mcp.operations.vnic import (
     _validate_vnic_backing_selector,
 )
 from hmc_mcp.server_tools.lpar.configuration import (
-    hmc_set_lpar_description as hmc_set_lpar_description,
+    hmc_set_lpar_description,
 )
 from hmc_mcp.server_tools.lpar.profiles import (
-    hmc_backup_lpar_profiles as hmc_backup_lpar_profiles,
+    hmc_backup_lpar_profiles,
 )
 from hmc_mcp.server_tools.system_resources import (
-    hmc_list_memory_pools as hmc_list_memory_pools,
-)
-from hmc_mcp.server_tools.system_resources import (
-    hmc_remove_memory_pool as hmc_remove_memory_pool,
+    hmc_list_memory_pools,
+    hmc_remove_memory_pool,
 )
 from hmc_mcp.server_tools.vios import (
-    hmc_backup_vios as hmc_backup_vios,
-)
-from hmc_mcp.server_tools.vios import (
-    hmc_restore_vios as hmc_restore_vios,
+    hmc_backup_vios,
+    hmc_restore_vios,
 )
 from hmc_mcp.ssh.network import list_io_slots
 
@@ -128,7 +124,7 @@ def test_add_vnic_rejects_structural_selector_characters():
     """Typed vNIC selectors reject characters that alter HMC payload structure."""
     with pytest.raises(ValueError, match="alter HMC command structure"):
         _validate_vnic_backing_selector(
-            VnicBackingSelector(f"vios,{HOSTILE}", "2", "1", "0", Decimal("2"))
+            VnicBackingSelector(f"vios,{HOSTILE}", "2", "1", "0", Decimal(2))
         )
 
 

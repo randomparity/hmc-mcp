@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.operations.systems import get_system, list_systems
 from hmc_mcp.operations.lpar.core import list_lpars
+from hmc_mcp.operations.systems import get_system, list_systems
 from hmc_mcp.operations.vios import list_vios
 
 

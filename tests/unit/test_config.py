@@ -18,10 +18,10 @@ from unittest.mock import patch
 import pytest
 
 from hmc_mcp import config as config_module
-from hmc_mcp.config import build_config
 from hmc_mcp.config import (
     ConfigError,
     HMCConfig,
+    build_config,
     config_dir,
     config_inventory,
     env_var_value,
@@ -996,9 +996,11 @@ def test_load_profile_with_no_platform_config_file(tmp_path, monkeypatch):
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
-    with patch.object(sys, "platform", "linux"):
-        with pytest.raises(ConfigError, match="not found"):
-            _READERS["load_profile"](None)
+    with (
+        patch.object(sys, "platform", "linux"),
+        pytest.raises(ConfigError, match="not found"),
+    ):
+        _READERS["load_profile"](None)
 
 
 def test_profile_reader_rejects_a_non_table_profiles_key(profile_reader, tmp_path):

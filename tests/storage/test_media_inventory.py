@@ -2,7 +2,6 @@
 
 import httpx
 import pytest
-
 from conftest import make_config
 
 from hmc_mcp.client.core import HMCClient

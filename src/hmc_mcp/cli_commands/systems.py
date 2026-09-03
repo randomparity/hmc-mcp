@@ -16,8 +16,8 @@ from ..operations.systems import (
     list_systems,
     power_system,
 )
+from .output import console, err_console, first_field, output, print_json
 from .runtime import with_client
-from .output import first_field, output, print_json, console, err_console
 
 
 def systems_health(

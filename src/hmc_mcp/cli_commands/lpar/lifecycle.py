@@ -6,8 +6,8 @@ import typer
 
 from ...jobs import validate_wait_timing
 from ...operations.lpar.core import delete_lpar, power_lpar
+from ..output import console, err_console, print_json
 from ..runtime import client, run
-from ..output import print_json, console, err_console
 
 
 def lpars_power_on(
@@ -146,11 +146,10 @@ def lpars_delete(
 
     async def _go():
         async with client() as hmc:
-            if not yes:
-                if not typer.confirm(
-                    f"Permanently DELETE partition '{name_or_uuid}'? This cannot be undone."
-                ):
-                    raise typer.Abort()
+            if not yes and not typer.confirm(
+                f"Permanently DELETE partition '{name_or_uuid}'? This cannot be undone."
+            ):
+                raise typer.Abort()
             return await delete_lpar(
                 hmc,
                 system,

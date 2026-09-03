@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.operations import vios as operations_vios
 from hmc_mcp.operations.lpar.core import delete_lpar, power_lpar, rename_lpar
 from hmc_mcp.operations.vios import power_vios
-from hmc_mcp.operations import vios as operations_vios
-from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
 from hmc_mcp.server_tools import vios as server_vios
+from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
 
 
 def _client_factory(hmc):

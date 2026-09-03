@@ -15,8 +15,8 @@ from ...operations.lpar.core import (
 )
 from ...operations.partition_state import PartitionState
 from ...resource_identity import ResourceNotFoundError
+from ..output import console, first_field, output, partition_not_found, print_json
 from ..runtime import with_client
-from ..output import first_field, output, partition_not_found, print_json, console
 
 
 def lpars_summary(

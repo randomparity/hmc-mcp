@@ -5,14 +5,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.snapshots.operations import capture_lpar_snapshot
-from hmc_mcp.snapshots.operations import _placement
 from hmc_mcp.operations.ssh_affinity import (
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
 )
+from hmc_mcp.snapshots.operations import _placement, capture_lpar_snapshot
 from hmc_mcp.ssh.affinity import MemoptResourceGroupSelector
-
 
 PROFILE = "name=default,lpar_name=aix,min_mem=4096,desired_mem=8192,max_mem=16384,proc_mode=shared,min_proc_units=0.5,desired_proc_units=1.0,max_proc_units=2.0,min_procs=1,desired_procs=2,max_procs=4,sharing_mode=uncap"
 

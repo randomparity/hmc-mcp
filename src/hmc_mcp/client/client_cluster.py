@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .client_contracts import ClusterClient
 from ..jobs import DeviceType, LuType, create_logical_unit_job, delete_logical_unit_job
+from .client_contracts import ClusterClient
 
 
 class ClusterMixin:

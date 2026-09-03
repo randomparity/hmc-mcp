@@ -120,7 +120,7 @@ class _GrantModel(BaseModel):
         if not isinstance(value, dict):
             # A misspelled sentinel falls through to here, so one message covers
             # both "wrong string" and "wrong type".
-            raise ValueError(
+            raise ValueError(  # noqa: TRY004 - inside a Pydantic field_validator, which folds ValueError into a ValidationError; TypeError would escape uncaught. The guard also rejects a misspelled sentinel, so it is not a pure type check
                 "'targets' must be the string \"all-targets\" or a table of target "
                 f"kind to selector strings; got {value!r}"
             )
@@ -136,7 +136,7 @@ class _GrantModel(BaseModel):
                     f"{sorted(TARGET_KINDS - {'none'})}"
                 )
             if not isinstance(selectors, (list, tuple)):
-                raise ValueError(
+                raise ValueError(  # noqa: TRY004 - inside a Pydantic field_validator, which folds ValueError into a ValidationError; TypeError would escape uncaught. The guard also rejects a misspelled sentinel, so it is not a pure type check
                     f"targets kind {kind!r} must be an array of selector strings"
                 )
             if not selectors:

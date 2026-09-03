@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Client
 
-
 if TYPE_CHECKING:
     from live_test_runner import RunState
 

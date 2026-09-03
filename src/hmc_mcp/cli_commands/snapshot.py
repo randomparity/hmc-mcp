@@ -10,9 +10,8 @@ from typing import NoReturn
 
 import typer
 
-from hmc_mcp.cli_commands.runtime import client, run
 from hmc_mcp.cli_commands.output import print_json
-from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
+from hmc_mcp.cli_commands.runtime import client, run
 from hmc_mcp.operations.affinity import PolicyState
 from hmc_mcp.snapshots.models import (
     SnapshotValidationError,
@@ -21,6 +20,7 @@ from hmc_mcp.snapshots.models import (
     read_snapshot_text,
     serialize_snapshot,
 )
+from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
 
 
 def fail(error: Exception) -> NoReturn:

@@ -4,7 +4,6 @@ from xml.etree import ElementTree
 
 import httpx
 import pytest
-
 from conftest import JOB_ENTRY, make_config
 
 from hmc_mcp.client.core import HMCClient

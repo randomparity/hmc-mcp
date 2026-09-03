@@ -14,14 +14,14 @@ import functools
 import inspect
 import re
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import MISSING, dataclass, fields as dataclass_fields, is_dataclass, replace
+from dataclasses import MISSING, dataclass, is_dataclass, replace
+from dataclasses import fields as dataclass_fields
 from types import MappingProxyType
 from typing import Any, Literal, TypeVar, get_args, get_origin, get_type_hints
 
-from pydantic import BaseModel
-
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from pydantic import BaseModel
 
 Effect = Literal["read", "mutate", "destructive", "arbitrary-command"]
 
@@ -501,7 +501,7 @@ def tool_module() -> ToolModule:
             )
             try:
                 targets = build_targets(fn, extra_targets)
-            except Exception as error:  # noqa: BLE001 - re-raised with the tool named
+            except Exception as error:
                 raise ValueError(
                     f"{name}: cannot inspect signature: {error!r}"
                 ) from error

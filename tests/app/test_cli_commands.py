@@ -14,29 +14,30 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Self
+from unittest.mock import AsyncMock
 
 import pytest
 import typer
 from click import unstyle
-from unittest.mock import AsyncMock
 from typer.main import get_command
 from typer.testing import CliRunner
 
 from hmc_mcp import cli
+from hmc_mcp.cli_commands import pcie as cli_pcie
+from hmc_mcp.cli_commands import runtime as cli_runtime
+from hmc_mcp.cli_commands import vios_labels as cli_vios_labels
+from hmc_mcp.cli_commands import vnic as cli_vnic
+from hmc_mcp.cli_commands.lpar import config as cli_lpars
+from hmc_mcp.config import HMCConfig
+from hmc_mcp.errors import HMCError
+from hmc_mcp.operations import ownership as lpar_ownership
+from hmc_mcp.operations.vnic import VnicChangeResult, VnicPartialError
 from hmc_mcp.ssh import affinity as ssh_affinity
 from hmc_mcp.ssh import commands as ssh_commands
 from hmc_mcp.ssh import lpar as ssh_lpar
 from hmc_mcp.ssh import network as ssh_network
 from hmc_mcp.ssh import profiles as ssh_profiles
-from hmc_mcp.cli_commands import runtime as cli_runtime
-from hmc_mcp.cli_commands.lpar import config as cli_lpars
-from hmc_mcp.cli_commands import pcie as cli_pcie
-from hmc_mcp.cli_commands import vnic as cli_vnic
-from hmc_mcp.cli_commands import vios_labels as cli_vios_labels
-from hmc_mcp.operations import ownership as lpar_ownership
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.vnic import VnicChangeResult, VnicPartialError
 
 LPAR_NAME = "lpar1"
 
@@ -175,7 +176,7 @@ class FakeHMC:
                 "<xml><Message>boom</Message></xml>",
             )
 
-    async def __aenter__(self) -> "FakeHMC":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *exc_info) -> None:

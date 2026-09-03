@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import ast
-import json
 import hashlib
+import json
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -53,20 +53,20 @@ EXPECTED_PROVENANCE = {
     ),
     "power9-sriov-logport.json": (
         P9_URL,
-        "lshwres > -r sriov > --rsubtype logport > --level eth > "
-        "adapter_ids,logical_port_ids,phys_port_ids",
+        ("lshwres > -r sriov > --rsubtype logport > --level eth > "
+         "adapter_ids,logical_port_ids,phys_port_ids"),
     ),
     "power10-sriov-contract.json": (
         "https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres",
-        "chhwres > -r io > -o a/r > -l; chhwres > -r sriov > "
-        "slot_id,adapter_id,logical_port_id,capacity,max_capacity,"
-        "min_eth_capacity_granularity",
+        ("chhwres > -r io > -o a/r > -l; chhwres > -r sriov > "
+         "slot_id,adapter_id,logical_port_id,capacity,max_capacity,"
+         "min_eth_capacity_granularity"),
     ),
     "power11-sriov-contract.json": (
         "https://www.ibm.com/docs/en/power11/9824-42A?topic=commands-chhwres",
-        "chhwres > -r io > -o a/r > -l; chhwres > -r sriov > "
-        "slot_id,adapter_id,logical_port_id,capacity,max_capacity,"
-        "min_eth_capacity_granularity",
+        ("chhwres > -r io > -o a/r > -l; chhwres > -r sriov > "
+         "slot_id,adapter_id,logical_port_id,capacity,max_capacity,"
+         "min_eth_capacity_granularity"),
     ),
 }
 
@@ -143,14 +143,14 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
     assert {row["phys_port_type"] for row in rows} == {"eth"}
     assert run.await_count == 2
     assert [call.args[1] for call in run.await_args_list] == [
-        "lshwres -r sriov --rsubtype physport -m system-a --level roce "
-        "--filter adapter_ids=1 -F "
-        "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,"
-        "config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header",
-        "lshwres -r sriov --rsubtype physport -m system-a --level ethc "
-        "--filter adapter_ids=1 -F "
-        "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,"
-        "config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header",
+        ("lshwres -r sriov --rsubtype physport -m system-a --level roce "
+         "--filter adapter_ids=1 -F "
+         "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,"
+         "config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header"),
+        ("lshwres -r sriov --rsubtype physport -m system-a --level ethc "
+         "--filter adapter_ids=1 -F "
+         "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,"
+         "config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header"),
     ]
     fixture_sha256 = "8c13d5e53c44183a0ade3e26f654aab24593d5f84945902f758186cfee74f597"  # pragma: allowlist secret -- pinned fixture checksum
     fixture_bytes = (FIXTURES / "power9-v10r3m1060-live-sriov.json").read_bytes()
@@ -294,7 +294,7 @@ def test_operation_matrix_fails_closed_without_same_family_readback() -> None:
     rows = {
         columns[0]: columns[1:]
         for line in spec.splitlines()
-        if line.startswith("| Assign/unassign") or line.startswith("| Switch adapter")
+        if line.startswith(("| Assign/unassign", "| Switch adapter"))
         if len(columns := [part.strip() for part in line.strip("|").split("|")]) == 5
     }
     assert set(rows) == {

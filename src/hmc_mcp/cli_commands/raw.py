@@ -6,8 +6,8 @@ from pathlib import Path
 
 import typer
 
+from .output import console, fail
 from .runtime import with_client
-from .output import fail, console
 
 
 def raw_get(

@@ -9,11 +9,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from hmc_mcp.audit import records as audit
-from hmc_mcp.client.core import HMCClient
 from hmc_mcp.client.client_resolution import (
     MAX_PARENT_DISCOVERY_SYSTEMS,
     PARENT_DISCOVERY_TIMEOUT_SECONDS,
 )
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
 from hmc_mcp.resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
 from hmc_mcp.ssh.description_validation import validate_lpar_description
@@ -641,8 +641,8 @@ async def stamp_created_lpar_ownership(
     system_name = await _resolve_system_name(hmc, system_uuid, system_fallback)
     if system_name == system_uuid:
         return None, [
-            f"ownership stamp skipped for LPAR {confirmed_name!r}: "
-            "could not resolve the managed-system name"
+            (f"ownership stamp skipped for LPAR {confirmed_name!r}: "
+             "could not resolve the managed-system name")
         ]
 
     token = await stamp_lpar_ownership(

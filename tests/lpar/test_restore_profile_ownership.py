@@ -5,8 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from unittest.mock import AsyncMock
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -48,15 +47,14 @@ async def test_foreign_partition_blocks_restore_before_ssh(caplog) -> None:
     ]
     write = AsyncMock()
 
-    with caplog.at_level(logging.WARNING):
-        with pytest.raises(PermissionError, match="db01"):
-            with patch(
-                "hmc_mcp.operations.lpar.configuration.restore_lpar_profiles",
-                new=write,
-            ):
-                await restore_system_lpar_profiles(
-                    hmc, SYSTEM_UUID, "/tmp/profiles.bak"
-                )
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.raises(PermissionError, match="db01"),
+        patch( "hmc_mcp.operations.lpar.configuration.restore_lpar_profiles", new=write, ),
+    ):
+        await restore_system_lpar_profiles(
+            hmc, SYSTEM_UUID, "/tmp/profiles.bak"
+        )
 
     write.assert_not_awaited()
     records = [json.loads(record.message) for record in caplog.records]
@@ -115,16 +113,15 @@ async def test_override_skips_inventory_audits_wildcard_and_restores(caplog) -> 
     hmc = _hmc()
     write = AsyncMock(return_value="restored")
 
-    with caplog.at_level(logging.WARNING):
-        with patch(
-            "hmc_mcp.operations.lpar.configuration.restore_lpar_profiles", new=write
-        ):
-            result = await restore_system_lpar_profiles(
-                hmc,
-                SYSTEM_UUID,
-                "/tmp/profiles.bak",
-                ownership_override=True,
-            )
+    with caplog.at_level(logging.WARNING), patch(
+        "hmc_mcp.operations.lpar.configuration.restore_lpar_profiles", new=write
+    ):
+        result = await restore_system_lpar_profiles(
+            hmc,
+            SYSTEM_UUID,
+            "/tmp/profiles.bak",
+            ownership_override=True,
+        )
 
     assert result == "restored"
     hmc.list_logical_partitions.assert_not_awaited()

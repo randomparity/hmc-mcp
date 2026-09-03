@@ -5,10 +5,11 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import hmc_mcp.ssh.transport as ssh
+from hmc_mcp import server
 from hmc_mcp.cli_commands import network as cli_network
 from hmc_mcp.cli_commands import pcie as cli_pcie
 from hmc_mcp.cli_commands import vnic as cli_vnic
-import hmc_mcp.server as server
 from hmc_mcp.server_tools import (
     adapters,
     capacity,
@@ -20,11 +21,10 @@ from hmc_mcp.server_tools import (
     storage,
     system_resources,
     systems,
-    vnic,
     vios,
+    vnic,
 )
 from hmc_mcp.server_tools.lpar import configuration, lifecycle
-import hmc_mcp.ssh.transport as ssh
 
 
 def test_domain_handlers_live_in_focused_modules() -> None:

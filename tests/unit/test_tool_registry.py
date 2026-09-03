@@ -19,6 +19,7 @@ from hmc_mcp.tool_registry import (
     tool_module,
     validate_security,
 )
+
 # Both gates are required since ADR 0041: `register_tools` is the bulk registration
 # site, and while they defaulted to None a caller that omitted them registered a
 # module's whole tool set with no ceiling and no authorizer. These tests are about

@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.vnic import (
     VnicBackingSelector,
     VnicCapabilityError,
@@ -12,7 +13,6 @@ from hmc_mcp.operations.vnic import (
     add_vnic,
     remove_vnic,
 )
-from hmc_mcp.config import HMCConfig
 
 
 def test_vnic_models_are_immutable_and_result_field_order_is_stable() -> None:
@@ -135,13 +135,13 @@ async def test_add_rejects_blank_selector_fields(field: str) -> None:
         "physical_port_id": "1",
     }
     values[field] = " "
-    selector = VnicBackingSelector(**values, capacity_percent=Decimal("2"))
+    selector = VnicBackingSelector(**values, capacity_percent=Decimal(2))
     with pytest.raises(ValueError, match="must not be blank"):
         await add_vnic(_hmc(), "system-a", "client-a", selector, 7)
 
 
 @pytest.mark.parametrize(
-    "capacity", [Decimal("0"), Decimal("101"), Decimal("NaN"), Decimal("1.001")]
+    "capacity", [Decimal(0), Decimal(101), Decimal("NaN"), Decimal("1.001")]
 )
 @pytest.mark.asyncio
 async def test_add_rejects_invalid_capacity(capacity: Decimal) -> None:
@@ -153,7 +153,7 @@ async def test_add_rejects_invalid_capacity(capacity: Decimal) -> None:
 @pytest.mark.parametrize("vlan", [-1, 4095])
 @pytest.mark.asyncio
 async def test_add_rejects_vlan_out_of_range(vlan: int) -> None:
-    selector = VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2"))
+    selector = VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2))
     with pytest.raises(ValueError, match="between 0 and 4094"):
         await add_vnic(_hmc(), "system-a", "client-a", selector, vlan)
 
@@ -163,7 +163,7 @@ async def test_add_rejects_vlan_out_of_range(vlan: int) -> None:
 async def test_add_rejects_non_integer_vlan_before_preflight(
     monkeypatch: pytest.MonkeyPatch, vlan: object
 ) -> None:
-    selector = VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2"))
+    selector = VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2))
     preflight = AsyncMock()
     mutation = AsyncMock()
     monkeypatch.setattr("hmc_mcp.operations.vnic._preflight_add", preflight)
@@ -203,7 +203,7 @@ async def test_add_rejects_each_delimiter_in_each_selector_field(
         "physical_port_id": "1",
     }
     values[field] += character
-    selector = VnicBackingSelector(**values, capacity_percent=Decimal("2"))
+    selector = VnicBackingSelector(**values, capacity_percent=Decimal(2))
     with pytest.raises(ValueError):
         await add_vnic(_hmc(), "system-a", "client-a", selector, 7)
 
@@ -229,7 +229,7 @@ async def test_add_preserves_shell_metacharacters_as_quoted_payload_data(
         "physical_port_id": "1",
     }
     values[field] = value
-    selector = VnicBackingSelector(**values, capacity_percent=Decimal("2"))
+    selector = VnicBackingSelector(**values, capacity_percent=Decimal(2))
     monkeypatch.setattr(
         "hmc_mcp.operations.vnic.read_vios_identity",
         AsyncMock(
@@ -312,7 +312,7 @@ async def test_add_rejects_wrong_vios_identity_or_type(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -370,7 +370,7 @@ async def test_add_rejects_adapter_or_port_mismatch(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -403,7 +403,7 @@ async def test_add_rejects_exhausted_capacity(monkeypatch: pytest.MonkeyPatch) -
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -425,7 +425,7 @@ async def test_add_verified_retry_is_unchanged(monkeypatch: pytest.MonkeyPatch) 
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
         7,
     )
     assert (result.changed, result.slot_num, result.mutation_dispatched) == (
@@ -469,7 +469,7 @@ async def test_add_verified_retry_resolves_before_new_allocation_capacity(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("60")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(60)),
         7,
     )
 
@@ -515,7 +515,7 @@ async def test_add_rejects_identical_duplicates_within_one_projection(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -555,7 +555,7 @@ async def test_add_deduplicates_consistent_direct_and_backing_observations(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -583,7 +583,7 @@ async def test_add_successfully_correlates_new_slot(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
         7,
     )
     assert (result.changed, result.slot_num, result.output) == (True, "2", "created")
@@ -610,7 +610,7 @@ async def test_add_ignores_unrelated_equal_selector_backing_for_target_identity(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
         7,
     )
 
@@ -640,7 +640,7 @@ async def test_add_before_state_after_dispatch_is_known_unchanged_partial(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -695,7 +695,7 @@ async def test_add_reconciliation_decision_table(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
         7,
     )
 
@@ -739,7 +739,7 @@ async def test_add_retry_ignores_unrelated_selector_matching_degraded_backing(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
         7,
     )
 
@@ -772,7 +772,7 @@ async def test_add_final_ignores_unrelated_selector_matching_degraded_backing(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
         7,
     )
 
@@ -802,7 +802,7 @@ async def test_add_retry_refuses_degraded_correlated_target_backing(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -832,7 +832,7 @@ async def test_add_rejects_two_new_matching_vnics_despite_one_operational_backin
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -864,7 +864,7 @@ async def test_add_successful_reads_with_only_new_vnic_are_contradictory(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -899,7 +899,7 @@ async def test_add_command_and_both_read_failures_are_retained_in_order(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
     result = caught.value.result

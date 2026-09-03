@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-
 import typer
 from rich.table import Table
 
-from .runtime import run, ssh_config
-from .output import print_json, console, err_console
-
 from ..ssh.memory import list_memory_pools, remove_memory_pool
+from .output import console, err_console, print_json
+from .runtime import run, ssh_config
 
 
 def memory_pools_list(
@@ -28,7 +26,7 @@ def memory_pools_list(
         return
 
     table = Table(title=f"Memory Pools — {system_name}")
-    for key in pools[0].keys():
+    for key in pools[0]:
         table.add_column(key)
     for pool in pools:
         table.add_row(*pool.values())

@@ -304,7 +304,7 @@ class HMCConfig(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def _warn_audit_memento_override(self) -> "HMCConfig":
+    def _warn_audit_memento_override(self) -> HMCConfig:
         """Say once that HMC_AGENT_ID is discarding a custom HMC_AUDIT_MEMENTO.
 
         When both are set, :attr:`effective_audit_memento` returns

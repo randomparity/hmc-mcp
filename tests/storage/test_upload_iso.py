@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-
 from conftest import make_config
 
 from hmc_mcp.client.core import HMCClient
@@ -41,12 +40,12 @@ VG_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
 def _media_feed(media_name: str | None = None, media_size: int = 0) -> str:
     """Build a VirtualMediaRepository feed response."""
     if media_name is None:
-        return """<?xml version="1.0" encoding="UTF-8"?>
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
 <feed>
   <entry>
     <content>
       <VirtualIOServer>
-        <VolumeGroup UUID="{vg}">
+        <VolumeGroup UUID="{VG_UUID}">
           <VirtualMediaRepository>
             <VMLibrary />
           </VirtualMediaRepository>
@@ -54,7 +53,7 @@ def _media_feed(media_name: str | None = None, media_size: int = 0) -> str:
       </VirtualIOServer>
     </content>
   </entry>
-</feed>""".format(vg=VG_UUID)
+</feed>"""
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <feed>
   <entry>
@@ -777,7 +776,7 @@ async def test_download_iso_from_https_url_success():
     mock_client.stream = MagicMock(return_value=mock_response)
     
     with patch('hmc_mcp.operations.storage.httpx.AsyncClient', return_value=mock_client):
-        temp_file, sha256, size = await _download_iso_from_url(test_url)
+        temp_file, _sha256, size = await _download_iso_from_url(test_url)
         
         assert temp_file.exists()
         assert size == len(test_content)
@@ -810,9 +809,11 @@ async def test_download_iso_http_error():
     mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.stream = MagicMock(return_value=mock_response)
 
-    with patch('hmc_mcp.operations.storage.httpx.AsyncClient', return_value=mock_client):
-        with pytest.raises(httpx.HTTPStatusError):
-            await _download_iso_from_url(test_url)
+    with (
+        patch('hmc_mcp.operations.storage.httpx.AsyncClient', return_value=mock_client),
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        await _download_iso_from_url(test_url)
 
 
 @pytest.mark.asyncio
@@ -842,10 +843,12 @@ async def test_download_iso_size_limit_exceeded():
     mock_client.stream = MagicMock(return_value=mock_response)
     
     # Patch the size limit to be small
-    with patch('hmc_mcp.operations.storage.MAX_DOWNLOAD_SIZE_BYTES', small_limit):
-        with patch('hmc_mcp.operations.storage.httpx.AsyncClient', return_value=mock_client):
-            with pytest.raises(ValueError, match="exceeds maximum allowed size"):
-                await _download_iso_from_url(test_url)
+    with (
+        patch('hmc_mcp.operations.storage.MAX_DOWNLOAD_SIZE_BYTES', small_limit),
+        patch('hmc_mcp.operations.storage.httpx.AsyncClient', return_value=mock_client),
+        pytest.raises(ValueError, match="exceeds maximum allowed size"),
+    ):
+        await _download_iso_from_url(test_url)
 
 
 
@@ -861,7 +864,7 @@ async def test_download_iso_cleanup_on_error():
     
     async def mock_aiter_bytes(chunk_size=8192):
         yield b"partial content"
-        raise Exception("Network error during download")
+        raise RuntimeError("Network error during download")
     
     mock_response.aiter_bytes = mock_aiter_bytes
     
@@ -874,7 +877,7 @@ async def test_download_iso_cleanup_on_error():
     mock_client.stream = MagicMock(return_value=mock_response)
     
     with patch('hmc_mcp.operations.storage.httpx.AsyncClient', return_value=mock_client):
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             await _download_iso_from_url(test_url)
         
         # Verify temp file was cleaned up by checking no leftover files

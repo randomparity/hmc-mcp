@@ -175,7 +175,7 @@ def test_every_spec_numbered_test_named_in_the_header_still_exists():
     source = Path(__file__).read_text()
     header = source.split('"""')[1]
     named = set(re.findall(r"\b(test_[a-z_0-9]+)", header))
-    defined = set(re.findall(r"^def (test_[a-z_0-9]+)", source, re.M))
+    defined = set(re.findall(r"^def (test_[a-z_0-9]+)", source, re.MULTILINE))
     assert named, "the header must map spec numbers to node ids"
     missing = named - defined
     assert not missing, f"named in the header but no longer defined: {sorted(missing)}"
@@ -1230,7 +1230,7 @@ def test_a_handler_with_a_formatter_carries_the_traceback_to_the_sink(capsys):
     try:
         raise RuntimeError("a handler bug")
     except RuntimeError:
-        logger.error("Error calling tool 'x'", exc_info=True)
+        logger.exception("Error calling tool 'x'")
     _flush()
 
     err = capsys.readouterr().err
@@ -1275,7 +1275,7 @@ def test_a_foreign_rendering_cannot_forge_a_record_on_this_stream(capsys):
     try:
         raise RuntimeError(f"hmc said: \n{FORGED}\n and \x1b[31m‮ too")
     except RuntimeError:
-        logger.error("Error calling tool 'hmc_migrate_validate_lpar'", exc_info=True)
+        logger.exception("Error calling tool 'hmc_migrate_validate_lpar'")
     _flush()
 
     err = capsys.readouterr().err
@@ -1327,7 +1327,7 @@ def test_a_multi_line_rendering_reaches_the_stream_in_one_write(monkeypatch):
     try:
         raise RuntimeError("boom")
     except RuntimeError:
-        logger.error("Error calling tool 'x'", exc_info=True)
+        logger.exception("Error calling tool 'x'")
     _flush()
 
     assert len(writes) == 1, "a traceback must be one write, so it cannot land torn"

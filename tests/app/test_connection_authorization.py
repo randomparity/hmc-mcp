@@ -13,21 +13,20 @@ import warnings
 from types import SimpleNamespace
 
 import pytest
+from conftest import make_config
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from conftest import make_config
-
 from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.server_tools import command as server_command
-from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
 from hmc_mcp.authorization.access_policy import (
     DEFAULT_CONNECTION_TOKEN,
     compile_access_policy,
 )
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmc_mcp.server_tools import command as server_command
+from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
 from hmc_mcp.tool_registry import ToolSecurity, authorized
 
 SOURCE = "test-access-policy.toml"

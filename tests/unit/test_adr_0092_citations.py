@@ -14,7 +14,7 @@ line, so a row naming `capture_lpar_console` cannot be satisfied by a line defin
 
 import ast
 import re
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import NamedTuple
 
@@ -114,7 +114,7 @@ def _parse_citations() -> list[Citation]:
     return citations
 
 
-@lru_cache(maxsize=None)
+@cache
 def _definitions(path: Path) -> dict[int, str]:
     """Map each definition's starting line to its name (decorators excluded)."""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

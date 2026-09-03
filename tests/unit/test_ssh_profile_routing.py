@@ -262,7 +262,7 @@ async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
 
 def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
     """hmc_run_command(cmd, profile=...) routes SSH to the profile's HMC host."""
-    from hmc_mcp.server_tools.command import hmc_run_command as hmc_run_command
+    from hmc_mcp.server_tools.command import hmc_run_command
 
     with patch(
         "hmc_mcp.server_tools.command.build_config", return_value=DEV_CONFIG
@@ -277,7 +277,7 @@ def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
 
 def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
     """hmc_restore_vios with profile routes SSH to the profile's HMC host."""
-    from hmc_mcp.server_tools.vios import hmc_restore_vios as hmc_restore_vios
+    from hmc_mcp.server_tools.vios import hmc_restore_vios
 
     client_factory = MagicMock(side_effect=_vios_client_factory())
     monkeypatch.setattr("hmc_mcp._app.client_from_env", client_factory)
@@ -298,7 +298,7 @@ def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
 def test_hmc_list_memory_pools_profile_reaches_ssh(monkeypatch, mock_hmc):
     """hmc_list_memory_pools with profile threads profile through ssh_with_client."""
     from hmc_mcp.server_tools.system_resources import (
-        hmc_list_memory_pools as hmc_list_memory_pools,
+        hmc_list_memory_pools,
     )
 
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
@@ -321,7 +321,7 @@ def test_different_profiles_produce_independent_configs():
 
     def capture_connect(**kwargs):
         configs_seen.append(kwargs["host"])
-        raise Exception("abort after capture")  # abort the SSH connection attempt
+        raise RuntimeError("abort after capture")  # abort the SSH connection attempt
 
     with patch("hmc_mcp._app.build_config") as mock_config:
         # First call: profile="dev" → DEV_CONFIG
@@ -338,7 +338,7 @@ def test_different_profiles_produce_independent_configs():
                     system_name_or_uuid=SYSTEM_NAME,
                     profile="dev",
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - the connection is aborted on purpose once the config is captured
                 pass
 
         # Second call: profile="prod" → PROD_CONFIG
@@ -352,7 +352,7 @@ def test_different_profiles_produce_independent_configs():
                     system_name_or_uuid=SYSTEM_NAME,
                     profile="prod",
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - the connection is aborted on purpose once the config is captured
                 pass
 
     assert configs_seen[0] == DEV_HOST

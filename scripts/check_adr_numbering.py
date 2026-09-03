@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Guard: every decision record in ``docs/adr/`` must carry a unique number.
 
 Records are cited by number from code comments, test docstrings, and other

@@ -8,10 +8,8 @@ import pytest
 from conftest import mock_uuid_resolution
 
 from hmc_mcp.server_tools.system_resources import (
-    hmc_list_memory_pools as hmc_list_memory_pools,
-)
-from hmc_mcp.server_tools.system_resources import (
-    hmc_remove_memory_pool as hmc_remove_memory_pool,
+    hmc_list_memory_pools,
+    hmc_remove_memory_pool,
 )
 from hmc_mcp.ssh.transport import HMCCLIError
 
@@ -116,9 +114,11 @@ def test_remove_memory_pool_blocks_when_lpars_assigned(monkeypatch, mock_hmc):
     conn_mock.__aenter__ = AsyncMock(return_value=conn_mock)
     conn_mock.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        with pytest.raises(HMCCLIError) as exc_info:
-            hmc_remove_memory_pool(SYSTEM_UUID, "SharedMemPool1")
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError) as exc_info,
+    ):
+        hmc_remove_memory_pool(SYSTEM_UUID, "SharedMemPool1")
 
     # Only the safety-check lshwres should have been called -- no chhwres.
     assert conn_mock.run.call_count == 1
@@ -171,9 +171,11 @@ def test_remove_memory_pool_unknown_pool_raises(monkeypatch, mock_hmc):
     conn_mock.__aenter__ = AsyncMock(return_value=conn_mock)
     conn_mock.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        with pytest.raises(HMCCLIError) as exc_info:
-            hmc_remove_memory_pool(SYSTEM_UUID, "MissingPool")
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError) as exc_info,
+    ):
+        hmc_remove_memory_pool(SYSTEM_UUID, "MissingPool")
 
     # Only the safety-check lshwres should have been called -- no chhwres.
     assert conn_mock.run.call_count == 1

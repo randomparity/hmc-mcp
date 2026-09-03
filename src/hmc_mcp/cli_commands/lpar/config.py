@@ -10,11 +10,12 @@ import typer
 from pydantic import TypeAdapter, ValidationError
 from rich.table import Table
 
+from hmc_mcp.operations.ownership import set_lpar_ownership_description
+
+from ...operations.lpar.assignments import LparPcieAssignments
 from ...operations.lpar.core import (
     ProcessorCompatibilityMode,
 )
-from ...operations.lpar.assignments import LparPcieAssignments
-from hmc_mcp.operations.ownership import set_lpar_ownership_description
 from ...operations.ssh_affinity import (
     get_lpar_memopt_score,
     get_minimum_affinity_policy,
@@ -38,8 +39,8 @@ from ...ssh.profiles import (
     set_lpar_msp,
     set_lpar_proc_compat,
 )
+from ..output import console, print_json, usage_error
 from ..runtime import client, run, ssh_config
-from ..output import print_json, usage_error, console
 
 
 def _load_pcie_assignments(path: Path | None) -> LparPcieAssignments:

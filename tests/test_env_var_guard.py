@@ -11,13 +11,12 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 import sys
-from types import ModuleType
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from hmc_mcp.config import HMCConfig
-
 
 ROOT = Path(__file__).parents[1]
 GUARD = ROOT / "scripts" / "check_env_vars.py"
@@ -130,6 +129,7 @@ def test_guard_passes_on_complete_doc(tmp_path: Path) -> None:
         [sys.executable, str(GUARD), "--doc", str(doc)],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
 
@@ -145,6 +145,7 @@ def test_guard_fails_on_incomplete_doc(tmp_path: Path) -> None:
         [sys.executable, str(GUARD), "--doc", str(doc)],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 1
     assert "HMC_TIMEOUT" in result.stdout + result.stderr
@@ -164,6 +165,7 @@ def test_guard_ignores_vars_only_in_prose(tmp_path: Path) -> None:
         [sys.executable, str(GUARD), "--doc", str(doc)],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 1
     assert "HMC_TIMEOUT" in result.stdout + result.stderr
@@ -189,6 +191,7 @@ def test_guard_ignores_vars_in_prose_inside_reference_section(tmp_path: Path) ->
         [sys.executable, str(GUARD), "--doc", str(doc)],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 1
     assert "HMC_TIMEOUT" in result.stdout + result.stderr
@@ -205,6 +208,7 @@ def test_guard_fails_when_reference_section_missing(tmp_path: Path) -> None:
         [sys.executable, str(GUARD), "--doc", str(doc)],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 1
     assert "Reference" in result.stdout + result.stderr
@@ -220,6 +224,7 @@ def test_guard_uses_default_doc_path_when_no_arg(
         capture_output=True,
         text=True,
         cwd=ROOT,
+        check=False,
     )
     assert result.returncode == 0, f"Guard failed:\n{result.stdout}\n{result.stderr}"
 

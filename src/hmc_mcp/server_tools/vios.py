@@ -2,34 +2,31 @@
 
 from __future__ import annotations
 
-from ..tool_registry import tool_module
-
 from typing import Any
 
 from .._app import (
     with_client,
 )
-
+from ..documents import VIOS_DEFAULT_RESOURCES, LparResources
 from ..operations.install import (
     InstallRequest,
     install_lpar_os,
     install_vios,
     validate_install_request,
 )
-from ..documents import LparResources, VIOS_DEFAULT_RESOURCES
 from ..operations.vios import (
     BackupType,
     RestoreBackupType,
+    backup_vios,
     create_vios,
     delete_vios,
-    backup_vios,
     list_vios_backups,
     power_vios,
     restore_vios,
     validate_vios_backup_request,
     validate_vios_restore_request,
 )
-
+from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

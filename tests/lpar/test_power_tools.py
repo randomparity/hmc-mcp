@@ -15,29 +15,21 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY, SYSTEM_ENTRY
 
-from hmc_mcp.errors import HMCError
 from hmc_mcp.documents import LparResources
+from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.systems import power_system
 from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_dlpar_mem as hmc_dlpar_mem,
-)
-from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_dlpar_proc as hmc_dlpar_proc,
+    hmc_dlpar_mem,
+    hmc_dlpar_proc,
 )
 from hmc_mcp.server_tools.systems import (
-    hmc_modify_system as hmc_modify_system,
-)
-from hmc_mcp.server_tools.systems import (
-    hmc_power_off_system as hmc_power_off_system,
-)
-from hmc_mcp.server_tools.systems import (
-    hmc_power_on_system as hmc_power_on_system,
+    hmc_modify_system,
+    hmc_power_off_system,
+    hmc_power_on_system,
 )
 from hmc_mcp.server_tools.vios import (
-    hmc_power_off_vios as hmc_power_off_vios,
-)
-from hmc_mcp.server_tools.vios import (
-    hmc_power_on_vios as hmc_power_on_vios,
+    hmc_power_off_vios,
+    hmc_power_on_vios,
 )
 
 
@@ -55,9 +47,9 @@ SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 
-LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+LPAR_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:{uuid}</id>
+  <id>urn:uuid:{LPAR_UUID}</id>
   <title>LogicalPartition:lpar1</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -66,7 +58,7 @@ LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </LogicalPartition>
   </content>
 </entry>
-""".format(uuid=LPAR_UUID)
+"""
 
 
 def _hmc_env(monkeypatch) -> None:
@@ -235,9 +227,8 @@ def test_dlpar_without_a_system_selector_refuses_a_foreign_owner(
     with patch(
         "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
-    ):
-        with pytest.raises(PermissionError, match="ownership_override=true"):
-            tool(LPAR_UUID, LparResources(desired_procs=1.0, desired_memory=2048))
+    ), pytest.raises(PermissionError, match="ownership_override=true"):
+        tool(LPAR_UUID, LparResources(desired_procs=1.0, desired_memory=2048))
     assert not route.called
 
 
@@ -281,13 +272,12 @@ def test_dlpar_proc_refuses_a_foreign_owned_partition(monkeypatch, mock_hmc):
     with patch(
         "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
-    ):
-        with pytest.raises(PermissionError, match="ownership_override=true"):
-            hmc_dlpar_proc(
-                LPAR_UUID,
-                LparResources(desired_procs=1.0),
-                system_name_or_uuid=SYSTEM_UUID,
-            )
+    ), pytest.raises(PermissionError, match="ownership_override=true"):
+        hmc_dlpar_proc(
+            LPAR_UUID,
+            LparResources(desired_procs=1.0),
+            system_name_or_uuid=SYSTEM_UUID,
+        )
     assert not route.called
 
 

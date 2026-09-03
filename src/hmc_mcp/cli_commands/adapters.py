@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-
 import typer
 
 from ..client.client_adapters import ADAPTER_TYPES, AdapterType
-
-from .runtime import client, run
-from .output import output, print_json, console
 from ..operations.adapters import (
     add_network_adapter,
     add_vfc_adapter,
@@ -16,7 +12,8 @@ from ..operations.adapters import (
     delete_adapter,
     list_adapters,
 )
-
+from .output import console, output, print_json
+from .runtime import client, run
 
 _ADAPTER_TYPES = " | ".join(sorted(ADAPTER_TYPES))
 

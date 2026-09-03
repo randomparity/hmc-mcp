@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from .core import HMCClient
 from ..config import build_config
+from .core import HMCClient
 
 
 def client_from_env(profile: str | None = None) -> HMCClient:

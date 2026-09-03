@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from ..tool_registry import tool_module
-
 from typing import Any
 
 from .._app import run_limited_collection, with_client
@@ -15,7 +13,7 @@ from ..operations.adapters import (
     delete_adapter,
     list_adapters,
 )
-
+from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

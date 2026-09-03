@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-from ...tool_registry import tool_module
-
 from ..._app import with_client
 from ...documents import LparResources, PartitionType
 from ...operations.affinity import ProvisionAffinityAssessment
+from ...operations.lpar.assignments import LparPcieAssignments
 from ...operations.lpar.provision import (
     ProvisionAdapters,
     ProvisionResult,
     ProvisionStorage,
     provision_lpar,
 )
-from ...operations.lpar.assignments import LparPcieAssignments
 from ...ssh.affinity import MinimumAffinityPolicy
+from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

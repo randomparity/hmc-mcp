@@ -62,9 +62,11 @@ async def test_dedicated_slot_reader_accepts_header_only_output() -> None:
     ],
 )
 async def test_dedicated_slot_reader_rejects_schema_drift(output: str) -> None:
-    with patch("hmc_mcp.ssh.network.run_hmc_command", AsyncMock(return_value=output)):
-        with pytest.raises(ValueError, match="header|columns"):
-            await list_dedicated_pcie_slot_rows(_config(), "sys1")
+    with (
+        patch("hmc_mcp.ssh.network.run_hmc_command", AsyncMock(return_value=output)),
+        pytest.raises(ValueError, match="header|columns"),
+    ):
+        await list_dedicated_pcie_slot_rows(_config(), "sys1")
 
 
 @pytest.mark.asyncio
@@ -107,10 +109,9 @@ async def test_dedicated_inventory_rejects_blank_identity() -> None:
         patch(
             "hmc_mcp.operations.pcie.list_dedicated_pcie_slot_rows",
             AsyncMock(return_value=rows),
-        ),
+        ),pytest.raises(ValueError, match="drc_index")
     ):
-        with pytest.raises(ValueError, match="drc_index"):
-            await list_dedicated_slots(_config(), "sys1")
+        await list_dedicated_slots(_config(), "sys1")
 
 
 @pytest.mark.asyncio
@@ -126,10 +127,9 @@ async def test_dedicated_inventory_rejects_whitespace_identity_and_normalizes_op
         patch(
             "hmc_mcp.operations.pcie.list_dedicated_pcie_slot_rows",
             AsyncMock(return_value=rows),
-        ),
+        ),pytest.raises(ValueError, match="drc_index")
     ):
-        with pytest.raises(ValueError, match="drc_index"):
-            await list_dedicated_slots(_config(), "sys1")
+        await list_dedicated_slots(_config(), "sys1")
 
 
 @pytest.mark.asyncio

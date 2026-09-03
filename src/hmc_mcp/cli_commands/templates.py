@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-
 import typer
 from rich.table import Table
 
-from .runtime import with_client
-from .output import first_field, output, print_json, usage_error, console
 from ..jobs import validate_wait_timing
 from ..operations.templates import (
     deploy_partition_template,
     get_partition_template,
     list_partition_templates,
 )
+from .output import console, first_field, output, print_json, usage_error
+from .runtime import with_client
 
 
 def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:

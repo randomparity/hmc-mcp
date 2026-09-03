@@ -10,10 +10,8 @@ from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.server_tools.lpar.configuration import (
-    hmc_get_lpar_msp as hmc_get_lpar_msp,
-)
-from hmc_mcp.server_tools.lpar.configuration import (
-    hmc_set_lpar_msp as hmc_set_lpar_msp,
+    hmc_get_lpar_msp,
+    hmc_set_lpar_msp,
 )
 from hmc_mcp.ssh.profiles import HMCCLIError, set_lpar_msp
 
@@ -182,9 +180,11 @@ def test_set_lpar_msp_rejects_aix_lpar(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock_seq("", "aixlinux\n")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        with pytest.raises(HMCCLIError, match="only valid for a VIOS"):
-            hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, True)
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError, match="only valid for a VIOS"),
+    ):
+        hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, True)
 
     # chsyscfg must NOT have been called
     assert conn_mock.run.call_count == 2
@@ -200,9 +200,11 @@ def test_set_lpar_msp_rejects_linux_lpar(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock_seq("", "aixlinux\n")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        with pytest.raises(HMCCLIError, match="only valid for a VIOS"):
-            hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, False)
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError, match="only valid for a VIOS"),
+    ):
+        hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, False)
 
     assert conn_mock.run.call_count == 2
 
@@ -218,9 +220,11 @@ def test_set_lpar_msp_rejects_partition_not_found(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock_seq("", "\n")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        with pytest.raises(HMCCLIError, match="not found"):
-            hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, True)
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError, match="not found"),
+    ):
+        hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, True)
 
     assert conn_mock.run.call_count == 2
 
@@ -235,6 +239,8 @@ def test_set_lpar_msp_ssh_layer_rejects_non_vios():
     conn.__aenter__ = AsyncMock(return_value=conn)
     conn.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
-        with pytest.raises(HMCCLIError, match="only valid for a VIOS"):
-            asyncio.run(set_lpar_msp(cfg, "sys", "lpar", True))
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        pytest.raises(HMCCLIError, match="only valid for a VIOS"),
+    ):
+        asyncio.run(set_lpar_msp(cfg, "sys", "lpar", True))

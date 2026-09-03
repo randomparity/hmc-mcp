@@ -9,14 +9,13 @@ import logging
 import socket
 from unittest.mock import patch
 
-from hmc_mcp.audit import sink as audit_sink
-
 import pytest
 from click import unstyle
 from fastmcp import FastMCP
 from typer.testing import CliRunner
 
 from hmc_mcp import server as server_app
+from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy
 from hmc_mcp.cli import app
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
@@ -315,9 +314,11 @@ def test_http_entry_point_gates_the_escape_hatch(enabled, monkeypatch):
 
 
 def test_http_entrypoint_refuses_remote_bind_without_authorization():
-    with patch.object(FastMCP, "run") as run:
-        with pytest.raises(ValueError, match="binds beyond loopback"):
-            server_app.main_http(_legacy(), host="0.0.0.0")
+    with (
+        patch.object(FastMCP, "run") as run,
+        pytest.raises(ValueError, match="binds beyond loopback"),
+    ):
+        server_app.main_http(_legacy(), host="0.0.0.0")
 
     run.assert_not_called()
 

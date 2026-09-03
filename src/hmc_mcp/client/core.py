@@ -9,17 +9,14 @@ into :class:`HMCClient` by inheritance.
 
 from __future__ import annotations
 
-import warnings
-from collections.abc import AsyncIterator
-from collections.abc import Mapping
-from typing import Any, Literal, get_args
 import re
+import warnings
+from collections.abc import AsyncIterator, Mapping
 from threading import Lock
+from typing import Any, Literal, Self, get_args
 from urllib.parse import quote, unquote, urlparse
 
 from ..audit import records as audit
-from .client_contracts import httpx
-from .client_parse import _find_text, _parse_feed
 from ..config import HMCConfig, env_var_value
 from ..documents import (
     build_brokered_file_document,
@@ -29,12 +26,13 @@ from ..documents import (
 from ..errors import HMCError, HMCTransportError
 from ..jobs import TERMINAL_JOB_STATUSES
 from ..resource_identity import is_uuid
-
 from .client_adapters import AdaptersMixin
 from .client_cluster import ClusterMixin
+from .client_contracts import httpx
 from .client_lpars import LparsMixin
 from .client_lpm import LpmMixin
 from .client_network import NetworkMixin
+from .client_parse import _find_text, _parse_feed
 from .client_pcm import PcmMixin
 from .client_storage import StorageMixin
 from .client_systems import SystemsMixin
@@ -304,7 +302,7 @@ class HMCClient(
 
     # Session lifecycle
 
-    async def __aenter__(self) -> "HMCClient":
+    async def __aenter__(self) -> Self:
         try:
             await self.logon()
         except BaseException:
@@ -328,12 +326,12 @@ class HMCClient(
         cleanup_error: BaseException | None = None
         try:
             await self.logoff()
-        except BaseException as logoff_error:
+        except BaseException as logoff_error:  # noqa: BLE001 - BaseException is deliberate: the failure is noted on the in-flight exception, and narrowing would swallow CancelledError
             cleanup_error = logoff_error
 
         try:
             await self._http.aclose()
-        except BaseException as close_error:
+        except BaseException as close_error:  # noqa: BLE001 - BaseException is deliberate: the failure is noted on the in-flight exception, and narrowing would swallow CancelledError
             if cleanup_error is None:
                 cleanup_error = close_error
             else:

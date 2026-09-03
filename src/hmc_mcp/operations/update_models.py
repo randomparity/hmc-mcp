@@ -10,8 +10,6 @@ from typing_extensions import TypedDict
 
 from ..jobs import build_job_request
 
-
-
 ConsoleUpdateMediaType = Literal[
     "USB", "NFS", "SFTP", "FTP", "IBMWebsite", "Disk", "VirtualMedia", "CDDVD"
 ]
@@ -230,7 +228,7 @@ class SystemFirmwareUpdateModel(BaseModel):
     ] = None
 
     @model_validator(mode="after")
-    def reject_empty_sriov(self) -> "SystemFirmwareUpdateModel":
+    def reject_empty_sriov(self) -> SystemFirmwareUpdateModel:
         """Reject an explicitly empty adapter selection."""
         if self.SRIOVAdapterUpdate == []:
             raise ValueError("SRIOVAdapterUpdate must contain at least one adapter")
@@ -282,7 +280,7 @@ class VIOSPlatformUpdate(BaseModel):
     ] = None
 
     @model_validator(mode="after")
-    def validate_update_shape(self) -> "VIOSPlatformUpdate":
+    def validate_update_shape(self) -> VIOSPlatformUpdate:
         """Enforce conditional resource and non-empty adapter requirements."""
         if self.UpdateType != "NoUpdate" and self.ResourceType is None:
             raise ValueError(f"ResourceType is required for {self.UpdateType}")
@@ -305,7 +303,7 @@ class PlatformUpdateParameter(BaseModel):
     ] = None
 
     @model_validator(mode="after")
-    def require_update_action(self) -> "PlatformUpdateParameter":
+    def require_update_action(self) -> PlatformUpdateParameter:
         """Reject requests that contain no firmware or adapter action."""
         if self.VIOSUpdate == []:
             raise ValueError("VIOSUpdate must contain at least one VIOS")

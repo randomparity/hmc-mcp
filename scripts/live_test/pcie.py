@@ -58,7 +58,7 @@ class _SriovState:
     capacity_percent: float | None
 
 
-async def _read_sriov_state(client: "Client", state: "RunState") -> _SriovState:
+async def _read_sriov_state(client: Client, state: RunState) -> _SriovState:
     """Read current SR-IOV state for the test logical port and lp3 profile."""
     context = state.context
 
@@ -117,7 +117,7 @@ def _sriov_state_summary(s: _SriovState) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def capture_sriov_baseline(client: "Client", state: "RunState") -> bool:
+async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
     """Record the pre-test SR-IOV inventory.  Returns False if prerequisites fail."""
     context = state.context
     print("\n=== ST23: SR-IOV Baseline (issue #217) ===")
@@ -315,7 +315,7 @@ async def capture_sriov_baseline(client: "Client", state: "RunState") -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def assign_sriov_to_lp3(client: "Client", state: "RunState") -> bool:
+async def assign_sriov_to_lp3(client: Client, state: RunState) -> bool:
     """Assign test logical port to lp3.  Returns False if the call failed."""
     context = state.context
     print("\n=== ST24: SR-IOV Assign (issue #217) ===")
@@ -340,7 +340,7 @@ async def assign_sriov_to_lp3(client: "Client", state: "RunState") -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def verify_sriov_assigned(client: "Client", state: "RunState") -> bool:
+async def verify_sriov_assigned(client: Client, state: RunState) -> bool:
     """Verify the logical port is configured on lp3 after assign."""
     context = state.context
     print("\n=== ST25: SR-IOV Post-Assign Verify (issue #217) ===")
@@ -389,7 +389,7 @@ async def verify_sriov_assigned(client: "Client", state: "RunState") -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def unassign_sriov_from_lp3(client: "Client", state: "RunState") -> bool:
+async def unassign_sriov_from_lp3(client: Client, state: RunState) -> bool:
     """Unassign the test logical port from lp3.  Returns False if the call failed."""
     context = state.context
     print("\n=== ST26: SR-IOV Unassign (issue #217) ===")
@@ -436,7 +436,7 @@ async def unassign_sriov_from_lp3(client: "Client", state: "RunState") -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def reassign_sriov_to_lp3(client: "Client", state: "RunState") -> bool:
+async def reassign_sriov_to_lp3(client: Client, state: RunState) -> bool:
     """Re-assign the same port to prove the round-trip path."""
     context = state.context
     print("\n=== ST27: SR-IOV Reassign (issue #217) ===")
@@ -473,7 +473,7 @@ async def reassign_sriov_to_lp3(client: "Client", state: "RunState") -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def cleanup_sriov(client: "Client", state: "RunState") -> None:
+async def cleanup_sriov(client: Client, state: RunState) -> None:
     """Unassign the test port (cleanup) and confirm the baseline is restored."""
     context = state.context
     print("\n=== ST28: SR-IOV Cleanup (issue #217) ===")
@@ -614,7 +614,7 @@ async def cleanup_sriov(client: "Client", state: "RunState") -> None:
 # ---------------------------------------------------------------------------
 
 
-async def exercise_sriov_assignment(client: "Client", state: "RunState") -> None:
+async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
     """Orchestrate the full SR-IOV assign/verify/unassign/reassign/cleanup sequence."""
     print("\n============================")
     print("=== SR-IOV Live Test (issue #217) ===")

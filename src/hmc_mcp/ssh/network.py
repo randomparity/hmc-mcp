@@ -8,13 +8,13 @@ import shlex
 from typing import Any, Literal, TypedDict, get_args
 
 from ..config import HMCConfig
-from .transport import HMCCLIError, run_hmc_command
 from .commands import (
     _parse_lshwres_output,
     build_attribute_record,
     build_filter,
     parse_hmc_delimited_rows,
 )
+from .transport import HMCCLIError, run_hmc_command
 
 _IO_SLOT_PCI_CLASS = {
     "eth": "0200",

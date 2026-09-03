@@ -5,16 +5,16 @@ from __future__ import annotations
 import ast
 import functools
 import hashlib
-from importlib import import_module
 import inspect
 import json
-from pathlib import Path
 import pkgutil
 import re
 import subprocess
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import InitVar, dataclass, fields, is_dataclass
+from importlib import import_module
+from pathlib import Path
 from types import ModuleType
 from typing import (
     Annotated,
@@ -28,8 +28,7 @@ from typing import (
 
 import pytest
 
-from hmc_mcp import api
-from hmc_mcp import operations
+from hmc_mcp import api, operations
 from hmc_mcp.client.client_contracts import PcmClient, TemplatesClient
 
 # ADR 0029's Decision section selects, from each ``operations.*`` module, "every non-underscore
@@ -1239,7 +1238,7 @@ def test_literal_alias_clause_reads_paths_the_resolved_hints_lose(
 
     async def dotted(hmc: object, operation: jobs.RemoteRestartOperation) -> None: ...
 
-    async def quoted(hmc: object, operation: "RemoteRestartOperation") -> None: ...  # noqa: F821
+    async def quoted(hmc: object, operation: RemoteRestartOperation) -> None: ...  # noqa: F821
 
     for operation in (dotted, quoted):
         operation.__module__ = lpm.__name__

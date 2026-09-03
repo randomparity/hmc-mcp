@@ -17,14 +17,13 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
-from typing import Any, Literal, TypeVar, overload
+from typing import Any, TypeVar, overload
 
 from fastmcp import FastMCP
 
-from .client.core import HMCClient
 from .client.client_factory import client_from_env
-from .config import build_config
-from .config import HMCConfig
+from .client.core import HMCClient
+from .config import HMCConfig, build_config
 from .ssh.selectors import resolve_ssh_names
 
 _T = TypeVar("_T")
@@ -240,7 +239,7 @@ def ssh_with_client(
 
 @overload
 def ssh_with_client(
-    fn: Callable[[HMCConfig, str, Literal[None]], Awaitable[_T]],
+    fn: Callable[[HMCConfig, str, None], Awaitable[_T]],
     *,
     system_name_or_uuid: str,
     lpar_name_or_uuid: None = None,
@@ -250,7 +249,7 @@ def ssh_with_client(
 
 @overload
 def ssh_with_client(
-    fn: Callable[[HMCConfig, Literal[None], str], Awaitable[_T]],
+    fn: Callable[[HMCConfig, None, str], Awaitable[_T]],
     *,
     system_name_or_uuid: None = None,
     lpar_name_or_uuid: str,
@@ -260,7 +259,7 @@ def ssh_with_client(
 
 @overload
 def ssh_with_client(
-    fn: Callable[[HMCConfig, Literal[None], Literal[None]], Awaitable[_T]],
+    fn: Callable[[HMCConfig, None, None], Awaitable[_T]],
     *,
     system_name_or_uuid: None = None,
     lpar_name_or_uuid: None = None,

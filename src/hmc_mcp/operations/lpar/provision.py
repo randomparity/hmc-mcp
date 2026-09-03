@@ -12,38 +12,39 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from hmc_mcp.client.core import HMCClient
-from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
+
 from ...documents import LparResources, PartitionType, StorageKind
 from ...errors import HMCError
 from ...jobs import JobOutcome, job_outcome
-from ..affinity import (
-    ProvisionAffinityAssessment,
-    assess_post_activation_affinity,
-    validate_affinity_request,
-)
-from .core import (
-    LparCreation,
-    LparCreationResult,
-    create_and_stamp_lpar,
-    power_lpar,
-)
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
-from ..ssh_affinity import set_minimum_affinity_policy
-from ...ssh.transport import HMCCLIError
-from ...ssh.selectors import resolve_ssh_names
-from ..storage import create_virtual_disk
+from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from ...ssh.affinity import (
     MinimumAffinityPolicy,
     require_minimum_affinity_policy_capability,
     validate_minimum_affinity_policy,
 )
 from ...ssh.lpar import validate_caller_token
+from ...ssh.selectors import resolve_ssh_names
+from ...ssh.transport import HMCCLIError
+from ..affinity import (
+    ProvisionAffinityAssessment,
+    assess_post_activation_affinity,
+    validate_affinity_request,
+)
+from ..ssh_affinity import set_minimum_affinity_policy
+from ..storage import create_virtual_disk
 from .assignments import (
     LparPcieAssignments,
     WorkflowStep,
     _apply_validated_lpar_pcie_assignments,
     assignment_step_names,
     prevalidate_lpar_pcie_assignments,
+)
+from .core import (
+    LparCreation,
+    LparCreationResult,
+    create_and_stamp_lpar,
+    power_lpar,
 )
 
 

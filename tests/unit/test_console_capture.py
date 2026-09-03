@@ -14,21 +14,21 @@ import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from conftest import make_config
+
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.server_tools import console as server_console
 from hmc_mcp.ssh.console import (
     HELD_SENTINEL,
     MAX_CAPTURE_BYTES,
     MAX_CAPTURE_SECONDS,
     ConsoleCapture,
     ConsoleHeldError,
-    _SealedStdin,
     _probe_released,
+    _SealedStdin,
     _truncate,
     capture_lpar_console,
 )
-from hmc_mcp.server_tools import console as server_console
 
 BANNER = b"\r\n Open in progress  \r\n "
 
@@ -149,9 +149,11 @@ async def _run_capture(connection: FakeConnection, **overrides) -> ConsoleCaptur
 async def test_out_of_range_bounds_are_rejected_before_any_ssh(field, value):
     kwargs = _capture_kwargs()
     kwargs[field] = value
-    with patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()) as connect_mock:
-        with pytest.raises(ValueError, match=field):
-            await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
+    with (
+        patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()) as connect_mock,
+        pytest.raises(ValueError, match=field),
+    ):
+        await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
     connect_mock.assert_not_awaited()
 
 
@@ -160,9 +162,11 @@ async def test_out_of_range_bounds_are_rejected_before_any_ssh(field, value):
 async def test_nan_time_bounds_are_rejected_before_any_ssh(field):
     kwargs = _capture_kwargs()
     kwargs[field] = float("nan")
-    with patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()) as connect_mock:
-        with pytest.raises(ValueError, match=field):
-            await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
+    with (
+        patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock()) as connect_mock,
+        pytest.raises(ValueError, match=field),
+    ):
+        await capture_lpar_console(_client(), "sys1", "lp1", **kwargs)
     connect_mock.assert_not_awaited()
 
 
@@ -175,16 +179,13 @@ async def test_nan_time_bounds_are_rejected_before_any_ssh(field):
 async def test_contention_sentinel_raises_distinct_error_and_never_releases():
     connection = FakeConnection([FakeProcess(CONTENTION)])
     with (
-        patch(
-            "hmc_mcp.ssh.console.open_hmc_connection",
-            AsyncMock(return_value=connection),
-        ),
+        patch( "hmc_mcp.ssh.console.open_hmc_connection", AsyncMock(return_value=connection), ),
         patch("hmc_mcp.ssh.console.run_hmc_command", AsyncMock()) as release_mock,
+        pytest.raises(ConsoleHeldError) as excinfo,
     ):
-        with pytest.raises(ConsoleHeldError) as excinfo:
-            await capture_lpar_console(
-                _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.05)
-            )
+        await capture_lpar_console(
+            _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.05)
+        )
     assert "already holds" in str(excinfo.value)
     # Exit code was 0 on the real HMC; only the sentinel detects this. And
     # since we never held the vterm, releasing would close the other holder.
@@ -202,19 +203,16 @@ async def test_contention_is_detected_when_it_arrives_midstream():
     # depend on it being the first chunk.
     connection = FakeConnection([FakeProcess(BANNER, CONTENTION)])
     with (
-        patch(
-            "hmc_mcp.ssh.console.open_hmc_connection",
-            AsyncMock(return_value=connection),
-        ),
+        patch( "hmc_mcp.ssh.console.open_hmc_connection", AsyncMock(return_value=connection), ),
         patch("hmc_mcp.ssh.console.run_hmc_command", AsyncMock()),
+        pytest.raises(ConsoleHeldError),
     ):
-        with pytest.raises(ConsoleHeldError):
-            await capture_lpar_console(
-                _client(),
-                "sys1",
-                "lp1",
-                **_capture_kwargs(duration_seconds=0.2, idle_timeout_seconds=0.2),
-            )
+        await capture_lpar_console(
+            _client(),
+            "sys1",
+            "lp1",
+            **_capture_kwargs(duration_seconds=0.2, idle_timeout_seconds=0.2),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -549,7 +547,7 @@ async def test_stdin_is_a_pipe_write_end_that_nothing_can_write():
     assert not hasattr(capture, "stdin")
     writer = _SealedStdin()
     assert not any(
-        name.startswith("write") or name.startswith("send")
+        name.startswith(("write", "send"))
         for name in dir(writer)
         if not name.startswith("_")
     )
@@ -578,7 +576,7 @@ def test_truncation_never_splits_an_incomplete_csi_sequence():
 def test_truncation_backtracks_over_partial_utf8_then_esc():
     data = "aé".encode() + b"\x1b[1;2Hx"
     # The limit lands inside é and inside the CSI sequence: both backtrack.
-    assert _truncate(data, 2) == "a".encode() == b"a"
+    assert _truncate(data, 2) == b"a"
     # The CSI sequence completes at 'H' (index 8), but the cut must fall
     # before the whole incomplete sequence, i.e. before the ESC at index 3.
     assert _truncate(data, 8) == "aé".encode()

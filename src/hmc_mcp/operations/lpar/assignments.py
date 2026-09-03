@@ -16,11 +16,11 @@ from hmc_mcp.operations.pcie import (
     list_sriov_logical_ports,
     list_sriov_physical_ports,
 )
-from hmc_mcp.operations.vnic import VnicBackingSelector, add_vnic
 from hmc_mcp.operations.pcie_validation import (
     require_command_safe_text,
     validate_capacity_percent,
 )
+from hmc_mcp.operations.vnic import VnicBackingSelector, add_vnic
 from hmc_mcp.ssh.network import (
     list_sriov_configured_logical_port_rows,
     list_vnic_backing_rows,
@@ -216,7 +216,7 @@ async def _validate_sriov_inventory(
 ) -> None:
     """Validate adapter, port, logical-port, and capacity inventory."""
 
-    for adapter, physical in requested_capacity:
+    for (adapter, physical), requested in requested_capacity.items():
         adapters = await list_sriov_adapters(hmc.config, system, adapter)
         if adapters.capability != "available" or len(adapters.items) != 1:
             raise ValueError(f"SR-IOV adapter {adapter!r} is unavailable")
@@ -237,10 +237,10 @@ async def _validate_sriov_inventory(
                 logical.unavailable_reason or "logical-port inventory unavailable"
             )
         used = await _existing_capacity(hmc, adapters.system, adapter, physical)
-        if used + requested_capacity[adapter, physical] > 100:
+        if used + requested > 100:
             raise ValueError(
                 f"capacity exhausted on {adapter}/{physical}: {used}% used and "
-                f"{requested_capacity[adapter, physical]}% requested"
+                f"{requested}% requested"
             )
 
 
@@ -359,7 +359,7 @@ async def _apply_validated_lpar_pcie_assignments(
     for index, (name, operation) in enumerate(operations):
         try:
             steps.append(WorkflowStep(name, "ok", await operation()))
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - any step failure becomes a WorkflowStep("error") and skips the rest
             result = getattr(error, "result", str(error))
             steps.append(WorkflowStep(name, "error", result))
             steps.extend(

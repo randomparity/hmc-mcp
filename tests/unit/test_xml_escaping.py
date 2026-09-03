@@ -343,9 +343,12 @@ def _renders_through_job_request(func: Any, seen: frozenset[str]) -> bool:
         target = getattr(jobs, name, None)
         if target is jobs.build_job_request:
             return True
-        if inspect.isfunction(target) and name not in seen:
-            if _renders_through_job_request(target, seen | {name}):
-                return True
+        if (
+            inspect.isfunction(target)
+            and name not in seen
+            and _renders_through_job_request(target, seen | {name})
+        ):
+            return True
     return False
 
 

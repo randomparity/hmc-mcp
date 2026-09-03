@@ -9,13 +9,9 @@ import pytest
 
 from hmc_mcp.config import build_config
 from hmc_mcp.server_tools.vios import (
-    hmc_backup_vios as hmc_backup_vios,
-)
-from hmc_mcp.server_tools.vios import (
-    hmc_list_vios_backups as hmc_list_vios_backups,
-)
-from hmc_mcp.server_tools.vios import (
-    hmc_restore_vios as hmc_restore_vios,
+    hmc_backup_vios,
+    hmc_list_vios_backups,
+    hmc_restore_vios,
 )
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
@@ -145,9 +141,11 @@ def test_list_vios_backups_refuses_malformed_csv(monkeypatch, output):
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock(output)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        with pytest.raises(ValueError):
-            hmc_list_vios_backups(VIOS_UUID)
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(ValueError),
+    ):
+        hmc_list_vios_backups(VIOS_UUID)
 
 
 def test_list_vios_backups_resolves_vios_name(monkeypatch):
@@ -527,9 +525,8 @@ def test_backup_vios_refuses_uuid_without_complete_mtms_before_ssh(
     with patch(
         "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=AssertionError("reached the SSH layer"),
-    ):
-        with pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
-            hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
+    ), pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
+        hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
 
 
 @pytest.mark.parametrize(
@@ -576,9 +573,8 @@ def test_backup_vios_refuses_missing_or_blank_nested_mtms_component_before_ssh(
     with patch(
         "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=AssertionError("reached the SSH layer"),
-    ):
-        with pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
-            hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
+    ), pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
+        hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
 
 
 def test_backup_vios_reuses_config_for_rest_and_ssh(monkeypatch):

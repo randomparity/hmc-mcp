@@ -14,11 +14,11 @@ from hmc_mcp.ssh.install import (
 
 BASE = "https://hmc.test"
 
-VIOS_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+VIOS_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:00000000-0000-0000-0000-000000000003</id>
   <title>LogicalPartition:vios1</title>
-  <link rel="SELF" href="{base}/rest/api/uom/LogicalPartition/00000000-0000-0000-0000-000000000003"/>
+  <link rel="SELF" href="{BASE}/rest/api/uom/LogicalPartition/00000000-0000-0000-0000-000000000003"/>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <PartitionName>vios1</PartitionName>
@@ -27,7 +27,7 @@ VIOS_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </LogicalPartition>
   </content>
 </entry>
-""".format(base=BASE)
+"""
 
 
 # ---------------------------------------------------------------------- #
@@ -140,7 +140,7 @@ def _mock_resolution(mock_hmc) -> None:
 
 def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
     """The public VIOS target is resolved before the install submission."""
-    from hmc_mcp.server_tools.vios import hmc_install_vios as hmc_install_vios
+    from hmc_mcp.server_tools.vios import hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -174,7 +174,7 @@ def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
 
 def test_install_vios_tool_rejects_invalid_arguments_before_any_io(monkeypatch):
     """Validator failures raise before an SSH session is opened."""
-    from hmc_mcp.server_tools.vios import hmc_install_vios as hmc_install_vios
+    from hmc_mcp.server_tools.vios import hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -192,7 +192,7 @@ def test_install_vios_tool_rejects_invalid_arguments_before_any_io(monkeypatch):
 
 
 def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc):
-    from hmc_mcp.server_tools.vios import hmc_install_vios as hmc_install_vios
+    from hmc_mcp.server_tools.vios import hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -207,14 +207,16 @@ def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc
     async def fail(config, cmd):  # pragma: no cover — must never be reached
         raise AssertionError("run_installios must not be called")
 
-    with patch("hmc_mcp.operations.install.run_installios", new=fail):
-        with pytest.raises(ValueError, match="No VIOS named"):
-            hmc_install_vios("nosuchvios", "sys1", **_INSTALL_KWARGS)
+    with (
+        patch("hmc_mcp.operations.install.run_installios", new=fail),
+        pytest.raises(ValueError, match="No VIOS named"),
+    ):
+        hmc_install_vios("nosuchvios", "sys1", **_INSTALL_KWARGS)
 
 
 def test_install_vios_ssh_failure_surfaces_as_cli_error(monkeypatch, mock_hmc):
     """A failed installios submission raises HMCError out of the tool."""
-    from hmc_mcp.server_tools.vios import hmc_install_vios as hmc_install_vios
+    from hmc_mcp.server_tools.vios import hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -224,6 +226,8 @@ def test_install_vios_ssh_failure_surfaces_as_cli_error(monkeypatch, mock_hmc):
     async def fail(config, cmd):
         raise HMCError("SSH command timed out after 30s")
 
-    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fail):
-        with pytest.raises(HMCError, match="timed out"):
-            hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)
+    with (
+        patch("hmc_mcp.ssh.install.run_hmc_command", new=fail),
+        pytest.raises(HMCError, match="timed out"),
+    ):
+        hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)

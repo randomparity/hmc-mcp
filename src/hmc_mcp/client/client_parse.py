@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from defusedxml import ElementTree as DET
 
 from ..errors import HMCError
-from .pcm_payloads import metric_links, pcm_preferences_to_dict
 from ..xmlutil import find_text, parse_feed
+from .pcm_payloads import metric_links, pcm_preferences_to_dict
 
 _T = TypeVar("_T")
 

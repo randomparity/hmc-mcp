@@ -20,19 +20,11 @@ from hmc_mcp.operations.lpm import (
     remote_restart_lpar,
 )
 from hmc_mcp.server_tools.lpm import (
-    hmc_migrate_abort_lpar as hmc_migrate_abort_lpar,
-)
-from hmc_mcp.server_tools.lpm import (
-    hmc_migrate_lpar as hmc_migrate_lpar,
-)
-from hmc_mcp.server_tools.lpm import (
-    hmc_migrate_recover_lpar as hmc_migrate_recover_lpar,
-)
-from hmc_mcp.server_tools.lpm import (
-    hmc_migrate_validate_lpar as hmc_migrate_validate_lpar,
-)
-from hmc_mcp.server_tools.lpm import (
-    hmc_remote_restart_lpar as hmc_remote_restart_lpar,
+    hmc_migrate_abort_lpar,
+    hmc_migrate_lpar,
+    hmc_migrate_recover_lpar,
+    hmc_migrate_validate_lpar,
+    hmc_remote_restart_lpar,
 )
 
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"

@@ -25,7 +25,6 @@ from hmc_mcp.config import HMCConfig
 from hmc_mcp.ssh import memory as ssh_memory
 from hmc_mcp.ssh import network as ssh_network
 from hmc_mcp.ssh import profiles as ssh_profiles
-from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.ssh.commands import (
     build_attribute_record,
     build_filter,
@@ -39,6 +38,7 @@ from hmc_mcp.ssh.profiles import (
     set_lpar_proc_compat,
     sync_lpar_profile,
 )
+from hmc_mcp.ssh.transport import HMCCLIError
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 SCANNED_ROOTS = (_REPO_ROOT / "src" / "hmc_mcp", _REPO_ROOT / "scripts")
@@ -604,8 +604,8 @@ def _flag_payload_problems(
     """
     if not isinstance(literal, ast.JoinedStr):
         return [
-            f"{ast.unparse(literal)} (a command that is not an f-string, "
-            f"so its {flag} payload cannot be traced to {builder_name})"
+            (f"{ast.unparse(literal)} (a command that is not an f-string, "
+             f"so its {flag} payload cannot be traced to {builder_name})")
         ]
     unguarded: list[str] = []
     examined = 0
@@ -903,10 +903,9 @@ def test_prose_docstrings_are_excluded_from_selection():
                     isinstance(node, ast.Constant)
                     and isinstance(node.value, str)
                     and "--filter" in node.value
-                ):
-                    if id(node) in skip:
-                        saw_a_docstring = True
-                        assert id(node) not in selected
+                ) and id(node) in skip:
+                    saw_a_docstring = True
+                    assert id(node) not in selected
     assert saw_a_docstring, "precondition lost: no prose docstring names --filter"
 
 
@@ -923,25 +922,12 @@ def _function_from_source(source: str) -> ast.FunctionDef | ast.AsyncFunctionDef
 def test_the_scan_reports_an_unguarded_whole_expression_filter():
     """A synthetic unguarded filter literal fails; a builder-built one passes."""
     unguarded_func = _function_from_source(
-        "\n".join(
-            [
-                "def f(x):",
-                "    cmd = f'lssyscfg -r lpar -m sys --filter {x}'",
-                "    return cmd",
-            ]
-        )
+        "def f(x):\n    cmd = f'lssyscfg -r lpar -m sys --filter {x}'\n    return cmd"
     )
     assert _unguarded_filter_values(unguarded_func)
 
     guarded_func = _function_from_source(
-        "\n".join(
-            [
-                "import shlex",
-                "def f(x):",
-                "    cmd = f'lssyscfg -r lpar -m sys --filter {shlex.quote(build_filter([(\"lpar_names\", x)]))}'",
-                "    return cmd",
-            ]
-        )
+        "import shlex\ndef f(x):\n    cmd = f'lssyscfg -r lpar -m sys --filter {shlex.quote(build_filter([(\"lpar_names\", x)]))}'\n    return cmd"
     )
     assert _unguarded_filter_values(guarded_func) == []
 

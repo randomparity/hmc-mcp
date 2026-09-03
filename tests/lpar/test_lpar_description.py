@@ -10,10 +10,8 @@ from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.server_tools.lpar.configuration import (
-    hmc_get_lpar_description as hmc_get_lpar_description,
-)
-from hmc_mcp.server_tools.lpar.configuration import (
-    hmc_set_lpar_description as hmc_set_lpar_description,
+    hmc_get_lpar_description,
+    hmc_set_lpar_description,
 )
 from hmc_mcp.ssh.profiles import set_lpar_description
 

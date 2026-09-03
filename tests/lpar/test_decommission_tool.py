@@ -18,7 +18,9 @@ from hmc_mcp.operations.lpar.decommission import (
     DecommissionResult,
     decommission_lpar,
 )
-from hmc_mcp.server_tools.lpar.lifecycle import hmc_decommission_lpar as hmc_decommission_lpar
+from hmc_mcp.server_tools.lpar.lifecycle import (
+    hmc_decommission_lpar,
+)
 
 SYSTEM_UUID = "11111111-1111-1111-1111-111111111111"
 LPAR_UUID = "22222222-2222-2222-2222-222222222222"
@@ -332,8 +334,8 @@ async def test_decommission_warns_when_listed_vios_has_no_uuid(
     assert result.blast_radius["unresolved_storage_mapping_count"] == 0
     assert result.blast_radius["unavailable_storage_source_count"] == 1
     assert result.warnings == (
-        "Storage blast radius may be incomplete: listed VIOS 'vios-missing-id' "
-        "has no UUID, so its storage mappings could not be inventoried.",
+        ("Storage blast radius may be incomplete: listed VIOS 'vios-missing-id' "
+         "has no UUID, so its storage mappings could not be inventoried."),
     )
     hmc.get_vios_storage_detail.assert_not_awaited()
 
@@ -353,8 +355,8 @@ async def test_decommission_warns_when_vios_storage_detail_is_unavailable(
     assert result.blast_radius["unresolved_storage_mapping_count"] == 0
     assert result.blast_radius["unavailable_storage_source_count"] == 1
     assert result.warnings == (
-        f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
-        "storage detail, so its storage mappings could not be inventoried.",
+        (f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
+         "storage detail, so its storage mappings could not be inventoried."),
     )
     hmc.get_vios_storage_detail.assert_awaited_once_with(VIOS_UUID)
 
@@ -401,8 +403,8 @@ async def test_decommission_continues_when_vios_storage_detail_is_unavailable(
     assert result.blast_radius["unresolved_storage_mapping_count"] == 0
     assert result.blast_radius["unavailable_storage_source_count"] == 1
     assert result.warnings == (
-        f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
-        "storage detail, so its storage mappings could not be inventoried.",
+        (f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
+         "storage detail, so its storage mappings could not be inventoried."),
     )
     assert calls == [
         "resolve_system_uuid:system-a",

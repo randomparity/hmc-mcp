@@ -18,21 +18,21 @@ from conftest import JOB_ENTRY, assert_no_mutating_requests
 
 from hmc_mcp.documents import LparResources
 from hmc_mcp.jobs import JobOutcome
-from hmc_mcp.operations.lpar.assignments import WorkflowStep
-from hmc_mcp.operations.lpar.core import LparPowerResult
-from hmc_mcp.operations.lpar.provision import (
-    ProvisionAffinityAssessment,
-    ProvisionAdapters,
-    ProvisionStorage,
-    _power_on,
-)
-from hmc_mcp.server_tools.lpar.provision import hmc_provision_lpar as hmc_provision_lpar
 from hmc_mcp.operations.affinity import (
     AffinityAssessmentResult,
     AffinityEvidence,
     PostActivationAffinityAssessment,
     validate_affinity_request,
 )
+from hmc_mcp.operations.lpar.assignments import WorkflowStep
+from hmc_mcp.operations.lpar.core import LparPowerResult
+from hmc_mcp.operations.lpar.provision import (
+    ProvisionAdapters,
+    ProvisionAffinityAssessment,
+    ProvisionStorage,
+    _power_on,
+)
+from hmc_mcp.server_tools.lpar.provision import hmc_provision_lpar
 from hmc_mcp.ssh.affinity import MinimumAffinityPolicy
 from hmc_mcp.ssh.transport import HMCCLIError
 
@@ -71,10 +71,10 @@ def _hmc_env(monkeypatch) -> None:
 
 EMPTY_FEED = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><feed xmlns="http://www.w3.org/2005/Atom"/>'
 
-EXISTING_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+EXISTING_LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:{lpar_uuid}</id>
+    <id>urn:uuid:{LPAR_UUID}</id>
     <title>LogicalPartition:existing-lpar</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -84,12 +84,12 @@ EXISTING_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </content>
   </entry>
 </feed>
-""".format(lpar_uuid=LPAR_UUID)
+"""
 
-CREATED_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+CREATED_LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:{lpar_uuid}</id>
+    <id>urn:uuid:{LPAR_UUID}</id>
     <title>LogicalPartition:web01</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -99,13 +99,13 @@ CREATED_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </content>
   </entry>
 </feed>
-""".format(lpar_uuid=LPAR_UUID)
+"""
 
-NETWORK_ADAPTER_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+NETWORK_ADAPTER_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:{uuid}</id>
-    <title>ClientNetworkAdapter:{uuid}</title>
+    <id>urn:uuid:{ADAPTER_UUID}</id>
+    <title>ClientNetworkAdapter:{ADAPTER_UUID}</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <ClientNetworkAdapter xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <MACAddress>aa:bb:cc:dd:ee:ff</MACAddress>
@@ -113,13 +113,13 @@ NETWORK_ADAPTER_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?
     </content>
   </entry>
 </feed>
-""".format(uuid=ADAPTER_UUID)
+"""
 
-VSCSI_ADAPTER_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+VSCSI_ADAPTER_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:{uuid}</id>
-    <title>VirtualSCSIClientAdapter:{uuid}</title>
+    <id>urn:uuid:{ADAPTER_UUID}</id>
+    <title>VirtualSCSIClientAdapter:{ADAPTER_UUID}</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <VirtualSCSIClientAdapter xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <RemoteLogicalPartitionID>7</RemoteLogicalPartitionID>
@@ -127,12 +127,12 @@ VSCSI_ADAPTER_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </content>
   </entry>
 </feed>
-""".format(uuid=ADAPTER_UUID)
+"""
 
-VIOS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+VIOS_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:{vios_uuid}</id>
+    <id>urn:uuid:{VIOS_UUID}</id>
     <title>VirtualIOServer:vios1</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -141,13 +141,13 @@ VIOS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </content>
   </entry>
 </feed>
-""".format(vios_uuid=VIOS_UUID)
+"""
 
-VG_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+VG_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:{vg_uuid}</id>
-    <title>VolumeGroup:{vg_uuid}</title>
+    <id>urn:uuid:{VG_UUID}</id>
+    <title>VolumeGroup:{VG_UUID}</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <GroupName>rootvg</GroupName>
@@ -155,7 +155,7 @@ VG_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </content>
   </entry>
 </feed>
-""".format(vg_uuid=VG_UUID)
+"""
 
 VLAN_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -184,10 +184,10 @@ MALFORMED_THEN_VALID_VLAN_FEED = MALFORMED_VLAN_FEED.replace(
     "</feed>", f"{VALID_VLAN_ENTRY}\n</feed>"
 )
 
-SYSTEM_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+SYSTEM_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:{system_uuid}</id>
+    <id>urn:uuid:{SYSTEM_UUID}</id>
     <title>ManagedSystem:sys1</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -196,7 +196,7 @@ SYSTEM_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </content>
   </entry>
 </feed>
-""".format(system_uuid=SYSTEM_UUID)
+"""
 
 
 def _mock_preconditions(
@@ -226,15 +226,15 @@ def _mock_preconditions(
     return name_lookup
 
 
-SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+SYSTEM_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:{system_uuid}</id>
+  <id>urn:uuid:{SYSTEM_UUID}</id>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <SystemName>sys1</SystemName>
     </ManagedSystem>
   </content>
-</entry>""".format(system_uuid=SYSTEM_UUID)
+</entry>"""
 
 
 def _mock_execution_steps(mock_hmc):
@@ -271,21 +271,21 @@ def _mock_execution_steps(mock_hmc):
 
 
 def _provision_args(**overrides):
-    args = dict(
-        system_name_or_uuid=SYSTEM_UUID,
-        name="web01",
-        network=ProvisionAdapters(
+    args = {
+        "system_name_or_uuid": SYSTEM_UUID,
+        "name": "web01",
+        "network": ProvisionAdapters(
             port_vlan_id=VLAN_ID, vios_partition_id=7, vios_slot=11
         ),
-        storage=ProvisionStorage(vios_uuid=VIOS_UUID, storage_name="lv_boot"),
-        resources=LparResources(
+        "storage": ProvisionStorage(vios_uuid=VIOS_UUID, storage_name="lv_boot"),
+        "resources": LparResources(
             min_memory=256,
             desired_memory=4096,
             max_memory=8192,
             desired_vcpus=1,
             max_vcpus=2,
         ),
-    )
+    }
     if "vg_uuid" in overrides:
         args["storage"] = ProvisionStorage(
             vios_uuid=VIOS_UUID,
@@ -297,20 +297,20 @@ def _provision_args(**overrides):
 
 
 def _affinity_request(**overrides):
-    values = dict(
-        system_name_or_uuid=SYSTEM_UUID,
-        lpar_name="web01",
-        captured_score=80,
-        captured_policy_state="configured",
-        captured_minimum=70,
-        captured_at=datetime(2026, 8, 24, tzinfo=UTC),
-        stale_after_seconds=86400,
-        response="warn",
-        regression_threshold=5,
-        optimization_threshold=5,
-        timeout_seconds=30,
-        poll_interval=1,
-    )
+    values = {
+        "system_name_or_uuid": SYSTEM_UUID,
+        "lpar_name": "web01",
+        "captured_score": 80,
+        "captured_policy_state": "configured",
+        "captured_minimum": 70,
+        "captured_at": datetime(2026, 8, 24, tzinfo=UTC),
+        "stale_after_seconds": 86400,
+        "response": "warn",
+        "regression_threshold": 5,
+        "optimization_threshold": 5,
+        "timeout_seconds": 30,
+        "poll_interval": 1,
+    }
     values.update(overrides)
     return ProvisionAffinityAssessment(**values)
 
@@ -332,7 +332,10 @@ def test_provision_affinity_rejects_foreign_evidence_before_hmc(monkeypatch, moc
     "change",
     [
         {"captured_score": 101},
-        {"captured_at": datetime(2026, 8, 24)},
+        # The naive datetime IS the invalid evidence under test:
+        # operations/affinity.py rejects a captured_at with no tzinfo, so giving
+        # this one a timezone would silently delete the case.
+        {"captured_at": datetime(2026, 8, 24)},  # noqa: DTZ001 - naiveness is the subject
         {"stale_after_seconds": 0},
         {"regression_threshold": -1},
         {"captured_policy_state": "unknown"},
@@ -834,9 +837,8 @@ def test_provision_lpar_propagates_unexpected_step_failure(monkeypatch, mock_hmc
     with patch(
         "hmc_mcp.client.core.HMCClient.add_vscsi_adapter",
         new=AsyncMock(side_effect=TypeError("adapter defect")),
-    ):
-        with pytest.raises(TypeError, match="adapter defect"):
-            hmc_provision_lpar(**_provision_args())
+    ), pytest.raises(TypeError, match="adapter defect"):
+        hmc_provision_lpar(**_provision_args())
 
 
 def test_provision_lpar_reports_created_resource_without_uuid(monkeypatch, mock_hmc):
@@ -922,21 +924,15 @@ def test_provision_policy_rejects_unsupported_system_before_mutation(
 ):
     _hmc_env(monkeypatch)
     with (
-        patch(
-            "hmc_mcp.operations.lpar.provision.resolve_ssh_names",
-            AsyncMock(return_value=("system", None)),
-        ),
-        patch(
-            "hmc_mcp.operations.lpar.provision.require_minimum_affinity_policy_capability",
-            AsyncMock(side_effect=HMCCLIError("POWER11 required")),
-        ),
+        patch( "hmc_mcp.operations.lpar.provision.resolve_ssh_names", AsyncMock(return_value=("system", None)), ),
+        patch( "hmc_mcp.operations.lpar.provision.require_minimum_affinity_policy_capability", AsyncMock(side_effect=HMCCLIError("POWER11 required")), ),
+        pytest.raises(HMCCLIError, match="POWER11"),
     ):
-        with pytest.raises(HMCCLIError, match="POWER11"):
-            hmc_provision_lpar(
-                **_provision_args(
-                    minimum_affinity_policy=MinimumAffinityPolicy(80, "warn")
-                )
+        hmc_provision_lpar(
+            **_provision_args(
+                minimum_affinity_policy=MinimumAffinityPolicy(80, "warn")
             )
+        )
     assert_no_mutating_requests(mock_hmc)
 
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Guard: every generated document under ``docs/`` is current, and the arrangement
 that produces it is intact. See ADR 0098.
 
@@ -156,7 +155,8 @@ def _query(command: list[str], root: Path) -> str:
     """Run a read-only command in *root* and return its stdout, or raise."""
     printable = " ".join(command)
     try:
-        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        # fixed argv, no shell
+        result = subprocess.run(
             command,
             cwd=root,
             capture_output=True,
@@ -280,7 +280,8 @@ def regenerate(command: str, workspace: Path) -> None:
     descendants silently and discards the output.)
     """
     try:
-        process = subprocess.Popen(  # noqa: S603 - argv from a matched banner, no shell
+        # argv from a matched banner, no shell
+        process = subprocess.Popen(
             shlex.split(command),
             cwd=workspace,
             stdout=subprocess.PIPE,
@@ -410,8 +411,8 @@ def _banner_check(path: Path, command: str, generated: bytes) -> list[str]:
     if match is not None and f"just {match['recipe']}" == command:
         return []
     return [
-        f"{path}: produced by `{command}` but its first line does not name that "
-        f"command in a generation banner, so nothing would ever check it"
+        (f"{path}: produced by `{command}` but its first line does not name that "
+         f"command in a generation banner, so nothing would ever check it")
     ]
 
 

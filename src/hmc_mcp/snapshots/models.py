@@ -558,7 +558,7 @@ def _parse_timestamp(value: Any, pointer: str) -> Any:
     if _RFC3339.fullmatch(value) is None:
         _error(pointer, "timestamp must use RFC 3339 syntax")
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(value)
     except ValueError:
         _error(pointer, "timestamp must be valid RFC 3339")
 

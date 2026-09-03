@@ -15,7 +15,7 @@ ProcessedMetrics, AggregatedMetrics.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from defusedxml import ElementTree as ET
@@ -117,11 +117,11 @@ def newest_metric_link(links: list[dict[str, str]]) -> dict[str, str]:
     def _key(link: dict[str, str]) -> datetime:
         updated = link.get("updated", "")
         try:
-            dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(updated)
         except ValueError:
-            return datetime.min.replace(tzinfo=timezone.utc)
+            return datetime.min.replace(tzinfo=UTC)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt
 
     return max(links, key=_key)

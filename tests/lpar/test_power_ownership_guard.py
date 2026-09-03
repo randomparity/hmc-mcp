@@ -18,11 +18,11 @@ from typer.testing import CliRunner
 from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.cli import app as cli_app
 from hmc_mcp.cli_commands.lpar import lifecycle as cli_lpars
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.lpar import core as lpar_core
 from hmc_mcp.operations.lpar import provision as operations_provision
-from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
-from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.lpar.core import power_lpar
+from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
 from hmc_mcp.ssh.transport import HMCCLIError
 
 LPAR_UUID = "11111111-1111-1111-1111-111111111111"
@@ -154,14 +154,13 @@ async def test_enabled_guard_refuses_a_partition_another_agent_owns() -> None:
     with patch(
         "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_BOB),
-    ):
-        with pytest.raises(PermissionError, match="ownership_override=true"):
-            await power_lpar(
-                hmc,
-                SYSTEM_UUID,
-                LPAR_UUID,
-                power_on=False,
-            )
+    ), pytest.raises(PermissionError, match="ownership_override=true"):
+        await power_lpar(
+            hmc,
+            SYSTEM_UUID,
+            LPAR_UUID,
+            power_on=False,
+        )
 
     hmc.submit_job.assert_not_awaited()
 
@@ -195,14 +194,13 @@ async def test_enabled_guard_runs_before_the_already_running_short_circuit() -> 
     with patch(
         "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_BOB),
-    ):
-        with pytest.raises(PermissionError):
-            await power_lpar(
-                hmc,
-                SYSTEM_UUID,
-                LPAR_UUID,
-                power_on=True,
-            )
+    ), pytest.raises(PermissionError):
+        await power_lpar(
+            hmc,
+            SYSTEM_UUID,
+            LPAR_UUID,
+            power_on=True,
+        )
 
     hmc.get_quick_property.assert_not_awaited()
 
@@ -252,14 +250,13 @@ async def test_enabled_guard_fails_closed_when_the_ownership_read_fails() -> Non
     with patch(
         "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(side_effect=HMCCLIError("SSH command timed out after 300s")),
-    ):
-        with pytest.raises(HMCCLIError, match="timed out"):
-            await power_lpar(
-                hmc,
-                SYSTEM_UUID,
-                LPAR_UUID,
-                power_on=False,
-            )
+    ), pytest.raises(HMCCLIError, match="timed out"):
+        await power_lpar(
+            hmc,
+            SYSTEM_UUID,
+            LPAR_UUID,
+            power_on=False,
+        )
 
     hmc.submit_job.assert_not_awaited()
 
@@ -314,9 +311,8 @@ async def test_enabled_guard_refuses_a_partition_owned_by_a_discovered_system() 
     with patch(
         "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_BOB),
-    ):
-        with pytest.raises(PermissionError, match="ownership_override=true"):
-            await power_lpar(hmc, None, LPAR_UUID, power_on=False)
+    ), pytest.raises(PermissionError, match="ownership_override=true"):
+        await power_lpar(hmc, None, LPAR_UUID, power_on=False)
 
     hmc.submit_job.assert_not_awaited()
 
@@ -352,14 +348,13 @@ async def test_enabled_guard_refuses_a_uuid_paired_with_a_foreign_system() -> No
     with patch(
         "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_ALICE),
-    ) as read:
-        with pytest.raises(ValueError, match="does not belong to managed system"):
-            await power_lpar(
-                hmc,
-                SYSTEM_UUID,
-                LPAR_UUID,
-                power_on=False,
-            )
+    ) as read, pytest.raises(ValueError, match="does not belong to managed system"):
+        await power_lpar(
+            hmc,
+            SYSTEM_UUID,
+            LPAR_UUID,
+            power_on=False,
+        )
 
     read.assert_not_awaited()
     hmc.submit_job.assert_not_awaited()

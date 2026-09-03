@@ -14,33 +14,10 @@ the complete tree.
 
 from __future__ import annotations
 
-from .cli_commands.app import (
-    adapters_app,
-    app as app,
-    cluster_app,
-    config_app,
-    console_app,
-    jobs_app,
-    lpars_app,
-    main as main,
-    memory_pools_app,
-    metrics_app,
-    network_app,
-    raw_app,
-    snapshot_app,
-    storage_app,
-    systems_app,
-    templates_app,
-    vios_app,
-)
-from .cli_commands.output import console as console
-from .cli_commands.runtime import GlobalOpts as GlobalOpts
-
 from .cli_commands import (
     adapters,
     cluster,
     config,
-    console as console_commands,
     jobs,
     memory_pools,
     metrics,
@@ -51,20 +28,68 @@ from .cli_commands import (
     storage,
     systems,
     templates,
-    vnic,
     vios,
     vios_labels,
+    vnic,
+)
+from .cli_commands import (
+    console as console_commands,
+)
+from .cli_commands.app import (
+    adapters_app,
+    cluster_app,
+    config_app,
+    console_app,
+    jobs_app,
+    lpars_app,
+    memory_pools_app,
+    metrics_app,
+    network_app,
+    raw_app,
+    snapshot_app,
+    storage_app,
+    systems_app,
+    templates_app,
+    vios_app,
+)
+from .cli_commands.app import (
+    app as app,  # noqa: PLC0414 - PEP 484 explicit re-export; see the module docstring
+)
+from .cli_commands.app import (
+    main as main,  # noqa: PLC0414 - PEP 484 explicit re-export; see the module docstring
 )
 from .cli_commands.lpar import (
     config as lpar_config,
+)
+from .cli_commands.lpar import (
     create as lpar_create,
+)
+from .cli_commands.lpar import (
     decommission as lpar_decommission,
+)
+from .cli_commands.lpar import (
     inventory as lpar_inventory,
+)
+from .cli_commands.lpar import (
     lifecycle as lpar_lifecycle,
+)
+from .cli_commands.lpar import (
     migration as lpar_migration,
+)
+from .cli_commands.lpar import (
     modify as lpar_modify,
+)
+from .cli_commands.lpar import (
     profiles as lpar_profiles,
+)
+from .cli_commands.lpar import (
     provision as lpar_provision,
+)
+from .cli_commands.output import (
+    console as console,  # noqa: PLC0414 - PEP 484 explicit re-export; see the module docstring
+)
+from .cli_commands.runtime import (
+    GlobalOpts as GlobalOpts,  # noqa: PLC0414 - PEP 484 explicit re-export; see the module docstring
 )
 
 

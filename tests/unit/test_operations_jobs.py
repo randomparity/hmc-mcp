@@ -14,12 +14,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from conftest import make_config
 
 from hmc_mcp.api import JobOutcome, get_job, wait_for_job
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
-
-from conftest import make_config
 
 _JOB_ID = "job-uuid-999"
 _GLOBAL_PATH = f"/rest/api/uom/jobs/{_JOB_ID}"

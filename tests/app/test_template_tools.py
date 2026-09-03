@@ -14,13 +14,9 @@ from conftest import JOB_ENTRY
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.server_tools.templates import (
-    hmc_deploy_partition_template as hmc_deploy_partition_template,
-)
-from hmc_mcp.server_tools.templates import (
-    hmc_get_partition_template as hmc_get_partition_template,
-)
-from hmc_mcp.server_tools.templates import (
-    hmc_list_partition_templates as hmc_list_partition_templates,
+    hmc_deploy_partition_template,
+    hmc_get_partition_template,
+    hmc_list_partition_templates,
 )
 
 TEMPLATE_UUID = "tmpl-uuid-1"
@@ -145,8 +141,8 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
     assert result["ownership_stamped"] is None
     assert result["warnings"] == [
-        "ownership stamp not attempted: template deployment does not identify and stamp "
-        "the new LPAR; list partitions to identify it, then set its description"
+        ("ownership stamp not attempted: template deployment does not identify and stamp "
+         "the new LPAR; list partitions to identify it, then set its description")
     ]
 
 

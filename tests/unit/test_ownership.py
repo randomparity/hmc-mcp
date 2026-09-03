@@ -14,15 +14,14 @@ import pytest
 
 from hmc_mcp.audit import records as audit
 from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.operations.lpar import core as operations_lpar
-from hmc_mcp.operations import ownership as lpar_ownership
 from hmc_mcp.config import validate_agent_id
+from hmc_mcp.operations import ownership as lpar_ownership
+from hmc_mcp.operations.lpar import core as operations_lpar
 from hmc_mcp.operations.ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     authorize_lpar_mutation,
     resolve_and_authorize_lpar_names,
 )
-
 
 # ---------------------------------------------------------------------------
 # validate_agent_id
@@ -106,8 +105,8 @@ def test_validate_agent_id_control_char():
 # ---------------------------------------------------------------------------
 
 
-from hmc_mcp.ssh.lpar import stamp_lpar_ownership  # noqa: E402 (after validate tests)
 from hmc_mcp.config import HMCConfig  # noqa: E402
+from hmc_mcp.ssh.lpar import stamp_lpar_ownership  # noqa: E402 (after validate tests)
 
 
 def _config():
@@ -122,7 +121,7 @@ def test_stamp_returns_token_on_success():
         token = asyncio.run(
             stamp_lpar_ownership(config, "sys1", "lpar1", agent_id="alice")
         )
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today().isoformat()  # noqa: DTZ011 - mirrors the ownership stamp's own local-date basis in ssh/lpar.py; changing one side alone makes them disagree for part of every day
     assert token == f"[hmc-mcp owner:alice created:{today}]"
     mock_set.assert_awaited_once()
     # verify set_lpar_description was called with the token as the description arg
@@ -158,7 +157,7 @@ def test_stamp_returns_none_on_ssh_error():
 
 def test_token_format():
     config = _config()
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today().isoformat()  # noqa: DTZ011 - mirrors the ownership stamp's own local-date basis in ssh/lpar.py; changing one side alone makes them disagree for part of every day
     with patch(
         "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
     ):
@@ -233,15 +232,15 @@ def test_required_system_rejects_partition_uuid_from_another_system():
         patch.object(lpar_ownership, "resolve_lpar_uuid", resolve_lpar),
         patch.object(lpar_ownership, "resolve_lpar_ownership_names", resolve_names),
         patch.object(lpar_ownership, "authorize_lpar_mutation", authorize),
+        pytest.raises(ValueError, match="does not belong to managed system"),
     ):
-        with pytest.raises(ValueError, match="does not belong to managed system"):
-            asyncio.run(
-                resolve_and_authorize_lpar_names(
-                    hmc,
-                    "selected-system",
-                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-                )
+        asyncio.run(
+            resolve_and_authorize_lpar_names(
+                hmc,
+                "selected-system",
+                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             )
+        )
 
     hmc.list_logical_partitions.assert_awaited_once_with("selected-system-uuid")
     resolve_names.assert_not_awaited()
@@ -260,16 +259,16 @@ def test_optional_system_rejects_partition_uuid_from_another_system():
         patch.object(lpar_ownership, "resolve_system_uuid", resolve_system),
         patch.object(lpar_ownership, "resolve_lpar_uuid", resolve_lpar),
         patch.object(lpar_ownership, "authorize_lpar_mutation", authorize),
+        pytest.raises(ValueError, match="does not belong to managed system"),
     ):
-        with pytest.raises(ValueError, match="does not belong to managed system"):
-            asyncio.run(
-                lpar_ownership.resolve_and_authorize_lpar_mutation(
-                    hmc,
-                    "selected-system",
-                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-                    ownership_override=False,
-                )
+        asyncio.run(
+            lpar_ownership.resolve_and_authorize_lpar_mutation(
+                hmc,
+                "selected-system",
+                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                ownership_override=False,
             )
+        )
 
     hmc.list_logical_partitions.assert_awaited_once_with("selected-system-uuid")
     authorize.assert_not_awaited()
@@ -464,14 +463,11 @@ def test_authorize_lpar_mutation_normal_access_has_no_override_audit(caplog):
 def _denied(hmc, description, run, caplog):
     """Run *run* against a stubbed description, expect a refusal, return the records."""
     with (
-        patch(
-            "hmc_mcp.operations.ownership.get_lpar_description",
-            new=AsyncMock(return_value=description),
-        ),
+        patch( "hmc_mcp.operations.ownership.get_lpar_description", new=AsyncMock(return_value=description), ),
         caplog.at_level(logging.WARNING),
+        pytest.raises(PermissionError, match="ownership_override=true"),
     ):
-        with pytest.raises(PermissionError, match="ownership_override=true"):
-            asyncio.run(run(hmc))
+        asyncio.run(run(hmc))
     return _override_records(caplog)
 
 
@@ -581,9 +577,8 @@ def test_ssh_ownership_read_failure_names_guard_and_remedy(authorize):
     with patch(
         "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(side_effect=cause),
-    ):
-        with pytest.raises(HMCCLIError) as exc_info:
-            asyncio.run(authorize(hmc))
+    ), pytest.raises(HMCCLIError) as exc_info:
+        asyncio.run(authorize(hmc))
 
     assert "ADR 0011 ownership precheck" in str(exc_info.value)
     assert "LPAR 'lpar1'" in str(exc_info.value)
@@ -678,9 +673,8 @@ def test_the_denial_still_reaches_stderr_without_a_sink(capsys):
         with patch(
             "hmc_mcp.operations.ownership.get_lpar_description",
             new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
-        ):
-            with pytest.raises(PermissionError):
-                asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
+        ), pytest.raises(PermissionError):
+            asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
         captured = capsys.readouterr()
     finally:
         logging.root.handlers[:] = saved
@@ -704,10 +698,9 @@ def test_the_denial_record_is_bounded_and_escaped(caplog):
             "hmc_mcp.operations.ownership.get_lpar_description",
             new=AsyncMock(return_value=hostile),
         ),
-        caplog.at_level(logging.WARNING),
+        caplog.at_level(logging.WARNING),pytest.raises(PermissionError)
     ):
-        with pytest.raises(PermissionError):
-            asyncio.run(authorize_lpar_mutation(hmc, "A" * 500, "x\ny‮z"))
+        asyncio.run(authorize_lpar_mutation(hmc, "A" * 500, "x\ny‮z"))
 
     raw = [r.getMessage() for r in caplog.records if r.name == audit_sink.AUDIT_LOGGER_NAME]
     assert len(raw) == 1
@@ -755,7 +748,7 @@ def test_validate_caller_token_rejects_non_string():
 
 def test_stamp_composes_caller_segment():
     config = _config()
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today().isoformat()  # noqa: DTZ011 - mirrors the ownership stamp's own local-date basis in ssh/lpar.py; changing one side alone makes them disagree for part of every day
     with patch(
         "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
     ) as mock_set:
@@ -774,7 +767,7 @@ def test_stamp_composes_caller_segment():
 
 def test_stamp_without_caller_token_unchanged():
     config = _config()
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today().isoformat()  # noqa: DTZ011 - mirrors the ownership stamp's own local-date basis in ssh/lpar.py; changing one side alone makes them disagree for part of every day
     with patch(
         "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
     ):
@@ -805,13 +798,12 @@ def test_stamp_bad_caller_token_raises_unswallowed():
     config = _config()
     with patch(
         "hmc_mcp.ssh.lpar.set_lpar_description", new=AsyncMock(return_value="")
-    ) as mock_set:
-        with pytest.raises(ValueError, match="caller_token"):
-            asyncio.run(
-                stamp_lpar_ownership(
-                    config, "sys1", "lpar1", caller_token=""
-                )
+    ) as mock_set, pytest.raises(ValueError, match="caller_token"):
+        asyncio.run(
+            stamp_lpar_ownership(
+                config, "sys1", "lpar1", caller_token=""
             )
+        )
     mock_set.assert_not_awaited()  # rejected before any SSH traffic
 
 
@@ -933,13 +925,19 @@ def test_set_lpar_ownership_description_rejects_foreign_owned():
         patch("hmc_mcp.operations.ownership.get_lpar_description", new=read),
         patch("hmc_mcp.operations.ownership.set_lpar_description", new=write),
     )
-    with patches[0], patches[1], patches[2], patches[3], patches[4]:
-        with pytest.raises(PermissionError, match="owned by 'bob'"):
-            asyncio.run(
-                lpar_ownership.set_lpar_ownership_description(
-                    hmc, "sys1", "lpar1", "replacement"
-                )
+    with (
+        patches[0],
+        patches[1],
+        patches[2],
+        patches[3],
+        patches[4],
+        pytest.raises(PermissionError, match="owned by 'bob'"),
+    ):
+        asyncio.run(
+            lpar_ownership.set_lpar_ownership_description(
+                hmc, "sys1", "lpar1", "replacement"
             )
+        )
     write.assert_not_awaited()
 
 
@@ -977,17 +975,23 @@ def test_set_lpar_ownership_description_override_bypasses_guard(caplog):
         patch("hmc_mcp.operations.ownership.get_lpar_description", new=read),
         patch("hmc_mcp.operations.ownership.set_lpar_description", new=write),
     )
-    with patches[0], patches[1], patches[2], patches[3], patches[4]:
-        with caplog.at_level(logging.WARNING):
-            result = asyncio.run(
-                lpar_ownership.set_lpar_ownership_description(
-                    hmc,
-                    "sys1",
-                    "lpar1",
-                    "replacement",
-                    ownership_override=True,
-                )
+    with (
+        patches[0],
+        patches[1],
+        patches[2],
+        patches[3],
+        patches[4],
+        caplog.at_level(logging.WARNING),
+    ):
+        result = asyncio.run(
+            lpar_ownership.set_lpar_ownership_description(
+                hmc,
+                "sys1",
+                "lpar1",
+                "replacement",
+                ownership_override=True,
             )
+        )
     assert result == "ok"
     read.assert_not_awaited()
     write.assert_awaited_once()
@@ -1017,7 +1021,7 @@ def test_set_lpar_ownership_description_rejects_invalid_text(bad):
 def test_set_lpar_ownership_description_restamps_failed_create_stamp():
     """Re-stamp path: an unowned LPAR receives an ADR 0011 + ADR 0064 token."""
     read = AsyncMock(return_value="")
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today().isoformat()  # noqa: DTZ011 - mirrors the ownership stamp's own local-date basis in ssh/lpar.py; changing one side alone makes them disagree for part of every day
     token = f"[hmc-mcp owner:alice created:{today}] [caller JIRA-42]"
     hmc = type(
         "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
@@ -1043,9 +1047,12 @@ def test_set_lpar_ownership_description_restamps_failed_create_stamp():
 # ---------------------------------------------------------------------------
 
 
-from hmc_mcp.errors import HMCError  # noqa: E402
-from hmc_mcp.operations.lpar.core import LparCreation, create_and_stamp_lpar  # noqa: E402
 from hmc_mcp.documents import LparResources  # noqa: E402
+from hmc_mcp.errors import HMCError  # noqa: E402
+from hmc_mcp.operations.lpar.core import (  # noqa: E402
+    LparCreation,
+    create_and_stamp_lpar,
+)
 from hmc_mcp.ssh.transport import HMCCLIError  # noqa: E402
 
 _STAMP_FAILURES = [
@@ -1083,7 +1090,7 @@ def _create_hmc():
 def _run_create(hmc, creation, *, set_description=None):
     """Run create_and_stamp_lpar against stubbed name resolution and SSH write."""
     if set_description is None:
-        today = datetime.date.today().isoformat()
+        today = datetime.date.today().isoformat()  # noqa: DTZ011 - mirrors the ownership stamp's own local-date basis in ssh/lpar.py; changing one side alone makes them disagree for part of every day
         set_description = AsyncMock(
             return_value=f"[hmc-mcp owner:alice created:{today}]"
         )
@@ -1158,15 +1165,15 @@ def test_required_skips_raise_when_system_name_unresolved():
             new=AsyncMock(return_value="sys-uuid"),
         ),
         patch.object(
-                lpar_ownership,
-                "_resolve_system_name",
+            lpar_ownership,
+            "_resolve_system_name",
             new=AsyncMock(return_value="sys-uuid"),  # fallback equals the uuid
         ),
+        pytest.raises(HMCError) as excinfo,
     ):
-        with pytest.raises(HMCError) as excinfo:
-            asyncio.run(
-                create_and_stamp_lpar(hmc, "sys1", _creation(stamp_policy="required"))
-            )
+        asyncio.run(
+            create_and_stamp_lpar(hmc, "sys1", _creation(stamp_policy="required"))
+        )
     message = str(excinfo.value)
     assert "'newlpar'" in message
     assert "lpar-uuid-377" in message
@@ -1189,8 +1196,8 @@ def test_best_effort_skip_warning_unchanged_when_system_name_unresolved():
         result = asyncio.run(create_and_stamp_lpar(hmc, "sys1", _creation()))
     assert result.ownership_stamped is None
     assert result.warnings == (
-        "ownership stamp skipped for LPAR 'newlpar': "
-        "could not resolve the managed-system name",
+        ("ownership stamp skipped for LPAR 'newlpar': "
+         "could not resolve the managed-system name"),
     )
 
 

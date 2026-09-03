@@ -6,13 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
 import pytest
+from conftest import make_config
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.ssh.transport import HMCCLIError, run_hmc_command
-
-from conftest import make_config
-
 
 # ---------------------------------------------------------------------------
 # Helpers to build a minimal asyncssh mock
@@ -92,9 +90,11 @@ async def test_run_hmc_command_command_timeout_raises_hmcclierror():
     conn_mock = _make_ssh_mock()
     conn_mock.run = AsyncMock(side_effect=TimeoutError("timed out"))
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        with pytest.raises(HMCCLIError, match="timed out after 300s") as exc_info:
-            await run_hmc_command(make_config(), "lssyscfg -r sys")
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError, match="timed out after 300s") as exc_info,
+    ):
+        await run_hmc_command(make_config(), "lssyscfg -r sys")
 
     assert isinstance(exc_info.value, HMCError)
 
@@ -105,9 +105,8 @@ async def test_run_hmc_command_connect_timeout_raises_hmcclierror():
     with patch(
         "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=TimeoutError("timed out"),
-    ):
-        with pytest.raises(HMCCLIError, match="timed out after 300s"):
-            await run_hmc_command(make_config(), "lssyscfg -r sys")
+    ), pytest.raises(HMCCLIError, match="timed out after 300s"):
+        await run_hmc_command(make_config(), "lssyscfg -r sys")
 
 
 @pytest.mark.asyncio
@@ -142,9 +141,11 @@ async def test_run_hmc_command_nonzero_exit_raises_hmcclierror():
         )
     )
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        with pytest.raises(HMCCLIError, match="HSCL0001 bad config") as exc_info:
-            await run_hmc_command(make_config(), "lssyscfg -r sys")
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError, match="HSCL0001 bad config") as exc_info,
+    ):
+        await run_hmc_command(make_config(), "lssyscfg -r sys")
 
     # HMCCLIError subclasses HMCError so REST and CLI failures share one type.
     assert isinstance(exc_info.value, HMCError)
@@ -168,9 +169,11 @@ async def test_run_hmc_command_signal_failure_names_signal_and_command():
         )
     )
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        with pytest.raises(HMCCLIError) as exc_info:
-            await run_hmc_command(make_config(), "lssyscfg -r sys")
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError) as exc_info,
+    ):
+        await run_hmc_command(make_config(), "lssyscfg -r sys")
 
     message = str(exc_info.value)
     assert "lssyscfg -r sys" in message
@@ -185,9 +188,8 @@ async def test_run_hmc_command_connect_error_raises_hmcclierror():
     with patch(
         "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=asyncssh.Error("connect", "connection refused"),
-    ):
-        with pytest.raises(HMCCLIError, match="connection refused"):
-            await run_hmc_command(make_config(), "lssyscfg -r sys")
+    ), pytest.raises(HMCCLIError, match="connection refused"):
+        await run_hmc_command(make_config(), "lssyscfg -r sys")
 
 
 def test_hmc_config_ssh_key_field_default():
@@ -219,9 +221,11 @@ async def test_run_hmc_command_missing_config_fails_actionably():
 
     The suite fixture clears ambient HMC credentials before this test.
     """
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect") as mock_connect:
-        with pytest.raises(ValueError, match="Missing HMC configuration"):
-            await run_hmc_command(HMCConfig(), "lssyscfg -r sys")
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect") as mock_connect,
+        pytest.raises(ValueError, match="Missing HMC configuration"),
+    ):
+        await run_hmc_command(HMCConfig(), "lssyscfg -r sys")
     mock_connect.assert_not_called()
 
 

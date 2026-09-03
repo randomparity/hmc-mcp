@@ -19,12 +19,11 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-
 from conftest import make_config
 
 from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.client.core import HMCClient
 from hmc_mcp.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.documents import LparResources
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.lpar.dlpar import set_lpar_memory, set_lpar_processors

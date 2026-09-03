@@ -6,10 +6,10 @@ import shlex
 
 from ..config import HMCConfig
 from ..documents import LparResources
-from .transport import HMCCLIError, run_hmc_command
 from .commands import build_attribute_record
 from .description_validation import validate_lpar_description
 from .profiles import set_lpar_description
+from .transport import HMCCLIError, run_hmc_command
 
 
 def validate_caller_token(token: str) -> None:
@@ -26,7 +26,7 @@ def validate_caller_token(token: str) -> None:
     tool typing.
     """
     if not isinstance(token, str):
-        raise ValueError(f"caller_token must be a string, got {type(token).__name__}")
+        raise ValueError(f"caller_token must be a string, got {type(token).__name__}")  # noqa: TRY004 - ValueError is what the best-effort boundary below catches, asserted in tests/unit/test_ownership.py
     if not token:
         raise ValueError("caller_token must not be empty")
     if len(token) > 64:
@@ -82,7 +82,7 @@ async def stamp_lpar_ownership(
     if caller_token is not None:
         validate_caller_token(caller_token)
     effective_id = agent_id if agent_id else "hmc-mcp"
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today().isoformat()  # noqa: DTZ011 - the ADR 0011 ownership stamp records the operator's local calendar date and is persisted on the HMC; moving it to UTC is not this issue's to make
     description = f"[hmc-mcp owner:{effective_id} created:{today}]"
     if caller_token is not None:
         description = f"{description} [caller {caller_token}]"

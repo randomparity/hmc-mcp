@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import ast
-import json
 import importlib.util
+import json
 import os
 import re
 import sys
@@ -13,9 +13,8 @@ from pathlib import Path
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.ssh import affinity as ssh_affinity
 from hmc_mcp.server import TOOL_SECURITY
-
+from hmc_mcp.ssh import affinity as ssh_affinity
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
@@ -102,7 +101,6 @@ def _isolate_runner(monkeypatch) -> None:
         # its handler unwrapped, which is how a live run stops being evidence.
         assert permits is not None and authorize is not None
         assert permits("hmc_run_command") is True
-        return None
 
     monkeypatch.setattr(runner, "configure_arbitrary_command_tool", configure)
 
@@ -592,7 +590,7 @@ def _dispatched_tool_names(source: str) -> set[str]:
             continue
         tool = node.args[1] if len(node.args) > 1 else None
         if not (isinstance(tool, ast.Constant) and isinstance(tool.value, str)):
-            raise AssertionError(
+            raise AssertionError(  # noqa: TRY004 - AssertionError is this guard's contract, asserted at tests/test_live_runner.py:630
                 f"line {node.lineno}: call() dispatches a tool name this guard "
                 "cannot read — pass a string literal"
             )
@@ -641,9 +639,12 @@ def test_every_live_workflow_dispatch_has_exactly_client_and_tool_arguments():
         for node in ast.walk(ast.parse(source)):
             if not isinstance(node, ast.Call):
                 continue
-            if isinstance(node.func, ast.Attribute) and node.func.attr == "call":
-                if len(node.args) != 2:
-                    invalid.append(f"{Path(module.__file__).name}:{node.lineno}")
+            if (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "call"
+                and len(node.args) != 2
+            ):
+                invalid.append(f"{Path(module.__file__).name}:{node.lineno}")
 
     assert invalid == []
 

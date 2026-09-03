@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-
 import typer
 from rich.table import Table
 
-from .runtime import with_client
-from .output import first_field, output, print_json, console
 from ..jobs import DeviceType, LuType
 from ..operations.storage import (
     create_logical_unit,
@@ -17,6 +14,8 @@ from ..operations.storage import (
     validate_logical_unit_create,
     validate_logical_unit_wait,
 )
+from .output import console, first_field, output, print_json
+from .runtime import with_client
 
 
 def cluster_list(

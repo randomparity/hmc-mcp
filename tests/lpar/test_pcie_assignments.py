@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.lpar.assignments import (
     DedicatedPcieAssignment,
     LparPcieAssignments,
@@ -16,7 +17,6 @@ from hmc_mcp.operations.lpar.assignments import (
     apply_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
-from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.pcie import (
     InventoryResult,
     InventorySelector,
@@ -29,13 +29,13 @@ from hmc_mcp.operations.vnic import VnicBackingSelector
 
 def _sriov(logical: str = "27004001") -> SriovLogicalPortAssignment:
     return SriovLogicalPortAssignment(
-        "default_profile", "1", "1", logical, Decimal("2")
+        "default_profile", "1", "1", logical, Decimal(2)
     )
 
 
 def _vnic() -> VnicAssignment:
     return VnicAssignment(
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("3")), 42
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(3)), 42
     )
 
 
@@ -98,7 +98,7 @@ def test_request_analysis_returns_capacity_and_unique_vios_requirements() -> Non
         LparPcieAssignments(sriov=(_sriov(),), vnics=(vnic,))
     )
 
-    assert capacities == {("1", "1"): Decimal("5")}
+    assert capacities == {("1", "1"): Decimal(5)}
     assert vios_identities == {("vios-a", "100")}
 
 
@@ -117,7 +117,7 @@ async def test_conflicting_duplicate_logical_port_fails_closed() -> None:
         sriov=(
             _sriov(),
             SriovLogicalPortAssignment(
-                "default_profile", "1", "2", "27004001", Decimal("3")
+                "default_profile", "1", "2", "27004001", Decimal(3)
             ),
         )
     )
@@ -137,7 +137,7 @@ async def test_duplicate_vnic_request_fails_before_inventory() -> None:
 @pytest.mark.asyncio
 async def test_structural_selector_character_fails_before_inventory() -> None:
     request = SriovLogicalPortAssignment(
-        "default_profile", "1,2", "1", "27004001", Decimal("2")
+        "default_profile", "1,2", "1", "27004001", Decimal(2)
     )
     with pytest.raises(ValueError, match="comma"):
         await prevalidate_lpar_pcie_assignments(
@@ -178,13 +178,13 @@ async def test_prevalidated_post_create_path_does_not_repeat_inventory() -> None
 @pytest.mark.asyncio
 async def test_public_apply_cannot_bypass_validation() -> None:
     validation = AsyncMock(side_effect=ValueError("unsafe collection"))
-    with patch(
-        "hmc_mcp.operations.lpar.assignments.prevalidate_lpar_pcie_assignments", validation
+    with (
+        patch( "hmc_mcp.operations.lpar.assignments.prevalidate_lpar_pcie_assignments", validation ),
+        pytest.raises(ValueError, match="unsafe collection"),
     ):
-        with pytest.raises(ValueError, match="unsafe collection"):
-            await apply_lpar_pcie_assignments(
-                AsyncMock(), "sys", "lpar", LparPcieAssignments()
-            )
+        await apply_lpar_pcie_assignments(
+            AsyncMock(), "sys", "lpar", LparPcieAssignments()
+        )
     validation.assert_awaited_once()
 
 

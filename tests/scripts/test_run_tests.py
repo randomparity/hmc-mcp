@@ -5,11 +5,11 @@ import inspect
 import io
 import os
 import signal
-import time
-from typing import Any
 import subprocess
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 

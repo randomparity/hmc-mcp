@@ -18,13 +18,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from conftest import make_config
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.ssh.lpar import resolve_lpar_cli_name, resolve_system_cli_name
 from hmc_mcp.ssh.selectors import resolve_lpar_name, resolve_system_name
-
-from conftest import make_config
+from hmc_mcp.ssh.transport import HMCCLIError
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"
@@ -71,9 +70,11 @@ async def test_ssh_system_name_raises_when_uuid_missing():
     """A UUID with no matching row raises HMCCLIError, not a silent guess."""
     conn = _make_ssh_mock("00000000-0000-0000-0000-000000000000,other\n")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
-        with pytest.raises(HMCCLIError, match="Could not resolve system UUID"):
-            await resolve_system_cli_name(make_config(), SYSTEM_UUID)
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        pytest.raises(HMCCLIError, match="Could not resolve system UUID"),
+    ):
+        await resolve_system_cli_name(make_config(), SYSTEM_UUID)
 
 
 @pytest.mark.asyncio
@@ -188,8 +189,10 @@ async def test_resolve_system_name_does_not_fall_back_on_rest_status_error(
         return_value=httpx.Response(404, text="not found")
     )
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect") as mock_connect:
-        with pytest.raises(HMCError):
-            await resolve_system_name(make_config(), SYSTEM_UUID)
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect") as mock_connect,
+        pytest.raises(HMCError),
+    ):
+        await resolve_system_name(make_config(), SYSTEM_UUID)
 
     mock_connect.assert_not_called()

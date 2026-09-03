@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate the MCP tool reference under docs/tools/ from the tool registry.
 
 Usage:
@@ -184,7 +183,8 @@ async def load_descriptions() -> dict[str, str | None]:
         permits=policy.permits_tool,
         authorize=dispatch_authorizer(policy),
     )
-    from fastmcp import Client  # noqa: PLC0415 - server extra, imported at use
+    # server extra, imported at use
+    from fastmcp import Client
 
     async with Client(mcp) as client:
         return {tool.name: tool.description for tool in await client.list_tools()}
@@ -240,8 +240,8 @@ def _render_group(group: str, members: list[ToolRecord]) -> str:
         "",
         f"# `{group}` tools",
         "",
-        f"{len(members)} tool{plural} in the `{group}` operation domain. "
-        f"{SCOPE_NOTE} See the [tool reference index](index.md) for every domain.",
+        (f"{len(members)} tool{plural} in the `{group}` operation domain. "
+         f"{SCOPE_NOTE} See the [tool reference index](index.md) for every domain."),
         "",
         "| Tool | Effect | Operation | Target | Summary |",
         "| --- | --- | --- | --- | --- |",
@@ -275,8 +275,8 @@ def _render_index(groups: Mapping[str, list[ToolRecord]]) -> str:
         "",
         "# MCP tool reference",
         "",
-        f"{SCOPE_NOTE} It is generated from the server's tool registry, so it "
-        "cannot drift from what the code registers.",
+        (f"{SCOPE_NOTE} It is generated from the server's tool registry, so it "
+         "cannot drift from what the code registers."),
         "",
         f"- **{len(records)}** tools are registered.",
         f"- **{len(records) - len(withheld)}** are exposed by a default deployment.",

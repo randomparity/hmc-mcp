@@ -12,16 +12,20 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp.server_tools.lpar import configuration as server_lpar_config
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.config import HMCConfig
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.ssh_affinity import (
     get_system_memopt_score as get_system_memopt_score_operation,
+)
+from hmc_mcp.operations.ssh_affinity import (
     plan_lpar_memopt_scores as plan_lpar_memopt_scores_operation,
+)
+from hmc_mcp.operations.ssh_affinity import (
     plan_system_memopt_score as plan_system_memopt_score_operation,
 )
-from hmc_mcp.ssh.transport import HMCCLIError
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmc_mcp.server_tools.lpar import configuration as server_lpar_config
 from hmc_mcp.ssh.affinity import (
     MemoptLparSelector,
     get_system_memopt_score,
@@ -29,7 +33,7 @@ from hmc_mcp.ssh.affinity import (
     plan_system_memopt_score,
     validate_memopt_scenario,
 )
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmc_mcp.ssh.transport import HMCCLIError
 
 SYSTEM = "p10-system"
 LPAR_ROWS = (
@@ -134,13 +138,15 @@ def test_shared_planning_rejects_invalid_scenarios_before_system_resolution(
 ):
     resolve = AsyncMock()
 
-    with patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve):
-        with pytest.raises(ValueError, match=diagnostic):
-            asyncio.run(
-                plan_lpar_memopt_scores_operation(
-                    _config(), SYSTEM, prioritized, excluded
-                )
+    with (
+        patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve),
+        pytest.raises(ValueError, match=diagnostic),
+    ):
+        asyncio.run(
+            plan_lpar_memopt_scores_operation(
+                _config(), SYSTEM, prioritized, excluded
             )
+        )
 
     resolve.assert_not_awaited()
 
@@ -202,11 +208,11 @@ def test_affinity_mcp_rejects_invalid_scenarios_before_system_resolution(
     with (
         patch("hmc_mcp._app.build_config") as config_factory,
         patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve),
+        pytest.raises(ValueError, match=diagnostic),
     ):
-        with pytest.raises(ValueError, match=diagnostic):
-            server_lpar_config.hmc_plan_system_memopt_score(
-                SYSTEM, prioritized, excluded
-            )
+        server_lpar_config.hmc_plan_system_memopt_score(
+            SYSTEM, prioritized, excluded
+        )
 
     resolve.assert_not_awaited()
     config_factory.assert_not_called()
@@ -243,13 +249,15 @@ def test_oversized_selector_is_rejected_before_resolution_or_transport():
     resolve = AsyncMock()
     prioritized, excluded, package = _quote_heavy_dual_selector_package(extra_byte=True)
 
-    with patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve):
-        with pytest.raises(ValueError, match="option package exceeds 4096 UTF-8 bytes"):
-            asyncio.run(
-                plan_lpar_memopt_scores_operation(
-                    _config(), SYSTEM, prioritized, excluded
-                )
+    with (
+        patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve),
+        pytest.raises(ValueError, match="option package exceeds 4096 UTF-8 bytes"),
+    ):
+        asyncio.run(
+            plan_lpar_memopt_scores_operation(
+                _config(), SYSTEM, prioritized, excluded
             )
+        )
 
     assert len(package.encode("utf-8")) == 4097
     resolve.assert_not_awaited()
@@ -272,9 +280,11 @@ def test_mcp_rejects_oversized_selector_before_shared_operation():
                 },
             )
 
-    with patch.object(server_lpar_config, "plan_lpar_memopt_scores", operation):
-        with pytest.raises(ToolError, match="option package exceeds 4096 UTF-8 bytes"):
-            asyncio.run(call_tool())
+    with (
+        patch.object(server_lpar_config, "plan_lpar_memopt_scores", operation),
+        pytest.raises(ToolError, match="option package exceeds 4096 UTF-8 bytes"),
+    ):
+        asyncio.run(call_tool())
 
     assert len(package.encode("utf-8")) == 4097
     operation.assert_not_awaited()
@@ -425,16 +435,18 @@ def test_planning_rejects_incompatible_selectors_before_transport(
 ):
     connection = _connection(LPAR_ROWS)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
-        with pytest.raises(ValueError, match=diagnostic):
-            asyncio.run(
-                plan_lpar_memopt_scores(
-                    _config(),
-                    SYSTEM,
-                    prioritized=prioritized,
-                    excluded=excluded,
-                )
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection),
+        pytest.raises(ValueError, match=diagnostic),
+    ):
+        asyncio.run(
+            plan_lpar_memopt_scores(
+                _config(),
+                SYSTEM,
+                prioritized=prioritized,
+                excluded=excluded,
             )
+        )
 
     connection.run.assert_not_called()
 
@@ -503,11 +515,11 @@ def test_empty_lpar_prediction_is_an_empty_list():
 def test_score_operations_reject_missing_required_fields(operation, stdout, missing):
     connection = _connection(stdout)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
-        with pytest.raises(
-            HMCCLIError, match=rf"row 1 is missing required fields: {missing}"
-        ):
-            asyncio.run(operation(_config(), SYSTEM))
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection),
+        pytest.raises( HMCCLIError, match=rf"row 1 is missing required fields: {missing}" ),
+    ):
+        asyncio.run(operation(_config(), SYSTEM))
 
 
 @pytest.mark.parametrize(
@@ -527,14 +539,14 @@ def test_score_operations_reject_missing_required_fields(operation, stdout, miss
         ),
         (
             plan_lpar_memopt_scores,
-            "lpar_name=web,lpar_id=1,curr_lpar_score=80,"
-            "predicted_lpar_score=,firmware_extension=",
+            ("lpar_name=web,lpar_id=1,curr_lpar_score=80,"
+             "predicted_lpar_score=,firmware_extension="),
             "predicted_lpar_score",
         ),
         (
             plan_lpar_memopt_scores,
-            "predicted_lpar_score,lpar_name=web,lpar_id=1,"
-            "curr_lpar_score=80,firmware_extension=",
+            ("predicted_lpar_score,lpar_name=web,lpar_id=1,"
+             "curr_lpar_score=80,firmware_extension="),
             "predicted_lpar_score",
         ),
     ],
@@ -542,11 +554,11 @@ def test_score_operations_reject_missing_required_fields(operation, stdout, miss
 def test_score_operations_reject_empty_required_fields(operation, stdout, field):
     connection = _connection(stdout)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
-        with pytest.raises(
-            HMCCLIError, match=rf"row 1 has empty required fields: {field}"
-        ):
-            asyncio.run(operation(_config(), SYSTEM))
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection),
+        pytest.raises( HMCCLIError, match=rf"row 1 has empty required fields: {field}" ),
+    ):
+        asyncio.run(operation(_config(), SYSTEM))
 
 
 def test_score_operations_preserve_empty_extension_fields():
@@ -565,11 +577,11 @@ def test_score_operations_preserve_empty_extension_fields():
 def test_system_score_operations_require_exactly_one_row(operation, stdout, count):
     connection = _connection(stdout)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
-        with pytest.raises(
-            HMCCLIError, match=rf"returned {count} rows; expected exactly 1"
-        ):
-            asyncio.run(operation(_config(), SYSTEM))
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection),
+        pytest.raises( HMCCLIError, match=rf"returned {count} rows; expected exactly 1" ),
+    ):
+        asyncio.run(operation(_config(), SYSTEM))
 
 
 @pytest.mark.parametrize(
@@ -585,9 +597,11 @@ def test_prediction_failures_retain_command_and_diagnostic_without_fallback(diag
     connection = _connection()
     connection.run = AsyncMock(side_effect=_process_error(diagnostic))
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection):
-        with pytest.raises(HMCCLIError) as captured:
-            asyncio.run(plan_system_memopt_score(_config(), SYSTEM))
+    with (
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=connection),
+        pytest.raises(HMCCLIError) as captured,
+    ):
+        asyncio.run(plan_system_memopt_score(_config(), SYSTEM))
 
     message = str(captured.value)
     assert "lsmemopt -m p10-system -r sys -o calcscore" in message

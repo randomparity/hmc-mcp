@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-from ..tool_registry import tool_module
-
+import json
 from dataclasses import asdict
 from decimal import Decimal
-import json
 from typing import Any
 
 from .._app import (
-    with_config,
     with_client,
+    with_config,
 )
-
 from ..operations.vnic import (
     VnicBackingSelector,
     VnicPartialError,
@@ -23,7 +20,7 @@ from ..operations.vnic import (
     list_vnics,
     remove_vnic,
 )
-
+from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

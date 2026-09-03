@@ -6,6 +6,12 @@ from conftest import make_config
 from defusedxml import ElementTree as ET
 
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.client.pcm_payloads import (
+    build_pcm_preferences_document,
+    metric_links,
+    newest_metric_link,
+    pcm_preferences_to_dict,
+)
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import (
     DEVICE_TYPES,
@@ -13,29 +19,13 @@ from hmc_mcp.jobs import (
     create_logical_unit_job,
     delete_logical_unit_job,
 )
-from hmc_mcp.client.pcm_payloads import (
-    build_pcm_preferences_document,
-    metric_links,
-    newest_metric_link,
-    pcm_preferences_to_dict,
-)
 from hmc_mcp.server_tools.metrics import (
-    hmc_aggregated_metric_links as hmc_aggregated_metric_links,
-)
-from hmc_mcp.server_tools.metrics import (
-    hmc_aggregated_metrics as hmc_aggregated_metrics,
-)
-from hmc_mcp.server_tools.metrics import (
-    hmc_get_pcm_preferences as hmc_get_pcm_preferences,
-)
-from hmc_mcp.server_tools.metrics import (
-    hmc_processed_metric_links as hmc_processed_metric_links,
-)
-from hmc_mcp.server_tools.metrics import (
-    hmc_processed_metrics as hmc_processed_metrics,
-)
-from hmc_mcp.server_tools.metrics import (
-    hmc_set_pcm_preferences as hmc_set_pcm_preferences,
+    hmc_aggregated_metric_links,
+    hmc_aggregated_metrics,
+    hmc_get_pcm_preferences,
+    hmc_processed_metric_links,
+    hmc_processed_metrics,
+    hmc_set_pcm_preferences,
 )
 
 PCM_PREFS_XML = """<?xml version="1.0"?>

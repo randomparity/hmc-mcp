@@ -4,9 +4,9 @@ import pytest
 
 from hmc_mcp.documents import (
     AUTHENTICATION_TYPES,
-    LparResources,
     PARTITION_TYPES,
     SHARING_MODES,
+    LparResources,
     build_dlpar_proc_document,
     build_hmc_user_document,
     build_lpar_document,

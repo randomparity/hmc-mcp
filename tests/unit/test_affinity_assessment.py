@@ -7,7 +7,6 @@ from hmc_mcp.operations.affinity import (
     assess_affinity,
 )
 
-
 NOW = datetime(2026, 8, 24, 12, tzinfo=UTC)
 
 

@@ -9,9 +9,9 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlencode
 
+from ..errors import HMCError
 from .client_contracts import PcmClient
 from .client_parse import _metric_links, _pcm_preferences
-from ..errors import HMCError
 from .pcm_payloads import build_pcm_preferences_document
 
 

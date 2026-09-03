@@ -16,16 +16,22 @@ from hmc_mcp.operations.pcie_validation import (
 )
 from hmc_mcp.ssh.network import (
     add_vnic_backing,
-    list_fc_ports as _list_fc_ports,
-    list_sea_adapters as _list_sea_adapters,
     list_sriov_adapter_rows,
     list_sriov_configured_logical_port_rows,
     list_sriov_physical_port_rows,
     list_vnic_backing_rows,
     list_vnic_rows,
-    list_vnics as _list_vnics,
     read_vios_identity,
     remove_vnic_slot,
+)
+from hmc_mcp.ssh.network import (
+    list_fc_ports as _list_fc_ports,
+)
+from hmc_mcp.ssh.network import (
+    list_sea_adapters as _list_sea_adapters,
+)
+from hmc_mcp.ssh.network import (
+    list_vnics as _list_vnics,
 )
 from hmc_mcp.ssh.selectors import resolve_ssh_names
 
@@ -435,7 +441,7 @@ async def _read_vnic_state_after_mutation(
     try:
         vnics = _parse_vnic_snapshots(await list_vnic_rows(config, system, lpar))
         v_ok = True
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         cause = error
         errors.append(f"vNIC reconciliation read failed: {error}")
     try:
@@ -444,7 +450,7 @@ async def _read_vnic_state_after_mutation(
             for row in await list_vnic_backing_rows(config, system)
         )
         b_ok = True
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         cause = cause or error
         errors.append(f"backing reconciliation read failed: {error}")
     return _VnicReadback(vnics, backings, v_ok, b_ok, tuple(errors), cause)
@@ -654,7 +660,7 @@ async def add_vnic(
             payload,
             port_vlan_id,
         )
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         mutation_error = error
         errors.append(f"mutation failed: {error}")
     readback = await _read_vnic_state_after_mutation(
@@ -747,7 +753,7 @@ async def remove_vnic(
     mutation_error: Exception | None = None
     try:
         output = await remove_vnic_slot(hmc.config, system_name, lpar_name, slot_num)
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
         mutation_error = error
         errors.append(f"mutation failed: {error}")
     readback = await _read_vnic_state_after_mutation(hmc.config, system_name, lpar_name)
