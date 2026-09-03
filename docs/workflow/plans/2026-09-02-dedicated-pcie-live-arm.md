@@ -115,7 +115,6 @@ class _DedicatedFixture:
     drc_index: str | None = None
     baseline_io_slots: str | None = None
     applied_io_slots: str | None = None
-    slot_assigned: bool = False   # reporting only; no cleanup guard reads it
     created: bool = False
     probe_created: bool = False
 
@@ -164,6 +163,24 @@ def _change_io_slots_command(fixture: _DedicatedFixture, *, add: bool) -> str: .
 4. Append `_dedicated_config`:
 
    ```python
+   #: Characters the HMC's own ``-i`` / ``--filter`` record parser treats as
+   #: structure. `build_attribute_record` and `build_filter` refuse them — by
+   #: raising, at command-construction time, in the caller's frame rather than
+   #: inside `RunState.call`. The first such construction happens *after* the
+   #: fixture partition exists, so an unvalidated value would abandon a created
+   #: partition with no cleanup and no results file (see the orchestrator's
+   #: try/finally in Task 4). Refusing here turns that into the ST29
+   #: configuration SKIP, before anything is created.
+   _RECORD_DELIMITERS = ',="[]\\'
+
+
+   def _config_value_safe(value: str) -> bool:
+       """Whether *value* can cross the HMC record grammar unchanged."""
+       return not any(
+           character in _RECORD_DELIMITERS or character < " " for character in value
+       )
+
+
    def _dedicated_config(environ: Mapping[str, str]) -> _DedicatedConfig | None:
        """Resolve the arm's explicit configuration, or None when it is absent.
 
@@ -179,8 +196,17 @@ def _change_io_slots_command(fixture: _DedicatedFixture, *, add: bool) -> str: .
            environ.get(_DEDICATED_ENV_PROFILE) or ""
        ).strip() or _DEFAULT_DEDICATED_PROFILE
        drc_index = (environ.get(_DEDICATED_ENV_DRC) or "").strip() or None
+       if not all(
+           _config_value_safe(value)
+           for value in (lpar_prefix, profile_name, drc_index or "")
+       ):
+           return None
        return _DedicatedConfig(system_name, lpar_prefix, profile_name, drc_index)
    ```
+
+   `system_name` is deliberately not in that set: it reaches the commands through
+   `shlex.quote` only, never through a record, and the two managed-system reads at ST29 fail
+   safely on a bad name. The other three do reach a record.
 
 5. Append `_new_run_marker` and `_dedicated_state_summary`:
 
@@ -431,9 +457,12 @@ async def create_dedicated_fixture(client, state, fixture) -> bool: ...
                29,
                "dedicated pcie configuration",
                f"{_DEDICATED_ENV_SYSTEM} and {_DEDICATED_ENV_PREFIX} are not both "
-               "set; the dedicated arm requires an explicitly configured managed "
-               "system and LPAR name prefix and never falls back to a default "
-               "system — SKIP dedicated arm",
+               "set, or a configured LPAR prefix, profile name, or DRC index "
+               f"carries one of the HMC record delimiters {_RECORD_DELIMITERS!r}. "
+               "The dedicated arm requires an explicitly configured managed "
+               "system and LPAR name prefix, never falls back to a default "
+               "system, and refuses a value that cannot cross the record "
+               "grammar unchanged — SKIP dedicated arm",
            )
            return None
 
@@ -684,7 +713,7 @@ async def reassign_dedicated_slot(client, state, fixture) -> bool: ...
 ### Steps
 
 1. Append `assign_dedicated_slot`. It records the admitted operation's refusal, then issues
-   the documented grammar and confirms by readback before setting `slot_assigned`.
+   the documented grammar and records the exact value the profile then holds.
 
    ```python
    async def assign_dedicated_slot(
@@ -735,7 +764,6 @@ async def reassign_dedicated_slot(client, state, fixture) -> bool: ...
        assigned = applied is not None and str(fixture.drc_index) in applied
        if assigned:
            fixture.applied_io_slots = applied
-           fixture.slot_assigned = True
        state.record(
            31,
            "profile io_slots readback (post-assign)",
@@ -799,8 +827,6 @@ async def reassign_dedicated_slot(client, state, fixture) -> bool: ...
        # removed, and the run must not believe otherwise.
        observed = await _read_profile_io_slots(client, state, fixture)
        restored = observed is not None and observed == fixture.baseline_io_slots
-       if restored:
-           fixture.slot_assigned = False
        state.record(
            33,
            "profile io_slots exact baseline restore",
@@ -833,7 +859,6 @@ async def reassign_dedicated_slot(client, state, fixture) -> bool: ...
        ok = applied is not None and str(fixture.drc_index) in applied
        if ok:
            fixture.applied_io_slots = applied
-           fixture.slot_assigned = True
        state.record(
            33,
            "profile io_slots readback (post-reassign)",
@@ -847,8 +872,8 @@ async def reassign_dedicated_slot(client, state, fixture) -> bool: ...
 **Verify:** `uv run --no-sync ruff check scripts/live_test/pcie.py` — expect
 `All checks passed!`.
 
-**Acceptance:** `assign_dedicated_slot` sets `fixture.slot_assigned` only after the readback
-observes the DRC index; `unassign_dedicated_slot` returns `False` when the readback does not
+**Acceptance:** `assign_dedicated_slot` sets `fixture.applied_io_slots` only after the
+readback observes the DRC index; `unassign_dedicated_slot` returns `False` when the readback does not
 equal `fixture.baseline_io_slots` exactly; and each of the three mutating steps performs its
 readback even when the command it just issued reported `FAIL`, so `applied_io_slots` records
 what the profile actually holds rather than what the command claimed.
@@ -874,12 +899,73 @@ async def exercise_dedicated_pcie_assignment(client, state) -> None: ...
    returns without attempting any further mutation.
 
    ```python
+   async def _cleanup_probe_partition(
+       client: Client, state: RunState, fixture: _DedicatedFixture
+   ) -> None:
+       """Delete the create-time probe partition, on its own caller token.
+
+       Independent of the fixture's own guards: a refusal here records recovery
+       evidence and returns, and must not stop the fixture from being cleaned up.
+       The probe was created with `caller_token=fixture.run_marker`, so a
+       partition of that name carrying a different token is not this run's.
+       """
+       config = fixture.config
+       st_desc, data_desc = await state.call(
+           client,
+           "hmc_get_lpar_description",
+           system_name_or_uuid=config.system_name,
+           lpar_name_or_uuid=fixture.probe_lpar_name,
+       )
+       probe_token = (
+           parse_lpar_ownership_caller_token(data_desc)
+           if st_desc == "PASS" and isinstance(data_desc, str)
+           else None
+       )
+       if probe_token != fixture.run_marker:
+           state.record(
+               34,
+               "dedicated cleanup: probe run-marker mismatch",
+               "FAIL",
+               "MANUAL RECOVERY REQUIRED: the create-time probe partition "
+               f"{fixture.probe_lpar_name!r} on {config.system_name!r} does not "
+               f"carry this run's caller token (read {probe_token!r}, expected "
+               f"{fixture.run_marker!r}); it was NOT deleted. Inspect it and "
+               "remove it by hand once identified.",
+           )
+           return
+       st, data = await state.call(
+           client,
+           "hmc_delete_lpar",
+           system_name_or_uuid=config.system_name,
+           lpar_name_or_uuid=fixture.probe_lpar_name,
+       )
+       state.record(34, "hmc_delete_lpar (create-time probe partition)", st, data)
+       if st != "PASS":
+           state.record(
+               34,
+               "dedicated cleanup: probe partition delete failed",
+               "FAIL",
+               "MANUAL RECOVERY REQUIRED: the create-time probe partition "
+               f"{fixture.probe_lpar_name!r} on {config.system_name!r} still "
+               f"exists, with dedicated slot {fixture.drc_index!r} assigned, and "
+               f"must be removed by hand. Error: {str(data)[:400]}",
+           )
+
+
    async def cleanup_dedicated(
        client: Client, state: RunState, fixture: _DedicatedFixture
    ) -> None:
        """Remove the slot, then delete the fixture — each only on an exact match."""
        config = fixture.config
        print("\n=== ST34: Dedicated PCIe Cleanup (issue #217) ===")
+
+       # Hardware before partitions, and the probe holds hardware on a
+       # gate-lifted HMC. It is a different partition with its own identity, so
+       # its outcome never gates the fixture's.
+       if fixture.probe_created:
+           await _cleanup_probe_partition(client, state, fixture)
+       if not fixture.created:
+           return
 
        # Guard A — fixture identity, re-read immediately before any mutation.
        observed = await _read_dedicated_state(client, state, fixture)
@@ -913,14 +999,15 @@ async def exercise_dedicated_pcie_assignment(client, state) -> None: ...
 
        # Guard B — remove the slot before the partition, decided on LIVE state.
        #
-       # Deliberately not `if fixture.slot_assigned:`. That flag is false on three
-       # reachable paths where the profile really does carry the DRC index — an
-       # assign or reassign whose response was lost to a timeout, and one whose
-       # confirming read failed — and on each of them a flag-gated branch skips
+       # Deliberately not gated on anything this run believes it did — not a
+       # `slot_assigned` flag, and not `applied_io_slots is not None`. Both are
+       # false on reachable paths where the profile really does carry the DRC
+       # index: an assign or reassign whose response was lost to a timeout, and
+       # one whose confirming read failed. On each, a belief-gated branch skips
        # removal and Guard C deletes a partition with a slot still on it. The
-       # profile is the fact; the flag is only a memory of it. An unreadable
-       # value (None) is also unequal to the baseline, so it enters the branch
-       # and is refused inside it.
+       # profile is the fact; a flag is only a memory of it. An unreadable value
+       # (None) is also unequal to the baseline, so it enters the branch and is
+       # refused inside it.
        drifted = (
            fixture.baseline_io_slots is not None
            and observed.profile_io_slots != fixture.baseline_io_slots
@@ -974,7 +1061,6 @@ async def exercise_dedicated_pcie_assignment(client, state) -> None: ...
                    f"Reconcile {fixture.lpar_name!r} by hand.",
                )
                return
-           fixture.slot_assigned = False
            state.record(
                34,
                "dedicated cleanup: slot removed",
@@ -998,34 +1084,6 @@ async def exercise_dedicated_pcie_assignment(client, state) -> None: ...
                "NOT deleted; remove it by hand after confirming what it is.",
            )
            return
-
-       # The probe partition first, when the create-time gate has been lifted and
-       # the probe actually created one. Same identity rules, same override-off
-       # rule: it carries this run's caller token, so the operation layer's own
-       # ownership check passes without help.
-       if fixture.probe_created:
-           st_probe, data_probe = await state.call(
-               client,
-               "hmc_delete_lpar",
-               system_name_or_uuid=config.system_name,
-               lpar_name_or_uuid=fixture.probe_lpar_name,
-           )
-           state.record(
-               34,
-               "hmc_delete_lpar (create-time probe partition)",
-               st_probe,
-               data_probe,
-           )
-           if st_probe != "PASS":
-               state.record(
-                   34,
-                   "dedicated cleanup: probe partition delete failed",
-                   "FAIL",
-                   "MANUAL RECOVERY REQUIRED: the create-time probe partition "
-                   f"{fixture.probe_lpar_name!r} on {config.system_name!r} still "
-                   f"exists, with dedicated slot {fixture.drc_index!r} assigned, "
-                   f"and must be removed by hand. Error: {str(data_probe)[:400]}",
-               )
 
        # Act on the identity Guard C just verified. `hmc_delete_lpar` accepts a
        # UUID or a name; deleting by name would re-resolve the name and reopen
@@ -1051,8 +1109,8 @@ async def exercise_dedicated_pcie_assignment(client, state) -> None: ...
            )
    ```
 
-2. Append the orchestrator. Cleanup runs whenever a fixture was created, whatever happened
-   after:
+2. Append the orchestrator. Cleanup runs whenever this run created **any** partition,
+   whatever happened after — including on an exception:
 
    ```python
    async def exercise_dedicated_pcie_assignment(
@@ -1068,15 +1126,30 @@ async def exercise_dedicated_pcie_assignment(client, state) -> None: ...
            print("  Dedicated baseline SKIP — halting dedicated arm")
            return
 
-       usable = await create_dedicated_fixture(client, state, fixture)
-       if not usable:
-           # A partition that was created but has no resolved identity or baseline
-           # still has to be cleaned up; cleanup decides for itself whether it can
-           # prove ownership. A create that never happened has nothing to clean up,
-           # and calling cleanup on it would emit a manual-recovery row for a
-           # partition that does not exist.
-           if fixture.created:
+       try:
+           await _exercise_dedicated_steps(client, state, fixture)
+       except Exception as exc:  # noqa: BLE001 — see below
+           state.record(
+               34,
+               "dedicated arm raised before cleanup",
+               "FAIL",
+               f"{type(exc).__name__}: {exc}",
+           )
+       finally:
+           # `created` covers the fixture; `probe_created` covers the create-time
+           # probe partition, which on a gate-lifted HMC holds hardware and which
+           # the fixture create can fail *after*. A create that never happened has
+           # nothing to clean up, and calling cleanup then would emit a
+           # manual-recovery row for a partition that does not exist.
+           if fixture.created or fixture.probe_created:
                await cleanup_dedicated(client, state, fixture)
+
+
+   async def _exercise_dedicated_steps(
+       client: Client, state: RunState, fixture: _DedicatedFixture
+   ) -> None:
+       """Run ST30–ST33; the caller owns cleanup on every exit."""
+       if not await create_dedicated_fixture(client, state, fixture):
            return
 
        assign_ok = await assign_dedicated_slot(client, state, fixture)
@@ -1106,9 +1179,24 @@ async def exercise_dedicated_pcie_assignment(client, state) -> None: ...
                "chsyscfg io_slots+ (reassign)",
                f"skipping reassign: unassign_ok={unassign_ok}",
            )
-
-       await cleanup_dedicated(client, state, fixture)
    ```
+
+   **Why the bare `except` is the right shape here, and what it does not fix.** The two
+   command builders raise `HMCCLIError` at *construction* time, evaluated as argument
+   expressions in the arm's own frame — outside `RunState.call`'s try/except, which only
+   covers the tool call. Task 1's `_config_value_safe` removes the reachable trigger before
+   anything is created; this `finally` is the second line, so that any unanticipated raise
+   still reaches cleanup rather than abandoning a created partition. `RunState.call` already
+   takes the same totality position for the same reason (`live_test_runner.py`'s `call`
+   carries the identical `noqa: BLE001`).
+
+   It is bounded, and the bound is worth writing down: `scripts/live_test_runner.py`
+   dispatches subtasks with a bare `await fn(client, state)` and writes its results file
+   *after* the `try/finally` that closes the ISO server. So an exception escaping this arm
+   would also discard every row of every subtask in the run. Catching here keeps the arm's
+   own failure from doing that. Making the runner's dispatch loop resilient is a separate
+   concern in a file this charter's surface does not include, and it is not made worse by
+   this change.
 
 3. In `scripts/live_test_runner.py`, extend the existing import to
    `from live_test.pcie import (exercise_dedicated_pcie_assignment, exercise_sriov_assignment)`,
@@ -1152,16 +1240,25 @@ SR-IOV arm.
 ### Steps
 
 1. Create the module with the header and the state seam. It follows
-   `tests/scripts/test_inventory.py`'s `ScenarioState` pattern, extended with a **per-call**
-   status map and an ordered call list so a test can assert that a mutation **did not**
-   happen.
+   `tests/scripts/test_inventory.py`'s `ScenarioState` pattern, extended with three things
+   the inventory one does not need.
 
-   The per-call form is required, not a convenience: `hmc_create_lpar` is called twice
-   (probe, then fixture) and `hmc_run_command` carries the environment reads, every
-   `lssyscfg` and every `chsyscfg`, so a run-wide status on either tool aborts the arm at a
-   strictly earlier step than the one a test is named for and the assertion then passes over
-   the wrong path. A `statuses` value may therefore be a plain string **or** a callable
-   `(tool, kwargs, call_index) -> str`:
+   **A per-call status map.** `hmc_create_lpar` is called twice (probe, then fixture) and
+   `hmc_run_command` carries the two environment reads, every `lssyscfg` and every
+   `chsyscfg`, so a run-wide status on either tool aborts the arm at a strictly earlier step
+   than the one a test is named for, and the assertion then passes over the wrong path. A
+   `statuses` value may therefore be a plain string **or** a callable
+   `(tool, kwargs, per_tool_index) -> str`.
+
+   **A cleanup phase boundary.** The arm legitimately issues an `io_slots-` at ST33, before
+   any guard runs, so a flat run-wide command list cannot express "no *cleanup* mutation was
+   issued" — the assertion every guard test depends on. `_run_arm` therefore wraps
+   `pcie.cleanup_dedicated` and records the call index at which cleanup began; assertions
+   read `state.cleanup_calls()`.
+
+   **A mutable `io_slots` model** behind `hmc_run_command`, so a `chsyscfg` in the sequence
+   actually changes what the next `lssyscfg` reads. A static map would let a cleanup that
+   issues no command still look correct.
 
    ```python
    """Behavioural tests for the dedicated PCIe live-assignment arm (issue #217)."""
@@ -1183,10 +1280,12 @@ SR-IOV arm.
        "HMC_LIVE_PCIE_SYSTEM": "sys-one",
        "HMC_LIVE_PCIE_LPAR_PREFIX": "live-",
    }
+   _DRC = "553713664"
+   _ASSIGNED = f"{_DRC}//0"
 
 
    class ScenarioState:
-       """State seam recording every tool call in order, with per-tool outcomes."""
+       """State seam recording every tool call in order, with per-call outcomes."""
 
        def __init__(
            self,
@@ -1199,6 +1298,7 @@ SR-IOV arm.
            self.results: list[tuple[int, str, str, Any]] = []
            self.context = SimpleNamespace(system_name="unused", lp3_name="unused")
            self.tool_counts: dict[str, int] = {}
+           self.cleanup_start: int | None = None
 
        async def call(
            self, _client: object, tool: str, **kwargs: Any
@@ -1208,7 +1308,7 @@ SR-IOV arm.
            self.calls.append((tool, kwargs))
            response = self.responses.get(tool)
            if callable(response):
-               response = response(kwargs, len(self.calls))
+               response = response(kwargs, index)
            status = self.statuses.get(tool, "PASS")
            if callable(status):
                status = status(tool, kwargs, index)
@@ -1217,9 +1317,11 @@ SR-IOV arm.
        def record(
            self, subtask: int, tool: str, status: str, data: Any, note: str = ""
        ) -> None:
-           # `RunState.record` puts the note in `note` and the payload in `data`;
-           # both are retained here so an assertion can read either.
-           self.results.append((subtask, tool, status, data if data is not None else note))
+           # `RunState.record` carries the note in `note` and the payload in
+           # `data`; keeping whichever is populated lets one assertion read both.
+           self.results.append(
+               (subtask, tool, status, data if data is not None else note)
+           )
 
        def skip(self, subtask: int, tool: str, reason: str) -> None:
            self.results.append((subtask, tool, "SKIP", reason))
@@ -1240,111 +1342,169 @@ SR-IOV arm.
                return
            self.record(subtask, tool, status, data)
 
-       def commands(self) -> list[str]:
-           return [
-               kwargs["cmd"] for tool, kwargs in self.calls if tool == "hmc_run_command"
-           ]
+       # -- views -------------------------------------------------------------
 
        def tools(self) -> list[str]:
            return [tool for tool, _ in self.calls]
 
-       def statuses_for(self, needle: str) -> list[str]:
-           return [status for _, tool, status, _ in self.results if needle in tool]
+       def commands(self) -> list[str]:
+           return [k["cmd"] for t, k in self.calls if t == "hmc_run_command"]
+
+       def cleanup_calls(self) -> list[tuple[str, dict[str, Any]]]:
+           assert self.cleanup_start is not None, "cleanup never ran"
+           return self.calls[self.cleanup_start :]
+
+       def cleanup_commands(self) -> list[str]:
+           return [k["cmd"] for t, k in self.cleanup_calls() if t == "hmc_run_command"]
+
+       def cleanup_tools(self) -> list[str]:
+           return [tool for tool, _ in self.cleanup_calls()]
+
+       def row(self, needle: str) -> tuple[int, str, str, Any] | None:
+           """The first recorded row whose tool label contains *needle*."""
+           return next((r for r in self.results if needle in r[1]), None)
    ```
 
+   `row()` is what makes a recovery-evidence assertion specific. Scanning every row for the
+   substring `MANUAL RECOVERY REQUIRED` cannot distinguish a guard that refused from one
+   that did not, because ST30's probe row can carry that text too.
+
 2. Add helpers building a working scenario, so each guard test differs from the happy path
-   in exactly one respect:
+   in exactly one respect.
+
+   The default is **today's** behaviour: ADR 0055 refuses the create-time probe, so no probe
+   partition exists and cleanup performs exactly one delete. Test 6 opts into the
+   gate-lifted branch explicitly. Defaulting the other way would make every other test run
+   the gate-lifted path, give each of them a pre-satisfied recovery row, and make the
+   happy-path delete assertion pick the probe's delete instead of the fixture's.
 
    ```python
+   _ADMITTED_VERSION = "Version: 10\nRelease: 3\nService Pack: 1060"
+   _ADMITTED_MODEL = "8375-42A"
+   _REFUSAL = (
+       "PcieAssignmentUnavailableError: ADR 0053 admits no exact dedicated "
+       "PCIe profile readback; assignment cannot be safely verified"
+   )
+
+
    def _slot_inventory(owner: str = "") -> dict[str, Any]:
        return {
            "capability": "available",
            "items": [
-               {"drc_index": "553713664", "description": "PCIe adapter", "owner_lpar": owner}
+               {"drc_index": _DRC, "description": "PCIe adapter", "owner_lpar": owner}
            ],
        }
 
 
-   _ADMITTED_VERSION = "Version: 10\nRelease: 3\nService Pack: 1060"
-   _ADMITTED_MODEL = "8375-42A"
+   def _is_probe(kwargs: dict[str, Any]) -> bool:
+       return str(kwargs.get("name", "")).endswith("-createtime")
+
+
+   def _probe_refused(_tool: str, kwargs: dict[str, Any], _index: int) -> str:
+       """The default: the create-time probe is refused, the fixture create is not."""
+       return "FAIL" if _is_probe(kwargs) else "PASS"
 
 
    def _happy_responses(
        marker_holder: dict[str, str],
        *,
        description: str | None = None,
+       descriptions: list[str] | None = None,
        uuid_value: str | None = "fixture-uuid",
+       uuids: list[str | None] | None = None,
        ownership_stamped: bool | None = True,
        hmc_version: str = _ADMITTED_VERSION,
        system_model: str = _ADMITTED_MODEL,
-       model: dict[str, str] | None = None,
+       inventory_owner: str = "",
+       run_command: Any = None,
    ) -> dict[str, Any]:
        """Responses for a run in which every step succeeds.
 
-       ``io_slots`` is served from a small mutable model so a ``chsyscfg`` in the
-       call sequence actually changes what the next ``lssyscfg`` reads — a static
-       map would let a cleanup that issues no command still look correct. Tests
-       that need to diverge from the command sequence (a mutation that applied
-       while its response was lost) pass their own ``model``.
+       ``descriptions`` and ``uuids``, when given, are consumed one per call so a
+       test can make an identity drift *between* two reads — which is how Guard C
+       is reached with a value Guard A already accepted. ``run_command`` replaces
+       the default command model outright, for the two tests whose fault is a
+       response property rather than a status.
        """
-       slots = model if model is not None else {"io_slots": "none"}
+       slots = {"io_slots": "none"}
 
-       def run_command(kwargs: dict[str, Any], _n: int) -> str:
+       def default_run_command(kwargs: dict[str, Any], _index: int) -> str:
            cmd = kwargs["cmd"]
            if cmd == "lshmc -V":
                return hmc_version
            if "-r sys " in cmd and "type_model" in cmd:
                return system_model
            if "io_slots+" in cmd:
-               slots["io_slots"] = "553713664//0"
+               slots["io_slots"] = _ASSIGNED
                return ""
            if "io_slots-" in cmd:
                slots["io_slots"] = "none"
                return ""
            return slots["io_slots"]
 
-       def get_description(_kwargs: dict[str, Any], _n: int) -> str:
+       def get_description(_kwargs: dict[str, Any], index: int) -> str:
+           if descriptions is not None:
+               return descriptions[min(index, len(descriptions) - 1)]
            if description is not None:
                return description
            token = marker_holder.get("marker", "")
            return f"[hmc-mcp owner:hmc-mcp created:2026-09-02] [caller {token}]"
 
-       return {
-           "hmc_list_dedicated_pcie_slots": lambda _k, _n: _slot_inventory(),
-           "hmc_create_lpar": lambda _k, _n: {
+       def get_lpar(_kwargs: dict[str, Any], index: int) -> dict[str, Any] | None:
+           value = (
+               uuids[min(index, len(uuids) - 1)] if uuids is not None else uuid_value
+           )
+           return {"UUID": value} if value else None
+
+       def create_lpar(kwargs: dict[str, Any], _index: int) -> Any:
+           if _is_probe(kwargs):
+               return _REFUSAL
+           return {
                "resource_created": True,
                "lpar": {"UUID": uuid_value} if uuid_value else None,
                "ownership_stamped": ownership_stamped,
                "warnings": [],
-           },
-           "hmc_get_lpar": lambda _k, _n: {"UUID": uuid_value} if uuid_value else None,
+           }
+
+       return {
+           "hmc_list_dedicated_pcie_slots": lambda _k, _n: _slot_inventory(
+               inventory_owner
+           ),
+           "hmc_create_lpar": create_lpar,
+           "hmc_get_lpar": get_lpar,
            "hmc_get_lpar_description": get_description,
-           "hmc_run_command": run_command,
+           "hmc_run_command": run_command or default_run_command,
            "hmc_delete_lpar": lambda _k, _n: "deleted",
            "hmc_assign_dedicated_pcie_slot": lambda _k, _n: None,
        }
+   ```
 
+   Three status helpers cover every fault the table below names. Each states which seam it
+   drives, because a status callable cannot change what a response returns and vice versa:
 
-   def _first_call_fails() -> Any:
-       """A status callable failing only a tool's first call.
+   ```python
+   def _command_fails(needle: str) -> Any:
+       """Status seam: fail every `hmc_run_command` whose text contains *needle*."""
 
-       The failing call's *payload* comes from the responses map, which can
-       branch on `kwargs["name"]` to tell the create-time probe from the fixture
-       create — the response callable's second argument is the run-wide call
-       index, not the per-tool one.
-       """
-
-       def status(_tool: str, _kwargs: dict[str, Any], index: int) -> str:
-           return "FAIL" if index == 0 else "PASS"
+       def status(_tool: str, kwargs: dict[str, Any], _index: int) -> str:
+           return "FAIL" if needle in kwargs.get("cmd", "") else "PASS"
 
        return status
 
 
-   def _command_fails(needle: str) -> Any:
-       """A status callable failing only the `hmc_run_command` calls matching *needle*."""
+   def _nth_matching_command_fails(needle: str, first: int) -> Any:
+       """Status seam: fail matching commands from the *first*-th occurrence on.
+
+       Counts matches itself rather than using the per-tool index, because
+       `hmc_run_command` also carries the environment reads and the mutations.
+       """
+       seen = {"n": 0}
 
        def status(_tool: str, kwargs: dict[str, Any], _index: int) -> str:
-           return "FAIL" if needle in kwargs.get("cmd", "") else "PASS"
+           if needle not in kwargs.get("cmd", ""):
+               return "PASS"
+           seen["n"] += 1
+           return "FAIL" if seen["n"] >= first else "PASS"
 
        return status
 
@@ -1353,7 +1513,7 @@ SR-IOV arm.
        monkeypatch: pytest.MonkeyPatch,
        responses: dict[str, Any],
        marker_holder: dict[str, str],
-       statuses: dict[str, str] | None = None,
+       statuses: dict[str, Any] | None = None,
        env: dict[str, str] | None = None,
    ) -> ScenarioState:
        for name in (
@@ -1374,15 +1534,29 @@ SR-IOV arm.
            return marker
 
        monkeypatch.setattr(pcie, "_new_run_marker", capture)
-       state = ScenarioState(responses, statuses)
+
+       # The cleanup phase boundary: the arm reaches cleanup through this module
+       # global, so wrapping it records where cleanup's calls begin.
+       real_cleanup = pcie.cleanup_dedicated
+
+       async def marking_cleanup(client: Any, st: Any, fixture: Any) -> None:
+           st.cleanup_start = len(st.calls)
+           await real_cleanup(client, st, fixture)
+
+       monkeypatch.setattr(pcie, "cleanup_dedicated", marking_cleanup)
+
+       merged = {"hmc_create_lpar": _probe_refused}
+       merged.update(statuses or {})
+       state = ScenarioState(responses, merged)
        await pcie.exercise_dedicated_pcie_assignment(None, state)
        return state
    ```
 
 3. Write the twenty tests the spec's Testing section lists, in that order, each named for
-   the guard it exercises. Every guard test asserts **both** the recorded row and the
-   absence of the forbidden call. Four written out — the three shapes every other test
-   follows, plus the live-state regression that a flag-gated Guard B fails:
+   the guard it exercises. Every guard test asserts **both** a specific recorded row and the
+   absence of the forbidden call **within the cleanup phase**. Five written out — the shapes
+   every other test follows, plus the two that distinguish a live-state Guard B from a
+   belief-gated one:
 
    ```python
    @pytest.mark.asyncio
@@ -1406,16 +1580,15 @@ SR-IOV arm.
        )
        state = await _run_arm(monkeypatch, responses, holder)
 
-       assert "hmc_delete_lpar" not in state.tools()
-       assert not [cmd for cmd in state.commands() if "io_slots-" in cmd]
-       assert any(
-           status == "FAIL" and "MANUAL RECOVERY REQUIRED" in str(data)
-           for _, _, status, data in state.results
-       )
+       assert "hmc_delete_lpar" not in state.cleanup_tools()
+       assert not [c for c in state.cleanup_commands() if "io_slots-" in c]
+       row = state.row("run-marker mismatch")
+       assert row is not None and row[2] == "FAIL"
+       assert "MANUAL RECOVERY REQUIRED" in str(row[3])
 
 
    @pytest.mark.asyncio
-   async def test_slot_removal_precedes_partition_delete(
+   async def test_happy_path_removes_the_slot_then_deletes_by_uuid(
        monkeypatch: pytest.MonkeyPatch,
    ) -> None:
        holder: dict[str, str] = {}
@@ -1423,25 +1596,29 @@ SR-IOV arm.
 
        order = [
            index
-           for index, (tool, kwargs) in enumerate(state.calls)
+           for index, (tool, kwargs) in enumerate(state.cleanup_calls())
            if tool == "hmc_delete_lpar"
            or (tool == "hmc_run_command" and "io_slots-" in kwargs["cmd"])
        ]
        assert order, "expected a cleanup removal and a delete"
-       assert state.calls[order[-1]][0] == "hmc_delete_lpar"
-       delete = next(k for t, k in state.calls if t == "hmc_delete_lpar")
-       assert delete["lpar_name_or_uuid"] == "fixture-uuid"
-       assert "ownership_override" not in delete
+       assert state.cleanup_calls()[order[-1]][0] == "hmc_delete_lpar"
+
+       deletes = [k for t, k in state.calls if t == "hmc_delete_lpar"]
+       assert len(deletes) == 1, "the probe was refused, so only the fixture is deleted"
+       assert deletes[0]["lpar_name_or_uuid"] == "fixture-uuid"
+       assert "ownership_override" not in deletes[0]
 
 
    @pytest.mark.asyncio
    async def test_cleanup_removes_a_slot_whose_assign_response_was_lost(
        monkeypatch: pytest.MonkeyPatch,
    ) -> None:
-       """The assign applied but reported FAIL, so `slot_assigned` is never set.
+       """The `chsyscfg` applied and then reported FAIL.
 
-       A Guard B gated on that flag skips the removal and deletes the partition
-       with the slot still on it. This is the test that distinguishes the two.
+       `assign_dedicated_slot` must read back anyway, so `applied_io_slots`
+       records what the profile holds. Restore the early `return` before that
+       readback and cleanup can no longer prove the deviation is its own: it
+       refuses the delete, and this test goes red.
        """
        holder: dict[str, str] = {}
        state = await _run_arm(
@@ -1451,38 +1628,65 @@ SR-IOV arm.
            statuses={"hmc_run_command": _command_fails("io_slots+")},
        )
 
-       cleanup_removals = [c for c in state.commands() if "io_slots-" in c]
-       assert cleanup_removals, "cleanup must remove a slot the profile still holds"
+       assert [c for c in state.cleanup_commands() if "io_slots-" in c]
+       assert "hmc_delete_lpar" in state.cleanup_tools()
        order = [
            index
-           for index, (tool, kwargs) in enumerate(state.calls)
+           for index, (tool, kwargs) in enumerate(state.cleanup_calls())
            if tool == "hmc_delete_lpar"
            or (tool == "hmc_run_command" and "io_slots-" in kwargs["cmd"])
        ]
-       assert state.calls[order[-1]][0] == "hmc_delete_lpar"
+       assert state.cleanup_calls()[order[-1]][0] == "hmc_delete_lpar"
+
+
+   @pytest.mark.asyncio
+   async def test_cleanup_refuses_when_the_confirming_read_was_lost(
+       monkeypatch: pytest.MonkeyPatch,
+   ) -> None:
+       """ST30's baseline read succeeds; every profile read after it fails.
+
+       So the assign applies, `applied_io_slots` is never set, and the live
+       `io_slots` at cleanup is unreadable. Guard B must enter on the baseline
+       comparison and refuse — a Guard B gated on `applied_io_slots is not None`
+       would skip the branch and delete, and this test goes red.
+       """
+       holder: dict[str, str] = {}
+       state = await _run_arm(
+           monkeypatch,
+           _happy_responses(holder),
+           holder,
+           statuses={
+               "hmc_run_command": _nth_matching_command_fails("-F io_slots", 2)
+           },
+       )
+
+       assert "hmc_delete_lpar" not in state.cleanup_tools()
+       assert not [c for c in state.cleanup_commands() if "io_slots-" in c]
+       row = state.row("profile drift")
+       assert row is not None and row[2] == "FAIL"
    ```
 
-   The remaining sixteen follow the same shape against the scenario variation the spec
-   names. Their fault injections, where not obvious:
+   The remaining fifteen follow the same shape. Their fault injections, and which seam each
+   drives:
 
-   | Spec test | Injection |
-   |---|---|
-   | 2 environment outside envelope | `_happy_responses(holder, system_model="9080-M9S")` |
-   | 3 no unassigned slot | `_slot_inventory(owner="someone")` |
-   | 4 configured DRC absent | `env={**_ENV, "HMC_LIVE_PCIE_DRC_INDEX": "999"}` |
-   | 5 create-time refusal | `statuses={"hmc_create_lpar": _first_call_fails()}`, response branching on `kwargs["name"]` to return `"PcieAssignmentUnavailableError: …"` for the probe |
-   | 6 probe unexpectedly succeeds | default statuses — every `hmc_create_lpar` PASSes |
-   | 7 assign-tool refusal | `statuses={"hmc_assign_dedicated_pcie_slot": "FAIL"}` with a matching payload |
-   | 9 UUID drift | `hmc_get_lpar` returning a different UUID after the create |
-   | 10 foreign token | `description="… [caller someone-else]"` |
-   | 11 unreadable identity | `statuses={"hmc_get_lpar_description": "FAIL"}` |
-   | 12 profile drift | a `model` the test mutates to a third value before cleanup |
-   | 13 removal does not restore | `_command_fails` variant whose `io_slots-` leaves the model unchanged |
-   | 15 lost confirming read | `statuses={"hmc_run_command": _command_fails("-F io_slots")}` scoped to the post-assign read |
-   | 16 identity drift before delete | `hmc_get_lpar_description` returning this run's token first and a foreign one afterwards |
-   | 17 nothing ever assigned | `_command_fails("io_slots+")` **with** a `model` that does not apply it |
-   | 19 no resolvable UUID | `uuid_value=None` |
-   | 20 stamp did not land | `ownership_stamped=False` |
+   | Spec test | Seam | Injection |
+   |---|---|---|
+   | 2 environment outside envelope | response | `_happy_responses(holder, system_model="9080-M9S")` |
+   | 3 no unassigned slot | response | `_happy_responses(holder, inventory_owner="someone")` |
+   | 4 configured DRC absent | env | `env={**_ENV, "HMC_LIVE_PCIE_DRC_INDEX": "999"}` |
+   | 5 create-time refusal | default | the default `_probe_refused`; assert the ST30 row is `SKIP`, and that the fixture create still happened |
+   | 6 probe unexpectedly succeeds | status | `statuses={"hmc_create_lpar": "PASS"}`; assert `probe_created`'s FAIL row, a probe-name delete, and that it precedes the fixture delete |
+   | 7 assign-tool refusal | status | `statuses={"hmc_assign_dedicated_pcie_slot": "FAIL"}` with a `_REFUSAL` payload; assert `SKIP` and that `io_slots+` was still issued |
+   | 9 UUID drift | response | `uuids=["fixture-uuid", "other-uuid"]` — Guard A's read is the second |
+   | 11 unreadable identity | status | `statuses={"hmc_get_lpar_description": "FAIL"}` |
+   | 12 profile drift | response | a `run_command` whose profile read returns a third value once `io_slots+` has been seen twice (assign and reassign) |
+   | 13 removal does not restore | response | a `run_command` whose `io_slots-` returns PASS but leaves the model at `_ASSIGNED` |
+   | 16 identity drift before delete | response | `descriptions=[this run's stamp] * 3 + [foreign stamp]` — Guard A reads early, Guard C reads last |
+   | 17 nothing ever assigned | response | a `run_command` whose `io_slots+` is a no-op returning PASS; assert no cleanup `io_slots-` **and** that the delete still happens |
+   | 18 marker uniqueness | direct | call `pcie._new_run_marker()` twice; assert distinct, and that a fixture's `lpar_name` starts with the prefix |
+   | 19 no resolvable UUID | response | `uuid_value=None` |
+   | 20 stamp did not land | response | `ownership_stamped=False` **and** `description="[hmc-mcp owner:hmc-mcp created:2026-09-02]"` — no caller segment, because `lifecycle.py` documents `False` as both the stamp and the caller segment being lost in one write. Assert no `chsyscfg` at all **and** that Guard A refuses the delete with a recovery row, which is what the spec's ST30 note claims. |
+   | 1b delimiter-bearing config | env | `env={**_ENV, "HMC_LIVE_PCIE_PROFILE": "prof,x"}`; assert `state.calls == []` — the SKIP happens before anything is created, which is what keeps a `build_filter` raise off a path where a partition already exists |
 
 **Verify:**
 
@@ -1491,20 +1695,24 @@ uv run --no-sync pytest tests/scripts/test_pcie.py -q
 uv run --no-sync ruff check .
 ```
 
-Expect 20 passed and `All checks passed!`.
+Expect 21 passed and `All checks passed!`.
 
-**Acceptance:** every guard test asserts an absent call, not only a recorded row. To confirm
-the tests bite, introduce each controlled fault below in turn, observe the named tests go
-red, and revert before the next one. A guard whose neutralization reddens nothing is not
-covered, whatever its tests appear to assert.
+**Acceptance:** every guard test asserts an absent *cleanup* call and a specific recorded
+row, not a run-wide substring scan. To confirm the tests bite, introduce each controlled
+fault below in turn, observe the named tests go red, and revert before the next one. A guard
+whose neutralization reddens nothing is not covered, whatever its tests appear to assert.
 
 | Fault | Tests that must fail |
 |---|---|
-| Guard A's identity comparison → `if False:` | 9, 10, 11 |
-| Guard B's entry condition → `if fixture.slot_assigned:` | 14, 15 |
-| Guard B's `applied_io_slots` exact-match → `if False:` | 12, 13 |
+| Guard A's identity comparison → `if False:` | 9, 10, 11, 20 |
+| `assign_dedicated_slot` returns early on a non-`PASS` command, before its readback | 14 |
+| Guard B's entry → `if fixture.applied_io_slots is not None:` | 15 |
+| Guard B's `applied_io_slots` exact-match → `if False:` | 12 |
+| Guard B's post-removal baseline check → `if False:` | 13 |
 | Guard C's re-read comparison → `if False:` | 16 |
 | `_admit_dedicated_environment` → always return `True` | 2 |
+| `_config_value_safe` → always return `True` | 1b |
+| `_cleanup_probe_partition`'s token comparison → `if False:` | 6 |
 
 **Cleanup:** revert every deliberate fault before committing.
 
@@ -1528,14 +1736,16 @@ the invocation, and ADR 0115's status names the evidence it was accepted on.
 
 ## Deferrals
 
-None. The design review (`$trial-loop`/`$gauntlet`, iteration 1, 9 findings / 3 blocking)
-raised no finding that was deferred, rejected, or blocked: all nine were dispositioned
-`accepted-fixed` in the design set. In summary, what changed:
+None. The design review (`$trial-loop`/`$gauntlet`, three iterations, 20 findings / 8
+blocking across passes 1 and 2) raised no finding that was deferred, rejected, or blocked:
+every one was dispositioned `accepted-fixed` in the design set. In summary, what changed —
+first from pass 1:
 
-- **Guard B no longer reads `fixture.slot_assigned`.** It is entered on live state — the
-  re-read `io_slots` differing from the captured baseline — because the flag is false on
-  three reachable paths where the profile really does carry the DRC index, and on each of
-  them a flag-gated guard deleted a partition with a slot still assigned.
+- **Guard B is not gated on anything the run believes it did.** It is entered on live state
+  — the re-read `io_slots` differing from the captured baseline — because a
+  `slot_assigned`-style flag is false on three reachable paths where the profile really does
+  carry the DRC index, and on each of them a flag-gated guard deleted a partition with a slot
+  still assigned. The field itself is gone, so nothing can gate on it later.
 - **The three mutating steps read back even when the command reported `FAIL`**, so the run
   never believes it did not write something it did.
 - **`ownership_stamped` is not `True` now stops the arm before any mutation**, joining the
@@ -1556,6 +1766,39 @@ raised no finding that was deferred, rejected, or blocked: all nine were disposi
   guards plus the environment gate rather than Guard A alone.
 - **ADR 0115 is `Proposed` until the guardrails are green** (Task 6 step 4), and its
   "before issuing any command" claim is narrowed to "before any mutating command".
+
+Then from pass 2, which reviewed those fixes and found four of them under-specified in the
+place that matters most — the tests that must make the guards refuse:
+
+- **The test seam gained a cleanup phase boundary.** The arm legitimately issues an
+  `io_slots-` at ST33, so "no cleanup mutation was issued" was unwritable against a run-wide
+  command list; six guard tests depended on an assertion that could not be stated.
+- **Recovery evidence is asserted by the specific guard row**, not by scanning every row for
+  `MANUAL RECOVERY REQUIRED` — ST30's probe row can carry that text and pre-satisfy it.
+- **The ADR 0055 refusal is now the default fixture**, so every test except test 6 runs
+  today's behaviour. Defaulting the probe to success made the happy path exercise the
+  gate-lifted branch and made its delete assertion pick the probe's delete.
+- **Tests 14 and 15 have injections that reach the states they are named for.** The previous
+  test 14 left the readback succeeding, so its scenario never produced the belief it was
+  meant to falsify; test 15's injection aborted the arm at ST30's baseline read and asserted
+  the opposite of what the arm does.
+- **Configuration values carrying an HMC record delimiter SKIP at ST29.**
+  `build_filter` / `build_attribute_record` raise at command-construction time, in the arm's
+  frame, outside `RunState.call` — and the first construction happens *after* the fixture
+  exists, so an unvalidated `HMC_LIVE_PCIE_PROFILE="prof,x"` abandoned a created partition
+  with no cleanup and, because the runner writes results after its `finally`, no results
+  file. The orchestrator also gained a `try/finally` so cleanup runs on any exception.
+- **Cleanup runs when only the probe partition was created**, and the probe's delete now
+  performs the caller-token comparison all three documents claimed for it, in its own
+  helper so its refusal never blocks the fixture's cleanup.
+- **Test 20's fixture is consistent with `lifecycle.py`'s contract** (`ownership_stamped=False`
+  means the caller segment was lost too), so the Guard A refusal the spec relies on is
+  actually exercised.
+- **The fault-injection table names the seam each fault drives**, since a status callable
+  cannot change what a response returns.
+- **ADR 0115 and the spec record the `io_slots` byte-stability question** as an expected
+  Guard B refusal on the first live run rather than a defect, and refuse to loosen the
+  comparison to avoid it.
 
 The dedicated arm is not exercised against hardware by this change; the live PASS/SKIP/FAIL
 matrix is the operator's, per the frozen charter's exclusions.

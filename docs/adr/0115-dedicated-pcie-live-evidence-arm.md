@@ -90,6 +90,19 @@ layer's ownership and validation checks. The fixture ownership guards above are 
 replaces them, and they are the part the unit tests must exercise — a guard that never
 refuses is indistinguishable from no guard.
 
+**Guard B's exact string comparison rests on a readback ADR 0053 records as not yet
+admitted, and that is a stated expectation rather than an oversight.** `io_slots` is a
+list-valued attribute; nothing in this repository establishes that
+`lssyscfg -r prof -F io_slots` is byte-stable across an add/remove round trip on a profile
+that already holds slots, and no captured sample exists to check against. If it is not, the
+post-removal value will not equal the captured baseline, Guard B will refuse the delete, and
+the run will end with the fixture alive and recovery evidence recorded. That is the correct
+outcome, not a defect: the refusal row carries the baseline and post-removal strings side by
+side, so the first live run answers the stability question directly, and the captured
+before/after pair is the ADR 0053 input either way. Guard B is not weakened to accommodate
+it — a comparison loose enough to tolerate re-rendering is also loose enough to tolerate
+third-party drift, which is the thing it exists to catch.
+
 The arm's mutation surface is a partition it created in the same run. It never mutates a
 pre-existing LPAR, and it selects only a dedicated slot that inventory reports as
 unassigned.

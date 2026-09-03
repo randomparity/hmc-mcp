@@ -62,7 +62,6 @@ class _DedicatedFixture:
     drc_index: str | None = None
     baseline_io_slots: str | None = None   # exact profile value at creation
     applied_io_slots: str | None = None    # exact profile value this run wrote
-    slot_assigned: bool = False            # reporting only; no guard reads it
     created: bool = False      # a partition exists and is this run's to clean up
     probe_created: bool = False  # the create-time probe unexpectedly created one
 
@@ -158,8 +157,10 @@ returns `FAIL` for any raised exception, and `ssh/transport.py` raises `HMCCLIEr
 the SSH timeout expires — after the HMC has already executed `chsyscfg`. Returning early on
 a `FAIL` without reading back is how the run would come to believe it had not written
 something it had. So the readback and the `applied_io_slots` capture happen first, and only
-then does a non-`PASS` command status end the step. `slot_assigned` is retained for
-reporting; **no cleanup guard reads it** (see below).
+then does a non-`PASS` command status end the step. There is deliberately no
+`slot_assigned`-style flag on the fixture at all: a field recording what the run believes it
+did is exactly the input Guard B must not take, and a field nothing reads is a standing
+invitation to gate on it.
 
 **ST32 — verify readback.** The profile's `io_slots` must contain the DRC index. The
 dedicated-slot inventory owner is recorded as an informational row, mirroring the SR-IOV
@@ -175,11 +176,17 @@ if the previous one passed; a skipped phase is recorded as SKIP with the reason.
 
 ## Cleanup contract
 
-Cleanup performs at most two mutations, in this order: remove the slot from the profile,
-then delete the LPAR. Before **each** of them it re-reads live state and compares it exactly
-against what this run recorded. Every refusal records a FAIL row whose note begins
-`MANUAL RECOVERY REQUIRED:` and names the exact command an operator must run, and then
-returns without attempting any further mutation.
+Cleanup performs at most three mutations: delete the create-time probe partition when one
+exists, then remove the slot from the fixture profile, then delete the fixture. Before
+**each** of them it re-reads live state and compares it exactly against what this run
+recorded. Every refusal records a FAIL row whose tool label names the guard and whose data
+begins `MANUAL RECOVERY REQUIRED:` and names the exact command an operator must run, and
+then stops that line of cleanup without attempting any further mutation on it.
+
+The probe partition is a **different partition with its own identity**, so it is handled
+first and independently: its own caller token is read and compared to this run's marker
+before its delete, and a refusal there records recovery evidence without preventing the
+fixture from being cleaned up. Guards A, B and C below govern the fixture only.
 
 **Guard A — fixture identity, checked before either mutation.** Re-read the LPAR UUID via
 `hmc_get_lpar` and the ADR 0064 caller token from `hmc_get_lpar_description`, parsed with
@@ -222,6 +229,17 @@ When no baseline was captured, ST31–ST33 never ran (`create_dedicated_fixture`
 `False` without one), so there is nothing to compare and nothing to remove; the delete is
 governed by Guard A and Guard C alone.
 
+**Expected on the first live run: Guard B may refuse for a benign reason.** Nothing in this
+repository establishes that `lssyscfg -r prof -F io_slots` — a list-valued attribute — is
+byte-stable across an add/remove round trip on a profile that already holds slots; ADR 0053
+records that readback as not yet admitted, and there is no captured sample. If the HMC
+re-renders or reorders the value, the post-removal string will not equal the baseline and
+Guard B will refuse the delete. That is the safe direction and a real result, not a bug: the
+refusal row prints the baseline and the post-removal value side by side, which answers the
+stability question on the first run, and the captured before/after pair is the ADR 0053
+evidence either way. Do not loosen the comparison to avoid it — a comparison that tolerates
+re-rendering also tolerates the third-party drift Guard B exists to catch.
+
 **Guard C — LPAR deletion.** Reached only after Guard A passed and either Guard B was not
 entered or it completed and observed the restored baseline. Re-read the UUID and caller
 token once more, immediately before the delete, and require both to still match. The delete
@@ -241,8 +259,8 @@ resolved>)`. Two properties, both deliberate:
   `hmc_assign_dedicated_pcie_slot` refusal row, so the recorded refusal is the one an
   operator would actually see.
 
-Finally, when `fixture.probe_created` is set, the probe partition is deleted first, under
-the same caller-token comparison and with the same override-off rule.
+The probe partition, when `fixture.probe_created` is set, is deleted before any of this,
+under its own caller-token comparison and the same override-off rule, as described above.
 
 Hardware before partition is the ordering the issue requires, and Guard B's refusal is what
 makes the ordering binding: a delete that ran first — or that ran while the profile still
@@ -272,45 +290,54 @@ The guards are what the tests must bite on. Each of these asserts both the recor
 **and** that the forbidden mutation does not appear in the call list:
 
 1. Missing required configuration → the arm SKIPs and issues no tool call at all.
+1b. **A configured value carrying an HMC record delimiter** (`,`, `=`, `"`, `[`, `]`, `\`, or
+   a control character) in the LPAR prefix, profile name, or DRC index → the arm SKIPs with
+   zero tool calls. This is the guard that keeps a `build_filter` / `build_attribute_record`
+   raise — which happens at command-construction time, in the arm's own frame, outside
+   `RunState.call`'s try/except, and first occurs *after* the fixture partition exists —
+   off a path where a partition has already been created.
 2. **Environment outside the admitted envelope** — `lshmc -V` reports a different release, or
    the type-model is not `8375-42A`: SKIP for the arm, no LPAR is created, and no `chsyscfg`
    is issued.
 3. Inventory with no unassigned slot → SKIP for the arm, and no LPAR is created.
 4. A configured `drc_index` that inventory reports as owned → SKIP, no LPAR created.
 5. The create-time dedicated request's capability refusal is recorded SKIP, not FAIL or
-   PASS, and the arm still proceeds to create the unassigned fixture. The fault is scoped to
-   the **first** `hmc_create_lpar` call, so the second one succeeds.
-6. **The create-time probe unexpectedly succeeds** — the first `hmc_create_lpar` returns PASS:
+   PASS, and the arm still proceeds to create the unassigned fixture. This is the **default**
+   scenario for every other test: today ADR 0055 refuses the probe, so no probe partition
+   exists and cleanup performs exactly one delete.
+6. **The create-time probe unexpectedly succeeds** — the probe create returns PASS:
    `probe_created` is set, a `MANUAL RECOVERY REQUIRED:` row names the probe partition, and
-   cleanup issues an `hmc_delete_lpar` for it as well as for the fixture.
+   cleanup reads that partition's own caller token and then deletes it, before the fixture's
+   delete.
 7. The existing-LPAR `hmc_assign_dedicated_pcie_slot` refusal is recorded SKIP, and the arm
    still proceeds to the profile grammar.
 8. Happy path: `io_slots+` then `io_slots-` restores the exact baseline, reassign succeeds,
    cleanup removes the slot and deletes the LPAR, the removal command precedes the delete
-   call in the recorded order, and the delete names the fixture's **UUID** with no
-   `ownership_override`.
-9. **Guard A, UUID drift** — the `hmc_get_lpar` read at cleanup reports a different UUID: no
-   `chsyscfg` and no `hmc_delete_lpar` is issued, and a `MANUAL RECOVERY REQUIRED:` row is
-   recorded.
+   call in the recorded order, exactly one delete is issued, and it names the fixture's
+   **UUID** with no `ownership_override`.
+9. **Guard A, UUID drift** — the `hmc_get_lpar` read at cleanup reports a different UUID than
+   the one captured at ST30: no `chsyscfg` and no `hmc_delete_lpar` in the cleanup phase, and
+   the `uuid mismatch` row is recorded FAIL with recovery evidence.
 10. **Guard A, foreign caller token** — the token read back is not this run's marker: same
-    assertions.
+    assertions against the `run-marker mismatch` row.
 11. **Guard A, unreadable identity** — the description read fails: same assertions.
 12. **Guard B, profile drift** — `io_slots` at cleanup is neither the applied value nor the
-    baseline: no `io_slots-` is issued, no delete is issued, recovery evidence is recorded.
+    baseline: no `io_slots-` and no delete in the cleanup phase, `profile drift` recorded.
 13. **Guard B, removal that does not restore** — `io_slots-` reports success but the
-    re-read does not equal the baseline: no `hmc_delete_lpar` is issued.
-14. **Guard B is not fooled by a lost response** — the assign's `chsyscfg` reports `FAIL`
-    while the model shows it applied, so `slot_assigned` is never set: cleanup nevertheless
-    issues `io_slots-` and only then deletes, in that order. This is the regression test for
-    the flag-gated guard; against a `slot_assigned`-gated Guard B it fails.
-15. **Guard B is not fooled by a lost confirming read** — the assign's `chsyscfg` reports
-    `PASS` but its confirming `lssyscfg` fails, leaving `applied_io_slots` unset while the
-    profile carries the DRC index: cleanup refuses the delete and records recovery evidence
-    rather than deleting a partition holding a slot.
+    re-read does not equal the baseline: no `hmc_delete_lpar` in the cleanup phase.
+14. **The assign's response was lost** — the `chsyscfg` applied and then reported `FAIL`.
+    `assign_dedicated_slot` must read back anyway, so `applied_io_slots` records what the
+    profile holds and cleanup can prove the deviation is its own: it issues `io_slots-` and
+    only then deletes, in that order. Restore an early `return` before that readback and the
+    arm can no longer prove it, so cleanup refuses the delete and this test goes red.
+15. **The confirming read was lost** — ST30's baseline read succeeds and every profile read
+    after it fails, so the assign applies while `applied_io_slots` is never set. Guard B must
+    still enter, on the baseline comparison, and refuse: no delete, `profile drift` recorded.
+    A Guard B gated on `applied_io_slots is not None` skips the branch and deletes.
 16. **Guard C, identity drift between removal and delete** — identity matched at Guard A and
     the removal succeeded, but the re-read before the delete reports a foreign token: no
-    `hmc_delete_lpar` is issued.
-17. Cleanup when nothing was ever assigned — the profile still equals the baseline: no
+    `hmc_delete_lpar` in the cleanup phase.
+17. Nothing was ever assigned — the profile still equals the baseline at cleanup: no
     `chsyscfg` is issued in cleanup, and the LPAR is still deleted (the fixture is this run's
     to remove).
 18. A run marker is unique per invocation, and the fixture LPAR name carries the configured
@@ -318,23 +345,34 @@ The guards are what the tests must bite on. Each of these asserts both the recor
 19. **No identity, no mutation (UUID)** — create returns no LPAR body and `hmc_get_lpar`
     resolves nothing: no `chsyscfg` is issued at all, and the fixture is still deleted on the
     token.
-20. **No identity, no mutation (ownership stamp)** — create returns `ownership_stamped=False`:
-    no `chsyscfg` is issued at all.
+20. **No identity, no mutation (ownership stamp)** — create returns `ownership_stamped=False`
+    and, consistently with what that value means, a description carrying no caller segment:
+    no `chsyscfg` is issued at all, **and** Guard A refuses the delete with recovery
+    evidence — which is what the ST30 note above claims happens on this path.
 
-Tests 9–16 would pass against a guard that never refuses if the assertion on the absent call
-were missing, so each states it explicitly rather than asserting the recorded row alone.
-Tests 14 and 15 are the ones that distinguish a live-state Guard B from a flag-gated one.
+Two properties make these bite rather than merely run, and both are seam requirements, not
+assertion style. First, the "forbidden mutation did not happen" assertion is scoped to the
+**cleanup phase**: the arm legitimately issues an `io_slots-` at ST33 before any guard runs,
+so a run-wide command list cannot express it and the assertion the whole set depends on
+would be unwritable. Second, recovery evidence is asserted by the **specific guard row's**
+tool label, never by scanning every row for the substring `MANUAL RECOVERY REQUIRED` — ST30's
+probe row can carry that text too, and an assertion it pre-satisfies cannot distinguish a
+guard that refused from one that did not.
 
 **Confirm the tests bite, one guard at a time.** Introduce each controlled fault, observe the
 named tests go red, then revert:
 
 | Fault | Tests that must fail |
 |---|---|
-| Guard A's identity comparison → `if False:` | 9, 10, 11 |
-| Guard B's entry condition → `if fixture.slot_assigned:` | 14, 15 |
-| Guard B's `applied_io_slots` exact-match → `if False:` | 12, 13 |
+| Guard A's identity comparison → `if False:` | 9, 10, 11, 20 |
+| `assign_dedicated_slot` returns early on a non-`PASS` command, before its readback | 14 |
+| Guard B's entry → `if fixture.applied_io_slots is not None:` | 15 |
+| Guard B's `applied_io_slots` exact-match → `if False:` | 12 |
+| Guard B's post-removal baseline check → `if False:` | 13 |
 | Guard C's re-read comparison → `if False:` | 16 |
-| The admitted-environment gate → always admit | 2 |
+| `_admit_dedicated_environment` → always return `True` | 2 |
+| `_config_value_safe` → always return `True` | 1b |
+| `_cleanup_probe_partition`'s token comparison → `if False:` | 6 |
 
 A guard whose neutralization reddens nothing is not covered, whatever its tests appear to
 assert.
