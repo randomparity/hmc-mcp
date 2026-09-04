@@ -35,7 +35,6 @@ from ..ssh_affinity import set_minimum_affinity_policy
 from ..storage import create_virtual_disk
 from .assignments import (
     LparPcieAssignments,
-    WorkflowStep,
     _apply_validated_lpar_pcie_assignments,
     assignment_step_names,
     prevalidate_lpar_pcie_assignments,
@@ -46,6 +45,7 @@ from .core import (
     create_and_stamp_lpar,
     power_lpar,
 )
+from .workflow_contract import WorkflowStep
 
 
 @dataclass(frozen=True)

@@ -155,6 +155,9 @@ names are internal everywhere and are never inventoried.
   `validate_affinity_request`.
 - `operations.capacity` — operations: `fetch_capacity_report`, `find_placement`; types: `CapacitySummary`; excluded
   synchronous: `calculate_system_capacity`, `lpar_processing_units`.
+- `operations.cluster` — operations: `create_logical_unit`, `delete_logical_unit`,
+  `get_shared_storage_pool`, `list_clusters`, `list_shared_storage_pools`; types: none;
+  excluded synchronous: `validate_logical_unit_create`, `validate_logical_unit_wait`.
 - `operations.composite` — operations: `lpar_summary`, `system_summary`; types: `LparSummary`, `SystemSummary`; excluded
   synchronous: none.
 - `operations.error_translation` — operations: none; types: none; excluded synchronous:
@@ -235,14 +238,13 @@ names are internal everywhere and are never inventoried.
   `plan_system_memopt_score`, `set_minimum_affinity_policy`; types:
   `MemoptLparSelector`, `MemoptResourceGroupSelector`, `MinimumAffinityPolicyResult`,
   `ResourceGroupAffinityResult`; excluded synchronous: none.
-- `operations.storage` — operations: `create_logical_unit`, `create_media_repository`,
-  `create_optical_media`, `create_virtual_disk`, `create_volume_group`, `delete_logical_unit`,
+- `operations.storage` — operations: `create_media_repository`,
+  `create_optical_media`, `create_virtual_disk`, `create_volume_group`,
   `delete_media_repository`, `delete_optical_media`, `delete_virtual_disk`,
   `detach_storage_mapping`, `get_media_repository`, `get_shared_storage_pool`, `list_clusters`,
   `list_optical_mappings`, `list_optical_media`, `list_shared_storage_pools`,
   `list_storage_mappings`, `list_volume_groups`, `map_storage`, `mount_optical_media`,
-  `unmount_optical_media`, `upload_iso`; types: `StorageMapResult`; excluded synchronous:
-  `validate_logical_unit_create`, `validate_logical_unit_wait`.
+  `unmount_optical_media`, `upload_iso`; types: `StorageMapResult`; excluded synchronous: none.
 - `operations.systems` — operations: `get_system`, `list_systems`, `modify_system`,
   `power_system`; types: `ManagedSystemPatch`; excluded synchronous: none.
 - `operations.templates` — operations: `deploy_partition_template`, `get_partition_template`,

@@ -26,7 +26,7 @@ from ...jobs import (
     wait_for_submitted_job,
 )
 from ...resource_identity import is_uuid, resolve_system_uuid
-from .assignments import WorkflowStep
+from .workflow_contract import WorkflowStep
 
 _ADAPTER_ORDER: tuple[AdapterType, ...] = (
     "ClientNetworkAdapter",

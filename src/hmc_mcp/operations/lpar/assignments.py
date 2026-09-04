@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.operations.pcie import (
@@ -26,6 +26,8 @@ from hmc_mcp.ssh.network import (
     list_vnic_backing_rows,
     read_vios_identity,
 )
+
+from .workflow_contract import WorkflowStep
 
 
 @dataclass(frozen=True)
@@ -75,15 +77,6 @@ class LparPcieAssignments:
         default_factory=tuple,
         metadata={"description": "Ordered vNIC assignments."},
     )
-
-
-@dataclass(frozen=True)
-class WorkflowStep:
-    """Stable outcome for one ordered multi-stage workflow operation."""
-
-    step: str
-    status: Literal["ok", "error", "skipped", "dry_run"]
-    result: Any = None
 
 
 @dataclass(frozen=True)

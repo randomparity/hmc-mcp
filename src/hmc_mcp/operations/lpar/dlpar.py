@@ -17,11 +17,11 @@ from ...errors import HMCError
 from .assignments import (
     LparPcieAssignments,
     LparPcieWorkflowResult,
-    WorkflowStep,
     _apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
 from .errors import translate_lpar_write_error
+from .workflow_contract import WorkflowStep
 
 
 async def modify_lpar(
