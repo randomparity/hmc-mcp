@@ -10,7 +10,8 @@ import pytest
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations import health as operations_health
-from hmc_mcp.operations.health import FleetHealthResult, fleet_health
+from hmc_mcp.operations.health import FleetHealthResult
+from hmc_mcp.operations.health import fetch_fleet_health as fleet_health
 
 _ACTIONABLE_TERMINAL_STATUSES = {
     "CANCELED_BEFORE_START",
