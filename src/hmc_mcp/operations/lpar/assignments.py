@@ -276,7 +276,7 @@ async def apply_lpar_pcie_assignments(
 ) -> AssignmentResult:
     """Apply requests in stable order and expose partial state without rollback."""
     await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
-    return await _apply_validated_lpar_pcie_assignments(
+    return await apply_validated_lpar_pcie_assignments(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
@@ -286,7 +286,7 @@ async def apply_lpar_pcie_assignments(
     )
 
 
-async def _apply_validated_lpar_pcie_assignments(
+async def apply_validated_lpar_pcie_assignments(
     hmc: HMCClient,
     system: str,
     lpar: str,

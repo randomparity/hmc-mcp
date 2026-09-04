@@ -35,7 +35,7 @@ from ..affinity.ssh import set_minimum_affinity_policy
 from ..storage import create_virtual_disk
 from .assignments import (
     LparPcieAssignments,
-    _apply_validated_lpar_pcie_assignments,
+    apply_validated_lpar_pcie_assignments,
     assignment_step_names,
     prevalidate_lpar_pcie_assignments,
 )
@@ -421,7 +421,7 @@ async def _run_assignment_leg(
     lpar_name: str,
     assignments: LparPcieAssignments,
 ) -> bool:
-    result = await _apply_validated_lpar_pcie_assignments(
+    result = await apply_validated_lpar_pcie_assignments(
         hmc, system_name_or_uuid, lpar_name, assignments
     )
     steps.extend(result.steps)

@@ -17,7 +17,7 @@ from ...errors import HMCError
 from .assignments import (
     LparPcieAssignments,
     LparPcieWorkflowResult,
-    _apply_validated_lpar_pcie_assignments,
+    apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
 from .errors import translate_lpar_write_error
@@ -65,7 +65,7 @@ async def modify_lpar(
             raise
         steps.append(WorkflowStep("resources", "ok", resource))
 
-    assignment_result = await _apply_validated_lpar_pcie_assignments(
+    assignment_result = await apply_validated_lpar_pcie_assignments(
         hmc,
         system_name_or_uuid or "",
         lpar_uuid,
