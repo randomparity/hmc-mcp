@@ -165,7 +165,7 @@ wildcard records the operation's actual scope.
 | `unassign_sriov_logical_port` | `operations/pcie.py:588` | guarded (`:612`) | — |
 | `add_vnic` | `operations/vnic.py:596` | guarded (via `_preflight_add:370` → `resolve_and_authorize_lpar_names:377`) | — |
 | `remove_vnic` | `operations/vnic.py:679` | guarded (`:695`) | — |
-| `set_minimum_affinity_policy` | `operations/ssh_affinity.py:191` | guarded (`:201`) | — |
+| `set_minimum_affinity_policy` | `operations/affinity/ssh.py:203` | guarded (`:213`) | — |
 | `set_lpar_processors` | `operations/lpar/dlpar.py:109` | guarded (`:405`, via `_apply_dlpar_document:397` → `_resolve_and_authorize_lpar:328`) | — |
 | `set_lpar_memory` | `operations/lpar/dlpar.py:145` | guarded (`:405`, via `_apply_dlpar_document`) | — |
 | `apply_lpar_pcie_assignments` | `operations/lpar/assignments.py:268` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
