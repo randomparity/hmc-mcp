@@ -91,20 +91,7 @@ _DENIED = (
 
 
 def _value(raw: Any) -> str | _Unresolved:
-    """One bound argument, as the string to compare or a sentinel.
-
-    The arms are ordered, and the order is the whole rule. ``bool`` is tested
-    before ``int`` because it is an ``int`` subclass, and ``str(True)`` would put
-    ``"True"`` into a comparison against resource names.
-
-    The ``int`` arm exists for ``vios_partition_id``, the surface's only non-string
-    selector. It is load-bearing rather than convenient: without it those calls
-    would be UNREADABLE, which denies even under ``all-targets``, and #225's
-    legacy-equivalent policy would stop covering three live tools. It does not
-    make the *comparison* unambiguous — a ``vios`` allowlist holds partition IDs
-    and VIOS names in one set — which is why ADR 0039 refuses ``vios_partition_id``
-    as a bounding identity outright instead of trusting the rendering.
-    """
+    """Normalize supported selectors, rejecting booleans and unknown values."""
     if isinstance(raw, str):
         # Including "": a well-formed string that no table can hold, because
         # `access_policy._check_entries` rejects an empty allowlist entry.
@@ -119,14 +106,7 @@ def _value(raw: Any) -> str | _Unresolved:
 
 
 def audit_state(value: str | _Unresolved) -> State:
-    """Which of the audit record's three input states *value* is.
-
-    Lives here rather than in the authorizer because this module owns the two
-    singletons, and a mapping written one module away from the values it
-    interprets is the drift ADR 0039 spent a design on avoiding. ``audit`` owns
-    the vocabulary and this owns the interpretation, which is the same split by
-    which ``denial_reason`` returns an ``audit.Reason``.
-    """
+    """Classify a normalized selector as present, absent, or unreadable."""
     if isinstance(value, str):
         return "present"
     return "absent" if value is ABSENT else "unreadable"
