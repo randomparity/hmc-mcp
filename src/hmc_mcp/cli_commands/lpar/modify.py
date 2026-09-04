@@ -61,31 +61,6 @@ def lpars_modify(
     activation.
     """
     assignments = load_pcie_assignments(pcie_assignments)
-    if (
-        all(
-            v is None
-            for v in (
-                new_name,
-                min_memory,
-                memory,
-                max_memory,
-                min_procs,
-                procs,
-                max_procs,
-                min_vcpus,
-                vcpus,
-                max_vcpus,
-                dedicated,
-                capped,
-            )
-        )
-        and assignments == LparPcieAssignments()
-    ):
-        usage_error("Nothing to change — pass at least one option")
-    if new_name is not None and system is None:
-        usage_error("--system is required when renaming an LPAR")
-    if assignments != LparPcieAssignments() and system is None:
-        usage_error("--system is required when assigning PCIe resources")
     resources = LparResources(
         min_memory=min_memory,
         desired_memory=memory,
@@ -99,6 +74,16 @@ def lpars_modify(
         max_vcpus=max_vcpus,
         uncapped=None if capped is None else not capped,
     )
+    if (
+        new_name is None
+        and resources == LparResources()
+        and assignments == LparPcieAssignments()
+    ):
+        usage_error("Nothing to change — pass at least one option")
+    if new_name is not None and system is None:
+        usage_error("--system is required when renaming an LPAR")
+    if assignments != LparPcieAssignments() and system is None:
+        usage_error("--system is required when assigning PCIe resources")
     if not yes and not typer.confirm(f"Apply changes to '{name_or_uuid}'?"):
         raise typer.Abort()
 

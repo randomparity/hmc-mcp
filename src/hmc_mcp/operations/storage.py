@@ -119,8 +119,8 @@ async def delete_virtual_disk(
         disk_name: Name of the Virtual Disk to delete.
 
     Returns:
-        Deleted disk metadata when supplied by the HMC, or ``None`` when a
-        successful deletion response contains no resource entry.
+        The parsed HMC response entry from the VolumeGroup update, or ``None``
+        when a successful response contains no resource entry.
 
     Raises:
         HMCError: If the disk is mapped to an LPAR or deletion fails.
