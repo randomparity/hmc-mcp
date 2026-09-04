@@ -237,7 +237,6 @@ names are internal everywhere and are never inventoried.
   `resolve_pcm_resource`, `set_pcm_preferences`; types: `MetricKind`, `PcmCategory`,
   `PcmResource`; excluded synchronous: `preference_flags`, `validate_pcm_metric_target`,
   `validate_pcm_preferences_category`.
-- `operations.ssh_affinity` — operations: none; types: none; excluded synchronous: none.
 - `operations.storage` — operations: `create_media_repository`,
   `create_optical_media`, `create_virtual_disk`, `create_volume_group`,
   `delete_media_repository`, `delete_optical_media`, `delete_virtual_disk`,
