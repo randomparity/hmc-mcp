@@ -506,7 +506,7 @@ async def test_cancellation_still_runs_release_to_completion():
                 **_capture_kwargs(duration_seconds=30.0, idle_timeout_seconds=30.0),
             )
         )
-        await capture_started.wait()
+        await asyncio.wait_for(capture_started.wait(), timeout=5)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -543,7 +543,7 @@ async def test_cancellation_during_acquisition_releases_proven_session():
                 **_capture_kwargs(duration_seconds=30.0, idle_timeout_seconds=30.0),
             )
         )
-        await entered.wait()
+        await asyncio.wait_for(entered.wait(), timeout=5)
         task.cancel()
         await asyncio.sleep(0)
         finish.set()
@@ -583,7 +583,7 @@ async def test_cancellation_during_contended_acquisition_never_releases_holder()
                 **_capture_kwargs(duration_seconds=30.0, idle_timeout_seconds=30.0),
             )
         )
-        await entered.wait()
+        await asyncio.wait_for(entered.wait(), timeout=5)
         task.cancel()
         await asyncio.sleep(0)
         finish.set()

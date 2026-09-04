@@ -146,7 +146,7 @@ async def test_cancellation_while_closing_aborts_fallback():
     client._new_http_client = MagicMock()
 
     logon = asyncio.create_task(client.logon())
-    await close_started.wait()
+    await asyncio.wait_for(close_started.wait(), timeout=5)
     logon.cancel()
 
     with pytest.raises(asyncio.CancelledError):
