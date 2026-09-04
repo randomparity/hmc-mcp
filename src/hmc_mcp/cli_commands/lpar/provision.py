@@ -18,6 +18,7 @@ from ...documents import (
 from ...operations.lpar.provision import (
     ProvisionAdapters,
     ProvisionRequest,
+    ProvisionResult,
     ProvisionStorage,
     provision_lpar,
 )
@@ -118,43 +119,36 @@ def lpars_provision(
 
     result = run(_go)
 
+    _render_provision_result(result, name, dry_run, as_json)
+
+
+def _render_provision_result(
+    result: ProvisionResult, name: str, dry_run: bool, as_json: bool
+) -> None:
     if as_json:
         print_json(asdict(result))
         return
-
     if dry_run:
-        console.print(
-            "[yellow]DRY RUN — preconditions validated, no LPAR created[/yellow]"
-        )
+        console.print("[yellow]DRY RUN — preconditions validated, no LPAR created[/yellow]")
     elif result.workflow_completed:
         console.print(f"[green]LPAR '{name}' provisioned successfully[/green]")
     elif result.resource_created:
         identity = result.lpar_uuid or "UUID unavailable"
-        console.print(
-            f"[yellow]LPAR '{name}' was created ({identity}), but provisioning "
-            "is incomplete — check step results[/yellow]"
-        )
+        console.print(f"[yellow]LPAR '{name}' was created ({identity}), but provisioning is incomplete — check step results[/yellow]")
     else:
-        console.print(
-            f"[yellow]LPAR '{name}' was not created — check step results[/yellow]"
-        )
+        console.print(f"[yellow]LPAR '{name}' was not created — check step results[/yellow]")
 
     table = Table(title=f"Provision steps: {name}")
     table.add_column("Step", style="cyan")
     table.add_column("Status", style="green")
     for step in result.steps:
-        status = step.status
-        style = (
-            "green"
-            if status == "ok"
-            else ("yellow" if status in ("dry_run", "skipped") else "red")
+        style = "green" if step.status == "ok" else (
+            "yellow" if step.status in ("dry_run", "skipped") else "red"
         )
-        table.add_row(step.step, f"[{style}]{status}[/{style}]")
+        table.add_row(step.step, f"[{style}]{step.status}[/{style}]")
     console.print(table)
-
-    if result.warnings:
-        for w in result.warnings:
-            console.print(f"[yellow]Warning: {w}[/yellow]")
+    for warning in result.warnings:
+        console.print(f"[yellow]Warning: {warning}[/yellow]")
 
 
 # LPAR Boot Order Commands
