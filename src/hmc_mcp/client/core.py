@@ -276,8 +276,11 @@ class HMCClient(
     async def __aenter__(self) -> Self:
         try:
             await self.logon()
-        except BaseException:
-            await self._http.aclose()
+        except BaseException as exc:
+            try:
+                await self._http.aclose()
+            except BaseException as cleanup_exc:  # noqa: BLE001 - preserve primary failure
+                exc.add_note(f"session cleanup failed: {cleanup_exc}")
             raise
         return self
 

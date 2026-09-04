@@ -485,6 +485,21 @@ async def test_logon_failure(mock_hmc):
     assert client._http.is_closed
 
 
+@pytest.mark.asyncio
+async def test_session_entry_preserves_logon_failure_when_close_also_fails():
+    client = HMCClient(make_config())
+    logon_error = HMCError("bad credentials", 401)
+    client.logon = AsyncMock(side_effect=logon_error)
+    client._http.aclose = AsyncMock(side_effect=RuntimeError("close failed"))
+
+    with pytest.raises(HMCError) as exc_info:
+        async with client:
+            pass
+
+    assert exc_info.value is logon_error
+    assert "session cleanup failed: close failed" in exc_info.value.__notes__
+
+
 def _capture_audit() -> list[dict]:
     """Collect parsed audit records. Logger isolation is conftest's autouse fixture."""
     events: list[dict] = []
