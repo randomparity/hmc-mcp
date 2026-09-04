@@ -30,19 +30,26 @@ async def list_vios(
     state: PartitionState | None = None,
 ) -> list[dict[str, Any]]:
     """List VIOSes, optionally scoped to one system or partition state."""
-    if system_name_or_uuid is not None and state is not None:
-        raise ValueError("Provide at most one of system_name_or_uuid or state")
-    if state is not None:
-        if state not in PARTITION_STATES:
-            allowed = ", ".join(sorted(PARTITION_STATES))
-            raise ValueError(f"state must be one of: {allowed}")
-        return await hmc.search_uom("VirtualIOServer", "PartitionState", state)
+    if state is not None and state not in PARTITION_STATES:
+        allowed = ", ".join(sorted(PARTITION_STATES))
+        raise ValueError(f"state must be one of: {allowed}")
     system_uuid = (
         await resolve_system_uuid(hmc, system_name_or_uuid)
         if system_name_or_uuid is not None
         else None
     )
-    return await hmc.list_vios(system_uuid)
+    vios = (
+        await hmc.search_uom("VirtualIOServer", "PartitionState", state)
+        if system_uuid is None and state is not None
+        else await hmc.list_vios(system_uuid)
+    )
+    if state is None or system_uuid is None:
+        return vios
+    return [
+        entry
+        for entry in vios
+        if (entry.get("Resource") or {}).get("PartitionState") == state
+    ]
 
 
 async def get_vios(
