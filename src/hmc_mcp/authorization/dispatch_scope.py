@@ -55,7 +55,7 @@ def _audit_view(
     ``resolved`` is null rather than ``resolved_connection(None)``. That function
     renders an omitted ``profile`` as ``<default>``, which is true of a call that
     could have named a connection and did not; such a call never could. Null there
-    is what distinguishes the two in the stream — see ADR 0039's #297 amendment.
+    is what distinguishes the two in the stream (ADR 0039).
     """
     try:
         return (audit.resolved_connection(connection) if scoped else None), tuple(
@@ -87,7 +87,8 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
         # *target* dimension still decides: whether a `targets` table can bound a
         # tool is a fact about its declared selectors, not about how it opens a
         # connection. ADR 0039 keyed the wrapper on the connection argument and so
-        # skipped that decision entirely; #297 is that gap, and the two spellings
+        # skipped that decision entirely; the explicit scope fields close that gap,
+        # and the two spellings
         # now reach the same answer through the same loop below.
         argument = security.connection_argument
         # Indexed, not `.get`: `authorized` applies the handler's defaults and

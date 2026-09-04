@@ -105,12 +105,8 @@ def config_list() -> None:
         console.print(f"No config file found at {would_be}")
         return
 
-    # Read and parse config.toml exactly once for this command (issue #300): the
-    # profile names, the (default) marker, and the nicknames all derive from the
-    # same parsed document, so a file edited between what used to be two separate
-    # reads cannot produce a nickname column computed against a different profile
-    # set than the names printed above it. Same approach issue #295 used for
-    # config_show and hmc_list_configured_hosts.
+    # Parse once so profile names, the default marker, and nicknames all derive
+    # from the same document.
     try:
         inventory = config_inventory(config_path)
     except ConfigError as exc:

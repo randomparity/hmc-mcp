@@ -678,11 +678,8 @@ def _load_profile_from_document(
 ) -> HMCConfig:
     """Build an HMCConfig for *profile* from an already-parsed *doc*.
 
-    Shared by :func:`load_profile`, which reads and parses *path* itself, and
-    by a caller that already holds the parsed document for this invocation —
-    such as ``config_show``, which needs the same document for credential
-    presence and nickname resolution and must not parse ``config.toml`` a
-    second time to also select a profile (issue #295). *path* is used only for
+    Shared by :func:`load_profile` and callers that already hold the parsed
+    document for this invocation. *path* is used only for
     error messages; it is not re-read here.
     """
     profiles = _coerce_profiles(doc.get("profiles"), path)
@@ -736,7 +733,7 @@ def _load_profile_from_document(
     # The membership test matches the loader's own casing rule via
     # env_var_value: an exact-case test would leave the TOML value in the init
     # kwargs for a lower- or mixed-case export that pydantic-settings does read,
-    # and init kwargs outrank every environment source (#531).
+    # and init kwargs outrank every environment source.
     env_prefix = "HMC_"
     filtered_entry = {
         k: v

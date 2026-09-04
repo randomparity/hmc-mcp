@@ -6,9 +6,8 @@ tool argument. It is a different concept from an *HMC connection profile*, which
 ``config.py`` resolves from ``config.toml``; see
 docs/adr/0036-server-access-policy-model.md.
 
-This module loads, validates, and compiles a policy. It does not enforce one:
-registration filtering is issue #221, connection scope #222, and target
-constraints #223.
+This module loads, validates, and compiles a policy. Enforcement is applied by
+the server's registration and dispatch layers.
 """
 
 from __future__ import annotations
@@ -252,8 +251,7 @@ class Grant:
 
     ``effects`` is what the grant *authored* — the effect-class names written in
     the document, in document order — while ``tools`` is what it *resolves to*.
-    #221 rendered grants only in expanded form; #251 retains the authored tuple
-    so inspection can distinguish an effect-class grant from a named-tool
+    The authored tuple lets inspection distinguish an effect-class grant from a named-tool
     enumeration that happens to reach the same tools. The values are the
     operator-authored identifiers `_GrantModel._validate_effects` already
     admits, so retaining them widens no disclosure surface. Defaulted ``()``
@@ -285,9 +283,8 @@ class AccessPolicy:
     def permits_tool(self, tool: str) -> bool:
         """True when the capability ceiling admits *tool*.
 
-        This is the ceiling question #221's registration filter asks. It is never
-        sufficient authorization on its own: #222 and #223 must evaluate a whole
-        grant from :meth:`grants_for`.
+        The capability ceiling is not sufficient authorization on its own:
+        callers must evaluate a complete grant from :meth:`grants_for`.
         """
         return tool in self.tools
 
@@ -416,8 +413,8 @@ def compile_access_policy(
     """Validate *document* and compile its *name* policy into a frozen object.
 
     *tool_security* is the authoritative classification index, normally
-    ``server.TOOL_SECURITY``. It is a parameter rather than an import so the
-    dependency runs one way: #221 makes ``server`` policy-aware.
+    ``server.TOOL_SECURITY``. It is a parameter rather than an import to keep
+    policy compilation independent from server registration.
 
     *source* names the origin for error messages — the resolved file path when
     the caller read one.

@@ -79,10 +79,8 @@ def selected_connection(token: Any, *, tool: str) -> str | None:
        uncoerced;
     1. ``HMC_HOST`` set and non-empty collapses every token to the environment
        connection, because ``build_config`` gates its whole TOML branch on it.
-       Read through :func:`config.env_var_value`, as that gate is: reading it
-       exact-case while ``build_config`` reads it case-insensitively would
-       resolve the token to a profile key, let a grant naming that profile
-       authorize the call, and send the call to the exported host anyway (#531);
+       Read through :func:`config.env_var_value` so selection uses the same
+       case-insensitive environment semantics as configuration loading;
     2. a falsy token is the default connection. ``HMC_PROFILE`` and
        ``default_profile`` are deliberately *not* consulted: ADR 0036 fixed
        ``<default>`` as the denotation of the omitted argument and recorded its

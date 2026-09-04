@@ -206,9 +206,7 @@ def default_exposure() -> Callable[[str], bool]:
 def render_pages(
     records: Iterable[ToolRecord],
     *,
-    # Taken as a parameter because #476 requires the grouping to be pluggable: when
-    # a `tier` field arrives to promote workflow tools above the tools they compose,
-    # that is a different function here rather than a rewrite of the renderer.
+    # Keep grouping injectable so callers can render alternate domain partitions.
     group_key: Callable[[ToolRecord], str] = attrgetter("domain"),
 ) -> dict[str, str]:
     """The whole reference as ``{relative path: text}``, deterministically.
