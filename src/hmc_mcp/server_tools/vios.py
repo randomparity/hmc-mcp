@@ -297,7 +297,7 @@ def hmc_list_vios_backups(
     """
 
     return with_client(
-        lambda hmc: list_vios_backups(hmc, None, vios_name_or_uuid),
+        lambda hmc: list_vios_backups(hmc, vios_name_or_uuid),
         profile=profile,
     )
 
@@ -343,8 +343,8 @@ def hmc_backup_vios(
     return with_client(
         lambda hmc: backup_vios(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
+            system_name_or_uuid=system_name_or_uuid,
             backup_name=backup_name,
             backup_type=backup_type,
         ),
@@ -395,9 +395,9 @@ def hmc_restore_vios(
     return with_client(
         lambda hmc: restore_vios(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             backup_name,
+            system_name_or_uuid=system_name_or_uuid,
             backup_type=backup_type,
             restart_if_required=restart_if_required,
         ),

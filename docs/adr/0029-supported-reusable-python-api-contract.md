@@ -185,6 +185,7 @@ names are internal everywhere and are never inventoried.
     record; §6's recording obligation for them is discharged there, not here. It does not reach
     `InstallHandle`: §6 places a new facade export in one of §5's three sets, and §5 enumerates
     Domain A over exported *functions*, which a type is not.
+- `operations.io_virtualization` — operations: none; types: none; excluded synchronous: none.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
   `is_unsupported_job_listing`.
 - `operations.lpar` — operations: none; types: none; excluded synchronous: none.
@@ -209,8 +210,10 @@ names are internal everywhere and are never inventoried.
 - `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
   `run_lpm_affinity_preflight`, `validate_lpar_migration`; types: `LpmAffinityMigrationResult`,
-  `LpmAffinityPreflightOutcome`, `LpmAffinityPreflightRequest`, `LpmMigrationRequest`,
-  `LpmResult`; excluded synchronous: `evaluate_lpm_affinity_preflight`.
+  `LpmAffinityPreflightOutcome`, `LpmAffinityPreflightRequest`, `LpmCapability`,
+  `LpmDestinationCheckBasis`, `LpmMigrationRequest`, `LpmPreflightStatus`, `LpmResponse`,
+  `LpmResult`;
+  excluded synchronous: `evaluate_lpm_affinity_preflight`.
 - `operations.network` — operations: `create_virtual_network`, `delete_virtual_network`,
   `list_network_bridges`, `list_virtual_networks`, `list_virtual_switches`; types:
   `VirtualNetworkResult`; excluded synchronous: none.
@@ -230,8 +233,6 @@ names are internal everywhere and are never inventoried.
   `SriovLogicalPort`, `SriovLogicalPortCapabilityError`, `SriovLogicalPortChangeResult`,
   `SriovLogicalPortPartialError`, `SriovLogicalPortSnapshot`, `SriovPhysicalPort`; excluded
   synchronous: none.
-- `operations.pcie_validation` — operations: none; types: none; excluded synchronous:
-  `require_command_safe_text`, `require_nonblank_text`, `validate_capacity_percent`.
 - `operations.pcm` — operations: `fetch_metric_data`, `fetch_metric_links`, `get_pcm_preferences`,
   `resolve_pcm_resource`, `set_pcm_preferences`; types: `MetricKind`, `PcmCategory`,
   `PcmResource`; excluded synchronous: `preference_flags`, `validate_pcm_metric_target`,

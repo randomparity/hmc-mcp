@@ -474,6 +474,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: named LPM affinity literal types (`LpmCapability`, `LpmDestinationCheckBasis`,
+  `LpmPreflightStatus`, and `LpmResponse`) for typed reusable callers.
+- Changed: VIOS backup, restore, and backup-catalog operations now take the VIOS selector
+  first and accept managed-system scope as a keyword-only argument.
 - Renamed: `list_available_hmc_ptfs` to `submit_available_hmc_ptfs_query`.
 - Renamed: `metric_data` to `fetch_metric_data` and `capacity_report` to
   `fetch_capacity_report` in the reusable facade.

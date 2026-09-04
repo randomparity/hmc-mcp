@@ -193,8 +193,9 @@ async def _resolve_vios_backup_selectors(
 
 async def list_vios_backups(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
     """Return the validated backup catalog for one VIOS."""
     vios_uuid = vios_name_or_uuid
@@ -278,9 +279,9 @@ def validate_vios_restore_request(
 
 async def backup_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str,
     vios_name_or_uuid: str,
     *,
+    system_name_or_uuid: str,
     backup_name: str,
     backup_type: BackupType = "vios",
 ) -> str:
@@ -299,10 +300,10 @@ async def backup_vios(
 
 async def restore_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str,
     vios_name_or_uuid: str,
     backup_name: str,
     *,
+    system_name_or_uuid: str,
     backup_type: RestoreBackupType,
     restart_if_required: bool = False,
 ) -> str:
