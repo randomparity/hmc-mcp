@@ -66,19 +66,19 @@ VDISK_NAME=example-lt-609-disk
 DRY_RUN_LPAR_NAME=example-lt-609-dry-run
 DRY_RUN_STORAGE_NAME=example-lt-609-dry-disk
 VDISK_VOLUME_GROUP_NAME=example-lt-609-vg
-DRY_RUN_VIOS_SLOT=7
-DRY_RUN_VIOS_PARTITION_ID=107
-DRY_RUN_MEMORY_MIB=768
-PROVISION_MIN_MEMORY_MIB=512
-PROVISION_DESIRED_MEMORY_MIB=1024
-PROVISION_MAX_MEMORY_MIB=2048
-PROVISION_DESIRED_VCPUS=1
-PROVISION_MAX_VCPUS=2
+DRY_RUN_VIOS_SLOT=17
+DRY_RUN_VIOS_PARTITION_ID=307
+DRY_RUN_MEMORY_MIB=1536
+PROVISION_MIN_MEMORY_MIB=1536
+PROVISION_DESIRED_MEMORY_MIB=3072
+PROVISION_MAX_MEMORY_MIB=6144
+PROVISION_DESIRED_VCPUS=3
+PROVISION_MAX_VCPUS=6
 PROTECTED_LPAR_NAMES=example-lt-609-protected-a,example-lt-609-protected-b
-SRIOV_ADAPTER_ID=7
-SRIOV_PHYSICAL_PORT_ID=2
-SRIOV_LOGICAL_PORT_ID=701
-SRIOV_CAPACITY_PERCENT=5.0
+SRIOV_ADAPTER_ID=17
+SRIOV_PHYSICAL_PORT_ID=9
+SRIOV_LOGICAL_PORT_ID=917003
+SRIOV_CAPACITY_PERCENT=7.5
 SRIOV_PROFILE_NAME=example-lt-609-profile
 ISO_PATH=/srv/example-lt-609/example-lt-609.iso
 ISO_MEDIA_NAME=example-lt-609.iso
@@ -86,11 +86,12 @@ ISO_HTTP_MEDIA_NAME=example-lt-609-http.iso
 ISO_BIND_HOST=0.0.0.0
 ISO_ADVERTISED_HOST=iso.example.test
 ISO_HTTP_PORT=18090
-VMEDIA_REPOSITORY_SIZE_MIB=4096
-VMEDIA_SHORT_REPOSITORY_SIZE_MIB=512
+VMEDIA_REPOSITORY_SIZE_MIB=6144
+VMEDIA_SHORT_REPOSITORY_SIZE_MIB=1536
 ```
 
-`example.test` is a reserved documentation domain. The example may include
+`example.test` is a reserved documentation domain. Every selectable example
+value differs from the current live-test source values. The example may include
 commented `HMC_*` connection guidance, but it contains no credentials or
 site-specific endpoint values.
 
@@ -105,7 +106,8 @@ host and port. Protected-LPAR refusal uses the configured list.
 
 Focused tests will prove that a complete fictional mapping creates a context,
 that missing and malformed values produce aggregated actionable errors, and
-that configuration failure precedes MCP and client construction and `.env`
+that configuration failure precedes MCP and client construction on both direct
+`main()` calls and command-line entry, and `.env`
 takes precedence over conflicting ambient `LIVE_TEST_*` exports, including on
 the successful TOML-connection path. Existing scenario
 tests will be updated to construct contexts with fictional inputs and will
