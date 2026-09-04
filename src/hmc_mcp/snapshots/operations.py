@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import math
 import re
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, overload
 
@@ -270,6 +270,72 @@ def _placement(resource: dict[str, Any]) -> dict[str, object]:
     }
 
 
+@dataclass(frozen=True)
+class _AffinityObservations:
+    current_lpar: Any
+    current_system: Any
+    predicted_lpars: Any
+    predicted_system: Any
+    current_groups: Any
+    predicted_groups: Any
+    minimum_policy: Any
+
+
+async def _collect_affinity_observations(
+    hmc: HMCClient, system_name: str, lpar_name: str
+) -> _AffinityObservations:
+    """Collect the affinity evidence used by a snapshot."""
+    return _AffinityObservations(
+        current_lpar=await get_lpar_memopt_score(hmc, system_name, lpar_name),
+        current_system=await get_system_memopt_score(hmc, system_name),
+        predicted_lpars=await plan_lpar_memopt_scores(hmc, system_name),
+        predicted_system=await plan_system_memopt_score(hmc, system_name),
+        current_groups=await list_resource_group_memopt_scores(hmc, system_name),
+        predicted_groups=await plan_resource_group_memopt_scores(hmc, system_name),
+        minimum_policy=await get_minimum_affinity_policy(hmc, system_name, lpar_name),
+    )
+
+
+def _identity_parts(
+    console: dict[str, Any] | None,
+    console_resource: dict[str, Any],
+    system: dict[str, Any] | None,
+    system_resource: dict[str, Any],
+    lpar: dict[str, Any] | None,
+    lpar_resource: dict[str, Any],
+) -> tuple[HMCIdentity, SystemIdentity, LparIdentity]:
+    """Parse remote identity fields and enforce the portable snapshot contract."""
+    mtms = system_resource.get("MachineTypeModelSerialNumber")
+    if isinstance(mtms, dict):
+        machine_type = _text(mtms.get("MachineType"), "system machine type")
+        model = _text(mtms.get("Model"), "system model")
+        serial = _text(mtms.get("SerialNumber"), "system serial")
+        machine_type_model = f"{machine_type}-{model}"
+    else:
+        mtms_text = _text(mtms, "system MTMS")
+        if "*" not in mtms_text:
+            raise ValueError("Snapshot capture requires system MTMS in type-model*serial form")
+        machine_type_model, serial = mtms_text.split("*", 1)
+    return (
+        HMCIdentity(
+            uuid=_text(console.get("UUID") if console else None, "HMC UUID"),
+            name=_text(console_resource.get("HostName"), "HMC name", optional=True),
+            version=_text(console_resource.get("Version"), "HMC version", optional=True),
+        ),
+        SystemIdentity(
+            uuid=_text(system.get("UUID") if system else None, "system UUID"),
+            name=_text(system_resource.get("SystemName"), "system name", optional=True),
+            machine_type_model=machine_type_model,
+            serial=serial,
+        ),
+        LparIdentity(
+            uuid=_text(lpar.get("UUID") if lpar else None, "LPAR UUID"),
+            name=_text(lpar_resource.get("PartitionName"), "LPAR name"),
+            partition_id=_positive_int(lpar_resource.get("PartitionID"), "partition ID"),
+        ),
+    )
+
+
 async def capture_lpar_snapshot(
     hmc: HMCClient,
     system_name_or_uuid: str,
@@ -296,58 +362,18 @@ async def capture_lpar_snapshot(
         _parse_profile(native_data)
     )
     observed_at = _utcnow()
-    current_lpar = await get_lpar_memopt_score(hmc, system_name, lpar_name)
-    current_system = await get_system_memopt_score(hmc, system_name)
-    predicted_lpars = await plan_lpar_memopt_scores(hmc, system_name)
-    predicted_system = await plan_system_memopt_score(hmc, system_name)
-    current_groups = await list_resource_group_memopt_scores(hmc, system_name)
-    predicted_groups = await plan_resource_group_memopt_scores(hmc, system_name)
-    minimum_policy = await get_minimum_affinity_policy(
-        hmc, system_name, lpar_name
+    affinity = await _collect_affinity_observations(hmc, system_name, lpar_name)
+    hmc_identity, system_identity, lpar_identity = _identity_parts(
+        console, console_resource, system, system_resource, lpar, lpar_resource
     )
-    mtms = system_resource.get("MachineTypeModelSerialNumber")
-    if isinstance(mtms, dict):
-        machine_type = _text(mtms.get("MachineType"), "system machine type")
-        model = _text(mtms.get("Model"), "system model")
-        serial = _text(mtms.get("SerialNumber"), "system serial")
-        machine_type_model = f"{machine_type}-{model}"
-    else:
-        mtms_text = _text(mtms, "system MTMS")
-        if "*" not in mtms_text:
-            raise ValueError(
-                "Snapshot capture requires system MTMS in type-model*serial form"
-            )
-        machine_type_model, serial = mtms_text.split("*", 1)
-    hmc_uuid = _text(console.get("UUID") if console else None, "HMC UUID")
-    system_id = _text(system.get("UUID") if system else None, "system UUID")
-    lpar_id = _text(lpar.get("UUID") if lpar else None, "LPAR UUID")
     snapshot = LparSnapshot(
         format="hmc-mcp.lpar-snapshot",
         version=1,
         captured_at=_utcnow(),
         source=SnapshotSource(
-            hmc=HMCIdentity(
-                uuid=hmc_uuid,
-                name=_text(console_resource.get("HostName"), "HMC name", optional=True),
-                version=_text(
-                    console_resource.get("Version"), "HMC version", optional=True
-                ),
-            ),
-            system=SystemIdentity(
-                uuid=system_id,
-                name=_text(
-                    system_resource.get("SystemName"), "system name", optional=True
-                ),
-                machine_type_model=machine_type_model,
-                serial=serial,
-            ),
-            lpar=LparIdentity(
-                uuid=lpar_id,
-                name=lpar_name,
-                partition_id=_positive_int(
-                    lpar_resource.get("PartitionID"), "partition ID"
-                ),
-            ),
+            hmc=hmc_identity,
+            system=system_identity,
+            lpar=lpar_identity,
         ),
         capabilities=(
             SnapshotCapability(
@@ -362,9 +388,9 @@ async def capture_lpar_snapshot(
             SnapshotCapability(
                 name="minimum-affinity-policy",
                 version=1,
-                supported=minimum_policy.capability == "available",
+                supported=affinity.minimum_policy.capability == "available",
                 collection="hmc-cli",
-                unavailable_reason=minimum_policy.unavailable_reason,
+                unavailable_reason=affinity.minimum_policy.unavailable_reason,
             ),
             SnapshotCapability(
                 name="runtime-placement",
@@ -386,11 +412,11 @@ async def capture_lpar_snapshot(
             scores=ObservationEnvelope(
                 media_type=SCORES_MEDIA_TYPE,
                 data={
-                    "current": {"lpar": current_lpar, "system": current_system},
-                    "predicted": {"lpars": predicted_lpars, "system": predicted_system},
+                    "current": {"lpar": affinity.current_lpar, "system": affinity.current_system},
+                    "predicted": {"lpars": affinity.predicted_lpars, "system": affinity.predicted_system},
                     "resource_groups": {
-                        "current": asdict(current_groups),
-                        "predicted": asdict(predicted_groups),
+                        "current": asdict(affinity.current_groups),
+                        "predicted": asdict(affinity.predicted_groups),
                     },
                 },
             ),
@@ -398,13 +424,13 @@ async def capture_lpar_snapshot(
                 ObservationEnvelope(
                     media_type=MINIMUM_AFFINITY_POLICY_MEDIA_TYPE,
                     data={
-                        "min_affinity_score": minimum_policy.min_affinity_score,
+                        "min_affinity_score": affinity.minimum_policy.min_affinity_score,
                         "min_affinity_score_action": (
-                            minimum_policy.min_affinity_score_action
+                            affinity.minimum_policy.min_affinity_score_action
                         ),
                     },
                 )
-                if minimum_policy.capability == "available"
+                if affinity.minimum_policy.capability == "available"
                 else None
             ),
         ),
