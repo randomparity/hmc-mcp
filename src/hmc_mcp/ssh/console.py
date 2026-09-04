@@ -306,6 +306,8 @@ async def _release_uncancellable(
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
+            if task.done():
+                return task.result()
             continue
 
 
@@ -501,6 +503,8 @@ async def _await_acquisition(
         try:
             connection, process, data = await asyncio.shield(task)
         except asyncio.CancelledError:
+            if task.done():
+                task.result()
             cancelled = True
             continue
         except BaseException:

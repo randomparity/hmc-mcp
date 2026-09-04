@@ -25,6 +25,7 @@ from hmc_mcp.ssh.console import (
     ConsoleCapture,
     ConsoleHeldError,
     _probe_released,
+    _release_uncancellable,
     _SealedStdin,
     _truncate,
     capture_lpar_console,
@@ -35,6 +36,17 @@ BANNER = b"\r\n Open in progress  \r\n "
 
 def _client() -> HMCClient:
     return HMCClient(make_config())
+
+
+@pytest.mark.asyncio
+async def test_release_propagates_cancellation_from_completed_child() -> None:
+    async def cancelled_release(*args) -> bool:
+        raise asyncio.CancelledError
+
+    with patch("hmc_mcp.ssh.console._release_and_verify", cancelled_release), pytest.raises(
+        asyncio.CancelledError
+    ):
+        await _release_uncancellable(make_config(), "sys1", "lp1")
 
 
 # The exact recorded P1 contention output, quirks included.
