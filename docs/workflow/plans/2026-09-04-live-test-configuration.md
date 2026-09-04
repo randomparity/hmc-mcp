@@ -7,12 +7,13 @@ only consume context values. The standard library and the runner's existing
 
 ## Global Constraints
 
-- Keep `HMC_*` connection precedence and semantics unchanged.
+- Keep `HMC_*` connection precedence and semantics unchanged; local `.env` is
+  authoritative for `LIVE_TEST_*` even when conflicting values are exported.
 - Do not add dependencies.
 - Missing or malformed `LIVE_TEST_*` values must fail before MCP client creation.
 - `.env.example` uses only fictional, mutually consistent sample values.
 
-Expected implementation size: 180–280 changed lines (M) — one context parser,
+Expected implementation size: 220–320 changed lines (M) — one context parser,
 scenario substitutions, example documentation, and focused tests.
 
 ## Task 1: Define and validate live-test configuration
@@ -40,11 +41,14 @@ Steps:
 1. Add a single mapping of required key names and conversion functions beside
    `_load_dotenv`; load values after the existing connection bootstrap.
 2. Make `LiveTestContext` store all configured scenario inputs, including
-   SR-IOV and virtual-media inputs, while retaining mutable discovered state.
+   SR-IOV, provisioning, and virtual-media inputs, while retaining mutable
+   discovered state. Define the complete specification inventory as the parser's
+   single required-key list.
 3. Replace default construction in the runner entry path with validated
    construction before `Client` is entered.
 4. Add focused tests using fictional mapping values and prove no client is
-   instantiated when validation fails.
+   instantiated when validation fails or when a selected subtask is requested.
+   Prove a conflicting exported `LIVE_TEST_*` value cannot override `.env`.
 
 Acceptance: every required key has validation and error text; no current
 environment identifier remains a default in `LiveTestContext`.
@@ -64,18 +68,19 @@ Verification:
   it is red while module constants are used, then green with
   `uv run --no-sync pytest tests/test_live_runner.py -q`.
 - Contract: virtual-media serving, allow-list, media names, and protection use
-  configured values.
+  configured values, with separate bind and advertised hosts.
   Mode: focused-test. Add a focused virtual-media configuration test; it is red
   while constants are used, then green with the same command.
 
 Steps:
 
-1. Remove environment-specific constants and source-specific prose from the
-   scenario modules.
+1. Remove every source item in the specification inventory and
+   environment-specific prose from the scenario modules.
 2. Substitute the corresponding typed context values in every tool call,
    command, server setup, allow-list update, and safety guard.
 3. Update focused tests to build a complete fictional context and assert the
-   selected values reach the relevant calls.
+   selected SR-IOV, provisioning, primary/alternate media, bind, advertised URL,
+   allow-list, and protection values reach the relevant calls.
 
 Acceptance: scenario modules do not retain environment-specific identifiers or
 read environment variables directly.
@@ -89,8 +94,8 @@ with comments describing format and use.
 
 Verification:
 
-- Contract: the example key set equals the parser's required key set and does
-  not contain retired source identifiers.
+- Contract: the example key set equals the specification inventory and parser's
+  required key set and does not contain retired source identifiers.
   Mode: focused-test. Add an example-contract test; it is red before the file
   exists, then green with `uv run --no-sync pytest tests/test_live_runner.py -q`.
 

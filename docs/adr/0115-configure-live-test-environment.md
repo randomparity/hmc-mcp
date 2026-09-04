@@ -15,15 +15,19 @@ action, and sample values must be fictional.
 
 ## Decision
 
-Use a strict `LIVE_TEST_*` namespace in the local `.env` file. The runner will
-load and validate every required value into `LiveTestContext` before it creates
-the MCP client. Scenario modules will consume the context rather than their own
-environment-specific module constants. `.env.example` will list every setting,
-state its format and purpose, and use mutually consistent fictional values.
+Use a strict `LIVE_TEST_*` namespace in the local `.env` file. The runner reads
+that file directly and treats it as authoritative for this namespace; ambient
+`LIVE_TEST_*` exports do not select live-test targets. It validates every
+required value into `LiveTestContext` before it creates the MCP client. Scenario
+modules consume the context rather than their own environment-specific module
+constants. `.env.example` lists every setting, states its format and purpose,
+and uses mutually consistent fictional values.
 
 `HMC_*` connection settings retain their existing configuration precedence and
-semantics. The live runner must report all missing or invalid `LIVE_TEST_*`
-settings together and return without opening a client.
+semantics. The live runner reports all missing or invalid `LIVE_TEST_*`
+settings together and returns without opening a client. Virtual media uses
+separate local-bind and HMC-advertised hosts so a wildcard listener can
+advertise a routable address.
 
 ## Consequences
 
@@ -42,3 +46,5 @@ UUIDs remains outside the static configuration.
 - **Add a configuration dependency.** verified: the runner already parses its
   local `.env` file in `scripts/live_test_runner.py`; a small typed parser uses
   the existing standard-library path.
+- **Let ambient `LIVE_TEST_*` exports override `.env`.** judgment: an operator
+  must be able to review one local file and know which destructive targets run.
