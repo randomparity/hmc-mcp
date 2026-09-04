@@ -32,7 +32,7 @@ from typing import Any, Literal, get_args, get_origin, get_type_hints
 import pytest
 from defusedxml import ElementTree as DET
 
-from hmc_mcp import documents, jobs
+from hmc_mcp import documents, jobs, jobs_requests
 from hmc_mcp.operations import update_models as update_jobs
 from hmc_mcp.xmlutil import escape_xml, escapes_string_arguments, localname
 
@@ -43,7 +43,7 @@ from hmc_mcp.xmlutil import escape_xml, escapes_string_arguments, localname
 PAYLOAD = "R&D <a> \"b\" 'c'"
 BENIGN = "benign"
 
-BUILDER_MODULES = (documents, jobs, update_jobs)
+BUILDER_MODULES = (documents, jobs, jobs_requests, update_jobs)
 
 ADR_0042 = (
     pathlib.Path(__file__).resolve().parents[2]
