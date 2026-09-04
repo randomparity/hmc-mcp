@@ -60,7 +60,7 @@ The test in clause 1 is the **resource type**, not the mere presence of a
 selector. `VirtualIOServer` partitions are out of scope: ADR 0011 never stamps
 them, so there is no token to authorize against. That excludes the VIOS mutations —
 `power_vios`, `hmc_delete_vios`, `hmc_install_vios`, `hmc_restore_vios`,
-`hmc_backup_vios`, `hmc_vios_update` — and also `hmc_install_lpar_os`, despite its
+`hmc_backup_vios`, `hmc_vios_update` — and also `hmc_install_vios_by_lpar_selector`, despite its
 name, because `installios` requires its `-p` partition to be of type Virtual I/O
 Server. #366 moved that determination's subject out of the tool body into
 `operations/install.py`, where §3.4a now classifies both install operations; the
@@ -252,7 +252,7 @@ LPAR-mutating exemption.
 | `hmc_capture_lpar_console` (`server_tools/console.py:23`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_backup_lpar_profiles` (`server_tools/lpar/profiles.py:31`) | Reads every profile and writes an HMC-side backup file; it does not mutate a partition or profile. |
 | `hmc_migrate_validate_lpar` (`server_tools/lpm.py:146`) | Calls `validate_lpar_migration`, which submits an LPM validation job and changes nothing. The mutating migration operation has its own guard. |
-| `install_lpar_os` (`operations/install.py:228`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation now reads the resolved `LogicalPartition` resource and rejects a non-VIOS type or any state other than `not activated` before composing or submitting the detached command. |
+| `install_vios_by_lpar_selector` (`operations/install.py:228`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_vios_by_lpar_selector` tool body this operation was extracted from. The operation now reads the resolved `LogicalPartition` resource and rejects a non-VIOS type or any state other than `not activated` before composing or submitting the detached command. |
 | `install_vios` (`operations/install.py:311`) | Added by #366. Same reason and preflight: after resolving through the `VirtualIOServer` feed, both name and UUID selectors are checked through the resolved `LogicalPartition` resource for Virtual I/O Server type and `not activated` state before submission. |
 
 **3.4b — no LPAR-mutating standing exemptions remain.** Issue #449 moved
@@ -264,7 +264,7 @@ system-wide acknowledgement remains accident prevention, and the managed-system 
 remains an additional MCP boundary; neither substitutes for the ownership check on
 direct CLI or Python entry paths.
 
-`hmc_install_lpar_os` is absent from §3.1–§3.3 because §1 puts it out of scope:
+`hmc_install_vios_by_lpar_selector` is absent from §3.1–§3.3 because §1 puts it out of scope:
 `installios` requires a Virtual I/O Server partition. #366 proposed extracting a NIM
 install operation covering LPARs as well as VIOS, and this paragraph made that
 extraction conditional: if the operation can target a `LogicalPartition`, it is
@@ -273,7 +273,7 @@ introduces it.
 
 **Disposition of #366.** #366 shipped as a layering extraction only — it moved the
 tool bodies into `operations.install` unchanged and added no LPAR-capable install
-path. `install_lpar_os` can be *handed* a `LogicalPartition` selector, as the tool
+path. `install_vios_by_lpar_selector` can be *handed* a `LogicalPartition` selector, as the tool
 always could, but `installios` refuses a non-VIOS `-p`, so no mutation of a
 `LogicalPartition` is reachable through it. Both exports are therefore classified in
 §3.4a rather than §3.1, and §6's recording obligation is discharged there. The
@@ -284,7 +284,7 @@ against a `LogicalPartition`.
 that ADR lists under "Assumptions and unverified behaviors" — none of which had
 live-HMC verification. Confirming or refuting it in the next live-HMC window
 therefore reopens this classification, not merely ADR 0070's scope note: if any
-release has widened `installios` beyond VIOS-type targets, `install_lpar_os`
+release has widened `installios` beyond VIOS-type targets, `install_vios_by_lpar_selector`
 becomes Destructive under §2 and moves to §3.1 with a guard. Nothing detects the
 widening on its own — submission is detached, so acceptance and refusal both
 reach only the HMC-side log — so the pointer in ADR 0070's item 5 is the

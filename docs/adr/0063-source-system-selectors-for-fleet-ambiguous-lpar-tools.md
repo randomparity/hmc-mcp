@@ -19,7 +19,7 @@ remedy rather than widen the public contract. Three groups were named:
 
 1. **Twenty lpar tools with no `system_name_or_uuid`** (`hmc_delete_adapter`,
    `hmc_dlpar_mem`, `hmc_dlpar_proc`, `hmc_modify_lpar` since retired from this
-   list by later work, `hmc_power_on_lpar`, `hmc_install_lpar_os`, and their
+   list by later work, `hmc_power_on_lpar`, `hmc_install_vios_by_lpar_selector`, and their
    siblings — 21 at the time of writing, `hmc_lpar_summary` among them).
 2. **The LPM tools bound the destination only.** `hmc_migrate_lpar`,
    `hmc_migrate_validate_lpar`, and `hmc_remote_restart_lpar` declare

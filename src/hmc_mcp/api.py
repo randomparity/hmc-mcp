@@ -74,8 +74,8 @@ from hmc_mcp.operations.health import FleetHealthResult, fetch_fleet_health
 from hmc_mcp.operations.install import (
     InstallHandle,
     InstallRequest,
-    install_lpar_os,
     install_vios,
+    install_vios_by_lpar_selector,
 )
 from hmc_mcp.operations.jobs import get_job, wait_for_job
 from hmc_mcp.operations.lpar.assignments import (
@@ -371,7 +371,7 @@ __all__ = [  # noqa: RUF022 - grouped by subsystem to mirror ADR 0029, not sorte
     "DecommissionResult",
     "fetch_fleet_health",
     "FleetHealthResult",
-    "install_lpar_os",
+    "install_vios_by_lpar_selector",
     "install_vios",
     "InstallHandle",
     "InstallRequest",

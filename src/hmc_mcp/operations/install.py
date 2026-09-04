@@ -71,7 +71,7 @@ class InstallHandle(TypedDict):
 
     log_path: str
     """HMC-side path the install writes to. Keyed on the partition name alone,
-    so it is not unique per managed system — see :func:`install_lpar_os`."""
+    so it is not unique per managed system — see :func:`install_vios_by_lpar_selector`."""
 
     message: str
     """Operator-facing restatement of ``pid`` and ``log_path`` with the cleanup
@@ -225,7 +225,7 @@ async def _submit_install(
     }
 
 
-async def install_lpar_os(
+async def install_vios_by_lpar_selector(
     hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -317,7 +317,7 @@ async def install_vios(
     """Detach an ``installios`` VIOS install onto an existing VIOS partition.
 
     Identical mechanism, contract, and return value to
-    :func:`install_lpar_os` — see it for the submit-and-detach semantics, the
+    :func:`install_vios_by_lpar_selector` — see it for the submit-and-detach semantics, the
     detach handle's fields, the ADR 0092 §3.4a ownership classification, and the
     ``installios`` argument grammar. This operation differs only in resolving
     its target through the ``VirtualIOServer`` feed rather than the
@@ -343,7 +343,7 @@ async def install_vios(
             raised before anything is submitted.
         HMCError: If the target is not a Virtual I/O Server or is not powered
             off. The check runs before SSH submission.
-        HMCCLIError: Same two sources as :func:`install_lpar_os` — UUID-to-CLI
+        HMCCLIError: Same two sources as :func:`install_vios_by_lpar_selector` — UUID-to-CLI
             name resolution over SSH, or the submission — and the same
             inability to tell them apart from the exception type.
     """

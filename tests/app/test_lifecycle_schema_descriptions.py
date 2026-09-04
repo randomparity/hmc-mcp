@@ -42,7 +42,7 @@ SCOPED_TOOLS = {
     "hmc_create_vios",
     "hmc_delete_vios",
     "hmc_install_vios",
-    "hmc_install_lpar_os",
+    "hmc_install_vios_by_lpar_selector",
     "hmc_list_vios_backups",
     "hmc_backup_vios",
     "hmc_restore_vios",

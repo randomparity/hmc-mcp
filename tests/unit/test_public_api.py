@@ -51,7 +51,23 @@ ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {
         "require_admitted_environment",
     ): "ADR 0029 excludes this shared admission-policy guard from domain operations",
 }
-ADR_0029_TYPE_EXCLUSIONS: dict[tuple[str, str], str] = {}
+for _vios_label_name in (
+    "list_vios_fc_port_labels",
+    "set_vios_fc_port_label",
+    "remove_vios_fc_port_label",
+    "list_vios_vfc_group_labels",
+    "create_vios_vfc_group_label",
+    "update_vios_vfc_group_label",
+    "remove_vios_vfc_group_label",
+):
+    ADR_0029_OPERATION_EXCLUSIONS[
+        ("hmc_mcp.operations.vios_labels", _vios_label_name)
+    ] = "ADR 0029 excludes this adapter-facing VIOS label workflow from the reusable facade"
+ADR_0029_TYPE_EXCLUSIONS = {
+    ("hmc_mcp.ssh.vios_labels", "ViosGroupUpdateAction"): (
+        "ADR 0029 excludes this adapter-facing VIOS label type from the reusable facade"
+    )
+}
 
 
 class FacadeContractError(AssertionError):
@@ -146,7 +162,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "DecommissionResult",
         "fetch_fleet_health",
         "FleetHealthResult",
-        "install_lpar_os",
+        "install_vios_by_lpar_selector",
         "install_vios",
         "InstallHandle",
         "InstallRequest",
@@ -1773,7 +1789,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
         Last moved by issue #468, which named the `installios` detach handle
-        `InstallHandle` and annotated `install_lpar_os` and `install_vios` with
+        `InstallHandle` and annotated `install_vios_by_lpar_selector` and `install_vios` with
         it. Both return annotations move from `dict[str, Any]` to that name, and
         `_typed_dict_text` adds an entry carrying the five keys themselves
         — the point of the change, since `inspect.signature` reports nothing for
@@ -1797,7 +1813,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         when the caller omits the optional selector.
         Before that, issue #366 extracted the ``installios`` install
         orchestration out of the MCP tool bodies into ``operations.install``
-        and exported ``install_lpar_os`` and ``install_vios``. Both return the
+        and exported ``install_vios_by_lpar_selector`` and ``install_vios``. Both return the
         CLI bridge's detach handle, not an HMC job identifier: ADR 0069 found
         no ``InstallLPAR``/``InstallVIOS`` REST job on any surveyed HMC and
         ADR 0070 replaced them with the detached CLI submission, so that
@@ -2062,7 +2078,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
-    expected_digest = "298b4416ca0e5379bb5cac3e6f057103ba27707bff2889e65b3370fa80d2ca68"  # pragma: allowlist secret
+    expected_digest = "9d99edbdfd62b9671079b564045d5d1e23d9278700f5a9433b6b2966c8f7bc39"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

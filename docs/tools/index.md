@@ -124,8 +124,8 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_get_system_memopt_score` | `read` | [system.md](system.md) |
 | `hmc_get_user` | `read` | [user.md](user.md) |
 | `hmc_get_vios` | `read` | [vios.md](vios.md) |
-| `hmc_install_lpar_os` | `destructive` | [lpar.md](lpar.md) |
 | `hmc_install_vios` | `destructive` | [vios.md](vios.md) |
+| `hmc_install_vios_by_lpar_selector` | `destructive` | [lpar.md](lpar.md) |
 | `hmc_list_adapters` | `read` | [adapter.md](adapter.md) |
 | `hmc_list_clusters` | `read` | [cluster.md](cluster.md) |
 | `hmc_list_configured_hosts` | `read` | [config.md](config.md) |

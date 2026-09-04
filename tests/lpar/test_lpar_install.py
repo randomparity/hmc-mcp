@@ -1,4 +1,4 @@
-"""Tests for hmc_install_lpar_os: the HMC CLI installios bridge (ADR 0070).
+"""Tests for hmc_install_vios_by_lpar_selector: the HMC CLI installios bridge (ADR 0070).
 
 The InstallLPAR REST job does not exist (ADR 0069); the tool now composes a
 detached ``installios`` command and submits it over SSH.
@@ -232,7 +232,7 @@ async def test_run_installios_ssh_failure_surfaces_as_cli_error():
 
 
 # ---------------------------------------------------------------------- #
-# Tool-layer tests for hmc_install_lpar_os
+# Tool-layer tests for hmc_install_vios_by_lpar_selector
 # ---------------------------------------------------------------------- #
 
 
@@ -251,9 +251,9 @@ _INSTALL_KWARGS = {
 }
 
 
-def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc):
+def test_install_vios_by_lpar_selector_tool_submits_detached_installios(monkeypatch, mock_hmc):
     """The tool resolves the target then runs the composed installios command."""
-    from hmc_mcp.server_tools.vios import hmc_install_lpar_os
+    from hmc_mcp.server_tools.vios import hmc_install_vios_by_lpar_selector
 
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
@@ -277,7 +277,7 @@ def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc)
         return f"{INSTALLIOS_PID_PREFIX}4242\n"
 
     with patch("hmc_mcp.ssh.install.run_hmc_command", new=fake_run_hmc_command):
-        result = hmc_install_lpar_os("aixprod", "sys1", **_INSTALL_KWARGS)
+        result = hmc_install_vios_by_lpar_selector("aixprod", "sys1", **_INSTALL_KWARGS)
 
     assert result["pid"] == 4242
     assert result["partition"] == "aixprod"
@@ -298,15 +298,15 @@ def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc)
     assert submitted["cmd"] == expected
 
 
-def test_install_lpar_os_tool_rejects_invalid_arguments_before_ssh(
+def test_install_vios_by_lpar_selector_tool_rejects_invalid_arguments_before_ssh(
     monkeypatch, mock_hmc
 ):
     """Operations-layer validation rejects input before SSH submission."""
-    from hmc_mcp.server_tools.vios import hmc_install_lpar_os
+    from hmc_mcp.server_tools.vios import hmc_install_vios_by_lpar_selector
 
     _hmc_env(monkeypatch)
     with pytest.raises(ValueError, match="IPv4"):
-        hmc_install_lpar_os(
+        hmc_install_vios_by_lpar_selector(
             "aixprod",
             "sys1",
             install_source="/extra/vios.iso",
@@ -317,8 +317,8 @@ def test_install_lpar_os_tool_rejects_invalid_arguments_before_ssh(
     assert {call.request.url.path for call in mock_hmc.calls} == {"/rest/api/web/Logon"}
 
 
-def test_install_lpar_os_unknown_name_fails_before_submission(monkeypatch, mock_hmc):
-    from hmc_mcp.server_tools.vios import hmc_install_lpar_os
+def test_install_vios_by_lpar_selector_unknown_name_fails_before_submission(monkeypatch, mock_hmc):
+    from hmc_mcp.server_tools.vios import hmc_install_vios_by_lpar_selector
 
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
@@ -338,7 +338,7 @@ def test_install_lpar_os_unknown_name_fails_before_submission(monkeypatch, mock_
         patch("hmc_mcp.operations.install.run_installios", new=fail),
         pytest.raises(ValueError, match="No LPAR named"),
     ):
-        hmc_install_lpar_os("nosuchlpar", "sys1", **_INSTALL_KWARGS)
+        hmc_install_vios_by_lpar_selector("nosuchlpar", "sys1", **_INSTALL_KWARGS)
 
 
 def _system_feed(name: str) -> str:

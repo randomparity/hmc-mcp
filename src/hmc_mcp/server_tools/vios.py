@@ -10,8 +10,8 @@ from .._app import (
 from ..documents import VIOS_DEFAULT_RESOURCES, LparResources
 from ..operations.install import (
     InstallRequest,
-    install_lpar_os,
     install_vios,
+    install_vios_by_lpar_selector,
     validate_install_request,
 )
 from ..operations.vios import (
@@ -185,7 +185,7 @@ def hmc_install_vios(
 
 
 @tool(effect="destructive", operation="lpar.install_os", target_kind="lpar")
-def hmc_install_lpar_os(
+def hmc_install_vios_by_lpar_selector(
     lpar_name_or_uuid: str,
     system_name_or_uuid: str,
     install_source: str,
@@ -252,7 +252,7 @@ def hmc_install_lpar_os(
         profile: Optional TOML profile name; uses environment defaults when
             omitted.
     """
-    # install_lpar_os validates too, but only once its client exists. Calling
+    # install_vios_by_lpar_selector validates too, but only once its client exists. Calling
     # the same list here rejects a malformed argument before a session opens.
     request = InstallRequest(
         install_source=install_source,
@@ -265,7 +265,7 @@ def hmc_install_lpar_os(
     )
 
     async def _go(hmc):
-        return await install_lpar_os(
+        return await install_vios_by_lpar_selector(
             hmc,
             system_name_or_uuid,
             lpar_name_or_uuid,

@@ -58,6 +58,10 @@ synchronous function is a transformation, parser, or validator rather than an as
 operation and is excluded for that concrete contract-readiness reason. Imported transport types
 such as `Any` and built-in containers are not facade exports.
 
+The adapter-facing `operations.vios_labels` workflow and its SSH command type are intentionally
+excluded from the reusable facade. They are shared by the MCP and CLI presentation layers but are
+not a supported Python consumer boundary.
+
 `operations.pcie.require_admitted_environment` is the one asynchronous exception. It is a shared
 admission-policy guard called by complete PCIe and SSH-network operations, not a domain operation a
 consumer can use independently: it accepts an already-resolved CLI system name and returns no
@@ -169,7 +173,7 @@ names are internal everywhere and are never inventoried.
   `translate_pcm_error`, `translate_template_error`, `translate_virtual_network_create_error`.
 - `operations.health` — operations: `fetch_fleet_health`; types: `FleetHealthResult`; excluded
   synchronous: none.
-- `operations.install` — operations: `install_lpar_os`, `install_vios`; types: `InstallHandle`, `InstallRequest`;
+- `operations.install` — operations: `install_vios`, `install_vios_by_lpar_selector`; types: `InstallHandle`, `InstallRequest`;
   excluded synchronous: `validate_install_request`.
   - Note: the MCP tools call `validate_install_request` to reject a malformed argument before a
     client is opened, which the operations cannot do. Both operations submit the detached
@@ -263,6 +267,7 @@ names are internal everywhere and are never inventoried.
   `BackupType`, `RestoreBackupType`;
   excluded synchronous: `validate_vios_backup_name`, `validate_vios_backup_request`,
   `validate_vios_restore_request`.
+- `operations.vios_labels` — operations: none; types: none; excluded synchronous: none.
 - `operations.vnic` — operations: `add_vnic`, `list_fc_ports`,
   `list_sea_adapters`, `list_vnics`, `remove_vnic`; types:
   `VnicBackingSelector`, `VnicBackingSnapshot`,

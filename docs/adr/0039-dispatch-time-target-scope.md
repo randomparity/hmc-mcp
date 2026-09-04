@@ -433,7 +433,7 @@ omissions:
   UUIDs. Refusing a legitimate non-canonical identifier would be a regression traded for
   reach that dot-segment refusal has already removed.
 - **Remote endpoints a call reads from.** `hmc_update_firmware`, `hmc_update_console_software`, and
-  `hmc_vios_update` take a `repository`; `hmc_install_lpar_os` and `hmc_install_vios` take NIM
+  `hmc_vios_update` take a `repository`; `hmc_install_vios_by_lpar_selector` and `hmc_install_vios` take NIM
   server addresses. These are not HMC resources, so no `TargetKind` names one and no allowlist can
   hold one. Each still mutates exactly the resource its selectors declare — a system, a console, a
   VIOS, a partition — while loading the payload from an address the caller chose. Constraining

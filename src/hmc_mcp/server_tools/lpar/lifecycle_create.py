@@ -43,8 +43,35 @@ def hmc_create_lpar(
 ) -> LparPcieWorkflowResult:
     """Create a new LPAR on a managed system.
 
-    See the parameter annotations and server schema for accepted values. The
-    operation creates the partition powered off with the requested resources.
+    system_name_or_uuid: the target managed system — accepts either a
+    SystemName or a UUID. Memory values are in MiB. By default a
+    shared-processor partition is created; set dedicated=True for dedicated
+    CPUs (then procs are whole CPU counts). For shared partitions, procs are
+    processing units (may be fractional, e.g. 0.5) and vcpus are virtual
+    processor counts.
+
+    The partition is created powered off with a default profile; storage,
+    network and boot settings still need to be configured before it can boot an
+    OS. This creates a real partition — confirm the target before calling.
+
+    Raises ValueError if a partition with the given name already exists on any
+    managed system — names must be unique across the HMC.
+
+    Returns a dict with ``lpar``, ``ownership_stamped``, and ``warnings`` keys.
+
+    Args:
+        system_name_or_uuid: SystemName or UUID of the managed system to create on.
+        name: Unique PartitionName for the new logical partition.
+        resources: Memory and processor assignments for the new partition.
+        partition_type: Partition type: AIX/Linux, OS400, or Virtual IO Server.
+        partition_id: Optional numeric partition ID; the HMC assigns one when omitted.
+        os_type: Optional target operating-system family: aix, linux, or ibmi.
+        keylock: Optional initial keylock position: normal, manual, or auto.
+        max_virtual_slots: Optional maximum number of virtual I/O slots.
+        caller_token: Optional caller tracking reference embedded in the partition
+            description after the ownership stamp (ADR 0064).
+        assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
     if caller_token is not None:
         validate_caller_token(caller_token)

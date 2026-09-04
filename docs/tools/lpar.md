@@ -19,7 +19,7 @@
 | `hmc_get_lpar_proc_compat` | `read` | `lpar.get_proc_compat` | `lpar` | Return an LPAR's desired and current processor compatibility modes. |
 | `hmc_get_lpar_state` | `read` | `lpar.get_state` | `lpar` | Return the current state of one LPAR by partition name or UUID. |
 | `hmc_get_minimum_affinity_policy` | `read` | `lpar.get_minimum_affinity_policy` | `lpar` | Return an LPAR's minimum-affinity policy when supported. |
-| `hmc_install_lpar_os` | `destructive` | `lpar.install_os` | `lpar` | Install an OS image onto a partition via the HMC ``installios`` CLI. |
+| `hmc_install_vios_by_lpar_selector` | `destructive` | `lpar.install_os` | `lpar` | Install an OS image onto a partition via the HMC ``installios`` CLI. |
 | `hmc_list_lpar_memopt_scores` | `read` | `lpar.list_memopt_scores` | `managed_system` | List current memory-optimization affinity scores for a system's LPARs. |
 | `hmc_list_lpar_ownership` | `read` | `lpar.list_ownership` | `managed_system` | Read parsed ownership for every LPAR on a system in one REST call. |
 | `hmc_list_lpars` | `read` | `lpar.list` | `managed_system` | List LPARs, optionally filtered by system or state. |
