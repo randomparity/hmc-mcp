@@ -24,12 +24,15 @@ from hmc_mcp.ssh.console import (
     MAX_CAPTURE_SECONDS,
     ConsoleCapture,
     ConsoleHeldError,
+    _acquire_capture_stream,
+    _open_capture_stream,
     _probe_released,
     _release_uncancellable,
     _SealedStdin,
     _truncate,
     capture_lpar_console,
 )
+from hmc_mcp.ssh.transport import HMCCLIError
 
 BANNER = b"\r\n Open in progress  \r\n "
 
@@ -108,6 +111,20 @@ class FakeConnection:
         self.closed = True
 
 
+class FailingProcessConnection(FakeConnection):
+    async def create_process(self, command: str, **kwargs):
+        raise OSError("channel unavailable")
+
+
+class FailingStdout:
+    async def read(self, size: int) -> bytes:
+        raise OSError("channel lost")
+
+
+class FailingReadProcess:
+    stdout = FailingStdout()
+
+
 def _capture_kwargs(**overrides):
     kwargs = {
         "duration_seconds": 5.0,
@@ -139,6 +156,29 @@ async def _run_capture(connection: FakeConnection, **overrides) -> ConsoleCaptur
     # ConsoleCapture is frozen; the test seam rides on the side.
     object.__setattr__(capture, "release_calls", release_mock.await_args_list)
     return capture
+
+
+@pytest.mark.asyncio
+async def test_console_process_creation_translates_transport_errors() -> None:
+    connection = FailingProcessConnection([])
+    with (
+        patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock(return_value=connection)),
+        pytest.raises(HMCCLIError, match="Unable to create the HMC console process"),
+    ):
+        await _open_capture_stream(make_config(), "mkvterm", _SealedStdin())
+    assert connection.closed
+
+
+@pytest.mark.asyncio
+async def test_console_acquisition_read_translates_transport_errors() -> None:
+    connection = FakeConnection([])
+    connection.create_process = AsyncMock(return_value=FailingReadProcess())
+    with (
+        patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock(return_value=connection)),
+        pytest.raises(HMCCLIError, match="acquisition read failed"),
+    ):
+        await _acquire_capture_stream(make_config(), "mkvterm", _SealedStdin())
+    assert connection.closed
 
 
 # ---------------------------------------------------------------------------

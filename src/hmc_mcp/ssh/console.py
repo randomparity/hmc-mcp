@@ -43,6 +43,8 @@ import shlex
 from dataclasses import dataclass
 from typing import Any, Literal
 
+import asyncssh
+
 from hmc_mcp.client.core import HMCClient
 
 from ..config import HMCConfig
@@ -453,6 +455,11 @@ async def _open_capture_stream(
         process = await connection.create_process(
             command, stdin=stdin.read_fd, encoding=None
         )
+    except (asyncssh.Error, OSError) as exc:
+        connection.close()
+        raise HMCCLIError(
+            f"Unable to create the HMC console process for {command!r}: {exc}"
+        ) from exc
     except BaseException:
         connection.close()
         raise
@@ -469,7 +476,14 @@ async def _acquire_capture_stream(
         async with asyncio.timeout(_RELEASE_PROBE_SECONDS):
             data = bytearray()
             while True:
-                chunk = await process.stdout.read(_CHUNK)
+                try:
+                    chunk = await process.stdout.read(_CHUNK)
+                except (asyncssh.Error, OSError) as exc:
+                    connection.close()
+                    raise HMCCLIError(
+                        "HMC console acquisition read failed before the console "
+                        f"was confirmed: {exc}"
+                    ) from exc
                 if not chunk:
                     raise HMCCLIError(
                         "mkvterm exited before confirming console acquisition"
