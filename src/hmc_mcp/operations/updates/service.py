@@ -131,10 +131,10 @@ async def submit_available_hmc_ptfs_query(
 
 async def update_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     repository: VIOSUpdateSource,
     *,
+    system_name_or_uuid: str | None = None,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
@@ -157,10 +157,10 @@ async def update_vios(
 
 async def upgrade_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     repository: VIOSUpgradeSource,
     *,
+    system_name_or_uuid: str | None = None,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,

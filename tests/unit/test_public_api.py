@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import functools
 import hashlib
+import importlib.util
 import inspect
 import json
 import pkgutil
@@ -615,8 +616,9 @@ def _module_import_bindings(module: ModuleType) -> dict[str, str]:
         return {}
     tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
     return {
-        alias.asname or alias.name: (
-            f"hmc_mcp.{node.module}" if node.level else node.module
+        alias.asname or alias.name: importlib.util.resolve_name(
+            f"{'.' * node.level}{node.module}" if node.level else node.module,
+            module.__package__ or module.__name__,
         )
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom) and node.module is not None
@@ -1976,19 +1978,15 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         parameters = inspect.signature(getattr(api, operation_name)).parameters
         assert "power_on" in parameters
         assert "on" not in parameters
-        for operation_name in ("update_vios", "upgrade_vios", "upload_iso"):
-            parameters = inspect.signature(getattr(api, operation_name)).parameters
-            selector_names = [
-                name
-                for name in parameters
-                if name in {"system_name_or_uuid", "vios_name_or_uuid"}
-            ]
-            expected = (
-                ["vios_name_or_uuid", "system_name_or_uuid"]
-                if operation_name == "upload_iso"
-                else ["system_name_or_uuid", "vios_name_or_uuid"]
-            )
-            assert selector_names == expected
+    for operation_name in ("update_vios", "upgrade_vios", "upload_iso"):
+        parameters = inspect.signature(getattr(api, operation_name)).parameters
+        selector_names = [
+            name
+            for name in parameters
+            if name in {"system_name_or_uuid", "vios_name_or_uuid"}
+        ]
+        expected = ["vios_name_or_uuid", "system_name_or_uuid"]
+        assert selector_names == expected
     for operation_name in (
         "delete_vios",
         "power_vios",
@@ -2058,8 +2056,10 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Every LPAR operation now places the system selector before the LPAR selector.
     # VIOS inventory operations and their PartitionState selector joined the facade.
     # System and VIOS power operations now use power_on like the LPAR operation.
-    # VIOS mutations share system-before-partition selector order; get_vios
-    # makes its optional system scope keyword-only after the required selector.
+        # VIOS mutations share system-before-partition selector order; get_vios
+        # makes its optional system scope keyword-only after the required selector.
+        # VIOS update and upgrade operations now place the required VIOS selector
+        # before the optional managed-system scope, matching the other VIOS mutations.
     # Virtual-disk creation now uses capacity_mib at every public layer.
     # ProvisionAdapters replaces the network-only name for its mixed adapter inputs.
     # SSH-only operations accept HMCConfig directly instead of an unused REST client.
@@ -2078,7 +2078,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
-    expected_digest = "c13d7e5d09c53049e0b84ea8d8ccc63dcd1fb5c0fbf855f4ee107c76c9c69528"  # pragma: allowlist secret
+    expected_digest = "96063f1b3c015d0a7ebab65e62594c095e5367fc91eb729acd4a96a0bb9daaef"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

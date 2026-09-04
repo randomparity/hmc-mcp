@@ -135,9 +135,9 @@ def hmc_vios_update(
     return with_client(
         lambda hmc: update_vios(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             repository,
+            system_name_or_uuid=system_name_or_uuid,
             wait=wait,
             timeout_seconds=timeout_seconds,
             poll_interval=poll_interval,
@@ -176,9 +176,9 @@ def hmc_vios_upgrade(
     return with_client(
         lambda hmc: upgrade_vios(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             repository,
+            system_name_or_uuid=system_name_or_uuid,
             wait=wait,
             timeout_seconds=timeout_seconds,
             poll_interval=poll_interval,
