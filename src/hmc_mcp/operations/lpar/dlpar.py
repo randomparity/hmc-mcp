@@ -93,15 +93,21 @@ async def modify_lpar(
         ownership_override=ownership_override,
     )
     steps.extend(assignment_result.steps)
+    warnings: tuple[str, ...] = ()
     if resource is None:
-        resource = await hmc.get_logical_partition(lpar_uuid)
+        try:
+            resource = await hmc.get_logical_partition(lpar_uuid)
+        except HMCError as exc:
+            if not steps:
+                raise
+            warnings = (f"final LPAR readback failed: {exc}",)
     return LparPcieWorkflowResult(
         False,
         assignment_result.workflow_completed,
         resource,
         None,
         tuple(steps),
-        (),
+        warnings,
     )
 
 

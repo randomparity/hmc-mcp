@@ -116,6 +116,9 @@ def lpars_modify(
 
     result = run(_go)
 
+    if not result.workflow_completed:
+        print_json(asdict(result))
+        raise typer.Exit(code=1)
     if result.lpar is None:
         partition_not_found(name_or_uuid)
     uuid = result.lpar.get("UUID", name_or_uuid)

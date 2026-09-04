@@ -29,9 +29,12 @@ from hmc_mcp.cli_commands import runtime as cli_runtime
 from hmc_mcp.cli_commands import vios_labels as cli_vios_labels
 from hmc_mcp.cli_commands import vnic as cli_vnic
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
+from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations import ownership as lpar_ownership
+from hmc_mcp.operations.lpar.assignments import LparPcieWorkflowResult
+from hmc_mcp.operations.lpar.workflow_contract import WorkflowStep
 from hmc_mcp.operations.vnic import VnicChangeResult, VnicPartialError
 from hmc_mcp.ssh import affinity as ssh_affinity
 from hmc_mcp.ssh import commands as ssh_commands
@@ -52,7 +55,7 @@ def _patch_ssh_command(monkeypatch, replacement) -> None:
         }
     )
     for module in (cli_lpars, cli_pcie, cli_vnic):
-        monkeypatch.setattr(module, "ssh_config", lambda: config)
+        monkeypatch.setattr(module, "ssh_config", lambda: config, raising=False)
     for module in (ssh_affinity, ssh_lpar, ssh_network, ssh_profiles):
         monkeypatch.setattr(module, "run_hmc_command", replacement)
 
@@ -79,7 +82,7 @@ def _configured_ssh_config(monkeypatch) -> None:
         }
     )
     for module in (cli_lpars, cli_pcie, cli_vnic):
-        monkeypatch.setattr(module, "ssh_config", lambda: config)
+        monkeypatch.setattr(module, "ssh_config", lambda: config, raising=False)
 
 
 class FakeHMC:
@@ -1046,6 +1049,32 @@ def test_lpars_modify_renames(fake_hmc):
     assert name == "modify_logical_partition"
     assert args[0] == LPAR_UUID
     assert "renamed" in args[1]
+
+
+def test_lpars_modify_reports_incomplete_workflow_with_nonzero_exit(monkeypatch, fake_hmc):
+    monkeypatch.setattr(
+        cli_lpar_modify,
+        "modify_lpar",
+        AsyncMock(
+            return_value=LparPcieWorkflowResult(
+                False,
+                False,
+                {"UUID": LPAR_UUID},
+                None,
+                (WorkflowStep("assign", "error", "failed"),),
+                ("assignment failed",),
+            )
+        ),
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "modify", LPAR_UUID, "--system", SYSTEM_UUID, "--name", "renamed", "--yes"],
+    )
+
+    assert result.exit_code == 1
+    assert '"workflow_completed": false' in result.output
+    assert "assignment failed" in result.output
 
 
 def test_lpars_modify_rename_requires_system_before_client_use(fake_hmc):
