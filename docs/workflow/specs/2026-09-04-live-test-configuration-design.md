@@ -51,6 +51,7 @@ environment-specific values through that context. No scenario module reads
 | ISO file path, primary media name, alternate HTTP media name | `ISO_PATH`, `ISO_MEDIA_NAME`, `ISO_HTTP_MEDIA_NAME` |
 | Local HTTP listener and HMC-visible URL host | `ISO_BIND_HOST`, `ISO_ADVERTISED_HOST`, `ISO_HTTP_PORT` |
 | Main and short virtual-media repository capacities | `VMEDIA_REPOSITORY_SIZE_MIB`, `VMEDIA_SHORT_REPOSITORY_SIZE_MIB` |
+| Placement probe memory and dynamic VLAN selection range | `PLACEMENT_MEMORY_MIB`, `VLAN_RANGE_START`, `VLAN_RANGE_END` |
 
 This inventory is the required parser and example key set. Per-invocation random
 password generation, generic user descriptions, protocol constants,
@@ -88,6 +89,9 @@ PROVISION_MAX_MEMORY_MIB=6144
 PROVISION_DESIRED_VCPUS=3
 PROVISION_MAX_VCPUS=6
 PROTECTED_LPAR_NAMES=example-lt-609-protected-a,example-lt-609-protected-b
+PLACEMENT_MEMORY_MIB=3072
+VLAN_RANGE_START=3100
+VLAN_RANGE_END=3199
 SRIOV_ADAPTER_ID=17
 SRIOV_PHYSICAL_PORT_ID=9
 SRIOV_LOGICAL_PORT_ID=917003
@@ -115,6 +119,11 @@ that needs correction. It does not run a selected subtask as a way around this
 check. Virtual-media allow-list handling adds only the configured advertised
 host and port. Protected-LPAR refusal uses the configured list.
 
+Every memory, CPU, capacity, and repository-size setting must be positive. The
+parser rejects desired memory or CPU values above their matching maximum, and
+rejects provision memory triples unless minimum is at most desired and desired
+is at most maximum. VLAN bounds must be within 1 through 4094 and ordered.
+
 ## Testing
 
 Focused tests will prove that a complete fictional mapping creates a context,
@@ -129,7 +138,9 @@ prove the scratch-LPAR lifecycle, SR-IOV, provisioning, and virtual-media paths
 use configured values, including separate ISO bind and advertised hosts. A
 structural test will ensure
 `.env.example` defines exactly the inventory key set and contains none of the
-retired source identifiers.
+retired source identifiers. Focused tests also prove placement and VLAN calls
+use configuration, and that invalid resource relationships fail before MCP or
+client construction.
 
 ## Scope and constraints
 

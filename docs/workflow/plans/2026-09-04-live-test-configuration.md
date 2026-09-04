@@ -57,6 +57,8 @@ Steps:
 4. Add focused tests using fictional mapping values and prove no client is
    instantiated when validation fails or when a selected subtask is requested.
    Prove a conflicting exported `LIVE_TEST_*` value cannot override `.env`.
+   Cover duplicate keys, positive numeric fields, resource ordering, and VLAN
+   range bounds.
 
 Acceptance: every required key has validation and error text; no current
 environment identifier remains a default in `LiveTestContext`.
@@ -79,6 +81,9 @@ Verification:
 - Contract: scratch-LPAR create and modify calls use configured resource values.
   Mode: focused-test. Add a lifecycle-call test using fictional values; it is
   red while resource dictionaries are literals, then green with the same command.
+- Contract: placement probes and VLAN allocation use configured bounds.
+  Mode: focused-test. Add call assertions with fictional configuration values;
+  they are red while the source values are literals, then green with the same command.
 - Contract: virtual-media serving, allow-list, media names, and protection use
   configured values, with separate bind and advertised hosts.
   Mode: focused-test. Add a focused virtual-media configuration test; it is red
@@ -92,7 +97,8 @@ Steps:
    command, server setup, allow-list update, and safety guard.
 3. Update focused tests to build a complete fictional context and assert the
    selected scratch-LPAR, SR-IOV, provisioning, primary/alternate media, bind,
-   advertised URL, allow-list, and protection values reach the relevant calls.
+   advertised URL, allow-list, protection, placement, and VLAN values reach the
+   relevant calls.
 
 Acceptance: scenario modules do not retain environment-specific identifiers or
 read environment variables directly.
