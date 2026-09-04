@@ -752,7 +752,7 @@ def test_delete_vios_succeeds_when_powered_off(monkeypatch, mock_hmc):
 
     result = hmc_delete_vios(LPAR_UUID)
 
-    assert result == f"Deleted VIOS {LPAR_UUID}"
+    assert result == LPAR_UUID
 
 
 # ------------------------------------------------------------------ #

@@ -99,7 +99,7 @@ async def delete_vios(
             status_code=409,
         )
     await hmc.delete_logical_partition(vios_uuid)
-    return f"Deleted VIOS {vios_uuid}"
+    return vios_uuid
 
 
 async def power_vios(
