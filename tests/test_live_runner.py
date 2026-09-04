@@ -99,7 +99,7 @@ def test_sriov_baseline_helpers_require_healthy_adapter() -> None:
 
 
 def test_sriov_baseline_helpers_compute_capacity_and_configuration() -> None:
-    """Capacity and clean-port predicates handle unconfigured and malformed rows."""
+    """Capacity and clean-port predicates handle unconfigured rows and reject malformed data."""
     data = {
         "items": [
             {"capacity_percent": "25", "availability": "1"},
@@ -107,7 +107,8 @@ def test_sriov_baseline_helpers_compute_capacity_and_configuration() -> None:
             {"capacity_percent": "50", "availability": "unconfigured"},
         ]
     }
-    assert pcie._available_capacity(data) == 75.0
+    with pytest.raises(ValueError, match="row 1.*capacity_percent"):
+        pcie._available_capacity(data)
     assert not pcie._logical_port_is_configured({"items": []})
     assert pcie._logical_port_is_configured(
         {

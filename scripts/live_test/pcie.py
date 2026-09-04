@@ -133,7 +133,7 @@ def _available_capacity(data: object) -> float:
     """Calculate remaining physical-port capacity from logical-port inventory."""
     used = 0.0
     items = data.get("items") or [] if isinstance(data, dict) else []
-    for item in items:
+    for index, item in enumerate(items):
         if (
             isinstance(item, dict)
             and item.get("availability") not in ("unconfigured", None, "")
@@ -141,8 +141,10 @@ def _available_capacity(data: object) -> float:
         ):
             try:
                 used += float(item["capacity_percent"])
-            except (ValueError, TypeError):
-                continue
+            except (ValueError, TypeError) as error:
+                raise ValueError(
+                    f"logical-port row {index} has invalid capacity_percent"
+                ) from error
     return 100.0 - used
 
 
