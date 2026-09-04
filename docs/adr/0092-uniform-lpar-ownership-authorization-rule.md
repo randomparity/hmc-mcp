@@ -159,10 +159,10 @@ wildcard records the operation's actual scope.
 |---|---|---|---|
 | `set_lpar_boot_order` | `operations/lpar/boot_order.py:47` | guarded (`:66`) | — |
 | `clear_lpar_boot_order` | `operations/lpar/boot_order.py:89` | guarded (`:99`) | — |
-| `assign_dedicated_pcie_slot` | `operations/io_virtualization/pcie.py:184` | guarded (`:223`, via `_authorize_pcie_profile_request`) | — |
-| `unassign_dedicated_pcie_slot` | `operations/io_virtualization/pcie.py:204` | guarded (`:223`) | — |
-| `assign_sriov_logical_port` | `operations/io_virtualization/pcie.py:501` | guarded (`:427`, via `_resolve_lpar`) | — |
-| `unassign_sriov_logical_port` | `operations/io_virtualization/pcie.py:604` | guarded (`:612`) | — |
+| `assign_dedicated_pcie_slot` | `operations/io_virtualization/pcie.py:185` | guarded (`:223`, via `_authorize_pcie_profile_request`) | — |
+| `unassign_dedicated_pcie_slot` | `operations/io_virtualization/pcie.py:205` | guarded (`:223`) | — |
+| `assign_sriov_logical_port` | `operations/io_virtualization/pcie.py:502` | guarded (`:427`, via `_resolve_lpar`) | — |
+| `unassign_sriov_logical_port` | `operations/io_virtualization/pcie.py:605` | guarded (`:612`) | — |
 | `add_vnic` | `operations/io_virtualization/vnic.py:599` | guarded (via `_preflight_add:370` → `resolve_and_authorize_lpar_names:377`) | — |
 | `remove_vnic` | `operations/io_virtualization/vnic.py:682` | guarded (`:695`) | — |
 | `set_minimum_affinity_policy` | `operations/affinity/ssh.py:203` | guarded (`:213`) | — |

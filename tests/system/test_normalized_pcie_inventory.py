@@ -16,6 +16,7 @@ from hmc_mcp.operations.io_virtualization.pcie import (
     list_sriov_physical_ports,
 )
 from hmc_mcp.ssh.network import list_dedicated_pcie_slot_rows
+from hmc_mcp.ssh.transport import HMCCLIError
 
 
 def _config() -> HMCConfig:
@@ -298,7 +299,7 @@ async def test_sriov_physical_inventory_rejects_malformed_port_state(state: str)
             "hmc_mcp.operations.io_virtualization.pcie.list_sriov_physical_port_rows",
             AsyncMock(return_value=rows),
         ),
-        pytest.raises(ValueError, match="physical-port state"),
+        pytest.raises(HMCCLIError, match="physical-port state"),
     ):
         await list_sriov_physical_ports(_hmc(), "system-uuid", "a1")
 
@@ -332,7 +333,7 @@ async def test_sriov_physical_inventory_validates_unselected_port_state() -> Non
             "hmc_mcp.operations.io_virtualization.pcie.list_sriov_physical_port_rows",
             AsyncMock(return_value=rows),
         ),
-        pytest.raises(ValueError, match="physical-port state"),
+        pytest.raises(HMCCLIError, match="physical-port state"),
     ):
         await list_sriov_physical_ports(_hmc(), "system-uuid", "a1", "p1")
 

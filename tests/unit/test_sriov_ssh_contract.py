@@ -217,14 +217,14 @@ async def test_physical_port_rejects_ambiguous_or_mismatched_rows(monkeypatch):
     )
     monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
 
-    with pytest.raises(ValueError, match="both roce and ethc"):
+    with pytest.raises(HMCCLIError, match="both roce and ethc"):
         await list_sriov_physical_port_rows(_config(), "sys", "1")
 
     run = AsyncMock(
         side_effect=[_physical_port_output(adapter_id="2"), "No results were found."]
     )
     monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
-    with pytest.raises(ValueError, match="adapter_id"):
+    with pytest.raises(HMCCLIError, match="adapter_id"):
         await list_sriov_physical_port_rows(_config(), "sys", "1")
 
 
@@ -254,7 +254,7 @@ async def test_physical_port_reads_both_levels_before_rejecting_malformed_output
     run = AsyncMock(side_effect=[roce_output, ethc_output])
     monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
 
-    with pytest.raises(ValueError, match="header does not match"):
+    with pytest.raises(HMCCLIError, match="expected"):
         await list_sriov_physical_port_rows(_config(), "sys", "1")
 
     assert run.await_count == 2

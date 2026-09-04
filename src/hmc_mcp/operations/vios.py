@@ -30,8 +30,6 @@ async def list_vios(
     state: PartitionState | None = None,
 ) -> list[dict[str, Any]]:
     """List VIOSes, optionally scoped to one system or partition state."""
-    if system_name_or_uuid is not None and state is not None:
-        raise ValueError("Provide at most one of system_name_or_uuid or state")
     if state is not None and state not in PARTITION_STATES:
         allowed = ", ".join(sorted(PARTITION_STATES))
         raise ValueError(f"state must be one of: {allowed}")
