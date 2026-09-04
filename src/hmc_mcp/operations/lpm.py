@@ -228,8 +228,8 @@ async def run_lpm_affinity_preflight(
         raise ValueError("preflight_timeout_seconds must be non-negative")
 
     async def _evaluate() -> LpmAffinityPreflightOutcome:
-        await asyncio.sleep(0)
-        return evaluate_lpm_affinity_preflight(request)
+        """Run synchronous validation off the event loop's control path."""
+        return await asyncio.to_thread(evaluate_lpm_affinity_preflight, request)
 
     try:
         return await asyncio.wait_for(_evaluate(), timeout=timeout)
