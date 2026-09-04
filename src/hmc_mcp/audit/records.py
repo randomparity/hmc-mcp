@@ -350,7 +350,7 @@ def record_install_submitted(
 
 
 def record_tls_verification_disabled(*, host: str, source: str) -> None:
-    """Emit one bounded audit record for a client with TLS verification disabled."""
+    """Emit one bounded audit record with ``source: VerifySSLSource``."""
 
     def build() -> dict[str, Any]:
         event: Event = "tls-verification-disabled"
