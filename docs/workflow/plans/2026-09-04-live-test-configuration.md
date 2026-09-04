@@ -13,7 +13,7 @@ only consume context values. The standard library and the runner's existing
 - Missing or malformed `LIVE_TEST_*` values must fail before MCP client creation.
 - `.env.example` uses only fictional, mutually consistent sample values.
 
-Expected implementation size: 220–320 changed lines (M) — one context parser,
+Expected implementation size: 280–400 changed lines (M) — one context parser,
 scenario substitutions, example documentation, and focused tests.
 
 ## Task 1: Define and validate live-test configuration
@@ -21,9 +21,10 @@ scenario substitutions, example documentation, and focused tests.
 Files: modify `scripts/live_test_runner.py`; modify `tests/test_live_runner.py`.
 
 Interfaces: add `LiveTestContext.from_environment() -> LiveTestContext`, called
-after `.env` loading and before `RunState` or `Client` creation. It reads the
-complete `LIVE_TEST_*` key set and raises one actionable `ValueError` listing
-all missing or invalid entries.
+after argument parsing but before `RunState`, `create_mcp`, or `Client`
+creation. It uses a side-effect-free local-file reader that returns only
+`LIVE_TEST_*` entries, never reads or mutates `os.environ`, and raises one
+actionable `ValueError` listing all missing or invalid entries.
 
 Verification:
 
@@ -34,18 +35,21 @@ Verification:
 - Contract: absent and malformed values prevent client construction.
   Mode: focused-test. Add a parametrized validation test and a runner-entry
   test; they are red because defaults permit execution, then green with the
-  same command.
+  same command. Cover successful TOML connection bootstrap, conflicting ambient
+  exports, and a missing local file.
 
 Steps:
 
-1. Add a single mapping of required key names and conversion functions beside
-   `_load_dotenv`; load values after the existing connection bootstrap.
+1. Add a separate `LIVE_TEST_*` file reader and required-key mapping with
+   conversion functions. Call it unconditionally after argument parsing and
+   before connection bootstrap; do not reuse `_load_dotenv`.
 2. Make `LiveTestContext` store all configured scenario inputs, including
    SR-IOV, provisioning, and virtual-media inputs, while retaining mutable
    discovered state. Define the complete specification inventory as the parser's
    single required-key list.
 3. Replace default construction in the runner entry path with validated
-   construction before `Client` is entered.
+   construction before connection bootstrap, MCP construction, and `Client`
+   entry.
 4. Add focused tests using fictional mapping values and prove no client is
    instantiated when validation fails or when a selected subtask is requested.
    Prove a conflicting exported `LIVE_TEST_*` value cannot override `.env`.
@@ -101,10 +105,10 @@ Verification:
 
 Steps:
 
-1. Add a commented `.env.example` with fictional values that use the
-   `example-lt-609` prefix.
-2. Add the contract test so future configuration fields cannot omit their
-   example documentation.
+1. Add a commented `.env.example` with the specification's exact fictional
+   sample map, including `0.0.0.0`, `iso.example.test`, and the ISO path.
+2. Add the contract test so future configuration fields cannot omit example
+   documentation or substitute an unreviewed sample value.
 
 Acceptance: copying the file gives an operator every key to replace and no
 value reveals the previous environment.
