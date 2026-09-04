@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from ..documents_shared import lpar_envelope
 from ..xmlutil import escapes_string_arguments
-from .common import BOOT_DEVICE_SELECTORS
+from .common import BOOT_DEVICE_SELECTORS, lpar_envelope
 
 
 def _build_pending_boot_string(devices: list[str]) -> str:

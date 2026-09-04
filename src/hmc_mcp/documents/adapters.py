@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from ..documents_shared import document_envelope
 from ..xmlutil import escapes_string_arguments
+from .common import document_envelope
 
 
 def _adapter_document(

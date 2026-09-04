@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from ..documents_shared import document_envelope
 from ..xmlutil import escapes_string_arguments
-from .common import ATOM_NS, STORAGE_KINDS, UOM_NS, StorageKind
+from .common import ATOM_NS, STORAGE_KINDS, UOM_NS, StorageKind, document_envelope
 
 
 @escapes_string_arguments

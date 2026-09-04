@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from ..documents_shared import document_envelope
 from ..xmlutil import escapes_string_arguments
 from .common import (
     MEM_MIRRORING_MODES,
@@ -9,6 +8,7 @@ from .common import (
     MemoryMirroringMode,
     PowerOffPolicy,
     PowerOnLparStartPolicy,
+    document_envelope,
 )
 
 

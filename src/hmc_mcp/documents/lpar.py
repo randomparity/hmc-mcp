@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from ..documents_shared import lpar_envelope
 from ..xmlutil import escapes_string_arguments
 from .common import (
     KEYLOCK_POSITIONS,
@@ -12,6 +11,7 @@ from .common import (
     PartitionType,
     _memory_config,
     _processor_config,
+    lpar_envelope,
 )
 
 

@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from ..documents_shared import document_envelope
 from ..xmlutil import escapes_string_arguments
-from .common import AUTHENTICATION_TYPES, DET, ET, UOM_NS, WEB_NS, AuthenticationType
+from .common import (
+    AUTHENTICATION_TYPES,
+    DET,
+    ET,
+    UOM_NS,
+    WEB_NS,
+    AuthenticationType,
+    document_envelope,
+)
 
 
 @escapes_string_arguments
