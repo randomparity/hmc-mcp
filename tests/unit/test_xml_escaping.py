@@ -69,7 +69,10 @@ def _is_builder(name: str, obj: object, module: types.ModuleType) -> bool:
         and not inspect.iscoroutinefunction(obj)
         and not name.startswith("_")
         and (name.startswith("build_") or name.endswith("_job"))
-        and getattr(obj, "__module__", None) == module.__name__
+        and (
+            getattr(obj, "__module__", None) == module.__name__
+            or getattr(obj, "__module__", "").startswith(f"{module.__name__}.")
+        )
         and get_type_hints(obj).get("return") is str
     )
 
