@@ -1,7 +1,29 @@
-"""Compatibility alias for the affinity SSH operations package."""
+"""Compatibility exports for the pre-package SSH affinity import path."""
 
-import sys
+from .affinity.ssh import (
+    MinimumAffinityPolicyResult,
+    ResourceGroupAffinityResult,
+    get_lpar_memopt_score,
+    get_minimum_affinity_policy,
+    get_system_memopt_score,
+    list_lpar_memopt_scores,
+    list_resource_group_memopt_scores,
+    plan_lpar_memopt_scores,
+    plan_resource_group_memopt_scores,
+    plan_system_memopt_score,
+    set_minimum_affinity_policy,
+)
 
-from .affinity import ssh as _implementation
-
-sys.modules[__name__] = _implementation
+__all__ = [
+    "MinimumAffinityPolicyResult",
+    "ResourceGroupAffinityResult",
+    "get_lpar_memopt_score",
+    "get_minimum_affinity_policy",
+    "get_system_memopt_score",
+    "list_lpar_memopt_scores",
+    "list_resource_group_memopt_scores",
+    "plan_lpar_memopt_scores",
+    "plan_resource_group_memopt_scores",
+    "plan_system_memopt_score",
+    "set_minimum_affinity_policy",
+]

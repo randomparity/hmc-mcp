@@ -15,13 +15,13 @@ from fastmcp.exceptions import ToolError
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.ssh_affinity import (
+from hmc_mcp.operations.affinity.ssh import (
     get_system_memopt_score as get_system_memopt_score_operation,
 )
-from hmc_mcp.operations.ssh_affinity import (
+from hmc_mcp.operations.affinity.ssh import (
     plan_lpar_memopt_scores as plan_lpar_memopt_scores_operation,
 )
-from hmc_mcp.operations.ssh_affinity import (
+from hmc_mcp.operations.affinity.ssh import (
     plan_system_memopt_score as plan_system_memopt_score_operation,
 )
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
@@ -100,10 +100,10 @@ def test_shared_affinity_operations_resolve_system_uuid_before_delegating(
 
     with (
         patch(
-                "hmc_mcp.operations.ssh_affinity.resolve_ssh_names",
+                "hmc_mcp.operations.affinity.ssh.resolve_ssh_names",
             AsyncMock(return_value=(SYSTEM, None)),
         ) as resolve,
-            patch(f"hmc_mcp.operations.ssh_affinity._{primitive}", delegated),
+                patch(f"hmc_mcp.operations.affinity.ssh._{primitive}", delegated),
     ):
         kwargs = (
             {"prioritized": selector, "excluded": None}
@@ -139,7 +139,7 @@ def test_shared_planning_rejects_invalid_scenarios_before_system_resolution(
     resolve = AsyncMock()
 
     with (
-        patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve),
+        patch("hmc_mcp.operations.affinity.ssh.resolve_ssh_names", resolve),
         pytest.raises(ValueError, match=diagnostic),
     ):
         asyncio.run(
@@ -207,7 +207,7 @@ def test_affinity_mcp_rejects_invalid_scenarios_before_system_resolution(
 
     with (
         patch("hmc_mcp._app.build_config") as config_factory,
-        patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve),
+        patch("hmc_mcp.operations.affinity.ssh.resolve_ssh_names", resolve),
         pytest.raises(ValueError, match=diagnostic),
     ):
         server_lpar_config.hmc_plan_system_memopt_score(
@@ -250,7 +250,7 @@ def test_oversized_selector_is_rejected_before_resolution_or_transport():
     prioritized, excluded, package = _quote_heavy_dual_selector_package(extra_byte=True)
 
     with (
-        patch("hmc_mcp.operations.ssh_affinity.resolve_ssh_names", resolve),
+        patch("hmc_mcp.operations.affinity.ssh.resolve_ssh_names", resolve),
         pytest.raises(ValueError, match="option package exceeds 4096 UTF-8 bytes"),
     ):
         asyncio.run(

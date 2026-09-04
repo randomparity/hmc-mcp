@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.ssh_affinity import (
+from hmc_mcp.operations.affinity.ssh import (
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
 )
