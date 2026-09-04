@@ -12,7 +12,7 @@ from ...operations.lpar.assignments import LparPcieAssignments
 from ...operations.lpar.dlpar import modify_lpar
 from ..output import console, partition_not_found, print_json, usage_error
 from ..runtime import client, run
-from .config import _load_pcie_assignments
+from .assignment_input import load_pcie_assignments
 
 
 def lpars_modify(
@@ -60,7 +60,7 @@ def lpars_modify(
     dynamic (DLPAR) operations and need RMC up; otherwise they apply on next
     activation.
     """
-    assignments = _load_pcie_assignments(pcie_assignments)
+    assignments = load_pcie_assignments(pcie_assignments)
     if (
         all(
             v is None

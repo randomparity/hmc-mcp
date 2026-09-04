@@ -22,7 +22,7 @@ from ...operations.lpar.provision import (
 )
 from ..output import console, print_json, usage_error
 from ..runtime import client, run
-from .config import _load_pcie_assignments
+from .assignment_input import load_pcie_assignments
 
 
 def lpars_provision(
@@ -80,7 +80,7 @@ def lpars_provision(
     On partial failure the completed steps are reported as "ok", the failed step as "error",
     and remaining steps as "skipped". No automatic rollback is performed.
     """
-    assignments = _load_pcie_assignments(pcie_assignments)
+    assignments = load_pcie_assignments(pcie_assignments)
 
     if partition_type not in PARTITION_TYPES:
         usage_error(
