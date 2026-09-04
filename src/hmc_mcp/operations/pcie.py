@@ -832,27 +832,27 @@ async def list_sriov_logical_ports(
     unconfigured = await list_sriov_unconfigured_logical_port_rows(config, system_name)
     physical_rows = await list_sriov_physical_port_rows(config, system_name, adapter_id)
 
-    def physical_id(row: dict[str, str]) -> str | None:
+    selected_unconfigured = [
+        row for row in unconfigured if row.get("adapter_id") == adapter_id
+    ]
+    resolved_unconfigured: list[tuple[dict[str, str], str]] = []
+    for row in selected_unconfigured:
         location = row.get("location_code", "")
         matches = [
             port["phys_port_id"]
             for port in physical_rows
             if location.startswith(port["phys_port_loc"] + "-S")
         ]
-        return matches[0] if len(matches) == 1 else None
-
-    selected_unconfigured = [
-        row for row in unconfigured if row.get("adapter_id") == adapter_id
-    ]
-    if any(physical_id(row) is None for row in selected_unconfigured):
-        raise SriovLogicalPortCapabilityError(
-            "unconfigured logical-port inventory has an ambiguous physical-port parent"
-        )
+        if len(matches) != 1:
+            raise SriovLogicalPortCapabilityError(
+                "unconfigured logical-port inventory has an ambiguous physical-port parent"
+            )
+        resolved_unconfigured.append((row, matches[0]))
     items.extend(
         SriovLogicalPort(
             system_name,
             row["adapter_id"],
-            physical_id(row),
+            parent_id,
             row["logical_port_id"],
             "unconfigured",
             None,
@@ -861,8 +861,8 @@ async def list_sriov_logical_ports(
             None,
             None,
         )
-        for row in selected_unconfigured
-        if (physical_port_id is None or physical_id(row) == physical_port_id)
+        for row, parent_id in resolved_unconfigured
+        if (physical_port_id is None or parent_id == physical_port_id)
         and (logical_port_id is None or row.get("logical_port_id") == logical_port_id)
     )
     return InventoryResult(
