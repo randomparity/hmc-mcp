@@ -47,10 +47,6 @@ ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {
         "hmc_mcp.operations.jobs",
         "list_jobs",
     ): "ADR 0029 excludes this adapter-facing inventory boundary from the reusable facade",
-    (
-        "hmc_mcp.operations.io_virtualization.pcie",
-        "require_admitted_environment",
-    ): "ADR 0029 excludes this shared admission-policy guard from domain operations",
 }
 for _vios_label_name in (
     "list_vios_fc_port_labels",
@@ -2060,6 +2056,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         # makes its optional system scope keyword-only after the required selector.
         # VIOS update and upgrade operations now place the required VIOS selector
         # before the optional managed-system scope, matching the other VIOS mutations.
+        # ProvisionRequest's mixed network/storage group is named adapters to
+        # describe its vSCSI and virtual-Ethernet contents accurately.
     # Virtual-disk creation now uses capacity_mib at every public layer.
     # ProvisionAdapters replaces the network-only name for its mixed adapter inputs.
     # SSH-only operations accept HMCConfig directly instead of an unused REST client.
@@ -2078,7 +2076,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
-    expected_digest = "96063f1b3c015d0a7ebab65e62594c095e5367fc91eb729acd4a96a0bb9daaef"  # pragma: allowlist secret
+    expected_digest = "7cbf8dc91849c860f8bcb63cbff58e1ef3efa561e3570131648cbe92e6b11696"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

@@ -190,6 +190,16 @@ names are internal everywhere and are never inventoried.
     `InstallHandle`: §6 places a new facade export in one of §5's three sets, and §5 enumerates
     Domain A over exported *functions*, which a type is not.
 - `operations.io_virtualization` — operations: none; types: none; excluded synchronous: none.
+- `operations.io_virtualization.pcie` — exports: `CapabilityState`, `DedicatedSlot`, `InventoryResult`,
+  `InventorySelector`, `PcieAssignmentUnavailableError`, `ResourceKind`, `SriovAdapter`,
+  `SriovLogicalPort`, `SriovLogicalPortCapabilityError`, `SriovLogicalPortChangeResult`,
+  `SriovLogicalPortPartialError`, `SriovLogicalPortSnapshot`, `SriovPhysicalPort`,
+  `assign_dedicated_pcie_slot`, `assign_sriov_logical_port`, `list_dedicated_slots`,
+  `list_sriov_adapters`, `list_sriov_logical_ports`, `list_sriov_physical_ports`,
+  `set_sriov_adapter_mode`, `unassign_dedicated_pcie_slot`, `unassign_sriov_logical_port`.
+- `operations.io_virtualization.vnic` — exports: `VnicBackingSelector`, `VnicBackingSnapshot`,
+  `VnicCapabilityError`, `VnicChangeResult`, `VnicPartialError`, `VnicSnapshot`,
+  `add_vnic`, `list_fc_ports`, `list_sea_adapters`, `list_vnics`, `remove_vnic`.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
   `is_unsupported_job_listing`.
 - `operations.lpar` — operations: none; types: none; excluded synchronous: none.
@@ -229,14 +239,6 @@ names are internal everywhere and are never inventoried.
   `parse_lpar_ownership_caller_token`, `parse_lpar_ownership_owner`.
 - `operations.partition_state` — types: `PartitionState`; operations: none; excluded
   synchronous: none.
-- `operations.io_virtualization.pcie` — operations: `assign_dedicated_pcie_slot`, `assign_sriov_logical_port`,
-  `list_dedicated_slots`, `list_sriov_adapters`, `list_sriov_logical_ports`,
-  `list_sriov_physical_ports`, `set_sriov_adapter_mode`, `unassign_dedicated_pcie_slot`,
-  `unassign_sriov_logical_port`; types: `CapabilityState`, `DedicatedSlot`, `InventoryResult`,
-  `InventorySelector`, `PcieAssignmentUnavailableError`, `ResourceKind`, `SriovAdapter`,
-  `SriovLogicalPort`, `SriovLogicalPortCapabilityError`, `SriovLogicalPortChangeResult`,
-  `SriovLogicalPortPartialError`, `SriovLogicalPortSnapshot`, `SriovPhysicalPort`; excluded
-  synchronous: none.
 - `operations.pcm` — operations: `fetch_metric_data`, `fetch_metric_links`, `get_pcm_preferences`,
   `resolve_pcm_resource`, `set_pcm_preferences`; types: `MetricKind`, `PcmCategory`,
   `PcmResource`; excluded synchronous: `preference_flags`, `validate_pcm_metric_target`,
@@ -268,11 +270,6 @@ names are internal everywhere and are never inventoried.
   excluded synchronous: `validate_vios_backup_name`, `validate_vios_backup_request`,
   `validate_vios_restore_request`.
 - `operations.vios_labels` — operations: none; types: none; excluded synchronous: none.
-- `operations.io_virtualization.vnic` — operations: `add_vnic`, `list_fc_ports`,
-  `list_sea_adapters`, `list_vnics`, `remove_vnic`; types:
-  `VnicBackingSelector`, `VnicBackingSnapshot`,
-  `VnicCapabilityError`, `VnicChangeResult`, `VnicPartialError`, `VnicSnapshot`; excluded
-  synchronous: none.
 - `snapshots.models` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
   `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,
   `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotInspection`, `SnapshotObservations`,
