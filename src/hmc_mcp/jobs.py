@@ -149,43 +149,45 @@ def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
 
 def _job_error(resource: dict[str, Any], status: str) -> str | None:
     """Extract the HMC result or response-exception message from a job resource."""
+    exception_message = _exception_message(resource)
+    if status == "EXCEPTION" and exception_message:
+        return exception_message
+    result_message = _result_message(resource)
+    return result_message or exception_message
+
+
+def _exception_message(resource: dict[str, Any]) -> str | None:
     exception = resource.get("ResponseException")
-    exception_message = (
-        exception.get("Message") if isinstance(exception, dict) else None
-    )
-    if (
-        status == "EXCEPTION"
-        and isinstance(exception_message, str)
-        and exception_message.strip()
-    ):
-        return exception_message.strip()
+    message = exception.get("Message") if isinstance(exception, dict) else None
+    return message.strip() if isinstance(message, str) and message.strip() else None
 
+
+def _result_message(resource: dict[str, Any]) -> str | None:
     results = resource.get("Results")
-    if isinstance(results, dict):
-        parameters = results.get("JobParameter", [])
-        if isinstance(parameters, dict):
-            parameters = [parameters]
-        if isinstance(parameters, list):
-            messages: dict[str, str] = {}
-            for parameter in parameters:
-                if not isinstance(parameter, dict):
-                    continue
-                name = parameter.get("ParameterName")
-                value = parameter.get("ParameterValue")
-                if (
-                    name in {"result", "detailedStatus", "ErrorData"}
-                    and name not in messages
-                    and isinstance(value, str)
-                    and value.strip()
-                ):
-                    messages[name] = value.strip()
-            for name in ("ErrorData", "detailedStatus", "result"):
-                if name in messages:
-                    return messages[name]
-
-    if isinstance(exception_message, str) and exception_message.strip():
-        return exception_message.strip()
-    return None
+    if not isinstance(results, dict):
+        return None
+    parameters = results.get("JobParameter", [])
+    if isinstance(parameters, dict):
+        parameters = [parameters]
+    if not isinstance(parameters, list):
+        return None
+    messages: dict[str, str] = {}
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            continue
+        name = parameter.get("ParameterName")
+        value = parameter.get("ParameterValue")
+        if (
+            name in {"result", "detailedStatus", "ErrorData"}
+            and name not in messages
+            and isinstance(value, str)
+            and value.strip()
+        ):
+            messages[name] = value.strip()
+    return next(
+        (messages[name] for name in ("ErrorData", "detailedStatus", "result") if name in messages),
+        None,
+    )
 
 
 def vios_stdout(job: dict[str, Any] | None) -> str | None:
@@ -421,6 +423,35 @@ def remote_restart_lpar_job(
     retain_devices: bool = False,
 ) -> str:
     """Build a RemoteRestart request using its dedicated parameter vocabulary."""
+    _validate_remote_restart(
+        operation,
+        target_managed_system,
+        target_managed_system_uuid,
+        use_current_data,
+        retain_devices,
+    )
+    return build_job_request(
+        "RemoteRestart",
+        "LogicalPartition",
+        _remote_restart_params(
+            operation,
+            managed_system,
+            logical_partition_uuid,
+            target_managed_system,
+            target_managed_system_uuid,
+            use_current_data,
+            retain_devices,
+        ),
+    )
+
+
+def _validate_remote_restart(
+    operation: RemoteRestartOperation,
+    target_managed_system: str | None,
+    target_managed_system_uuid: str | None,
+    use_current_data: bool,
+    retain_devices: bool,
+) -> None:
     if operation not in REMOTE_RESTART_OPERATIONS:
         allowed = ", ".join(sorted(REMOTE_RESTART_OPERATIONS))
         raise ValueError(f"RemoteRestart operation must be one of: {allowed}")
@@ -436,6 +467,17 @@ def remote_restart_lpar_job(
         raise ValueError("use_current_data is valid only for RemoteRestart 'restart'")
     if retain_devices and operation != "cleanup":
         raise ValueError("retain_devices is valid only for RemoteRestart 'cleanup'")
+
+
+def _remote_restart_params(
+    operation: RemoteRestartOperation,
+    managed_system: str,
+    logical_partition_uuid: str,
+    target_managed_system: str | None,
+    target_managed_system_uuid: str | None,
+    use_current_data: bool,
+    retain_devices: bool,
+) -> dict[str, str]:
     params = {
         "Operation": operation,
         "managedSystem": managed_system,
@@ -449,7 +491,7 @@ def remote_restart_lpar_job(
         params["usecurrdata"] = "true"
     if retain_devices:
         params["retaindev"] = "true"
-    return build_job_request("RemoteRestart", "LogicalPartition", params)
+    return params
 
 
 # Template Library
