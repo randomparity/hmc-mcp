@@ -144,7 +144,13 @@ class SriovLogicalPortChangeResult:
 class _SriovAssignmentReadback:
     effective: SriovLogicalPortSnapshot | None
     profile: str | None
-    error: Exception | None
+    effective_error: Exception | None
+    profile_error: Exception | None
+
+    @property
+    def error(self) -> Exception | None:
+        """Return the first read failure for exception chaining compatibility."""
+        return self.effective_error or self.profile_error
 
 
 @dataclass(frozen=True)
@@ -308,7 +314,8 @@ async def _read_assignment_state(
 ) -> _SriovAssignmentReadback:
     effective = None
     profile = None
-    error: Exception | None = None
+    effective_error: Exception | None = None
+    profile_error: Exception | None = None
     try:
         rows = await list_sriov_configured_logical_port_rows(
             config, system_name, adapter_id
@@ -318,14 +325,14 @@ async def _read_assignment_state(
             raise ValueError("duplicate logical-port inventory rows")
         effective = _snapshot(matching[0]) if matching else None
     except Exception as caught:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
-        error = caught
+        effective_error = caught
     try:
         profile = (
             await read_sriov_profile_ports(config, system_name, lpar_name, profile_name)
         )["sriov_eth_logical_ports"]
     except Exception as caught:  # noqa: BLE001 - captured into the readback result and reconciled by the caller
-        error = error or caught
-    return _SriovAssignmentReadback(effective, profile, error)
+        profile_error = caught
+    return _SriovAssignmentReadback(effective, profile, effective_error, profile_error)
 
 
 async def _read_sriov_assignment_inventory(
@@ -574,8 +581,16 @@ async def assign_sriov_logical_port(
         or after.capacity_percent != capacity
         or profile_after != profile_before
     ):
+        readback_errors = "; ".join(
+            label
+            for label, failure in (
+                ("effective-state read failed", readback.effective_error),
+                ("profile-state read failed", readback.profile_error),
+            )
+            if failure is not None
+        )
         partial = SriovLogicalPortPartialError(
-            f"assignment could not be verified: {error or readback.error or 'readback mismatch'}",
+            f"assignment could not be verified: {error or readback_errors or 'readback mismatch'}",
             result,
         )
         cause = error or readback.error
