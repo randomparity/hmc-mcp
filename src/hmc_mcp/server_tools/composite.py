@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .._app import serialize_tool_result, with_client
-from ..operations.composite import lpar_summary, system_summary
+from ..operations.composite import fetch_lpar_summary, fetch_system_summary
 from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
@@ -27,7 +27,7 @@ def hmc_lpar_summary(
     """
 
     async def summary(hmc):
-        return serialize_tool_result(await lpar_summary(hmc, system_name_or_uuid, lpar_name_or_uuid))
+        return serialize_tool_result(await fetch_lpar_summary(hmc, system_name_or_uuid, lpar_name_or_uuid))
 
     return with_client(summary, profile=profile)
 
@@ -45,6 +45,6 @@ def hmc_system_summary(
     """
 
     async def summary(hmc):
-        return serialize_tool_result(await system_summary(hmc, system_name_or_uuid))
+        return serialize_tool_result(await fetch_system_summary(hmc, system_name_or_uuid))
 
     return with_client(summary, profile=profile)

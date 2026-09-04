@@ -67,10 +67,10 @@ from hmc_mcp.operations.capacity import (
 from hmc_mcp.operations.composite import (
     LparSummary,
     SystemSummary,
-    lpar_summary,
-    system_summary,
+    fetch_lpar_summary,
+    fetch_system_summary,
 )
-from hmc_mcp.operations.health import FleetHealthResult, fleet_health
+from hmc_mcp.operations.health import FleetHealthResult, fetch_fleet_health
 from hmc_mcp.operations.install import (
     InstallHandle,
     InstallRequest,
@@ -191,8 +191,8 @@ from hmc_mcp.operations.pcm import (
     PcmCategory,
     PcmResource,
     fetch_metric_data,
+    fetch_metric_links,
     get_pcm_preferences,
-    metric_links,
     resolve_pcm_resource,
     set_pcm_preferences,
 )
@@ -355,15 +355,15 @@ __all__ = [  # noqa: RUF022 - grouped by subsystem to mirror ADR 0029, not sorte
     "CapacitySummary",
     "fetch_capacity_report",
     "find_placement",
-    "lpar_summary",
+    "fetch_lpar_summary",
     "LparSummary",
-    "system_summary",
+    "fetch_system_summary",
     "SystemSummary",
     "decommission_lpar",
     "DecommissionAdapterRecord",
     "DecommissionBlastRadius",
     "DecommissionResult",
-    "fleet_health",
+    "fetch_fleet_health",
     "FleetHealthResult",
     "install_lpar_os",
     "install_vios",
@@ -420,7 +420,7 @@ __all__ = [  # noqa: RUF022 - grouped by subsystem to mirror ADR 0029, not sorte
     "resolve_pcm_resource",
     "get_pcm_preferences",
     "set_pcm_preferences",
-    "metric_links",
+    "fetch_metric_links",
     "fetch_metric_data",
     "PcmCategory",
     "MetricKind",

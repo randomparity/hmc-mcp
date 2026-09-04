@@ -163,11 +163,11 @@ names are internal everywhere and are never inventoried.
 - `operations.cluster` — operations: `create_logical_unit`, `delete_logical_unit`,
   `get_shared_storage_pool`, `list_clusters`, `list_shared_storage_pools`; types: none;
   excluded synchronous: `validate_logical_unit_create`, `validate_logical_unit_wait`.
-- `operations.composite` — operations: `lpar_summary`, `system_summary`; types: `LparSummary`, `SystemSummary`; excluded
+- `operations.composite` — operations: `fetch_lpar_summary`, `fetch_system_summary`; types: `LparSummary`, `SystemSummary`; excluded
   synchronous: none.
 - `operations.error_translation` — operations: none; types: none; excluded synchronous:
   `translate_pcm_error`, `translate_template_error`, `translate_virtual_network_create_error`.
-- `operations.health` — operations: `fleet_health`; types: `FleetHealthResult`; excluded
+- `operations.health` — operations: `fetch_fleet_health`; types: `FleetHealthResult`; excluded
   synchronous: none.
 - `operations.install` — operations: `install_lpar_os`, `install_vios`; types: `InstallHandle`, `InstallRequest`;
   excluded synchronous: `validate_install_request`.
@@ -232,7 +232,7 @@ names are internal everywhere and are never inventoried.
   synchronous: none.
 - `operations.pcie_validation` — operations: none; types: none; excluded synchronous:
   `require_command_safe_text`, `require_nonblank_text`, `validate_capacity_percent`.
-- `operations.pcm` — operations: `fetch_metric_data`, `get_pcm_preferences`, `metric_links`,
+- `operations.pcm` — operations: `fetch_metric_data`, `fetch_metric_links`, `get_pcm_preferences`,
   `resolve_pcm_resource`, `set_pcm_preferences`; types: `MetricKind`, `PcmCategory`,
   `PcmResource`; excluded synchronous: `preference_flags`, `validate_pcm_metric_target`,
   `validate_pcm_preferences_category`.

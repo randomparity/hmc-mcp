@@ -269,7 +269,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   explicit typed keyword parameters instead of accepting an untyped `**fields` bag.
 - User deletion and remote-access MCP tools now call the client boundary directly;
   remote-access validation and document merging have one owner in the client layer.
-- `metric_links` and `fetch_metric_data` require metric kind, time range, sample count, and
+- `fetch_metric_links` and `fetch_metric_data` require metric kind, time range, sample count, and
   managed-system scope as named arguments after the resource selector.
 - Affinity assessment models, pure evaluation, and live orchestration now live together
   in `operations.affinity`; snapshot modules consume that boundary without a reverse
@@ -775,18 +775,18 @@ added afterwards; every later addition is recorded above.
 `create_virtual_disk`, `create_virtual_network`, `create_volume_group`, `decommission_lpar`,
 `delete_adapter`, `delete_logical_unit`, `delete_lpar`, `delete_media_repository`,
 `delete_optical_media`, `delete_virtual_disk`, `delete_virtual_network`,
-`deploy_partition_template`, `detach_storage_mapping`, `find_placement`, `fleet_health`,
+`deploy_partition_template`, `detach_storage_mapping`, `find_placement`, `fetch_fleet_health`,
 `get_media_repository`, `get_partition_template`, `get_pcm_preferences`, `list_adapters`,
 `list_dedicated_slots`, `list_fc_ports`, `list_network_bridges`, `list_optical_media`,
 `list_partition_templates`, `list_sea_adapters`, `list_sriov_adapters`,
 `list_sriov_logical_ports`, `list_sriov_physical_ports`, `list_storage_mappings`,
 `list_virtual_networks`, `list_virtual_switches`, `list_vnics`, `list_volume_groups`,
-`load_profile`, `lpar_summary`, `map_storage`, `metric_data`, `metric_links`, `migrate_lpar`,
+`load_profile`, `fetch_lpar_summary`, `map_storage`, `metric_data`, `fetch_metric_links`, `migrate_lpar`,
 `power_lpar`, `power_system`, `power_vios`, `prevalidate_lpar_pcie_assignments`,
 `provision_lpar`, `read_lpar_boot_order`, `recover_lpar_migration`, `remote_restart_lpar`,
 `remove_vnic`, `rename_lpar`, `resolve_lpar_ownership_names`, `resolve_pcm_resource`,
 `set_lpar_boot_order`, `set_pcm_preferences`, `set_sriov_adapter_mode`,
-`stamp_created_lpar_ownership`, `system_summary`, `unassign_dedicated_pcie_slot`,
+`stamp_created_lpar_ownership`, `fetch_system_summary`, `unassign_dedicated_pcie_slot`,
 `unassign_sriov_logical_port`, `upload_iso`
 
 [unreleased]: https://github.com/randomparity/hmc-mcp/compare/0.1.0...HEAD

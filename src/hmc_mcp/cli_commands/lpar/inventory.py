@@ -7,7 +7,7 @@ from dataclasses import asdict
 import typer
 from rich.table import Table
 
-from ...operations.composite import lpar_summary
+from ...operations.composite import fetch_lpar_summary
 from ...operations.lpar.core import (
     get_lpar,
     get_lpar_state,
@@ -26,7 +26,7 @@ def lpars_summary(
     """One-call summary: state, RMC, memory/CPU, OS details, adapter count, description."""
 
     summary = asdict(
-        with_client(lambda hmc: lpar_summary(hmc, None, name_or_uuid))
+        with_client(lambda hmc: fetch_lpar_summary(hmc, None, name_or_uuid))
     )
 
     if as_json:

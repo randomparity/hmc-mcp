@@ -136,15 +136,15 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "CapacitySummary",
         "fetch_capacity_report",
         "find_placement",
-        "lpar_summary",
+        "fetch_lpar_summary",
         "LparSummary",
-        "system_summary",
+        "fetch_system_summary",
         "SystemSummary",
         "decommission_lpar",
         "DecommissionAdapterRecord",
         "DecommissionBlastRadius",
         "DecommissionResult",
-        "fleet_health",
+        "fetch_fleet_health",
         "FleetHealthResult",
         "install_lpar_os",
         "install_vios",
@@ -201,7 +201,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "resolve_pcm_resource",
         "get_pcm_preferences",
         "set_pcm_preferences",
-        "metric_links",
+        "fetch_metric_links",
         "fetch_metric_data",
         "PcmCategory",
         "MetricKind",
@@ -2060,7 +2060,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
-    expected_digest = "31577fe65cf721dd0434c9bb33da263e1751daef1fcb057e98f5df05dbdb661c"  # pragma: allowlist secret
+    expected_digest = "ed1654bc41287b84a13353ccec56e8a24164ee169c8204739384fde0f85e1141"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

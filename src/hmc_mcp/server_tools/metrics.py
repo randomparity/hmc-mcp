@@ -11,8 +11,8 @@ from ..operations.pcm import (
     MetricKind,
     PcmCategory,
     fetch_metric_data,
+    fetch_metric_links,
     get_pcm_preferences,
-    metric_links,
     preference_flags,
     set_pcm_preferences,
     validate_pcm_metric_target,
@@ -260,7 +260,7 @@ def _metrics_links(
 ) -> list[dict[str, str]]:
     validate_pcm_metric_target(category, system_name_or_uuid)
     return with_client(
-        lambda hmc: metric_links(
+        lambda hmc: fetch_metric_links(
             hmc,
             category,
             resource_name_or_uuid,

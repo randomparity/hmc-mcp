@@ -132,7 +132,7 @@ async def set_pcm_preferences(
         raise
 
 
-async def metric_links(
+async def fetch_metric_links(
     hmc: HMCClient,
     category: PcmCategory,
     resource: str,
@@ -187,7 +187,7 @@ async def fetch_metric_data(
     Raises:
         ValueError: If system scope is missing or invalid for the category.
     """
-    links = await metric_links(
+    links = await fetch_metric_links(
         hmc,
         category,
         resource,

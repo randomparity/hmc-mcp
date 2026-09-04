@@ -186,7 +186,7 @@ async def _system_inventory(
     return lpars, vioses
 
 
-async def fleet_health(hmc: HMCClient) -> FleetHealthResult:
+async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
     """Return curated unhealthy resources from the configured HMC estate."""
     systems = await hmc.list_managed_systems()
     if len(systems) > _MAX_SYSTEMS:

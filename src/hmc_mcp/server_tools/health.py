@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .._app import serialize_tool_result, with_client
-from ..operations.health import fleet_health
+from ..operations.health import fetch_fleet_health
 from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
@@ -20,6 +20,6 @@ def hmc_fleet_health(profile: str | None = None) -> dict[str, Any]:
     """
 
     async def health(hmc):
-        return serialize_tool_result(await fleet_health(hmc))
+        return serialize_tool_result(await fetch_fleet_health(hmc))
 
     return with_client(health, profile=profile)
