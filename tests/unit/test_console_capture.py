@@ -181,6 +181,18 @@ async def test_console_acquisition_read_translates_transport_errors() -> None:
     assert connection.closed
 
 
+def test_truncate_backtracks_split_string_terminator() -> None:
+    data = b"prefix\x1bPpayload\x1b\\suffix"
+
+    assert _truncate(data, data.index(b"\\")) == b"prefix"
+
+
+def test_truncate_backtracks_unterminated_osc_payload() -> None:
+    data = b"prefix\x1b]0;window title\x07suffix"
+
+    assert _truncate(data, data.index(b"window") + 3) == b"prefix"
+
+
 # ---------------------------------------------------------------------------
 # Bounds validation
 # ---------------------------------------------------------------------------
