@@ -40,6 +40,8 @@ environment-specific values through that context. No scenario module reads
 | Current source value class | `LIVE_TEST_*` field |
 | --- | --- |
 | Managed system, baseline LPAR, scratch LPAR, network-test LPAR | `SYSTEM_NAME`, `LPAR_NAME`, `SCRATCH_LPAR_NAME`, `NETWORK_TEST_LPAR_NAME` |
+| Scratch-LPAR create memory and processors | `SCRATCH_CREATE_DESIRED_MEMORY_MIB`, `SCRATCH_CREATE_MAX_MEMORY_MIB`, `SCRATCH_CREATE_DESIRED_VCPUS`, `SCRATCH_CREATE_MAX_VCPUS` |
+| Scratch-LPAR modify memory | `SCRATCH_MODIFY_DESIRED_MEMORY_MIB`, `SCRATCH_MODIFY_MAX_MEMORY_MIB` |
 | Test user, primary virtual disk, dry-run LPAR and disk | `TEST_USER_NAME`, `VDISK_NAME`, `DRY_RUN_LPAR_NAME`, `DRY_RUN_STORAGE_NAME` |
 | Provisioning volume-group fallback | `VDISK_VOLUME_GROUP_NAME` |
 | Dry-run VIOS fallback slot, partition ID, and memory | `DRY_RUN_VIOS_SLOT`, `DRY_RUN_VIOS_PARTITION_ID`, `DRY_RUN_MEMORY_MIB` |
@@ -51,9 +53,9 @@ environment-specific values through that context. No scenario module reads
 | Main and short virtual-media repository capacities | `VMEDIA_REPOSITORY_SIZE_MIB`, `VMEDIA_SHORT_REPOSITORY_SIZE_MIB` |
 
 This inventory is the required parser and example key set. Per-invocation random
-password generation, generic user descriptions, protocol constants, and expected
-error classifications are scenario behavior rather than environment selection
-and remain fixed.
+password generation, generic user descriptions, protocol constants,
+observed-resource fallbacks, timing bounds, and expected error classifications
+are scenario behavior rather than environment selection and remain fixed.
 
 ## Example file
 
@@ -68,6 +70,12 @@ SCRATCH_LPAR_NAME=example-lt-609-scratch
 NETWORK_TEST_LPAR_NAME=example-lt-609-network
 TEST_USER_NAME=example-lt-609-user
 VDISK_NAME=example-lt-609-disk
+SCRATCH_CREATE_DESIRED_MEMORY_MIB=1536
+SCRATCH_CREATE_MAX_MEMORY_MIB=3072
+SCRATCH_CREATE_DESIRED_VCPUS=3
+SCRATCH_CREATE_MAX_VCPUS=6
+SCRATCH_MODIFY_DESIRED_MEMORY_MIB=2304
+SCRATCH_MODIFY_MAX_MEMORY_MIB=4608
 DRY_RUN_LPAR_NAME=example-lt-609-dry-run
 DRY_RUN_STORAGE_NAME=example-lt-609-dry-disk
 VDISK_VOLUME_GROUP_NAME=example-lt-609-vg
@@ -117,8 +125,9 @@ takes precedence over conflicting ambient `LIVE_TEST_*` exports, including on
 the successful TOML-connection path. Duplicate keys must report an error before
 either entry path reaches HMC bootstrap. Existing scenario
 tests will be updated to construct contexts with fictional inputs and will
-prove the SR-IOV, provisioning, and virtual-media paths use configured values,
-including separate ISO bind and advertised hosts. A structural test will ensure
+prove the scratch-LPAR lifecycle, SR-IOV, provisioning, and virtual-media paths
+use configured values, including separate ISO bind and advertised hosts. A
+structural test will ensure
 `.env.example` defines exactly the inventory key set and contains none of the
 retired source identifiers.
 

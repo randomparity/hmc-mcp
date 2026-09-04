@@ -63,8 +63,9 @@ environment identifier remains a default in `LiveTestContext`.
 
 ## Task 2: Route every scenario through the context
 
-Files: modify `scripts/live_test/pcie.py`, `scripts/live_test/provisioning.py`,
-`scripts/live_test/vmedia.py`, and direct tests in `tests/test_live_runner.py`.
+Files: modify `scripts/live_test/lpar.py`, `scripts/live_test/pcie.py`,
+`scripts/live_test/provisioning.py`, `scripts/live_test/vmedia.py`, and direct
+tests in `tests/test_live_runner.py`.
 
 Interfaces: scenario functions continue to accept `RunState`; their resource,
 media, host, and protection inputs come from `state.context`.
@@ -75,6 +76,9 @@ Verification:
   Mode: focused-test. Extend the SR-IOV test with fictional context values;
   it is red while module constants are used, then green with
   `uv run --no-sync pytest tests/test_live_runner.py -q`.
+- Contract: scratch-LPAR create and modify calls use configured resource values.
+  Mode: focused-test. Add a lifecycle-call test using fictional values; it is
+  red while resource dictionaries are literals, then green with the same command.
 - Contract: virtual-media serving, allow-list, media names, and protection use
   configured values, with separate bind and advertised hosts.
   Mode: focused-test. Add a focused virtual-media configuration test; it is red
@@ -87,8 +91,8 @@ Steps:
 2. Substitute the corresponding typed context values in every tool call,
    command, server setup, allow-list update, and safety guard.
 3. Update focused tests to build a complete fictional context and assert the
-   selected SR-IOV, provisioning, primary/alternate media, bind, advertised URL,
-   allow-list, and protection values reach the relevant calls.
+   selected scratch-LPAR, SR-IOV, provisioning, primary/alternate media, bind,
+   advertised URL, allow-list, and protection values reach the relevant calls.
 
 Acceptance: scenario modules do not retain environment-specific identifiers or
 read environment variables directly.
