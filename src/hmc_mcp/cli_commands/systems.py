@@ -8,7 +8,7 @@ import typer
 from rich.table import Table
 
 from ..jobs import validate_wait_timing
-from ..operations.capacity import capacity_report, find_placement
+from ..operations.capacity import fetch_capacity_report, find_placement
 from ..operations.composite import system_summary
 from ..operations.health import fleet_health
 from ..operations.systems import (
@@ -184,7 +184,7 @@ def systems_capacity(
 ) -> None:
     """Capacity report: memory/CPU totals and free resources per managed system."""
 
-    report = [asdict(item) for item in with_client(capacity_report)]
+    report = [asdict(item) for item in with_client(fetch_capacity_report)]
     if as_json:
         print_json(report)
         return

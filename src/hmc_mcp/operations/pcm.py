@@ -171,7 +171,7 @@ async def metric_links(
         raise
 
 
-async def metric_data(
+async def fetch_metric_data(
     hmc: HMCClient,
     category: PcmCategory,
     resource: str,

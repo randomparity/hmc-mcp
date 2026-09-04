@@ -6,8 +6,8 @@ import typer
 
 from ..operations.pcm import (
     PcmCategory,
+    fetch_metric_data,
     get_pcm_preferences,
-    metric_data,
     metric_links,
     preference_flags,
     set_pcm_preferences,
@@ -98,7 +98,7 @@ def metrics_show(
     async def _go():
         async with client() as hmc:
             kind = "aggregated" if aggregated else "processed"
-            operation = metric_data if fetch else metric_links
+            operation = fetch_metric_data if fetch else metric_links
             return await operation(
                 hmc,
                 category,

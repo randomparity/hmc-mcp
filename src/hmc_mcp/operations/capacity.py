@@ -39,7 +39,7 @@ def lpar_processing_units(lpar: dict[str, Any]) -> float:
         ) from exc
 
 
-def system_capacity(
+def calculate_system_capacity(
     system: dict[str, Any], lpars: list[dict[str, Any]]
 ) -> CapacitySummary:
     """Compute capacity statistics for one managed system."""
@@ -69,14 +69,14 @@ def system_capacity(
     )
 
 
-async def capacity_report(hmc: HMCClient) -> list[CapacitySummary]:
+async def fetch_capacity_report(hmc: HMCClient) -> list[CapacitySummary]:
     """Return capacity statistics for every managed system."""
     systems = await hmc.list_managed_systems()
     result = []
     for system in systems:
         uuid = system.get("UUID")
         lpars = await hmc.list_logical_partitions(uuid) if uuid else []
-        result.append(system_capacity(system, lpars))
+        result.append(calculate_system_capacity(system, lpars))
     return result
 
 
@@ -86,7 +86,7 @@ async def find_placement(
     desired_proc_units: float = 0.5,
 ) -> list[CapacitySummary]:
     """Return systems with sufficient free resources, best fit first."""
-    report = await capacity_report(hmc)
+    report = await fetch_capacity_report(hmc)
     candidates = [
         capacity
         for capacity in report

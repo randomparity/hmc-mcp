@@ -267,7 +267,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   explicit typed keyword parameters instead of accepting an untyped `**fields` bag.
 - User deletion and remote-access MCP tools now call the client boundary directly;
   remote-access validation and document merging have one owner in the client layer.
-- `metric_links` and `metric_data` require metric kind, time range, sample count, and
+- `metric_links` and `fetch_metric_data` require metric kind, time range, sample count, and
   managed-system scope as named arguments after the resource selector.
 - Affinity assessment models, pure evaluation, and live orchestration now live together
   in `operations.affinity`; snapshot modules consume that boundary without a reverse

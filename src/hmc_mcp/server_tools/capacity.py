@@ -6,7 +6,7 @@ from dataclasses import asdict
 from typing import Any
 
 from .._app import with_client
-from ..operations.capacity import capacity_report, find_placement
+from ..operations.capacity import fetch_capacity_report, find_placement
 from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
@@ -21,7 +21,7 @@ def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
     """
 
     async def report(hmc):
-        return [asdict(item) for item in await capacity_report(hmc)]
+        return [asdict(item) for item in await fetch_capacity_report(hmc)]
 
     return with_client(report, profile=profile)
 

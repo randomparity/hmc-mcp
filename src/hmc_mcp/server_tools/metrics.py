@@ -10,8 +10,8 @@ from .._app import (
 from ..operations.pcm import (
     MetricKind,
     PcmCategory,
+    fetch_metric_data,
     get_pcm_preferences,
-    metric_data,
     metric_links,
     preference_flags,
     set_pcm_preferences,
@@ -286,7 +286,7 @@ def _metrics_fetch(
 ) -> dict[str, Any]:
     validate_pcm_metric_target(category, system_name_or_uuid)
     return with_client(
-        lambda hmc: metric_data(
+        lambda hmc: fetch_metric_data(
             hmc,
             category,
             resource_name_or_uuid,

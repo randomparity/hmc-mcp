@@ -126,7 +126,7 @@ jobs:
           from pathlib import Path
           import sys
 
-          from hmc_mcp.api import CapacitySummary, capacity_report
+          from hmc_mcp.api import CapacitySummary, fetch_capacity_report
 
           package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
           environment = Path(".library-wheel-venv").resolve()
@@ -159,7 +159,7 @@ jobs:
                       },
                   }]
 
-          report = asyncio.run(capacity_report(FakeHMC()))
+          report = asyncio.run(fetch_capacity_report(FakeHMC()))
           assert report == [CapacitySummary(
               system_uuid="system-1",
               system_name="p10",
@@ -269,7 +269,7 @@ jobs:
           from pathlib import Path
           import sys
 
-          from hmc_mcp.api import CapacitySummary, capacity_report
+          from hmc_mcp.api import CapacitySummary, fetch_capacity_report
 
           package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
           environment = Path(".floor-venv").resolve()
@@ -301,7 +301,7 @@ jobs:
                       },
                   }]
 
-          report = asyncio.run(capacity_report(FakeHMC()))
+          report = asyncio.run(fetch_capacity_report(FakeHMC()))
           assert report == [CapacitySummary(
               system_uuid="system-1",
               system_name="p10",

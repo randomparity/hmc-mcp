@@ -2,7 +2,7 @@
 
 import pytest
 
-from hmc_mcp.operations.capacity import find_placement, system_capacity
+from hmc_mcp.operations.capacity import calculate_system_capacity, find_placement
 from hmc_mcp.operations.composite import _system_summary
 
 SYSTEM = {
@@ -26,7 +26,7 @@ MALFORMED_LPAR = {
 @pytest.mark.parametrize(
     "summarize",
     [
-        lambda: system_capacity(SYSTEM, [MALFORMED_LPAR]),
+        lambda: calculate_system_capacity(SYSTEM, [MALFORMED_LPAR]),
         lambda: _system_summary(SYSTEM, [MALFORMED_LPAR], []),
     ],
 )

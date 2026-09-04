@@ -153,8 +153,8 @@ names are internal everywhere and are never inventoried.
   `PostActivationAffinityAssessment`, `ProvisionAffinityAssessment`; excluded synchronous:
   `affinity_not_measured`, `assess_affinity`, `classify_affinity_outcome`,
   `validate_affinity_request`.
-- `operations.capacity` — operations: `capacity_report`, `find_placement`; types: `CapacitySummary`; excluded
-  synchronous: `lpar_processing_units`, `system_capacity`.
+- `operations.capacity` — operations: `fetch_capacity_report`, `find_placement`; types: `CapacitySummary`; excluded
+  synchronous: `calculate_system_capacity`, `lpar_processing_units`.
 - `operations.composite` — operations: `lpar_summary`, `system_summary`; types: `LparSummary`, `SystemSummary`; excluded
   synchronous: none.
 - `operations.error_translation` — operations: none; types: none; excluded synchronous:
@@ -224,7 +224,7 @@ names are internal everywhere and are never inventoried.
   synchronous: none.
 - `operations.pcie_validation` — operations: none; types: none; excluded synchronous:
   `require_command_safe_text`, `require_nonblank_text`, `validate_capacity_percent`.
-- `operations.pcm` — operations: `get_pcm_preferences`, `metric_data`, `metric_links`,
+- `operations.pcm` — operations: `fetch_metric_data`, `get_pcm_preferences`, `metric_links`,
   `resolve_pcm_resource`, `set_pcm_preferences`; types: `MetricKind`, `PcmCategory`,
   `PcmResource`; excluded synchronous: `preference_flags`, `validate_pcm_metric_target`,
   `validate_pcm_preferences_category`.

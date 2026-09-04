@@ -243,7 +243,7 @@ def test_capacity_clis_delegate_to_neutral_operations():
     report = AsyncMock(return_value=[])
     placement = AsyncMock(return_value=[])
     with (
-        patch("hmc_mcp.cli_commands.systems.capacity_report", report),
+        patch("hmc_mcp.cli_commands.systems.fetch_capacity_report", report),
         patch("hmc_mcp.cli_commands.systems.find_placement", placement),
         patch(
                 "hmc_mcp.cli_commands.runtime.client", return_value=_ClientContext(client)
@@ -263,7 +263,7 @@ def test_capacity_cli_preserves_connection_overrides():
     client = object()
     report = AsyncMock(return_value=[])
     with (
-        patch("hmc_mcp.cli_commands.systems.capacity_report", report),
+        patch("hmc_mcp.cli_commands.systems.fetch_capacity_report", report),
         patch(
             "hmc_mcp.cli_commands.runtime.HMCClient",
             return_value=_ClientContext(client),

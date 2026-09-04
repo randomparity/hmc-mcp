@@ -134,7 +134,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "AdapterResult",
         "AdapterType",
         "CapacitySummary",
-        "capacity_report",
+        "fetch_capacity_report",
         "find_placement",
         "lpar_summary",
         "LparSummary",
@@ -202,7 +202,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "get_pcm_preferences",
         "set_pcm_preferences",
         "metric_links",
-        "metric_data",
+        "fetch_metric_data",
         "PcmCategory",
         "MetricKind",
         "PcmResource",
@@ -2041,7 +2041,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
-    expected_digest = "48242eeca3f9c00f2d9179163b3b5da241f1f69b6cc0a5a46ce3c73c8faec874"  # pragma: allowlist secret
+    expected_digest = "f7ba336dbf28a30b6e8633fbec60ef5893ce8b17ef57140f826b55a2cdb53b81"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

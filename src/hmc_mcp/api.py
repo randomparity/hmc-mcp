@@ -44,7 +44,11 @@ from hmc_mcp.operations.affinity import (
     ProvisionAffinityAssessment,
     assess_post_activation_affinity,
 )
-from hmc_mcp.operations.capacity import CapacitySummary, capacity_report, find_placement
+from hmc_mcp.operations.capacity import (
+    CapacitySummary,
+    fetch_capacity_report,
+    find_placement,
+)
 from hmc_mcp.operations.composite import (
     LparSummary,
     SystemSummary,
@@ -171,8 +175,8 @@ from hmc_mcp.operations.pcm import (
     MetricKind,
     PcmCategory,
     PcmResource,
+    fetch_metric_data,
     get_pcm_preferences,
-    metric_data,
     metric_links,
     resolve_pcm_resource,
     set_pcm_preferences,
@@ -347,7 +351,7 @@ __all__ = [  # noqa: RUF022 - grouped by subsystem to mirror ADR 0029, not sorte
     "AdapterResult",
     "AdapterType",
     "CapacitySummary",
-    "capacity_report",
+    "fetch_capacity_report",
     "find_placement",
     "lpar_summary",
     "LparSummary",
@@ -415,7 +419,7 @@ __all__ = [  # noqa: RUF022 - grouped by subsystem to mirror ADR 0029, not sorte
     "get_pcm_preferences",
     "set_pcm_preferences",
     "metric_links",
-    "metric_data",
+    "fetch_metric_data",
     "PcmCategory",
     "MetricKind",
     "PcmResource",
