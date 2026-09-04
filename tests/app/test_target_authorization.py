@@ -365,7 +365,7 @@ def test_a_table_grant_still_never_reaches_provision_lpar():
     """#260 declared the nested selectors; the slot number still cannot bound.
 
     A well-formed call now extracts all three identities and denies under
-    target-unboundable anyway, because `network.vios_partition_id` is an
+    target-unboundable anyway, because `adapters.vios_partition_id` is an
     identity no table can write precisely. A call whose structured arguments
     are None is malformed rather than narrow: the second extraction rule reads
     it UNREADABLE, which denies under `all-targets` too.
@@ -380,7 +380,7 @@ def test_a_table_grant_still_never_reaches_provision_lpar():
     well_formed = {
         "system_name_or_uuid": "sys-1",
         "name": "new-lpar",
-        "network": ProvisionAdapters(port_vlan_id=1, vios_partition_id=3, vios_slot=2),
+        "adapters": ProvisionAdapters(port_vlan_id=1, vios_partition_id=3, vios_slot=2),
         "storage": ProvisionStorage(vios_uuid="vios-uuid-1", storage_name="rootvg"),
         "profile": "lab",
     }

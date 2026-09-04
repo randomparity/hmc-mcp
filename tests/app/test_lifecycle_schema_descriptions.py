@@ -84,7 +84,7 @@ def test_nested_lifecycle_parameters_have_rendered_descriptions():
     tools = _tools_by_name()
     nested = {
         "resources": tools["hmc_create_lpar"].parameters["properties"]["resources"],
-        "network": tools["hmc_provision_lpar"].parameters["properties"]["network"],
+        "adapters": tools["hmc_provision_lpar"].parameters["properties"]["adapters"],
         "storage": tools["hmc_provision_lpar"].parameters["properties"]["storage"],
     }
     missing = {

@@ -225,13 +225,13 @@ def test_a_nested_field_with_a_default_is_optional():
         operation="provision.lpar",
         target_kind="managed_system",
         extra_targets=(
-            ("vios", "network.vios_partition_id"),
+            ("vios", "adapters.vios_partition_id"),
             ("vios", "storage.vios_uuid"),
         ),
     )
     def provision(
         system_name_or_uuid: str,
-        network: _Network,
+        adapters: _Network,
         storage: _Storage,
         profile: str | None = None,
     ) -> str:

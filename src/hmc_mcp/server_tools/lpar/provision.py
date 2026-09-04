@@ -20,11 +20,11 @@ tool, register_tools, tool_security = tool_module()
 
 
 # The VIOS identities this call mutates arrive one level below the signature —
-# `storage.vios_uuid` and `network.vios_partition_id` — and are declared here as
+# `storage.vios_uuid` and `adapters.vios_partition_id` — and are declared here as
 # nested selectors (#260), so extraction, the audit record, and denial messages
 # see them instead of only the managed system. The tool remains
 # `exhaustive_targets=False`: `storage.vios_uuid` is a fleet-unique UUID a policy
-# `targets` table could bound, but `network.vios_partition_id` is a per-system
+# `targets` table could bound, but `adapters.vios_partition_id` is a per-system
 # slot number no allowlist can write precisely (ADR 0039, #259), so only
 # `targets = "all-targets"` grants it today. The declaration is what makes the
 # boundable half fixable the moment #259 gives the slot number a fleet-unique form.
@@ -33,7 +33,7 @@ tool, register_tools, tool_security = tool_module()
     operation="provision.lpar",
     target_kind="managed_system",
     extra_targets=(
-        ("vios", "network.vios_partition_id"),
+        ("vios", "adapters.vios_partition_id"),
         ("vios", "storage.vios_uuid"),
     ),
     exhaustive_targets=False,
@@ -41,7 +41,7 @@ tool, register_tools, tool_security = tool_module()
 def hmc_provision_lpar(
     system_name_or_uuid: str,
     name: str,
-    network: ProvisionAdapters,
+    adapters: ProvisionAdapters,
     storage: ProvisionStorage,
     resources: LparResources = LparResources(
         min_memory=256,
@@ -59,12 +59,12 @@ def hmc_provision_lpar(
     affinity_assessment: ProvisionAffinityAssessment | None = None,
     profile: str | None = None,
 ) -> ProvisionResult:
-    """Provision an LPAR with network, vSCSI storage, and optional power-on.
+    """Provision an LPAR with virtual adapters, vSCSI storage, and optional power-on.
 
     Args:
         system_name_or_uuid: Target managed-system name or UUID.
         name: Name for the new logical partition.
-        network: Virtual Ethernet and VIOS vSCSI attachment settings.
+        adapters: Virtual Ethernet and VIOS vSCSI attachment settings.
         storage: VIOS-backed storage mapping settings.
         resources: Memory and processor settings for the partition.
         partition_type: Partition environment: AIX/Linux, OS400, or VIOS.
@@ -94,7 +94,7 @@ def hmc_provision_lpar(
             hmc,
             system_name_or_uuid=system_name_or_uuid,
             request=ProvisionRequest(
-                name=name, network=network, storage=storage, resources=resources,
+                name=name, adapters=adapters, storage=storage, resources=resources,
                 partition_type=partition_type, power_on=power_on, dry_run=dry_run,
                 assignments=assignments, caller_token=caller_token,
                 minimum_affinity_policy=minimum_affinity_policy,

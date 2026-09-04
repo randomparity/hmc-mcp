@@ -314,7 +314,7 @@ def test_provision_lpar_declares_its_nested_selectors():
     assert security.exhaustive_targets is False
     assert [(t.kind, t.path, t.required) for t in security.targets] == [
         ("managed_system", "system_name_or_uuid", True),
-        ("vios", "network.vios_partition_id", True),
+        ("vios", "adapters.vios_partition_id", True),
         ("vios", "storage.vios_uuid", True),
     ]
 
@@ -1419,7 +1419,7 @@ def test_the_declared_set_is_exactly_what_the_check_finds():
         "hmc_get_job": ["job_href"],
         # storage.vios_uuid is declared now (#260); the slot number remains an
         # identity no table can bound, so it stays in this set.
-        "hmc_provision_lpar": ["network.vios_partition_id"],
+        "hmc_provision_lpar": ["adapters.vios_partition_id"],
         "hmc_restore_lpar_profiles": ["file_path"],
         "hmc_run_command": ["cmd"],
         "hmc_wait_for_job": ["job_href"],

@@ -89,7 +89,7 @@ class ProvisionRequest:
     """Typed inputs for the end-to-end LPAR provisioning workflow."""
 
     name: str
-    network: ProvisionAdapters
+    adapters: ProvisionAdapters
     storage: ProvisionStorage
     resources: LparResources
     partition_type: PartitionType = "AIX/Linux"
@@ -532,7 +532,7 @@ async def _preflight_provision_request(
         system_name, _ = await resolve_ssh_names(hmc.config, system_name_or_uuid, None)
         await require_minimum_affinity_policy_capability(hmc.config, system_name)
     await _check_name_unique(hmc, request.name)
-    await _check_vlan_exists(hmc, system_uuid, request.network.port_vlan_id)
+    await _check_vlan_exists(hmc, system_uuid, request.adapters.port_vlan_id)
     if request.storage.vg_uuid is not None:
         await _check_vg_exists(hmc, request.storage.vios_uuid, request.storage.vg_uuid)
     await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, request.assignments)
@@ -623,15 +623,15 @@ async def provision_lpar(
     ):
         return _failed_provision_result(creation, created_uuid, steps, step_names)
 
-    if not await _run_network_leg(steps, hmc, created_uuid, request.network.port_vlan_id):
+    if not await _run_network_leg(steps, hmc, created_uuid, request.adapters.port_vlan_id):
         return _failed_provision_result(creation, created_uuid, steps, step_names)
 
     storage_steps, storage_completed = await _run_storage_leg(
         hmc,
         created_uuid,
         request.storage,
-        vios_partition_id=request.network.vios_partition_id,
-        vios_slot=request.network.vios_slot,
+        vios_partition_id=request.adapters.vios_partition_id,
+        vios_slot=request.adapters.vios_slot,
     )
     steps.extend(storage_steps)
     if not storage_completed:
