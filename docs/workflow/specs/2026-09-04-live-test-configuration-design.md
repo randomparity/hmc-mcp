@@ -25,6 +25,11 @@ positive, and the protected list must contain at least one name. Configuration
 validation reports every invalid or absent key and stops before the runner
 creates `Client`. Existing `HMC_*` configuration continues unchanged.
 
+The reader preserves line numbers and rejects every duplicate `LIVE_TEST_*`
+key with the conflicting lines. A shared pre-bootstrap validation step builds
+the context before either HMC connection bootstrap or direct `main()` execution;
+both the CLI and programmatic entry pass that context onward unchanged.
+
 `LiveTestContext` owns the immutable configured fields plus mutable execution
 state. Scenario modules receive the existing `RunState` and obtain all
 environment-specific values through that context. No scenario module reads
@@ -109,7 +114,8 @@ that missing and malformed values produce aggregated actionable errors, and
 that configuration failure precedes MCP and client construction on both direct
 `main()` calls and command-line entry, and `.env`
 takes precedence over conflicting ambient `LIVE_TEST_*` exports, including on
-the successful TOML-connection path. Existing scenario
+the successful TOML-connection path. Duplicate keys must report an error before
+either entry path reaches HMC bootstrap. Existing scenario
 tests will be updated to construct contexts with fictional inputs and will
 prove the SR-IOV, provisioning, and virtual-media paths use configured values,
 including separate ISO bind and advertised hosts. A structural test will ensure

@@ -29,6 +29,10 @@ settings together and returns without opening a client. Virtual media uses
 separate local-bind and HMC-advertised hosts so a wildcard listener can
 advertise a routable address.
 
+One shared pre-bootstrap entry validates the local live-test file for both CLI
+and direct invocation. Duplicate `LIVE_TEST_*` keys are invalid, so the
+operator-reviewed file has one unambiguous value for every target.
+
 ## Consequences
 
 Operators copy and edit `.env.example` before a live run. Adding a new

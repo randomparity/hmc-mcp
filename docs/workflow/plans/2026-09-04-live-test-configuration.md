@@ -20,13 +20,14 @@ scenario substitutions, example documentation, and focused tests.
 
 Files: modify `scripts/live_test_runner.py`; modify `tests/test_live_runner.py`.
 
-Interfaces: add `LiveTestContext.from_environment() -> LiveTestContext`; make
-`main()` obtain it before creating `RunState`, `create_mcp`, or `Client`, and
-make `RunState` require the resulting context. The command-line wrapper passes
-only selected task arguments to `main()`. The context reader uses a
+Interfaces: add `LiveTestContext.from_environment() -> LiveTestContext` and a
+shared pre-bootstrap entry that calls it before the CLI runs HMC bootstrap or a
+direct caller enters `main()`. Make `RunState` require the resulting context.
+The command-line wrapper and direct `main()` caller pass that context onward.
+The context reader uses a
 side-effect-free local-file reader that returns only `LIVE_TEST_*` entries,
 never reads or mutates `os.environ`, and raises one actionable `ValueError`
-listing all missing or invalid entries.
+listing all missing, invalid, or duplicate entries with their source lines.
 
 Verification:
 
@@ -38,19 +39,21 @@ Verification:
   Mode: focused-test. Add a parametrized validation test and a runner-entry
   test; they are red because defaults permit execution, then green with the
   same command. Cover direct `main()` and command-line paths, successful TOML
-  connection bootstrap, conflicting ambient exports, and a missing local file.
+  connection bootstrap, conflicting ambient exports, a missing local file, and
+  duplicate keys with their line numbers.
 
 Steps:
 
 1. Add a separate `LIVE_TEST_*` file reader and required-key mapping with
-   conversion functions. Call it inside `main()` before connection bootstrap;
-   do not reuse `_load_dotenv`.
+   conversion functions. It retains line numbers and rejects duplicate keys.
+   Add a shared pre-bootstrap entry used by the CLI and direct `main()`; do not
+   reuse `_load_dotenv`.
 2. Make `LiveTestContext` store all configured scenario inputs, including
    SR-IOV, provisioning, and virtual-media inputs, while retaining mutable
    discovered state. Define the complete specification inventory as the parser's
    single required-key list.
-3. Replace default construction with a required validated context inside
-   `main()` before connection bootstrap, MCP construction, and `Client` entry.
+3. Replace default construction with the shared required validated context
+   before connection bootstrap, MCP construction, and `Client` entry.
 4. Add focused tests using fictional mapping values and prove no client is
    instantiated when validation fails or when a selected subtask is requested.
    Prove a conflicting exported `LIVE_TEST_*` value cannot override `.env`.
