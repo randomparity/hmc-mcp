@@ -62,15 +62,10 @@ async def modify_lpar(
                 lpar_uuid, build_lpar_document(name=None, resources=resources)
             )
         except HMCError as exc:
-            try:
-                translate_lpar_write_error(exc)
-            except HMCError as translated:
-                if new_name is None:
-                    raise
-                exc = translated
+            translated = translate_lpar_write_error(exc)
             if new_name is None:
-                raise
-            steps.append(WorkflowStep("resources", "error", str(exc)))
+                raise translated from exc
+            steps.append(WorkflowStep("resources", "error", str(translated)))
             steps.extend(
                 WorkflowStep(step, "skipped")
                 for step in assignment_step_names(assignments)
@@ -81,7 +76,7 @@ async def modify_lpar(
                 resource,
                 None,
                 tuple(steps),
-                (str(exc),),
+                (str(translated),),
             )
         steps.append(WorkflowStep("resources", "ok", resource))
 
@@ -128,8 +123,7 @@ async def _apply_dlpar_document(
     try:
         return await hmc.modify_logical_partition(lpar_uuid, document)
     except HMCError as exc:
-        translate_lpar_write_error(exc)
-        raise
+        raise translate_lpar_write_error(exc) from exc
 
 
 async def set_lpar_processors(
