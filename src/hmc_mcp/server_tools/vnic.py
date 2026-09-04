@@ -10,7 +10,7 @@ from .._app import (
     serialize_tool_result,
     with_client,
 )
-from ..operations.vnic import (
+from ..operations.io_virtualization.vnic import (
     VnicBackingSelector,
     VnicPartialError,
     add_vnic,

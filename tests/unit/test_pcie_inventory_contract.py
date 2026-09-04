@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 from hmc_mcp import api
 from hmc_mcp.cli import app
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.pcie import (
+from hmc_mcp.operations.io_virtualization.pcie import (
     DedicatedSlot,
     InventoryResult,
     InventorySelector,
@@ -133,7 +133,7 @@ def test_supported_api_exports_inventory_contract_directly() -> None:
     ):
         assert name in api.__all__
         assert getattr(api, name) is getattr(
-            __import__("hmc_mcp.operations.pcie", fromlist=[name]), name
+            __import__("hmc_mcp.operations.io_virtualization.pcie", fromlist=[name]), name
         )
 
 

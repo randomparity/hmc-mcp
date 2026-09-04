@@ -8,7 +8,7 @@ from decimal import Decimal
 import typer
 from rich.table import Table
 
-from ..operations.pcie import (
+from ..operations.io_virtualization.pcie import (
     assign_dedicated_pcie_slot,
     assign_sriov_logical_port,
     list_dedicated_slots,

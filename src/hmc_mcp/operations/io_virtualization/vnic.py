@@ -8,12 +8,12 @@ from typing import Literal
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.operations.io_virtualization.pcie import require_admitted_environment
 from hmc_mcp.operations.io_virtualization.validation import (
     require_command_safe_text,
     validate_capacity_percent,
 )
 from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_names
-from hmc_mcp.operations.pcie import require_admitted_environment
 from hmc_mcp.ssh.network import (
     add_vnic_backing,
     list_sriov_adapter_rows,

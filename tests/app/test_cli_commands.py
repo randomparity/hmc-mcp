@@ -33,9 +33,9 @@ from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations import ownership as lpar_ownership
+from hmc_mcp.operations.io_virtualization.vnic import VnicChangeResult, VnicPartialError
 from hmc_mcp.operations.lpar.assignments import LparPcieWorkflowResult
 from hmc_mcp.operations.lpar.workflow_contract import WorkflowStep
-from hmc_mcp.operations.vnic import VnicChangeResult, VnicPartialError
 from hmc_mcp.ssh import affinity as ssh_affinity
 from hmc_mcp.ssh import commands as ssh_commands
 from hmc_mcp.ssh import lpar as ssh_lpar

@@ -62,7 +62,7 @@ The adapter-facing `operations.vios_labels` workflow and its SSH command type ar
 excluded from the reusable facade. They are shared by the MCP and CLI presentation layers but are
 not a supported Python consumer boundary.
 
-`operations.pcie.require_admitted_environment` is the one asynchronous exception. It is a shared
+`operations.io_virtualization.pcie.require_admitted_environment` is the one asynchronous exception. It is a shared
 admission-policy guard called by complete PCIe and SSH-network operations, not a domain operation a
 consumer can use independently: it accepts an already-resolved CLI system name and returns no
 domain result. It therefore remains outside the facade while retaining a public module name so
@@ -229,7 +229,7 @@ names are internal everywhere and are never inventoried.
   `parse_lpar_ownership_caller_token`, `parse_lpar_ownership_owner`.
 - `operations.partition_state` — types: `PartitionState`; operations: none; excluded
   synchronous: none.
-- `operations.pcie` — operations: `assign_dedicated_pcie_slot`, `assign_sriov_logical_port`,
+- `operations.io_virtualization.pcie` — operations: `assign_dedicated_pcie_slot`, `assign_sriov_logical_port`,
   `list_dedicated_slots`, `list_sriov_adapters`, `list_sriov_logical_ports`,
   `list_sriov_physical_ports`, `set_sriov_adapter_mode`, `unassign_dedicated_pcie_slot`,
   `unassign_sriov_logical_port`; types: `CapabilityState`, `DedicatedSlot`, `InventoryResult`,
@@ -268,7 +268,7 @@ names are internal everywhere and are never inventoried.
   excluded synchronous: `validate_vios_backup_name`, `validate_vios_backup_request`,
   `validate_vios_restore_request`.
 - `operations.vios_labels` — operations: none; types: none; excluded synchronous: none.
-- `operations.vnic` — operations: `add_vnic`, `list_fc_ports`,
+- `operations.io_virtualization.vnic` — operations: `add_vnic`, `list_fc_ports`,
   `list_sea_adapters`, `list_vnics`, `remove_vnic`; types:
   `VnicBackingSelector`, `VnicBackingSnapshot`,
   `VnicCapabilityError`, `VnicChangeResult`, `VnicPartialError`, `VnicSnapshot`; excluded

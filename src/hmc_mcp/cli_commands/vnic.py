@@ -9,7 +9,7 @@ from decimal import Decimal
 
 import typer
 
-from ..operations.vnic import (
+from ..operations.io_virtualization.vnic import (
     VnicBackingSelector,
     VnicPartialError,
     add_vnic,

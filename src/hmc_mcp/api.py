@@ -77,6 +77,43 @@ from hmc_mcp.operations.install import (
     install_vios,
     install_vios_by_lpar_selector,
 )
+from hmc_mcp.operations.io_virtualization.pcie import (
+    CapabilityState,
+    DedicatedSlot,
+    InventoryResult,
+    InventorySelector,
+    PcieAssignmentUnavailableError,
+    ResourceKind,
+    SriovAdapter,
+    SriovLogicalPort,
+    SriovLogicalPortCapabilityError,
+    SriovLogicalPortChangeResult,
+    SriovLogicalPortPartialError,
+    SriovLogicalPortSnapshot,
+    SriovPhysicalPort,
+    assign_dedicated_pcie_slot,
+    assign_sriov_logical_port,
+    list_dedicated_slots,
+    list_sriov_adapters,
+    list_sriov_logical_ports,
+    list_sriov_physical_ports,
+    set_sriov_adapter_mode,
+    unassign_dedicated_pcie_slot,
+    unassign_sriov_logical_port,
+)
+from hmc_mcp.operations.io_virtualization.vnic import (
+    VnicBackingSelector,
+    VnicBackingSnapshot,
+    VnicCapabilityError,
+    VnicChangeResult,
+    VnicPartialError,
+    VnicSnapshot,
+    add_vnic,
+    list_fc_ports,
+    list_sea_adapters,
+    list_vnics,
+    remove_vnic,
+)
 from hmc_mcp.operations.jobs import get_job, wait_for_job
 from hmc_mcp.operations.lpar.assignments import (
     AssignmentResult,
@@ -168,30 +205,6 @@ from hmc_mcp.operations.ownership import (
     stamp_created_lpar_ownership,
 )
 from hmc_mcp.operations.partition_state import PartitionState
-from hmc_mcp.operations.pcie import (
-    CapabilityState,
-    DedicatedSlot,
-    InventoryResult,
-    InventorySelector,
-    PcieAssignmentUnavailableError,
-    ResourceKind,
-    SriovAdapter,
-    SriovLogicalPort,
-    SriovLogicalPortCapabilityError,
-    SriovLogicalPortChangeResult,
-    SriovLogicalPortPartialError,
-    SriovLogicalPortSnapshot,
-    SriovPhysicalPort,
-    assign_dedicated_pcie_slot,
-    assign_sriov_logical_port,
-    list_dedicated_slots,
-    list_sriov_adapters,
-    list_sriov_logical_ports,
-    list_sriov_physical_ports,
-    set_sriov_adapter_mode,
-    unassign_dedicated_pcie_slot,
-    unassign_sriov_logical_port,
-)
 from hmc_mcp.operations.pcm import (
     MetricKind,
     PcmCategory,
@@ -258,19 +271,6 @@ from hmc_mcp.operations.vios import (
     list_vios_backups,
     power_vios,
     restore_vios,
-)
-from hmc_mcp.operations.vnic import (
-    VnicBackingSelector,
-    VnicBackingSnapshot,
-    VnicCapabilityError,
-    VnicChangeResult,
-    VnicPartialError,
-    VnicSnapshot,
-    add_vnic,
-    list_fc_ports,
-    list_sea_adapters,
-    list_vnics,
-    remove_vnic,
 )
 from hmc_mcp.snapshots.models import (
     HMCIdentity,

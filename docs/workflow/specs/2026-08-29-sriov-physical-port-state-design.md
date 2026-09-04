@@ -28,7 +28,7 @@ ambiguous. Every accepted row must repeat the requested adapter ID.
 `phys_port_type` remains opaque returned HMC data because the captured `roce`
 fixture reports `eth`; it does not select or validate the query level.
 
-`operations.pcie.list_sriov_physical_ports` retains its existing environment
+`operations.io_virtualization.pcie.list_sriov_physical_ports` retains its existing environment
 admission call. An empty result from both levels raises the existing
 `SriovLogicalPortCapabilityError`. It maps state `1` to `up` and `0` to `down` in the existing
 `availability` field before applying the optional physical-port selector. Blank

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .._app import serialize_tool_result, ssh_with_client, with_client
-from ..operations.pcie import (
+from ..operations.io_virtualization.pcie import (
     list_dedicated_slots,
     list_sriov_adapters,
     list_sriov_logical_ports,

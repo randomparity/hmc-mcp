@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.pcie import (
+from hmc_mcp.operations.io_virtualization.pcie import (
     PcieAssignmentUnavailableError,
     assign_dedicated_pcie_slot,
     unassign_dedicated_pcie_slot,
@@ -43,9 +43,9 @@ def test_assignment_rejects_before_mutation_when_profile_readback_is_unavailable
     inventory = AsyncMock()
     authorize.return_value = ("sys", "lpar")
     monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_and_authorize_lpar_names", authorize
+        "hmc_mcp.operations.io_virtualization.pcie.resolve_and_authorize_lpar_names", authorize
     )
-    monkeypatch.setattr("hmc_mcp.operations.pcie.list_dedicated_slots", inventory)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.pcie.list_dedicated_slots", inventory)
 
     with pytest.raises(PcieAssignmentUnavailableError, match="profile readback"):
         asyncio.run(assign_dedicated_pcie_slot(hmc, "sys", "lpar", "prof", "123"))
@@ -60,7 +60,7 @@ def test_unassignment_passes_explicit_ownership_override(monkeypatch):
     authorize = AsyncMock()
     authorize.return_value = ("sys", "lpar")
     monkeypatch.setattr(
-        "hmc_mcp.operations.pcie.resolve_and_authorize_lpar_names", authorize
+        "hmc_mcp.operations.io_virtualization.pcie.resolve_and_authorize_lpar_names", authorize
     )
 
     with pytest.raises(PcieAssignmentUnavailableError):

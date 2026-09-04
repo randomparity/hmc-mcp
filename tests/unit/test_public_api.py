@@ -48,7 +48,7 @@ ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {
         "list_jobs",
     ): "ADR 0029 excludes this adapter-facing inventory boundary from the reusable facade",
     (
-        "hmc_mcp.operations.pcie",
+        "hmc_mcp.operations.io_virtualization.pcie",
         "require_admitted_environment",
     ): "ADR 0029 excludes this shared admission-policy guard from domain operations",
 }

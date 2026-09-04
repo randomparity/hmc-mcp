@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from hmc_mcp.operations.vnic import (
+from hmc_mcp.operations.io_virtualization.vnic import (
     VnicBackingSelector,
     VnicChangeResult,
     VnicPartialError,
