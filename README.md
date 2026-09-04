@@ -942,7 +942,7 @@ src/hmc_mcp/
     ssh/*.py       # transport, shared parsing, and resource-specific commands
   ssh/console.py             # bounded, non-interactive LPAR console capture (mkvterm)
   documents/     # domain XML request builders with shared primitives
-  documents_shared.py # shared HMC XML envelope helpers
+  documents/common.py # shared HMC XML envelope helpers and document vocabulary
   jobs.py        # job outcomes, lifecycle helpers, and named job builders
   jobs_requests.py # shared JobRequest XML serialization boundary
   authorization/             # access policy and dispatch-time scope enforcement

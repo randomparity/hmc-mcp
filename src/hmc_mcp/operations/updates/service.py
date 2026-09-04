@@ -48,14 +48,14 @@ def _with_vios_stdout(
     return result if output is None else {**result, "stdOut": output}
 
 
-async def _submit_platform_update(
+async def _wait_for_platform_update(
     hmc: HMCClient,
     job: dict[str, Any] | None,
     wait: bool,
     timeout_seconds: int,
     poll_interval: int,
 ) -> dict[str, Any] | None:
-    """Submit PlatformUpdate and require a link before polling."""
+    """Validate and optionally wait for an already-submitted PlatformUpdate job."""
     if not wait:
         return job
     if job is not None:
@@ -197,4 +197,4 @@ async def update_firmware(
     job = await hmc.submit_platform_update(
         system_uuid, platform_update_job(platform_update)
     )
-    return await _submit_platform_update(hmc, job, wait, timeout_seconds, poll_interval)
+    return await _wait_for_platform_update(hmc, job, wait, timeout_seconds, poll_interval)
