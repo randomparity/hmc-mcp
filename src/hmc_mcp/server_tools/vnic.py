@@ -115,7 +115,12 @@ def hmc_list_vnics(
     )
 
 
-@tool(effect="mutate", operation="vnic.add", target_kind="lpar")
+@tool(
+    effect="mutate",
+    operation="vnic.add",
+    target_kind="lpar",
+    extra_targets=(("vios", "vios_name"),),
+)
 def hmc_add_vnic(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,

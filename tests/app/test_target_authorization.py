@@ -146,6 +146,28 @@ def test_any_selector_outside_the_table_denies(system, lpar):
         _authorize(LAB_NARROW, "hmc_delete_lpar", _delete(system=system, lpar=lpar))
 
 
+def test_add_vnic_requires_authorization_for_backing_vios():
+    """The backing VIOS is an independently mutable target of vNIC creation."""
+    grant = {
+        "tools": ["hmc_add_vnic"],
+        "connections": ["lab"],
+        "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
+    }
+    arguments = {
+        "system_name_or_uuid": "sys-1",
+        "lpar_name_or_uuid": "victim",
+        "vios_name": "vios-1",
+        "vios_lpar_id": "2",
+        "adapter_id": "1",
+        "physical_port_id": "0",
+        "capacity_percent": 20.0,
+        "port_vlan_id": 100,
+        "profile": "lab",
+    }
+    with pytest.raises(AccessPolicyError, match="requires a target constraint for kind 'vios'"):
+        _authorize([grant], "hmc_add_vnic", arguments)
+
+
 VIOS_BACKUP_ARGUMENTS = {
     "system_name_or_uuid": "sys-1",
     "vios_name_or_uuid": "vios-1",
