@@ -311,16 +311,6 @@ def _processor_config(resources: LparResources) -> str:
     return "\n".join(parts)
 
 
-def _document_envelope(root_element: str, body: str, namespace: str = UOM_NS) -> str:
-    """Compatibility wrapper for the shared envelope implementation."""
-    return document_envelope(root_element, body, namespace)
-
-
-def _lpar_envelope(body: str) -> str:
-    """Compatibility wrapper for the shared LPAR envelope implementation."""
-    return lpar_envelope(body)
-
-
 @escapes_string_arguments
 def build_lpar_document(
     name: str | None,
@@ -392,7 +382,7 @@ def build_lpar_document(
     )
 
     body = "\n".join(body_parts)
-    return _lpar_envelope(body)
+    return lpar_envelope(body)
 
 
 VIOS_DEFAULT_RESOURCES = LparResources(
@@ -443,7 +433,7 @@ def build_dlpar_proc_document(resources: LparResources | None = None) -> str:
     body = "  <Metadata><Atom/></Metadata>"
     if proc:
         body = body + "\n" + proc
-    return _lpar_envelope(body)
+    return lpar_envelope(body)
 
 
 @escapes_string_arguments
@@ -462,7 +452,7 @@ def build_dlpar_mem_document(resources: LparResources | None = None) -> str:
     body = "  <Metadata><Atom/></Metadata>"
     if mem:
         body = body + "\n" + mem
-    return _lpar_envelope(body)
+    return lpar_envelope(body)
 
 
 @escapes_string_arguments
@@ -547,7 +537,7 @@ def build_managed_system_document(
         )
 
     body = "\n".join(body_parts)
-    return _document_envelope("ManagedSystem", body)
+    return document_envelope("ManagedSystem", body)
 
 
 # Virtual adapters (children of LogicalPartition)
@@ -584,7 +574,7 @@ def _adapter_document(
   <AdapterType kb="CUD" kxe="false">Client</AdapterType>
 {slot}  <{partition_id_field} kb="CUD" kxe="false">{vios_partition_id}</{partition_id_field}>
   <{slot_field} kb="CUD" kxe="false">{vios_slot}</{slot_field}>"""
-    return _document_envelope(root_element, body)
+    return document_envelope(root_element, body)
 
 
 @escapes_string_arguments
@@ -660,7 +650,7 @@ def build_client_network_adapter_document(
     if mac_address:
         parts.append(f'  <MACAddress kb="CUD" kxe="false">{mac_address}</MACAddress>')
     body = "\n".join(parts)
-    return _document_envelope("ClientNetworkAdapter", body)
+    return document_envelope("ClientNetworkAdapter", body)
 
 
 # Virtual storage (children of VirtualIOServer)
@@ -692,7 +682,7 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
     <Metadata><Atom/></Metadata>
 {pvs}
   </PhysicalVolumes>"""
-    return _document_envelope("VolumeGroup", body)
+    return document_envelope("VolumeGroup", body)
 
 
 @escapes_string_arguments
@@ -707,7 +697,7 @@ def build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str:
       <DiskCapacity kb="CUD" kxe="false">{capacity_mib}</DiskCapacity>
     </VirtualDisk>
   </VirtualDisks>"""
-    return _document_envelope("VolumeGroup", body)
+    return document_envelope("VolumeGroup", body)
 
 
 @escapes_string_arguments
@@ -859,7 +849,7 @@ def build_media_repository_delete_document(vg_name: str = "") -> str:
       <RepositoryName>VMLibrary</RepositoryName>
     </VirtualMediaRepository>
   </MediaRepositories>"""
-    return _document_envelope("VolumeGroup", body)
+    return document_envelope("VolumeGroup", body)
 
 
 @escapes_string_arguments
@@ -883,7 +873,7 @@ def build_virtual_optical_media_delete_document(
       </VirtualOpticalMedia>
     </VirtualMediaRepository>
   </MediaRepositories>"""
-    return _document_envelope("VolumeGroup", body)
+    return document_envelope("VolumeGroup", body)
 
 
 @escapes_string_arguments
@@ -897,7 +887,7 @@ def build_virtual_disk_delete_document(disk_name: str) -> str:
       <VolumeGroupName kb="CUD" kxe="false">{disk_name}</VolumeGroupName>
     </VirtualDisk>
   </VirtualDisks>"""
-    return _document_envelope("VolumeGroup", body)
+    return document_envelope("VolumeGroup", body)
 
 
 # Brokered file upload / ISO import (ADR 0031)
@@ -909,7 +899,7 @@ def build_virtual_disk_delete_document(disk_name: str) -> str:
 #          naming that broker URI.
 #
 # Neither document carries schemaVersion, so they render their own envelope
-# rather than going through _document_envelope. Both are transport
+# rather than going through an envelope helper. Both are transport
 # primitives for #203's future public API and are not exposed today.
 
 
@@ -965,7 +955,7 @@ def build_logon_request_document(user: str, password: str) -> str:
   </Metadata>
   <UserID kb="CUR" kxe="false">{user}</UserID>
   <Password kb="CUR" kxe="false">{password}</Password>"""
-    return _document_envelope("LogonRequest", body, WEB_NS)
+    return document_envelope("LogonRequest", body, WEB_NS)
 
 
 # UOM UserProfile and ManagementConsole RemoteAccess documents
@@ -1041,7 +1031,7 @@ def build_hmc_user_document(
         if value is not None:
             rendered = str(value).lower() if isinstance(value, bool) else value
             parts.append(f'  <{name} kb="CUR" kxe="false">{rendered}</{name}>')
-    return _document_envelope("UserProfile", "\n".join(parts), UOM_NS)
+    return document_envelope("UserProfile", "\n".join(parts), UOM_NS)
 
 
 REMOTE_ACCESS_FIELDS = frozenset(
@@ -1099,7 +1089,7 @@ def build_remote_access_document(
         rendered = str(value).lower() if isinstance(value, bool) else value
         parts.append(f'  <{name} kb="CUR" kxe="false">{rendered}</{name}>')
     parts.extend(f'  <{name} kb="CUR" kxe="false"/>' for name in cleared)
-    return _document_envelope("ManagementConsole", "\n".join(parts), UOM_NS)
+    return document_envelope("ManagementConsole", "\n".join(parts), UOM_NS)
 
 
 def merge_remote_access_document(
@@ -1155,7 +1145,7 @@ def build_boot_order_document(devices: list[str]) -> str:
 
     body = f"""  <PendingBootString kb="CUR" kxe="false">{pending_boot_string}</PendingBootString>"""
 
-    return _lpar_envelope(body)
+    return lpar_envelope(body)
 
 
 @escapes_string_arguments
@@ -1163,4 +1153,4 @@ def build_clear_boot_order_document() -> str:
     """Restore the HMC's default boot order on the LPAR's next activation."""
     body = """  <PendingBootString kb="CUR" kxe="false"></PendingBootString>"""
 
-    return _lpar_envelope(body)
+    return lpar_envelope(body)
