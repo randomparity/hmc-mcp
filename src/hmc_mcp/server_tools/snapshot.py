@@ -60,7 +60,7 @@ def hmc_snapshot_capture(
     lpar_name_or_uuid: str,
     profile_name: str,
     profile: str | None = None,
-) -> dict:
+) -> dict[str, object]:
     """Capture replayable profile configuration and separate placement observations.
 
     Args:

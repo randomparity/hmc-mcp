@@ -69,7 +69,8 @@ def hmc_create_lpar(
         keylock: Optional initial keylock position: normal, manual, or auto.
         max_virtual_slots: Optional maximum number of virtual I/O slots.
         caller_token: Optional caller tracking reference embedded in the partition
-            description after the ownership stamp (ADR 0064).
+            description as ``[caller <token>]`` after the ownership stamp (ADR 0064);
+            1–64 printable ASCII characters, no whitespace or , = " [ ] \\.
         assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
