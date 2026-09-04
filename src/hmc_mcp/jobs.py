@@ -2,7 +2,7 @@
 
 Jobs are submitted with Content-Type: application/vnd.ibm.powervm.web+xml;
 type=JobRequest via PUT and run asynchronously. Poll the submission's SELF link
-for portable status handling; ``/rest/api/uom/Job/{uuid}`` remains a legacy
+for portable status handling; ``/rest/api/uom/jobs/{job_id}`` remains the
 fallback for responses that omit that link.
 """
 
@@ -107,9 +107,9 @@ def job_identifier(job: dict[str, Any]) -> str | None:
     """Return a polling identifier from a UUID, JobID, or SELF link."""
     resource = job.get("Resource")
     resource_id = resource.get("JobID") if isinstance(resource, dict) else None
-    identifier = job.get("UUID") or resource_id
-    if isinstance(identifier, str) and identifier.strip():
-        return identifier.strip()
+    for candidate in (job.get("UUID"), resource_id):
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
     link = job.get("link")
     if not isinstance(link, str) or not link.strip():
         return None
