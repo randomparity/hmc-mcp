@@ -13,7 +13,7 @@ from typing import Any, Literal, Protocol, get_args
 from urllib.parse import urlparse
 
 from .errors import HMCError
-from .xmlutil import WEB_NS, escapes_string_arguments
+from .jobs_requests import build_job_request
 
 LuType = Literal["THIN", "THICK"]
 DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
@@ -252,59 +252,6 @@ def validate_logical_unit_types(
             f"Must be one of: {', '.join(sorted(DEVICE_TYPES))}"
         )
     return lu_type, device_type
-
-
-_JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<JobRequest xmlns="{ns}" xmlns:JobRequest="{ns}" schemaVersion="V1_0">
-  <Metadata>
-    <Atom/>
-  </Metadata>
-  <RequestedOperation kb="CUR" kxe="false" schemaVersion="V1_0">
-    <Metadata>
-      <Atom/>
-    </Metadata>
-    <OperationName kb="ROR" kxe="false">{operation}</OperationName>
-    <GroupName kb="ROR" kxe="false">{group}</GroupName>
-    <ProgressType kb="ROR" kxe="false">DISCRETE</ProgressType>
-  </RequestedOperation>
-  <JobParameters kb="CUR" kxe="false" schemaVersion="V1_0">
-    <Metadata>
-      <Atom/>
-    </Metadata>
-{parameters}
-  </JobParameters>
-</JobRequest>
-"""
-
-_PARAM_TEMPLATE = """    <JobParameter schemaVersion="V1_0">
-      <Metadata>
-        <Atom/>
-      </Metadata>
-      <ParameterName kb="ROR" kxe="false">{name}</ParameterName>
-      <ParameterValue kb="CUR" kxe="false">{value}</ParameterValue>
-    </JobParameter>"""
-
-
-@escapes_string_arguments
-def build_job_request(
-    operation: str,
-    group: str,
-    parameters: dict[str, str] | None = None,
-) -> str:
-    """Build the JobRequest XML for a do/* operation.
-
-    Every ``*_job`` builder in this module renders through here, so this one
-    decorator is the module's whole encoding boundary (ADR 0042).
-    """
-    params_xml = ""
-    if parameters:
-        params_xml = "\n".join(
-            _PARAM_TEMPLATE.format(name=name, value=value)
-            for name, value in parameters.items()
-        )
-    return _JOB_TEMPLATE.format(
-        ns=WEB_NS, operation=operation, group=group, parameters=params_xml
-    )
 
 
 def power_on_lpar_job() -> str:
