@@ -637,6 +637,7 @@ async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
     baseline_ok = await capture_sriov_baseline(client, state)
     if not baseline_ok:
         print("  SR-IOV baseline check failed or SKIP — halting SR-IOV arm")
+        await cleanup_sriov(client, state)
         return
 
     # Phase 2: Assign

@@ -9,6 +9,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -41,6 +42,7 @@ LIVE_WORKFLOW_MODULES = (
     lpar,
     metrics,
     network,
+    pcie,
     profiles,
     provisioning,
     storage,
@@ -117,6 +119,112 @@ def test_sriov_baseline_helpers_compute_capacity_and_configuration() -> None:
             ]
         }
     )
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_runs_phases_in_order_and_cleans_up() -> None:
+    """A successful round trip invokes every phase and always reaches cleanup."""
+    calls: list[str] = []
+
+    def phase(name: str):
+        def run(*_args) -> bool:
+            calls.append(name)
+            return True
+
+        return run
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(pcie, "capture_sriov_baseline", AsyncMock(side_effect=phase("baseline")))
+        monkeypatch.setattr(pcie, "assign_sriov_to_lp3", AsyncMock(side_effect=phase("assign")))
+        monkeypatch.setattr(pcie, "verify_sriov_assigned", AsyncMock(side_effect=phase("verify")))
+        monkeypatch.setattr(pcie, "unassign_sriov_from_lp3", AsyncMock(side_effect=phase("unassign")))
+        monkeypatch.setattr(pcie, "reassign_sriov_to_lp3", AsyncMock(side_effect=phase("reassign")))
+        monkeypatch.setattr(pcie, "cleanup_sriov", AsyncMock(side_effect=phase("cleanup")))
+
+        class State:
+            def skip(self, *_args) -> None:
+                raise AssertionError("successful orchestration must not skip a phase")
+
+        await pcie.exercise_sriov_assignment(object(), State())
+    finally:
+        monkeypatch.undo()
+
+    assert calls == ["baseline", "assign", "verify", "unassign", "reassign", "cleanup"]
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_stops_after_baseline_but_runs_cleanup() -> None:
+    """A failed baseline prevents mutations while preserving the cleanup arm."""
+    calls: list[str] = []
+
+    async def baseline(*_args) -> bool:
+        calls.append("baseline")
+        return False
+
+    async def cleanup(*_args) -> None:
+        calls.append("cleanup")
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(pcie, "capture_sriov_baseline", baseline)
+        monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
+        for name in (
+            "assign_sriov_to_lp3",
+            "verify_sriov_assigned",
+            "unassign_sriov_from_lp3",
+            "reassign_sriov_to_lp3",
+        ):
+            monkeypatch.setattr(pcie, name, AsyncMock(side_effect=AssertionError(name)))
+
+        class State:
+            pass
+
+        await pcie.exercise_sriov_assignment(object(), State())
+    finally:
+        monkeypatch.undo()
+
+    assert calls == ["baseline", "cleanup"]
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_skips_mutations_after_assign_failure() -> None:
+    """Assignment failure still verifies state, skips later mutations, and cleans up."""
+    calls: list[str] = []
+
+    async def baseline(*_args) -> bool:
+        calls.append("baseline")
+        return True
+
+    async def assign(*_args) -> bool:
+        calls.append("assign")
+        return False
+
+    async def verify(*_args) -> bool:
+        calls.append("verify")
+        return True
+
+    async def cleanup(*_args) -> None:
+        calls.append("cleanup")
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(pcie, "capture_sriov_baseline", baseline)
+        monkeypatch.setattr(pcie, "assign_sriov_to_lp3", assign)
+        monkeypatch.setattr(pcie, "verify_sriov_assigned", verify)
+        monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
+        monkeypatch.setattr(pcie, "unassign_sriov_from_lp3", AsyncMock(side_effect=AssertionError))
+        monkeypatch.setattr(pcie, "reassign_sriov_to_lp3", AsyncMock(side_effect=AssertionError))
+
+        class State:
+            def skip(self, *_args) -> None:
+                calls.append("skip")
+
+        await pcie.exercise_sriov_assignment(object(), State())
+    finally:
+        monkeypatch.undo()
+
+    assert calls == ["baseline", "assign", "verify", "skip", "skip", "cleanup"]
 
 
 def _isolate_runner(monkeypatch) -> None:
