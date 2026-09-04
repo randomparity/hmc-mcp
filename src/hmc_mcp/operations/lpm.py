@@ -51,6 +51,17 @@ class LpmMigrationRequest:
 
 
 @dataclass(frozen=True)
+class RemoteRestartRequest:
+    """Restart-specific controls for a remote-restart workflow."""
+
+    operation: RemoteRestartOperation
+    target_system_name_or_uuid: str | None = None
+    use_current_data: bool = False
+    retain_devices: bool = False
+    ownership_override: bool = False
+
+
+@dataclass(frozen=True)
 class LpmAffinityPreflightRequest:
     """Explicit affinity evidence and caller-owned migration response."""
 
@@ -470,15 +481,11 @@ async def remote_restart_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    operation: RemoteRestartOperation,
+    request: RemoteRestartRequest,
     *,
-    target_system_name_or_uuid: str | None = None,
-    use_current_data: bool = False,
-    retain_devices: bool = False,
     wait: bool = False,
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
-    ownership_override: bool = False,
 ) -> LpmResult:
     """Resolve selectors and submit an explicit RemoteRestart operation.
 
@@ -490,24 +497,24 @@ async def remote_restart_lpar(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
-        ownership_override=ownership_override,
+        ownership_override=request.ownership_override,
     )
     source_system = await resolve_system_name(hmc, system_name_or_uuid)
     target_name = None
     target_uuid = None
-    if target_system_name_or_uuid is not None:
-        if is_uuid(target_system_name_or_uuid):
-            target_uuid = target_system_name_or_uuid
+    if request.target_system_name_or_uuid is not None:
+        if is_uuid(request.target_system_name_or_uuid):
+            target_uuid = request.target_system_name_or_uuid
         else:
-            target_name = target_system_name_or_uuid
+            target_name = request.target_system_name_or_uuid
     job = await hmc.lpar_remote_restart(
         lpar_uuid,
-        operation,
+        request.operation,
         source_system,
         target_managed_system=target_name,
         target_managed_system_uuid=target_uuid,
-        use_current_data=use_current_data,
-        retain_devices=retain_devices,
+        use_current_data=request.use_current_data,
+        retain_devices=request.retain_devices,
     )
     return LpmResult(
         lpar_uuid,

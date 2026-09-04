@@ -20,6 +20,7 @@ from ...operations.lpm import (
     LpmDestinationCheckBasis,
     LpmMigrationRequest,
     LpmResponse,
+    RemoteRestartRequest,
     abort_lpar_migration,
     migrate_lpar,
     migrate_lpar_with_affinity_preflight,
@@ -252,14 +253,16 @@ def lpars_remote_restart(
             hmc,
             system,
             name_or_uuid,
-            cast(RemoteRestartOperation, operation),
-            target_system_name_or_uuid=target,
-            use_current_data=use_current_data,
-            retain_devices=retain_devices,
+            RemoteRestartRequest(
+                operation=cast(RemoteRestartOperation, operation),
+                target_system_name_or_uuid=target,
+                use_current_data=use_current_data,
+                retain_devices=retain_devices,
+                ownership_override=ownership_override,
+            ),
             wait=wait,
             timeout_seconds=timeout,
             poll_interval=interval,
-            ownership_override=ownership_override,
         )
 
     _lpm_run(name_or_uuid, _fn, f"RemoteRestart {operation}", target, yes)

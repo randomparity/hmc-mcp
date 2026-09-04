@@ -15,6 +15,7 @@ from conftest import JOB_ENTRY
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.lpm import (
+    RemoteRestartRequest,
     abort_lpar_migration,
     recover_lpar_migration,
     remote_restart_lpar,
@@ -65,7 +66,7 @@ LPM_RECOVERY_OPERATION_CASES = [
     (
         remote_restart_lpar,
         "lpar_remote_restart",
-        ("source-system", LPAR_UUID, "restart"),
+        ("source-system", LPAR_UUID, RemoteRestartRequest("restart")),
     ),
 ]
 

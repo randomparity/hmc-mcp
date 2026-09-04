@@ -476,6 +476,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 - Added: named LPM affinity literal types (`LpmCapability`, `LpmDestinationCheckBasis`,
   `LpmPreflightStatus`, and `LpmResponse`) for typed reusable callers.
+- Added: `RemoteRestartRequest` groups remote-restart-specific controls while common
+  polling controls remain keyword-only.
+- Added: `ProvisionRequest` groups the typed inputs for end-to-end LPAR provisioning;
+  the operation now accepts this request object directly.
 - Changed: VIOS backup, restore, and backup-catalog operations now take the VIOS selector
   first and accept managed-system scope as a keyword-only argument.
 - Renamed: `list_available_hmc_ptfs` to `submit_available_hmc_ptfs_query`.

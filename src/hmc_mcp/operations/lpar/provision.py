@@ -80,12 +80,25 @@ class ProvisionStorage:
     )
     vg_uuid: str | None = field(
         default=None,
-        metadata={
-            "description": "Volume-group UUID used when creating a virtual disk."
-        },
+        metadata={"description": "Volume-group UUID used when creating a virtual disk."},
     )
 
 
+@dataclass(frozen=True)
+class ProvisionRequest:
+    """Typed inputs for the end-to-end LPAR provisioning workflow."""
+
+    name: str
+    network: ProvisionAdapters
+    storage: ProvisionStorage
+    resources: LparResources
+    partition_type: PartitionType = "AIX/Linux"
+    power_on: bool = True
+    dry_run: bool = False
+    assignments: LparPcieAssignments = LparPcieAssignments()
+    caller_token: str | None = None
+    minimum_affinity_policy: MinimumAffinityPolicy | None = None
+    affinity_assessment: ProvisionAffinityAssessment | None = None
 @dataclass(frozen=True)
 class ProvisionResult:
     """Truthful outcome of a provisioning attempt."""
@@ -560,18 +573,7 @@ def _provision_step_names(
 async def provision_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str,
-    name: str,
-    network: ProvisionAdapters,
-    storage: ProvisionStorage,
-    resources: LparResources,
-    *,
-    partition_type: PartitionType = "AIX/Linux",
-    power_on: bool = True,
-    dry_run: bool = False,
-    assignments: LparPcieAssignments = LparPcieAssignments(),
-    caller_token: str | None = None,
-    minimum_affinity_policy: MinimumAffinityPolicy | None = None,
-    affinity_assessment: ProvisionAffinityAssessment | None = None,
+    request: ProvisionRequest,
 ) -> ProvisionResult:
     """Provision an LPAR after validating every requested dependency.
 
@@ -586,6 +588,17 @@ async def provision_lpar(
     the ownership stamp, so the result describes both values as one write.
     """
 
+    name = request.name
+    network = request.network
+    storage = request.storage
+    resources = request.resources
+    partition_type = request.partition_type
+    power_on = request.power_on
+    dry_run = request.dry_run
+    assignments = request.assignments
+    caller_token = request.caller_token
+    minimum_affinity_policy = request.minimum_affinity_policy
+    affinity_assessment = request.affinity_assessment
     await _preflight_provision_request(
         hmc,
         system_name_or_uuid,

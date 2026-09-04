@@ -17,6 +17,7 @@ from ...documents import (
 )
 from ...operations.lpar.provision import (
     ProvisionAdapters,
+    ProvisionRequest,
     ProvisionStorage,
     provision_lpar,
 )
@@ -103,25 +104,16 @@ def lpars_provision(
             return await provision_lpar(
                 hmc,
                 system_name_or_uuid=system,
-                name=name,
-                network=ProvisionAdapters(port_vlan_id, vios_partition_id, vios_slot),
-                storage=ProvisionStorage(
-                    vios_uuid,
-                    storage_name,
-                    cast(StorageKind, storage_kind),
-                    vg_uuid,
+                request=ProvisionRequest(
+                    name=name,
+                    network=ProvisionAdapters(port_vlan_id, vios_partition_id, vios_slot),
+                    storage=ProvisionStorage(vios_uuid, storage_name, cast(StorageKind, storage_kind), vg_uuid),
+                    resources=LparResources(min_memory=min_memory, desired_memory=memory, max_memory=max_memory, desired_vcpus=vcpus, max_vcpus=max_vcpus),
+                    partition_type=partition_type,
+                    power_on=power_on,
+                    dry_run=dry_run,
+                    assignments=assignments,
                 ),
-                resources=LparResources(
-                    min_memory=min_memory,
-                    desired_memory=memory,
-                    max_memory=max_memory,
-                    desired_vcpus=vcpus,
-                    max_vcpus=max_vcpus,
-                ),
-                partition_type=partition_type,
-                power_on=power_on,
-                dry_run=dry_run,
-                assignments=assignments,
             )
 
     result = run(_go)

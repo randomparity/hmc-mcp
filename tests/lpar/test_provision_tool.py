@@ -29,6 +29,7 @@ from hmc_mcp.operations.lpar.core import LparPowerResult
 from hmc_mcp.operations.lpar.provision import (
     ProvisionAdapters,
     ProvisionAffinityAssessment,
+    ProvisionRequest,
     ProvisionStorage,
     _power_on,
 )
@@ -901,10 +902,21 @@ def test_provision_operation_rejects_bad_token_before_any_round_trip(monkeypatch
     so the operation validates first, before any HMC round trip."""
     _hmc_env(monkeypatch)
     from hmc_mcp.operations.lpar.provision import provision_lpar
+    args = _provision_args(caller_token="a=b")
 
     with pytest.raises(ValueError, match="caller_token"):
         asyncio.run(
-            provision_lpar(None, **_provision_args(caller_token="a=b"))  # type: ignore[arg-type]
+            provision_lpar(
+                None,
+                args["system_name_or_uuid"],
+                ProvisionRequest(
+                    name=args["name"],
+                    network=args["network"],
+                    storage=args["storage"],
+                    resources=args["resources"],
+                    caller_token=args["caller_token"],
+                ),
+            )  # type: ignore[arg-type]
         )
 
 

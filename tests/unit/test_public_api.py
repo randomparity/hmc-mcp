@@ -187,6 +187,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "remote_restart_lpar",
         "validate_lpar_migration",
         "RemoteRestartOperation",
+        "RemoteRestartRequest",
         "LpmResult",
         "LpmCapability",
         "LpmDestinationCheckBasis",
@@ -236,6 +237,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "provision_lpar",
         "ProvisionAffinityAssessment",
         "ProvisionAdapters",
+        "ProvisionRequest",
         "ProvisionStorage",
         "ProvisionResult",
         "AttachDiskResult",
@@ -2002,16 +2004,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     assert "capacity_mib" in inspect.signature(api.create_virtual_disk).parameters
     assert "size_mib" not in inspect.signature(api.create_virtual_disk).parameters
     provision_parameters = inspect.signature(api.provision_lpar).parameters
-    for control in (
-        "partition_type",
-        "power_on",
-        "dry_run",
-        "assignments",
-        "caller_token",
-        "minimum_affinity_policy",
-        "affinity_assessment",
-    ):
-        assert provision_parameters[control].kind is inspect.Parameter.KEYWORD_ONLY
+    assert list(provision_parameters) == ["hmc", "system_name_or_uuid", "request"]
     unassign_parameters = inspect.signature(api.unassign_sriov_logical_port).parameters
     assert unassign_parameters["profile_name"].kind is inspect.Parameter.KEYWORD_ONLY
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
@@ -2064,7 +2057,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
-    expected_digest = "e02e33feb1d32335dc373deb8405ac95c5984d297f5d2d447912a80ee1f9971e"  # pragma: allowlist secret
+    expected_digest = "942d48611bed84a89a77d463b3efda776c78c4b7b46a5c6925e08ab9076f3cfd"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

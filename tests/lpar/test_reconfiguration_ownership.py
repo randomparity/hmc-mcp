@@ -27,6 +27,7 @@ from hmc_mcp.operations.lpar.configuration import (
 from hmc_mcp.operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
 from hmc_mcp.operations.lpm import (
     LpmMigrationRequest,
+    RemoteRestartRequest,
     abort_lpar_migration,
     migrate_lpar,
     recover_lpar_migration,
@@ -122,7 +123,9 @@ CASES: tuple[tuple[str, Operation], ...] = (
     ),
     (
         "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
-        lambda hmc: remote_restart_lpar(hmc, "source", LPAR, "cleanup"),
+        lambda hmc: remote_restart_lpar(
+            hmc, "source", LPAR, RemoteRestartRequest("cleanup")
+        ),
     ),
 )
 

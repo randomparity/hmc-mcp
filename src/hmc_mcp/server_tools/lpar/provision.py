@@ -8,6 +8,7 @@ from ...operations.affinity.rest import ProvisionAffinityAssessment
 from ...operations.lpar.assignments import LparPcieAssignments
 from ...operations.lpar.provision import (
     ProvisionAdapters,
+    ProvisionRequest,
     ProvisionResult,
     ProvisionStorage,
     provision_lpar,
@@ -92,17 +93,13 @@ def hmc_provision_lpar(
         lambda hmc: provision_lpar(
             hmc,
             system_name_or_uuid=system_name_or_uuid,
-            name=name,
-            network=network,
-            storage=storage,
-            resources=resources,
-            partition_type=partition_type,
-            power_on=power_on,
-            dry_run=dry_run,
-            assignments=assignments,
-            caller_token=caller_token,
-            minimum_affinity_policy=minimum_affinity_policy,
-            affinity_assessment=affinity_assessment,
+            request=ProvisionRequest(
+                name=name, network=network, storage=storage, resources=resources,
+                partition_type=partition_type, power_on=power_on, dry_run=dry_run,
+                assignments=assignments, caller_token=caller_token,
+                minimum_affinity_policy=minimum_affinity_policy,
+                affinity_assessment=affinity_assessment,
+            ),
         ),
         profile=profile,
     )
