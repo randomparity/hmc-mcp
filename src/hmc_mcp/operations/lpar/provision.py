@@ -508,20 +508,13 @@ async def _preflight_provision_request(
     request: ProvisionRequest,
 ) -> None:
     """Validate a provisioning request and every external dependency it names."""
-    if request.affinity_assessment is not None:
-        if (
-            request.affinity_assessment.system_name_or_uuid != system_name_or_uuid
-            or request.affinity_assessment.lpar_name != request.name
-        ):
-            raise ValueError(
-                "affinity assessment identities must match the provisioned system and LPAR"
-            )
-        if request.affinity_assessment.response not in {"warn", "fail"}:
-            raise ValueError("affinity assessment response must be warn or fail")
-        if request.affinity_assessment.timeout_seconds < 0:
-            raise ValueError("affinity assessment timeout_seconds must be non-negative")
-        if request.affinity_assessment.poll_interval <= 0:
-            raise ValueError("affinity assessment poll_interval must be positive")
+    if request.affinity_assessment is not None and (
+        request.affinity_assessment.system_name_or_uuid != system_name_or_uuid
+        or request.affinity_assessment.lpar_name != request.name
+    ):
+        raise ValueError(
+            "affinity assessment identities must match the provisioned system and LPAR"
+        )
     if request.minimum_affinity_policy is not None:
         validate_minimum_affinity_policy(request.minimum_affinity_policy)
     if request.affinity_assessment is not None:
