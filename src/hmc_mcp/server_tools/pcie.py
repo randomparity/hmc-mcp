@@ -8,7 +8,6 @@ from typing import Any
 from .._app import (
     serialize_tool_result,
     with_client,
-    with_config,
 )
 from ..operations.pcie import (
     SriovMode,
@@ -52,10 +51,8 @@ def hmc_set_sriov_adapter_mode(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_config(
-        lambda config: set_sriov_adapter_mode(
-            config, system_name_or_uuid, adapter_id, mode
-        ),
+    return with_client(
+        lambda hmc: set_sriov_adapter_mode(hmc, system_name_or_uuid, adapter_id, mode),
         profile=profile,
     )
 

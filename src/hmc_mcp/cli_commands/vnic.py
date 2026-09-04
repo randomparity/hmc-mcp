@@ -19,7 +19,7 @@ from ..operations.vnic import (
     remove_vnic,
 )
 from .output import output, print_json
-from .runtime import run, ssh_config, with_client
+from .runtime import with_client
 
 
 def _confirm_on_stderr(prompt: str) -> bool:
@@ -37,7 +37,7 @@ def network_list_fc_ports(
 ) -> None:
     """List Virtual Fibre Channel (NPIV) adapters on a managed system."""
 
-    ports = run(lambda: list_fc_ports(ssh_config(), system_name, lpar_name))
+    ports = with_client(lambda hmc: list_fc_ports(hmc, system_name, lpar_name))
 
     output(ports, as_json, None, "No FC ports found")
 
@@ -51,7 +51,7 @@ def network_list_sea_adapters(
 ) -> None:
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports on a managed system."""
 
-    adapters = run(lambda: list_sea_adapters(ssh_config(), system_name, lpar_name))
+    adapters = with_client(lambda hmc: list_sea_adapters(hmc, system_name, lpar_name))
 
     output(adapters, as_json, None, "No SEA adapters found")
 
@@ -62,7 +62,7 @@ def network_list_vnics(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR (HMC CLI via SSH)."""
-    vnics = run(lambda: list_vnics(ssh_config(), system_name, lpar))
+    vnics = with_client(lambda hmc: list_vnics(hmc, system_name, lpar))
     output(vnics, as_json, None, "No vNICs found")
 
 

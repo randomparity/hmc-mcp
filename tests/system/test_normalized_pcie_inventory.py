@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -24,6 +25,10 @@ def _config() -> HMCConfig:
         password="password",  # pragma: allowlist secret
 
     )
+
+
+def _hmc() -> SimpleNamespace:
+    return SimpleNamespace(config=_config())
 
 
 @pytest.mark.asyncio
@@ -85,7 +90,7 @@ async def test_dedicated_inventory_normalizes_identity_owner_and_unknowns() -> N
             AsyncMock(return_value=rows),
         ),
     ):
-        result = await list_dedicated_slots(_config(), "system-uuid")
+        result = await list_dedicated_slots(_hmc(), "system-uuid")
 
     assert result.capability == "available"
     assert result.unavailable_reason is None
@@ -111,7 +116,7 @@ async def test_dedicated_inventory_rejects_blank_identity() -> None:
             AsyncMock(return_value=rows),
         ),pytest.raises(ValueError, match="drc_index")
     ):
-        await list_dedicated_slots(_config(), "sys1")
+        await list_dedicated_slots(_hmc(), "sys1")
 
 
 @pytest.mark.asyncio
@@ -129,7 +134,7 @@ async def test_dedicated_inventory_rejects_whitespace_identity_and_normalizes_op
             AsyncMock(return_value=rows),
         ),pytest.raises(ValueError, match="drc_index")
     ):
-        await list_dedicated_slots(_config(), "sys1")
+        await list_dedicated_slots(_hmc(), "sys1")
 
 
 @pytest.mark.asyncio
@@ -145,7 +150,7 @@ async def test_dedicated_inventory_normalizes_whitespace_optional_fields() -> No
             AsyncMock(return_value=rows),
         ),
     ):
-        result = await list_dedicated_slots(_config(), "sys1")
+        result = await list_dedicated_slots(_hmc(), "sys1")
 
     assert result.items[0].description is None
     assert result.items[0].owner_lpar is None
@@ -219,10 +224,10 @@ async def test_sriov_inventories_use_admitted_read_projections() -> None:
             ),
         ),
     ):
-        adapter = await list_sriov_adapters(_config(), "system-uuid", "a1")
-        physical = await list_sriov_physical_ports(_config(), "system-uuid", "a1", "p2")
+        adapter = await list_sriov_adapters(_hmc(), "system-uuid", "a1")
+        physical = await list_sriov_physical_ports(_hmc(), "system-uuid", "a1", "p2")
         logical = await list_sriov_logical_ports(
-            _config(), "system-uuid", "a1", "p2", "l3"
+            _hmc(), "system-uuid", "a1", "p2", "l3"
         )
 
     for result in (adapter, physical, logical):
@@ -264,7 +269,7 @@ async def test_sriov_physical_inventory_normalizes_port_state() -> None:
             AsyncMock(return_value=rows),
         ),
     ):
-        result = await list_sriov_physical_ports(_config(), "system-uuid", "a1")
+        result = await list_sriov_physical_ports(_hmc(), "system-uuid", "a1")
 
     assert [port.availability for port in result.items] == ["up", "down"]
 
@@ -295,7 +300,7 @@ async def test_sriov_physical_inventory_rejects_malformed_port_state(state: str)
         ),
         pytest.raises(ValueError, match="physical-port state"),
     ):
-        await list_sriov_physical_ports(_config(), "system-uuid", "a1")
+        await list_sriov_physical_ports(_hmc(), "system-uuid", "a1")
 
 
 @pytest.mark.asyncio
@@ -329,7 +334,7 @@ async def test_sriov_physical_inventory_validates_unselected_port_state() -> Non
         ),
         pytest.raises(ValueError, match="physical-port state"),
     ):
-        await list_sriov_physical_ports(_config(), "system-uuid", "a1", "p1")
+        await list_sriov_physical_ports(_hmc(), "system-uuid", "a1", "p1")
 
 
 @pytest.mark.asyncio
@@ -349,7 +354,7 @@ async def test_sriov_physical_inventory_rejects_both_empty_supported_levels() ->
         ),
         pytest.raises(SriovLogicalPortCapabilityError),
     ):
-        await list_sriov_physical_ports(_config(), "system-uuid", "a1")
+        await list_sriov_physical_ports(_hmc(), "system-uuid", "a1")
 
 
 @pytest.mark.asyncio
@@ -366,7 +371,7 @@ async def test_sriov_physical_inventory_checks_environment_before_port_read() ->
         ),
         patch("hmc_mcp.operations.pcie.list_sriov_physical_port_rows", physical_rows),
     ):
-        result = await list_sriov_physical_ports(_config(), "system-uuid", "a1")
+        result = await list_sriov_physical_ports(_hmc(), "system-uuid", "a1")
 
     assert result.capability == "capability-unavailable"
     physical_rows.assert_not_awaited()
@@ -405,4 +410,4 @@ async def test_unconfigured_logical_port_requires_unique_physical_parent() -> No
         ),
         pytest.raises(RuntimeError, match="ambiguous physical-port parent"),
     ):
-        await list_sriov_logical_ports(_config(), "system-uuid", "a1")
+        await list_sriov_logical_ports(_hmc(), "system-uuid", "a1")

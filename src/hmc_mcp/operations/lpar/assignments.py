@@ -210,12 +210,12 @@ async def _validate_sriov_inventory(
     """Validate adapter, port, logical-port, and capacity inventory."""
 
     for (adapter, physical), requested in requested_capacity.items():
-        adapters = await list_sriov_adapters(hmc.config, system, adapter)
+        adapters = await list_sriov_adapters(hmc, system, adapter)
         if adapters.capability != "available" or len(adapters.items) != 1:
             raise ValueError(f"SR-IOV adapter {adapter!r} is unavailable")
         if adapters.items[0].mode != "sriov" or adapters.items[0].availability != "1":
             raise ValueError(f"SR-IOV adapter {adapter!r} is not healthy")
-        ports = await list_sriov_physical_ports(hmc.config, system, adapter, physical)
+        ports = await list_sriov_physical_ports(hmc, system, adapter, physical)
         if ports.capability != "available" or len(ports.items) != 1:
             raise ValueError(
                 f"SR-IOV physical port {adapter}/{physical} is unavailable"
@@ -224,7 +224,7 @@ async def _validate_sriov_inventory(
             raise ValueError(
                 f"SR-IOV physical port {adapter}/{physical} is not healthy"
             )
-        logical = await list_sriov_logical_ports(hmc.config, system, adapter, physical)
+        logical = await list_sriov_logical_ports(hmc, system, adapter, physical)
         if logical.capability != "available":
             raise ValueError(
                 logical.unavailable_reason or "logical-port inventory unavailable"
@@ -242,7 +242,7 @@ async def _validate_vios_inventory(
 ) -> None:
     """Validate each unique VIOS name and partition-ID pair."""
     for identity in identities:
-        system_name = (await list_sriov_adapters(hmc.config, system)).system
+        system_name = (await list_sriov_adapters(hmc, system)).system
         observed = await read_vios_identity(hmc.config, system_name, identity[0])
         if observed != {
             "name": identity[0],

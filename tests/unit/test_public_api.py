@@ -2078,7 +2078,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
-    expected_digest = "9d99edbdfd62b9671079b564045d5d1e23d9278700f5a9433b6b2966c8f7bc39"  # pragma: allowlist secret
+    expected_digest = "94f95e37f58d8c556f3b9fedec62e397d25007c4c6cad0f88a9e6a37ffe8bfbf"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

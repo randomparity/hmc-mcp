@@ -78,7 +78,7 @@ async def test_prevalidation_uses_normalized_physical_port_availability(
         patch("hmc_mcp.operations.lpar.assignments.list_sriov_logical_ports", AsyncMock(return_value=logical)),
         patch("hmc_mcp.operations.lpar.assignments._existing_capacity", AsyncMock(return_value=Decimal())),
     ):
-        ports = await list_sriov_physical_ports(config, "sys", "1", "1")
+        ports = await list_sriov_physical_ports(SimpleNamespace(config=config), "sys", "1", "1")
         assert ports.items[0].availability == availability
         assignments = LparPcieAssignments(sriov=(_sriov(),))
         if availability == "up":
