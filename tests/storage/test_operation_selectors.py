@@ -38,7 +38,9 @@ class _StorageClient:
 async def test_vios_name_is_resolved_with_managed_system_scope() -> None:
     client = _StorageClient()
 
-    await list_volume_groups(cast(HMCClient, client), "system-a", "shared-vios")
+    await list_volume_groups(
+        cast(HMCClient, client), "shared-vios", system_name_or_uuid="system-a"
+    )
 
     assert client.system_queries == ["system-a"]
     assert client.vios_queries == [("shared-vios", SYSTEM_UUID)]
@@ -49,7 +51,7 @@ async def test_vios_name_is_resolved_with_managed_system_scope() -> None:
 async def test_vios_uuid_needs_no_managed_system_scope() -> None:
     client = _StorageClient()
 
-    await list_volume_groups(cast(HMCClient, client), None, VIOS_UUID)
+    await list_volume_groups(cast(HMCClient, client), VIOS_UUID)
 
     assert client.system_queries == []
     assert client.vios_queries == []

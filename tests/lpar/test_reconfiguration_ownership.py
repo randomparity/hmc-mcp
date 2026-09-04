@@ -75,9 +75,9 @@ CASES: tuple[tuple[str, Operation], ...] = (
         "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation",
         lambda hmc: map_storage(
             hmc,
-            None,
             VIOS,
             LPAR,
+            system_name_or_uuid=None,
             kind="VirtualDisk",
             storage_name="disk1",
         ),
@@ -85,13 +85,13 @@ CASES: tuple[tuple[str, Operation], ...] = (
     (
         "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation",
         lambda hmc: mount_optical_media(
-            hmc, None, VIOS, LPAR, media_name="aix.iso"
+                hmc, VIOS, LPAR, media_name="aix.iso"
         ),
     ),
     (
         "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation",
         lambda hmc: unmount_optical_media(
-            hmc, None, VIOS, LPAR, media_name="aix.iso"
+                hmc, VIOS, LPAR, media_name="aix.iso"
         ),
     ),
     (
@@ -201,7 +201,9 @@ async def test_real_guard_rejects_foreign_optical_owner_before_write(
         "hmc_mcp.operations.ownership.get_lpar_description",
         new=AsyncMock(return_value=FOREIGN_OWNER),
     ), pytest.raises(PermissionError, match="ownership_override=true"):
-        await operation(hmc, SYSTEM_UUID, VIOS, LPAR, media_name="aix.iso")
+            await operation(
+                hmc, VIOS, LPAR, media_name="aix.iso", system_name_or_uuid=SYSTEM_UUID
+            )
 
     getattr(hmc, write_method).assert_not_awaited()
 
@@ -226,10 +228,10 @@ async def test_optical_ownership_override_bypasses_read_and_writes(
     ) as read:
         await operation(
             hmc,
-            SYSTEM_UUID,
-            VIOS,
-            LPAR,
-            media_name="aix.iso",
+                VIOS,
+                LPAR,
+                media_name="aix.iso",
+                system_name_or_uuid=SYSTEM_UUID,
             ownership_override=True,
         )
 

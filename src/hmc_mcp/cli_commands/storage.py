@@ -43,7 +43,7 @@ def storage_list_vgs(
 ) -> None:
     """List Volume Groups on a VIOS (free space, PVs, virtual disks)."""
 
-    vgs = with_client(lambda hmc: list_volume_groups(hmc, system, vios))
+    vgs = with_client(lambda hmc: list_volume_groups(hmc, vios, system_name_or_uuid=system))
 
     table = None
     if not as_json:
@@ -80,7 +80,9 @@ def storage_create_vg(
     ):
         raise typer.Abort()
 
-    vg = with_client(lambda hmc: create_volume_group(hmc, system, vios, name, pv_list))
+    vg = with_client(
+        lambda hmc: create_volume_group(hmc, vios, name, pv_list, system_name_or_uuid=system)
+    )
 
     console.print(f"[green]Created Volume Group '{name}'[/green]")
     print_json(vg)
@@ -106,7 +108,7 @@ def storage_create_disk(
 
     disk = with_client(
         lambda hmc: create_virtual_disk(
-            hmc, system, vios, vg, name, capacity_mib=capacity_mib
+            hmc, vios, vg, name, capacity_mib=capacity_mib, system_name_or_uuid=system
         )
     )
 
@@ -130,7 +132,9 @@ def storage_delete_disk(
     if not yes and not typer.confirm(f"Delete virtual disk '{name}' from VG {vg}?"):
         raise typer.Abort()
 
-    disk = with_client(lambda hmc: delete_virtual_disk(hmc, system, vios, vg, name))
+    disk = with_client(
+        lambda hmc: delete_virtual_disk(hmc, vios, vg, name, system_name_or_uuid=system)
+    )
 
     console.print(f"[green]Deleted virtual disk '{name}'[/green]")
     print_json(disk)
@@ -227,9 +231,9 @@ def storage_map(
         async with client() as hmc:
             return await map_storage(
                 hmc,
-                system,
                 vios,
                 lpar,
+                system_name_or_uuid=system,
                 kind=kind,
                 storage_name=disk,
                 target=target,
@@ -258,7 +262,7 @@ def storage_create_media_repo(
         raise typer.Abort()
 
     result = with_client(
-        lambda hmc: create_media_repository(hmc, system, vios, vg, size_mib)
+        lambda hmc: create_media_repository(hmc, vios, vg, size_mib, system_name_or_uuid=system)
     )
 
     console.print(f"[green]Created media repository on {vg}[/green]")
@@ -284,7 +288,9 @@ def storage_create_media(
         raise typer.Abort()
 
     result = with_client(
-        lambda hmc: create_optical_media(hmc, system, vios, vg, name, size_mib)
+        lambda hmc: create_optical_media(
+            hmc, vios, vg, name, size_mib, system_name_or_uuid=system
+        )
     )
 
     console.print(f"[green]Created media '{name}' on {vg}[/green]")
@@ -305,7 +311,7 @@ def storage_delete_media_repo(
     ):
         raise typer.Abort()
 
-    with_client(lambda hmc: delete_media_repository(hmc, system, vios, vg))
+    with_client(lambda hmc: delete_media_repository(hmc, vios, vg, system_name_or_uuid=system))
     console.print(f"[green]Deleted media repository on {vg}[/green]")
 
 
@@ -324,7 +330,11 @@ def storage_delete_media(
     ):
         raise typer.Abort()
 
-    with_client(lambda hmc: delete_optical_media(hmc, system, vios, vg, media_name))
+    with_client(
+        lambda hmc: delete_optical_media(
+            hmc, vios, vg, media_name, system_name_or_uuid=system
+        )
+    )
     console.print(f"[green]Deleted media '{media_name}' on {vg}[/green]")
 
 
@@ -337,7 +347,9 @@ def storage_get_media_repo(
     ),
 ) -> None:
     """Get the Virtual Media Repository (VMLibrary) from a volume group."""
-    result = with_client(lambda hmc: get_media_repository(hmc, system, vios, vg))
+    result = with_client(
+        lambda hmc: get_media_repository(hmc, vios, vg, system_name_or_uuid=system)
+    )
 
     if as_json:
         print_json(result)
@@ -361,7 +373,9 @@ def storage_list_optical_media(
     ),
 ) -> None:
     """List Virtual Optical Media in the Virtual Media Repository."""
-    media_list = with_client(lambda hmc: list_optical_media(hmc, system, vios, vg))
+    media_list = with_client(
+        lambda hmc: list_optical_media(hmc, vios, vg, system_name_or_uuid=system)
+    )
 
     if as_json:
         print_json(media_list)
@@ -399,7 +413,9 @@ def storage_list_mappings(
     async def _go() -> list[dict[str, Any]]:
         config = load_profile()
         async with HMCClient(config) as hmc:
-            return await list_storage_mappings(hmc, system, vios, lpar)
+            return await list_storage_mappings(
+                hmc, vios, lpar, system_name_or_uuid=system
+            )
 
     mappings = run(_go)
     if as_json:
@@ -460,9 +476,9 @@ def storage_detach_mapping(
         async with HMCClient(config) as hmc:
             await detach_storage_mapping(
                 hmc,
-                system,
                 vios,
                 mapping_uuid,
+                system_name_or_uuid=system,
                 ownership_override=ownership_override,
             )
 

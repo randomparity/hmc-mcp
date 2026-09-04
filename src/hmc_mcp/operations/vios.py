@@ -77,8 +77,9 @@ async def create_vios(
 
 async def delete_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> str:
     """Delete an inactive VIOS partition.
 
@@ -104,9 +105,9 @@ async def delete_vios(
 
 async def power_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     *,
+    system_name_or_uuid: str | None = None,
     power_on: bool,
     immediate: bool = False,
     wait: bool = False,

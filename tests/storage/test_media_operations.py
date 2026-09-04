@@ -68,7 +68,7 @@ async def test_get_media_repository_operation(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_WITH_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        result = await get_media_repository(hmc, None, VIOS_UUID, VG_UUID)
+        result = await get_media_repository(hmc, VIOS_UUID, VG_UUID)
 
     assert route.called
     assert result is not None
@@ -105,7 +105,7 @@ async def test_list_optical_media_operation(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=vg_entry_with_media))
 
     async with HMCClient(make_config()) as hmc:
-        media_list = await list_optical_media(hmc, None, VIOS_UUID, VG_UUID)
+        media_list = await list_optical_media(hmc, VIOS_UUID, VG_UUID)
 
     assert route.called
     assert len(media_list) == 1
@@ -121,7 +121,7 @@ async def test_get_media_repository_none_propagates(mock_hmc):
 
     async with HMCClient(make_config()) as hmc:
         result = await get_media_repository(
-            hmc, None, VIOS_UUID, "99999999-9999-9999-9999-999999999999"
+            hmc, VIOS_UUID, "99999999-9999-9999-9999-999999999999"
         )
 
     assert route.called
@@ -136,7 +136,7 @@ async def test_list_optical_media_empty_propagates(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_EMPTY))
 
     async with HMCClient(make_config()) as hmc:
-        media_list = await list_optical_media(hmc, None, VIOS_UUID, VG_UUID)
+        media_list = await list_optical_media(hmc, VIOS_UUID, VG_UUID)
 
     assert route.called
     assert media_list == []
@@ -233,7 +233,7 @@ async def test_unmount_optical_media_deletes_only_the_exact_mapping_identity():
     ]
 
     await unmount_optical_media(
-        hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+        hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
     )
 
     hmc.list_optical_mappings.assert_awaited_once_with(VIOS_UUID, LPAR_UUID)
@@ -245,7 +245,7 @@ async def test_unmount_optical_media_rejects_empty_media_before_inventory():
     hmc = AsyncMock()
 
     with pytest.raises(HMCError, match="must not be empty"):
-        await unmount_optical_media(hmc, None, VIOS_UUID, LPAR_UUID, media_name="")
+        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, media_name="")
 
     hmc.list_optical_mappings.assert_not_awaited()
     hmc.delete_storage_mapping.assert_not_awaited()
@@ -266,7 +266,7 @@ async def test_unmount_optical_media_rejects_ambiguous_exact_identity():
 
     with pytest.raises(HMCError, match="ambiguous"):
         await unmount_optical_media(
-            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+            hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
         )
 
     hmc.delete_storage_mapping.assert_not_awaited()
@@ -287,7 +287,7 @@ async def test_unmount_optical_media_fails_closed_when_exact_mapping_is_absent()
 
     with pytest.raises(HMCError, match="not found"):
         await unmount_optical_media(
-            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+            hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
         )
 
     hmc.delete_storage_mapping.assert_not_awaited()
@@ -306,7 +306,7 @@ async def test_unmount_optical_media_rejects_missing_mapping_uuid():
 
     with pytest.raises(HMCError, match="invalid UUID identity"):
         await unmount_optical_media(
-            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+            hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
         )
 
     hmc.delete_storage_mapping.assert_not_awaited()
@@ -328,7 +328,7 @@ async def test_unmount_optical_media_removes_the_named_mapping_for_that_lpar(moc
 
     async with HMCClient(make_config()) as hmc:
         result = await unmount_optical_media(
-            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+                hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
         )
 
     assert result is None
@@ -352,7 +352,7 @@ async def test_unmount_optical_media_preserves_the_backing_iso(mock_hmc):
 
     async with HMCClient(make_config()) as hmc:
         await unmount_optical_media(
-            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+                hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
         )
 
     body = _posted_document(post)
@@ -378,7 +378,7 @@ async def test_unmount_optical_media_fails_without_post_when_mapping_is_absent(m
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="not found"):
             await unmount_optical_media(
-                hmc, None, VIOS_UUID, LPAR_UUID, media_name="aix73.iso"
+                hmc, VIOS_UUID, LPAR_UUID, media_name="aix73.iso"
             )
 
     assert not post.called
@@ -401,7 +401,7 @@ async def test_unmount_optical_media_preserves_a_sibling_with_a_prefix_name(
 
     async with HMCClient(make_config()) as hmc:
         await unmount_optical_media(
-            hmc, None, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+                hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
         )
 
     body = _posted_document(post)
@@ -439,7 +439,7 @@ async def test_unmount_optical_media_resolves_vios_and_lpar_names(mock_hmc):
 
     async with HMCClient(make_config()) as hmc:
         await unmount_optical_media(
-            hmc, None, "vios1", "lpar1", media_name="rhel9.iso"
+                hmc, "vios1", "lpar1", media_name="rhel9.iso"
         )
 
     assert "mapping-optical-target" not in _posted_document(post)

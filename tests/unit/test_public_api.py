@@ -1898,7 +1898,19 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         if not selectors.issubset(parameters):
             continue
         selector_names = [name for name in parameters if name in selectors]
-        assert selector_names == ["system_name_or_uuid", "lpar_name_or_uuid"]
+        expected_selector_names = (
+            ["lpar_name_or_uuid", "system_name_or_uuid"]
+            if operation_name
+            in {
+                "map_storage",
+                "list_optical_mappings",
+                "list_storage_mappings",
+                "mount_optical_media",
+                "unmount_optical_media",
+            }
+            else ["system_name_or_uuid", "lpar_name_or_uuid"]
+        )
+        assert selector_names == expected_selector_names
     for operation_name in (
         "read_lpar_boot_order",
         "set_lpar_boot_order",
@@ -1942,11 +1954,17 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         parameters = inspect.signature(getattr(api, operation_name)).parameters
         assert "power_on" in parameters
         assert "on" not in parameters
+    for operation_name in ("update_vios", "upgrade_vios", "upload_iso"):
+        parameters = inspect.signature(getattr(api, operation_name)).parameters
+        selector_names = [
+            name
+            for name in parameters
+            if name in {"system_name_or_uuid", "vios_name_or_uuid"}
+        ]
+        assert selector_names == ["system_name_or_uuid", "vios_name_or_uuid"]
     for operation_name in (
         "delete_vios",
         "power_vios",
-        "update_vios",
-        "upgrade_vios",
         "list_volume_groups",
         "create_volume_group",
         "create_virtual_disk",
@@ -1960,7 +1978,6 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         "delete_optical_media",
         "get_media_repository",
         "list_optical_media",
-        "upload_iso",
         "list_optical_mappings",
         "mount_optical_media",
         "unmount_optical_media",
@@ -1971,7 +1988,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             for name in parameters
             if name in {"system_name_or_uuid", "vios_name_or_uuid"}
         ]
-        assert selector_names == ["system_name_or_uuid", "vios_name_or_uuid"]
+        assert selector_names == ["vios_name_or_uuid", "system_name_or_uuid"]
+        assert parameters["system_name_or_uuid"].kind is inspect.Parameter.KEYWORD_ONLY
+        assert parameters["system_name_or_uuid"].default is None
     get_vios_parameters = inspect.signature(api.get_vios).parameters
     assert list(get_vios_parameters)[:2] == ["hmc", "vios_name_or_uuid"]
     assert get_vios_parameters["system_name_or_uuid"].kind is inspect.Parameter.KEYWORD_ONLY
@@ -2029,8 +2048,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Boot-order operations now accept a system-scoped LPAR name or UUID.
     # PCIe inventory operations now name their system selector explicitly.
     # Cluster and shared-storage-pool inventory joined the reusable facade.
-    # VIOS storage operations now accept managed-system scope before the
-    # VIOS selector, making duplicate names unambiguous.
+        # VIOS storage operations now require the VIOS selector first and make
+        # managed-system scope keyword-only, making duplicate names unambiguous.
     # ConsoleCapture now exposes bounded stream-failure context.
     # Capacity and summary memory contracts now use the accurate MiB suffix.
     # DecommissionResult now exposes its blast-radius record types.
@@ -2041,7 +2060,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
-    expected_digest = "f7ba336dbf28a30b6e8633fbec60ef5893ce8b17ef57140f826b55a2cdb53b81"  # pragma: allowlist secret
+    expected_digest = "76fd71d840fcc619ce39dc2ed22258d493da46126ef0432bd166c1275bde6352"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

@@ -1682,7 +1682,8 @@ def direct_client(monkeypatch):
 
 
 def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
-    async def fake_list(_hmc, system, vios):
+    async def fake_list(_hmc, vios, *, system_name_or_uuid=None):
+        system = system_name_or_uuid
         assert system == "system-a"
         assert vios == VIOS_UUID
         return [
@@ -1710,7 +1711,7 @@ def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
 def test_storage_delete_disk_deletes_when_confirmed(fake_hmc, monkeypatch):
     seen = {}
 
-    async def fake_delete(_hmc, _system, vios, vg, name):
+    async def fake_delete(_hmc, vios, vg, name, *, system_name_or_uuid=None):
         seen.update(vios=vios, vg=vg, name=name)
         return {"UUID": "disk-1"}
 
@@ -1797,7 +1798,7 @@ def test_storage_create_media_repo_declined_confirmation_aborts(fake_hmc, monkey
 def test_storage_create_media_creates_when_confirmed(fake_hmc, monkeypatch):
     seen = {}
 
-    async def fake_create(_hmc, _system, vios, vg, name, size_mib):
+    async def fake_create(_hmc, vios, vg, name, size_mib, *, system_name_or_uuid=None):
         seen.update(vios=vios, vg=vg, name=name, size_mib=size_mib)
         return {"MediaName": "aix.iso"}
 
@@ -1863,7 +1864,7 @@ def test_storage_create_media_declined_confirmation_aborts(fake_hmc, monkeypatch
 def test_storage_delete_media_deletes_when_confirmed(fake_hmc, monkeypatch):
     seen = {}
 
-    async def fake_delete(_hmc, _system, vios, vg, media_name):
+    async def fake_delete(_hmc, vios, vg, media_name, *, system_name_or_uuid=None):
         seen.update(vios=vios, vg=vg, media_name=media_name)
 
     monkeypatch.setattr(
@@ -1902,7 +1903,7 @@ def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch
 
 
 def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
-    async def fake_get(_hmc, _system, vios, vg):
+    async def fake_get(_hmc, vios, vg, *, system_name_or_uuid=None):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
         return {"Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "10240"}}
 
@@ -1916,7 +1917,7 @@ def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
 
 
 def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
-    async def fake_get(_hmc, _system, _vios, _vg):
+    async def fake_get(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return {}
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.get_media_repository", fake_get)
@@ -1928,7 +1929,7 @@ def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
 
 
 def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
-    async def fake_get(_hmc, _system, _vios, _vg):
+    async def fake_get(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return {"Resource": {"RepositoryName": "VMLibrary"}}
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.get_media_repository", fake_get)
@@ -1942,7 +1943,7 @@ def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
 
 
 def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
-    async def fake_list(_hmc, _system, vios, vg):
+    async def fake_list(_hmc, vios, vg, *, system_name_or_uuid=None):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
         return [{"MediaName": "aix.iso", "MediaSize": 4096, "MediaType": "ISO"}]
 
@@ -1958,7 +1959,7 @@ def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
 
 
 def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
-    async def fake_list(_hmc, _system, _vios, _vg):
+    async def fake_list(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return []
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_optical_media", fake_list)
@@ -1972,7 +1973,7 @@ def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
 
 
 def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
-    async def fake_list(_hmc, _system, _vios, _vg):
+    async def fake_list(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return [{"MediaName": "aix.iso"}]
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_optical_media", fake_list)
@@ -1986,7 +1987,8 @@ def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
 
 
 def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
-    async def fake_mappings(_hmc, system, vios, lpar):
+    async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
+        system = system_name_or_uuid
         assert (system, vios, lpar) == (None, VIOS_UUID, None)
         return [
             {
@@ -2010,7 +2012,8 @@ def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
 
 
 def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatch):
-    async def fake_mappings(_hmc, system, vios, lpar):
+    async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
+        system = system_name_or_uuid
         assert (system, vios, lpar) == (None, VIOS_UUID, LPAR_UUID)
         return [
             {
@@ -2034,7 +2037,7 @@ def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatc
 
 
 def test_storage_list_mappings_json(direct_client, monkeypatch):
-    async def fake_mappings(_hmc, _system, _vios, _lpar):
+    async def fake_mappings(_hmc, _vios, _lpar, *, system_name_or_uuid=None):
         return [{"UUID": "map-1"}]
 
     monkeypatch.setattr(
@@ -2050,7 +2053,10 @@ def test_storage_list_mappings_json(direct_client, monkeypatch):
 def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatch):
     seen = {}
 
-    async def fake_detach(_hmc, system, vios, mapping_uuid, *, ownership_override):
+    async def fake_detach(
+        _hmc, vios, mapping_uuid, *, system_name_or_uuid=None, ownership_override
+    ):
+        system = system_name_or_uuid
         seen.update(
             system=system,
             vios=vios,
@@ -2088,7 +2094,7 @@ def test_storage_detach_mapping_reports_one_failure_and_exits_1(
     """
 
     async def fake_detach(
-        _hmc, _system, _vios, _mapping_uuid, *, ownership_override: bool
+        _hmc, _vios, _mapping_uuid, *, system_name_or_uuid=None, ownership_override: bool
     ):
         assert not ownership_override
         raise HMCError("mapping is in use")

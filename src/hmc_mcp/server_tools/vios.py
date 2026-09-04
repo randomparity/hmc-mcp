@@ -88,7 +88,9 @@ def hmc_delete_vios(
     """
 
     return with_client(
-        lambda hmc: delete_vios(hmc, system_name_or_uuid, vios_name_or_uuid),
+        lambda hmc: delete_vios(
+            hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        ),
         profile=profile,
     )
 
@@ -424,8 +426,8 @@ def hmc_power_on_vios(
     return with_client(
         lambda hmc: power_vios(
             hmc,
-            None,
             vios_name_or_uuid,
+            system_name_or_uuid=None,
             power_on=True,
             wait=wait,
             timeout_seconds=timeout_seconds,
@@ -460,8 +462,8 @@ def hmc_power_off_vios(
     return with_client(
         lambda hmc: power_vios(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
+            system_name_or_uuid=system_name_or_uuid,
             power_on=False,
             immediate=immediate,
             wait=wait,

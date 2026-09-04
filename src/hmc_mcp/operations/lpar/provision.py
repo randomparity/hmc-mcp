@@ -236,11 +236,11 @@ async def _create_disk(
         raise ValueError("virtual-disk creation requires storage vg_uuid")
     await create_virtual_disk(
         hmc,
-        None,
         storage.vios_uuid,
         storage.vg_uuid,
         storage.storage_name,
         capacity_mib,
+        system_name_or_uuid=None,
     )
     return {"disk_name": storage.storage_name, "capacity_mib": capacity_mib}
 

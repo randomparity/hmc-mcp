@@ -75,8 +75,9 @@ UPLOAD_CHUNK_SIZE = 64 * 1024
 
 async def list_volume_groups(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List volume groups on a VIOS."""
     vios_uuid = await resolve_vios_uuid(
@@ -87,10 +88,11 @@ async def list_volume_groups(
 
 async def create_volume_group(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     name: str,
     physical_volumes: list[str],
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a volume group from the selected physical volumes."""
     return await hmc.create_volume_group(
@@ -104,11 +106,12 @@ async def create_volume_group(
 
 async def create_virtual_disk(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     name: str,
     capacity_mib: int,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a virtual disk of ``capacity_mib`` in a volume group."""
     return await hmc.create_virtual_disk(
@@ -123,10 +126,11 @@ async def create_virtual_disk(
 
 async def delete_virtual_disk(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     disk_name: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Delete a Virtual Disk from a Volume Group.
 
@@ -173,10 +177,10 @@ async def delete_virtual_disk(
 
 async def map_storage(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str,
     *,
+    system_name_or_uuid: str | None = None,
     kind: StorageKind,
     storage_name: str,
     target: str | None = None,
@@ -200,10 +204,11 @@ async def map_storage(
 
 async def create_media_repository(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     size_mib: int,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a media repository in a VIOS volume group."""
     return await hmc.create_media_repository(
@@ -217,11 +222,12 @@ async def create_media_repository(
 
 async def create_optical_media(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     name: str,
     size_mib: int,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create blank optical media in a VIOS media repository."""
     return await hmc.create_optical_media(
@@ -236,9 +242,10 @@ async def create_optical_media(
 
 async def list_storage_mappings(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List VirtualSCSIMappings on a VIOS, optionally scoped to an LPAR.
 
@@ -258,10 +265,10 @@ async def list_storage_mappings(
 
 async def detach_storage_mapping(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     mapping_uuid: str,
     *,
+    system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> None:
     """Authorize the mapped LPAR, then detach its VirtualSCSIMapping.
@@ -302,9 +309,10 @@ async def detach_storage_mapping(
 
 async def delete_media_repository(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> str:
     """Delete the Virtual Media Repository from a Volume Group.
 
@@ -330,10 +338,11 @@ async def delete_media_repository(
 
 async def delete_optical_media(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     media_name: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Delete a VirtualOpticalMedia (ISO image) from the media repository.
 
@@ -371,9 +380,10 @@ async def delete_optical_media(
 
 async def get_media_repository(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Get the Virtual Media Repository (VMLibrary) from a Volume Group.
 
@@ -579,9 +589,10 @@ async def _aiter_file_chunks(
 
 async def list_optical_media(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List Virtual Optical Media in the Virtual Media Repository.
 
@@ -801,9 +812,10 @@ def validate_logical_unit_wait(
 
 async def list_optical_mappings(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List VirtualSCSIMappings for optical media on a VIOS, optionally scoped to an LPAR.
 
@@ -824,10 +836,10 @@ async def list_optical_mappings(
 
 async def mount_optical_media(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str,
     *,
+    system_name_or_uuid: str | None = None,
     media_name: str,
     target_device: str | None = None,
     ownership_override: bool = False,
@@ -854,10 +866,10 @@ async def mount_optical_media(
 
 async def unmount_optical_media(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str,
     *,
+    system_name_or_uuid: str | None = None,
     media_name: str,
     ownership_override: bool = False,
 ) -> None:

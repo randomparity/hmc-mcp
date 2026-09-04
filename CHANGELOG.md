@@ -70,6 +70,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `lpar_name_or_uuid`, including LPM, disk attachment, summaries, ownership
   authorization, and PCIe assignment workflows. Presentation adapters pass
   `None` when they intentionally request fleet-wide LPAR-name resolution.
+- Exported VIOS storage operations now require `vios_name_or_uuid` first and
+  accept the optional `system_name_or_uuid` selector as a keyword-only argument.
 
 ### Added
 
