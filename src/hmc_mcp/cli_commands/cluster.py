@@ -6,7 +6,7 @@ import typer
 from rich.table import Table
 
 from ..jobs import DeviceType, LuType
-from ..operations.storage import (
+from ..operations.cluster import (
     create_logical_unit,
     delete_logical_unit,
     list_clusters,

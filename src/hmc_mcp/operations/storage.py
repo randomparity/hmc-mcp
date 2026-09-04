@@ -21,15 +21,6 @@ from ..client.client_contracts import httpx
 from ..config import ISO_URL_ALLOWLIST_HELP
 from ..documents import StorageKind
 from ..errors import HMCError
-from ..jobs import (
-    DEFAULT_JOB_POLL_INTERVAL,
-    DEFAULT_JOB_TIMEOUT_SECONDS,
-    DeviceType,
-    LuType,
-    validate_logical_unit_types,
-    validate_wait_timing,
-    wait_for_submitted_job,
-)
 from ..resource_identity import resolve_lpar_uuid, resolve_vios_uuid
 
 logger = logging.getLogger(__name__)
@@ -41,23 +32,6 @@ class StorageMapResult:
 
     lpar_uuid: str
     resource: dict[str, Any] | None
-
-
-async def list_clusters(hmc: HMCClient) -> list[dict[str, Any]]:
-    """List clusters through the shared presentation-neutral operation seam."""
-    return await hmc.list_clusters()
-
-
-async def list_shared_storage_pools(hmc: HMCClient) -> list[dict[str, Any]]:
-    """List shared storage pools through the shared operation seam."""
-    return await hmc.list_shared_storage_pools()
-
-
-async def get_shared_storage_pool(
-    hmc: HMCClient, ssp_uuid: str
-) -> dict[str, Any] | None:
-    """Get one shared storage pool by UUID."""
-    return await hmc.get_shared_storage_pool(ssp_uuid)
 
 
 # HTTP download configuration
@@ -744,70 +718,6 @@ async def upload_iso(
                     raise
                 else:
                     logger.exception("temporary ISO cleanup failed for %s", iso_path)
-
-
-async def create_logical_unit(
-    hmc: HMCClient,
-    cluster_uuid: str,
-    lu_name: str,
-    lu_size_gib: int,
-    lu_type: LuType,
-    device_type: DeviceType,
-    *,
-    cloned_from: str | None = None,
-    wait: bool = False,
-    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
-    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
-) -> dict[str, Any] | None:
-    """Submit logical-unit creation and optionally wait for completion.
-
-    Raises:
-        ValueError: If the LU/device combination or polling controls are invalid.
-    """
-    validate_logical_unit_types(lu_type, device_type)
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-    job = await hmc.create_logical_unit(
-        cluster_uuid, lu_name, lu_size_gib, lu_type, device_type, cloned_from
-    )
-    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
-
-
-async def delete_logical_unit(
-    hmc: HMCClient,
-    cluster_uuid: str,
-    lu_udid: str,
-    *,
-    wait: bool = False,
-    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
-    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
-) -> dict[str, Any] | None:
-    """Submit logical-unit deletion and optionally wait for completion.
-
-    Raises:
-        ValueError: If the polling controls are invalid.
-    """
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-    job = await hmc.delete_logical_unit(cluster_uuid, lu_udid)
-    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
-
-
-def validate_logical_unit_create(
-    lu_type: LuType,
-    device_type: DeviceType,
-    wait: bool,
-    timeout_seconds: int,
-    poll_interval: int,
-) -> None:
-    """Validate a create request before an adapter opens a connection."""
-    validate_logical_unit_types(lu_type, device_type)
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-
-
-def validate_logical_unit_wait(
-    wait: bool, timeout_seconds: int, poll_interval: int
-) -> None:
-    """Validate job polling controls before an adapter opens a connection."""
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
 
 async def list_optical_mappings(
