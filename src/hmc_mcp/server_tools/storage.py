@@ -735,11 +735,11 @@ def hmc_upload_iso(
     return with_client(
         lambda hmc: upload_iso(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             vg_uuid,
             media_name,
             iso_source,
+            system_name_or_uuid=system_name_or_uuid,
         ),
         profile=profile,
     )

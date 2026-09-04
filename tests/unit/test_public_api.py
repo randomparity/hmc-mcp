@@ -1960,14 +1960,19 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         parameters = inspect.signature(getattr(api, operation_name)).parameters
         assert "power_on" in parameters
         assert "on" not in parameters
-    for operation_name in ("update_vios", "upgrade_vios", "upload_iso"):
-        parameters = inspect.signature(getattr(api, operation_name)).parameters
-        selector_names = [
-            name
-            for name in parameters
-            if name in {"system_name_or_uuid", "vios_name_or_uuid"}
-        ]
-        assert selector_names == ["system_name_or_uuid", "vios_name_or_uuid"]
+        for operation_name in ("update_vios", "upgrade_vios", "upload_iso"):
+            parameters = inspect.signature(getattr(api, operation_name)).parameters
+            selector_names = [
+                name
+                for name in parameters
+                if name in {"system_name_or_uuid", "vios_name_or_uuid"}
+            ]
+            expected = (
+                ["vios_name_or_uuid", "system_name_or_uuid"]
+                if operation_name == "upload_iso"
+                else ["system_name_or_uuid", "vios_name_or_uuid"]
+            )
+            assert selector_names == expected
     for operation_name in (
         "delete_vios",
         "power_vios",
@@ -2057,7 +2062,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
-    expected_digest = "942d48611bed84a89a77d463b3efda776c78c4b7b46a5c6925e08ab9076f3cfd"  # pragma: allowlist secret
+    expected_digest = "298b4416ca0e5379bb5cac3e6f057103ba27707bff2889e65b3370fa80d2ca68"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

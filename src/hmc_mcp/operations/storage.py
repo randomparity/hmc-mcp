@@ -618,11 +618,12 @@ async def _upload_iso_via_broker(
 
 async def upload_iso(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     media_name: str,
     iso_source: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
     """Upload an ISO to a VIOS media repository via the HMC file broker.
 
@@ -639,12 +640,12 @@ async def upload_iso(
 
     Args:
         hmc: HMC client instance.
-        system_name_or_uuid: Optional managed-system name or UUID used to scope
-            a VIOS name.
         vios_name_or_uuid: VIOS name or UUID.
         vg_uuid: Volume Group UUID containing the media repository.
         media_name: Target name for the ISO in the repository.
         iso_source: HTTP(S) URL to download the ISO from.
+        system_name_or_uuid: Optional managed-system name or UUID used to scope
+            a VIOS name.
 
     Returns:
         Dict with:

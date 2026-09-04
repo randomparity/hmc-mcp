@@ -514,7 +514,14 @@ def storage_upload_iso(
     async def _go() -> dict[str, Any]:
         config = load_profile()
         async with HMCClient(config) as hmc:
-            return await upload_iso(hmc, system, vios, vg, media_name, iso_source)
+            return await upload_iso(
+                hmc,
+                vios,
+                vg,
+                media_name,
+                iso_source,
+                system_name_or_uuid=system,
+            )
 
     result = run(_go)
 

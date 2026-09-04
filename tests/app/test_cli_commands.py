@@ -2146,9 +2146,10 @@ def test_with_client_propagates_a_typer_exit_code_unchanged(monkeypatch):
 
 
 def test_storage_upload_iso_reports_uploaded_media(direct_client, monkeypatch):
-    async def fake_upload(_hmc, _system, vios, vg, media_name, iso_source):
+    async def fake_upload(_hmc, vios, vg, media_name, iso_source, *, system_name_or_uuid):
         assert (vios, vg, media_name) == (VIOS_UUID, VG_UUID, "aix.iso")
         assert iso_source == "https://images.test/aix.iso"
+        assert system_name_or_uuid is None
         return {
             "status": "uploaded",
             "media_name": "aix.iso",
@@ -2178,7 +2179,10 @@ def test_storage_upload_iso_reports_uploaded_media(direct_client, monkeypatch):
 
 
 def test_storage_upload_iso_json(direct_client, monkeypatch):
-    async def fake_upload(_hmc, _system, _vios, _vg, _media_name, _iso_source):
+    async def fake_upload(
+        _hmc, _vios, _vg, _media_name, _iso_source, *, system_name_or_uuid
+    ):
+        assert system_name_or_uuid is None
         return {"status": "uploaded", "media_name": "aix.iso"}
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.upload_iso", fake_upload)
