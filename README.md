@@ -941,7 +941,8 @@ src/hmc_mcp/
   ssh/            # asyncssh transport plus HMC CLI operations by resource family
     ssh/*.py       # transport, shared parsing, and resource-specific commands
   ssh/console.py             # bounded, non-interactive LPAR console capture (mkvterm)
-  documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
+  documents.py   # domain XML request-document builders (LPAR, adapters, storage, users, ...)
+  documents_shared.py # shared HMC XML envelope helpers
   jobs.py        # job outcomes, lifecycle helpers, and named job builders
   jobs_requests.py # shared JobRequest XML serialization boundary
   authorization/             # access policy and dispatch-time scope enforcement
