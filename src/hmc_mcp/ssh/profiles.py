@@ -19,21 +19,9 @@ async def get_lpar_description(
 ) -> str:
     """Get the description field of *lpar_name* on *system_name* via SSH.
 
-    Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
-    -F description`` and returns the raw output (the description string, or an
-    empty line if none is set). It is the same text shown in the HMC GUI
-    Partitions tab.
-
-    The description *is* exposed via the HMC REST API — an earlier revision of
-    this docstring claimed otherwise. The #374 live-REST survey found it
-    inlined in the bulk list feed ``GET
-    /rest/api/uom/ManagedSystem/<uuid>/LogicalPartition`` (and in
-    per-partition detail), byte-for-byte identical to this CLI output, present
-    since REST schema version V1_2_0, with an empty description signaled by
-    element absence rather than an empty element. Bulk ownership reads use
-    that feed (``hmc_mcp.operations.ownership.list_lpar_ownership``); this SSH read
-    stays for the CLI-name-keyed write flows that share this module's
-    transport.
+    Returns the raw CLI value, including an empty line when no description is
+    set. CLI-name-keyed write flows use this transport; bulk ownership reads
+    obtain the same field from the REST list feed.
     """
     cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "

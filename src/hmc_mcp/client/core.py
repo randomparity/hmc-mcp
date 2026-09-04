@@ -143,46 +143,17 @@ class TLSVerificationDisabledWarning(UserWarning):
 _reported_tls_warning_keys: set[tuple[str, VerifySSLSource]] = set()
 _tls_warning_lock = Lock()
 
-#: The closed vocabulary, derived rather than restated — as ``audit.REASONS`` is from
-#: ``audit.Reason``. ``audit`` imports nothing from ``hmc_mcp``, so its TLS record
-#: builder still takes a plain ``str``; the narrowing lives here, at the only place
-#: that produces a value. ``tests/test_authorization_audit_doc.py`` holds the two
-#: documents that restate this set to it (#497), and holds
-#: ``record_tls_verification_disabled``'s docstring and its test to naming this alias
-#: instead of the values (#504). Its ledger records what is still out of reach; for this
-#: vocabulary that is the literals in the documents' JSON sample records, unbackticked so
-#: no extractor reads them, which #506 owns.
+#: Runtime form of the closed audit vocabulary declared by ``VerifySSLSource``.
 VERIFY_SSL_SOURCES: frozenset[str] = frozenset(get_args(VerifySSLSource))
 
 
 def _verify_ssl_source(config: HMCConfig) -> VerifySSLSource:
-    """Name where the effective ``verify_ssl`` value came from, for #379's audit record.
+    """Name the source controlling ``verify_ssl`` using :data:`VerifySSLSource`.
 
-    The vocabulary is :data:`VerifySSLSource`, so a typo here is a type error.
-    ``pydantic-settings`` folds environment values into the constructor kwargs, so
-    ``model_fields_set`` alone cannot separate an explicit argument from an
-    environment-sourced one once ``HMC_VERIFY_SSL`` is set; when both are present
-    and disagree, the explicit argument won pydantic-settings' source priority, and
-    when they agree they are indistinguishable and the environment is named —
-    telling the operator which knob matches the effective value is what lets them
-    change it. For a config the environment could not have reached, the two are
-    distinguishable in principle but not from here, so that arm names the
-    environment for an isolated config that supplied a matching ``verify_ssl``
-    itself; it self-corrects the moment the two disagree.
-
-    Because that folding is what puts an environment value into
-    ``model_fields_set``, its *absence* is decisive the other way: nothing
-    supplied the field, so the value is the field default and
-    ``HMC_VERIFY_SSL`` is not the knob — even when it is set. That is the case
-    ``HMCConfig.from_mapping`` produces (ADR 0096), where the environment cannot
-    reach the config at all and naming it would send the operator to a variable
-    that has no effect on this connection.
-
-    The variable is read through :func:`config.env_var_value` because
-    pydantic-settings folded it in case-insensitively; an exact-case read would
-    report ``explicit-argument`` for a value nothing in the call supplied
-    (#531). The vocabulary keeps the canonical spelling either way — it names
-    the knob, not the operator's spelling of it.
+    An unset model field is the default, including for isolated configurations
+    created by :meth:`HMCConfig.from_mapping`. Otherwise, a case-insensitive
+    environment value is named only when it matches the effective value; a
+    mismatch means the explicit argument won source precedence.
     """
     if "verify_ssl" not in config.model_fields_set:
         return "field-default"
@@ -439,36 +410,12 @@ class HMCClient(
     # Generic request helpers
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
-        """Send one REST request and normalize transport-layer failures.
+        """Send one REST request and normalize transport failures.
 
-        Refuses a path carrying an RFC 3986 dot-segment before anything leaves
-        the process. Every REST path in this package is built by interpolating
-        caller-supplied identifiers into an f-string — ``/VirtualIOServer/
-        {vios_uuid}/VolumeGroup/{vg_uuid}`` and a dozen siblings — and httpx
-        *resolves* dot-segments when merging a path onto ``base_url``. Verified
-        against httpx 0.28.1: a ``vg_uuid`` of ``../../../LogicalPartition/X``
-        sends ``DELETE /rest/api/uom/LogicalPartition/X``.
-
-        That silently retargets the request at a resource the caller never
-        named, which defeats every layer above it. The MCP access policy
-        authorizes the *declared* selectors (ADR 0039), so a grant scoped to one
-        VIOS would permit a call that deletes an arbitrary partition; the CLI and
-        the ``api`` facade have no policy at all and are equally exposed. So the
-        guard lives here, at the one waist all three paths cross, rather than at
-        the thirteen interpolation sites or at the authorization boundary only
-        two of them reach.
-
-        Percent-encoded dot-segments are refused too. An earlier version of this
-        docstring said they were deliberately allowed through because "httpx does
-        not resolve them either, so they reach the HMC as literal path text and
-        address nothing". Only the first half of that is verified: httpx 0.28.1
-        leaves ``%2e%2e`` and ``..%2f`` untouched, confirmed here. The second half
-        is a claim about whether the *HMC's* server decodes a path before routing
-        it, which nothing in this repository can establish and which many HTTP
-        servers do. So the check reads the raw and the once-decoded form, and the
-        claim it makes is one this checkout can actually support: no dot-segment
-        reaches the transport in any encoding. No legitimate identifier in this
-        API contains a percent sign, so the refusal costs nothing.
+        Rejects raw and percent-encoded RFC 3986 dot-segments before transport.
+        This shared guard prevents interpolated resource identifiers from
+        retargeting an authorized request when httpx resolves the path against
+        ``base_url`` (ADR 0039).
         """
         _reject_dot_segments(method, path)
         try:

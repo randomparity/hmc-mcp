@@ -332,59 +332,13 @@ _UVICORN_CONFIG: Final = {"log_config": None}
 
 
 def install_third_party_stderr_sinks() -> None:
-    """Put the bound third-party loggers' stderr output on ADR 0043's queue. ADR 0051.
+    """Route third-party stderr records through the bounded sink.
 
-    ADR 0043 bounded every write *this package* makes to fd 2, on the reasoning
-    that a blocked ``write()`` there wedges the server. FastMCP's two
-    ``RichHandler``s write to the same descriptor and were not on that queue, so
-    the bound was on this package's contribution rather than on the stream. This
-    replaces them with one handler feeding the same sink.
-
-    **A handler attached here survives.** ``fastmcp/__init__.py`` calls
-    ``configure_logging`` once, at import of ``fastmcp`` and only when
-    ``settings.log_enabled``. The only other caller is ``temporary_log_level``,
-    which reconfigures nothing when its level is falsy, and neither ``main_stdio``
-    nor ``main_http`` passes ``log_level`` to ``.run()``. Verified against
-    ``fastmcp-slim==3.4.7``, which this project pins exactly.
-
-    **Every handler goes, not only a recognized ``RichHandler``.** Deciding a
-    handler's destination means reading ``rich``'s ``Console.file``, and when
-    ``settings.log_enabled`` is false there is no handler to recognize at all.
-    Taking the list wholesale is ADR 0051's accepted cost — it also displaces a
-    handler an operator attached to any bound logger themselves — and it is what makes
-    "no handler on this logger writes to fd 2" something a test asserts rather
-    than infers. Removing and re-adding is what makes this idempotent: a second
-    call takes out the handler the first one left. A removed handler is not
-    ``close()``d: it is no longer reachable through this logger, ``logging.shutdown``
-    flushes and closes it at exit anyway, and closing a handler this package did not
-    open would be a second liberty on top of removing it.
-
-    **Only the handlers — with one documented exception.** For ``fastmcp`` and
-    ``mcp`` the level, ``propagate`` flag, and filters are untouched — including
-    ``_DenialFilter``, which sits on the child logger and solves a different
-    problem: this handler decides *where* a record goes, that filter decides *what*
-    a denial record says. The ``uvicorn`` pair is the exception ADR 0051's
-    amendment records: skipping uvicorn's ``dictConfig`` skips its level and
-    propagation configuration too, so the install reproduces it — both loggers at
-    INFO (access records are INFO; left alone they would inherit root's WARNING and
-    the access log would silently vanish) and ``propagate = False`` (with the
-    parent-plus-child bindings left propagating, ``callHandlers`` would render
-    every access record twice). One thing the wholesale removal takes with it in a
-    test process is ``pytest``'s own ``LogCaptureHandler``, so a test that serves
-    and then asserts on a bound record through ``caplog`` would pass vacuously;
-    nothing does today.
-
-    **The rendering is marked, not just formatted.** ``StreamSafeFormatter`` puts a
-    fixed non-JSON prefix on every physical line and escapes the control
-    characters, because a rendered exception carries HMC-returned text onto a
-    stream whose grammar is one line of JSON per record. See ADR 0051.
-
-    **Called unconditionally**, including when ``settings.log_enabled`` is false
-    and the removal loop finds nothing to remove. That case is the reason not to
-    skip rather than a reason to: a logger with no handler anywhere above it falls
-    through to ``logging.lastResort``, a ``StreamHandler`` on fd 2 that writes
-    synchronously and unbounded, which is precisely the writer this exists to
-    remove.
+    Replaces every handler on each bound logger, making repeated installation
+    idempotent and preventing fallback to synchronous ``logging.lastResort``.
+    Uvicorn additionally needs INFO level and propagation disabled because its
+    normal ``dictConfig`` is bypassed. Formatting preserves the sink's one-record-
+    per-line grammar. See ADRs 0043 and 0051.
     """
     for name in _THIRD_PARTY_LOGGERS:
         logger = logging.getLogger(name)
