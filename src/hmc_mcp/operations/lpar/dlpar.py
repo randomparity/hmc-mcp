@@ -18,6 +18,7 @@ from .assignments import (
     LparPcieAssignments,
     LparPcieWorkflowResult,
     apply_validated_lpar_pcie_assignments,
+    assignment_step_names,
     prevalidate_lpar_pcie_assignments,
 )
 from .errors import translate_lpar_write_error
@@ -61,8 +62,23 @@ async def modify_lpar(
                 lpar_uuid, build_lpar_document(name=None, resources=resources)
             )
         except HMCError as exc:
-            translate_lpar_write_error(exc)
-            raise
+            try:
+                translate_lpar_write_error(exc)
+            except HMCError as translated:
+                exc = translated
+            steps.append(WorkflowStep("resources", "error", str(exc)))
+            steps.extend(
+                WorkflowStep(step, "skipped")
+                for step in assignment_step_names(assignments)
+            )
+            return LparPcieWorkflowResult(
+                False,
+                False,
+                resource,
+                None,
+                tuple(steps),
+                (str(exc),),
+            )
         steps.append(WorkflowStep("resources", "ok", resource))
 
     assignment_result = await apply_validated_lpar_pcie_assignments(
