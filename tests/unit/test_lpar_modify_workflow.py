@@ -42,3 +42,26 @@ async def test_modify_lpar_returns_rename_when_resource_update_fails(monkeypatch
         ("resources", "error"),
     ]
     assert result.warnings == ("resource update failed (HTTP 500)",)
+
+
+@pytest.mark.asyncio
+async def test_modify_lpar_propagates_resource_failure_without_partial_state(monkeypatch):
+    hmc = AsyncMock()
+    hmc.modify_logical_partition.side_effect = HMCError("resource update failed", 500)
+    monkeypatch.setattr(
+        "hmc_mcp.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
+        AsyncMock(return_value="lpar-1"),
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations.lpar.dlpar.prevalidate_lpar_pcie_assignments",
+        AsyncMock(),
+    )
+
+    with pytest.raises(HMCError, match="resource update failed"):
+        await modify_lpar(
+            hmc,
+            "system-1",
+            "lpar-1",
+            LparResources(desired_memory=8192),
+            LparPcieAssignments(),
+        )

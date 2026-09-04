@@ -65,7 +65,11 @@ async def modify_lpar(
             try:
                 translate_lpar_write_error(exc)
             except HMCError as translated:
+                if new_name is None:
+                    raise
                 exc = translated
+            if new_name is None:
+                raise
             steps.append(WorkflowStep("resources", "error", str(exc)))
             steps.extend(
                 WorkflowStep(step, "skipped")
