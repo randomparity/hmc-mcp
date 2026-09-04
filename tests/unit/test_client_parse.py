@@ -8,6 +8,7 @@ preferences paths); these unit tests pin the tagging contract directly.
 
 import pytest
 from defusedxml import ElementTree as DET
+from defusedxml.common import DefusedXmlException
 
 from hmc_mcp.client.client_parse import _find_text, _metric_links
 from hmc_mcp.errors import HMCError
@@ -27,3 +28,13 @@ def test_metric_links_parse_error_tags_context():
     assert "Failed to parse test context response" in str(exc_info.value)
     assert "no element found" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, DET.ParseError)
+
+
+def test_find_text_entity_error_tags_context():
+    body = "<!DOCTYPE feed [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><feed>&xxe;</feed>"
+
+    with pytest.raises(HMCError) as exc_info:
+        _find_text(body, "test context")
+
+    assert "Failed to parse test context response" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, DefusedXmlException)
