@@ -361,6 +361,8 @@ async def apply_validated_lpar_pcie_assignments(
         try:
             steps.append(WorkflowStep(name, "ok", await operation()))
         except (
+            ValueError,
+            PermissionError,
             HMCError,
             PcieAssignmentUnavailableError,
             SriovLogicalPortCapabilityError,

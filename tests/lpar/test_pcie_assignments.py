@@ -213,6 +213,32 @@ async def test_first_assignment_failure_skips_remaining_steps() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [ValueError("invalid backing"), PermissionError("foreign owner")])
+async def test_later_preflight_failure_preserves_prior_assignment(failure: Exception) -> None:
+    assignments = LparPcieAssignments(sriov=(_sriov(),), vnics=(_vnic(),))
+    with (
+        patch(
+            "hmc_mcp.operations.lpar.assignments.prevalidate_lpar_pcie_assignments",
+            AsyncMock(),
+        ),
+        patch(
+            "hmc_mcp.operations.lpar.assignments.assign_sriov_logical_port",
+            AsyncMock(return_value={"assigned": True}),
+        ),
+        patch(
+            "hmc_mcp.operations.lpar.assignments.add_vnic",
+            AsyncMock(side_effect=failure),
+        ),
+    ):
+        result = await apply_lpar_pcie_assignments(AsyncMock(), "sys", "lpar", assignments)
+
+    assert [step.status for step in result.steps] == ["ok", "error"]
+    assert result.steps[0].result == {"assigned": True}
+    assert result.steps[1].result == str(failure)
+    assert result.workflow_completed is False
+
+
+@pytest.mark.asyncio
 async def test_assignment_programming_defect_propagates() -> None:
     assignments = LparPcieAssignments(sriov=(_sriov(),))
     with (
