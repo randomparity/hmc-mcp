@@ -343,76 +343,7 @@ def _compile_grant(
             )
 
     resolved = _resolve_tools(model, tool_security)
-
-    if not isinstance(model.targets, str):
-        declared = {
-            selector.kind
-            for name in resolved
-            for selector in tool_security[name].targets
-        }
-        for kind in model.targets:
-            if kind not in declared:
-                raise AccessPolicyError(
-                    f"{where}: no granted tool declares a target selector of kind "
-                    f"{kind!r}, so the constraint could never match"
-                )
-        # Named tools only, unchanged: naming tool X beside a table it cannot
-        # bound makes the grant dead for X, which for a named tool is the whole
-        # point of the grant, so it is refused outright.
-        #
-        # #297 removed this rule's exemption for a tool declaring no connection
-        # argument. ADR 0039 exempted the pair because `authorized` left them
-        # unwrapped, so such a grant was not dead — it worked, bounded by the
-        # ceiling alone. It is dead now: every tool is wrapped and a table denies
-        # one it cannot bound whether or not it routes a connection.
-        for tool in model.tools:
-            security = tool_security[tool]
-            if not security.exhaustive_targets:
-                raise AccessPolicyError(
-                    f"{where}: tool {tool!r} has no target selector that a targets "
-                    "table can bound, so this grant could never authorize it; "
-                    f'grant it under targets = "{ALL_TARGETS_TOKEN}" instead'
-                )
-            # Every declared selector kind, not only the required ones. ADR 0039
-            # denies an omitted optional selector at call time, so a grant leaving
-            # one uncovered is dead in the same way a missing required kind is —
-            # the authoring error ADR 0036 invented this rule to catch. This
-            # supersedes ADR 0036 acceptance criterion A7.
-            for selector in security.targets:
-                if selector.kind not in model.targets:
-                    raise AccessPolicyError(
-                        f"{where}: tool {tool!r} requires a target constraint for "
-                        f"kind {selector.kind!r}; add it to targets or use "
-                        f'targets = "{ALL_TARGETS_TOKEN}"'
-                    )
-
-        # #279: an effect class can resolve to tools a table cannot bound too, and
-        # the same refusal applies when *none* of what it resolves to can ever be
-        # authorized under the table — the true analogue of the named-tool case
-        # above, where the one tool named is the whole grant. A *mixed* resolved
-        # set — some bindable, some not, the common case since every effect class
-        # currently carries at least one non-exhaustive tool — is deliberately not
-        # refused here: doing so would discard every working grant reaching a
-        # bindable majority to diagnose an unreachable minority. That minority is
-        # still surfaced, at startup rather than at load, by
-        # `unboundable_effect_tools` below, which a compiled grant retains enough
-        # information for even though refusal here would have prevented it from
-        # compiling at all.
-        #
-        # The set is every tool the grant resolves to, not only the
-        # connection-bound ones: #297 made the target dimension bind a tool
-        # declaring no connection argument as well, so excluding those two would
-        # let a grant reaching nothing else compile as if it reached something.
-        reached = sorted(resolved)
-        unbound = [
-            tool for tool in reached if not tool_security[tool].exhaustive_targets
-        ]
-        if reached and unbound == reached:
-            raise AccessPolicyError(
-                f"{where}: tool {unbound[0]!r} has no target selector that a "
-                "targets table can bound, so this grant could never authorize it; "
-                f'grant it under targets = "{ALL_TARGETS_TOKEN}" instead'
-            )
+    _validate_grant_targets(model, resolved, tool_security, where)
 
     connections: frozenset[str | None] = frozenset(
         None if name == DEFAULT_CONNECTION_TOKEN else name
@@ -428,6 +359,52 @@ def _compile_grant(
     return Grant(
         tools=resolved, connections=connections, targets=targets, effects=model.effects
     )
+
+
+def _validate_grant_targets(
+    model: _GrantModel,
+    resolved: frozenset[str],
+    tool_security: Mapping[str, ToolSecurity],
+    where: str,
+) -> None:
+    """Validate that a grant's target table can constrain every named tool."""
+    if isinstance(model.targets, str):
+        return
+
+    declared = {
+        selector.kind
+        for name in resolved
+        for selector in tool_security[name].targets
+    }
+    for kind in model.targets:
+        if kind not in declared:
+            raise AccessPolicyError(
+                f"{where}: no granted tool declares a target selector of kind "
+                f"{kind!r}, so the constraint could never match"
+            )
+    for tool in model.tools:
+        security = tool_security[tool]
+        if not security.exhaustive_targets:
+            raise AccessPolicyError(
+                f"{where}: tool {tool!r} has no target selector that a targets "
+                "table can bound, so this grant could never authorize it; "
+                f'grant it under targets = "{ALL_TARGETS_TOKEN}" instead'
+            )
+        for selector in security.targets:
+            if selector.kind not in model.targets:
+                raise AccessPolicyError(
+                    f"{where}: tool {tool!r} requires a target constraint for "
+                    f"kind {selector.kind!r}; add it to targets or use "
+                    f'targets = "{ALL_TARGETS_TOKEN}"'
+                )
+    reached = sorted(resolved)
+    unbound = [tool for tool in reached if not tool_security[tool].exhaustive_targets]
+    if reached and unbound == reached:
+        raise AccessPolicyError(
+            f"{where}: tool {unbound[0]!r} has no target selector that a "
+            "targets table can bound, so this grant could never authorize it; "
+            f'grant it under targets = "{ALL_TARGETS_TOKEN}" instead'
+        )
 
 
 def compile_access_policy(
