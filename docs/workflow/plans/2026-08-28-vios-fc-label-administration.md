@@ -32,7 +32,7 @@ pytest, Ruff, ty, and repository `just` recipes. No dependency is added.
 
 - Create `src/hmc_mcp/ssh/vios_labels.py`: validation, dynamic header parser, exact command
   construction, SSH dispatch, and receipts.
-- Create `src/hmc_mcp/operations/_vios_labels.py`: private managed-system selector resolution and
+- Create `src/hmc_mcp/operations/vios_labels.py`: private managed-system selector resolution and
   delegation shared by MCP and CLI without entering ADR 0029's reusable facade.
 - Create `src/hmc_mcp/server_tools/vios_labels.py`: seven typed MCP presentation adapters.
 - Modify `src/hmc_mcp/server_tools/catalog.py`: register the new tool module.
@@ -234,14 +234,14 @@ result, and delegates with the resolved CLI name.
 1. Extend `tests/vios/test_vios_labels.py` with operation tests that monkeypatch
    `resolve_system_name` and the SSH function. Prove a UUID becomes `system-a`, a CLI name remains
    usable, every argument is preserved, and resolution failure prevents dispatch. Run the focused
-   module and expect failures because `operations/_vios_labels.py` does not exist.
+   module and expect failures because `operations/vios_labels.py` does not exist.
 
 2. Add MCP adapter tests in the same module using existing `HMCConfig.from_mapping`, `patch`, and
    direct handler calls. Assert list rows and complete receipts pass through; `profile` selects the
    existing configuration boundary; and all seven handler signatures expose
    `system_name_or_uuid` exactly so target extraction can bind them.
 
-3. Implement `src/hmc_mcp/operations/_vios_labels.py` as seven thin async functions plus one private
+3. Implement `src/hmc_mcp/operations/vios_labels.py` as seven thin async functions plus one private
    `_system_name` helper. Do not duplicate validation or command construction.
 
 4. Implement `src/hmc_mcp/server_tools/vios_labels.py` with `tool, register_tools, tool_security =
