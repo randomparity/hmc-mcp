@@ -21,7 +21,7 @@ from conftest import JOB_ENTRY
 
 from hmc_mcp.documents import LparResources
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.update_models import (
+from hmc_mcp.operations.updates.models import (
     PlatformUpdateParameter,
     SystemFirmwareUpdateModel,
 )

@@ -18,7 +18,7 @@ from hmc_mcp.jobs import (
     vios_stdout,
     wait_for_submitted_job,
 )
-from hmc_mcp.operations.update_models import (
+from hmc_mcp.operations.updates.models import (
     PlatformUpdateParameter,
     VIOSUpdateSource,
     VIOSUpgradeSource,

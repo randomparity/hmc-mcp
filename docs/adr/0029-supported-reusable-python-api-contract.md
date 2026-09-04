@@ -247,7 +247,6 @@ names are internal everywhere and are never inventoried.
   `power_system`; types: `ManagedSystemPatch`; excluded synchronous: none.
 - `operations.templates` — operations: `deploy_partition_template`, `get_partition_template`,
   `list_partition_templates`; types: none; excluded synchronous: none.
-- `operations.update_models` — operations: none; types: none; excluded synchronous: none.
 - `operations.updates` — operations: none; types: none; excluded synchronous: none.
 - `operations.updates.models` — exports: `ConsoleUpdateMediaType`, `ConsoleUpdateSource`,
   `IOAdapterUpdateModel`, `PlatformUpdateParameter`, `SriovAdapterUpdate`,

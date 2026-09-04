@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import build_job_request, job_outcome
-from hmc_mcp.operations.update_models import (
+from hmc_mcp.operations.updates.models import (
     IOAdapterUpdateModel,
     PlatformUpdateParameter,
     SriovAdapterUpdate,
