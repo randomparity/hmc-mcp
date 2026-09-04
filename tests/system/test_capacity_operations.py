@@ -38,6 +38,22 @@ def test_capacity_summaries_reject_malformed_processing_units(summarize):
         summarize()
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("AssignableSystemMemory", "not-memory"),
+        ("ConfigurableSystemProcessorUnits", "not-processors"),
+        ("DesiredMemory", "not-memory"),
+    ],
+)
+def test_capacity_summaries_contextualize_malformed_numeric_fields(field, value):
+    system = {**SYSTEM, "Resource": {**SYSTEM["Resource"], field: value}}
+    lpars = [] if field != "DesiredMemory" else [{"UUID": "lpar-2", "Resource": {field: value}}]
+
+    with pytest.raises(ValueError, match=field):
+        calculate_system_capacity(system, lpars)
+
+
 class _CapacityClient:
     async def list_managed_systems(self):
         return [
