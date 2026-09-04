@@ -27,7 +27,13 @@ from hmc_mcp.server_tools import (
     vnic,
 )
 from hmc_mcp.server_tools.command import HMC_RUN_COMMAND_SECURITY
-from hmc_mcp.server_tools.lpar import configuration, lifecycle, profiles, provision
+from hmc_mcp.server_tools.lpar import (
+    configuration,
+    lifecycle,
+    lifecycle_boot,
+    profiles,
+    provision,
+)
 from hmc_mcp.server_tools.permissions import EFFECTIVE_PERMISSIONS_SECURITY
 from hmc_mcp.tool_registry import ToolSecurity, build_tool_security
 
@@ -37,6 +43,7 @@ TOOL_MODULES = (
     jobs,
     health,
     lifecycle,
+    lifecycle_boot,
     vios,
     vios_labels,
     adapters,
