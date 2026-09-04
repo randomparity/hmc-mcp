@@ -117,6 +117,89 @@ def _sriov_state_summary(s: _SriovState) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _adapter_is_healthy(data: object) -> bool:
+    """Return whether the selected adapter is in healthy SR-IOV mode."""
+    items = data.get("items") or [] if isinstance(data, dict) else []
+    return any(
+        isinstance(item, dict)
+        and item.get("adapter_id") == _ADAPTER_ID
+        and item.get("mode") == "sriov"
+        and item.get("availability") == "1"
+        for item in items
+    )
+
+
+def _available_capacity(data: object) -> float:
+    """Calculate remaining physical-port capacity from logical-port inventory."""
+    used = 0.0
+    items = data.get("items") or [] if isinstance(data, dict) else []
+    for item in items:
+        if (
+            isinstance(item, dict)
+            and item.get("availability") not in ("unconfigured", None, "")
+            and item.get("capacity_percent") is not None
+        ):
+            try:
+                used += float(item["capacity_percent"])
+            except (ValueError, TypeError):
+                continue
+    return 100.0 - used
+
+
+def _logical_port_is_configured(data: object) -> bool:
+    """Return whether the selected logical port has an effective assignment."""
+    items = data.get("items") or [] if isinstance(data, dict) else []
+    return any(
+        isinstance(item, dict)
+        and item.get("logical_port_id") == _LOGICAL_PORT_ID
+        and item.get("availability") not in ("unconfigured", None, "")
+        for item in items
+    )
+
+
+async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
+    """Record final logical-port and profile checks after cleanup."""
+    context = state.context
+    st, data = await state.call(
+        client,
+        "hmc_list_sriov_logical_ports",
+        system_name_or_uuid=context.system_name,
+        adapter_id=_ADAPTER_ID,
+        logical_port_id=_LOGICAL_PORT_ID,
+    )
+    state.record(28, "hmc_list_sriov_logical_ports (final)", st, data)
+    if st == "PASS":
+        still_configured = _logical_port_is_configured(data)
+        state.record(
+            28,
+            "sriov final inventory check",
+            "FAIL" if still_configured else "PASS",
+            (
+                f"MANUAL RECOVERY REQUIRED: logical port {_LOGICAL_PORT_ID} "
+                "is still configured after cleanup"
+                if still_configured
+                else f"logical port {_LOGICAL_PORT_ID} is unconfigured — baseline restored"
+            ),
+        )
+
+    final_state = await _read_sriov_state(client, state)
+    profile_clean = final_state.profile_ports in (None, "none", "")
+    state.record(
+        28,
+        "lp3 profile final check",
+        "PASS" if profile_clean else "FAIL",
+        (
+            f"MANUAL RECOVERY REQUIRED: profile sriov_eth_logical_ports="
+            f"{final_state.profile_ports!r} after cleanup — "
+            f"run: chsyscfg -r prof -m {context.system_name} "
+            f"-i \"name={_PROFILE_NAME},lpar_name={context.lp3_name},"
+            f"sriov_eth_logical_ports=none\" to recover"
+            if not profile_clean
+            else "sriov_eth_logical_ports=none — lp3 profile restored to baseline"
+        ),
+    )
+
+
 async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
     """Record the pre-test SR-IOV inventory.  Returns False if prerequisites fail."""
     context = state.context
@@ -150,15 +233,7 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         return False
 
     # Confirm adapter is in SR-IOV mode and healthy
-    items = data.get("items") or [] if isinstance(data, dict) else []
-    adapter_ok = any(
-        isinstance(i, dict)
-        and i.get("adapter_id") == _ADAPTER_ID
-        and i.get("mode") == "sriov"
-        and i.get("availability") == "1"
-        for i in items
-    )
-    if not adapter_ok:
+    if not _adapter_is_healthy(data):
         state.skip(
             23,
             "hmc_list_sriov_adapters (health check)",
@@ -199,24 +274,12 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         adapter_id=_ADAPTER_ID,
         physical_port_id=_PHYS_PORT_ID,
     )
-    used_capacity = 0.0
-    if st_lp == "PASS" and isinstance(data_lp, dict):
-        for item in data_lp.get("items") or []:
-            if (
-                isinstance(item, dict)
-                and item.get("availability") not in ("unconfigured", None, "")
-                and item.get("capacity_percent") is not None
-            ):
-                try:
-                    used_capacity += float(item["capacity_percent"])
-                except (ValueError, TypeError):
-                    pass
-    available = 100.0 - used_capacity
+    available = _available_capacity(data_lp) if st_lp == "PASS" else 0.0
     state.record(
         23,
         "sriov capacity check (pre-test)",
         "PASS" if available >= _CAPACITY_PERCENT else "SKIP",
-        f"phys_port {_PHYS_PORT_ID}: used={used_capacity}% available={available}% needed={_CAPACITY_PERCENT}%",
+        f"phys_port {_PHYS_PORT_ID}: available={available}% needed={_CAPACITY_PERCENT}%",
     )
     if available < _CAPACITY_PERCENT:
         state.skip(
@@ -247,14 +310,7 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
             "logical port inventory failed: SKIP SR-IOV arm",
         )
         return False
-    items = data.get("items") or [] if isinstance(data, dict) else []
-    already_configured = any(
-        isinstance(i, dict)
-        and i.get("logical_port_id") == _LOGICAL_PORT_ID
-        and i.get("availability") not in ("unconfigured", None, "")
-        for i in items
-    )
-    if already_configured:
+    if _logical_port_is_configured(data):
         state.skip(
             23,
             "sriov logical port precondition",
@@ -561,52 +617,7 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
             )
             return
 
-    # Final logical-port inventory confirm
-    st, data = await state.call(
-        client,
-        "hmc_list_sriov_logical_ports",
-        system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
-    )
-    state.record(28, "hmc_list_sriov_logical_ports (final)", st, data)
-    if st == "PASS" and isinstance(data, dict):
-        items = data.get("items") or []
-        still_configured = any(
-            isinstance(i, dict)
-            and i.get("logical_port_id") == _LOGICAL_PORT_ID
-            and i.get("availability") not in ("unconfigured", None, "")
-            for i in items
-        )
-        state.record(
-            28,
-            "sriov final inventory check",
-            "FAIL" if still_configured else "PASS",
-            (
-                f"MANUAL RECOVERY REQUIRED: logical port {_LOGICAL_PORT_ID} "
-                "is still configured after cleanup"
-                if still_configured
-                else f"logical port {_LOGICAL_PORT_ID} is unconfigured — baseline restored"
-            ),
-        )
-
-    # Final profile check
-    final_state = await _read_sriov_state(client, state)
-    profile_clean = final_state.profile_ports in (None, "none", "")
-    state.record(
-        28,
-        "lp3 profile final check",
-        "PASS" if profile_clean else "FAIL",
-        (
-            f"MANUAL RECOVERY REQUIRED: profile sriov_eth_logical_ports="
-            f"{final_state.profile_ports!r} after cleanup — "
-            f"run: chsyscfg -r prof -m {context.system_name} "
-            f"-i \"name={_PROFILE_NAME},lpar_name={context.lp3_name},"
-            f"sriov_eth_logical_ports=none\" to recover"
-            if not profile_clean
-            else "sriov_eth_logical_ports=none — lp3 profile restored to baseline"
-        ),
-    )
+    await _verify_cleanup_inventory(client, state)
 
 
 # ---------------------------------------------------------------------------
