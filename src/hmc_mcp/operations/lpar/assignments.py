@@ -7,6 +7,10 @@ from decimal import Decimal
 from typing import Any
 
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.operations.io_virtualization.validation import (
+    require_command_safe_text,
+    validate_capacity_percent,
+)
 from hmc_mcp.operations.pcie import (
     PCIE_ASSIGNMENT_UNAVAILABLE_REASON,
     PcieAssignmentUnavailableError,
@@ -15,10 +19,6 @@ from hmc_mcp.operations.pcie import (
     list_sriov_adapters,
     list_sriov_logical_ports,
     list_sriov_physical_ports,
-)
-from hmc_mcp.operations.pcie_validation import (
-    require_command_safe_text,
-    validate_capacity_percent,
 )
 from hmc_mcp.operations.vnic import VnicBackingSelector, add_vnic
 from hmc_mcp.ssh.network import (
