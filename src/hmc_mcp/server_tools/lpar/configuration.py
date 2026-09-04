@@ -9,12 +9,7 @@ from ..._app import (
     with_client,
     with_config,
 )
-from ...operations.lpar.configuration import (
-    configure_lpar_msp,
-    configure_lpar_processor_compatibility,
-)
-from ...operations.lpar.core import ProcessorCompatibilityMode
-from ...operations.ssh_affinity import (
+from ...operations.affinity.ssh import (
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
     get_lpar_memopt_score,
@@ -27,6 +22,11 @@ from ...operations.ssh_affinity import (
     plan_system_memopt_score,
     set_minimum_affinity_policy,
 )
+from ...operations.lpar.configuration import (
+    configure_lpar_msp,
+    configure_lpar_processor_compatibility,
+)
+from ...operations.lpar.core import ProcessorCompatibilityMode
 from ...ssh.affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,

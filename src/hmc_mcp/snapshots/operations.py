@@ -16,7 +16,7 @@ from hmc_mcp.operations.affinity import (
     PolicyState,
     assess_affinity,
 )
-from hmc_mcp.operations.ssh_affinity import (
+from hmc_mcp.operations.affinity.ssh import (
     get_lpar_memopt_score,
     get_minimum_affinity_policy,
     get_system_memopt_score,

@@ -26,12 +26,12 @@ from ...ssh.affinity import (
 from ...ssh.lpar import validate_caller_token
 from ...ssh.selectors import resolve_ssh_names
 from ...ssh.transport import HMCCLIError
-from ..affinity import (
+from ..affinity.rest import (
     ProvisionAffinityAssessment,
     assess_post_activation_affinity,
     validate_affinity_request,
 )
-from ..ssh_affinity import set_minimum_affinity_policy
+from ..affinity.ssh import set_minimum_affinity_policy
 from ..storage import create_virtual_disk
 from .assignments import (
     LparPcieAssignments,

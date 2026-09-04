@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..._app import with_client
 from ...documents import LparResources, PartitionType
-from ...operations.affinity import ProvisionAffinityAssessment
+from ...operations.affinity.rest import ProvisionAffinityAssessment
 from ...operations.lpar.assignments import LparPcieAssignments
 from ...operations.lpar.provision import (
     ProvisionAdapters,

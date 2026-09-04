@@ -33,7 +33,7 @@ from hmc_mcp.operations.adapters import (
     delete_adapter,
     list_adapters,
 )
-from hmc_mcp.operations.affinity import (
+from hmc_mcp.operations.affinity.rest import (
     AffinityAssessmentInput,
     AffinityAssessmentResult,
     AffinityClassification,
@@ -43,6 +43,21 @@ from hmc_mcp.operations.affinity import (
     PostActivationAffinityAssessment,
     ProvisionAffinityAssessment,
     assess_post_activation_affinity,
+)
+from hmc_mcp.operations.affinity.ssh import (
+    MemoptLparSelector,
+    MemoptResourceGroupSelector,
+    MinimumAffinityPolicyResult,
+    ResourceGroupAffinityResult,
+    get_lpar_memopt_score,
+    get_minimum_affinity_policy,
+    get_system_memopt_score,
+    list_lpar_memopt_scores,
+    list_resource_group_memopt_scores,
+    plan_lpar_memopt_scores,
+    plan_resource_group_memopt_scores,
+    plan_system_memopt_score,
+    set_minimum_affinity_policy,
 )
 from hmc_mcp.operations.capacity import (
     CapacitySummary,
@@ -180,21 +195,6 @@ from hmc_mcp.operations.pcm import (
     metric_links,
     resolve_pcm_resource,
     set_pcm_preferences,
-)
-from hmc_mcp.operations.ssh_affinity import (
-    MemoptLparSelector,
-    MemoptResourceGroupSelector,
-    MinimumAffinityPolicyResult,
-    ResourceGroupAffinityResult,
-    get_lpar_memopt_score,
-    get_minimum_affinity_policy,
-    get_system_memopt_score,
-    list_lpar_memopt_scores,
-    list_resource_group_memopt_scores,
-    plan_lpar_memopt_scores,
-    plan_resource_group_memopt_scores,
-    plan_system_memopt_score,
-    set_minimum_affinity_policy,
 )
 from hmc_mcp.operations.systems import (
     ManagedSystemPatch,

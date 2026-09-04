@@ -15,7 +15,7 @@ from ...documents import (
     OsType,
     PartitionType,
 )
-from ...operations.affinity import (
+from ...operations.affinity.rest import (
     ProvisionAffinityAssessment,
 )
 from ...operations.lpar.assignments import (

@@ -8,7 +8,7 @@ from typing import Any, Literal, cast
 
 from hmc_mcp.client.core import HMCClient
 
-from .ssh_affinity import (
+from .ssh import (
     get_lpar_memopt_score,
     get_minimum_affinity_policy,
     plan_lpar_memopt_scores,

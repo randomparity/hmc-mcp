@@ -12,11 +12,7 @@ from rich.table import Table
 
 from hmc_mcp.operations.ownership import set_lpar_ownership_description
 
-from ...operations.lpar.assignments import LparPcieAssignments
-from ...operations.lpar.core import (
-    ProcessorCompatibilityMode,
-)
-from ...operations.ssh_affinity import (
+from ...operations.affinity.ssh import (
     get_lpar_memopt_score,
     get_minimum_affinity_policy,
     get_system_memopt_score,
@@ -25,6 +21,10 @@ from ...operations.ssh_affinity import (
     plan_lpar_memopt_scores,
     plan_resource_group_memopt_scores,
     plan_system_memopt_score,
+)
+from ...operations.lpar.assignments import LparPcieAssignments
+from ...operations.lpar.core import (
+    ProcessorCompatibilityMode,
 )
 from ...ssh.affinity import (
     MemoptLparSelector,

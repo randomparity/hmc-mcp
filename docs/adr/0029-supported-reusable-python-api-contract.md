@@ -147,12 +147,17 @@ names are internal everywhere and are never inventoried.
 - `operations.adapters` — operations: `add_network_adapter`, `add_vfc_adapter`,
   `add_vscsi_adapter`, `delete_adapter`, `list_adapters`; types: `AdapterResult`; excluded
   synchronous: none.
-- `operations.affinity` — operations: `assess_post_activation_affinity`; types:
-  `AffinityAssessmentInput`, `AffinityAssessmentResult`, `AffinityClassification`,
-  `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`,
-  `PostActivationAffinityAssessment`, `ProvisionAffinityAssessment`; excluded synchronous:
-  `affinity_not_measured`, `assess_affinity`, `classify_affinity_outcome`,
-  `validate_affinity_request`.
+- `operations.affinity` — operations: none; types: none; excluded synchronous: none.
+- `operations.affinity.rest` — exports: `AffinityAssessmentInput`, `AffinityAssessmentResult`,
+  `AffinityClassification`, `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`,
+  `PostActivationAffinityAssessment`, `ProvisionAffinityAssessment`,
+  `assess_post_activation_affinity`.
+- `operations.affinity.ssh` — exports: `MemoptLparSelector`, `MemoptResourceGroupSelector`,
+  `MinimumAffinityPolicyResult`, `ResourceGroupAffinityResult`, `get_lpar_memopt_score`,
+  `get_minimum_affinity_policy`, `get_system_memopt_score`, `list_lpar_memopt_scores`,
+  `list_resource_group_memopt_scores`, `plan_lpar_memopt_scores`,
+  `plan_resource_group_memopt_scores`, `plan_system_memopt_score`,
+  `set_minimum_affinity_policy`.
 - `operations.capacity` — operations: `fetch_capacity_report`, `find_placement`; types: `CapacitySummary`; excluded
   synchronous: `calculate_system_capacity`, `lpar_processing_units`.
 - `operations.cluster` — operations: `create_logical_unit`, `delete_logical_unit`,
@@ -231,13 +236,7 @@ names are internal everywhere and are never inventoried.
   `resolve_pcm_resource`, `set_pcm_preferences`; types: `MetricKind`, `PcmCategory`,
   `PcmResource`; excluded synchronous: `preference_flags`, `validate_pcm_metric_target`,
   `validate_pcm_preferences_category`.
-- `operations.ssh_affinity` — operations: `get_lpar_memopt_score`,
-  `get_minimum_affinity_policy`, `get_system_memopt_score`,
-  `list_lpar_memopt_scores`, `list_resource_group_memopt_scores`,
-  `plan_lpar_memopt_scores`, `plan_resource_group_memopt_scores`,
-  `plan_system_memopt_score`, `set_minimum_affinity_policy`; types:
-  `MemoptLparSelector`, `MemoptResourceGroupSelector`, `MinimumAffinityPolicyResult`,
-  `ResourceGroupAffinityResult`; excluded synchronous: none.
+- `operations.ssh_affinity` — operations: none; types: none; excluded synchronous: none.
 - `operations.storage` — operations: `create_media_repository`,
   `create_optical_media`, `create_virtual_disk`, `create_volume_group`,
   `delete_media_repository`, `delete_optical_media`, `delete_virtual_disk`,
