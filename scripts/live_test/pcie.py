@@ -93,7 +93,7 @@ async def _read_sriov_state(client: Client, state: RunState) -> _SriovState:
         client,
         "hmc_run_command",
         cmd=(
-            f"lssyscfg -r prof -m ltczz386 "
+            f"lssyscfg -r prof -m {context.system_name} "
             f"--filter 'lpar_names={context.lp3_name},profile_names={_PROFILE_NAME}' "
             f"-F sriov_eth_logical_ports"
         ),
@@ -526,7 +526,7 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
                 "FAIL",
                 f"MANUAL RECOVERY REQUIRED: profile unassign failed — "
                 f"logical port {_LOGICAL_PORT_ID} may still be in profile and effective layer. "
-                f"Run: chhwres -r sriov --rsubtype logport -m ltczz386 "
+                f"Run: chhwres -r sriov --rsubtype logport -m {context.system_name} "
                 f"-o r -p {context.lp3_name} "
                 f"-a \"adapter_id={_ADAPTER_ID},logical_port_id={_LOGICAL_PORT_ID}\" "
                 f"to recover. Error: {str(data)[:400]}",
@@ -600,7 +600,7 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
         (
             f"MANUAL RECOVERY REQUIRED: profile sriov_eth_logical_ports="
             f"{final_state.profile_ports!r} after cleanup — "
-            f"run: chsyscfg -r prof -m ltczz386 "
+            f"run: chsyscfg -r prof -m {context.system_name} "
             f"-i \"name={_PROFILE_NAME},lpar_name={context.lp3_name},"
             f"sriov_eth_logical_ports=none\" to recover"
             if not profile_clean
