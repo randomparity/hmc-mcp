@@ -208,7 +208,7 @@ from hmc_mcp.operations.templates import (
     get_partition_template,
     list_partition_templates,
 )
-from hmc_mcp.operations.update_models import (
+from hmc_mcp.operations.updates.models import (
     ConsoleUpdateMediaType,
     ConsoleUpdateSource,
     IOAdapterUpdateModel,
