@@ -24,6 +24,11 @@ from ..jobs import (
 )
 from ..resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name
 
+LpmDestinationCheckBasis = Literal["calculated", "migration-check"]
+LpmCapability = Literal["available", "unavailable"]
+LpmResponse = Literal["warn", "fail"]
+LpmPreflightStatus = Literal["passed", "warned", "failed", "unavailable"]
+
 _MAX_CAPABILITY_LIMITS = 8
 _MAX_CAPABILITY_LIMIT_LENGTH = 200
 
@@ -55,19 +60,19 @@ class LpmAffinityPreflightRequest:
     destination_estimated_score: int | None = field(
         metadata={"description": "Estimated affinity score on the destination."}
     )
-    destination_check_basis: Literal["calculated", "migration-check"] = field(
+    destination_check_basis: LpmDestinationCheckBasis = field(
         metadata={"description": "Basis used for the destination estimate."}
     )
     configured_minimum: int | None = field(
         metadata={"description": "Configured minimum acceptable affinity score."}
     )
-    capability: Literal["available", "unavailable"] = field(
+    capability: LpmCapability = field(
         metadata={"description": "Whether the platform supports the affinity check."}
     )
     capability_limits: tuple[str, ...] = field(
         metadata={"description": "Bounded limitations on the affinity evidence."}
     )
-    response: Literal["warn", "fail"] = field(
+    response: LpmResponse = field(
         metadata={"description": "Explicit response to adverse or unavailable evidence."}
     )
     preflight_timeout_seconds: float = field(
@@ -80,14 +85,14 @@ class LpmAffinityPreflightRequest:
 class LpmAffinityPreflightOutcome:
     """Stable evidence-bearing decision made before HMC LPM validation."""
 
-    status: Literal["passed", "warned", "failed", "unavailable"]
+    status: LpmPreflightStatus
     reason: str
     proceed: bool
     source_current_score: int | None
     destination_estimated_score: int | None
-    destination_check_basis: str
+    destination_check_basis: LpmDestinationCheckBasis
     configured_minimum: int | None
-    capability: str
+    capability: LpmCapability
     capability_limits: tuple[str, ...]
     preflight_timeout_seconds: float
 
@@ -110,7 +115,7 @@ def _validate_affinity_score(value: int | None, name: str) -> None:
 
 def _preflight_outcome(
     request: LpmAffinityPreflightRequest,
-    status: Literal["passed", "warned", "failed", "unavailable"],
+    status: LpmPreflightStatus,
     reason: str,
     proceed: bool,
 ) -> LpmAffinityPreflightOutcome:

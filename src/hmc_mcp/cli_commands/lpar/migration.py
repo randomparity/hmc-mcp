@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Literal, cast
+from typing import cast
 
 import typer
 
@@ -16,7 +16,10 @@ from ...jobs import (
 from ...operations.lpm import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightRequest,
+    LpmCapability,
+    LpmDestinationCheckBasis,
     LpmMigrationRequest,
+    LpmResponse,
     abort_lpar_migration,
     migrate_lpar,
     migrate_lpar_with_affinity_preflight,
@@ -95,14 +98,14 @@ def lpars_migrate_affinity(
     target: str = typer.Option(..., "--target", help="Target managed system name"),
     source_score: int | None = typer.Option(None, "--source-score"),
     destination_estimate: int | None = typer.Option(None, "--destination-estimate"),
-    check_basis: Literal["calculated", "migration-check"] = typer.Option(
+    check_basis: LpmDestinationCheckBasis = typer.Option(
         "calculated", "--check-basis"
     ),
     configured_minimum: int | None = typer.Option(None, "--configured-minimum"),
-    capability: Literal["available", "unavailable"] = typer.Option(
+    capability: LpmCapability = typer.Option(
         "available", "--capability"
     ),
-    response: Literal["warn", "fail"] = typer.Option("warn", "--response"),
+    response: LpmResponse = typer.Option("warn", "--response"),
     preflight_timeout: float = typer.Option(
         5.0, "--preflight-timeout", help="Affinity preflight timeout seconds"
     ),
