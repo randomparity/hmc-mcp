@@ -36,6 +36,7 @@ async def resolve_pcm_resource(
     Raises:
         ValueError: If system scope is missing or invalid for the category.
     """
+    _validate_category(category)
     if category == "ManagedSystem":
         if system_name_or_uuid is not None:
             raise ValueError(
@@ -52,7 +53,18 @@ async def resolve_pcm_resource(
             hmc, resource, system_name_or_uuid=system_uuid
         )
         return PcmResource(resource_uuid, system_uuid)
-    return PcmResource(resource)
+    raise AssertionError("unreachable PCM category")
+
+
+def _validate_category(category: str) -> None:
+    if category not in PCM_CATEGORIES:
+        allowed = ", ".join(sorted(PCM_CATEGORIES))
+        raise ValueError(f"category must be one of: {allowed}")
+
+
+def _validate_kind(kind: str) -> None:
+    if kind not in {"processed", "aggregated"}:
+        raise ValueError("kind must be either 'processed' or 'aggregated'")
 
 
 def validate_pcm_preferences_category(category: PcmCategory) -> None:
@@ -66,6 +78,7 @@ def validate_pcm_preferences_category(category: PcmCategory) -> None:
 def validate_pcm_metric_target(
     category: PcmCategory, system_name_or_uuid: str | None
 ) -> None:
+    _validate_category(category)
     if category == "LogicalPartition" and system_name_or_uuid is None:
         raise ValueError(
             "LogicalPartition metrics require the owning system_name_or_uuid."
@@ -148,6 +161,7 @@ async def fetch_metric_links(
     Raises:
         ValueError: If system scope is missing or invalid for the category.
     """
+    _validate_kind(kind)
     validate_pcm_metric_target(category, system_name_or_uuid)
     target = await resolve_pcm_resource(
         hmc, category, resource, system_name_or_uuid=system_name_or_uuid
