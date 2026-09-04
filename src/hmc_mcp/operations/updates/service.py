@@ -8,15 +8,15 @@ from urllib.parse import quote
 
 from hmc_mcp.client.core import HMCClient
 
-from ..errors import HMCError
-from ..jobs import (
+from ...errors import HMCError
+from ...jobs import (
     TERMINAL_JOB_STATUSES,
     validate_wait_timing,
     vios_stdout,
     wait_for_submitted_job,
 )
-from ..resource_identity import resolve_system_uuid, resolve_vios_uuid
-from .update_models import (
+from ...resource_identity import resolve_system_uuid, resolve_vios_uuid
+from .models import (
     ConsoleUpdateSource,
     PlatformUpdateParameter,
     VIOSUpdateSource,

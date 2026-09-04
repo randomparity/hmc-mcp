@@ -226,7 +226,7 @@ from hmc_mcp.operations.update_models import (
     VIOSUpgradeSFTPSource,
     VIOSUpgradeUSBSource,
 )
-from hmc_mcp.operations.updates import (
+from hmc_mcp.operations.updates.service import (
     submit_available_hmc_ptfs_query,
     update_console_software,
     update_firmware,

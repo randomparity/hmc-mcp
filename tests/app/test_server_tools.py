@@ -528,7 +528,7 @@ def test_vios_update_encodes_uuid_as_one_path_segment(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     hostile_uuid = "allowed/do/Shutdown?ignored="
     monkeypatch.setattr(
-        "hmc_mcp.operations.updates.resolve_vios_uuid",
+        "hmc_mcp.operations.updates.service.resolve_vios_uuid",
         AsyncMock(return_value=hostile_uuid),
     )
     route = mock_hmc.put(
@@ -592,7 +592,7 @@ def test_vios_waited_terminal_result_projects_stdout(monkeypatch, mock_hmc):
     _mock_vios_submission(mock_hmc)
     raw = _vios_job_with_stdout()
     monkeypatch.setattr(
-        "hmc_mcp.operations.updates.wait_for_submitted_job",
+        "hmc_mcp.operations.updates.service.wait_for_submitted_job",
         AsyncMock(return_value=raw),
     )
 
@@ -617,7 +617,7 @@ def test_vios_stdout_is_not_projected_without_terminal_wait(
     _hmc_env(monkeypatch)
     _mock_vios_submission(mock_hmc)
     monkeypatch.setattr(
-        "hmc_mcp.operations.updates.wait_for_submitted_job",
+        "hmc_mcp.operations.updates.service.wait_for_submitted_job",
         AsyncMock(return_value=job),
     )
 
@@ -632,7 +632,7 @@ def test_vios_stdout_does_not_overwrite_raw_top_level_value(monkeypatch, mock_hm
     _mock_vios_submission(mock_hmc)
     raw = _vios_job_with_stdout(top_level="raw value")
     monkeypatch.setattr(
-        "hmc_mcp.operations.updates.wait_for_submitted_job",
+        "hmc_mcp.operations.updates.service.wait_for_submitted_job",
         AsyncMock(return_value=raw),
     )
 

@@ -7,13 +7,13 @@ from typing import Any
 from .._app import (
     with_client,
 )
-from ..operations.update_models import (
+from ..operations.updates.models import (
     ConsoleUpdateSource,
     PlatformUpdateParameter,
     VIOSUpdateSource,
     VIOSUpgradeSource,
 )
-from ..operations.updates import (
+from ..operations.updates.service import (
     submit_available_hmc_ptfs_query,
     update_console_software,
     update_firmware,

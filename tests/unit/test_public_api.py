@@ -2048,8 +2048,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Boot-order operations now accept a system-scoped LPAR name or UUID.
     # PCIe inventory operations now name their system selector explicitly.
     # Cluster and shared-storage-pool inventory joined the reusable facade.
-        # VIOS storage operations now require the VIOS selector first and make
-        # managed-system scope keyword-only, making duplicate names unambiguous.
+    # VIOS storage operations now require the VIOS selector first and make
+    # managed-system scope keyword-only, making duplicate names unambiguous.
     # ConsoleCapture now exposes bounded stream-failure context.
     # Capacity and summary memory contracts now use the accurate MiB suffix.
     # DecommissionResult now exposes its blast-radius record types.
@@ -2060,7 +2060,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
-    expected_digest = "76fd71d840fcc619ce39dc2ed22258d493da46126ef0432bd166c1275bde6352"  # pragma: allowlist secret
+    expected_digest = "12abb30eef03e045371cef1ba1324f49d2a7d56a2331201f93511d558bb32bee"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
