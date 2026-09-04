@@ -22,12 +22,12 @@ def metrics_prefs(
     category: PcmCategory = typer.Argument(
         ..., help="ManagedSystem (LogicalPartition preferences are unavailable)"
     ),
-    resource_uuid: str = typer.Argument(..., help="Resource name or UUID"),
+    resource_name_or_uuid: str = typer.Argument(..., help="Resource name or UUID"),
 ) -> None:
     """Show PCM monitoring preferences for a resource."""
     validate_pcm_preferences_category(category)
 
-    prefs = with_client(lambda hmc: get_pcm_preferences(hmc, category, resource_uuid))
+    prefs = with_client(lambda hmc: get_pcm_preferences(hmc, category, resource_name_or_uuid))
 
     print_json(prefs)
 
@@ -36,7 +36,7 @@ def metrics_set_prefs(
     category: PcmCategory = typer.Argument(
         ..., help="ManagedSystem (LogicalPartition preferences are unavailable)"
     ),
-    resource_uuid: str = typer.Argument(..., help="Resource name or UUID"),
+    resource_name_or_uuid: str = typer.Argument(..., help="Resource name or UUID"),
     ltm: bool | None = typer.Option(
         None, "--ltm/--no-ltm", help="Long-term monitoring"
     ),
@@ -63,20 +63,20 @@ def metrics_set_prefs(
     validate_pcm_preferences_category(category)
 
     if not yes and not typer.confirm(
-        f"Enable/disable PCM monitoring on {category} {resource_uuid}?"
+        f"Enable/disable PCM monitoring on {category} {resource_name_or_uuid}?"
     ):
         raise typer.Abort()
 
-    with_client(lambda hmc: set_pcm_preferences(hmc, category, resource_uuid, flags))
+    with_client(lambda hmc: set_pcm_preferences(hmc, category, resource_name_or_uuid, flags))
 
-    console.print(f"[green]Updated {category} {resource_uuid}: {flags}[/green]")
+    console.print(f"[green]Updated {category} {resource_name_or_uuid}: {flags}[/green]")
 
 
 def metrics_show(
     category: PcmCategory = typer.Argument(
         ..., help="ManagedSystem or LogicalPartition"
     ),
-    resource_uuid: str = typer.Argument(..., help="Resource name or UUID"),
+    resource_name_or_uuid: str = typer.Argument(..., help="Resource name or UUID"),
     start: str = typer.Option(..., "--start", help="Start TS yyyy-MM-ddTHH:mm:ssZ"),
     end: str | None = typer.Option(None, "--end", help="End TS (optional)"),
     samples: int | None = typer.Option(None, "--samples", help="Number of samples"),
@@ -102,7 +102,7 @@ def metrics_show(
             return await operation(
                 hmc,
                 category,
-                resource_uuid,
+                resource_name_or_uuid,
                 kind=kind,
                 start_ts=start,
                 end_ts=end,
