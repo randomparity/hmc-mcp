@@ -948,7 +948,7 @@ src/hmc_mcp/
   authorization/             # access policy and dispatch-time scope enforcement
   audit/         # audit records plus non-blocking diagnostic transport
   tool_registry.py           # local MCP tool collection, each tool carrying ToolSecurity
-  _app.py        # shared FastMCP instance, sync-run and SSH helpers, entry points
+  _app.py        # FastMCP factory, sync-run and SSH execution helpers
   server.py      # MCP composition, startup validation, logging, and serving bootstrap
   cli.py         # thin aggregator importing every cli_commands/ registration module
 tests/           # pytest + respx, no real HMC needed
