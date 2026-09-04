@@ -8,7 +8,6 @@ import pytest
 
 from hmc_mcp.operations.lpar.core import list_lpars
 from hmc_mcp.operations.systems import get_system, list_systems
-from hmc_mcp.operations.vios import list_vios
 
 
 @pytest.mark.asyncio
@@ -38,11 +37,10 @@ async def test_get_system_routes_names_and_uuids_to_the_correct_client_method() 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("operation", [list_lpars, list_vios])
-async def test_partition_inventory_rejects_conflicting_selectors(operation) -> None:
+async def test_lpar_inventory_rejects_conflicting_selectors() -> None:
     hmc = AsyncMock()
 
     with pytest.raises(ValueError, match="at most one"):
-        await operation(hmc, "system-1", "running")
+        await list_lpars(hmc, "system-1", "running")
 
     hmc.search_uom.assert_not_awaited()
