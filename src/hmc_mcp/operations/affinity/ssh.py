@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Literal
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.config import HMCConfig
@@ -39,7 +39,7 @@ from hmc_mcp.ssh.selectors import resolve_ssh_names
 
 def _config(hmc: HMCClient) -> HMCConfig:
     """Return the SSH settings owned by the client facade."""
-    return cast(HMCConfig, getattr(hmc, "config", hmc))
+    return hmc.config
 
 
 @dataclass(frozen=True)

@@ -53,6 +53,12 @@ def _config() -> HMCConfig:
     )
 
 
+def _hmc() -> MagicMock:
+    hmc = MagicMock()
+    hmc.config = _config()
+    return hmc
+
+
 def _connection(stdout: str = "") -> MagicMock:
     result = MagicMock(stdout=stdout)
     connection = AsyncMock()
@@ -110,7 +116,7 @@ def test_shared_affinity_operations_resolve_system_uuid_before_delegating(
             if primitive.startswith("plan_")
             else {}
         )
-        actual = asyncio.run(operation(_config(), system_uuid, **kwargs))
+        actual = asyncio.run(operation(_hmc(), system_uuid, **kwargs))
 
     assert actual == result
     resolve.assert_awaited_once_with(_config(), system_uuid, None)
@@ -144,7 +150,7 @@ def test_shared_planning_rejects_invalid_scenarios_before_system_resolution(
     ):
         asyncio.run(
             plan_lpar_memopt_scores_operation(
-                _config(), SYSTEM, prioritized, excluded
+                _hmc(), SYSTEM, prioritized, excluded
             )
         )
 
@@ -163,11 +169,16 @@ def test_affinity_mcp_adapters_delegate_to_shared_operations(
     adapter, operation, result
 ):
     config = _config()
+    client = MagicMock(config=config)
     selector = MemoptLparSelector(ids=(7,))
     delegated = AsyncMock(return_value=result)
 
     with (
-        patch("hmc_mcp._app.build_config", return_value=config) as config_factory,
+        patch.object(
+            server_lpar_config,
+            "with_client",
+            side_effect=lambda callback, **_: asyncio.run(callback(client)),
+        ),
         patch.object(server_lpar_config, operation, delegated),
     ):
         kwargs = (
@@ -178,9 +189,8 @@ def test_affinity_mcp_adapters_delegate_to_shared_operations(
         actual = getattr(server_lpar_config, adapter)(SYSTEM, profile="lab", **kwargs)
 
     assert actual == result
-    config_factory.assert_called_once_with(profile="lab")
-    actual_config = delegated.await_args.args[0]
-    assert actual_config is config
+    actual_hmc = delegated.await_args.args[0]
+    assert actual_hmc.config is config
     expected = (SYSTEM, selector, None) if kwargs else (SYSTEM,)
     assert delegated.await_args.args[1:] == expected
 
@@ -255,7 +265,7 @@ def test_oversized_selector_is_rejected_before_resolution_or_transport():
     ):
         asyncio.run(
             plan_lpar_memopt_scores_operation(
-                _config(), SYSTEM, prioritized, excluded
+                _hmc(), SYSTEM, prioritized, excluded
             )
         )
 

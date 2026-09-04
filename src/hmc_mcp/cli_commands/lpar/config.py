@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import cast
 
 import typer
 from rich.table import Table
 
-from hmc_mcp.client.core import HMCClient
 from hmc_mcp.operations.ownership import set_lpar_ownership_description
 
 from ...operations.affinity.ssh import (
@@ -38,7 +36,7 @@ from ...ssh.profiles import (
     set_lpar_proc_compat,
 )
 from ..output import console, print_json, usage_error
-from ..runtime import client, run, ssh_config
+from ..runtime import client, run, ssh_config, with_client
 
 
 def _memopt_selectors(
@@ -76,7 +74,7 @@ def lpars_memopt_score(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get an LPAR's current memory-optimization affinity score."""
-    score = run(lambda: get_lpar_memopt_score(cast(HMCClient, ssh_config()), system_name, lpar_name))
+    score = with_client(lambda hmc: get_lpar_memopt_score(hmc, system_name, lpar_name))
     if as_json:
         print_json(score)
     else:
@@ -92,9 +90,7 @@ def lpars_get_minimum_affinity_policy(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get an LPAR's minimum-affinity policy when supported."""
-    policy = run(
-        lambda: get_minimum_affinity_policy(cast(HMCClient, ssh_config()), system_name, lpar_name)
-    )
+    policy = with_client(lambda hmc: get_minimum_affinity_policy(hmc, system_name, lpar_name))
     if as_json:
         print_json(asdict(policy))
         return
@@ -115,9 +111,7 @@ def lpars_memopt_scores(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """List current memory-optimization affinity scores for a system's LPARs."""
-    scores = run(
-        lambda: list_lpar_memopt_scores(cast(HMCClient, ssh_config()), system_name, lpar_name)
-    )
+    scores = with_client(lambda hmc: list_lpar_memopt_scores(hmc, system_name, lpar_name))
     if as_json:
         print_json(scores)
         return
@@ -141,7 +135,7 @@ def lpars_system_memopt_score(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get a managed system's current memory-optimization affinity score."""
-    score = run(lambda: get_system_memopt_score(cast(HMCClient, ssh_config()), system_name))
+    score = with_client(lambda hmc: get_system_memopt_score(hmc, system_name))
     if as_json:
         print_json(score)
         return
@@ -159,7 +153,7 @@ def _run_memopt_plan(
     prioritized, excluded = _memopt_selectors(
         prioritize_name, prioritize_id, exclude_name, exclude_id
     )
-    return run(lambda: operation(cast(HMCClient, ssh_config()), system_name, prioritized, excluded))
+    return with_client(lambda hmc: operation(hmc, system_name, prioritized, excluded))
 
 
 def _resource_group_selector(
@@ -190,7 +184,7 @@ def _run_resource_group_memopt(
     as_json: bool,
 ) -> None:
     selector = _resource_group_selector(names, ids, all_groups)
-    result = run(lambda: operation(cast(HMCClient, ssh_config()), system_name, selector))
+    result = with_client(lambda hmc: operation(hmc, system_name, selector))
     if as_json:
         print_json(asdict(result))
         return
