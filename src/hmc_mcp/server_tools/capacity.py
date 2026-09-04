@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any
 
-from .._app import with_client
+from .._app import serialize_tool_result, with_client
 from ..operations.capacity import fetch_capacity_report, find_placement
 from ..tool_registry import tool_module
 
@@ -21,7 +20,7 @@ def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
     """
 
     async def report(hmc):
-        return [asdict(item) for item in await fetch_capacity_report(hmc)]
+        return [serialize_tool_result(item) for item in await fetch_capacity_report(hmc)]
 
     return with_client(report, profile=profile)
 
@@ -42,7 +41,7 @@ def hmc_find_placement(
 
     async def placements(hmc):
         return [
-            asdict(item)
+            serialize_tool_result(item)
             for item in await find_placement(
                 hmc, desired_memory_mib, desired_proc_units
             )

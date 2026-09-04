@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from decimal import Decimal
 from typing import Any
 
 from .._app import (
+    serialize_tool_result,
     with_client,
     with_config,
 )
@@ -87,7 +87,7 @@ def hmc_assign_sriov_logical_port(
     """
 
     async def _go(hmc):
-        return asdict(
+        return serialize_tool_result(
             await assign_sriov_logical_port(
                 hmc,
                 system_name_or_uuid,
@@ -129,7 +129,7 @@ def hmc_unassign_sriov_logical_port(
     """
 
     async def _go(hmc):
-        return asdict(
+        return serialize_tool_result(
             await unassign_sriov_logical_port(
                 hmc,
                 system_name_or_uuid,

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any
 
 from .._app import (
     run_limited_collection,
+    serialize_tool_result,
     with_client,
 )
 from ..documents import StorageKind
@@ -279,7 +279,7 @@ def hmc_map_storage_to_lpar(
     """
 
     async def mapping(hmc):
-        return asdict(
+        return serialize_tool_result(
             await map_storage(
                 hmc,
                 vios_name_or_uuid,

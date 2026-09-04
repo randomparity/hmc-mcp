@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any
 
-from .._app import ssh_with_client, with_config
+from .._app import serialize_tool_result, ssh_with_client, with_config
 from ..operations.pcie import (
     list_dedicated_slots,
     list_sriov_adapters,
@@ -37,7 +36,7 @@ def hmc_list_dedicated_pcie_slots(
     """
 
     async def slots(config):
-        return asdict(await list_dedicated_slots(config, system_name_or_uuid))
+        return serialize_tool_result(await list_dedicated_slots(config, system_name_or_uuid))
 
     return with_config(slots, profile=profile)
 
@@ -57,7 +56,7 @@ def hmc_list_sriov_adapters(
     """
 
     async def adapters(config):
-        return asdict(await list_sriov_adapters(config, system_name_or_uuid, adapter_id))
+        return serialize_tool_result(await list_sriov_adapters(config, system_name_or_uuid, adapter_id))
 
     return with_config(adapters, profile=profile)
 
@@ -83,7 +82,7 @@ def hmc_list_sriov_physical_ports(
     """
 
     async def ports(config):
-        return asdict(
+        return serialize_tool_result(
             await list_sriov_physical_ports(
                 config, system_name_or_uuid, adapter_id, physical_port_id
             )
@@ -115,7 +114,7 @@ def hmc_list_sriov_logical_ports(
     """
 
     async def ports(config):
-        return asdict(
+        return serialize_tool_result(
             await list_sriov_logical_ports(
                 config,
                 system_name_or_uuid,

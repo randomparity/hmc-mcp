@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from decimal import Decimal
 from typing import Any
 
 from .._app import (
+    serialize_tool_result,
     with_client,
     with_config,
 )
@@ -164,9 +164,9 @@ def hmc_add_vnic(
                 ownership_override=ownership_override,
             )
         except VnicPartialError as exc:
-            evidence = json.dumps(asdict(exc.result), default=str)
+            evidence = json.dumps(serialize_tool_result(exc.result), default=str)
             raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
-        return asdict(result)
+        return serialize_tool_result(result)
 
     return with_client(_go, profile=profile)
 
@@ -202,8 +202,8 @@ def hmc_remove_vnic(
                 ownership_override=ownership_override,
             )
         except VnicPartialError as exc:
-            evidence = json.dumps(asdict(exc.result), default=str)
+            evidence = json.dumps(serialize_tool_result(exc.result), default=str)
             raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
-        return asdict(result)
+        return serialize_tool_result(result)
 
     return with_client(_go, profile=profile)
