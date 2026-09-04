@@ -1,0 +1,44 @@
+# ADR 0115: Configure the live-test environment
+
+## Status
+
+Accepted
+
+## Context
+
+The live-test runner contains identifiers and hardware-specific values that only
+apply to one environment. Reusing it requires editing tracked source and risks
+publishing those identifiers. Issue #609 requires every environment-specific
+value to be configured, with a documented `.env.example`. The operator also
+requires missing or malformed live-test configuration to stop before a live
+action, and sample values must be fictional.
+
+## Decision
+
+Use a strict `LIVE_TEST_*` namespace in the local `.env` file. The runner will
+load and validate every required value into `LiveTestContext` before it creates
+the MCP client. Scenario modules will consume the context rather than their own
+environment-specific module constants. `.env.example` will list every setting,
+state its format and purpose, and use mutually consistent fictional values.
+
+`HMC_*` connection settings retain their existing configuration precedence and
+semantics. The live runner must report all missing or invalid `LIVE_TEST_*`
+settings together and return without opening a client.
+
+## Consequences
+
+Operators copy and edit `.env.example` before a live run. Adding a new
+environment-specific scenario input requires a corresponding `LIVE_TEST_*`
+field, validation, example entry, and test. Runtime state such as discovered
+UUIDs remains outside the static configuration.
+
+## Considered & rejected
+
+- **Keep source defaults.** judgment: defaults make an incomplete local setup
+  capable of targeting an unintended environment.
+- **Use `HMC_*` names for scenario inputs.** verified: `HMCConfig` owns the
+  `HMC_*` namespace (`src/hmc_mcp/config.py`); mixing scenario inputs with
+  connection settings would create an unsupported configuration surface.
+- **Add a configuration dependency.** verified: the runner already parses its
+  local `.env` file in `scripts/live_test_runner.py`; a small typed parser uses
+  the existing standard-library path.
