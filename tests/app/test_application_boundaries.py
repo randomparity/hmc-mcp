@@ -176,7 +176,7 @@ def test_lpar_summary_cli_delegates_to_neutral_operation():
         return_value=_lpar_summary({"Resource": {"PartitionName": "aix1"}}, [])
     )
     with (
-        patch("hmc_mcp.cli_commands.lpar.inventory.lpar_summary", summary),
+        patch("hmc_mcp.cli_commands.lpar.inventory.fetch_lpar_summary", summary),
         patch(
                 "hmc_mcp.cli_commands.runtime.client",
             return_value=_ClientContext(client),
@@ -193,7 +193,7 @@ def test_system_summary_cli_delegates_to_neutral_operation():
         return_value=_system_summary({"Resource": {"SystemName": "system1"}}, [], [])
     )
     with (
-        patch("hmc_mcp.cli_commands.systems.system_summary", summary),
+        patch("hmc_mcp.cli_commands.systems.fetch_system_summary", summary),
         patch(
                 "hmc_mcp.cli_commands.runtime.client", return_value=_ClientContext(client)
         ),
@@ -209,7 +209,7 @@ def test_fleet_health_cli_delegates_to_neutral_operation():
     client = object()
     health = AsyncMock(return_value=FleetHealthResult((), (), (), (), ()))
     with (
-        patch("hmc_mcp.cli_commands.systems.fleet_health", health),
+        patch("hmc_mcp.cli_commands.systems.fetch_fleet_health", health),
         patch(
                 "hmc_mcp.cli_commands.runtime.client", return_value=_ClientContext(client)
         ),
@@ -227,7 +227,7 @@ def test_fleet_health_cli_does_not_claim_healthy_when_telemetry_is_unavailable()
     warning = "Recent job health is unavailable"
     health = AsyncMock(return_value=FleetHealthResult((), (), (), (), (warning,)))
     with (
-        patch("hmc_mcp.cli_commands.systems.fleet_health", health),
+        patch("hmc_mcp.cli_commands.systems.fetch_fleet_health", health),
         patch(
                 "hmc_mcp.cli_commands.runtime.client", return_value=_ClientContext(client)
         ),
