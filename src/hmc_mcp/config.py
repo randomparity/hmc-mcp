@@ -305,28 +305,7 @@ class HMCConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _warn_audit_memento_override(self) -> HMCConfig:
-        """Say once that HMC_AGENT_ID is discarding a custom HMC_AUDIT_MEMENTO.
-
-        When both are set, :attr:`effective_audit_memento` returns
-        ``hmc-mcp:<agent_id>`` and the custom ``audit_memento`` is ignored, which
-        an operator reading HMC audit logs has no other way to discover.
-
-        Said **once per process**, not once per construction.
-        :func:`build_config` builds a fresh ``HMCConfig`` inside every tool body,
-        so an unthrottled emission here runs at a rate the MCP client owns while
-        the message is identical every time. The package logger is bound to the
-        bounded served sink; a separate ``warnings.warn`` would bypass it and is
-        deliberately not emitted (#546).
-
-        A repeat is logged at ``DEBUG``, matching
-        ``server_permissions._log_unresolved``: an operator who raises the level
-        can still confirm that the override remains in force.
-
-        Recording under :data:`_override_report_lock` makes the promise hold under
-        concurrency. Configs are built off the event-loop thread, so an
-        unsynchronised check-then-act lets each racer miss and emit, delivering
-        O(concurrency) where the promise says one.
-        """
+        """Warn once per process when HMC_AGENT_ID overrides a custom audit memento."""
         if not (self.agent_id and self.audit_memento != "hmc-mcp"):
             return self
         global _reported_memento_override

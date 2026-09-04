@@ -52,10 +52,7 @@ UNRESOLVED_RENDERING: Final = "<unresolved>"
 
 Decision = Literal["allow", "deny"]
 
-#: Derived, as ``REASONS`` and ``EVENTS`` are. Lifted out of
-#: :func:`record_authorization`'s own signature so this vocabulary is something a
-#: checker and a test can consult, rather than one that has to be read back off the
-#: signature to be compared with anything (#518).
+#: Closed vocabulary exposed for validation and documentation checks.
 DECISIONS: frozenset[str] = frozenset(get_args(Decision))
 
 Reason = Literal[
@@ -68,8 +65,7 @@ Reason = Literal[
     "target-not-granted",
 ]
 
-#: The closed vocabulary, derived rather than restated — as ``tool_registry`` derives
-#: ``EFFECTS`` from ``Effect``.
+#: Closed vocabulary exposed for validation and documentation checks.
 REASONS: frozenset[str] = frozenset(get_args(Reason))
 
 Event = Literal[
@@ -83,33 +79,20 @@ Event = Literal[
     "tls-verification-disabled",
 ]
 
-#: Derived, as REASONS is, so the vocabulary is something a checker and a test can
-#: consult rather than a claim in a docstring. Every builder binds its literal
-#: through ``Event``, so a typo in any of them is a type error.
-#:
-#: ``records-dropped`` is the sink's own event, not a decision: see
-#: :class:`audit_sink._StderrSink` and
-#: docs/adr/0043-non-blocking-stderr-diagnostics.md.
+#: Closed vocabulary; ``records-dropped`` is emitted by the audit sink.
 EVENTS: frozenset[str] = frozenset(get_args(Event))
 
-#: What a caller supplied for one selector: a value, nothing, or something the
-#: boundary declines to read. ``reason`` names the *decision*; these name the *input*,
-#: which is why there is no ``connection-selector-unreadable`` reason code.
+#: Whether a caller supplied a readable selector value.
 State = Literal["present", "absent", "unreadable"]
 
-#: Which ADR 0011 guard entry point refused, on the ``ownership-denied`` record. Three
-#: members rather than the MCP tool or API function name: threading the caller's name
-#: through would move the frozen public signature digest across two exports and fourteen
-#: call sites, and per-tool granularity is a later issue's (ADR 0100).
+#: Which ADR 0011 guard entry point refused an ownership request.
 OwnershipOperation = Literal[
     "lpar-mutation",
     "lpar-decommission-snapshot",
     "lpar-profile-restore",
 ]
 
-#: Derived, as :data:`REASONS` and :data:`EVENTS` are, so
-#: ``tests/test_authorization_audit_doc.py`` holds the document's field row to it in both
-#: directions rather than to a set spelled a second time.
+#: Closed ownership-operation vocabulary.
 OWNERSHIP_OPERATIONS: frozenset[str] = frozenset(get_args(OwnershipOperation))
 
 #: Which of the guard's two rules refused. Named ``denial`` on the record and not
@@ -117,7 +100,7 @@ OWNERSHIP_OPERATIONS: frozenset[str] = frozenset(get_args(OwnershipOperation))
 #: name two boundaries' vocabularies and still tell a reader which it is reading.
 OwnershipDenial = Literal["malformed-token", "foreign-owner"]
 
-#: Derived, as :data:`OWNERSHIP_OPERATIONS` is, and held to the document the same way.
+#: Closed ownership-denial vocabulary.
 OWNERSHIP_DENIALS: frozenset[str] = frozenset(get_args(OwnershipDenial))
 
 _DENY_LEVEL: Final = logging.WARNING
