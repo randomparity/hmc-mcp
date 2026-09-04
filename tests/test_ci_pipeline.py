@@ -626,6 +626,13 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "pip install -e" not in body
 
 
+def test_readme_reusable_api_example_uses_exported_operation() -> None:
+    readme = (ROOT / "README.md").read_text()
+    assert "from hmc_mcp.api import HMCClient, HMCConfig, fetch_capacity_report" in readme
+    assert "await fetch_capacity_report(hmc)" in readme
+    assert "capacity_report" not in readme
+
+
 def test_github_ci_exercises_each_declared_range_floor() -> None:
     """ADR 0068: a declared range is a claim only if its low end is exercised."""
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()

@@ -46,12 +46,12 @@ operation:
 ```python
 import asyncio
 
-from hmc_mcp.api import HMCClient, HMCConfig, capacity_report
+from hmc_mcp.api import HMCClient, HMCConfig, fetch_capacity_report
 
 
 async def main() -> None:
     async with HMCClient(HMCConfig()) as hmc:
-        for system in await capacity_report(hmc):
+        for system in await fetch_capacity_report(hmc):
             print(system)
 
 
