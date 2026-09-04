@@ -56,6 +56,10 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
             f"SSH command timed out after {config.ssh_timeout:.0f}s: {cmd!r}. "
             "The HMC CLI may be hung or the HMC may be under load."
         ) from exc
+    except OSError as exc:
+        raise HMCCLIError(
+            f"SSH command connection failed for {cmd!r}: {exc}"
+        ) from exc
     except asyncssh.ProcessError as exc:
         detail = exc.stderr or exc.stdout or str(exc)
         if exc.exit_status is not None:
@@ -90,6 +94,10 @@ async def open_hmc_connection(config: HMCConfig) -> asyncssh.SSHClientConnection
         raise HMCCLIError(
             f"SSH connection to {config.host} timed out after "
             f"{config.ssh_timeout:.0f}s."
+        ) from exc
+    except OSError as exc:
+        raise HMCCLIError(
+            f"SSH connection to {config.host} failed: {exc}"
         ) from exc
     except asyncssh.Error as exc:
         raise HMCCLIError(f"SSH connection failed: {str(exc).strip()}") from exc

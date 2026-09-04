@@ -10,7 +10,7 @@ from conftest import make_config
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
-from hmc_mcp.ssh.transport import HMCCLIError, run_hmc_command
+from hmc_mcp.ssh.transport import HMCCLIError, open_hmc_connection, run_hmc_command
 
 # ---------------------------------------------------------------------------
 # Helpers to build a minimal asyncssh mock
@@ -31,6 +31,21 @@ def _make_ssh_mock(stdout: str = "output\n") -> MagicMock:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", [run_hmc_command, open_hmc_connection])
+async def test_os_connection_failures_use_hmc_cli_error(operation):
+    with patch(
+        "hmc_mcp.ssh.transport.asyncssh.connect",
+        side_effect=ConnectionRefusedError("connection refused"),
+    ), pytest.raises(HMCCLIError, match="SSH .*failed") as exc_info:
+        if operation is run_hmc_command:
+            await operation(make_config(), "lshmc -v")
+        else:
+            await operation(make_config())
+
+    assert isinstance(exc_info.value.__cause__, ConnectionRefusedError)
 
 
 @pytest.mark.asyncio
