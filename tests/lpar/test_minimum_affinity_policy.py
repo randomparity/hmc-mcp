@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
@@ -31,6 +32,10 @@ from hmc_mcp.ssh.transport import HMCCLIError
 
 def _config() -> HMCConfig:
     return HMCConfig(host="hmc.test", user="u", password="p")
+
+
+def _hmc() -> SimpleNamespace:
+    return SimpleNamespace(config=_config())
 
 
 @pytest.mark.asyncio
@@ -226,7 +231,7 @@ async def test_shared_policy_operation_resolves_names_and_wraps_result():
         ),
             patch("hmc_mcp.operations.affinity.ssh.query_minimum_affinity_policy", query),
     ):
-        result = await get_minimum_affinity_policy(_config(), "system", "lpar")
+        result = await get_minimum_affinity_policy(_hmc(), "system", "lpar")
 
     assert result.capability == "available"
     assert result.system == "resolved-system"
@@ -241,15 +246,18 @@ def test_mcp_policy_adapter_delegates_to_shared_operation():
         "available", "system", "lpar", 75, "warn", None
     )
     operation = AsyncMock(return_value=expected)
-    config = _config()
     with (
-        patch("hmc_mcp._app.build_config", return_value=config),
+        patch.object(
+            server_lpar_config,
+            "with_client",
+            side_effect=lambda callback, **_: asyncio.run(callback(_hmc())),
+        ),
         patch.object(server_lpar_config, "get_minimum_affinity_policy", operation),
     ):
         actual = server_lpar_config.hmc_get_minimum_affinity_policy("system", "lpar")
 
     assert actual == expected
-    operation.assert_awaited_once_with(config, "system", "lpar")
+    operation.assert_awaited_once_with(ANY, "system", "lpar")
 
 
 def test_mcp_registers_minimum_affinity_policy_as_lpar_read():
@@ -287,7 +295,11 @@ def test_mcp_registers_minimum_affinity_policy_as_lpar_read():
 )
 def test_cli_policy_human_output(result, expected):
     with (
-        patch.object(cli_lpars, "ssh_config", return_value=_config()),
+        patch.object(
+            cli_lpars,
+            "with_client",
+            side_effect=lambda callback, **_: asyncio.run(callback(_hmc())),
+        ),
         patch.object(
             cli_lpars, "get_minimum_affinity_policy", AsyncMock(return_value=result)
         ),
@@ -305,7 +317,11 @@ def test_cli_policy_json_delegates():
     )
     operation = AsyncMock(return_value=expected)
     with (
-        patch.object(cli_lpars, "ssh_config", return_value=_config()),
+        patch.object(
+            cli_lpars,
+            "with_client",
+            side_effect=lambda callback, **_: asyncio.run(callback(_hmc())),
+        ),
         patch.object(cli_lpars, "get_minimum_affinity_policy", operation),
     ):
         invocation = CliRunner().invoke(

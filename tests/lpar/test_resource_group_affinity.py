@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
@@ -29,6 +30,10 @@ from hmc_mcp.ssh.transport import HMCCLIError
 
 def _config() -> HMCConfig:
     return HMCConfig(host="hmc.test", user="u", password="p")
+
+
+def _hmc() -> SimpleNamespace:
+    return SimpleNamespace(config=_config())
 
 
 V11 = "version= Version: 11\n Release: 2\n Service Pack: 1120\n"
@@ -235,7 +240,7 @@ def test_shared_operation_resolves_system_and_defaults_to_all():
         ),
     ):
         result = asyncio.run(
-            list_resource_group_memopt_scores(_config(), "system-uuid")
+            list_resource_group_memopt_scores(_hmc(), "system-uuid")
         )
     assert result.capability == "available"
     assert result.selector == MemoptResourceGroupSelector(all=True)
@@ -258,16 +263,19 @@ def test_mcp_adapter_delegates_to_shared_operation():
         "upgrade HMC",
     )
     operation = AsyncMock(return_value=expected)
-    config = _config()
     with (
-        patch("hmc_mcp._app.build_config", return_value=config),
+        patch.object(
+            server_lpar_config,
+            "with_client",
+            side_effect=lambda callback, **_: asyncio.run(callback(_hmc())),
+        ),
         patch.object(
             server_lpar_config, "list_resource_group_memopt_scores", operation
         ),
     ):
         actual = server_lpar_config.hmc_list_resource_group_memopt_scores("system")
     assert actual == expected
-    operation.assert_awaited_once_with(config, "system", None)
+    operation.assert_awaited_once_with(ANY, "system", None)
 
 
 def test_mcp_registers_both_resource_group_affinity_tools():
@@ -294,7 +302,11 @@ def test_resource_group_cli_delegates_id_zero_and_prints_json():
     )
     operation = AsyncMock(return_value=expected)
     with (
-        patch.object(cli_lpars, "ssh_config", return_value=_config()),
+        patch.object(
+            cli_lpars,
+            "with_client",
+            side_effect=lambda callback, **_: asyncio.run(callback(_hmc())),
+        ),
         patch.object(cli_lpars, "list_resource_group_memopt_scores", operation),
     ):
         result = CliRunner().invoke(

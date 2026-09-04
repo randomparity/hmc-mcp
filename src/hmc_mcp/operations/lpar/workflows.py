@@ -23,33 +23,31 @@ async def create_lpar(
     assignments: LparPcieAssignments,
 ) -> LparPcieWorkflowResult:
     """Validate, create, stamp, and apply ordered PCIe assignments."""
+    await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
     try:
-        await prevalidate_lpar_pcie_assignments(
-            hmc, system_name_or_uuid, assignments
-        )
         created = await create_and_stamp_lpar(hmc, system_name_or_uuid, creation)
-        steps = [WorkflowStep("create", "ok", created.lpar)]
-        if created.lpar is None:
-            return LparPcieWorkflowResult(
-                True,
-                False,
-                None,
-                created.ownership_stamped,
-                tuple(steps),
-                created.warnings,
-            )
-        assignment_result = await apply_validated_lpar_pcie_assignments(
-            hmc, system_name_or_uuid, creation.name, assignments
-        )
-        steps.extend(assignment_result.steps)
+    except HMCError as exc:
+        translate_lpar_write_error(exc)
+        raise
+    steps = [WorkflowStep("create", "ok", created.lpar)]
+    if created.lpar is None:
         return LparPcieWorkflowResult(
             True,
-            assignment_result.workflow_completed,
-            created.lpar,
+            False,
+            None,
             created.ownership_stamped,
             tuple(steps),
             created.warnings,
         )
-    except HMCError as exc:
-        translate_lpar_write_error(exc)
-        raise
+    assignment_result = await apply_validated_lpar_pcie_assignments(
+        hmc, system_name_or_uuid, creation.name, assignments
+    )
+    steps.extend(assignment_result.steps)
+    return LparPcieWorkflowResult(
+        True,
+        assignment_result.workflow_completed,
+        created.lpar,
+        created.ownership_stamped,
+        tuple(steps),
+        created.warnings,
+    )
