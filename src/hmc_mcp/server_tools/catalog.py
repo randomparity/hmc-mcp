@@ -31,6 +31,7 @@ from hmc_mcp.server_tools.lpar import (
     configuration,
     lifecycle,
     lifecycle_boot,
+    lifecycle_create,
     profiles,
     provision,
 )
@@ -44,6 +45,7 @@ TOOL_MODULES = (
     health,
     lifecycle,
     lifecycle_boot,
+    lifecycle_create,
     vios,
     vios_labels,
     adapters,
