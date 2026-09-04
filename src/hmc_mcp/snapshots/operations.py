@@ -177,13 +177,21 @@ def _assess_snapshot_affinity(
 
 
 async def validate_lpar_snapshot(document: str) -> dict[str, object]:
-    """Validate local snapshot JSON without blocking the caller's event loop."""
+    """Validate local snapshot JSON without blocking the caller's event loop.
+
+    Raises:
+        SnapshotValidationError: If the document is malformed or violates the snapshot contract.
+    """
     snapshot = await asyncio.to_thread(parse_snapshot, document)
     return {"valid": True, "format": snapshot.format, "version": snapshot.version}
 
 
 async def inspect_lpar_snapshot(document: str) -> SnapshotInspection:
-    """Inspect local snapshot identity without blocking the caller's event loop."""
+    """Inspect local snapshot identity without blocking the caller's event loop.
+
+    Raises:
+        SnapshotValidationError: If the document is malformed or violates the snapshot contract.
+    """
     return await asyncio.to_thread(inspect_snapshot, document)
 
 
