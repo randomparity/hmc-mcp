@@ -1349,7 +1349,7 @@ def test_case_variant_export_beats_a_profile_boolean(
 
 def test_build_config_uses_a_supplied_document_without_resolving_a_path(monkeypatch):
     """An invocation snapshot changes only the source of the parsed mapping."""
-    document = config_module._ConfigDocument(
+    document = config_module.ConfigDocument(
         Path("snapshot-config.toml"),
         {
             "profiles": {

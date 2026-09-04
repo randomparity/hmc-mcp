@@ -393,8 +393,8 @@ class NoProfileSelectedError(ConfigError):
 
 
 @dataclass(frozen=True)
-class _ConfigDocument:
-    """One invocation's resolved path and parsed configuration document."""
+class ConfigDocument:
+    """Package-internal snapshot of a resolved path and parsed config document."""
 
     path: Path | None
     data: dict[str, Any]
@@ -497,11 +497,11 @@ def _read_config_document(path: Path) -> dict[str, Any]:
         ) from exc
 
 
-def _load_config_document() -> _ConfigDocument:
-    """Resolve and read one fresh configuration document snapshot."""
+def load_config_document() -> ConfigDocument:
+    """Resolve and read one fresh package-internal configuration snapshot."""
     path = resolve_config_path()
     data = {} if path is None else _read_config_document(path)
-    return _ConfigDocument(path, data)
+    return ConfigDocument(path, data)
 
 
 def _coerce_profiles(raw: Any, path: str | Path | None) -> dict[str, Any]:
@@ -908,7 +908,7 @@ def load_profile(
 def build_config(
     profile: str | None = None,
     *,
-    document: _ConfigDocument | None = None,
+    document: ConfigDocument | None = None,
     **overrides: Any,
 ) -> HMCConfig:
     """Build configuration from CLI options, environment, and a TOML profile.
