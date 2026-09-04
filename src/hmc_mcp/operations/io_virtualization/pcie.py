@@ -28,6 +28,7 @@ from hmc_mcp.ssh.network import (
     validate_sriov_mode,
 )
 from hmc_mcp.ssh.selectors import resolve_ssh_names
+from hmc_mcp.ssh.transport import HMCCLIError
 
 CapabilityState = Literal["available", "capability-unavailable"]
 ResourceKind = Literal[
@@ -792,7 +793,7 @@ async def list_sriov_physical_ports(
     for row in rows:
         availability = state_availability.get(row["state"])
         if availability is None:
-            raise ValueError(f"malformed physical-port state: {row['state']!r}")
+            raise HMCCLIError(f"malformed physical-port state: {row['state']!r}")
         if physical_port_id is None or row["phys_port_id"] == physical_port_id:
             items.append(
                 SriovPhysicalPort(

@@ -87,7 +87,12 @@ async def list_dedicated_pcie_slot_rows(
 def _parse_admitted_rows(output: str, fields: tuple[str, ...]) -> list[dict[str, str]]:
     if output.strip() == "No results were found.":
         return []
-    return parse_hmc_delimited_rows(output, fields)
+    try:
+        return parse_hmc_delimited_rows(output, fields)
+    except ValueError as exc:
+        raise HMCCLIError(
+            f"SR-IOV inventory response did not match the expected {','.join(fields)} fields"
+        ) from exc
 
 
 async def list_sriov_adapter_rows(
@@ -154,10 +159,10 @@ async def list_sriov_physical_port_rows(
     roce_rows = _parse_admitted_rows(roce_output, fields)
     ethc_rows = _parse_admitted_rows(ethc_output, fields)
     if roce_rows and ethc_rows:
-        raise ValueError("physical port query returned both roce and ethc rows")
+        raise HMCCLIError("physical port query returned both roce and ethc rows")
     rows = roce_rows or ethc_rows
     if any(row["adapter_id"] != adapter_id for row in rows):
-        raise ValueError(f"physical port row adapter_id does not match {adapter_id!r}")
+        raise HMCCLIError(f"physical port row adapter_id does not match {adapter_id!r}")
     return rows
 
 
