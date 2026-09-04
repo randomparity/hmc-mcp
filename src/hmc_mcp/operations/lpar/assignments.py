@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any
 
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.io_virtualization.validation import (
     require_command_safe_text,
     validate_capacity_percent,
@@ -14,13 +15,20 @@ from hmc_mcp.operations.io_virtualization.validation import (
 from hmc_mcp.operations.pcie import (
     PCIE_ASSIGNMENT_UNAVAILABLE_REASON,
     PcieAssignmentUnavailableError,
+    SriovLogicalPortCapabilityError,
+    SriovLogicalPortPartialError,
     assign_dedicated_pcie_slot,
     assign_sriov_logical_port,
     list_sriov_adapters,
     list_sriov_logical_ports,
     list_sriov_physical_ports,
 )
-from hmc_mcp.operations.vnic import VnicBackingSelector, add_vnic
+from hmc_mcp.operations.vnic import (
+    VnicBackingSelector,
+    VnicCapabilityError,
+    VnicPartialError,
+    add_vnic,
+)
 from hmc_mcp.ssh.network import (
     list_sriov_configured_logical_port_rows,
     list_vnic_backing_rows,
@@ -352,7 +360,14 @@ async def apply_validated_lpar_pcie_assignments(
     for index, (name, operation) in enumerate(operations):
         try:
             steps.append(WorkflowStep(name, "ok", await operation()))
-        except Exception as error:  # noqa: BLE001 - any step failure becomes a WorkflowStep("error") and skips the rest
+        except (
+            HMCError,
+            PcieAssignmentUnavailableError,
+            SriovLogicalPortCapabilityError,
+            SriovLogicalPortPartialError,
+            VnicCapabilityError,
+            VnicPartialError,
+        ) as error:
             result = getattr(error, "result", str(error))
             steps.append(WorkflowStep(name, "error", result))
             steps.extend(
