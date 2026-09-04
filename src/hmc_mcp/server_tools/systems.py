@@ -36,7 +36,7 @@ tool, register_tools, tool_security = tool_module()
 
 
 @tool(effect="read", operation="console.info", target_kind="console")
-def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
+def hmc_get_console_info(profile: str | None = None) -> dict[str, Any] | None:
     """Get HMC version, network configuration and links to managed systems.
 
     Useful as a connectivity check — this is the cheapest HMC call.
@@ -186,9 +186,10 @@ def hmc_list_vios(
     Results may be restricted to one managed system via system_name_or_uuid
     (accepts either a SystemName or a UUID).
 
-    When state is provided, returns only
+    When state is provided without a system scope, returns only
     VIOS entries whose PartitionState matches the given value, using the HMC
-    server-side search endpoint. Supply at most one selector. Use hmc_get_vios
+    server-side search endpoint. With a system scope, the returned feed is
+    filtered locally after the scoped request. Use hmc_get_vios
     for the storage-detail mappings of one VIOS.
 
     Args:

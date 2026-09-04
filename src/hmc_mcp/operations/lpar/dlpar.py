@@ -17,11 +17,12 @@ from ...errors import HMCError
 from .assignments import (
     LparPcieAssignments,
     LparPcieWorkflowResult,
-    WorkflowStep,
-    _apply_validated_lpar_pcie_assignments,
+    apply_validated_lpar_pcie_assignments,
+    assignment_step_names,
     prevalidate_lpar_pcie_assignments,
 )
 from .errors import translate_lpar_write_error
+from .workflow_contract import WorkflowStep
 
 
 async def modify_lpar(
@@ -61,11 +62,25 @@ async def modify_lpar(
                 lpar_uuid, build_lpar_document(name=None, resources=resources)
             )
         except HMCError as exc:
-            translate_lpar_write_error(exc)
-            raise
+            translated = translate_lpar_write_error(exc)
+            if new_name is None:
+                raise translated from exc
+            steps.append(WorkflowStep("resources", "error", str(translated)))
+            steps.extend(
+                WorkflowStep(step, "skipped")
+                for step in assignment_step_names(assignments)
+            )
+            return LparPcieWorkflowResult(
+                False,
+                False,
+                resource,
+                None,
+                tuple(steps),
+                (str(translated),),
+            )
         steps.append(WorkflowStep("resources", "ok", resource))
 
-    assignment_result = await _apply_validated_lpar_pcie_assignments(
+    assignment_result = await apply_validated_lpar_pcie_assignments(
         hmc,
         system_name_or_uuid or "",
         lpar_uuid,
@@ -73,15 +88,21 @@ async def modify_lpar(
         ownership_override=ownership_override,
     )
     steps.extend(assignment_result.steps)
+    warnings: tuple[str, ...] = ()
     if resource is None:
-        resource = await hmc.get_logical_partition(lpar_uuid)
+        try:
+            resource = await hmc.get_logical_partition(lpar_uuid)
+        except HMCError as exc:
+            if not steps:
+                raise
+            warnings = (f"final LPAR readback failed: {exc}",)
     return LparPcieWorkflowResult(
         False,
         assignment_result.workflow_completed,
         resource,
         None,
         tuple(steps),
-        (),
+        warnings,
     )
 
 
@@ -102,8 +123,7 @@ async def _apply_dlpar_document(
     try:
         return await hmc.modify_logical_partition(lpar_uuid, document)
     except HMCError as exc:
-        translate_lpar_write_error(exc)
-        raise
+        raise translate_lpar_write_error(exc) from exc
 
 
 async def set_lpar_processors(

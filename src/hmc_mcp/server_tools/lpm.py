@@ -10,6 +10,7 @@ from ..operations.lpm import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightRequest,
     LpmMigrationRequest,
+    RemoteRestartRequest,
     abort_lpar_migration,
     migrate_lpar,
     migrate_lpar_with_affinity_preflight,
@@ -334,14 +335,16 @@ def hmc_remote_restart_lpar(
             hmc,
             system_name_or_uuid,
             lpar_name_or_uuid,
-            operation,
-            target_system_name_or_uuid=target_system_name_or_uuid,
-            use_current_data=use_current_data,
-            retain_devices=retain_devices,
+            RemoteRestartRequest(
+                operation=operation,
+                target_system_name_or_uuid=target_system_name_or_uuid,
+                use_current_data=use_current_data,
+                retain_devices=retain_devices,
+                ownership_override=ownership_override,
+            ),
             wait=wait,
             timeout_seconds=timeout_seconds,
             poll_interval=poll_interval,
-            ownership_override=ownership_override,
         )
         return result.job
 

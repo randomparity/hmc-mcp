@@ -8,12 +8,12 @@ from typing import Literal
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_names
-from hmc_mcp.operations.pcie import require_admitted_environment
-from hmc_mcp.operations.pcie_validation import (
+from hmc_mcp.operations.io_virtualization.pcie import require_admitted_environment
+from hmc_mcp.operations.io_virtualization.validation import (
     require_command_safe_text,
     validate_capacity_percent,
 )
+from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_names
 from hmc_mcp.ssh.network import (
     add_vnic_backing,
     list_sriov_adapter_rows,
@@ -121,11 +121,12 @@ class VnicPartialError(RuntimeError):
 
 
 async def list_fc_ports(
-    config: HMCConfig,
+    hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
     """List Fibre Channel ports, optionally scoped to one LPAR."""
+    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(
         config, system_name_or_uuid, lpar_name_or_uuid
     )
@@ -133,11 +134,12 @@ async def list_fc_ports(
 
 
 async def list_sea_adapters(
-    config: HMCConfig,
+    hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
     """List shared Ethernet adapters, optionally scoped to one LPAR."""
+    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(
         config, system_name_or_uuid, lpar_name_or_uuid
     )
@@ -145,9 +147,10 @@ async def list_sea_adapters(
 
 
 async def list_vnics(
-    config: HMCConfig, system_name_or_uuid: str, lpar_name_or_uuid: str
+    hmc: HMCClient, system_name_or_uuid: str, lpar_name_or_uuid: str
 ) -> list[dict[str, object]]:
     """List vNICs on an LPAR."""
+    config = hmc.config
     system_name, lpar_name = await resolve_ssh_names(
         config, system_name_or_uuid, lpar_name_or_uuid
     )

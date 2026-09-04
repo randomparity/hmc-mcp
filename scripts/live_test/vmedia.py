@@ -861,10 +861,9 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
             state.skip(20, name, "vmedia_repo_created=False (ST16 failed)")
         return
 
-    # Safety belt — never touch protected LPARs
-    assert context.lp3_name not in _PROTECTED_LPARS, (
-        f"ST20 refuses to mutate protected LPAR {context.lp3_name!r}"
-    )
+    # Safety belt — never touch protected LPARs, even under ``python -O``.
+    if context.lp3_name in _PROTECTED_LPARS:
+        raise ValueError(f"ST20 refuses to mutate protected LPAR {context.lp3_name!r}")
 
     vios = context.vios_uuid
     vg = context.vg_uuid

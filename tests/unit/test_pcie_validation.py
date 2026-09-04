@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from hmc_mcp.operations.pcie_validation import (
+from hmc_mcp.operations.io_virtualization.validation import (
     require_command_safe_text,
     require_nonblank_text,
     validate_capacity_percent,

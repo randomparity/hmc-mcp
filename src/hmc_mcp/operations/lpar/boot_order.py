@@ -74,8 +74,7 @@ async def set_lpar_boot_order(
     try:
         updated = await hmc.modify_logical_partition(lpar_uuid, xml)
     except HMCError as exc:
-        translate_lpar_write_error(exc)
-        raise
+        raise translate_lpar_write_error(exc) from exc
 
     _logger.info(
         "Set boot order for LPAR %s (%s) to: %s",
@@ -106,8 +105,7 @@ async def clear_lpar_boot_order(
     try:
         updated = await hmc.modify_logical_partition(lpar_uuid, xml)
     except HMCError as exc:
-        translate_lpar_write_error(exc)
-        raise
+        raise translate_lpar_write_error(exc) from exc
 
     _logger.info(
         "Cleared boot order for LPAR %s (%s) (restored defaults)",

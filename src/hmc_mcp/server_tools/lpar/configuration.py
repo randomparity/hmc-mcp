@@ -7,14 +7,8 @@ from hmc_mcp.operations.ownership import set_lpar_ownership_description
 from ..._app import (
     ssh_with_client,
     with_client,
-    with_config,
 )
-from ...operations.lpar.configuration import (
-    configure_lpar_msp,
-    configure_lpar_processor_compatibility,
-)
-from ...operations.lpar.core import ProcessorCompatibilityMode
-from ...operations.ssh_affinity import (
+from ...operations.affinity.ssh import (
     MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
     get_lpar_memopt_score,
@@ -27,6 +21,11 @@ from ...operations.ssh_affinity import (
     plan_system_memopt_score,
     set_minimum_affinity_policy,
 )
+from ...operations.lpar.configuration import (
+    configure_lpar_msp,
+    configure_lpar_processor_compatibility,
+)
+from ...operations.lpar.core import ProcessorCompatibilityMode
 from ...ssh.affinity import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
@@ -57,9 +56,9 @@ def hmc_get_minimum_affinity_policy(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_config(
-        lambda config: get_minimum_affinity_policy(
-            config, system_name_or_uuid, lpar_name_or_uuid
+    return with_client(
+        lambda hmc: get_minimum_affinity_policy(
+            hmc, system_name_or_uuid, lpar_name_or_uuid
         ),
         profile=profile,
     )
@@ -110,9 +109,9 @@ def hmc_get_lpar_memopt_score(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_config(
-        lambda config: get_lpar_memopt_score(
-            config, system_name_or_uuid, lpar_name_or_uuid
+    return with_client(
+        lambda hmc: get_lpar_memopt_score(
+            hmc, system_name_or_uuid, lpar_name_or_uuid
         ),
         profile=profile,
     )
@@ -132,9 +131,9 @@ def hmc_list_lpar_memopt_scores(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_config(
-        lambda config: list_lpar_memopt_scores(
-            config, system_name_or_uuid, lpar_name_or_uuid
+    return with_client(
+        lambda hmc: list_lpar_memopt_scores(
+            hmc, system_name_or_uuid, lpar_name_or_uuid
         ),
         profile=profile,
     )
@@ -151,8 +150,8 @@ def hmc_get_system_memopt_score(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_config(
-        lambda config: get_system_memopt_score(config, system_name_or_uuid),
+    return with_client(
+        lambda hmc: get_system_memopt_score(hmc, system_name_or_uuid),
         profile=profile,
     )
 
@@ -174,9 +173,9 @@ def hmc_plan_lpar_memopt_scores(
     """
 
     validate_memopt_scenario(prioritized, excluded)
-    return with_config(
-        lambda config: plan_lpar_memopt_scores(
-            config, system_name_or_uuid, prioritized, excluded
+    return with_client(
+        lambda hmc: plan_lpar_memopt_scores(
+            hmc, system_name_or_uuid, prioritized, excluded
         ),
         profile=profile,
     )
@@ -199,9 +198,9 @@ def hmc_plan_system_memopt_score(
     """
 
     validate_memopt_scenario(prioritized, excluded)
-    return with_config(
-        lambda config: plan_system_memopt_score(
-            config, system_name_or_uuid, prioritized, excluded
+    return with_client(
+        lambda hmc: plan_system_memopt_score(
+            hmc, system_name_or_uuid, prioritized, excluded
         ),
         profile=profile,
     )
@@ -225,9 +224,9 @@ def hmc_list_resource_group_memopt_scores(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_config(
-        lambda config: list_resource_group_memopt_scores(
-            config, system_name_or_uuid, selector
+    return with_client(
+        lambda hmc: list_resource_group_memopt_scores(
+            hmc, system_name_or_uuid, selector
         ),
         profile=profile,
     )
@@ -251,9 +250,9 @@ def hmc_plan_resource_group_memopt_scores(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_config(
-        lambda config: plan_resource_group_memopt_scores(
-            config, system_name_or_uuid, selector
+    return with_client(
+        lambda hmc: plan_resource_group_memopt_scores(
+            hmc, system_name_or_uuid, selector
         ),
         profile=profile,
     )

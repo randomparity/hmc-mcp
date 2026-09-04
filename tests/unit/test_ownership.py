@@ -113,6 +113,18 @@ def _config():
     return HMCConfig.from_mapping({"host": "hmc.test", "user": "u", "password": "p"})
 
 
+@pytest.fixture(autouse=True)
+def fixed_ownership_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep local-date ownership assertions deterministic across midnight."""
+
+    class FixedDate(datetime.date):
+        @classmethod
+        def today(cls) -> FixedDate:
+            return cls(2026, 1, 15)
+
+    monkeypatch.setattr(datetime, "date", FixedDate)
+
+
 def test_stamp_returns_token_on_success():
     config = _config()
     with patch(

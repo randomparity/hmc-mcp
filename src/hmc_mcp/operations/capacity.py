@@ -39,19 +39,23 @@ def lpar_processing_units(lpar: dict[str, Any]) -> float:
         ) from exc
 
 
-def system_capacity(
+def calculate_system_capacity(
     system: dict[str, Any], lpars: list[dict[str, Any]]
 ) -> CapacitySummary:
     """Compute capacity statistics for one managed system."""
     resource = system.get("Resource") or {}
-    total_memory = int(resource.get("AssignableSystemMemory") or 0)
-    total_processors = float(resource.get("ConfigurableSystemProcessorUnits") or 0.0)
+    identity = system.get("UUID") or resource.get("SystemName") or "unknown system"
+    total_memory = _int_capacity(resource, "AssignableSystemMemory", identity)
+    total_processors = _float_capacity(
+        resource, "ConfigurableSystemProcessorUnits", identity
+    )
     assigned_memory = 0
     assigned_processors = 0.0
     running = 0
     for lpar in lpars:
         lpar_resource = lpar.get("Resource") or {}
-        assigned_memory += int(lpar_resource.get("DesiredMemory") or 0)
+        lpar_identity = lpar.get("UUID") or lpar_resource.get("PartitionName") or "unknown LPAR"
+        assigned_memory += _int_capacity(lpar_resource, "DesiredMemory", lpar_identity)
         assigned_processors += lpar_processing_units(lpar)
         if lpar_resource.get("PartitionState") == "running":
             running += 1
@@ -69,14 +73,34 @@ def system_capacity(
     )
 
 
-async def capacity_report(hmc: HMCClient) -> list[CapacitySummary]:
+def _int_capacity(resource: dict[str, Any], field: str, identity: object) -> int:
+    raw_value = resource.get(field)
+    try:
+        return int(raw_value or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Resource {identity!r} has invalid {field} {raw_value!r}"
+        ) from exc
+
+
+def _float_capacity(resource: dict[str, Any], field: str, identity: object) -> float:
+    raw_value = resource.get(field)
+    try:
+        return float(raw_value or 0.0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Resource {identity!r} has invalid {field} {raw_value!r}"
+        ) from exc
+
+
+async def fetch_capacity_report(hmc: HMCClient) -> list[CapacitySummary]:
     """Return capacity statistics for every managed system."""
     systems = await hmc.list_managed_systems()
     result = []
     for system in systems:
         uuid = system.get("UUID")
         lpars = await hmc.list_logical_partitions(uuid) if uuid else []
-        result.append(system_capacity(system, lpars))
+        result.append(calculate_system_capacity(system, lpars))
     return result
 
 
@@ -86,7 +110,7 @@ async def find_placement(
     desired_proc_units: float = 0.5,
 ) -> list[CapacitySummary]:
     """Return systems with sufficient free resources, best fit first."""
-    report = await capacity_report(hmc)
+    report = await fetch_capacity_report(hmc)
     candidates = [
         capacity
         for capacity in report

@@ -8,9 +8,9 @@ import typer
 from rich.table import Table
 
 from ..jobs import validate_wait_timing
-from ..operations.capacity import capacity_report, find_placement
-from ..operations.composite import system_summary
-from ..operations.health import fleet_health
+from ..operations.capacity import fetch_capacity_report, find_placement
+from ..operations.composite import fetch_system_summary
+from ..operations.health import fetch_fleet_health
 from ..operations.systems import (
     get_system,
     list_systems,
@@ -25,7 +25,7 @@ def systems_health(
 ) -> None:
     """Show exception-only health across the managed estate."""
 
-    result = asdict(with_client(fleet_health))
+    result = asdict(with_client(fetch_fleet_health))
     if as_json:
         print_json(result)
         return
@@ -156,7 +156,7 @@ def systems_summary(
 ) -> None:
     """One-call summary: state, MTMS, firmware, LPAR counts, free memory/CPU, VIOS count."""
 
-    result = asdict(with_client(lambda hmc: system_summary(hmc, name_or_uuid)))
+    result = asdict(with_client(lambda hmc: fetch_system_summary(hmc, name_or_uuid)))
     if as_json:
         print_json(result)
         return
@@ -184,7 +184,7 @@ def systems_capacity(
 ) -> None:
     """Capacity report: memory/CPU totals and free resources per managed system."""
 
-    report = [asdict(item) for item in with_client(capacity_report)]
+    report = [asdict(item) for item in with_client(fetch_capacity_report)]
     if as_json:
         print_json(report)
         return

@@ -30,12 +30,12 @@ from ..authorization.access_policy import (
     Grant,
 )
 from ..config import (
+    ConfigDocument,
     ConfigError,
     HMCConfig,
-    _ConfigDocument,
-    _load_config_document,
     build_config,
     env_var_value,
+    load_config_document,
 )
 from ..tool_registry import (
     Authorize,
@@ -334,7 +334,7 @@ def _guard_source(config: HMCConfig) -> tuple[str, str | None]:
 def _power_guard(
     profile: str | None,
     reported_unresolved: set[tuple[str, str]],
-    document: _ConfigDocument | Exception | None = None,
+    document: ConfigDocument | Exception | None = None,
 ) -> PowerOwnershipGuard:
     """Resolve the guard for one connection the way a tool call would.
 
@@ -447,10 +447,10 @@ def resolve_power_guards(
     if ambient_host:
         connections &= {None}
     ordered = sorted(connections, key=lambda name: (name is not None, name or ""))
-    document: _ConfigDocument | Exception | None = None
+    document: ConfigDocument | Exception | None = None
     if ordered and not ambient_host:
         try:
-            document = _load_config_document()
+            document = load_config_document()
         except Exception as exc:  # noqa: BLE001 — classified per connection below
             document = exc
     return tuple(

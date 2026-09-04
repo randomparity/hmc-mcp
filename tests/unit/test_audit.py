@@ -81,6 +81,7 @@ Not spec-numbered, each pinning something a review round found:
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import io
 import json
@@ -908,12 +909,22 @@ def test_a_long_partition_records_a_log_path_that_does_not_exist(length, recover
 def test_only_audit_sink_resolves_the_audit_logger():
     """Spec 8a. The sink owns the logger and has no package dependencies."""
     package = Path(audit.__file__).parent.parent
-    offenders = [
-        path.name
-        for path in package.glob("*.py")
-        if path != Path(audit_sink.__file__)
-        and audit_sink.AUDIT_LOGGER_NAME in path.read_text()
-    ]
+    sink_path = Path(audit_sink.__file__).resolve()
+    offenders = []
+    for path in package.rglob("*.py"):
+        if path.resolve() == sink_path:
+            continue
+        tree = ast.parse(path.read_text())
+        if any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "getLogger"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value == audit_sink.AUDIT_LOGGER_NAME
+            for node in ast.walk(tree)
+        ):
+            offenders.append(str(path.relative_to(package)))
     assert offenders == [], f"{offenders} name the reserved audit logger"
 
     source = Path(audit_sink.__file__).read_text()

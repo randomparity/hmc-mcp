@@ -28,7 +28,7 @@ class PcmResource:
 async def resolve_pcm_resource(
     hmc: HMCClient,
     category: PcmCategory,
-    resource: str,
+    resource_name_or_uuid: str,
     system_name_or_uuid: str | None = None,
 ) -> PcmResource:
     """Resolve a PCM category selector to its REST resource identity.
@@ -36,12 +36,13 @@ async def resolve_pcm_resource(
     Raises:
         ValueError: If system scope is missing or invalid for the category.
     """
+    _validate_category(category)
     if category == "ManagedSystem":
         if system_name_or_uuid is not None:
             raise ValueError(
                 "system_name_or_uuid is valid only for LogicalPartition metrics."
             )
-        return PcmResource(await resolve_system_uuid(hmc, resource))
+        return PcmResource(await resolve_system_uuid(hmc, resource_name_or_uuid))
     if category == "LogicalPartition":
         if system_name_or_uuid is None:
             raise ValueError(
@@ -49,10 +50,21 @@ async def resolve_pcm_resource(
             )
         system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
         resource_uuid = await resolve_lpar_uuid(
-            hmc, resource, system_name_or_uuid=system_uuid
+            hmc, resource_name_or_uuid, system_name_or_uuid=system_uuid
         )
         return PcmResource(resource_uuid, system_uuid)
-    return PcmResource(resource)
+    raise AssertionError("unreachable PCM category")
+
+
+def _validate_category(category: str) -> None:
+    if category not in PCM_CATEGORIES:
+        allowed = ", ".join(sorted(PCM_CATEGORIES))
+        raise ValueError(f"category must be one of: {allowed}")
+
+
+def _validate_kind(kind: str) -> None:
+    if kind not in {"processed", "aggregated"}:
+        raise ValueError("kind must be either 'processed' or 'aggregated'")
 
 
 def validate_pcm_preferences_category(category: PcmCategory) -> None:
@@ -66,6 +78,7 @@ def validate_pcm_preferences_category(category: PcmCategory) -> None:
 def validate_pcm_metric_target(
     category: PcmCategory, system_name_or_uuid: str | None
 ) -> None:
+    _validate_category(category)
     if category == "LogicalPartition" and system_name_or_uuid is None:
         raise ValueError(
             "LogicalPartition metrics require the owning system_name_or_uuid."
@@ -94,7 +107,7 @@ def preference_flags(
 
 
 async def get_pcm_preferences(
-    hmc: HMCClient, category: PcmCategory, resource: str
+    hmc: HMCClient, category: PcmCategory, resource_name_or_uuid: str
 ) -> dict[str, Any]:
     """Return PCM preferences for a managed system.
 
@@ -102,7 +115,7 @@ async def get_pcm_preferences(
         ValueError: If ``category`` is not ``ManagedSystem``.
     """
     validate_pcm_preferences_category(category)
-    target = await resolve_pcm_resource(hmc, category, resource)
+    target = await resolve_pcm_resource(hmc, category, resource_name_or_uuid)
     try:
         return await hmc.get_pcm_preferences(category, target.resource_uuid)
     except HMCError as exc:
@@ -113,7 +126,7 @@ async def get_pcm_preferences(
 async def set_pcm_preferences(
     hmc: HMCClient,
     category: PcmCategory,
-    resource: str,
+    resource_name_or_uuid: str,
     flags: dict[str, bool],
 ) -> dict[str, Any]:
     """Update PCM preferences on a managed system.
@@ -124,7 +137,7 @@ async def set_pcm_preferences(
     if not flags:
         raise ValueError("No preference flags supplied; nothing to change.")
     validate_pcm_preferences_category(category)
-    target = await resolve_pcm_resource(hmc, category, resource)
+    target = await resolve_pcm_resource(hmc, category, resource_name_or_uuid)
     try:
         return await hmc.set_pcm_preferences(category, target.resource_uuid, **flags)
     except HMCError as exc:
@@ -132,10 +145,10 @@ async def set_pcm_preferences(
         raise
 
 
-async def metric_links(
+async def fetch_metric_links(
     hmc: HMCClient,
     category: PcmCategory,
-    resource: str,
+    resource_name_or_uuid: str,
     *,
     kind: MetricKind,
     start_ts: str,
@@ -148,9 +161,10 @@ async def metric_links(
     Raises:
         ValueError: If system scope is missing or invalid for the category.
     """
+    _validate_kind(kind)
     validate_pcm_metric_target(category, system_name_or_uuid)
     target = await resolve_pcm_resource(
-        hmc, category, resource, system_name_or_uuid=system_name_or_uuid
+        hmc, category, resource_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
     fetch = (
         hmc.get_processed_metric_links
@@ -171,10 +185,10 @@ async def metric_links(
         raise
 
 
-async def metric_data(
+async def fetch_metric_data(
     hmc: HMCClient,
     category: PcmCategory,
-    resource: str,
+    resource_name_or_uuid: str,
     *,
     kind: MetricKind,
     start_ts: str,
@@ -187,10 +201,10 @@ async def metric_data(
     Raises:
         ValueError: If system scope is missing or invalid for the category.
     """
-    links = await metric_links(
+    links = await fetch_metric_links(
         hmc,
         category,
-        resource,
+        resource_name_or_uuid,
         kind=kind,
         start_ts=start_ts,
         end_ts=end_ts,

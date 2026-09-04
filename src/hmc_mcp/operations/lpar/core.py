@@ -518,6 +518,5 @@ async def rename_lpar(
             lpar_uuid, build_lpar_document(name=new_name)
         )
     except HMCError as exc:
-        translate_lpar_write_error(exc)
-        raise
+        raise translate_lpar_write_error(exc) from exc
     return lpar_uuid, updated

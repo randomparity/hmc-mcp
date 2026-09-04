@@ -12,7 +12,7 @@ from ...operations.lpar.assignments import LparPcieAssignments
 from ...operations.lpar.dlpar import modify_lpar
 from ..output import console, partition_not_found, print_json, usage_error
 from ..runtime import client, run
-from .config import _load_pcie_assignments
+from .assignment_input import load_pcie_assignments
 
 
 def lpars_modify(
@@ -60,32 +60,7 @@ def lpars_modify(
     dynamic (DLPAR) operations and need RMC up; otherwise they apply on next
     activation.
     """
-    assignments = _load_pcie_assignments(pcie_assignments)
-    if (
-        all(
-            v is None
-            for v in (
-                new_name,
-                min_memory,
-                memory,
-                max_memory,
-                min_procs,
-                procs,
-                max_procs,
-                min_vcpus,
-                vcpus,
-                max_vcpus,
-                dedicated,
-                capped,
-            )
-        )
-        and assignments == LparPcieAssignments()
-    ):
-        usage_error("Nothing to change — pass at least one option")
-    if new_name is not None and system is None:
-        usage_error("--system is required when renaming an LPAR")
-    if assignments != LparPcieAssignments() and system is None:
-        usage_error("--system is required when assigning PCIe resources")
+    assignments = load_pcie_assignments(pcie_assignments)
     resources = LparResources(
         min_memory=min_memory,
         desired_memory=memory,
@@ -99,6 +74,16 @@ def lpars_modify(
         max_vcpus=max_vcpus,
         uncapped=None if capped is None else not capped,
     )
+    if (
+        new_name is None
+        and resources == LparResources()
+        and assignments == LparPcieAssignments()
+    ):
+        usage_error("Nothing to change — pass at least one option")
+    if new_name is not None and system is None:
+        usage_error("--system is required when renaming an LPAR")
+    if assignments != LparPcieAssignments() and system is None:
+        usage_error("--system is required when assigning PCIe resources")
     if not yes and not typer.confirm(f"Apply changes to '{name_or_uuid}'?"):
         raise typer.Abort()
 
@@ -116,6 +101,9 @@ def lpars_modify(
 
     result = run(_go)
 
+    if not result.workflow_completed:
+        print_json(asdict(result))
+        raise typer.Exit(code=1)
     if result.lpar is None:
         partition_not_found(name_or_uuid)
     uuid = result.lpar.get("UUID", name_or_uuid)

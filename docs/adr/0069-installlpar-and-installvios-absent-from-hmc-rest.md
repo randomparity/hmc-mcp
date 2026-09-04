@@ -123,7 +123,7 @@ from a specific adapter slot but does not drive the NIM install handshake —
 that remains entirely on the NIM master. Any OS-install automation therefore
 needs NIM-master credentials regardless of what the HMC is asked to do.
 
-**Tool disposition is out of scope here.** `hmc_install_lpar_os`
+**Tool disposition is out of scope here.** `hmc_install_vios_by_lpar_selector`
 (`src/hmc_mcp/server_tools/vios.py:193`, endpoint `:253`) and `hmc_install_vios`
 (`src/hmc_mcp/server_tools/vios.py:127`, endpoint `:182`) POST to operations that no
 surveyed HMC advertises — they are phantom tools, not under-parameterized
@@ -141,7 +141,7 @@ pending); this ADR deliberately changes no source code.
  *prove* nonexistence (the package itself relies on undocumented
   `/rest/api/web/File/`), which is why the live PUT probes returning REST0006
   on both HMCs are the load-bearing evidence.
-- Until #410 resolves, `hmc_install_lpar_os` and `hmc_install_vios` will fail
+- Until #410 resolves, `hmc_install_vios_by_lpar_selector` and `hmc_install_vios` will fail
   at runtime with `REST0006 No such Operation` on any surveyed HMC; callers
   should treat them as non-functional rather than mis-parameterized.
 - OS-install workflows built on this package must retain NIM-master SSH

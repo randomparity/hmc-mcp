@@ -13,6 +13,7 @@ a declared selector".
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import inspect
 
@@ -352,15 +353,22 @@ def test_the_guard_is_reached_by_every_transport_helper():
     guard above stops covering it. This asserts the property the placement
     depends on, rather than trusting that no such helper appears.
     """
-    import inspect
-
     from hmc_mcp.client import core as client_module
 
     source = inspect.getsource(client_module)
-    direct = [
-        line.strip()
-        for line in source.splitlines()
-        if "self._http." in line
-        and not any(k in line for k in ("aclose", "headers", "_http.request", "="))
-    ]
+    tree = ast.parse(source)
+    direct: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        expression = ast.unparse(node.func.value)
+        if expression != "self._http" or node.func.attr in {"aclose"}:
+            continue
+        owner = next(
+            (parent.name for parent in ast.walk(tree) if isinstance(parent, ast.AsyncFunctionDef)
+             and any(child is node for child in ast.walk(parent))),
+            None,
+        )
+        if owner != "_request":
+            direct.append(ast.unparse(node.func))
     assert not direct, f"a transport call bypassing _request: {direct}"

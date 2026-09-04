@@ -8,7 +8,7 @@ from decimal import Decimal
 import typer
 from rich.table import Table
 
-from ..operations.pcie import (
+from ..operations.io_virtualization.pcie import (
     assign_dedicated_pcie_slot,
     assign_sriov_logical_port,
     list_dedicated_slots,
@@ -51,7 +51,7 @@ def network_list_dedicated_pcie_slots(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List normalized dedicated PCIe slots on a managed system."""
-    result = run(lambda: list_dedicated_slots(ssh_config(), system_name))
+    result = with_client(lambda hmc: list_dedicated_slots(hmc, system_name))
     _print_pcie_inventory(result, as_json)
 
 
@@ -101,7 +101,7 @@ def network_list_sriov_adapters(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List normalized SR-IOV adapters or their unavailable capability."""
-    result = run(lambda: list_sriov_adapters(ssh_config(), system_name, adapter_id))
+    result = with_client(lambda hmc: list_sriov_adapters(hmc, system_name, adapter_id))
     _print_pcie_inventory(result, as_json)
 
 
@@ -112,9 +112,9 @@ def network_list_sriov_physical_ports(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List normalized SR-IOV physical ports or their unavailable capability."""
-    result = run(
-        lambda: list_sriov_physical_ports(
-            ssh_config(), system_name, adapter_id, physical_port_id
+    result = with_client(
+        lambda hmc: list_sriov_physical_ports(
+            hmc, system_name, adapter_id, physical_port_id
         )
     )
     _print_pcie_inventory(result, as_json)
@@ -128,9 +128,9 @@ def network_list_sriov_logical_ports(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List normalized SR-IOV logical ports or their unavailable capability."""
-    result = run(
-        lambda: list_sriov_logical_ports(
-            ssh_config(),
+    result = with_client(
+        lambda hmc: list_sriov_logical_ports(
+            hmc,
             system_name,
             adapter_id,
             physical_port_id,
@@ -214,8 +214,8 @@ def network_set_sriov_mode(
     mode: SriovMode = typer.Argument(..., help="'sriov' or 'dedicated'"),
 ) -> None:
     """Verify an adapter's current mode; transitions fail closed."""
-    result = run(
-        lambda: set_sriov_adapter_mode(ssh_config(), system_name, adapter_id, mode)
+    result = with_client(
+        lambda hmc: set_sriov_adapter_mode(hmc, system_name, adapter_id, mode)
     )
 
     console.print(

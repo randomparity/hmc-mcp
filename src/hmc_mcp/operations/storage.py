@@ -21,15 +21,6 @@ from ..client.client_contracts import httpx
 from ..config import ISO_URL_ALLOWLIST_HELP
 from ..documents import StorageKind
 from ..errors import HMCError
-from ..jobs import (
-    DEFAULT_JOB_POLL_INTERVAL,
-    DEFAULT_JOB_TIMEOUT_SECONDS,
-    DeviceType,
-    LuType,
-    validate_logical_unit_types,
-    validate_wait_timing,
-    wait_for_submitted_job,
-)
 from ..resource_identity import resolve_lpar_uuid, resolve_vios_uuid
 
 logger = logging.getLogger(__name__)
@@ -41,23 +32,6 @@ class StorageMapResult:
 
     lpar_uuid: str
     resource: dict[str, Any] | None
-
-
-async def list_clusters(hmc: HMCClient) -> list[dict[str, Any]]:
-    """List clusters through the shared presentation-neutral operation seam."""
-    return await hmc.list_clusters()
-
-
-async def list_shared_storage_pools(hmc: HMCClient) -> list[dict[str, Any]]:
-    """List shared storage pools through the shared operation seam."""
-    return await hmc.list_shared_storage_pools()
-
-
-async def get_shared_storage_pool(
-    hmc: HMCClient, ssp_uuid: str
-) -> dict[str, Any] | None:
-    """Get one shared storage pool by UUID."""
-    return await hmc.get_shared_storage_pool(ssp_uuid)
 
 
 # HTTP download configuration
@@ -75,8 +49,9 @@ UPLOAD_CHUNK_SIZE = 64 * 1024
 
 async def list_volume_groups(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List volume groups on a VIOS."""
     vios_uuid = await resolve_vios_uuid(
@@ -87,10 +62,11 @@ async def list_volume_groups(
 
 async def create_volume_group(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     name: str,
     physical_volumes: list[str],
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a volume group from the selected physical volumes."""
     return await hmc.create_volume_group(
@@ -104,11 +80,12 @@ async def create_volume_group(
 
 async def create_virtual_disk(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     name: str,
     capacity_mib: int,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a virtual disk of ``capacity_mib`` in a volume group."""
     return await hmc.create_virtual_disk(
@@ -123,10 +100,11 @@ async def create_virtual_disk(
 
 async def delete_virtual_disk(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     disk_name: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Delete a Virtual Disk from a Volume Group.
 
@@ -141,8 +119,8 @@ async def delete_virtual_disk(
         disk_name: Name of the Virtual Disk to delete.
 
     Returns:
-        Deleted disk metadata when supplied by the HMC, or ``None`` when a
-        successful deletion response contains no resource entry.
+        The parsed HMC response entry from the VolumeGroup update, or ``None``
+        when a successful response contains no resource entry.
 
     Raises:
         HMCError: If the disk is mapped to an LPAR or deletion fails.
@@ -173,10 +151,10 @@ async def delete_virtual_disk(
 
 async def map_storage(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str,
     *,
+    system_name_or_uuid: str | None = None,
     kind: StorageKind,
     storage_name: str,
     target: str | None = None,
@@ -200,10 +178,11 @@ async def map_storage(
 
 async def create_media_repository(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     size_mib: int,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a media repository in a VIOS volume group."""
     return await hmc.create_media_repository(
@@ -217,11 +196,12 @@ async def create_media_repository(
 
 async def create_optical_media(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     name: str,
     size_mib: int,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create blank optical media in a VIOS media repository."""
     return await hmc.create_optical_media(
@@ -236,9 +216,10 @@ async def create_optical_media(
 
 async def list_storage_mappings(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List VirtualSCSIMappings on a VIOS, optionally scoped to an LPAR.
 
@@ -258,10 +239,10 @@ async def list_storage_mappings(
 
 async def detach_storage_mapping(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     mapping_uuid: str,
     *,
+    system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> None:
     """Authorize the mapped LPAR, then detach its VirtualSCSIMapping.
@@ -302,9 +283,10 @@ async def detach_storage_mapping(
 
 async def delete_media_repository(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> str:
     """Delete the Virtual Media Repository from a Volume Group.
 
@@ -330,10 +312,11 @@ async def delete_media_repository(
 
 async def delete_optical_media(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     media_name: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Delete a VirtualOpticalMedia (ISO image) from the media repository.
 
@@ -371,9 +354,10 @@ async def delete_optical_media(
 
 async def get_media_repository(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Get the Virtual Media Repository (VMLibrary) from a Volume Group.
 
@@ -579,9 +563,10 @@ async def _aiter_file_chunks(
 
 async def list_optical_media(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List Virtual Optical Media in the Virtual Media Repository.
 
@@ -633,11 +618,12 @@ async def _upload_iso_via_broker(
 
 async def upload_iso(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     vg_uuid: str,
     media_name: str,
     iso_source: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
     """Upload an ISO to a VIOS media repository via the HMC file broker.
 
@@ -654,12 +640,12 @@ async def upload_iso(
 
     Args:
         hmc: HMC client instance.
-        system_name_or_uuid: Optional managed-system name or UUID used to scope
-            a VIOS name.
         vios_name_or_uuid: VIOS name or UUID.
         vg_uuid: Volume Group UUID containing the media repository.
         media_name: Target name for the ISO in the repository.
         iso_source: HTTP(S) URL to download the ISO from.
+        system_name_or_uuid: Optional managed-system name or UUID used to scope
+            a VIOS name.
 
     Returns:
         Dict with:
@@ -735,75 +721,12 @@ async def upload_iso(
                     logger.exception("temporary ISO cleanup failed for %s", iso_path)
 
 
-async def create_logical_unit(
-    hmc: HMCClient,
-    cluster_uuid: str,
-    lu_name: str,
-    lu_size_gib: int,
-    lu_type: LuType,
-    device_type: DeviceType,
-    *,
-    cloned_from: str | None = None,
-    wait: bool = False,
-    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
-    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
-) -> dict[str, Any] | None:
-    """Submit logical-unit creation and optionally wait for completion.
-
-    Raises:
-        ValueError: If the LU/device combination or polling controls are invalid.
-    """
-    validate_logical_unit_types(lu_type, device_type)
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-    job = await hmc.create_logical_unit(
-        cluster_uuid, lu_name, lu_size_gib, lu_type, device_type, cloned_from
-    )
-    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
-
-
-async def delete_logical_unit(
-    hmc: HMCClient,
-    cluster_uuid: str,
-    lu_udid: str,
-    *,
-    wait: bool = False,
-    timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
-    poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
-) -> dict[str, Any] | None:
-    """Submit logical-unit deletion and optionally wait for completion.
-
-    Raises:
-        ValueError: If the polling controls are invalid.
-    """
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-    job = await hmc.delete_logical_unit(cluster_uuid, lu_udid)
-    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
-
-
-def validate_logical_unit_create(
-    lu_type: LuType,
-    device_type: DeviceType,
-    wait: bool,
-    timeout_seconds: int,
-    poll_interval: int,
-) -> None:
-    """Validate a create request before an adapter opens a connection."""
-    validate_logical_unit_types(lu_type, device_type)
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-
-
-def validate_logical_unit_wait(
-    wait: bool, timeout_seconds: int, poll_interval: int
-) -> None:
-    """Validate job polling controls before an adapter opens a connection."""
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-
-
 async def list_optical_mappings(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List VirtualSCSIMappings for optical media on a VIOS, optionally scoped to an LPAR.
 
@@ -824,10 +747,10 @@ async def list_optical_mappings(
 
 async def mount_optical_media(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str,
     *,
+    system_name_or_uuid: str | None = None,
     media_name: str,
     target_device: str | None = None,
     ownership_override: bool = False,
@@ -854,10 +777,10 @@ async def mount_optical_media(
 
 async def unmount_optical_media(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str,
     *,
+    system_name_or_uuid: str | None = None,
     media_name: str,
     ownership_override: bool = False,
 ) -> None:

@@ -46,7 +46,9 @@ async def create_virtual_network(
     """Create a virtual network on a managed system.
 
     Raises:
-        ValueError: If the HMC reports an invalid VLAN or switch selection.
+        ResourceNotFoundError: If the managed-system selector cannot be resolved.
+        HMCError: If the HMC rejects the create request, including invalid VLAN or
+            virtual-switch selections.
     """
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     try:

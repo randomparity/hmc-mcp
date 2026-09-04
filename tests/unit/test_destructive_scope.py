@@ -97,8 +97,8 @@ async def test_power_vios_forwards_optional_system_scope():
 
     await power_vios(
         hmc,
-        "system-name",
         "vios1",
+        system_name_or_uuid="system-name",
         power_on=False,
     )
 
@@ -168,4 +168,5 @@ def test_power_off_vios_tool_forwards_system_scope(monkeypatch):
         "vios1", system_name_or_uuid="system-name"
     )
 
-    assert operation.await_args.args[1] == "system-name"
+    assert operation.await_args.args[1] == "vios1"
+    assert operation.await_args.kwargs["system_name_or_uuid"] == "system-name"

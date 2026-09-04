@@ -65,7 +65,7 @@ _TOOL_MODULES = (*TOOL_MODULES, server_command, server_permissions)
 # 20f3068. A frozen regression snapshot: no tool is ever added here.
 LEGACY_READ_ONLY = frozenset(
     {
-        "hmc_console_info",
+        "hmc_get_console_info",
         "hmc_list_systems",
         "hmc_system_summary",
         "hmc_list_lpars",
@@ -202,8 +202,8 @@ def test_declared_effects_use_the_closed_vocabulary():
 
 
 def test_available_hmc_ptfs_is_mutating_job_submission():
-    security = TOOL_SECURITY["hmc_get_available_hmc_ptfs"]
-    tool = _tools_by_name()["hmc_get_available_hmc_ptfs"]
+    security = TOOL_SECURITY["hmc_submit_available_hmc_ptfs_query"]
+    tool = _tools_by_name()["hmc_submit_available_hmc_ptfs_query"]
 
     assert security.effect == "mutate"
     assert tool.annotations.readOnlyHint is False
@@ -314,7 +314,7 @@ def test_provision_lpar_declares_its_nested_selectors():
     assert security.exhaustive_targets is False
     assert [(t.kind, t.path, t.required) for t in security.targets] == [
         ("managed_system", "system_name_or_uuid", True),
-        ("vios", "network.vios_partition_id", True),
+        ("vios", "adapters.vios_partition_id", True),
         ("vios", "storage.vios_uuid", True),
     ]
 
@@ -382,7 +382,7 @@ def test_the_argument_table_matches_its_independent_expectation():
 @pytest.mark.parametrize(
     "tool_name, expected",
     [
-        ("hmc_get_available_hmc_ptfs", {("console", "console_uuid")}),
+        ("hmc_submit_available_hmc_ptfs_query", {("console", "console_uuid")}),
         ("hmc_update_console_software", {("console", "console_uuid")}),
         ("hmc_get_job", {("job", "job_id")}),
         ("hmc_get_partition_template", {("template", "template_uuid")}),
@@ -1211,7 +1211,7 @@ _NOT_EXHAUSTIVE = frozenset(
     {
         # No selector at all, so a `targets` table has nothing to bind on.
         "hmc_capacity_report",
-        "hmc_console_info",
+        "hmc_get_console_info",
         "hmc_effective_permissions",
         "hmc_find_placement",
         "hmc_fleet_health",
@@ -1419,7 +1419,7 @@ def test_the_declared_set_is_exactly_what_the_check_finds():
         "hmc_get_job": ["job_href"],
         # storage.vios_uuid is declared now (#260); the slot number remains an
         # identity no table can bound, so it stays in this set.
-        "hmc_provision_lpar": ["network.vios_partition_id"],
+        "hmc_provision_lpar": ["adapters.vios_partition_id"],
         "hmc_restore_lpar_profiles": ["file_path"],
         "hmc_run_command": ["cmd"],
         "hmc_wait_for_job": ["job_href"],
@@ -1622,7 +1622,7 @@ def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
                 found[name] = (security.exhaustive_targets, hits)
 
     assert found == {
-        "hmc_install_lpar_os": (
+        "hmc_install_vios_by_lpar_selector": (
             True,
             ["install_source", "lpar_ip", "nim_gateway", "nim_subnetmask"],
         ),

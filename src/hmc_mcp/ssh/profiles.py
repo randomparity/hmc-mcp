@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import re
 import shlex
 
 from ..config import HMCConfig
@@ -19,21 +18,9 @@ async def get_lpar_description(
 ) -> str:
     """Get the description field of *lpar_name* on *system_name* via SSH.
 
-    Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
-    -F description`` and returns the raw output (the description string, or an
-    empty line if none is set). It is the same text shown in the HMC GUI
-    Partitions tab.
-
-    The description *is* exposed via the HMC REST API — an earlier revision of
-    this docstring claimed otherwise. The #374 live-REST survey found it
-    inlined in the bulk list feed ``GET
-    /rest/api/uom/ManagedSystem/<uuid>/LogicalPartition`` (and in
-    per-partition detail), byte-for-byte identical to this CLI output, present
-    since REST schema version V1_2_0, with an empty description signaled by
-    element absence rather than an empty element. Bulk ownership reads use
-    that feed (``hmc_mcp.operations.ownership.list_lpar_ownership``); this SSH read
-    stays for the CLI-name-keyed write flows that share this module's
-    transport.
+    Returns the raw CLI value, including an empty line when no description is
+    set. CLI-name-keyed write flows use this transport; bulk ownership reads
+    obtain the same field from the REST list feed.
     """
     cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
@@ -357,13 +344,3 @@ async def read_lpar_profile_record(
             f"received {len(records)}"
         )
     return records[0]
-
-
-# NIM install via the HMC CLI ``installios`` command (ADR 0070)
-
-_IPV4_OCTET = r"(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])"
-_IPV4_PATTERN = re.compile(rf"^{_IPV4_OCTET}(\.{_IPV4_OCTET}){{3}}$")
-_MAC_ADDRESS_PATTERN = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
-_VLAN_MIN, _VLAN_MAX = 0, 4094
-_LOG_SLUG_PATTERN = re.compile(r"[^A-Za-z0-9._-]")
-_INSTALLIOS_LOG_TEMPLATE = "/tmp/hmc-mcp-installios-{slug}.log"

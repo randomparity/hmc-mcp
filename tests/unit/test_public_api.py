@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import functools
 import hashlib
+import importlib.util
 import inspect
 import json
 import pkgutil
@@ -46,12 +47,24 @@ ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {
         "hmc_mcp.operations.jobs",
         "list_jobs",
     ): "ADR 0029 excludes this adapter-facing inventory boundary from the reusable facade",
-    (
-        "hmc_mcp.operations.pcie",
-        "require_admitted_environment",
-    ): "ADR 0029 excludes this shared admission-policy guard from domain operations",
 }
-ADR_0029_TYPE_EXCLUSIONS: dict[tuple[str, str], str] = {}
+for _vios_label_name in (
+    "list_vios_fc_port_labels",
+    "set_vios_fc_port_label",
+    "remove_vios_fc_port_label",
+    "list_vios_vfc_group_labels",
+    "create_vios_vfc_group_label",
+    "update_vios_vfc_group_label",
+    "remove_vios_vfc_group_label",
+):
+    ADR_0029_OPERATION_EXCLUSIONS[
+        ("hmc_mcp.operations.vios_labels", _vios_label_name)
+    ] = "ADR 0029 excludes this adapter-facing VIOS label workflow from the reusable facade"
+ADR_0029_TYPE_EXCLUSIONS = {
+    ("hmc_mcp.ssh.vios_labels", "ViosGroupUpdateAction"): (
+        "ADR 0029 excludes this adapter-facing VIOS label type from the reusable facade"
+    )
+}
 
 
 class FacadeContractError(AssertionError):
@@ -134,19 +147,19 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "AdapterResult",
         "AdapterType",
         "CapacitySummary",
-        "capacity_report",
+        "fetch_capacity_report",
         "find_placement",
-        "lpar_summary",
+        "fetch_lpar_summary",
         "LparSummary",
-        "system_summary",
+        "fetch_system_summary",
         "SystemSummary",
         "decommission_lpar",
         "DecommissionAdapterRecord",
         "DecommissionBlastRadius",
         "DecommissionResult",
-        "fleet_health",
+        "fetch_fleet_health",
         "FleetHealthResult",
-        "install_lpar_os",
+        "install_vios_by_lpar_selector",
         "install_vios",
         "InstallHandle",
         "InstallRequest",
@@ -187,9 +200,14 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "remote_restart_lpar",
         "validate_lpar_migration",
         "RemoteRestartOperation",
+        "RemoteRestartRequest",
         "LpmResult",
+        "LpmCapability",
+        "LpmDestinationCheckBasis",
         "LpmAffinityPreflightRequest",
         "LpmMigrationRequest",
+        "LpmPreflightStatus",
+        "LpmResponse",
         "LpmAffinityPreflightOutcome",
         "LpmAffinityMigrationResult",
         "VirtualNetworkResult",
@@ -201,8 +219,8 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "resolve_pcm_resource",
         "get_pcm_preferences",
         "set_pcm_preferences",
-        "metric_links",
-        "metric_data",
+        "fetch_metric_links",
+        "fetch_metric_data",
         "PcmCategory",
         "MetricKind",
         "PcmResource",
@@ -232,6 +250,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "provision_lpar",
         "ProvisionAffinityAssessment",
         "ProvisionAdapters",
+        "ProvisionRequest",
         "ProvisionStorage",
         "ProvisionResult",
         "AttachDiskResult",
@@ -329,7 +348,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "power_vios",
         "BackupType",
         "RestoreBackupType",
-        "list_available_hmc_ptfs",
+        "submit_available_hmc_ptfs_query",
         "update_console_software",
         "update_firmware",
         "update_vios",
@@ -593,8 +612,9 @@ def _module_import_bindings(module: ModuleType) -> dict[str, str]:
         return {}
     tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
     return {
-        alias.asname or alias.name: (
-            f"hmc_mcp.{node.module}" if node.level else node.module
+        alias.asname or alias.name: importlib.util.resolve_name(
+            f"{'.' * node.level}{node.module}" if node.level else node.module,
+            module.__package__ or module.__name__,
         )
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom) and node.module is not None
@@ -1767,7 +1787,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
         Last moved by issue #468, which named the `installios` detach handle
-        `InstallHandle` and annotated `install_lpar_os` and `install_vios` with
+        `InstallHandle` and annotated `install_vios_by_lpar_selector` and `install_vios` with
         it. Both return annotations move from `dict[str, Any]` to that name, and
         `_typed_dict_text` adds an entry carrying the five keys themselves
         — the point of the change, since `inspect.signature` reports nothing for
@@ -1791,7 +1811,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         when the caller omits the optional selector.
         Before that, issue #366 extracted the ``installios`` install
         orchestration out of the MCP tool bodies into ``operations.install``
-        and exported ``install_lpar_os`` and ``install_vios``. Both return the
+        and exported ``install_vios_by_lpar_selector`` and ``install_vios``. Both return the
         CLI bridge's detach handle, not an HMC job identifier: ADR 0069 found
         no ``InstallLPAR``/``InstallVIOS`` REST job on any surveyed HMC and
         ADR 0070 replaced them with the detached CLI submission, so that
@@ -1898,7 +1918,19 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         if not selectors.issubset(parameters):
             continue
         selector_names = [name for name in parameters if name in selectors]
-        assert selector_names == ["system_name_or_uuid", "lpar_name_or_uuid"]
+        expected_selector_names = (
+            ["lpar_name_or_uuid", "system_name_or_uuid"]
+            if operation_name
+            in {
+                "map_storage",
+                "list_optical_mappings",
+                "list_storage_mappings",
+                "mount_optical_media",
+                "unmount_optical_media",
+            }
+            else ["system_name_or_uuid", "lpar_name_or_uuid"]
+        )
+        assert selector_names == expected_selector_names
     for operation_name in (
         "read_lpar_boot_order",
         "set_lpar_boot_order",
@@ -1942,11 +1974,18 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         parameters = inspect.signature(getattr(api, operation_name)).parameters
         assert "power_on" in parameters
         assert "on" not in parameters
+    for operation_name in ("update_vios", "upgrade_vios", "upload_iso"):
+        parameters = inspect.signature(getattr(api, operation_name)).parameters
+        selector_names = [
+            name
+            for name in parameters
+            if name in {"system_name_or_uuid", "vios_name_or_uuid"}
+        ]
+        expected = ["vios_name_or_uuid", "system_name_or_uuid"]
+        assert selector_names == expected
     for operation_name in (
         "delete_vios",
         "power_vios",
-        "update_vios",
-        "upgrade_vios",
         "list_volume_groups",
         "create_volume_group",
         "create_virtual_disk",
@@ -1960,7 +1999,6 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         "delete_optical_media",
         "get_media_repository",
         "list_optical_media",
-        "upload_iso",
         "list_optical_mappings",
         "mount_optical_media",
         "unmount_optical_media",
@@ -1971,7 +2009,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             for name in parameters
             if name in {"system_name_or_uuid", "vios_name_or_uuid"}
         ]
-        assert selector_names == ["system_name_or_uuid", "vios_name_or_uuid"]
+        assert selector_names == ["vios_name_or_uuid", "system_name_or_uuid"]
+        assert parameters["system_name_or_uuid"].kind is inspect.Parameter.KEYWORD_ONLY
+        assert parameters["system_name_or_uuid"].default is None
     get_vios_parameters = inspect.signature(api.get_vios).parameters
     assert list(get_vios_parameters)[:2] == ["hmc", "vios_name_or_uuid"]
     assert get_vios_parameters["system_name_or_uuid"].kind is inspect.Parameter.KEYWORD_ONLY
@@ -1979,16 +2019,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     assert "capacity_mib" in inspect.signature(api.create_virtual_disk).parameters
     assert "size_mib" not in inspect.signature(api.create_virtual_disk).parameters
     provision_parameters = inspect.signature(api.provision_lpar).parameters
-    for control in (
-        "partition_type",
-        "power_on",
-        "dry_run",
-        "assignments",
-        "caller_token",
-        "minimum_affinity_policy",
-        "affinity_assessment",
-    ):
-        assert provision_parameters[control].kind is inspect.Parameter.KEYWORD_ONLY
+    assert list(provision_parameters) == ["hmc", "system_name_or_uuid", "request"]
     unassign_parameters = inspect.signature(api.unassign_sriov_logical_port).parameters
     assert unassign_parameters["profile_name"].kind is inspect.Parameter.KEYWORD_ONLY
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
@@ -2021,16 +2052,20 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Every LPAR operation now places the system selector before the LPAR selector.
     # VIOS inventory operations and their PartitionState selector joined the facade.
     # System and VIOS power operations now use power_on like the LPAR operation.
-    # VIOS mutations share system-before-partition selector order; get_vios
-    # makes its optional system scope keyword-only after the required selector.
+        # VIOS mutations share system-before-partition selector order; get_vios
+        # makes its optional system scope keyword-only after the required selector.
+        # VIOS update and upgrade operations now place the required VIOS selector
+        # before the optional managed-system scope, matching the other VIOS mutations.
+        # ProvisionRequest's mixed network/storage group is named adapters to
+        # describe its vSCSI and virtual-Ethernet contents accurately.
     # Virtual-disk creation now uses capacity_mib at every public layer.
     # ProvisionAdapters replaces the network-only name for its mixed adapter inputs.
     # SSH-only operations accept HMCConfig directly instead of an unused REST client.
     # Boot-order operations now accept a system-scoped LPAR name or UUID.
     # PCIe inventory operations now name their system selector explicitly.
     # Cluster and shared-storage-pool inventory joined the reusable facade.
-    # VIOS storage operations now accept managed-system scope before the
-    # VIOS selector, making duplicate names unambiguous.
+    # VIOS storage operations now require the VIOS selector first and make
+    # managed-system scope keyword-only, making duplicate names unambiguous.
     # ConsoleCapture now exposes bounded stream-failure context.
     # Capacity and summary memory contracts now use the accurate MiB suffix.
     # DecommissionResult now exposes its blast-radius record types.
@@ -2040,7 +2075,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # their recurring scalar parameter groups.
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
-    expected_digest = "07d5116d8851c62a65a6711d16196beb10f4758a043542d2c8ee5b8771e11cc4"  # pragma: allowlist secret
+    # The PTF query operation was renamed to reflect that it submits a remote job.
+    expected_digest = "7cbf8dc91849c860f8bcb63cbff58e1ef3efa561e3570131648cbe92e6b11696"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -2170,6 +2206,10 @@ _FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[object, ...]] = {
     "BackupType": ("vios", "viosioconfig", "ssp"),
     "BootDeviceSelector": ("cd", "disk", "network"),
     "CapabilityState": ("available", "capability-unavailable"),
+    "LpmCapability": ("available", "unavailable"),
+    "LpmDestinationCheckBasis": ("calculated", "migration-check"),
+    "LpmPreflightStatus": ("passed", "warned", "failed", "unavailable"),
+    "LpmResponse": ("warn", "fail"),
     "CapturedPolicyState": ("configured", "absent", "unsupported", "missing"),
     "ConsoleUpdateMediaType": (
         "USB",

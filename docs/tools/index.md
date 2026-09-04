@@ -78,7 +78,6 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_capture_lpar_console` | `mutate` | [lpar.md](lpar.md) |
 | `hmc_clear_lpar_boot_order` | `mutate` | [boot_order.md](boot_order.md) |
 | `hmc_configure_remote_access` | `mutate` | [remote_access.md](remote_access.md) |
-| `hmc_console_info` | `read` | [console.md](console.md) |
 | `hmc_create_logical_unit` | `mutate` | [cluster.md](cluster.md) |
 | `hmc_create_lpar` | `mutate` | [lpar.md](lpar.md) |
 | `hmc_create_media_repository` | `mutate` | [media.md](media.md) |
@@ -106,7 +105,7 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_effective_permissions` | `read` | [permissions.md](permissions.md) |
 | `hmc_find_placement` | `read` | [placement.md](placement.md) |
 | `hmc_fleet_health` | `read` | [health.md](health.md) |
-| `hmc_get_available_hmc_ptfs` | `mutate` | [update.md](update.md) |
+| `hmc_get_console_info` | `read` | [console.md](console.md) |
 | `hmc_get_job` | `read` | [job.md](job.md) |
 | `hmc_get_lpar` | `read` | [lpar.md](lpar.md) |
 | `hmc_get_lpar_description` | `read` | [lpar.md](lpar.md) |
@@ -125,8 +124,8 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_get_system_memopt_score` | `read` | [system.md](system.md) |
 | `hmc_get_user` | `read` | [user.md](user.md) |
 | `hmc_get_vios` | `read` | [vios.md](vios.md) |
-| `hmc_install_lpar_os` | `destructive` | [lpar.md](lpar.md) |
 | `hmc_install_vios` | `destructive` | [vios.md](vios.md) |
+| `hmc_install_vios_by_lpar_selector` | `destructive` | [lpar.md](lpar.md) |
 | `hmc_list_adapters` | `read` | [adapter.md](adapter.md) |
 | `hmc_list_clusters` | `read` | [cluster.md](cluster.md) |
 | `hmc_list_configured_hosts` | `read` | [config.md](config.md) |
@@ -207,6 +206,7 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_snapshot_capture` | `read` | [snapshot.md](snapshot.md) |
 | `hmc_snapshot_inspect` | `read` | [snapshot.md](snapshot.md) |
 | `hmc_snapshot_validate` | `read` | [snapshot.md](snapshot.md) |
+| `hmc_submit_available_hmc_ptfs_query` | `mutate` | [update.md](update.md) |
 | `hmc_sync_lpar_profile` | `destructive` | [lpar_profile.md](lpar_profile.md) |
 | `hmc_system_summary` | `read` | [system.md](system.md) |
 | `hmc_unassign_dedicated_pcie_slot` | `mutate` | [pcie.md](pcie.md) |

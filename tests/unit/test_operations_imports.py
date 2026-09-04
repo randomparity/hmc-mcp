@@ -11,8 +11,8 @@ import pytest
 @pytest.mark.parametrize(
     "modules",
     [
-        ("hmc_mcp.operations.lpar", "hmc_mcp.operations.vnic"),
-        ("hmc_mcp.operations.vnic", "hmc_mcp.operations.lpar"),
+        ("hmc_mcp.operations.lpar", "hmc_mcp.operations.io_virtualization.vnic"),
+        ("hmc_mcp.operations.io_virtualization.vnic", "hmc_mcp.operations.lpar"),
         ("hmc_mcp.ssh.lpar", "hmc_mcp.ssh.profiles"),
         ("hmc_mcp.ssh.profiles", "hmc_mcp.ssh.lpar"),
     ],

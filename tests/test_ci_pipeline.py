@@ -595,7 +595,7 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "name: release-wheel-amd64-py3.13" in body
     assert "uv pip install --python .library-wheel-venv/bin/python" in body
     assert '            "${wheels[0]}"' in body
-    assert "from hmc_mcp.api import CapacitySummary, capacity_report" in body
+    assert "from hmc_mcp.api import CapacitySummary, fetch_capacity_report" in body
     assert "import hmc_mcp.api" not in body
     for package in ("fastmcp", "mcp", "rich", "typer"):
         assert f'assert find_spec("{package}") is None' in body
@@ -612,7 +612,7 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "class FakeHMC:" in body
     assert "async def list_managed_systems(" in body
     assert "async def list_logical_partitions(" in body
-    assert "asyncio.run(capacity_report(FakeHMC()))" in body
+    assert "asyncio.run(fetch_capacity_report(FakeHMC()))" in body
     assert "CapacitySummary(" in body
     assert 'system_name="p10"' in body
     assert "assert report ==" in body
@@ -624,6 +624,13 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "--no-deps" not in body
     assert "scripts/smoke_mcp.py" not in body
     assert "pip install -e" not in body
+
+
+def test_readme_reusable_api_example_uses_exported_operation() -> None:
+    readme = (ROOT / "README.md").read_text()
+    assert "from hmc_mcp.api import HMCClient, HMCConfig, fetch_capacity_report" in readme
+    assert "await fetch_capacity_report(hmc)" in readme
+    assert " hmc_capacity_report" not in readme
 
 
 def test_github_ci_exercises_each_declared_range_floor() -> None:
@@ -641,7 +648,7 @@ def test_github_ci_exercises_each_declared_range_floor() -> None:
     assert '            "${wheels[0]}"' in body
     assert "uv venv" in body
     # The exercised surface is the bare installed API, not the app extra.
-    assert "from hmc_mcp.api import CapacitySummary, capacity_report" in body
+    assert "from hmc_mcp.api import CapacitySummary, fetch_capacity_report" in body
     assert "CapacitySummary(" in body
     for field in ("total_memory_mib", "assigned_memory_mib", "free_memory_mib"):
         assert f"{field}=" in body

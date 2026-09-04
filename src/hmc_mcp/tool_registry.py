@@ -232,17 +232,9 @@ def authorized(
 ) -> Callable[..., Any]:
     """Return a wrapper that authorizes the call before running *handler*.
 
-    **Every** registered tool is wrapped, whatever it declares. Until #297 this
-    keyed on the connection argument and returned a tool declaring none
-    unwrapped, which was sound only while the wrapper carried the connection
-    dimension alone (ADR 0038). ADR 0039 put the target dimension on the same
-    wrapper without revisiting the key, so the two tools with
-    ``connection_argument = None`` were never target-checked and a ``targets``
-    table permitted them where ``target_scope.targets_permitted`` denies. The
-    wrapper — not the registration site — decides, so no site can be handed an
-    authorizer it forgets to apply. *authorize* is required since ADR 0041; the
-    arm that returned a bare handler because no policy was selected described a
-    composition that no longer exists.
+    Every registered tool is wrapped, and the wrapper enforces connection and
+    target scope before invoking the handler. The wrapper is always supplied an
+    authorizer; registration cannot accidentally bypass policy enforcement.
 
     Arguments are bound against the handler's own signature rather than read out
     of ``kwargs``, so a selector passed positionally or left to its default is

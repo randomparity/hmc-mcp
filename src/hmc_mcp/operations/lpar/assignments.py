@@ -4,28 +4,38 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.pcie import (
+from hmc_mcp.errors import HMCError
+from hmc_mcp.operations.io_virtualization.pcie import (
     PCIE_ASSIGNMENT_UNAVAILABLE_REASON,
     PcieAssignmentUnavailableError,
+    SriovLogicalPortCapabilityError,
+    SriovLogicalPortPartialError,
     assign_dedicated_pcie_slot,
     assign_sriov_logical_port,
     list_sriov_adapters,
     list_sriov_logical_ports,
     list_sriov_physical_ports,
 )
-from hmc_mcp.operations.pcie_validation import (
+from hmc_mcp.operations.io_virtualization.validation import (
     require_command_safe_text,
     validate_capacity_percent,
 )
-from hmc_mcp.operations.vnic import VnicBackingSelector, add_vnic
+from hmc_mcp.operations.io_virtualization.vnic import (
+    VnicBackingSelector,
+    VnicCapabilityError,
+    VnicPartialError,
+    add_vnic,
+)
 from hmc_mcp.ssh.network import (
     list_sriov_configured_logical_port_rows,
     list_vnic_backing_rows,
     read_vios_identity,
 )
+
+from .workflow_contract import WorkflowStep
 
 
 @dataclass(frozen=True)
@@ -75,15 +85,6 @@ class LparPcieAssignments:
         default_factory=tuple,
         metadata={"description": "Ordered vNIC assignments."},
     )
-
-
-@dataclass(frozen=True)
-class WorkflowStep:
-    """Stable outcome for one ordered multi-stage workflow operation."""
-
-    step: str
-    status: Literal["ok", "error", "skipped", "dry_run"]
-    result: Any = None
 
 
 @dataclass(frozen=True)
@@ -217,12 +218,12 @@ async def _validate_sriov_inventory(
     """Validate adapter, port, logical-port, and capacity inventory."""
 
     for (adapter, physical), requested in requested_capacity.items():
-        adapters = await list_sriov_adapters(hmc.config, system, adapter)
+        adapters = await list_sriov_adapters(hmc, system, adapter)
         if adapters.capability != "available" or len(adapters.items) != 1:
             raise ValueError(f"SR-IOV adapter {adapter!r} is unavailable")
         if adapters.items[0].mode != "sriov" or adapters.items[0].availability != "1":
             raise ValueError(f"SR-IOV adapter {adapter!r} is not healthy")
-        ports = await list_sriov_physical_ports(hmc.config, system, adapter, physical)
+        ports = await list_sriov_physical_ports(hmc, system, adapter, physical)
         if ports.capability != "available" or len(ports.items) != 1:
             raise ValueError(
                 f"SR-IOV physical port {adapter}/{physical} is unavailable"
@@ -231,7 +232,7 @@ async def _validate_sriov_inventory(
             raise ValueError(
                 f"SR-IOV physical port {adapter}/{physical} is not healthy"
             )
-        logical = await list_sriov_logical_ports(hmc.config, system, adapter, physical)
+        logical = await list_sriov_logical_ports(hmc, system, adapter, physical)
         if logical.capability != "available":
             raise ValueError(
                 logical.unavailable_reason or "logical-port inventory unavailable"
@@ -249,7 +250,7 @@ async def _validate_vios_inventory(
 ) -> None:
     """Validate each unique VIOS name and partition-ID pair."""
     for identity in identities:
-        system_name = (await list_sriov_adapters(hmc.config, system)).system
+        system_name = (await list_sriov_adapters(hmc, system)).system
         observed = await read_vios_identity(hmc.config, system_name, identity[0])
         if observed != {
             "name": identity[0],
@@ -283,7 +284,7 @@ async def apply_lpar_pcie_assignments(
 ) -> AssignmentResult:
     """Apply requests in stable order and expose partial state without rollback."""
     await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
-    return await _apply_validated_lpar_pcie_assignments(
+    return await apply_validated_lpar_pcie_assignments(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
@@ -293,7 +294,7 @@ async def apply_lpar_pcie_assignments(
     )
 
 
-async def _apply_validated_lpar_pcie_assignments(
+async def apply_validated_lpar_pcie_assignments(
     hmc: HMCClient,
     system: str,
     lpar: str,
@@ -359,7 +360,16 @@ async def _apply_validated_lpar_pcie_assignments(
     for index, (name, operation) in enumerate(operations):
         try:
             steps.append(WorkflowStep(name, "ok", await operation()))
-        except Exception as error:  # noqa: BLE001 - any step failure becomes a WorkflowStep("error") and skips the rest
+        except (
+            ValueError,
+            PermissionError,
+            HMCError,
+            PcieAssignmentUnavailableError,
+            SriovLogicalPortCapabilityError,
+            SriovLogicalPortPartialError,
+            VnicCapabilityError,
+            VnicPartialError,
+        ) as error:
             result = getattr(error, "result", str(error))
             steps.append(WorkflowStep(name, "error", result))
             steps.extend(

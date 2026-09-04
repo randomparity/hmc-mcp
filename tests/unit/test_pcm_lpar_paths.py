@@ -9,6 +9,7 @@ from conftest import make_config
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.operations.pcm import (
+    fetch_metric_links,
     get_pcm_preferences,
     resolve_pcm_resource,
     set_pcm_preferences,
@@ -66,6 +67,35 @@ async def test_resolve_pcm_lpar_scopes_name_to_owning_system():
 async def test_lpar_metrics_require_owning_system():
     with pytest.raises(ValueError, match="system_name_or_uuid"):
         await resolve_pcm_resource(AsyncMock(), "LogicalPartition", LPAR_UUID)
+
+
+@pytest.mark.asyncio
+async def test_pcm_rejects_unknown_category_before_resolution():
+    hmc = AsyncMock()
+
+    with pytest.raises(ValueError, match="category must be one of"):
+        await resolve_pcm_resource(hmc, "TypoCategory", LPAR_UUID)
+
+    hmc.find_system_by_name.assert_not_awaited()
+    hmc.find_partition_by_name.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pcm_rejects_unknown_metric_kind_before_resolution():
+    hmc = AsyncMock()
+
+    with pytest.raises(ValueError, match="kind must be either"):
+        await fetch_metric_links(
+            hmc,
+            "ManagedSystem",
+            SYSTEM_UUID,
+            kind="typo",
+            start_ts="2026-08-07T11:00:00Z",
+            end_ts=None,
+            no_of_samples=None,
+        )
+
+    hmc.find_system_by_name.assert_not_awaited()
 
 
 @pytest.mark.asyncio

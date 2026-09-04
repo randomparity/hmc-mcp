@@ -7,14 +7,14 @@ from typing import Any
 from .._app import (
     with_client,
 )
-from ..operations.update_models import (
+from ..operations.updates.models import (
     ConsoleUpdateSource,
     PlatformUpdateParameter,
     VIOSUpdateSource,
     VIOSUpgradeSource,
 )
-from ..operations.updates import (
-    list_available_hmc_ptfs,
+from ..operations.updates.service import (
+    submit_available_hmc_ptfs_query,
     update_console_software,
     update_firmware,
     update_vios,
@@ -70,7 +70,7 @@ def hmc_update_console_software(
 
 
 @tool(effect="mutate", operation="update.list_ptfs", target_kind="console")
-def hmc_get_available_hmc_ptfs(
+def hmc_submit_available_hmc_ptfs_query(
     console_uuid: str,
     profile: str | None = None,
     *,
@@ -94,7 +94,7 @@ def hmc_get_available_hmc_ptfs(
     """
 
     return with_client(
-        lambda hmc: list_available_hmc_ptfs(
+        lambda hmc: submit_available_hmc_ptfs_query(
             hmc,
             console_uuid,
             wait=wait,
@@ -135,9 +135,9 @@ def hmc_vios_update(
     return with_client(
         lambda hmc: update_vios(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             repository,
+            system_name_or_uuid=system_name_or_uuid,
             wait=wait,
             timeout_seconds=timeout_seconds,
             poll_interval=poll_interval,
@@ -176,9 +176,9 @@ def hmc_vios_upgrade(
     return with_client(
         lambda hmc: upgrade_vios(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             repository,
+            system_name_or_uuid=system_name_or_uuid,
             wait=wait,
             timeout_seconds=timeout_seconds,
             poll_interval=poll_interval,

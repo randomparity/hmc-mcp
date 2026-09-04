@@ -29,10 +29,13 @@ from hmc_mcp.cli_commands import runtime as cli_runtime
 from hmc_mcp.cli_commands import vios_labels as cli_vios_labels
 from hmc_mcp.cli_commands import vnic as cli_vnic
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
+from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations import ownership as lpar_ownership
-from hmc_mcp.operations.vnic import VnicChangeResult, VnicPartialError
+from hmc_mcp.operations.io_virtualization.vnic import VnicChangeResult, VnicPartialError
+from hmc_mcp.operations.lpar.assignments import LparPcieWorkflowResult
+from hmc_mcp.operations.lpar.workflow_contract import WorkflowStep
 from hmc_mcp.ssh import affinity as ssh_affinity
 from hmc_mcp.ssh import commands as ssh_commands
 from hmc_mcp.ssh import lpar as ssh_lpar
@@ -52,7 +55,7 @@ def _patch_ssh_command(monkeypatch, replacement) -> None:
         }
     )
     for module in (cli_lpars, cli_pcie, cli_vnic):
-        monkeypatch.setattr(module, "ssh_config", lambda: config)
+        monkeypatch.setattr(module, "ssh_config", lambda: config, raising=False)
     for module in (ssh_affinity, ssh_lpar, ssh_network, ssh_profiles):
         monkeypatch.setattr(module, "run_hmc_command", replacement)
 
@@ -79,7 +82,7 @@ def _configured_ssh_config(monkeypatch) -> None:
         }
     )
     for module in (cli_lpars, cli_pcie, cli_vnic):
-        monkeypatch.setattr(module, "ssh_config", lambda: config)
+        monkeypatch.setattr(module, "ssh_config", lambda: config, raising=False)
 
 
 class FakeHMC:
@@ -1048,6 +1051,32 @@ def test_lpars_modify_renames(fake_hmc):
     assert "renamed" in args[1]
 
 
+def test_lpars_modify_reports_incomplete_workflow_with_nonzero_exit(monkeypatch, fake_hmc):
+    monkeypatch.setattr(
+        cli_lpar_modify,
+        "modify_lpar",
+        AsyncMock(
+            return_value=LparPcieWorkflowResult(
+                False,
+                False,
+                {"UUID": LPAR_UUID},
+                None,
+                (WorkflowStep("assign", "error", "failed"),),
+                ("assignment failed",),
+            )
+        ),
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "modify", LPAR_UUID, "--system", SYSTEM_UUID, "--name", "renamed", "--yes"],
+    )
+
+    assert result.exit_code == 1
+    assert '"workflow_completed": false' in result.output
+    assert "assignment failed" in result.output
+
+
 def test_lpars_modify_rename_requires_system_before_client_use(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
@@ -1682,7 +1711,8 @@ def direct_client(monkeypatch):
 
 
 def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
-    async def fake_list(_hmc, system, vios):
+    async def fake_list(_hmc, vios, *, system_name_or_uuid=None):
+        system = system_name_or_uuid
         assert system == "system-a"
         assert vios == VIOS_UUID
         return [
@@ -1710,7 +1740,7 @@ def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
 def test_storage_delete_disk_deletes_when_confirmed(fake_hmc, monkeypatch):
     seen = {}
 
-    async def fake_delete(_hmc, _system, vios, vg, name):
+    async def fake_delete(_hmc, vios, vg, name, *, system_name_or_uuid=None):
         seen.update(vios=vios, vg=vg, name=name)
         return {"UUID": "disk-1"}
 
@@ -1797,7 +1827,7 @@ def test_storage_create_media_repo_declined_confirmation_aborts(fake_hmc, monkey
 def test_storage_create_media_creates_when_confirmed(fake_hmc, monkeypatch):
     seen = {}
 
-    async def fake_create(_hmc, _system, vios, vg, name, size_mib):
+    async def fake_create(_hmc, vios, vg, name, size_mib, *, system_name_or_uuid=None):
         seen.update(vios=vios, vg=vg, name=name, size_mib=size_mib)
         return {"MediaName": "aix.iso"}
 
@@ -1863,7 +1893,7 @@ def test_storage_create_media_declined_confirmation_aborts(fake_hmc, monkeypatch
 def test_storage_delete_media_deletes_when_confirmed(fake_hmc, monkeypatch):
     seen = {}
 
-    async def fake_delete(_hmc, _system, vios, vg, media_name):
+    async def fake_delete(_hmc, vios, vg, media_name, *, system_name_or_uuid=None):
         seen.update(vios=vios, vg=vg, media_name=media_name)
 
     monkeypatch.setattr(
@@ -1902,7 +1932,7 @@ def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch
 
 
 def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
-    async def fake_get(_hmc, _system, vios, vg):
+    async def fake_get(_hmc, vios, vg, *, system_name_or_uuid=None):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
         return {"Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "10240"}}
 
@@ -1916,7 +1946,7 @@ def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
 
 
 def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
-    async def fake_get(_hmc, _system, _vios, _vg):
+    async def fake_get(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return {}
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.get_media_repository", fake_get)
@@ -1928,7 +1958,7 @@ def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
 
 
 def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
-    async def fake_get(_hmc, _system, _vios, _vg):
+    async def fake_get(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return {"Resource": {"RepositoryName": "VMLibrary"}}
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.get_media_repository", fake_get)
@@ -1942,7 +1972,7 @@ def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
 
 
 def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
-    async def fake_list(_hmc, _system, vios, vg):
+    async def fake_list(_hmc, vios, vg, *, system_name_or_uuid=None):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
         return [{"MediaName": "aix.iso", "MediaSize": 4096, "MediaType": "ISO"}]
 
@@ -1958,7 +1988,7 @@ def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
 
 
 def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
-    async def fake_list(_hmc, _system, _vios, _vg):
+    async def fake_list(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return []
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_optical_media", fake_list)
@@ -1972,7 +2002,7 @@ def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
 
 
 def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
-    async def fake_list(_hmc, _system, _vios, _vg):
+    async def fake_list(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return [{"MediaName": "aix.iso"}]
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_optical_media", fake_list)
@@ -1986,7 +2016,8 @@ def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
 
 
 def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
-    async def fake_mappings(_hmc, system, vios, lpar):
+    async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
+        system = system_name_or_uuid
         assert (system, vios, lpar) == (None, VIOS_UUID, None)
         return [
             {
@@ -2010,7 +2041,8 @@ def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
 
 
 def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatch):
-    async def fake_mappings(_hmc, system, vios, lpar):
+    async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
+        system = system_name_or_uuid
         assert (system, vios, lpar) == (None, VIOS_UUID, LPAR_UUID)
         return [
             {
@@ -2034,7 +2066,7 @@ def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatc
 
 
 def test_storage_list_mappings_json(direct_client, monkeypatch):
-    async def fake_mappings(_hmc, _system, _vios, _lpar):
+    async def fake_mappings(_hmc, _vios, _lpar, *, system_name_or_uuid=None):
         return [{"UUID": "map-1"}]
 
     monkeypatch.setattr(
@@ -2050,7 +2082,10 @@ def test_storage_list_mappings_json(direct_client, monkeypatch):
 def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatch):
     seen = {}
 
-    async def fake_detach(_hmc, system, vios, mapping_uuid, *, ownership_override):
+    async def fake_detach(
+        _hmc, vios, mapping_uuid, *, system_name_or_uuid=None, ownership_override
+    ):
+        system = system_name_or_uuid
         seen.update(
             system=system,
             vios=vios,
@@ -2088,7 +2123,7 @@ def test_storage_detach_mapping_reports_one_failure_and_exits_1(
     """
 
     async def fake_detach(
-        _hmc, _system, _vios, _mapping_uuid, *, ownership_override: bool
+        _hmc, _vios, _mapping_uuid, *, system_name_or_uuid=None, ownership_override: bool
     ):
         assert not ownership_override
         raise HMCError("mapping is in use")
@@ -2140,9 +2175,10 @@ def test_with_client_propagates_a_typer_exit_code_unchanged(monkeypatch):
 
 
 def test_storage_upload_iso_reports_uploaded_media(direct_client, monkeypatch):
-    async def fake_upload(_hmc, _system, vios, vg, media_name, iso_source):
+    async def fake_upload(_hmc, vios, vg, media_name, iso_source, *, system_name_or_uuid):
         assert (vios, vg, media_name) == (VIOS_UUID, VG_UUID, "aix.iso")
         assert iso_source == "https://images.test/aix.iso"
+        assert system_name_or_uuid is None
         return {
             "status": "uploaded",
             "media_name": "aix.iso",
@@ -2172,7 +2208,10 @@ def test_storage_upload_iso_reports_uploaded_media(direct_client, monkeypatch):
 
 
 def test_storage_upload_iso_json(direct_client, monkeypatch):
-    async def fake_upload(_hmc, _system, _vios, _vg, _media_name, _iso_source):
+    async def fake_upload(
+        _hmc, _vios, _vg, _media_name, _iso_source, *, system_name_or_uuid
+    ):
+        assert system_name_or_uuid is None
         return {"status": "uploaded", "media_name": "aix.iso"}
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.upload_iso", fake_upload)

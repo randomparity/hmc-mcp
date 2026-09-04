@@ -29,6 +29,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- The HMC PTF query operation and MCP tool now use submission-oriented names:
+  `submit_available_hmc_ptfs_query` and `hmc_submit_available_hmc_ptfs_query`.
 - SR-IOV physical-port inventory now queries both evidenced `roce` and `ethc`
   levels, accepts exactly one non-empty result, and maps HMC states `1` and `0`
   to `up` and `down` respectively (#557, ADR 0113).
@@ -68,6 +70,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `lpar_name_or_uuid`, including LPM, disk attachment, summaries, ownership
   authorization, and PCIe assignment workflows. Presentation adapters pass
   `None` when they intentionally request fleet-wide LPAR-name resolution.
+- Exported VIOS storage operations now require `vios_name_or_uuid` first and
+  accept the optional `system_name_or_uuid` selector as a keyword-only argument.
 
 ### Added
 
@@ -183,8 +187,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `system_name_or_uuid` now discovers the owning managed system by a bounded fleet walk, because
   the guard is keyed by CLI system name — supply the selector to skip it. ADR 0094 records the
   derivation and its alternatives.
-- `install_lpar_os` and `install_vios` operations and facade exports (#366, ADR 0013/0029/0070):
-  the `installios` orchestration moves out of the `hmc_install_lpar_os` / `hmc_install_vios` tool
+- `install_vios_by_lpar_selector` and `install_vios` operations and facade exports (#366, ADR 0013/0029/0070):
+  the `installios` orchestration moves out of the `hmc_install_vios_by_lpar_selector` / `hmc_install_vios` tool
   bodies into a new `operations_install` module, so a consumer already running an event loop can
   call it — the tool path reached it only through `asyncio.run`. Both return the CLI bridge's
   detach handle (resolved system and partition names, the remote PID, the install log path, and a
@@ -244,7 +248,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   a fourth argument and stays a pure function of its arguments; `EffectivePermissions` is not
   a `hmc_mcp.api` export, so the facade manifest is unaffected.
 - `install-attempted` audit record for a detached `installios` submission (#469, ADR 0102).
-  `install_lpar_os` and `install_vios` submit an irreversible install against a partition's
+  `install_vios_by_lpar_selector` and `install_vios` submit an irreversible install against a partition's
   disks and detach; the path has no HMC job, no ADR 0011 ownership guard, and — for an
   `hmc_mcp.api` consumer — no dispatch-boundary `authorization` record. The two `INFO` lines
   it left instead went to the unconfigured `hmc_mcp.operations_install` logger, whose
@@ -265,7 +269,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   explicit typed keyword parameters instead of accepting an untyped `**fields` bag.
 - User deletion and remote-access MCP tools now call the client boundary directly;
   remote-access validation and document merging have one owner in the client layer.
-- `metric_links` and `metric_data` require metric kind, time range, sample count, and
+- `fetch_metric_links` and `fetch_metric_data` require metric kind, time range, sample count, and
   managed-system scope as named arguments after the resource selector.
 - Affinity assessment models, pure evaluation, and live orchestration now live together
   in `operations.affinity`; snapshot modules consume that boundary without a reverse
@@ -327,7 +331,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `hmc jobs` CLI commands keep the previous behaviour; #526 owns that pass.
 - `HMC_AGENT_ID` values containing double quotes or backslashes are rejected at config load
   instead of being passed through into SSH command construction (#386).
-- `hmc_install_lpar_os` and `hmc_install_vios` now drive the HMC CLI
+- `hmc_install_vios_by_lpar_selector` and `hmc_install_vios` now drive the HMC CLI
   `installios` command over SSH (submit-and-detach: they return the remote PID
   and log path instead of a job, and `hmc_get_job`/`hmc_wait_for_job` do not
   apply). The targeted `InstallLPAR`/`InstallVIOS` REST jobs do not exist on
@@ -470,6 +474,17 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Added: named LPM affinity literal types (`LpmCapability`, `LpmDestinationCheckBasis`,
+  `LpmPreflightStatus`, and `LpmResponse`) for typed reusable callers.
+- Added: `RemoteRestartRequest` groups remote-restart-specific controls while common
+  polling controls remain keyword-only.
+- Added: `ProvisionRequest` groups the typed inputs for end-to-end LPAR provisioning;
+  the operation now accepts this request object directly.
+- Changed: VIOS backup, restore, and backup-catalog operations now take the VIOS selector
+  first and accept managed-system scope as a keyword-only argument.
+- Renamed: `list_available_hmc_ptfs` to `submit_available_hmc_ptfs_query`.
+- Renamed: `metric_data` to `fetch_metric_data` and `capacity_report` to
+  `fetch_capacity_report` in the reusable facade.
 - Changed: removed the stale `ambiguous` literal alternative from
   `PowerOwnershipGuard.source`; exact and case-variant environment spellings now report
   `environment` in both the MCP response and startup audit schema. No `hmc_mcp.api.__all__`
@@ -505,7 +520,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 - Changed: `read_lpar_boot_order`, `set_lpar_boot_order`, and
   `clear_lpar_boot_order` now accept a system-scoped LPAR name or UUID.
 - Changed: SSH affinity result types and workflows now live in
-  `operations.ssh_affinity`; network inventory and vNIC mutation now live in
+  `operations.affinity.ssh`; network inventory and vNIC mutation now live in
   `operations.vnic`.
 - Changed: `get_vios`, `delete_vios`, `update_vios`, and `upgrade_vios` now place the
   optional managed-system selector before the VIOS selector, matching sibling VIOS
@@ -579,13 +594,13 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `AuthenticationType` input type. These presentation-neutral operations already back the user
   MCP tools and now satisfy ADR 0029's selection rule.
 - Changed: `install_vios` now places `system_name_or_uuid` before `vios_name_or_uuid`,
-  matching `install_lpar_os` and the other system-scoped partition operations. This moves the
+  matching `install_vios_by_lpar_selector` and the other system-scoped partition operations. This moves the
   frozen public signature digest.
 - Changed: `capture_lpar_snapshot` now reads the SSH configuration from its `HMCClient`
   instead of requiring callers to pass the same client's configuration separately. This removes
   the redundant `config` parameter and moves the frozen public signature digest.
 - Changed: LPAR-targeting facade operations now consistently place the managed-system selector
-  before the partition selector. This reorders `install_lpar_os`, `power_lpar`,
+  before the partition selector. This reorders `install_vios_by_lpar_selector`, `power_lpar`,
   `set_lpar_processors`, `set_lpar_memory`, and all four virtual-adapter operations; callers
   that want fleet discovery pass `None` explicitly for the system selector. Operation-specific
   controls remain after the two selectors and the frozen signature digest moves.
@@ -605,7 +620,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   MCP and CLI adapters. ADR 0029's selection rule requires it in the reusable facade.
 - Added: `HMCIdentity`, replacing the inconsistently capitalized `HmcIdentity` export. This is a
   breaking public rename and moves the frozen signature digest; no compatibility alias remains.
-- Added: `InstallHandle` (#468), the `TypedDict` `install_lpar_os` and `install_vios` now return
+- Added: `InstallHandle` (#468), the `TypedDict` `install_vios_by_lpar_selector` and `install_vios` now return
   in place of `dict[str, Any]`. Runtime behaviour and both MCP tool responses are unchanged — a
   `TypedDict` is a plain `dict` — but the five keys `system`, `partition`, `pid`, `log_path`, and
   `message` are now part of the frozen public signature digest, so renaming one is a manifest
@@ -615,7 +630,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   expected, or adding or deleting a key are all errors against a `TypedDict`. Annotate with
   `InstallHandle`, or with `Mapping[str, object]` where the consumer only reads.
 - Added: `InstallRequest`, the shared source, network, and profile value object accepted by
-  `install_lpar_os` and `install_vios`.
+  `install_vios_by_lpar_selector` and `install_vios`.
 - Added: the exports below landed between the `[0.1.0]` entry's enumerated manifest and this
   cycle with no manifest bullet of their own (#479). Each is an entry in `hmc_mcp.api.__all__`,
   so each contributes to the frozen public signature digest. This records the manifest catching
@@ -660,7 +675,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   signature digest. Both take `system_name_or_uuid` and `ownership_override` as keyword-only
   parameters; the managed-system selector stays optional per ADR 0063, so a `hmc_mcp.api` caller
   may omit it and have the owning system derived.
-- Added: `install_lpar_os`, `install_vios` (#366); this moves the frozen public signature digest.
+- Added: `install_vios_by_lpar_selector`, `install_vios` (#366); this moves the frozen public signature digest.
   Their `dict[str, Any]` return is **not** one of ADR 0029's opaque HMC resource payloads — the
   package composes all five keys itself, and no firmware level can add or remove one. The keys
   `system`, `partition`, `pid`, `log_path` and `message` are pinned by a contract test
@@ -721,7 +736,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `"tls-verification-disabled"` above — `hmc_mcp.audit` is not part of the `hmc_mcp.api` facade,
   so the manifest and the frozen public signature digest are unmoved, but the literal vocabulary
   a consumer reading the audit stream matches against is wider.
-- Unchanged otherwise: #410 rebuilt `hmc_install_lpar_os` / `hmc_install_vios`
+- Unchanged otherwise: #410 rebuilt `hmc_install_vios_by_lpar_selector` / `hmc_install_vios`
   on the HMC CLI `installios` bridge (ADR 0070). These are MCP tools, not
   `hmc_mcp.api` exports; their parameter changes do not move the frozen
   manifest or its signature digest — the operations behind them that #366 later
@@ -768,18 +783,18 @@ added afterwards; every later addition is recorded above.
 `create_virtual_disk`, `create_virtual_network`, `create_volume_group`, `decommission_lpar`,
 `delete_adapter`, `delete_logical_unit`, `delete_lpar`, `delete_media_repository`,
 `delete_optical_media`, `delete_virtual_disk`, `delete_virtual_network`,
-`deploy_partition_template`, `detach_storage_mapping`, `find_placement`, `fleet_health`,
+`deploy_partition_template`, `detach_storage_mapping`, `find_placement`, `fetch_fleet_health`,
 `get_media_repository`, `get_partition_template`, `get_pcm_preferences`, `list_adapters`,
 `list_dedicated_slots`, `list_fc_ports`, `list_network_bridges`, `list_optical_media`,
 `list_partition_templates`, `list_sea_adapters`, `list_sriov_adapters`,
 `list_sriov_logical_ports`, `list_sriov_physical_ports`, `list_storage_mappings`,
 `list_virtual_networks`, `list_virtual_switches`, `list_vnics`, `list_volume_groups`,
-`load_profile`, `lpar_summary`, `map_storage`, `metric_data`, `metric_links`, `migrate_lpar`,
+`load_profile`, `fetch_lpar_summary`, `map_storage`, `metric_data`, `fetch_metric_links`, `migrate_lpar`,
 `power_lpar`, `power_system`, `power_vios`, `prevalidate_lpar_pcie_assignments`,
 `provision_lpar`, `read_lpar_boot_order`, `recover_lpar_migration`, `remote_restart_lpar`,
 `remove_vnic`, `rename_lpar`, `resolve_lpar_ownership_names`, `resolve_pcm_resource`,
 `set_lpar_boot_order`, `set_pcm_preferences`, `set_sriov_adapter_mode`,
-`stamp_created_lpar_ownership`, `system_summary`, `unassign_dedicated_pcie_slot`,
+`stamp_created_lpar_ownership`, `fetch_system_summary`, `unassign_dedicated_pcie_slot`,
 `unassign_sriov_logical_port`, `upload_iso`
 
 [unreleased]: https://github.com/randomparity/hmc-mcp/compare/0.1.0...HEAD

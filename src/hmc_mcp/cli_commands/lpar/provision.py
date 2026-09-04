@@ -17,12 +17,14 @@ from ...documents import (
 )
 from ...operations.lpar.provision import (
     ProvisionAdapters,
+    ProvisionRequest,
+    ProvisionResult,
     ProvisionStorage,
     provision_lpar,
 )
 from ..output import console, print_json, usage_error
 from ..runtime import client, run
-from .config import _load_pcie_assignments
+from .assignment_input import load_pcie_assignments
 
 
 def lpars_provision(
@@ -80,7 +82,7 @@ def lpars_provision(
     On partial failure the completed steps are reported as "ok", the failed step as "error",
     and remaining steps as "skipped". No automatic rollback is performed.
     """
-    assignments = _load_pcie_assignments(pcie_assignments)
+    assignments = load_pcie_assignments(pcie_assignments)
 
     if partition_type not in PARTITION_TYPES:
         usage_error(
@@ -103,66 +105,50 @@ def lpars_provision(
             return await provision_lpar(
                 hmc,
                 system_name_or_uuid=system,
-                name=name,
-                network=ProvisionAdapters(port_vlan_id, vios_partition_id, vios_slot),
-                storage=ProvisionStorage(
-                    vios_uuid,
-                    storage_name,
-                    cast(StorageKind, storage_kind),
-                    vg_uuid,
+                request=ProvisionRequest(
+                    name=name,
+                    adapters=ProvisionAdapters(port_vlan_id, vios_partition_id, vios_slot),
+                    storage=ProvisionStorage(vios_uuid, storage_name, cast(StorageKind, storage_kind), vg_uuid),
+                    resources=LparResources(min_memory=min_memory, desired_memory=memory, max_memory=max_memory, desired_vcpus=vcpus, max_vcpus=max_vcpus),
+                    partition_type=partition_type,
+                    power_on=power_on,
+                    dry_run=dry_run,
+                    assignments=assignments,
                 ),
-                resources=LparResources(
-                    min_memory=min_memory,
-                    desired_memory=memory,
-                    max_memory=max_memory,
-                    desired_vcpus=vcpus,
-                    max_vcpus=max_vcpus,
-                ),
-                partition_type=partition_type,
-                power_on=power_on,
-                dry_run=dry_run,
-                assignments=assignments,
             )
 
     result = run(_go)
 
+    _render_provision_result(result, name, dry_run, as_json)
+
+
+def _render_provision_result(
+    result: ProvisionResult, name: str, dry_run: bool, as_json: bool
+) -> None:
     if as_json:
         print_json(asdict(result))
         return
-
     if dry_run:
-        console.print(
-            "[yellow]DRY RUN — preconditions validated, no LPAR created[/yellow]"
-        )
+        console.print("[yellow]DRY RUN — preconditions validated, no LPAR created[/yellow]")
     elif result.workflow_completed:
         console.print(f"[green]LPAR '{name}' provisioned successfully[/green]")
     elif result.resource_created:
         identity = result.lpar_uuid or "UUID unavailable"
-        console.print(
-            f"[yellow]LPAR '{name}' was created ({identity}), but provisioning "
-            "is incomplete — check step results[/yellow]"
-        )
+        console.print(f"[yellow]LPAR '{name}' was created ({identity}), but provisioning is incomplete — check step results[/yellow]")
     else:
-        console.print(
-            f"[yellow]LPAR '{name}' was not created — check step results[/yellow]"
-        )
+        console.print(f"[yellow]LPAR '{name}' was not created — check step results[/yellow]")
 
     table = Table(title=f"Provision steps: {name}")
     table.add_column("Step", style="cyan")
     table.add_column("Status", style="green")
     for step in result.steps:
-        status = step.status
-        style = (
-            "green"
-            if status == "ok"
-            else ("yellow" if status in ("dry_run", "skipped") else "red")
+        style = "green" if step.status == "ok" else (
+            "yellow" if step.status in ("dry_run", "skipped") else "red"
         )
-        table.add_row(step.step, f"[{style}]{status}[/{style}]")
+        table.add_row(step.step, f"[{style}]{step.status}[/{style}]")
     console.print(table)
-
-    if result.warnings:
-        for w in result.warnings:
-            console.print(f"[yellow]Warning: {w}[/yellow]")
+    for warning in result.warnings:
+        console.print(f"[yellow]Warning: {warning}[/yellow]")
 
 
 # LPAR Boot Order Commands

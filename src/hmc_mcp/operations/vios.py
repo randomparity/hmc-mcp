@@ -30,19 +30,26 @@ async def list_vios(
     state: PartitionState | None = None,
 ) -> list[dict[str, Any]]:
     """List VIOSes, optionally scoped to one system or partition state."""
-    if system_name_or_uuid is not None and state is not None:
-        raise ValueError("Provide at most one of system_name_or_uuid or state")
-    if state is not None:
-        if state not in PARTITION_STATES:
-            allowed = ", ".join(sorted(PARTITION_STATES))
-            raise ValueError(f"state must be one of: {allowed}")
-        return await hmc.search_uom("VirtualIOServer", "PartitionState", state)
+    if state is not None and state not in PARTITION_STATES:
+        allowed = ", ".join(sorted(PARTITION_STATES))
+        raise ValueError(f"state must be one of: {allowed}")
     system_uuid = (
         await resolve_system_uuid(hmc, system_name_or_uuid)
         if system_name_or_uuid is not None
         else None
     )
-    return await hmc.list_vios(system_uuid)
+    vios = (
+        await hmc.search_uom("VirtualIOServer", "PartitionState", state)
+        if system_uuid is None and state is not None
+        else await hmc.list_vios(system_uuid)
+    )
+    if state is None or system_uuid is None:
+        return vios
+    return [
+        entry
+        for entry in vios
+        if (entry.get("Resource") or {}).get("PartitionState") == state
+    ]
 
 
 async def get_vios(
@@ -77,8 +84,9 @@ async def create_vios(
 
 async def delete_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> str:
     """Delete an inactive VIOS partition.
 
@@ -99,14 +107,14 @@ async def delete_vios(
             status_code=409,
         )
     await hmc.delete_logical_partition(vios_uuid)
-    return f"Deleted VIOS {vios_uuid}"
+    return vios_uuid
 
 
 async def power_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     *,
+    system_name_or_uuid: str | None = None,
     power_on: bool,
     immediate: bool = False,
     wait: bool = False,
@@ -192,8 +200,9 @@ async def _resolve_vios_backup_selectors(
 
 async def list_vios_backups(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
+    *,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
     """Return the validated backup catalog for one VIOS."""
     vios_uuid = vios_name_or_uuid
@@ -277,9 +286,9 @@ def validate_vios_restore_request(
 
 async def backup_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str,
     vios_name_or_uuid: str,
     *,
+    system_name_or_uuid: str,
     backup_name: str,
     backup_type: BackupType = "vios",
 ) -> str:
@@ -298,10 +307,10 @@ async def backup_vios(
 
 async def restore_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str,
     vios_name_or_uuid: str,
     backup_name: str,
     *,
+    system_name_or_uuid: str,
     backup_type: RestoreBackupType,
     restart_if_required: bool = False,
 ) -> str:

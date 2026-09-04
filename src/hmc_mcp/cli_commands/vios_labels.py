@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 
 import typer
 
-from ..operations._vios_labels import (
+from ..operations.vios_labels import (
     create_vios_vfc_group_label,
     list_vios_fc_port_labels,
     list_vios_vfc_group_labels,

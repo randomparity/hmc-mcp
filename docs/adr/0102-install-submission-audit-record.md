@@ -9,7 +9,7 @@ Accepted (2026-08-26)
 
 ## Context
 
-`install_lpar_os` and `install_vios` submit an irreversible OS install against a
+`install_vios_by_lpar_selector` and `install_vios` submit an irreversible OS install against a
 partition's disks and detach. There is no HMC job to poll (ADR 0069/0070), no ADR 0011
 ownership guard and therefore no `ownership-denied` or `ownership-override` record
 (ADR 0092 §3.4a), and for a `hmc_mcp.api` consumer no #218 dispatch-boundary

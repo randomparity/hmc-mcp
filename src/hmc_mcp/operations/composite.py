@@ -89,7 +89,7 @@ def _lpar_summary(
     )
 
 
-async def lpar_summary(
+async def fetch_lpar_summary(
     hmc: HMCClient,
     system_name_or_uuid: str | None,
     lpar_name_or_uuid: str,
@@ -182,7 +182,7 @@ def _system_summary(
     )
 
 
-async def system_summary(hmc: HMCClient, system_name_or_uuid: str) -> SystemSummary:
+async def fetch_system_summary(hmc: HMCClient, system_name_or_uuid: str) -> SystemSummary:
     """Compose system, partition, and VIOS inventory into one summary.
 
     Raises ``ValueError`` when the managed system cannot be found.

@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from decimal import Decimal
 from typing import Any
 
 from .._app import (
+    serialize_tool_result,
     with_client,
-    with_config,
 )
-from ..operations.vnic import (
+from ..operations.io_virtualization.vnic import (
     VnicBackingSelector,
     VnicPartialError,
     add_vnic,
@@ -50,8 +49,8 @@ def hmc_list_fc_ports(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_config(
-        lambda config: list_fc_ports(config, system_name_or_uuid, lpar_name_or_uuid),
+    return with_client(
+        lambda hmc: list_fc_ports(hmc, system_name_or_uuid, lpar_name_or_uuid),
         profile=profile,
     )
 
@@ -81,9 +80,9 @@ def hmc_list_sea_adapters(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_config(
-        lambda config: list_sea_adapters(
-            config, system_name_or_uuid, lpar_name_or_uuid
+    return with_client(
+        lambda hmc: list_sea_adapters(
+            hmc, system_name_or_uuid, lpar_name_or_uuid
         ),
         profile=profile,
     )
@@ -110,13 +109,18 @@ def hmc_list_vnics(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_config(
-        lambda config: list_vnics(config, system_name_or_uuid, lpar_name_or_uuid),
+    return with_client(
+        lambda hmc: list_vnics(hmc, system_name_or_uuid, lpar_name_or_uuid),
         profile=profile,
     )
 
 
-@tool(effect="mutate", operation="vnic.add", target_kind="lpar")
+@tool(
+    effect="mutate",
+    operation="vnic.add",
+    target_kind="lpar",
+    extra_targets=(("vios", "vios_name"),),
+)
 def hmc_add_vnic(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -164,9 +168,9 @@ def hmc_add_vnic(
                 ownership_override=ownership_override,
             )
         except VnicPartialError as exc:
-            evidence = json.dumps(asdict(exc.result), default=str)
+            evidence = json.dumps(serialize_tool_result(exc.result), default=str)
             raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
-        return asdict(result)
+        return serialize_tool_result(result)
 
     return with_client(_go, profile=profile)
 
@@ -202,8 +206,8 @@ def hmc_remove_vnic(
                 ownership_override=ownership_override,
             )
         except VnicPartialError as exc:
-            evidence = json.dumps(asdict(exc.result), default=str)
+            evidence = json.dumps(serialize_tool_result(exc.result), default=str)
             raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
-        return asdict(result)
+        return serialize_tool_result(result)
 
     return with_client(_go, profile=profile)

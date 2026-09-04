@@ -6,11 +6,14 @@ from ..._app import (
     ssh_with_client,
     with_client,
 )
+from ...operations.io_virtualization.pcie import (
+    assign_dedicated_pcie_slot,
+    unassign_dedicated_pcie_slot,
+)
 from ...operations.lpar.configuration import (
     restore_system_lpar_profiles,
     synchronize_lpar_profile,
 )
-from ...operations.pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
 from ...ssh.profiles import backup_lpar_profiles
 from ...tool_registry import tool_module
 

@@ -35,14 +35,22 @@ class ManagedSystemPatch:
 async def list_systems(
     hmc: HMCClient, state: str | None = None
 ) -> list[dict[str, Any]]:
-    """List managed systems, using server-side state filtering when requested."""
+    """List managed systems, using server-side state filtering when requested.
+
+    Raises:
+        HMCError: If the HMC request fails.
+    """
     if state is not None:
         return await hmc.search_uom("ManagedSystem", "State", state)
     return await hmc.list_managed_systems()
 
 
 async def get_system(hmc: HMCClient, system_name_or_uuid: str) -> dict[str, Any] | None:
-    """Return a managed system selected by exact name or UUID."""
+    """Return a managed system selected by exact name or UUID.
+
+    Raises:
+        HMCError: If the HMC request fails.
+    """
     if is_uuid(system_name_or_uuid):
         return await hmc.get_managed_system(system_name_or_uuid)
     return await hmc.find_system_by_name(system_name_or_uuid)

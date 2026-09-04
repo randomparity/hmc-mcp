@@ -10,7 +10,8 @@ import pytest
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations import health as operations_health
-from hmc_mcp.operations.health import FleetHealthResult, fleet_health
+from hmc_mcp.operations.health import FleetHealthResult
+from hmc_mcp.operations.health import fetch_fleet_health as fleet_health
 
 _ACTIONABLE_TERMINAL_STATUSES = {
     "CANCELED_BEFORE_START",
@@ -217,7 +218,8 @@ async def test_core_inventory_error_cancels_sibling_reads() -> None:
 
     async def lpars(system_uuid: str) -> list[dict]:
         if system_uuid == "sys-fail":
-            await sibling_started.wait()
+            async with asyncio.timeout(5):
+                await sibling_started.wait()
             raise error
         sibling_started.set()
         try:
@@ -244,7 +246,8 @@ async def test_core_inventory_error_cancels_same_system_sibling_read() -> None:
     error = HMCError("LPAR inventory failed", 500, "failure")
 
     async def lpars(_system_uuid: str) -> list[dict]:
-        await sibling_started.wait()
+        async with asyncio.timeout(5):
+            await sibling_started.wait()
         raise error
 
     async def vios(_system_uuid: str) -> list[dict]:

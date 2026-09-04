@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from decimal import Decimal
 from typing import Any
 
 from .._app import (
+    serialize_tool_result,
     with_client,
-    with_config,
 )
-from ..operations.pcie import (
+from ..operations.io_virtualization.pcie import (
     SriovMode,
     assign_sriov_logical_port,
     set_sriov_adapter_mode,
@@ -52,10 +51,8 @@ def hmc_set_sriov_adapter_mode(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_config(
-        lambda config: set_sriov_adapter_mode(
-            config, system_name_or_uuid, adapter_id, mode
-        ),
+    return with_client(
+        lambda hmc: set_sriov_adapter_mode(hmc, system_name_or_uuid, adapter_id, mode),
         profile=profile,
     )
 
@@ -87,7 +84,7 @@ def hmc_assign_sriov_logical_port(
     """
 
     async def _go(hmc):
-        return asdict(
+        return serialize_tool_result(
             await assign_sriov_logical_port(
                 hmc,
                 system_name_or_uuid,
@@ -129,7 +126,7 @@ def hmc_unassign_sriov_logical_port(
     """
 
     async def _go(hmc):
-        return asdict(
+        return serialize_tool_result(
             await unassign_sriov_logical_port(
                 hmc,
                 system_name_or_uuid,

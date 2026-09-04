@@ -2,7 +2,7 @@
 
 Jobs are submitted with Content-Type: application/vnd.ibm.powervm.web+xml;
 type=JobRequest via PUT and run asynchronously. Poll the submission's SELF link
-for portable status handling; ``/rest/api/uom/Job/{uuid}`` remains a legacy
+for portable status handling; ``/rest/api/uom/jobs/{job_id}`` remains the
 fallback for responses that omit that link.
 """
 
@@ -13,7 +13,7 @@ from typing import Any, Literal, Protocol, get_args
 from urllib.parse import urlparse
 
 from .errors import HMCError
-from .xmlutil import WEB_NS, escapes_string_arguments
+from .jobs_requests import build_job_request
 
 LuType = Literal["THIN", "THICK"]
 DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
@@ -107,9 +107,9 @@ def job_identifier(job: dict[str, Any]) -> str | None:
     """Return a polling identifier from a UUID, JobID, or SELF link."""
     resource = job.get("Resource")
     resource_id = resource.get("JobID") if isinstance(resource, dict) else None
-    identifier = job.get("UUID") or resource_id
-    if isinstance(identifier, str) and identifier.strip():
-        return identifier.strip()
+    for candidate in (job.get("UUID"), resource_id):
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
     link = job.get("link")
     if not isinstance(link, str) or not link.strip():
         return None
@@ -149,43 +149,45 @@ def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
 
 def _job_error(resource: dict[str, Any], status: str) -> str | None:
     """Extract the HMC result or response-exception message from a job resource."""
+    exception_message = _exception_message(resource)
+    if status == "EXCEPTION" and exception_message:
+        return exception_message
+    result_message = _result_message(resource)
+    return result_message or exception_message
+
+
+def _exception_message(resource: dict[str, Any]) -> str | None:
     exception = resource.get("ResponseException")
-    exception_message = (
-        exception.get("Message") if isinstance(exception, dict) else None
-    )
-    if (
-        status == "EXCEPTION"
-        and isinstance(exception_message, str)
-        and exception_message.strip()
-    ):
-        return exception_message.strip()
+    message = exception.get("Message") if isinstance(exception, dict) else None
+    return message.strip() if isinstance(message, str) and message.strip() else None
 
+
+def _result_message(resource: dict[str, Any]) -> str | None:
     results = resource.get("Results")
-    if isinstance(results, dict):
-        parameters = results.get("JobParameter", [])
-        if isinstance(parameters, dict):
-            parameters = [parameters]
-        if isinstance(parameters, list):
-            messages: dict[str, str] = {}
-            for parameter in parameters:
-                if not isinstance(parameter, dict):
-                    continue
-                name = parameter.get("ParameterName")
-                value = parameter.get("ParameterValue")
-                if (
-                    name in {"result", "detailedStatus", "ErrorData"}
-                    and name not in messages
-                    and isinstance(value, str)
-                    and value.strip()
-                ):
-                    messages[name] = value.strip()
-            for name in ("ErrorData", "detailedStatus", "result"):
-                if name in messages:
-                    return messages[name]
-
-    if isinstance(exception_message, str) and exception_message.strip():
-        return exception_message.strip()
-    return None
+    if not isinstance(results, dict):
+        return None
+    parameters = results.get("JobParameter", [])
+    if isinstance(parameters, dict):
+        parameters = [parameters]
+    if not isinstance(parameters, list):
+        return None
+    messages: dict[str, str] = {}
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            continue
+        name = parameter.get("ParameterName")
+        value = parameter.get("ParameterValue")
+        if (
+            name in {"result", "detailedStatus", "ErrorData"}
+            and name not in messages
+            and isinstance(value, str)
+            and value.strip()
+        ):
+            messages[name] = value.strip()
+    return next(
+        (messages[name] for name in ("ErrorData", "detailedStatus", "result") if name in messages),
+        None,
+    )
 
 
 def vios_stdout(job: dict[str, Any] | None) -> str | None:
@@ -252,59 +254,6 @@ def validate_logical_unit_types(
             f"Must be one of: {', '.join(sorted(DEVICE_TYPES))}"
         )
     return lu_type, device_type
-
-
-_JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<JobRequest xmlns="{ns}" xmlns:JobRequest="{ns}" schemaVersion="V1_0">
-  <Metadata>
-    <Atom/>
-  </Metadata>
-  <RequestedOperation kb="CUR" kxe="false" schemaVersion="V1_0">
-    <Metadata>
-      <Atom/>
-    </Metadata>
-    <OperationName kb="ROR" kxe="false">{operation}</OperationName>
-    <GroupName kb="ROR" kxe="false">{group}</GroupName>
-    <ProgressType kb="ROR" kxe="false">DISCRETE</ProgressType>
-  </RequestedOperation>
-  <JobParameters kb="CUR" kxe="false" schemaVersion="V1_0">
-    <Metadata>
-      <Atom/>
-    </Metadata>
-{parameters}
-  </JobParameters>
-</JobRequest>
-"""
-
-_PARAM_TEMPLATE = """    <JobParameter schemaVersion="V1_0">
-      <Metadata>
-        <Atom/>
-      </Metadata>
-      <ParameterName kb="ROR" kxe="false">{name}</ParameterName>
-      <ParameterValue kb="CUR" kxe="false">{value}</ParameterValue>
-    </JobParameter>"""
-
-
-@escapes_string_arguments
-def build_job_request(
-    operation: str,
-    group: str,
-    parameters: dict[str, str] | None = None,
-) -> str:
-    """Build the JobRequest XML for a do/* operation.
-
-    Every ``*_job`` builder in this module renders through here, so this one
-    decorator is the module's whole encoding boundary (ADR 0042).
-    """
-    params_xml = ""
-    if parameters:
-        params_xml = "\n".join(
-            _PARAM_TEMPLATE.format(name=name, value=value)
-            for name, value in parameters.items()
-        )
-    return _JOB_TEMPLATE.format(
-        ns=WEB_NS, operation=operation, group=group, parameters=params_xml
-    )
 
 
 def power_on_lpar_job() -> str:
@@ -474,6 +423,35 @@ def remote_restart_lpar_job(
     retain_devices: bool = False,
 ) -> str:
     """Build a RemoteRestart request using its dedicated parameter vocabulary."""
+    _validate_remote_restart(
+        operation,
+        target_managed_system,
+        target_managed_system_uuid,
+        use_current_data,
+        retain_devices,
+    )
+    return build_job_request(
+        "RemoteRestart",
+        "LogicalPartition",
+        _remote_restart_params(
+            operation,
+            managed_system,
+            logical_partition_uuid,
+            target_managed_system,
+            target_managed_system_uuid,
+            use_current_data,
+            retain_devices,
+        ),
+    )
+
+
+def _validate_remote_restart(
+    operation: RemoteRestartOperation,
+    target_managed_system: str | None,
+    target_managed_system_uuid: str | None,
+    use_current_data: bool,
+    retain_devices: bool,
+) -> None:
     if operation not in REMOTE_RESTART_OPERATIONS:
         allowed = ", ".join(sorted(REMOTE_RESTART_OPERATIONS))
         raise ValueError(f"RemoteRestart operation must be one of: {allowed}")
@@ -489,6 +467,17 @@ def remote_restart_lpar_job(
         raise ValueError("use_current_data is valid only for RemoteRestart 'restart'")
     if retain_devices and operation != "cleanup":
         raise ValueError("retain_devices is valid only for RemoteRestart 'cleanup'")
+
+
+def _remote_restart_params(
+    operation: RemoteRestartOperation,
+    managed_system: str,
+    logical_partition_uuid: str,
+    target_managed_system: str | None,
+    target_managed_system_uuid: str | None,
+    use_current_data: bool,
+    retain_devices: bool,
+) -> dict[str, str]:
     params = {
         "Operation": operation,
         "managedSystem": managed_system,
@@ -502,7 +491,7 @@ def remote_restart_lpar_job(
         params["usecurrdata"] = "true"
     if retain_devices:
         params["retaindev"] = "true"
-    return build_job_request("RemoteRestart", "LogicalPartition", params)
+    return params
 
 
 # Template Library

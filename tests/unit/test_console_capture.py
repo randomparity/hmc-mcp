@@ -24,17 +24,32 @@ from hmc_mcp.ssh.console import (
     MAX_CAPTURE_SECONDS,
     ConsoleCapture,
     ConsoleHeldError,
+    _acquire_capture_stream,
+    _open_capture_stream,
     _probe_released,
+    _release_uncancellable,
     _SealedStdin,
     _truncate,
     capture_lpar_console,
 )
+from hmc_mcp.ssh.transport import HMCCLIError
 
 BANNER = b"\r\n Open in progress  \r\n "
 
 
 def _client() -> HMCClient:
     return HMCClient(make_config())
+
+
+@pytest.mark.asyncio
+async def test_release_propagates_cancellation_from_completed_child() -> None:
+    async def cancelled_release(*args) -> bool:
+        raise asyncio.CancelledError
+
+    with patch("hmc_mcp.ssh.console._release_and_verify", cancelled_release), pytest.raises(
+        asyncio.CancelledError
+    ):
+        await _release_uncancellable(make_config(), "sys1", "lp1")
 
 
 # The exact recorded P1 contention output, quirks included.
@@ -96,6 +111,20 @@ class FakeConnection:
         self.closed = True
 
 
+class FailingProcessConnection(FakeConnection):
+    async def create_process(self, command: str, **kwargs):
+        raise OSError("channel unavailable")
+
+
+class FailingStdout:
+    async def read(self, size: int) -> bytes:
+        raise OSError("channel lost")
+
+
+class FailingReadProcess:
+    stdout = FailingStdout()
+
+
 def _capture_kwargs(**overrides):
     kwargs = {
         "duration_seconds": 5.0,
@@ -127,6 +156,41 @@ async def _run_capture(connection: FakeConnection, **overrides) -> ConsoleCaptur
     # ConsoleCapture is frozen; the test seam rides on the side.
     object.__setattr__(capture, "release_calls", release_mock.await_args_list)
     return capture
+
+
+@pytest.mark.asyncio
+async def test_console_process_creation_translates_transport_errors() -> None:
+    connection = FailingProcessConnection([])
+    with (
+        patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock(return_value=connection)),
+        pytest.raises(HMCCLIError, match="Unable to create the HMC console process"),
+    ):
+        await _open_capture_stream(make_config(), "mkvterm", _SealedStdin())
+    assert connection.closed
+
+
+@pytest.mark.asyncio
+async def test_console_acquisition_read_translates_transport_errors() -> None:
+    connection = FakeConnection([])
+    connection.create_process = AsyncMock(return_value=FailingReadProcess())
+    with (
+        patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock(return_value=connection)),
+        pytest.raises(HMCCLIError, match="acquisition read failed"),
+    ):
+        await _acquire_capture_stream(make_config(), "mkvterm", _SealedStdin())
+    assert connection.closed
+
+
+def test_truncate_backtracks_split_string_terminator() -> None:
+    data = b"prefix\x1bPpayload\x1b\\suffix"
+
+    assert _truncate(data, data.index(b"\\")) == b"prefix"
+
+
+def test_truncate_backtracks_unterminated_osc_payload() -> None:
+    data = b"prefix\x1b]0;window title\x07suffix"
+
+    assert _truncate(data, data.index(b"window") + 3) == b"prefix"
 
 
 # ---------------------------------------------------------------------------
@@ -442,7 +506,7 @@ async def test_cancellation_still_runs_release_to_completion():
                 **_capture_kwargs(duration_seconds=30.0, idle_timeout_seconds=30.0),
             )
         )
-        await capture_started.wait()
+        await asyncio.wait_for(capture_started.wait(), timeout=5)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -479,7 +543,7 @@ async def test_cancellation_during_acquisition_releases_proven_session():
                 **_capture_kwargs(duration_seconds=30.0, idle_timeout_seconds=30.0),
             )
         )
-        await entered.wait()
+        await asyncio.wait_for(entered.wait(), timeout=5)
         task.cancel()
         await asyncio.sleep(0)
         finish.set()
@@ -519,7 +583,7 @@ async def test_cancellation_during_contended_acquisition_never_releases_holder()
                 **_capture_kwargs(duration_seconds=30.0, idle_timeout_seconds=30.0),
             )
         )
-        await entered.wait()
+        await asyncio.wait_for(entered.wait(), timeout=5)
         task.cancel()
         await asyncio.sleep(0)
         finish.set()

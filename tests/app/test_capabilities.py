@@ -365,7 +365,7 @@ def test_parameter_normalization_contract_is_schema_pinned():
     by_name = _tools_by_name()
     replacements = {
         "hmc_install_vios": {"install_source", "system_name_or_uuid"},
-        "hmc_install_lpar_os": {"install_source", "system_name_or_uuid"},
+        "hmc_install_vios_by_lpar_selector": {"install_source", "system_name_or_uuid"},
         "hmc_attach_disk_to_lpar": {"capacity_mib"},
         "hmc_create_virtual_disk": {"capacity_mib"},
         "hmc_create_media_repository": {"size_mib"},
@@ -403,7 +403,7 @@ def test_parameter_normalization_contract_is_schema_pinned():
         by_name["hmc_remove_vnic"].parameters["properties"],
     ):
         assert properties["ownership_override"]["default"] is False
-    for install_tool in ("hmc_install_vios", "hmc_install_lpar_os"):
+    for install_tool in ("hmc_install_vios", "hmc_install_vios_by_lpar_selector"):
         properties = by_name[install_tool].parameters["properties"]
         # ADR 0070: the REST job-polling surface is gone with the dead
         # InstallLPAR/InstallVIOS endpoints; the CLI bridge exposes no wait.
@@ -533,7 +533,7 @@ def test_update_source_enums_match_runtime_constants():
 
     Each public tool schema is pinned to the corresponding runtime Literal.
     """
-    from hmc_mcp.operations.update_models import (
+    from hmc_mcp.operations.updates.models import (
         _CONSOLE_UPDATE_MEDIA_TYPES,
         _VIOS_UPDATE_RESOURCE_TYPES,
         _VIOS_UPGRADE_RESOURCE_TYPES,
@@ -752,7 +752,7 @@ def test_delete_vios_succeeds_when_powered_off(monkeypatch, mock_hmc):
 
     result = hmc_delete_vios(LPAR_UUID)
 
-    assert result == f"Deleted VIOS {LPAR_UUID}"
+    assert result == LPAR_UUID
 
 
 # ------------------------------------------------------------------ #

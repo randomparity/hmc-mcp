@@ -43,6 +43,8 @@ import shlex
 from dataclasses import dataclass
 from typing import Any, Literal
 
+import asyncssh
+
 from hmc_mcp.client.core import HMCClient
 
 from ..config import HMCConfig
@@ -202,8 +204,11 @@ def _escape_complete(data: bytes, start: int, cut: int) -> bool:
         while index < cut and 0x20 <= data[index] <= 0x3F:
             index += 1
         return index < cut and 0x40 <= data[index] <= 0x7E
-    if introducer in (0x50, 0x58, 0x5E, 0x5F):  # DCS/SOS/PM/APC strings
-        return data.find(b"\x1b\\", index + 1, cut - 1) != -1
+    if introducer in (0x50, 0x58, 0x5E, 0x5F, 0x5D):  # DCS/SOS/PM/APC/OSC strings
+        return (
+            data.find(b"\x1b\\", index + 1, cut) != -1
+            or (introducer == 0x5D and data.find(b"\x07", index + 1, cut) != -1)
+        )
     if 0x20 <= introducer <= 0x2F:  # intermediates then a final 0x30-0x7E
         index += 1
         while index < cut and 0x20 <= data[index] <= 0x2F:
@@ -218,10 +223,12 @@ def _ansi_safe_cut(data: bytes, cut: int) -> int:
     Protocol-derived, not prototype-verified (P6): every live observation was
     7-bit ASCII with no escapes; only a live install stream exercises this.
     """
-    start = data.rfind(b"\x1b", 0, cut)
-    if start == -1 or _escape_complete(data, start, cut):
-        return cut
-    return start
+    start = data.find(b"\x1b", 0, cut)
+    while start != -1:
+        if not _escape_complete(data, start, cut):
+            return start
+        start = data.find(b"\x1b", start + 1, cut)
+    return cut
 
 
 def _truncate(data: bytes, limit: int) -> bytes:
@@ -306,6 +313,8 @@ async def _release_uncancellable(
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
+            if task.done():
+                return task.result()
             continue
 
 
@@ -451,6 +460,11 @@ async def _open_capture_stream(
         process = await connection.create_process(
             command, stdin=stdin.read_fd, encoding=None
         )
+    except (asyncssh.Error, OSError) as exc:
+        connection.close()
+        raise HMCCLIError(
+            f"Unable to create the HMC console process for {command!r}: {exc}"
+        ) from exc
     except BaseException:
         connection.close()
         raise
@@ -467,7 +481,14 @@ async def _acquire_capture_stream(
         async with asyncio.timeout(_RELEASE_PROBE_SECONDS):
             data = bytearray()
             while True:
-                chunk = await process.stdout.read(_CHUNK)
+                try:
+                    chunk = await process.stdout.read(_CHUNK)
+                except (asyncssh.Error, OSError) as exc:
+                    connection.close()
+                    raise HMCCLIError(
+                        "HMC console acquisition read failed before the console "
+                        f"was confirmed: {exc}"
+                    ) from exc
                 if not chunk:
                     raise HMCCLIError(
                         "mkvterm exited before confirming console acquisition"
@@ -501,6 +522,8 @@ async def _await_acquisition(
         try:
             connection, process, data = await asyncio.shield(task)
         except asyncio.CancelledError:
+            if task.done():
+                task.result()
             cancelled = True
             continue
         except BaseException:

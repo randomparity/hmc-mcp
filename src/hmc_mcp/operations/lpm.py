@@ -24,6 +24,11 @@ from ..jobs import (
 )
 from ..resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name
 
+LpmDestinationCheckBasis = Literal["calculated", "migration-check"]
+LpmCapability = Literal["available", "unavailable"]
+LpmResponse = Literal["warn", "fail"]
+LpmPreflightStatus = Literal["passed", "warned", "failed", "unavailable"]
+
 _MAX_CAPABILITY_LIMITS = 8
 _MAX_CAPABILITY_LIMIT_LENGTH = 200
 
@@ -46,6 +51,17 @@ class LpmMigrationRequest:
 
 
 @dataclass(frozen=True)
+class RemoteRestartRequest:
+    """Restart-specific controls for a remote-restart workflow."""
+
+    operation: RemoteRestartOperation
+    target_system_name_or_uuid: str | None = None
+    use_current_data: bool = False
+    retain_devices: bool = False
+    ownership_override: bool = False
+
+
+@dataclass(frozen=True)
 class LpmAffinityPreflightRequest:
     """Explicit affinity evidence and caller-owned migration response."""
 
@@ -55,19 +71,19 @@ class LpmAffinityPreflightRequest:
     destination_estimated_score: int | None = field(
         metadata={"description": "Estimated affinity score on the destination."}
     )
-    destination_check_basis: Literal["calculated", "migration-check"] = field(
+    destination_check_basis: LpmDestinationCheckBasis = field(
         metadata={"description": "Basis used for the destination estimate."}
     )
     configured_minimum: int | None = field(
         metadata={"description": "Configured minimum acceptable affinity score."}
     )
-    capability: Literal["available", "unavailable"] = field(
+    capability: LpmCapability = field(
         metadata={"description": "Whether the platform supports the affinity check."}
     )
     capability_limits: tuple[str, ...] = field(
         metadata={"description": "Bounded limitations on the affinity evidence."}
     )
-    response: Literal["warn", "fail"] = field(
+    response: LpmResponse = field(
         metadata={"description": "Explicit response to adverse or unavailable evidence."}
     )
     preflight_timeout_seconds: float = field(
@@ -80,14 +96,14 @@ class LpmAffinityPreflightRequest:
 class LpmAffinityPreflightOutcome:
     """Stable evidence-bearing decision made before HMC LPM validation."""
 
-    status: Literal["passed", "warned", "failed", "unavailable"]
+    status: LpmPreflightStatus
     reason: str
     proceed: bool
     source_current_score: int | None
     destination_estimated_score: int | None
-    destination_check_basis: str
+    destination_check_basis: LpmDestinationCheckBasis
     configured_minimum: int | None
-    capability: str
+    capability: LpmCapability
     capability_limits: tuple[str, ...]
     preflight_timeout_seconds: float
 
@@ -110,7 +126,7 @@ def _validate_affinity_score(value: int | None, name: str) -> None:
 
 def _preflight_outcome(
     request: LpmAffinityPreflightRequest,
-    status: Literal["passed", "warned", "failed", "unavailable"],
+    status: LpmPreflightStatus,
     reason: str,
     proceed: bool,
 ) -> LpmAffinityPreflightOutcome:
@@ -223,8 +239,8 @@ async def run_lpm_affinity_preflight(
         raise ValueError("preflight_timeout_seconds must be non-negative")
 
     async def _evaluate() -> LpmAffinityPreflightOutcome:
-        await asyncio.sleep(0)
-        return evaluate_lpm_affinity_preflight(request)
+        """Run synchronous validation off the event loop's control path."""
+        return await asyncio.to_thread(evaluate_lpm_affinity_preflight, request)
 
     try:
         return await asyncio.wait_for(_evaluate(), timeout=timeout)
@@ -465,15 +481,11 @@ async def remote_restart_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    operation: RemoteRestartOperation,
+    request: RemoteRestartRequest,
     *,
-    target_system_name_or_uuid: str | None = None,
-    use_current_data: bool = False,
-    retain_devices: bool = False,
     wait: bool = False,
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
-    ownership_override: bool = False,
 ) -> LpmResult:
     """Resolve selectors and submit an explicit RemoteRestart operation.
 
@@ -485,24 +497,24 @@ async def remote_restart_lpar(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
-        ownership_override=ownership_override,
+        ownership_override=request.ownership_override,
     )
     source_system = await resolve_system_name(hmc, system_name_or_uuid)
     target_name = None
     target_uuid = None
-    if target_system_name_or_uuid is not None:
-        if is_uuid(target_system_name_or_uuid):
-            target_uuid = target_system_name_or_uuid
+    if request.target_system_name_or_uuid is not None:
+        if is_uuid(request.target_system_name_or_uuid):
+            target_uuid = request.target_system_name_or_uuid
         else:
-            target_name = target_system_name_or_uuid
+            target_name = request.target_system_name_or_uuid
     job = await hmc.lpar_remote_restart(
         lpar_uuid,
-        operation,
+        request.operation,
         source_system,
         target_managed_system=target_name,
         target_managed_system_uuid=target_uuid,
-        use_current_data=use_current_data,
-        retain_devices=retain_devices,
+        use_current_data=request.use_current_data,
+        retain_devices=request.retain_devices,
     )
     return LpmResult(
         lpar_uuid,

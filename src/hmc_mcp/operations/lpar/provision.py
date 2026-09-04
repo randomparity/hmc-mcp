@@ -26,17 +26,16 @@ from ...ssh.affinity import (
 from ...ssh.lpar import validate_caller_token
 from ...ssh.selectors import resolve_ssh_names
 from ...ssh.transport import HMCCLIError
-from ..affinity import (
+from ..affinity.rest import (
     ProvisionAffinityAssessment,
     assess_post_activation_affinity,
     validate_affinity_request,
 )
-from ..ssh_affinity import set_minimum_affinity_policy
+from ..affinity.ssh import set_minimum_affinity_policy
 from ..storage import create_virtual_disk
 from .assignments import (
     LparPcieAssignments,
-    WorkflowStep,
-    _apply_validated_lpar_pcie_assignments,
+    apply_validated_lpar_pcie_assignments,
     assignment_step_names,
     prevalidate_lpar_pcie_assignments,
 )
@@ -46,6 +45,7 @@ from .core import (
     create_and_stamp_lpar,
     power_lpar,
 )
+from .workflow_contract import WorkflowStep
 
 
 @dataclass(frozen=True)
@@ -80,12 +80,25 @@ class ProvisionStorage:
     )
     vg_uuid: str | None = field(
         default=None,
-        metadata={
-            "description": "Volume-group UUID used when creating a virtual disk."
-        },
+        metadata={"description": "Volume-group UUID used when creating a virtual disk."},
     )
 
 
+@dataclass(frozen=True)
+class ProvisionRequest:
+    """Typed inputs for the end-to-end LPAR provisioning workflow."""
+
+    name: str
+    adapters: ProvisionAdapters
+    storage: ProvisionStorage
+    resources: LparResources
+    partition_type: PartitionType = "AIX/Linux"
+    power_on: bool = True
+    dry_run: bool = False
+    assignments: LparPcieAssignments = LparPcieAssignments()
+    caller_token: str | None = None
+    minimum_affinity_policy: MinimumAffinityPolicy | None = None
+    affinity_assessment: ProvisionAffinityAssessment | None = None
 @dataclass(frozen=True)
 class ProvisionResult:
     """Truthful outcome of a provisioning attempt."""
@@ -236,11 +249,11 @@ async def _create_disk(
         raise ValueError("virtual-disk creation requires storage vg_uuid")
     await create_virtual_disk(
         hmc,
-        None,
         storage.vios_uuid,
         storage.vg_uuid,
         storage.storage_name,
         capacity_mib,
+        system_name_or_uuid=None,
     )
     return {"disk_name": storage.storage_name, "capacity_mib": capacity_mib}
 
@@ -421,7 +434,7 @@ async def _run_assignment_leg(
     lpar_name: str,
     assignments: LparPcieAssignments,
 ) -> bool:
-    result = await _apply_validated_lpar_pcie_assignments(
+    result = await apply_validated_lpar_pcie_assignments(
         hmc, system_name_or_uuid, lpar_name, assignments
     )
     steps.extend(result.steps)
@@ -492,67 +505,50 @@ def _failed_provision_result(
 async def _preflight_provision_request(
     hmc: HMCClient,
     system_name_or_uuid: str,
-    name: str,
-    network: ProvisionAdapters,
-    storage: ProvisionStorage,
-    assignments: LparPcieAssignments,
-    caller_token: str | None,
-    minimum_affinity_policy: MinimumAffinityPolicy | None,
-    affinity_assessment: ProvisionAffinityAssessment | None,
+    request: ProvisionRequest,
 ) -> None:
     """Validate a provisioning request and every external dependency it names."""
-    if affinity_assessment is not None:
-        if (
-            affinity_assessment.system_name_or_uuid != system_name_or_uuid
-            or affinity_assessment.lpar_name != name
-        ):
-            raise ValueError(
-                "affinity assessment identities must match the provisioned system and LPAR"
-            )
-        if affinity_assessment.response not in {"warn", "fail"}:
-            raise ValueError("affinity assessment response must be warn or fail")
-        if affinity_assessment.timeout_seconds < 0:
-            raise ValueError("affinity assessment timeout_seconds must be non-negative")
-        if affinity_assessment.poll_interval <= 0:
-            raise ValueError("affinity assessment poll_interval must be positive")
-    if minimum_affinity_policy is not None:
-        validate_minimum_affinity_policy(minimum_affinity_policy)
-    if affinity_assessment is not None:
+    if request.affinity_assessment is not None and (
+        request.affinity_assessment.system_name_or_uuid != system_name_or_uuid
+        or request.affinity_assessment.lpar_name != request.name
+    ):
+        raise ValueError(
+            "affinity assessment identities must match the provisioned system and LPAR"
+        )
+    if request.minimum_affinity_policy is not None:
+        validate_minimum_affinity_policy(request.minimum_affinity_policy)
+    if request.affinity_assessment is not None:
         configured_minimum = (
-            minimum_affinity_policy.min_affinity_score
-            if minimum_affinity_policy is not None
+            request.minimum_affinity_policy.min_affinity_score
+            if request.minimum_affinity_policy is not None
             else None
         )
-        validate_affinity_request(affinity_assessment, configured_minimum)
-    if caller_token is not None:
-        validate_caller_token(caller_token)
+        validate_affinity_request(request.affinity_assessment, configured_minimum)
+    if request.caller_token is not None:
+        validate_caller_token(request.caller_token)
 
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    if minimum_affinity_policy is not None:
+    if request.minimum_affinity_policy is not None:
         system_name, _ = await resolve_ssh_names(hmc.config, system_name_or_uuid, None)
         await require_minimum_affinity_policy_capability(hmc.config, system_name)
-    await _check_name_unique(hmc, name)
-    await _check_vlan_exists(hmc, system_uuid, network.port_vlan_id)
-    if storage.vg_uuid is not None:
-        await _check_vg_exists(hmc, storage.vios_uuid, storage.vg_uuid)
-    await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
+    await _check_name_unique(hmc, request.name)
+    await _check_vlan_exists(hmc, system_uuid, request.adapters.port_vlan_id)
+    if request.storage.vg_uuid is not None:
+        await _check_vg_exists(hmc, request.storage.vios_uuid, request.storage.vg_uuid)
+    await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, request.assignments)
 
 
 def _provision_step_names(
-    assignments: LparPcieAssignments,
-    *,
-    minimum_affinity_policy: MinimumAffinityPolicy | None,
-    power_on: bool,
-    affinity_assessment: ProvisionAffinityAssessment | None,
+    request: ProvisionRequest,
 ) -> list[str]:
     """Return the ordered workflow-step names for one provision request."""
     names = ["create"]
-    if minimum_affinity_policy is not None:
+    if request.minimum_affinity_policy is not None:
         names.append("minimum_affinity_policy")
-    names.extend(["network", "vscsi", "storage", *assignment_step_names(assignments)])
-    if power_on:
+    names.extend(["network", "vscsi", "storage", *assignment_step_names(request.assignments)])
+    if request.power_on:
         names.append("power_on")
-    if affinity_assessment is not None:
+    if request.affinity_assessment is not None:
         names.append("affinity_assessment")
     return names
 
@@ -560,18 +556,7 @@ def _provision_step_names(
 async def provision_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str,
-    name: str,
-    network: ProvisionAdapters,
-    storage: ProvisionStorage,
-    resources: LparResources,
-    *,
-    partition_type: PartitionType = "AIX/Linux",
-    power_on: bool = True,
-    dry_run: bool = False,
-    assignments: LparPcieAssignments = LparPcieAssignments(),
-    caller_token: str | None = None,
-    minimum_affinity_policy: MinimumAffinityPolicy | None = None,
-    affinity_assessment: ProvisionAffinityAssessment | None = None,
+    request: ProvisionRequest,
 ) -> ProvisionResult:
     """Provision an LPAR after validating every requested dependency.
 
@@ -589,22 +574,11 @@ async def provision_lpar(
     await _preflight_provision_request(
         hmc,
         system_name_or_uuid,
-        name,
-        network,
-        storage,
-        assignments,
-        caller_token,
-        minimum_affinity_policy,
-        affinity_assessment,
+        request,
     )
-    step_names = _provision_step_names(
-        assignments,
-        minimum_affinity_policy=minimum_affinity_policy,
-        power_on=power_on,
-        affinity_assessment=affinity_assessment,
-    )
+    step_names = _provision_step_names(request)
 
-    if dry_run:
+    if request.dry_run:
         return ProvisionResult(
             resource_created=False,
             workflow_completed=False,
@@ -620,7 +594,12 @@ async def provision_lpar(
         creation = await create_and_stamp_lpar(
             hmc,
             system_name_or_uuid,
-            LparCreation(name, partition_type, resources, caller_token=caller_token),
+            LparCreation(
+                request.name,
+                request.partition_type,
+                request.resources,
+                caller_token=request.caller_token,
+            ),
         )
     except HMCError as exc:
         steps.append(WorkflowStep("create", "error", str(exc)))
@@ -639,41 +618,41 @@ async def provision_lpar(
         steps,
         hmc,
         system_name_or_uuid,
-        name,
-        minimum_affinity_policy,
+        request.name,
+        request.minimum_affinity_policy,
     ):
         return _failed_provision_result(creation, created_uuid, steps, step_names)
 
-    if not await _run_network_leg(steps, hmc, created_uuid, network.port_vlan_id):
+    if not await _run_network_leg(steps, hmc, created_uuid, request.adapters.port_vlan_id):
         return _failed_provision_result(creation, created_uuid, steps, step_names)
 
     storage_steps, storage_completed = await _run_storage_leg(
         hmc,
         created_uuid,
-        storage,
-        vios_partition_id=network.vios_partition_id,
-        vios_slot=network.vios_slot,
+        request.storage,
+        vios_partition_id=request.adapters.vios_partition_id,
+        vios_slot=request.adapters.vios_slot,
     )
     steps.extend(storage_steps)
     if not storage_completed:
         return _failed_provision_result(creation, created_uuid, steps, step_names)
 
     if not await _run_assignment_leg(
-        steps, hmc, system_name_or_uuid, name, assignments
+        steps, hmc, system_name_or_uuid, request.name, request.assignments
     ):
         return _failed_provision_result(creation, created_uuid, steps, step_names)
 
-    if power_on and not await _run_power_leg(
-        steps, hmc, system_name_or_uuid, created_uuid, affinity_assessment
+    if request.power_on and not await _run_power_leg(
+        steps, hmc, system_name_or_uuid, created_uuid, request.affinity_assessment
     ):
         return _failed_provision_result(creation, created_uuid, steps, step_names)
 
-    if affinity_assessment is not None:
-        if not power_on:
+    if request.affinity_assessment is not None:
+        if not request.power_on:
             steps.append(WorkflowStep("affinity_assessment", "skipped"))
             return _provision_result(creation, created_uuid, steps, False)
         completed, warnings = await _run_affinity_leg(
-            steps, hmc, affinity_assessment, minimum_affinity_policy
+            steps, hmc, request.affinity_assessment, request.minimum_affinity_policy
         )
         if not completed:
             return _provision_result(creation, created_uuid, steps, False)

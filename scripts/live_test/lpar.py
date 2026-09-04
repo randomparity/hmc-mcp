@@ -32,14 +32,18 @@ async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
         "hmc_create_lpar",
         system_name_or_uuid=context.system_name,
         name=context.scratch_name,
-        desired_memory=512,
-        max_memory=1024,
-        desired_vcpus=1,
-        max_vcpus=2,
+        resources={
+            "desired_memory": 512,
+            "max_memory": 1024,
+            "desired_vcpus": 1,
+            "max_vcpus": 2,
+        },
     )
     state.record(8, "hmc_create_lpar", st, data)
     if st == "PASS" and isinstance(data, dict):
-        context.scratch_uuid = data.get("uuid") or data.get("UUID")
+        created = data.get("lpar")
+        if isinstance(created, dict):
+            context.scratch_uuid = created.get("uuid") or created.get("UUID")
 
     st, data = await state.call(
         client, "hmc_get_lpar", lpar_name_or_uuid=context.scratch_name
@@ -52,8 +56,7 @@ async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
         client,
         "hmc_modify_lpar",
         lpar_name_or_uuid=context.scratch_name,
-        desired_memory=768,
-        max_memory=1536,
+        resources={"desired_memory": 768, "max_memory": 1536},
     )
     state.record_expected_or_real(
         8,

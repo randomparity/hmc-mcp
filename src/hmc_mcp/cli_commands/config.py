@@ -33,6 +33,7 @@ from ..config import (
     resolve_config_path,
 )
 from . import runtime as cli_runtime
+from .legacy_policy import GENERATED_SOURCE, LEGACY_POLICY_NAME
 from .output import console, err_console, fail
 from .serve import _policy_file
 
@@ -104,12 +105,8 @@ def config_list() -> None:
         console.print(f"No config file found at {would_be}")
         return
 
-    # Read and parse config.toml exactly once for this command (issue #300): the
-    # profile names, the (default) marker, and the nicknames all derive from the
-    # same parsed document, so a file edited between what used to be two separate
-    # reads cannot produce a nickname column computed against a different profile
-    # set than the names printed above it. Same approach issue #295 used for
-    # config_show and hmc_list_configured_hosts.
+    # Parse once so profile names, the default marker, and nicknames all derive
+    # from the same document.
     try:
         inventory = config_inventory(config_path)
     except ConfigError as exc:
@@ -244,14 +241,6 @@ def config_init_access_policy(
     ``serve`` runs under: both resolve the file through the same config directory, and
     the connection list is read from that identity's ``config.toml``.
     """
-    from ..server_tools.catalog import TOOL_SECURITY
-    from .legacy_policy import (
-        LEGACY_POLICY_NAME,
-        compile_rendered_policy,
-        legacy_connections,
-        render_legacy_policy,
-    )
-
     if output is not None:
         target = Path(output)
     else:
@@ -267,30 +256,11 @@ def config_init_access_policy(
         target = Path(resolved[0])
 
     try:
-        connections = legacy_connections()
+        text = _render_validated_legacy_policy()
     except ConfigError as exc:
         fail(exc)
-
-    text = render_legacy_policy(TOOL_SECURITY, connections)
-
-    # Load what was rendered, before anything is written. Escaping makes the document
-    # parse; ADR 0036 enforces rules on entry *content* that escaping cannot satisfy —
-    # an empty or whitespace-padded profile key is legal TOML and an illegal connection
-    # entry. Compiling through the real loader keeps those rules in one place instead
-    # of copying them here, where they would drift.
-    try:
-        compile_rendered_policy(text, TOOL_SECURITY)
     except AccessPolicyError as exc:
-        # Every noun in the loader's message belongs to a document that was never
-        # written, while the operator's actual edit is a profile key — so the origin
-        # and the remedy are named alongside it.
-        fail(
-            AccessPolicyError(
-                f"{exc}\n\nThat entry came from a profile key in config.toml. Remove "
-                "the padding from the profile key, or generate elsewhere with "
-                "--output PATH and edit the connections list by hand."
-            )
-        )
+        fail(exc)
 
     try:
         _write_exclusive(target, text)
@@ -353,6 +323,27 @@ DEPLOYED_UNREADABLE: Final = 3
 GENERATION_FAILED: Final = 4
 
 
+def _render_validated_legacy_policy() -> str:
+    """Render and validate the generated legacy-equivalent policy once."""
+    from ..server_tools.catalog import TOOL_SECURITY
+    from .legacy_policy import (
+        compile_rendered_policy,
+        legacy_connections,
+        render_legacy_policy,
+    )
+
+    connections = legacy_connections()
+    text = render_legacy_policy(TOOL_SECURITY, connections)
+    try:
+        compile_rendered_policy(text, TOOL_SECURITY)
+    except AccessPolicyError as exc:
+        raise AccessPolicyError(
+            f"{exc}\n\nThat entry came from a profile key in config.toml. "
+            "Remove the padding from the profile key."
+        ) from exc
+    return text
+
+
 def config_diff_access_policy(
     deployed: str = typer.Argument(
         metavar="PATH",
@@ -384,40 +375,14 @@ def config_diff_access_policy(
     """
     import difflib
 
-    from ..server_tools.catalog import TOOL_SECURITY
-    from .legacy_policy import (
-        GENERATED_SOURCE,
-        compile_rendered_policy,
-        legacy_connections,
-        render_legacy_policy,
-    )
-
     path = Path(deployed)
 
     try:
-        connections = legacy_connections()
+        text = _render_validated_legacy_policy()
     except ConfigError as exc:
         fail(exc, code=GENERATION_FAILED)
-
-    text = render_legacy_policy(TOOL_SECURITY, connections)
-
-    # Load what was rendered, exactly as `init-access-policy` does before it writes:
-    # escaping makes the document parse while ADR 0036 enforces rules on entry
-    # *content* that escaping cannot satisfy. Compiling through the real loader keeps
-    # those rules in one place instead of copying them here, where they would drift.
-    try:
-        compile_rendered_policy(text, TOOL_SECURITY)
     except AccessPolicyError as exc:
-        # As in init-access-policy: every noun in the loader's message belongs to a
-        # document that does not exist here either — the origin is the operator's
-        # config.toml, and the remedy is an edit there.
-        fail(
-            AccessPolicyError(
-                f"{exc}\n\nThat entry came from a profile key in config.toml. "
-                "Remove the padding from the profile key."
-            ),
-            code=GENERATION_FAILED,
-        )
+        fail(exc, code=GENERATION_FAILED)
 
     try:
         deployed_text = path.read_text(encoding="utf-8")

@@ -22,8 +22,8 @@ import pytest
 from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.pcie_validation import require_command_safe_text
-from hmc_mcp.operations.vnic import (
+from hmc_mcp.operations.io_virtualization.validation import require_command_safe_text
+from hmc_mcp.operations.io_virtualization.vnic import (
     VnicBackingSelector,
     _validate_vnic_backing_selector,
 )

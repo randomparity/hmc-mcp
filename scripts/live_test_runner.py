@@ -90,16 +90,7 @@ _FOLDED_ENV_NAMES = frozenset(
 
 
 def _already_set(name: str) -> bool:
-    """Whether the environment already carries *name*, matched as its reader matches it.
-
-    This is what makes an exported variable outrank `.env` and `config.toml` — the
-    priority `_bootstrap_config` documents — for a case variant as well as the
-    canonical spelling. An exact-case membership test did not recognise an
-    exported `hmc_host` as an already-set `HMC_HOST`, so it injected the canonical
-    name; a newly created key lands last in `os.environ` order and therefore wins
-    the fold, and an operator who exported a lab host ran the destructive suite
-    against the HMC `.env` named (#543).
-    """
+    """Return whether *name* is already set using HMCConfig's case-insensitive lookup."""
     if name.lower() in _FOLDED_ENV_NAMES:
         return env_var_value(name) is not None
     return name in os.environ
@@ -167,19 +158,8 @@ def _bootstrap_config() -> None:
 
 
 def _ensure_schema_version() -> None:
-    """Warn if HMC_SCHEMA_VERSION is absent; exit so the operator sets it explicitly.
-
-    Note: HMC_SCHEMA_VERSION only affects GET requests — it has no effect on
-    write-path HTTP 406 errors (those are fixed by suppressing the header on
-    PUT/POST paths entirely).  We still require it to be present so that the
-    test runner's GET paths behave deterministically, but we do not silently
-    mutate .env — the operator must add it intentionally.
-    """
+    """Warn when HMC_SCHEMA_VERSION is absent; the operator must set it explicitly."""
     _load_dotenv()
-    # env_var_value for the same reason as the credential pre-check above:
-    # `schema_version` is an `HMCConfig` field, so an exact-case probe exits 1
-    # telling the operator to set a variable a case variant has already set and
-    # the server is already sending (#543).
     if env_var_value("HMC_SCHEMA_VERSION"):
         return
     print("⚠️  HMC_SCHEMA_VERSION is not set in .env or the environment.")

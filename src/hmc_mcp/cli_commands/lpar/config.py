@@ -2,21 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict
-from pathlib import Path
 
 import typer
-from pydantic import TypeAdapter, ValidationError
 from rich.table import Table
 
 from hmc_mcp.operations.ownership import set_lpar_ownership_description
 
-from ...operations.lpar.assignments import LparPcieAssignments
-from ...operations.lpar.core import (
-    ProcessorCompatibilityMode,
-)
-from ...operations.ssh_affinity import (
+from ...operations.affinity.ssh import (
     get_lpar_memopt_score,
     get_minimum_affinity_policy,
     get_system_memopt_score,
@@ -25,6 +18,9 @@ from ...operations.ssh_affinity import (
     plan_lpar_memopt_scores,
     plan_resource_group_memopt_scores,
     plan_system_memopt_score,
+)
+from ...operations.lpar.core import (
+    ProcessorCompatibilityMode,
 )
 from ...ssh.affinity import (
     MemoptLparSelector,
@@ -40,19 +36,12 @@ from ...ssh.profiles import (
     set_lpar_proc_compat,
 )
 from ..output import console, print_json, usage_error
-from ..runtime import client, run, ssh_config
+from ..runtime import client, run, ssh_config, with_client
 
 
-def _load_pcie_assignments(path: Path | None) -> LparPcieAssignments:
-    """Load the shared assignment schema from a JSON document."""
-    if path is None:
-        return LparPcieAssignments()
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return TypeAdapter(LparPcieAssignments).validate_python(payload)
-    except (OSError, json.JSONDecodeError, ValidationError) as error:
-        usage_error(f"Cannot load --pcie-assignments {path}: {error}")
-        raise AssertionError("usage_error must raise") from error
+def _with_ssh_affinity(operation, *args):
+    """Run an affinity operation directly against SSH configuration."""
+    return run(lambda: operation(ssh_config(), *args))
 
 
 def _memopt_selectors(
@@ -90,7 +79,7 @@ def lpars_memopt_score(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get an LPAR's current memory-optimization affinity score."""
-    score = run(lambda: get_lpar_memopt_score(ssh_config(), system_name, lpar_name))
+    score = _with_ssh_affinity(get_lpar_memopt_score, system_name, lpar_name)
     if as_json:
         print_json(score)
     else:
@@ -106,9 +95,7 @@ def lpars_get_minimum_affinity_policy(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get an LPAR's minimum-affinity policy when supported."""
-    policy = run(
-        lambda: get_minimum_affinity_policy(ssh_config(), system_name, lpar_name)
-    )
+    policy = _with_ssh_affinity(get_minimum_affinity_policy, system_name, lpar_name)
     if as_json:
         print_json(asdict(policy))
         return
@@ -129,9 +116,7 @@ def lpars_memopt_scores(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """List current memory-optimization affinity scores for a system's LPARs."""
-    scores = run(
-        lambda: list_lpar_memopt_scores(ssh_config(), system_name, lpar_name)
-    )
+    scores = _with_ssh_affinity(list_lpar_memopt_scores, system_name, lpar_name)
     if as_json:
         print_json(scores)
         return
@@ -155,7 +140,7 @@ def lpars_system_memopt_score(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get a managed system's current memory-optimization affinity score."""
-    score = run(lambda: get_system_memopt_score(ssh_config(), system_name))
+    score = _with_ssh_affinity(get_system_memopt_score, system_name)
     if as_json:
         print_json(score)
         return
@@ -173,7 +158,7 @@ def _run_memopt_plan(
     prioritized, excluded = _memopt_selectors(
         prioritize_name, prioritize_id, exclude_name, exclude_id
     )
-    return run(lambda: operation(ssh_config(), system_name, prioritized, excluded))
+    return _with_ssh_affinity(operation, system_name, prioritized, excluded)
 
 
 def _resource_group_selector(
@@ -204,7 +189,7 @@ def _run_resource_group_memopt(
     as_json: bool,
 ) -> None:
     selector = _resource_group_selector(names, ids, all_groups)
-    result = run(lambda: operation(ssh_config(), system_name, selector))
+    result = with_client(lambda hmc: operation(hmc, system_name, selector))
     if as_json:
         print_json(asdict(result))
         return

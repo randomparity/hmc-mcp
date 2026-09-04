@@ -305,28 +305,7 @@ class HMCConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _warn_audit_memento_override(self) -> HMCConfig:
-        """Say once that HMC_AGENT_ID is discarding a custom HMC_AUDIT_MEMENTO.
-
-        When both are set, :attr:`effective_audit_memento` returns
-        ``hmc-mcp:<agent_id>`` and the custom ``audit_memento`` is ignored, which
-        an operator reading HMC audit logs has no other way to discover.
-
-        Said **once per process**, not once per construction.
-        :func:`build_config` builds a fresh ``HMCConfig`` inside every tool body,
-        so an unthrottled emission here runs at a rate the MCP client owns while
-        the message is identical every time. The package logger is bound to the
-        bounded served sink; a separate ``warnings.warn`` would bypass it and is
-        deliberately not emitted (#546).
-
-        A repeat is logged at ``DEBUG``, matching
-        ``server_permissions._log_unresolved``: an operator who raises the level
-        can still confirm that the override remains in force.
-
-        Recording under :data:`_override_report_lock` makes the promise hold under
-        concurrency. Configs are built off the event-loop thread, so an
-        unsynchronised check-then-act lets each racer miss and emit, delivering
-        O(concurrency) where the promise says one.
-        """
+        """Warn once per process when HMC_AGENT_ID overrides a custom audit memento."""
         if not (self.agent_id and self.audit_memento != "hmc-mcp"):
             return self
         global _reported_memento_override
@@ -393,8 +372,8 @@ class NoProfileSelectedError(ConfigError):
 
 
 @dataclass(frozen=True)
-class _ConfigDocument:
-    """One invocation's resolved path and parsed configuration document."""
+class ConfigDocument:
+    """Package-internal snapshot of a resolved path and parsed config document."""
 
     path: Path | None
     data: dict[str, Any]
@@ -497,11 +476,11 @@ def _read_config_document(path: Path) -> dict[str, Any]:
         ) from exc
 
 
-def _load_config_document() -> _ConfigDocument:
-    """Resolve and read one fresh configuration document snapshot."""
+def load_config_document() -> ConfigDocument:
+    """Resolve and read one fresh package-internal configuration snapshot."""
     path = resolve_config_path()
     data = {} if path is None else _read_config_document(path)
-    return _ConfigDocument(path, data)
+    return ConfigDocument(path, data)
 
 
 def _coerce_profiles(raw: Any, path: str | Path | None) -> dict[str, Any]:
@@ -625,12 +604,8 @@ def list_profiles_and_nicknames(
 def env_var_value(name: str) -> str | None:
     """*name*'s value from the environment, matched the way ``HMCConfig`` matches it.
 
-    ``HMCConfig`` leaves pydantic-settings' ``case_sensitive`` at its ``False``
-    default, so ``hmc_host=...`` populates ``host`` exactly as ``HMC_HOST=...``
-    does. Every hand-rolled read of an ``HMC_*`` variable that predicts, mirrors,
-    or reports on that resolution has to match the same way, or it disagrees with
-    the loader it is describing — which is how a profile's TOML key came to beat a
-    lower-case export (#531).
+    ``HMCConfig`` matches environment names case-insensitively, and this helper
+    mirrors that behavior for callers that inspect effective settings.
 
     Returns ``None`` only when no casing of *name* is set. When several casings
     are set, the **last** one in ``os.environ`` order wins — the exact spelling
@@ -642,25 +617,8 @@ def env_var_value(name: str) -> str | None:
     while the config resolved to the exported one — the fail-open this function
     exists to close.
 
-    The fold is ``str.lower()`` for the same reason, and not because it reads
-    the same as ``str.upper()``: over Unicode the two are different relations,
-    and ``_get_env_var_key`` folds down. Folding up would both match names the
-    loader ignores and miss names it reads — ``hmc_ho\u017ft`` upper-folds to
-    ``HMC_HOST`` while the loader never sees it, and ``hmc_ssh_\u212aey_file``
-    reaches ``ssh_key_file`` while an upper-fold never matches it.
-
-    ``tests/unit/test_config.py`` pins the agreement against ``HMCConfig``
-    itself rather than against that reading of the library, so a change to
-    pydantic-settings' folding shows up as a failing test.
-
-    The keys are snapshotted and each read with a default, never iterated as
-    items: ``os.environ.items()`` comes from the ``Mapping`` mixin and re-indexes
-    every key after ``__iter__`` has already snapshotted them, so a key an
-    embedding host deletes from another thread in between raises ``KeyError``
-    out of here. Two of the callers are on the ADR 0038 dispatch-time
-    authorization path, where that would escape as a bare ``KeyError`` past the
-    denial machinery; the atomic ``os.environ.get`` calls this function replaced
-    could not raise, and neither may it.
+    Keys are snapshotted before lookup so concurrent environment changes cannot
+    raise ``KeyError`` on the authorization path.
     """
     wanted = name.lower()
     found: str | None = None
@@ -720,11 +678,8 @@ def _load_profile_from_document(
 ) -> HMCConfig:
     """Build an HMCConfig for *profile* from an already-parsed *doc*.
 
-    Shared by :func:`load_profile`, which reads and parses *path* itself, and
-    by a caller that already holds the parsed document for this invocation —
-    such as ``config_show``, which needs the same document for credential
-    presence and nickname resolution and must not parse ``config.toml`` a
-    second time to also select a profile (issue #295). *path* is used only for
+    Shared by :func:`load_profile` and callers that already hold the parsed
+    document for this invocation. *path* is used only for
     error messages; it is not re-read here.
     """
     profiles = _coerce_profiles(doc.get("profiles"), path)
@@ -778,7 +733,7 @@ def _load_profile_from_document(
     # The membership test matches the loader's own casing rule via
     # env_var_value: an exact-case test would leave the TOML value in the init
     # kwargs for a lower- or mixed-case export that pydantic-settings does read,
-    # and init kwargs outrank every environment source (#531).
+    # and init kwargs outrank every environment source.
     env_prefix = "HMC_"
     filtered_entry = {
         k: v
@@ -908,7 +863,7 @@ def load_profile(
 def build_config(
     profile: str | None = None,
     *,
-    document: _ConfigDocument | None = None,
+    document: ConfigDocument | None = None,
     **overrides: Any,
 ) -> HMCConfig:
     """Build configuration from CLI options, environment, and a TOML profile.

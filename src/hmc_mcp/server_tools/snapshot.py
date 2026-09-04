@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
-
-from hmc_mcp._app import run_sync, with_client
+from hmc_mcp._app import run_sync, serialize_tool_result, with_client
 from hmc_mcp.operations.affinity import PolicyState
 from hmc_mcp.snapshots.models import inspect_snapshot, parse_snapshot
 from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
@@ -53,7 +51,7 @@ def hmc_snapshot_assess_affinity(
             stale_after_seconds=stale_after_seconds,
         )
     )
-    return asdict(result)
+    return serialize_tool_result(result)
 
 
 @tool(effect="read", operation="snapshot.capture", target_kind="lpar")
@@ -62,7 +60,7 @@ def hmc_snapshot_capture(
     lpar_name_or_uuid: str,
     profile_name: str,
     profile: str | None = None,
-) -> dict:
+) -> dict[str, object]:
     """Capture replayable profile configuration and separate placement observations.
 
     Args:

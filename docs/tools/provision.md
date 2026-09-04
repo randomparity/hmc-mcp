@@ -6,4 +6,4 @@
 
 | Tool | Effect | Operation | Target | Summary |
 | --- | --- | --- | --- | --- |
-| `hmc_provision_lpar` | `mutate` | `provision.lpar` | `managed_system` | Provision an LPAR with network, vSCSI storage, and optional power-on. |
+| `hmc_provision_lpar` | `mutate` | `provision.lpar` | `managed_system` | Provision an LPAR with virtual adapters, vSCSI storage, and optional power-on. |

@@ -10,8 +10,8 @@ from .._app import (
 from ..documents import VIOS_DEFAULT_RESOURCES, LparResources
 from ..operations.install import (
     InstallRequest,
-    install_lpar_os,
     install_vios,
+    install_vios_by_lpar_selector,
     validate_install_request,
 )
 from ..operations.vios import (
@@ -88,7 +88,9 @@ def hmc_delete_vios(
     """
 
     return with_client(
-        lambda hmc: delete_vios(hmc, system_name_or_uuid, vios_name_or_uuid),
+        lambda hmc: delete_vios(
+            hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        ),
         profile=profile,
     )
 
@@ -183,7 +185,7 @@ def hmc_install_vios(
 
 
 @tool(effect="destructive", operation="lpar.install_os", target_kind="lpar")
-def hmc_install_lpar_os(
+def hmc_install_vios_by_lpar_selector(
     lpar_name_or_uuid: str,
     system_name_or_uuid: str,
     install_source: str,
@@ -250,7 +252,7 @@ def hmc_install_lpar_os(
         profile: Optional TOML profile name; uses environment defaults when
             omitted.
     """
-    # install_lpar_os validates too, but only once its client exists. Calling
+    # install_vios_by_lpar_selector validates too, but only once its client exists. Calling
     # the same list here rejects a malformed argument before a session opens.
     request = InstallRequest(
         install_source=install_source,
@@ -263,7 +265,7 @@ def hmc_install_lpar_os(
     )
 
     async def _go(hmc):
-        return await install_lpar_os(
+        return await install_vios_by_lpar_selector(
             hmc,
             system_name_or_uuid,
             lpar_name_or_uuid,
@@ -295,7 +297,7 @@ def hmc_list_vios_backups(
     """
 
     return with_client(
-        lambda hmc: list_vios_backups(hmc, None, vios_name_or_uuid),
+        lambda hmc: list_vios_backups(hmc, vios_name_or_uuid),
         profile=profile,
     )
 
@@ -341,8 +343,8 @@ def hmc_backup_vios(
     return with_client(
         lambda hmc: backup_vios(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
+            system_name_or_uuid=system_name_or_uuid,
             backup_name=backup_name,
             backup_type=backup_type,
         ),
@@ -393,9 +395,9 @@ def hmc_restore_vios(
     return with_client(
         lambda hmc: restore_vios(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             backup_name,
+            system_name_or_uuid=system_name_or_uuid,
             backup_type=backup_type,
             restart_if_required=restart_if_required,
         ),
@@ -424,8 +426,8 @@ def hmc_power_on_vios(
     return with_client(
         lambda hmc: power_vios(
             hmc,
-            None,
             vios_name_or_uuid,
+            system_name_or_uuid=None,
             power_on=True,
             wait=wait,
             timeout_seconds=timeout_seconds,
@@ -460,8 +462,8 @@ def hmc_power_off_vios(
     return with_client(
         lambda hmc: power_vios(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
+            system_name_or_uuid=system_name_or_uuid,
             power_on=False,
             immediate=immediate,
             wait=wait,

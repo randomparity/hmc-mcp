@@ -32,8 +32,8 @@ from typing import Any, Literal, get_args, get_origin, get_type_hints
 import pytest
 from defusedxml import ElementTree as DET
 
-from hmc_mcp import documents, jobs
-from hmc_mcp.operations import update_models as update_jobs
+from hmc_mcp import documents, jobs, jobs_requests
+from hmc_mcp.operations.updates import models as update_jobs
 from hmc_mcp.xmlutil import escape_xml, escapes_string_arguments, localname
 
 # A value an operator could plausibly type that carries all five XML
@@ -43,7 +43,7 @@ from hmc_mcp.xmlutil import escape_xml, escapes_string_arguments, localname
 PAYLOAD = "R&D <a> \"b\" 'c'"
 BENIGN = "benign"
 
-BUILDER_MODULES = (documents, jobs, update_jobs)
+BUILDER_MODULES = (documents, jobs, jobs_requests, update_jobs)
 
 ADR_0042 = (
     pathlib.Path(__file__).resolve().parents[2]
@@ -69,7 +69,10 @@ def _is_builder(name: str, obj: object, module: types.ModuleType) -> bool:
         and not inspect.iscoroutinefunction(obj)
         and not name.startswith("_")
         and (name.startswith("build_") or name.endswith("_job"))
-        and getattr(obj, "__module__", None) == module.__name__
+        and (
+            getattr(obj, "__module__", None) == module.__name__
+            or getattr(obj, "__module__", "").startswith(f"{module.__name__}.")
+        )
         and get_type_hints(obj).get("return") is str
     )
 

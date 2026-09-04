@@ -122,7 +122,7 @@ def _toml_two_profiles(tmp_path: Path) -> Path:
 def test_sequential_profile_routing(tmp_path, monkeypatch):
     """Two sequential calls with different profiles each hit the correct HMC host."""
     from hmc_mcp.config import load_profile as real_load_profile
-    from hmc_mcp.server_tools.systems import hmc_console_info
+    from hmc_mcp.server_tools.systems import hmc_get_console_info
 
     cfg_path = _toml_two_profiles(tmp_path)
 
@@ -145,7 +145,7 @@ def test_sequential_profile_routing(tmp_path, monkeypatch):
             return_value=httpx.Response(200, text=CONSOLE_A)
         )
 
-        result_a = hmc_console_info(profile="alpha")
+        result_a = hmc_get_console_info(profile="alpha")
 
     with (
         patch("hmc_mcp.config.load_profile", side_effect=_load_profile_with_path),
@@ -163,7 +163,7 @@ def test_sequential_profile_routing(tmp_path, monkeypatch):
             return_value=httpx.Response(200, text=CONSOLE_B)
         )
 
-        result_b = hmc_console_info(profile="beta")
+        result_b = hmc_get_console_info(profile="beta")
 
     assert result_a is not None and result_a["Resource"]["SystemName"] == "hmc-a"
     assert result_b is not None and result_b["Resource"]["SystemName"] == "hmc-b"

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any
 
 from .._app import (
     run_limited_collection,
+    serialize_tool_result,
     with_client,
 )
 from ..documents import StorageKind
@@ -14,28 +14,30 @@ from ..jobs import (
     DeviceType,
     LuType,
 )
+from ..operations.cluster import (
+    create_logical_unit,
+    delete_logical_unit,
+    get_shared_storage_pool,
+    list_clusters,
+    list_shared_storage_pools,
+)
 from ..operations.lpar.provision import (
     AttachDiskResult,
     ProvisionStorage,
     attach_disk_to_lpar,
 )
 from ..operations.storage import (
-    create_logical_unit,
     create_media_repository,
     create_optical_media,
     create_virtual_disk,
     create_volume_group,
-    delete_logical_unit,
     delete_media_repository,
     delete_optical_media,
     delete_virtual_disk,
     detach_storage_mapping,
     get_media_repository,
-    get_shared_storage_pool,
-    list_clusters,
     list_optical_mappings,
     list_optical_media,
-    list_shared_storage_pools,
     list_storage_mappings,
     list_volume_groups,
     map_storage,
@@ -70,7 +72,9 @@ def hmc_list_volume_groups(
     """
 
     return run_limited_collection(
-        lambda hmc: list_volume_groups(hmc, system_name_or_uuid, vios_name_or_uuid),
+        lambda hmc: list_volume_groups(
+            hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        ),
         limit,
         profile=profile,
     )
@@ -100,7 +104,11 @@ def hmc_create_volume_group(
 
     async def operation(hmc):
         return await create_volume_group(
-            hmc, system_name_or_uuid, vios_name_or_uuid, name, physical_volumes
+            hmc,
+            vios_name_or_uuid,
+            name,
+            physical_volumes,
+            system_name_or_uuid=system_name_or_uuid,
         )
 
     return with_client(operation, profile=profile)
@@ -194,11 +202,11 @@ def hmc_create_virtual_disk(
     return with_client(
         lambda hmc: create_virtual_disk(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             vg_uuid,
             disk_name,
             capacity_mib=capacity_mib,
+            system_name_or_uuid=system_name_or_uuid,
         ),
         profile=profile,
     )
@@ -227,7 +235,11 @@ def hmc_delete_virtual_disk(
 
     return with_client(
         lambda hmc: delete_virtual_disk(
-            hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid, disk_name
+            hmc,
+            vios_name_or_uuid,
+            vg_uuid,
+            disk_name,
+            system_name_or_uuid=system_name_or_uuid,
         ),
         profile=profile,
     )
@@ -267,12 +279,12 @@ def hmc_map_storage_to_lpar(
     """
 
     async def mapping(hmc):
-        return asdict(
+        return serialize_tool_result(
             await map_storage(
                 hmc,
-                system_name_or_uuid,
                 vios_name_or_uuid,
                 lpar_name_or_uuid,
+                system_name_or_uuid=system_name_or_uuid,
                 kind=storage_kind,
                 storage_name=storage_name,
                 target=target_device,
@@ -306,7 +318,11 @@ def hmc_create_media_repository(
 
     return with_client(
         lambda hmc: create_media_repository(
-            hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid, size_mib
+            hmc,
+            vios_name_or_uuid,
+            vg_uuid,
+            size_mib,
+            system_name_or_uuid=system_name_or_uuid,
         ),
         profile=profile,
     )
@@ -338,11 +354,11 @@ def hmc_create_optical_media(
     return with_client(
         lambda hmc: create_optical_media(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             vg_uuid,
             media_name,
             size_mib,
+            system_name_or_uuid=system_name_or_uuid,
         ),
         profile=profile,
     )
@@ -369,7 +385,7 @@ def hmc_delete_media_repository(
 
     async def delete_repository_and_confirm(hmc):
         await delete_media_repository(
-            hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid
+            hmc, vios_name_or_uuid, vg_uuid, system_name_or_uuid=system_name_or_uuid
         )
         return f"Deleted media repository from VolumeGroup {vg_uuid}"
 
@@ -399,7 +415,11 @@ def hmc_delete_optical_media(
 
     async def delete_media_and_confirm(hmc):
         await delete_optical_media(
-            hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid, media_name
+            hmc,
+            vios_name_or_uuid,
+            vg_uuid,
+            media_name,
+            system_name_or_uuid=system_name_or_uuid,
         )
         return f"Deleted optical media '{media_name}' from VolumeGroup {vg_uuid}"
 
@@ -427,7 +447,7 @@ def hmc_get_media_repository(
 
     return with_client(
         lambda hmc: get_media_repository(
-            hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid
+            hmc, vios_name_or_uuid, vg_uuid, system_name_or_uuid=system_name_or_uuid
         ),
         profile=profile,
     )
@@ -455,7 +475,7 @@ def hmc_list_optical_media(
 
     return with_client(
         lambda hmc: list_optical_media(
-            hmc, system_name_or_uuid, vios_name_or_uuid, vg_uuid
+            hmc, vios_name_or_uuid, vg_uuid, system_name_or_uuid=system_name_or_uuid
         ),
         profile=profile,
     )
@@ -484,7 +504,10 @@ def hmc_list_storage_mappings(
 
     return with_client(
         lambda hmc: list_storage_mappings(
-            hmc, system_name_or_uuid, vios_name_or_uuid, lpar_name_or_uuid
+            hmc,
+            vios_name_or_uuid,
+            lpar_name_or_uuid,
+            system_name_or_uuid=system_name_or_uuid,
         ),
         profile=profile,
     )
@@ -515,9 +538,9 @@ def hmc_detach_storage_mapping(
     async def detach_mapping(hmc) -> str:
         await detach_storage_mapping(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             mapping_uuid,
+            system_name_or_uuid=system_name_or_uuid,
             ownership_override=ownership_override,
         )
         return mapping_uuid
@@ -712,11 +735,11 @@ def hmc_upload_iso(
     return with_client(
         lambda hmc: upload_iso(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             vg_uuid,
             media_name,
             iso_source,
+            system_name_or_uuid=system_name_or_uuid,
         ),
         profile=profile,
     )
@@ -748,7 +771,10 @@ def hmc_list_optical_mappings(
 
     async def limited_optical_mappings(hmc):
         mappings = await list_optical_mappings(
-            hmc, system_name_or_uuid, vios_name_or_uuid, lpar_name_or_uuid
+            hmc,
+            vios_name_or_uuid,
+            lpar_name_or_uuid,
+            system_name_or_uuid=system_name_or_uuid,
         )
         return mappings if limit is None else mappings[:limit]
 
@@ -784,12 +810,12 @@ def hmc_mount_optical_media(
     return with_client(
         lambda hmc: mount_optical_media(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             lpar_name_or_uuid,
             media_name=media_name,
             target_device=target_device,
             ownership_override=ownership_override,
+            system_name_or_uuid=system_name_or_uuid,
         ),
         profile=profile,
     )
@@ -832,11 +858,11 @@ def hmc_unmount_optical_media(
     async def unmount_media_and_confirm(hmc):
         await unmount_optical_media(
             hmc,
-            system_name_or_uuid,
             vios_name_or_uuid,
             lpar_name_or_uuid,
             media_name=media_name,
             ownership_override=ownership_override,
+            system_name_or_uuid=system_name_or_uuid,
         )
         return f"Unmounted {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
 

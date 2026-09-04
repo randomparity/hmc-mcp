@@ -9,6 +9,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -25,6 +26,7 @@ from live_test import (  # noqa: E402
     lpar,
     metrics,
     network,
+    pcie,
     profiles,
     provisioning,
     results,
@@ -40,6 +42,7 @@ LIVE_WORKFLOW_MODULES = (
     lpar,
     metrics,
     network,
+    pcie,
     profiles,
     provisioning,
     storage,
@@ -85,6 +88,143 @@ class _ScriptedClient:
         if self.error is not None:
             raise self.error
         return self.result
+
+
+def test_sriov_baseline_helpers_require_healthy_adapter() -> None:
+    """Baseline predicates reject wrong mode/availability and accept healthy data."""
+    assert pcie._adapter_is_healthy(
+        {"items": [{"adapter_id": pcie._ADAPTER_ID, "mode": "sriov", "availability": "1"}]}
+    )
+    assert not pcie._adapter_is_healthy(
+        {"items": [{"adapter_id": pcie._ADAPTER_ID, "mode": "ded", "availability": "1"}]}
+    )
+
+
+def test_sriov_baseline_helpers_compute_capacity_and_configuration() -> None:
+    """Capacity and clean-port predicates handle unconfigured rows and reject malformed data."""
+    data = {
+        "items": [
+            {"capacity_percent": "25", "availability": "1"},
+            {"capacity_percent": "bad", "availability": "1"},
+            {"capacity_percent": "50", "availability": "unconfigured"},
+        ]
+    }
+    with pytest.raises(ValueError, match="row 1.*capacity_percent"):
+        pcie._available_capacity(data)
+    assert not pcie._logical_port_is_configured({"items": []})
+    assert pcie._logical_port_is_configured(
+        {
+            "items": [
+                {"logical_port_id": pcie._LOGICAL_PORT_ID, "availability": "1"}
+            ]
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_runs_phases_in_order_and_cleans_up() -> None:
+    """A successful round trip invokes every phase and always reaches cleanup."""
+    calls: list[str] = []
+
+    def phase(name: str):
+        def run(*_args) -> bool:
+            calls.append(name)
+            return True
+
+        return run
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(pcie, "capture_sriov_baseline", AsyncMock(side_effect=phase("baseline")))
+        monkeypatch.setattr(pcie, "assign_sriov_to_lp3", AsyncMock(side_effect=phase("assign")))
+        monkeypatch.setattr(pcie, "verify_sriov_assigned", AsyncMock(side_effect=phase("verify")))
+        monkeypatch.setattr(pcie, "unassign_sriov_from_lp3", AsyncMock(side_effect=phase("unassign")))
+        monkeypatch.setattr(pcie, "reassign_sriov_to_lp3", AsyncMock(side_effect=phase("reassign")))
+        monkeypatch.setattr(pcie, "cleanup_sriov", AsyncMock(side_effect=phase("cleanup")))
+
+        class State:
+            def skip(self, *_args) -> None:
+                raise AssertionError("successful orchestration must not skip a phase")
+
+        await pcie.exercise_sriov_assignment(object(), State())
+    finally:
+        monkeypatch.undo()
+
+    assert calls == ["baseline", "assign", "verify", "unassign", "reassign", "cleanup"]
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_stops_after_baseline_but_runs_cleanup() -> None:
+    """A failed baseline prevents mutations while preserving the cleanup arm."""
+    calls: list[str] = []
+
+    async def baseline(*_args) -> bool:
+        calls.append("baseline")
+        return False
+
+    async def cleanup(*_args) -> None:
+        calls.append("cleanup")
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(pcie, "capture_sriov_baseline", baseline)
+        monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
+        for name in (
+            "assign_sriov_to_lp3",
+            "verify_sriov_assigned",
+            "unassign_sriov_from_lp3",
+            "reassign_sriov_to_lp3",
+        ):
+            monkeypatch.setattr(pcie, name, AsyncMock(side_effect=AssertionError(name)))
+
+        class State:
+            pass
+
+        await pcie.exercise_sriov_assignment(object(), State())
+    finally:
+        monkeypatch.undo()
+
+    assert calls == ["baseline", "cleanup"]
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_skips_mutations_after_assign_failure() -> None:
+    """Assignment failure still verifies state, skips later mutations, and cleans up."""
+    calls: list[str] = []
+
+    async def baseline(*_args) -> bool:
+        calls.append("baseline")
+        return True
+
+    async def assign(*_args) -> bool:
+        calls.append("assign")
+        return False
+
+    async def verify(*_args) -> bool:
+        calls.append("verify")
+        return True
+
+    async def cleanup(*_args) -> None:
+        calls.append("cleanup")
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(pcie, "capture_sriov_baseline", baseline)
+        monkeypatch.setattr(pcie, "assign_sriov_to_lp3", assign)
+        monkeypatch.setattr(pcie, "verify_sriov_assigned", verify)
+        monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
+        monkeypatch.setattr(pcie, "unassign_sriov_from_lp3", AsyncMock(side_effect=AssertionError))
+        monkeypatch.setattr(pcie, "reassign_sriov_to_lp3", AsyncMock(side_effect=AssertionError))
+
+        class State:
+            def skip(self, *_args) -> None:
+                calls.append("skip")
+
+        await pcie.exercise_sriov_assignment(object(), State())
+    finally:
+        monkeypatch.undo()
+
+    assert calls == ["baseline", "assign", "verify", "skip", "skip", "cleanup"]
 
 
 def _isolate_runner(monkeypatch) -> None:
@@ -969,7 +1109,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
     async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
         responses = {
-            "hmc_console_info": {"uuid": "console-uuid"},
+            "hmc_get_console_info": {"uuid": "console-uuid"},
             "hmc_list_systems": [
                 {"UUID": "system-uuid", "Resource": {"SystemName": "ltczz386"}}
             ],
@@ -985,7 +1125,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
     await connectivity.inventory_connectivity(None, state)
 
     assert [tool for tool, _ in calls] == [
-        "hmc_console_info",
+        "hmc_get_console_info",
         "hmc_list_systems",
         "hmc_get_system",
         "hmc_list_lpars",

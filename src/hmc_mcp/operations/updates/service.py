@@ -8,15 +8,15 @@ from urllib.parse import quote
 
 from hmc_mcp.client.core import HMCClient
 
-from ..errors import HMCError
-from ..jobs import (
+from ...errors import HMCError
+from ...jobs import (
     TERMINAL_JOB_STATUSES,
     validate_wait_timing,
     vios_stdout,
     wait_for_submitted_job,
 )
-from ..resource_identity import resolve_system_uuid, resolve_vios_uuid
-from .update_models import (
+from ...resource_identity import resolve_system_uuid, resolve_vios_uuid
+from .models import (
     ConsoleUpdateSource,
     PlatformUpdateParameter,
     VIOSUpdateSource,
@@ -48,14 +48,14 @@ def _with_vios_stdout(
     return result if output is None else {**result, "stdOut": output}
 
 
-async def _submit_platform_update(
+async def _wait_for_platform_update(
     hmc: HMCClient,
     job: dict[str, Any] | None,
     wait: bool,
     timeout_seconds: int,
     poll_interval: int,
 ) -> dict[str, Any] | None:
-    """Submit PlatformUpdate and require a link before polling."""
+    """Validate and optionally wait for an already-submitted PlatformUpdate job."""
     if not wait:
         return job
     if job is not None:
@@ -110,7 +110,7 @@ async def update_console_software(
     return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
 
 
-async def list_available_hmc_ptfs(
+async def submit_available_hmc_ptfs_query(
     hmc: HMCClient,
     console_uuid: str,
     *,
@@ -131,10 +131,10 @@ async def list_available_hmc_ptfs(
 
 async def update_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     repository: VIOSUpdateSource,
     *,
+    system_name_or_uuid: str | None = None,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
@@ -157,10 +157,10 @@ async def update_vios(
 
 async def upgrade_vios(
     hmc: HMCClient,
-    system_name_or_uuid: str | None,
     vios_name_or_uuid: str,
     repository: VIOSUpgradeSource,
     *,
+    system_name_or_uuid: str | None = None,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
@@ -197,4 +197,4 @@ async def update_firmware(
     job = await hmc.submit_platform_update(
         system_uuid, platform_update_job(platform_update)
     )
-    return await _submit_platform_update(hmc, job, wait, timeout_seconds, poll_interval)
+    return await _wait_for_platform_update(hmc, job, wait, timeout_seconds, poll_interval)

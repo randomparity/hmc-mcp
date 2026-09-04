@@ -46,12 +46,12 @@ operation:
 ```python
 import asyncio
 
-from hmc_mcp.api import HMCClient, HMCConfig, capacity_report
+from hmc_mcp.api import HMCClient, HMCConfig, fetch_capacity_report
 
 
 async def main() -> None:
     async with HMCClient(HMCConfig()) as hmc:
-        for system in await capacity_report(hmc):
+        for system in await fetch_capacity_report(hmc):
             print(system)
 
 
@@ -941,12 +941,14 @@ src/hmc_mcp/
   ssh/            # asyncssh transport plus HMC CLI operations by resource family
     ssh/*.py       # transport, shared parsing, and resource-specific commands
   ssh/console.py             # bounded, non-interactive LPAR console capture (mkvterm)
-  documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
-  jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
+  documents/     # domain XML request builders with shared primitives
+  documents/common.py # shared HMC XML envelope helpers and document vocabulary
+  jobs.py        # job outcomes, lifecycle helpers, and named job builders
+  jobs_requests.py # shared JobRequest XML serialization boundary
   authorization/             # access policy and dispatch-time scope enforcement
   audit/         # audit records plus non-blocking diagnostic transport
   tool_registry.py           # local MCP tool collection, each tool carrying ToolSecurity
-  _app.py        # shared FastMCP instance, sync-run and SSH helpers, entry points
+  _app.py        # FastMCP factory, sync-run and SSH execution helpers
   server.py      # MCP composition, startup validation, logging, and serving bootstrap
   cli.py         # thin aggregator importing every cli_commands/ registration module
 tests/           # pytest + respx, no real HMC needed
