@@ -218,7 +218,8 @@ async def test_core_inventory_error_cancels_sibling_reads() -> None:
 
     async def lpars(system_uuid: str) -> list[dict]:
         if system_uuid == "sys-fail":
-            await sibling_started.wait()
+            async with asyncio.timeout(5):
+                await sibling_started.wait()
             raise error
         sibling_started.set()
         try:
@@ -245,7 +246,8 @@ async def test_core_inventory_error_cancels_same_system_sibling_read() -> None:
     error = HMCError("LPAR inventory failed", 500, "failure")
 
     async def lpars(_system_uuid: str) -> list[dict]:
-        await sibling_started.wait()
+        async with asyncio.timeout(5):
+            await sibling_started.wait()
         raise error
 
     async def vios(_system_uuid: str) -> list[dict]:
