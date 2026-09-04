@@ -401,7 +401,7 @@ async def test_hmc_update_console_software_update(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_hmc_get_available_hmc_ptfs(mock_hmc):
+async def test_hmc_submit_available_hmc_ptfs_query(mock_hmc):
     path = f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/ListManagementConsoleUpdates"
     route = mock_hmc.put(path).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
 

@@ -6,7 +6,7 @@
 
 | Tool | Effect | Operation | Target | Summary |
 | --- | --- | --- | --- | --- |
-| `hmc_get_available_hmc_ptfs` | `mutate` | `update.list_ptfs` | `console` | Submit the documented job that lists available HMC PTFs. |
+| `hmc_submit_available_hmc_ptfs_query` | `mutate` | `update.list_ptfs` | `console` | Submit the documented job that lists available HMC PTFs. |
 | `hmc_update_console_software` | `destructive` | `update.console` | `console` | Submit a documented HMC software update job. |
 | `hmc_update_firmware` | `destructive` | `update.firmware` | `managed_system` | Submit a documented Power11 PlatformUpdate job. |
 | `hmc_vios_update` | `destructive` | `update.vios` | `vios` | Submit a VIOS software update job. |

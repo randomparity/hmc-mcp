@@ -14,7 +14,7 @@ from ..operations.update_models import (
     VIOSUpgradeSource,
 )
 from ..operations.updates import (
-    list_available_hmc_ptfs,
+    submit_available_hmc_ptfs_query,
     update_console_software,
     update_firmware,
     update_vios,
@@ -70,7 +70,7 @@ def hmc_update_console_software(
 
 
 @tool(effect="mutate", operation="update.list_ptfs", target_kind="console")
-def hmc_get_available_hmc_ptfs(
+def hmc_submit_available_hmc_ptfs_query(
     console_uuid: str,
     profile: str | None = None,
     *,
@@ -94,7 +94,7 @@ def hmc_get_available_hmc_ptfs(
     """
 
     return with_client(
-        lambda hmc: list_available_hmc_ptfs(
+        lambda hmc: submit_available_hmc_ptfs_query(
             hmc,
             console_uuid,
             wait=wait,

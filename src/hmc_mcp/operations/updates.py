@@ -110,7 +110,7 @@ async def update_console_software(
     return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
 
 
-async def list_available_hmc_ptfs(
+async def submit_available_hmc_ptfs_query(
     hmc: HMCClient,
     console_uuid: str,
     *,

@@ -41,7 +41,7 @@ from hmc_mcp.server_tools.lpar.lifecycle import (
 )
 from hmc_mcp.server_tools.systems import hmc_get_lpar
 from hmc_mcp.server_tools.updates import (
-    hmc_get_available_hmc_ptfs,
+    hmc_submit_available_hmc_ptfs_query,
     hmc_update_console_software,
     hmc_update_firmware,
     hmc_vios_update,
@@ -820,13 +820,13 @@ def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     assert result["Resource"]["Status"] == "COMPLETED"
 
 
-def test_list_available_hmc_ptfs_returns_submitted_job(monkeypatch, mock_hmc):
-    """hmc_get_available_hmc_ptfs submits the documented list job."""
+def test_submit_available_hmc_ptfs_query_returns_submitted_job(monkeypatch, mock_hmc):
+    """The PTF query tool submits the documented list job."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    result = hmc_get_available_hmc_ptfs(MC_UUID)
+    result = hmc_submit_available_hmc_ptfs_query(MC_UUID)
     assert route.called
     assert result["Resource"]["JobID"] == "job-uuid-999"
     body = route.calls.last.request.content.decode()
@@ -835,30 +835,30 @@ def test_list_available_hmc_ptfs_returns_submitted_job(monkeypatch, mock_hmc):
     assert "<JobParameter schemaVersion" not in body
 
 
-def test_list_available_hmc_ptfs_preserves_positional_profile(monkeypatch, mock_hmc):
+def test_submit_available_hmc_ptfs_query_preserves_positional_profile(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
 
-    result = hmc_get_available_hmc_ptfs(MC_UUID, "default")
+    result = hmc_submit_available_hmc_ptfs_query(MC_UUID, "default")
 
     assert route.called
     assert result["Resource"]["JobID"] == "job-uuid-999"
     assert all(call.request.method != "GET" for call in mock_hmc.calls)
 
 
-def test_list_available_hmc_ptfs_surfaces_job_error(monkeypatch, mock_hmc):
+def test_submit_available_hmc_ptfs_query_surfaces_job_error(monkeypatch, mock_hmc):
     """Job submission errors retain their server diagnosis."""
     _hmc_env(monkeypatch)
     mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
     ).mock(return_value=httpx.Response(500, text="repository unavailable"))
     with pytest.raises(HMCError, match="repository unavailable"):
-        hmc_get_available_hmc_ptfs(MC_UUID)
+        hmc_submit_available_hmc_ptfs_query(MC_UUID)
 
 
-def test_list_available_hmc_ptfs_waits_for_result(monkeypatch, mock_hmc):
+def test_submit_available_hmc_ptfs_query_waits_for_result(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
@@ -867,7 +867,7 @@ def test_list_available_hmc_ptfs_waits_for_result(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
 
-    result = hmc_get_available_hmc_ptfs(
+    result = hmc_submit_available_hmc_ptfs_query(
         MC_UUID, wait=True, timeout_seconds=60, poll_interval=1
     )
 
@@ -879,7 +879,7 @@ def test_list_available_hmc_ptfs_waits_for_result(monkeypatch, mock_hmc):
     ("timeout_seconds", "poll_interval", "message"),
     [(-1, 1, "timeout_seconds"), (60, 0, "poll_interval")],
 )
-def test_list_available_hmc_ptfs_validates_wait_timing_before_io(
+def test_submit_available_hmc_ptfs_query_validates_wait_timing_before_io(
     monkeypatch, mock_hmc, timeout_seconds, poll_interval, message
 ):
     _hmc_env(monkeypatch)
@@ -888,7 +888,7 @@ def test_list_available_hmc_ptfs_validates_wait_timing_before_io(
     )
 
     with pytest.raises(ValueError, match=message):
-        hmc_get_available_hmc_ptfs(
+        hmc_submit_available_hmc_ptfs_query(
             MC_UUID,
             wait=True,
             timeout_seconds=timeout_seconds,

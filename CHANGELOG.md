@@ -29,6 +29,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- The HMC PTF query operation and MCP tool now use submission-oriented names:
+  `submit_available_hmc_ptfs_query` and `hmc_submit_available_hmc_ptfs_query`.
 - SR-IOV physical-port inventory now queries both evidenced `roce` and `ethc`
   levels, accepts exactly one non-empty result, and maps HMC states `1` and `0`
   to `up` and `down` respectively (#557, ADR 0113).
@@ -470,6 +472,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Renamed: `list_available_hmc_ptfs` to `submit_available_hmc_ptfs_query`.
 - Changed: removed the stale `ambiguous` literal alternative from
   `PowerOwnershipGuard.source`; exact and case-variant environment spellings now report
   `environment` in both the MCP response and startup audit schema. No `hmc_mcp.api.__all__`

@@ -202,8 +202,8 @@ def test_declared_effects_use_the_closed_vocabulary():
 
 
 def test_available_hmc_ptfs_is_mutating_job_submission():
-    security = TOOL_SECURITY["hmc_get_available_hmc_ptfs"]
-    tool = _tools_by_name()["hmc_get_available_hmc_ptfs"]
+    security = TOOL_SECURITY["hmc_submit_available_hmc_ptfs_query"]
+    tool = _tools_by_name()["hmc_submit_available_hmc_ptfs_query"]
 
     assert security.effect == "mutate"
     assert tool.annotations.readOnlyHint is False
@@ -382,7 +382,7 @@ def test_the_argument_table_matches_its_independent_expectation():
 @pytest.mark.parametrize(
     "tool_name, expected",
     [
-        ("hmc_get_available_hmc_ptfs", {("console", "console_uuid")}),
+        ("hmc_submit_available_hmc_ptfs_query", {("console", "console_uuid")}),
         ("hmc_update_console_software", {("console", "console_uuid")}),
         ("hmc_get_job", {("job", "job_id")}),
         ("hmc_get_partition_template", {("template", "template_uuid")}),

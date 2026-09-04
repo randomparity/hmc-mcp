@@ -329,7 +329,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "power_vios",
         "BackupType",
         "RestoreBackupType",
-        "list_available_hmc_ptfs",
+        "submit_available_hmc_ptfs_query",
         "update_console_software",
         "update_firmware",
         "update_vios",
@@ -2040,7 +2040,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # their recurring scalar parameter groups.
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
-    expected_digest = "07d5116d8851c62a65a6711d16196beb10f4758a043542d2c8ee5b8771e11cc4"  # pragma: allowlist secret
+    # The PTF query operation was renamed to reflect that it submits a remote job.
+    expected_digest = "48242eeca3f9c00f2d9179163b3b5da241f1f69b6cc0a5a46ce3c73c8faec874"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

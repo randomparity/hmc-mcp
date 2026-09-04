@@ -223,7 +223,7 @@ from hmc_mcp.operations.update_models import (
     VIOSUpgradeUSBSource,
 )
 from hmc_mcp.operations.updates import (
-    list_available_hmc_ptfs,
+    submit_available_hmc_ptfs_query,
     update_console_software,
     update_firmware,
     update_vios,
@@ -542,7 +542,7 @@ __all__ = [  # noqa: RUF022 - grouped by subsystem to mirror ADR 0029, not sorte
     "power_vios",
     "BackupType",
     "RestoreBackupType",
-    "list_available_hmc_ptfs",
+    "submit_available_hmc_ptfs_query",
     "update_console_software",
     "update_firmware",
     "update_vios",

@@ -106,7 +106,6 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_effective_permissions` | `read` | [permissions.md](permissions.md) |
 | `hmc_find_placement` | `read` | [placement.md](placement.md) |
 | `hmc_fleet_health` | `read` | [health.md](health.md) |
-| `hmc_get_available_hmc_ptfs` | `mutate` | [update.md](update.md) |
 | `hmc_get_job` | `read` | [job.md](job.md) |
 | `hmc_get_lpar` | `read` | [lpar.md](lpar.md) |
 | `hmc_get_lpar_description` | `read` | [lpar.md](lpar.md) |
@@ -207,6 +206,7 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_snapshot_capture` | `read` | [snapshot.md](snapshot.md) |
 | `hmc_snapshot_inspect` | `read` | [snapshot.md](snapshot.md) |
 | `hmc_snapshot_validate` | `read` | [snapshot.md](snapshot.md) |
+| `hmc_submit_available_hmc_ptfs_query` | `mutate` | [update.md](update.md) |
 | `hmc_sync_lpar_profile` | `destructive` | [lpar_profile.md](lpar_profile.md) |
 | `hmc_system_summary` | `read` | [system.md](system.md) |
 | `hmc_unassign_dedicated_pcie_slot` | `mutate` | [pcie.md](pcie.md) |
