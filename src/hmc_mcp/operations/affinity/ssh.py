@@ -37,9 +37,9 @@ from hmc_mcp.ssh.affinity import (
 from hmc_mcp.ssh.selectors import resolve_ssh_names
 
 
-def _config(hmc: HMCClient) -> HMCConfig:
+def _config(hmc: HMCClient | HMCConfig) -> HMCConfig:
     """Return the SSH settings owned by the client facade."""
-    return hmc.config
+    return hmc if isinstance(hmc, HMCConfig) else hmc.config
 
 
 @dataclass(frozen=True)

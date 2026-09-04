@@ -39,6 +39,11 @@ from ..output import console, print_json, usage_error
 from ..runtime import client, run, ssh_config, with_client
 
 
+def _with_ssh_affinity(operation, *args):
+    """Run an affinity operation directly against SSH configuration."""
+    return run(lambda: operation(ssh_config(), *args))
+
+
 def _memopt_selectors(
     prioritize_name: list[str] | None,
     prioritize_id: list[int] | None,
@@ -74,7 +79,7 @@ def lpars_memopt_score(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get an LPAR's current memory-optimization affinity score."""
-    score = with_client(lambda hmc: get_lpar_memopt_score(hmc, system_name, lpar_name))
+    score = _with_ssh_affinity(get_lpar_memopt_score, system_name, lpar_name)
     if as_json:
         print_json(score)
     else:
@@ -90,7 +95,7 @@ def lpars_get_minimum_affinity_policy(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get an LPAR's minimum-affinity policy when supported."""
-    policy = with_client(lambda hmc: get_minimum_affinity_policy(hmc, system_name, lpar_name))
+    policy = _with_ssh_affinity(get_minimum_affinity_policy, system_name, lpar_name)
     if as_json:
         print_json(asdict(policy))
         return
@@ -111,7 +116,7 @@ def lpars_memopt_scores(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """List current memory-optimization affinity scores for a system's LPARs."""
-    scores = with_client(lambda hmc: list_lpar_memopt_scores(hmc, system_name, lpar_name))
+    scores = _with_ssh_affinity(list_lpar_memopt_scores, system_name, lpar_name)
     if as_json:
         print_json(scores)
         return
@@ -135,7 +140,7 @@ def lpars_system_memopt_score(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get a managed system's current memory-optimization affinity score."""
-    score = with_client(lambda hmc: get_system_memopt_score(hmc, system_name))
+    score = _with_ssh_affinity(get_system_memopt_score, system_name)
     if as_json:
         print_json(score)
         return
@@ -153,7 +158,7 @@ def _run_memopt_plan(
     prioritized, excluded = _memopt_selectors(
         prioritize_name, prioritize_id, exclude_name, exclude_id
     )
-    return with_client(lambda hmc: operation(hmc, system_name, prioritized, excluded))
+    return _with_ssh_affinity(operation, system_name, prioritized, excluded)
 
 
 def _resource_group_selector(
