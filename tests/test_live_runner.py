@@ -25,6 +25,7 @@ from live_test import (  # noqa: E402
     lpar,
     metrics,
     network,
+    pcie,
     profiles,
     provisioning,
     results,
@@ -85,6 +86,36 @@ class _ScriptedClient:
         if self.error is not None:
             raise self.error
         return self.result
+
+
+def test_sriov_baseline_helpers_require_healthy_adapter() -> None:
+    """Baseline predicates reject wrong mode/availability and accept healthy data."""
+    assert pcie._adapter_is_healthy(
+        {"items": [{"adapter_id": pcie._ADAPTER_ID, "mode": "sriov", "availability": "1"}]}
+    )
+    assert not pcie._adapter_is_healthy(
+        {"items": [{"adapter_id": pcie._ADAPTER_ID, "mode": "ded", "availability": "1"}]}
+    )
+
+
+def test_sriov_baseline_helpers_compute_capacity_and_configuration() -> None:
+    """Capacity and clean-port predicates handle unconfigured and malformed rows."""
+    data = {
+        "items": [
+            {"capacity_percent": "25", "availability": "1"},
+            {"capacity_percent": "bad", "availability": "1"},
+            {"capacity_percent": "50", "availability": "unconfigured"},
+        ]
+    }
+    assert pcie._available_capacity(data) == 75.0
+    assert not pcie._logical_port_is_configured({"items": []})
+    assert pcie._logical_port_is_configured(
+        {
+            "items": [
+                {"logical_port_id": pcie._LOGICAL_PORT_ID, "availability": "1"}
+            ]
+        }
+    )
 
 
 def _isolate_runner(monkeypatch) -> None:
