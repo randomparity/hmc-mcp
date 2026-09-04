@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from pathlib import Path
+from typing import cast
 
 import typer
 from pydantic import TypeAdapter, ValidationError
 from rich.table import Table
 
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.operations.ownership import set_lpar_ownership_description
 
 from ...operations.affinity.ssh import (
@@ -90,7 +92,7 @@ def lpars_memopt_score(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get an LPAR's current memory-optimization affinity score."""
-    score = run(lambda: get_lpar_memopt_score(ssh_config(), system_name, lpar_name))
+    score = run(lambda: get_lpar_memopt_score(cast(HMCClient, ssh_config()), system_name, lpar_name))
     if as_json:
         print_json(score)
     else:
@@ -107,7 +109,7 @@ def lpars_get_minimum_affinity_policy(
 ) -> None:
     """Get an LPAR's minimum-affinity policy when supported."""
     policy = run(
-        lambda: get_minimum_affinity_policy(ssh_config(), system_name, lpar_name)
+        lambda: get_minimum_affinity_policy(cast(HMCClient, ssh_config()), system_name, lpar_name)
     )
     if as_json:
         print_json(asdict(policy))
@@ -130,7 +132,7 @@ def lpars_memopt_scores(
 ) -> None:
     """List current memory-optimization affinity scores for a system's LPARs."""
     scores = run(
-        lambda: list_lpar_memopt_scores(ssh_config(), system_name, lpar_name)
+        lambda: list_lpar_memopt_scores(cast(HMCClient, ssh_config()), system_name, lpar_name)
     )
     if as_json:
         print_json(scores)
@@ -155,7 +157,7 @@ def lpars_system_memopt_score(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get a managed system's current memory-optimization affinity score."""
-    score = run(lambda: get_system_memopt_score(ssh_config(), system_name))
+    score = run(lambda: get_system_memopt_score(cast(HMCClient, ssh_config()), system_name))
     if as_json:
         print_json(score)
         return
@@ -173,7 +175,7 @@ def _run_memopt_plan(
     prioritized, excluded = _memopt_selectors(
         prioritize_name, prioritize_id, exclude_name, exclude_id
     )
-    return run(lambda: operation(ssh_config(), system_name, prioritized, excluded))
+    return run(lambda: operation(cast(HMCClient, ssh_config()), system_name, prioritized, excluded))
 
 
 def _resource_group_selector(
@@ -204,7 +206,7 @@ def _run_resource_group_memopt(
     as_json: bool,
 ) -> None:
     selector = _resource_group_selector(names, ids, all_groups)
-    result = run(lambda: operation(ssh_config(), system_name, selector))
+    result = run(lambda: operation(cast(HMCClient, ssh_config()), system_name, selector))
     if as_json:
         print_json(asdict(result))
         return

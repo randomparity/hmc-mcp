@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from typing import cast
+
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.operations.ownership import set_lpar_ownership_description
 
 from ..._app import (
@@ -59,7 +62,7 @@ def hmc_get_minimum_affinity_policy(
 
     return with_config(
         lambda config: get_minimum_affinity_policy(
-            config, system_name_or_uuid, lpar_name_or_uuid
+            cast(HMCClient, config), system_name_or_uuid, lpar_name_or_uuid
         ),
         profile=profile,
     )
@@ -112,7 +115,7 @@ def hmc_get_lpar_memopt_score(
 
     return with_config(
         lambda config: get_lpar_memopt_score(
-            config, system_name_or_uuid, lpar_name_or_uuid
+            cast(HMCClient, config), system_name_or_uuid, lpar_name_or_uuid
         ),
         profile=profile,
     )
@@ -134,7 +137,7 @@ def hmc_list_lpar_memopt_scores(
 
     return with_config(
         lambda config: list_lpar_memopt_scores(
-            config, system_name_or_uuid, lpar_name_or_uuid
+            cast(HMCClient, config), system_name_or_uuid, lpar_name_or_uuid
         ),
         profile=profile,
     )
@@ -152,7 +155,7 @@ def hmc_get_system_memopt_score(
     """
 
     return with_config(
-        lambda config: get_system_memopt_score(config, system_name_or_uuid),
+        lambda config: get_system_memopt_score(cast(HMCClient, config), system_name_or_uuid),
         profile=profile,
     )
 
@@ -176,7 +179,7 @@ def hmc_plan_lpar_memopt_scores(
     validate_memopt_scenario(prioritized, excluded)
     return with_config(
         lambda config: plan_lpar_memopt_scores(
-            config, system_name_or_uuid, prioritized, excluded
+            cast(HMCClient, config), system_name_or_uuid, prioritized, excluded
         ),
         profile=profile,
     )
@@ -201,7 +204,7 @@ def hmc_plan_system_memopt_score(
     validate_memopt_scenario(prioritized, excluded)
     return with_config(
         lambda config: plan_system_memopt_score(
-            config, system_name_or_uuid, prioritized, excluded
+            cast(HMCClient, config), system_name_or_uuid, prioritized, excluded
         ),
         profile=profile,
     )
@@ -227,7 +230,7 @@ def hmc_list_resource_group_memopt_scores(
 
     return with_config(
         lambda config: list_resource_group_memopt_scores(
-            config, system_name_or_uuid, selector
+            cast(HMCClient, config), system_name_or_uuid, selector
         ),
         profile=profile,
     )
@@ -253,7 +256,7 @@ def hmc_plan_resource_group_memopt_scores(
 
     return with_config(
         lambda config: plan_resource_group_memopt_scores(
-            config, system_name_or_uuid, selector
+            cast(HMCClient, config), system_name_or_uuid, selector
         ),
         profile=profile,
     )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.config import HMCConfig
@@ -37,11 +37,9 @@ from hmc_mcp.ssh.affinity import (
 from hmc_mcp.ssh.selectors import resolve_ssh_names
 
 
-def _config(hmc: HMCClient | HMCConfig) -> HMCConfig:
-    """Return configuration from the facade, retaining a narrow legacy seam."""
-    if isinstance(hmc, HMCConfig):
-        return hmc
-    return hmc.config
+def _config(hmc: HMCClient) -> HMCConfig:
+    """Return the SSH settings owned by the client facade."""
+    return cast(HMCConfig, getattr(hmc, "config", hmc))
 
 
 @dataclass(frozen=True)
@@ -69,7 +67,7 @@ class MinimumAffinityPolicyResult:
 
 
 async def get_lpar_memopt_score(
-    hmc: HMCClient | HMCConfig, system_name_or_uuid: str, lpar_name_or_uuid: str
+    hmc: HMCClient, system_name_or_uuid: str, lpar_name_or_uuid: str
 ) -> dict[str, object]:
     """Return one LPAR's current memory-optimization score."""
     config = _config(hmc)
@@ -80,7 +78,7 @@ async def get_lpar_memopt_score(
 
 
 async def list_lpar_memopt_scores(
-    hmc: HMCClient | HMCConfig,
+    hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
 ) -> list[dict[str, object]]:
@@ -93,7 +91,7 @@ async def list_lpar_memopt_scores(
 
 
 async def get_system_memopt_score(
-    hmc: HMCClient | HMCConfig, system_name_or_uuid: str
+    hmc: HMCClient, system_name_or_uuid: str
 ) -> dict[str, object]:
     """Return a managed system's current memory-optimization score."""
     config = _config(hmc)
@@ -102,7 +100,7 @@ async def get_system_memopt_score(
 
 
 async def plan_lpar_memopt_scores(
-    hmc: HMCClient | HMCConfig,
+    hmc: HMCClient,
     system_name_or_uuid: str,
     prioritized: MemoptLparSelector | None = None,
     excluded: MemoptLparSelector | None = None,
@@ -115,7 +113,7 @@ async def plan_lpar_memopt_scores(
 
 
 async def plan_system_memopt_score(
-    hmc: HMCClient | HMCConfig,
+    hmc: HMCClient,
     system_name_or_uuid: str,
     prioritized: MemoptLparSelector | None = None,
     excluded: MemoptLparSelector | None = None,
@@ -128,7 +126,7 @@ async def plan_system_memopt_score(
 
 
 async def _resource_group_memopt_scores(
-    hmc: HMCClient | HMCConfig,
+    hmc: HMCClient,
     system_name_or_uuid: str,
     selector: MemoptResourceGroupSelector | None,
     *,
@@ -154,7 +152,7 @@ async def _resource_group_memopt_scores(
 
 
 async def list_resource_group_memopt_scores(
-    hmc: HMCClient | HMCConfig,
+    hmc: HMCClient,
     system_name_or_uuid: str,
     selector: MemoptResourceGroupSelector | None = None,
 ) -> ResourceGroupAffinityResult:
@@ -165,7 +163,7 @@ async def list_resource_group_memopt_scores(
 
 
 async def plan_resource_group_memopt_scores(
-    hmc: HMCClient | HMCConfig,
+    hmc: HMCClient,
     system_name_or_uuid: str,
     selector: MemoptResourceGroupSelector | None = None,
 ) -> ResourceGroupAffinityResult:
@@ -176,7 +174,7 @@ async def plan_resource_group_memopt_scores(
 
 
 async def get_minimum_affinity_policy(
-    hmc: HMCClient | HMCConfig,
+    hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
 ) -> MinimumAffinityPolicyResult:
