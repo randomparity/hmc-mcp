@@ -680,7 +680,12 @@ class StorageMixin:
             return None
         entry = entries[0]
         resource = entry.get("Resource")
-        if not isinstance(resource, dict) or "VirtualMediaRepository" not in resource:
+        if not isinstance(resource, dict):
+            return None
+        repositories = resource.get("MediaRepositories") or resource
+        if not isinstance(repositories, dict):
+            return None
+        if "VirtualMediaRepository" not in repositories:
             return None
         return entry
 
