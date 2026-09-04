@@ -6,5 +6,5 @@
 
 | Tool | Effect | Operation | Target | Summary |
 | --- | --- | --- | --- | --- |
-| `hmc_console_info` | `read` | `console.info` | `console` | Get HMC version, network configuration and links to managed systems. |
+| `hmc_get_console_info` | `read` | `console.info` | `console` | Get HMC version, network configuration and links to managed systems. |
 | `hmc_list_resources` | `read` | `console.list_resources` | `console` | List any uom resource type exposed by the HMC. |

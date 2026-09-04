@@ -16,7 +16,7 @@ from hmc_mcp.server_tools.capacity import (
     hmc_find_placement,
 )
 from hmc_mcp.server_tools.systems import (
-    hmc_console_info,
+    hmc_get_console_info,
     hmc_get_lpar,
     hmc_get_lpar_state,
     hmc_get_system,
@@ -95,7 +95,7 @@ def test_console_info_returns_management_console(monkeypatch, mock_hmc):
             text=_feed("mc-uuid-1", "ManagementConsole", Version="V10R1M1040"),
         )
     )
-    result = hmc_console_info()
+    result = hmc_get_console_info()
     assert result["UUID"] == "mc-uuid-1"
     assert result["Resource"]["Version"] == "V10R1M1040"
 
@@ -106,7 +106,7 @@ def test_console_info_translates_known_firmware_500(monkeypatch, mock_hmc):
         return_value=httpx.Response(500, text="null SessionId")
     )
     with pytest.raises(HMCError, match="null SessionId") as exc_info:
-        hmc_console_info()
+        hmc_get_console_info()
     assert exc_info.value.status_code == 500
     assert exc_info.value.body == "null SessionId"
     assert isinstance(exc_info.value.__cause__, HMCError)
@@ -118,7 +118,7 @@ def test_console_info_propagates_unrelated_hmc_error(monkeypatch, mock_hmc):
         return_value=httpx.Response(403, text="forbidden")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_console_info()
+        hmc_get_console_info()
     assert exc_info.value.status_code == 403
 
 
@@ -128,7 +128,7 @@ def test_console_info_propagates_unrelated_http_500(monkeypatch, mock_hmc):
         return_value=httpx.Response(500, text="database unavailable")
     )
     with pytest.raises(HMCError, match="database unavailable") as exc_info:
-        hmc_console_info()
+        hmc_get_console_info()
     assert exc_info.value.status_code == 500
 
 

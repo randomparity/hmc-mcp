@@ -78,7 +78,6 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_capture_lpar_console` | `mutate` | [lpar.md](lpar.md) |
 | `hmc_clear_lpar_boot_order` | `mutate` | [boot_order.md](boot_order.md) |
 | `hmc_configure_remote_access` | `mutate` | [remote_access.md](remote_access.md) |
-| `hmc_console_info` | `read` | [console.md](console.md) |
 | `hmc_create_logical_unit` | `mutate` | [cluster.md](cluster.md) |
 | `hmc_create_lpar` | `mutate` | [lpar.md](lpar.md) |
 | `hmc_create_media_repository` | `mutate` | [media.md](media.md) |
@@ -106,6 +105,7 @@ This reference covers every tool the server registers, including the ones a defa
 | `hmc_effective_permissions` | `read` | [permissions.md](permissions.md) |
 | `hmc_find_placement` | `read` | [placement.md](placement.md) |
 | `hmc_fleet_health` | `read` | [health.md](health.md) |
+| `hmc_get_console_info` | `read` | [console.md](console.md) |
 | `hmc_get_job` | `read` | [job.md](job.md) |
 | `hmc_get_lpar` | `read` | [lpar.md](lpar.md) |
 | `hmc_get_lpar_description` | `read` | [lpar.md](lpar.md) |

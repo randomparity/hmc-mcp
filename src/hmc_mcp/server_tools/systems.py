@@ -36,7 +36,7 @@ tool, register_tools, tool_security = tool_module()
 
 
 @tool(effect="read", operation="console.info", target_kind="console")
-def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
+def hmc_get_console_info(profile: str | None = None) -> dict[str, Any] | None:
     """Get HMC version, network configuration and links to managed systems.
 
     Useful as a connectivity check — this is the cheapest HMC call.

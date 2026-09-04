@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 
 
 async def _discover_console(client: Client, state: RunState) -> None:
-    st, data = await state.call(client, "hmc_console_info")
-    state.record(1, "hmc_console_info", st, data)
+    st, data = await state.call(client, "hmc_get_console_info")
+    state.record(1, "hmc_get_console_info", st, data)
     if st == "PASS" and isinstance(data, dict):
         state.context.console_uuid = data.get("uuid") or data.get("UUID")
 

@@ -65,7 +65,7 @@ _TOOL_MODULES = (*TOOL_MODULES, server_command, server_permissions)
 # 20f3068. A frozen regression snapshot: no tool is ever added here.
 LEGACY_READ_ONLY = frozenset(
     {
-        "hmc_console_info",
+        "hmc_get_console_info",
         "hmc_list_systems",
         "hmc_system_summary",
         "hmc_list_lpars",
@@ -1211,7 +1211,7 @@ _NOT_EXHAUSTIVE = frozenset(
     {
         # No selector at all, so a `targets` table has nothing to bind on.
         "hmc_capacity_report",
-        "hmc_console_info",
+        "hmc_get_console_info",
         "hmc_effective_permissions",
         "hmc_find_placement",
         "hmc_fleet_health",

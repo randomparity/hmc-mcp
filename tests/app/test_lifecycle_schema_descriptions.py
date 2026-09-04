@@ -17,7 +17,7 @@ mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,
 
 
 SCOPED_TOOLS = {
-    "hmc_console_info",
+    "hmc_get_console_info",
     "hmc_list_configured_hosts",
     "hmc_list_systems",
     "hmc_list_lpars",

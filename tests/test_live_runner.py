@@ -1109,7 +1109,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
     async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
         responses = {
-            "hmc_console_info": {"uuid": "console-uuid"},
+            "hmc_get_console_info": {"uuid": "console-uuid"},
             "hmc_list_systems": [
                 {"UUID": "system-uuid", "Resource": {"SystemName": "ltczz386"}}
             ],
@@ -1125,7 +1125,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
     await connectivity.inventory_connectivity(None, state)
 
     assert [tool for tool, _ in calls] == [
-        "hmc_console_info",
+        "hmc_get_console_info",
         "hmc_list_systems",
         "hmc_get_system",
         "hmc_list_lpars",
