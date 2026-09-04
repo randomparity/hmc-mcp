@@ -1,10 +1,9 @@
-# Domain modules use the common vocabulary and XML imports directly.
-# ruff: noqa: F401,F403,F405,I001
 from __future__ import annotations
 
-from .common import *
-from ..documents_shared import document_envelope, lpar_envelope
+from ..documents_shared import document_envelope
 from ..xmlutil import escapes_string_arguments
+from .common import AUTHENTICATION_TYPES, DET, ET, UOM_NS, WEB_NS, AuthenticationType
+
 
 @escapes_string_arguments
 def build_logon_request_document(user: str, password: str) -> str:
@@ -186,4 +185,3 @@ def merge_remote_access_document(
         child.set("kb", "CUR")
         child.set("kxe", "false")
     return ET.tostring(console, encoding="unicode")
-

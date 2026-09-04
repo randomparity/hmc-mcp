@@ -1,10 +1,8 @@
-# Domain modules use the common vocabulary and XML imports directly.
-# ruff: noqa: F401, F403, I001
 from __future__ import annotations
 
-from .common import *
-from ..documents_shared import document_envelope, lpar_envelope
+from ..documents_shared import document_envelope
 from ..xmlutil import escapes_string_arguments
+
 
 def _adapter_document(
     root_element: str,
@@ -118,4 +116,3 @@ def build_client_network_adapter_document(
 #   VirtualSCSIMapping  POST to the VIOS document carrying a
 #                    VirtualSCSIMappings block; connects a backing storage
 #                    (PhysicalVolume or VirtualDisk) to an LPAR (Atom link).
-

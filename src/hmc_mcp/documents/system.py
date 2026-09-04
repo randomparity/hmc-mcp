@@ -1,10 +1,16 @@
-# Domain modules use the common vocabulary and XML imports directly.
-# ruff: noqa: F401,F403,F405,I001
 from __future__ import annotations
 
-from .common import *
-from ..documents_shared import document_envelope, lpar_envelope
+from ..documents_shared import document_envelope
 from ..xmlutil import escapes_string_arguments
+from .common import (
+    MEM_MIRRORING_MODES,
+    POWER_OFF_POLICIES,
+    POWER_ON_LPAR_START_POLICIES,
+    MemoryMirroringMode,
+    PowerOffPolicy,
+    PowerOnLparStartPolicy,
+)
+
 
 @escapes_string_arguments
 def build_managed_system_document(
@@ -101,4 +107,3 @@ def build_managed_system_document(
 #                                        ConnectingVirtualSlotNumber, VirtualSlotNumber
 #   ClientNetworkAdapter              -> PortVLANID, VirtualSlotNumber,
 #                                        VirtualSwitchID, IsTaggedVLAN, MACAddress
-

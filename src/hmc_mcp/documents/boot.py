@@ -1,10 +1,9 @@
-# Domain modules use the common vocabulary and XML imports directly.
-# ruff: noqa: F401,F403,F405,I001
 from __future__ import annotations
 
-from .common import *
-from ..documents_shared import document_envelope, lpar_envelope
+from ..documents_shared import lpar_envelope
 from ..xmlutil import escapes_string_arguments
+from .common import BOOT_DEVICE_SELECTORS
+
 
 def _build_pending_boot_string(devices: list[str]) -> str:
     """Join validated boot device selectors for ``PendingBootString``."""

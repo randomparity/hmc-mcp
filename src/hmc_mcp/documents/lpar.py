@@ -1,11 +1,19 @@
-# Domain modules use the common vocabulary and XML imports directly.
-# ruff: noqa: F401,F403,F405,I001
 from __future__ import annotations
 
-from .common import *
-from .common import _memory_config, _processor_config
-from ..documents_shared import document_envelope, lpar_envelope
+from ..documents_shared import lpar_envelope
 from ..xmlutil import escapes_string_arguments
+from .common import (
+    KEYLOCK_POSITIONS,
+    OS_TYPES,
+    PARTITION_TYPES,
+    Keylock,
+    LparResources,
+    OsType,
+    PartitionType,
+    _memory_config,
+    _processor_config,
+)
+
 
 @escapes_string_arguments
 def build_lpar_document(
