@@ -544,7 +544,7 @@ async def test_submit_platform_update_rejects_non_uuid_path_input(mock_hmc):
     ).mock(return_value=httpx.Response(204))
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="system_uuid must be a UUID"):
+        with pytest.raises(ValueError, match="system_uuid must be a UUID"):
             await hmc.submit_platform_update(
                 "allowed/do/ShutdownHMC?ignored=", {"JobRequest": {}}
             )

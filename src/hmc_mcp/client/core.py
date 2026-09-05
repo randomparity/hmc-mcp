@@ -13,7 +13,7 @@ import re
 import warnings
 from collections.abc import Mapping
 from threading import Lock
-from typing import Any, Literal, Self, get_args
+from typing import Any, Literal, Self, TypedDict, cast, get_args
 from urllib.parse import quote, unquote, urlparse
 
 import httpx
@@ -47,6 +47,34 @@ MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
 # segment rather than with a substring test, so a resource legitimately named
 # "..log" or "a..b" is not refused for containing the characters.
 _DOT_SEGMENTS: frozenset[str] = frozenset({".", ".."})
+
+
+class PlatformUpdateJobParameter(TypedDict):
+    """One validated result value returned by a platform-update job."""
+
+    ParameterName: str
+    ParameterValue: str
+
+
+class PlatformUpdateJobResults(TypedDict):
+    """Normalized platform-update result collection."""
+
+    JobParameter: list[PlatformUpdateJobParameter]
+
+
+class PlatformUpdateJobResource(TypedDict, total=False):
+    """Known, validated fields of a normalized platform-update job."""
+
+    Status: str
+    Results: PlatformUpdateJobResults
+
+
+class PlatformUpdateJobEntry(TypedDict, total=False):
+    """Normalized platform-update job returned by :meth:`submit_platform_update`."""
+
+    UUID: str
+    Resource: PlatformUpdateJobResource
+    link: str
 
 
 def _reject_dot_segments(method: str, path: str) -> None:
@@ -167,7 +195,7 @@ def _platform_response_error(field: str) -> HMCError:
     return HMCError(f"Malformed PlatformUpdate response: invalid {field}")
 
 
-def _normalize_platform_update_response(payload: Any) -> dict[str, Any]:
+def _normalize_platform_update_response(payload: Any) -> PlatformUpdateJobEntry:
     """Normalize IBM's JSON PlatformUpdate job into the shared job shape."""
     if not isinstance(payload, dict):
         raise _platform_response_error("root")
@@ -194,7 +222,7 @@ def _normalize_platform_update_response(payload: Any) -> dict[str, Any]:
         results = resource.pop("Result")
         if not isinstance(results, list):
             raise _platform_response_error("Result")
-        normalized_results: list[dict[str, str]] = []
+        normalized_results: list[PlatformUpdateJobParameter] = []
         for entry in results:
             if not isinstance(entry, dict):
                 raise _platform_response_error("Result entry")
@@ -207,7 +235,10 @@ def _normalize_platform_update_response(payload: Any) -> dict[str, Any]:
             normalized_results.append({"ParameterName": name, "ParameterValue": value})
         resource["Results"] = {"JobParameter": normalized_results}
 
-    normalized: dict[str, Any] = {"UUID": job_id.strip(), "Resource": resource}
+    normalized: PlatformUpdateJobEntry = {
+        "UUID": job_id.strip(),
+        "Resource": cast(PlatformUpdateJobResource, resource),
+    }
     if isinstance(self_link, str):
         normalized["link"] = self_link.strip()
     return normalized
@@ -763,7 +794,7 @@ class HMCClient(
 
     async def submit_platform_update(
         self, system_uuid: str, job_request: Mapping[str, Any]
-    ) -> dict[str, Any] | None:
+    ) -> PlatformUpdateJobEntry | None:
         """PUT one native JSON PlatformUpdate request and normalize its job."""
         system_path_id = quote(system_uuid, safe="")
         path = f"/rest/api/uom/ManagedSystem/{system_path_id}/do/PlatformUpdate"
