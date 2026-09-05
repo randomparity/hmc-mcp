@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 
+from ...client.client_contracts import ADAPTER_TYPES, AdapterType
 from ...operations.virtualization.adapters import (
     add_network_adapter,
     add_vfc_adapter,
@@ -11,7 +12,6 @@ from ...operations.virtualization.adapters import (
     delete_adapter,
     list_adapters,
 )
-from ...operations.virtualization.contracts import ADAPTER_TYPES, AdapterType
 from ..output import console, output, print_json
 from ..runtime import client, run_cli_coroutine
 

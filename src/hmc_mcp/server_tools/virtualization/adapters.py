@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..._app import run_limited_collection, with_client
+from ...client.client_contracts import AdapterType
 from ...operations.virtualization.adapters import (
     add_network_adapter,
     add_vfc_adapter,
@@ -12,7 +13,6 @@ from ...operations.virtualization.adapters import (
     delete_adapter,
     list_adapters,
 )
-from ...operations.virtualization.contracts import AdapterType
 from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()

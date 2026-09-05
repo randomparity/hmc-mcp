@@ -13,6 +13,7 @@ from hmc_mcp.operations.lpar.ownership import (
     resolve_lpar_ownership_names,
 )
 
+from ...client.client_contracts import AdapterType
 from ...errors import HMCError
 from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
@@ -24,7 +25,6 @@ from ...jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from ...operations.virtualization.contracts import AdapterType
 from ...resource_identity import is_uuid, resolve_system_uuid
 from .workflow_contract import WorkflowStep
 

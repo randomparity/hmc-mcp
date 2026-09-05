@@ -13,8 +13,7 @@ from ..documents import (
     build_vfc_adapter_document,
     build_vscsi_adapter_document,
 )
-from ..operations.virtualization.contracts import AdapterType, validate_adapter_type
-from .client_contracts import AdaptersClient
+from .client_contracts import AdaptersClient, AdapterType, validate_adapter_type
 
 
 class AdaptersMixin:

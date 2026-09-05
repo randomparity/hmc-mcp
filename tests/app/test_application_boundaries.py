@@ -126,6 +126,31 @@ def test_operations_do_not_import_application_modules():
         assert not imports & forbidden, path
 
 
+def test_client_does_not_import_operations_package():
+    package = Path(__file__).parents[2] / "src" / "hmc_mcp"
+    client_modules = sorted((package / "client").rglob("*.py"))
+    assert client_modules, "client boundary guard discovered no modules"
+
+    for path in client_modules:
+        tree = ast.parse(path.read_text(), filename=str(path))
+        module_parts = ["hmc_mcp", *path.relative_to(package).with_suffix("").parts]
+        imports: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                base = module_parts[:-1]
+                if node.level:
+                    base = base[: len(base) - node.level + 1]
+                target = [*base, *(node.module or "").split(".")]
+                imports.add(".".join(part for part in target if part))
+        assert not any(
+            imported == "hmc_mcp.operations"
+            or imported.startswith("hmc_mcp.operations.")
+            for imported in imports
+        ), path
+
+
 def test_config_commands_do_not_import_the_server_composition_root():
     path = Path(__file__).parents[2] / "src" / "hmc_mcp" / "cli_commands" / "config.py"
     tree = ast.parse(path.read_text(), filename=str(path))

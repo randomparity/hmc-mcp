@@ -271,6 +271,10 @@ def test_closed_vocab_enum_matches_runtime_constant():
     adding a value must be a single edit. This pins the rendered schema to the
     constant so either side changing alone is caught.
     """
+    from hmc_mcp.client.client_contracts import (
+        ADAPTER_TYPES,
+        VALID_AUTHENTICATION_FILTERS,
+    )
     from hmc_mcp.documents import (
         AUTHENTICATION_TYPES,
         PARTITION_TYPES,
@@ -278,9 +282,7 @@ def test_closed_vocab_enum_matches_runtime_constant():
         STORAGE_KINDS,
     )
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
-    from hmc_mcp.operations.users.contracts import VALID_AUTHENTICATION_FILTERS
     from hmc_mcp.operations.vios.core import _VALID_BACKUP_TYPES
-    from hmc_mcp.operations.virtualization.contracts import ADAPTER_TYPES
     from hmc_mcp.ssh.io_inventory import _VALID_PCI_CLASSES
     from hmc_mcp.ssh.sriov import _VALID_SRIOV_MODES
 

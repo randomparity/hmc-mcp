@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol, get_args
 
 # Element is a type contract only; client implementations parse inbound XML
 # through defusedxml.
@@ -12,6 +12,27 @@ from xml.etree.ElementTree import Element  # nosec B405
 import httpx
 
 from ..config import HMCConfig
+
+AuthenticationFilter = Literal["local", "ldap", "kerberos", "all"]
+AUTHENTICATION_TYPES = {"local": "Local", "ldap": "LDAP", "kerberos": "Kerberos"}
+VALID_AUTHENTICATION_FILTERS = frozenset(get_args(AuthenticationFilter))
+
+AdapterType = Literal[
+    "ClientNetworkAdapter",
+    "VirtualSCSIClientAdapter",
+    "VirtualFibreChannelClientAdapter",
+    "VirtualNICDedicated",
+]
+ADAPTER_TYPES = frozenset(get_args(AdapterType))
+
+
+def validate_adapter_type(adapter_type: AdapterType) -> AdapterType:
+    if adapter_type not in ADAPTER_TYPES:
+        raise ValueError(
+            f"Invalid adapter_type {adapter_type!r}. "
+            f"Must be one of: {', '.join(sorted(ADAPTER_TYPES))}"
+        )
+    return adapter_type
 
 
 class LparsClient(Protocol):

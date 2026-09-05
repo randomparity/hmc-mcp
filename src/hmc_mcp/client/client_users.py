@@ -7,12 +7,12 @@ from urllib.parse import quote
 
 from ..documents import merge_remote_access_document
 from ..errors import HMCError
-from ..operations.users.contracts import (
+from .client_contracts import (
     AUTHENTICATION_TYPES,
     VALID_AUTHENTICATION_FILTERS,
     AuthenticationFilter,
+    UsersClient,
 )
-from .client_contracts import UsersClient
 from .client_parse import _parse_feed
 
 REMOTE_ACCESS_MEDIA = "application/vnd.ibm.powervm.web+xml; type=ManagementConsole"
