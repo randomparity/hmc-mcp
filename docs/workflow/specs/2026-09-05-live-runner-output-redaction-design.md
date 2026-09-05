@@ -22,19 +22,22 @@
 
 ## Decision
 
-ADR 0120 governs this design. `RunState.call()` will pass caught exception text
-and the formatted traceback through one private sanitizer before returning its
-`FAIL` value. `record()` will therefore print and retain the same sanitized
-text. The bootstrap acknowledgement will say only that configured credentials
-were loaded. PASS and SKIP behavior is unchanged.
+ADR 0120 governs this design. `RunState.record()` will pass all `FAIL` data,
+whether returned by `RunState.call()` or supplied directly by a subtask, through
+one private sanitizer before it appends, prints, or serializes the value.
+`main()` will also sanitize its pre-state configuration exception immediately
+before printing it. The bootstrap acknowledgement will say only that configured
+credentials were loaded. PASS and SKIP behavior is unchanged.
 
 ## Data flow and errors
 
 `Client.call_tool()` may raise text controlled by a remote HMC or by local
 configuration. The catch block combines the exception class, message, and
-traceback; the sanitizer replaces sensitive substrings with stable explicit
-markers, then the existing `record()` and JSON writer consume that value. The
-sanitizer is total for string input: a nonmatching string is returned unchanged.
+traceback; direct subtask failures can carry the same information. `record()`
+sanitizes either source before the existing JSON writer consumes it. Before
+state creation, `main()` sanitizes the configuration exception only for its
+terminal rendering. The sanitizer is total for string input: a nonmatching
+string is returned unchanged.
 
 ## Threat model
 
@@ -42,12 +45,13 @@ sanitizer is total for string input: a nonmatching string is returned unchanged.
 
 | Boundary | Data and actor | Control and failure leak |
 | --- | --- | --- |
-| HMC/tool failure to runner | Remote HMC or a compromised/intermediate service controls exception text | Sanitize before `RunState.call()` returns; preserve only safe diagnostic text. |
+| HMC/tool or direct subtask failure to runner | Remote HMC, a compromised/intermediate service, or local subtask context controls failure text | Sanitize every `FAIL` value in `RunState.record()`; preserve only safe diagnostic text. |
+| Pre-state configuration failure to terminal | Local config path and validation context control exception text | Sanitize the exception in `main()` immediately before printing; no JSON result exists yet. |
 | Local configuration to terminal | Local operator configuration supplies path and host | Do not emit either identifier in bootstrap status. |
 | Runner state to JSON/stdout | Local operator, CI collector, or later reader receives output | Store and render the already-sanitized failure value; no distinct rendering path. |
 
 The design adds no authorization boundary and trusts the process only to apply
-the sanitizer before it exposes caught failures.
+the sanitizer before it exposes any failure.
 
 ### Out of scope
 
@@ -61,5 +65,7 @@ values an operator deliberately supplies on the command line.
 - Failure data with a password, URL userinfo, hostname, or absolute local path
   records only redaction markers and preserves its exception type and safe text.
 - `record()` prints the sanitized failure text and JSON receives that same value.
+- A missing configuration file prints no path while retaining an actionable
+  configuration error.
 - Bootstrap status contains neither resolved config path nor configured host.
 - Existing PASS, SKIP, and ordinary failure tests remain green.
