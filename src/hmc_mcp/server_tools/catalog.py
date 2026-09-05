@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from hmc_mcp.server_tools import (
-    adapters,
     capacity,
     composite,
     console,
@@ -13,8 +12,6 @@ from hmc_mcp.server_tools import (
     jobs,
     lpm,
     metrics,
-    network,
-    pcie,
     snapshot,
     storage,
     system_resources,
@@ -24,7 +21,6 @@ from hmc_mcp.server_tools import (
     users,
     vios,
     vios_labels,
-    vnic,
 )
 from hmc_mcp.server_tools.command import HMC_RUN_COMMAND_SECURITY
 from hmc_mcp.server_tools.lpar import (
@@ -36,6 +32,7 @@ from hmc_mcp.server_tools.lpar import (
     provision,
 )
 from hmc_mcp.server_tools.permissions import EFFECTIVE_PERMISSIONS_SECURITY
+from hmc_mcp.server_tools.virtualization import adapters, network, pcie, vnic
 from hmc_mcp.tool_registry import ToolSecurity, build_tool_security
 
 TOOL_MODULES = (

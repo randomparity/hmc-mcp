@@ -3022,9 +3022,9 @@ def _vnic_result(operation: str) -> VnicChangeResult:
 
 def test_add_vnic_cli_default_confirmation_keeps_stdout_json(monkeypatch):
     operation = AsyncMock(return_value=_vnic_result("add"))
-    monkeypatch.setattr("hmc_mcp.cli_commands.vnic.add_vnic", operation)
+    monkeypatch.setattr("hmc_mcp.cli_commands.virtualization.vnic.add_vnic", operation)
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.vnic.with_client",
+        "hmc_mcp.cli_commands.virtualization.vnic.with_client",
         lambda fn: asyncio.run(fn(object())),
     )
 
@@ -3061,9 +3061,9 @@ def test_add_vnic_cli_default_confirmation_keeps_stdout_json(monkeypatch):
 def test_remove_vnic_cli_default_confirmation_keeps_partial_stdout_json(monkeypatch):
     partial = VnicPartialError("incomplete", _vnic_result("remove"))
     operation = AsyncMock(side_effect=partial)
-    monkeypatch.setattr("hmc_mcp.cli_commands.vnic.remove_vnic", operation)
+    monkeypatch.setattr("hmc_mcp.cli_commands.virtualization.vnic.remove_vnic", operation)
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.vnic.with_client",
+        "hmc_mcp.cli_commands.virtualization.vnic.with_client",
         lambda fn: asyncio.run(fn(object())),
     )
 
