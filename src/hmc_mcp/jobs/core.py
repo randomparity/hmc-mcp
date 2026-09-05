@@ -107,37 +107,41 @@ def _result_message(resource: dict[str, Any]) -> str | None:
 
 
 def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
-    resource_value = (job or {}).get("Resource")
-    resource = resource_value if isinstance(resource_value, dict) else {}
+    resource = _job_resource(job)
     status_value = resource.get("Status")
     status = status_value.strip() if isinstance(status_value, str) else None
-    exception = resource.get("ResponseException")
-    exception_message = (
-        exception.get("Message") if isinstance(exception, dict) else None
-    )
-    exception_text = (
-        exception_message.strip()
-        if isinstance(exception_message, str) and exception_message.strip()
-        else None
-    )
-    error = None
-    if status in FAILED_JOB_STATUSES:
-        error = (
-            exception_text
-            if status == "EXCEPTION" and exception_text
-            else _result_message(resource)
-            or exception_text
-            or f"Job ended with status {status}"
-        )
     return JobOutcome(
         (job_identifier(job) if job else None) or requested_id.strip(),
         status,
         status not in TERMINAL_JOB_STATUSES,
-        error,
+        _job_error(status, resource),
         job,
         job is not None,
         _job_href(job),
     )
+
+
+def _job_resource(job: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the mapping-shaped HMC job resource, or an empty mapping."""
+    resource = (job or {}).get("Resource")
+    return resource if isinstance(resource, dict) else {}
+
+
+def _job_error(status: str | None, resource: dict[str, Any]) -> str | None:
+    """Select the actionable diagnostic for one terminal failed job status."""
+    if status not in FAILED_JOB_STATUSES:
+        return None
+    exception_text = _exception_text(resource)
+    if status == "EXCEPTION" and exception_text:
+        return exception_text
+    return _result_message(resource) or exception_text or f"Job ended with status {status}"
+
+
+def _exception_text(resource: dict[str, Any]) -> str | None:
+    """Return the non-blank HMC exception message, when present."""
+    exception = resource.get("ResponseException")
+    message = exception.get("Message") if isinstance(exception, dict) else None
+    return message.strip() if isinstance(message, str) and message.strip() else None
 
 
 def vios_stdout(job: dict[str, Any] | None) -> str | None:
