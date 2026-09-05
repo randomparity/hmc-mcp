@@ -111,8 +111,8 @@ def test_list_optical_media(monkeypatch, mock_hmc):
 
     assert route.called
     assert len(media_list) == 2
-    assert media_list[0]["MediaName"] == "aix.iso"
-    assert media_list[1]["MediaName"] == "linux.iso"
+    assert media_list[0]["name"] == "aix.iso"
+    assert media_list[1]["name"] == "linux.iso"
 
 
 def test_get_media_repository_not_found(monkeypatch, mock_hmc):

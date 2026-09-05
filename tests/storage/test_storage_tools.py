@@ -290,8 +290,12 @@ def test_list_volume_groups(monkeypatch, mock_hmc):
         )
     )
     result = hmc_list_volume_groups(VIOS_UUID)
-    assert result[0]["UUID"] == VG_UUID
-    assert result[0]["Resource"]["GroupName"] == "vg_rootvg"
+    assert result[0] == {
+        "uuid": VG_UUID,
+        "name": "vg_rootvg",
+        "capacity_mib": None,
+        "free_space_mib": None,
+    }
 
 
 def test_create_volume_group_builds_xml(monkeypatch, mock_hmc):

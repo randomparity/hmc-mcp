@@ -248,7 +248,8 @@ names are internal everywhere and are never inventoried.
   `delete_media_repository`, `delete_optical_media`, `delete_virtual_disk`,
   `detach_storage_mapping`, `get_media_repository`, `list_optical_mappings`, `list_optical_media`,
   `list_storage_mappings`, `list_volume_groups`, `map_storage`, `mount_optical_media`,
-  `unmount_optical_media`, `upload_iso`; types: `StorageMapResult`; excluded synchronous: none.
+  `unmount_optical_media`, `upload_iso`; types: `OpticalMedia`, `StorageMapResult`,
+  `StorageMapping`, `VolumeGroup`; excluded synchronous: none.
 - `operations.systems` — operations: `get_system`, `list_systems`, `modify_system`,
   `power_system`; types: `ManagedSystemPatch`; excluded synchronous: none.
 - `operations.templates` — operations: `deploy_partition_template`, `get_partition_template`,

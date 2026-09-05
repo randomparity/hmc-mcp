@@ -30,7 +30,7 @@ from ..operations.storage import (
     map_storage,
     upload_iso,
 )
-from .output import console, first_field, output, print_json, usage_error
+from .output import console, output, print_json, usage_error
 from .runtime import client, run, with_client
 
 
@@ -52,12 +52,12 @@ def storage_list_vgs(
             table.add_column(col)
         for v in vgs:
             table.add_row(
-                first_field(v, "GroupName"),
-                v.get("UUID") or "-",
-                first_field(v, "FreeSpace", "FreeSpaceInMBytes"),
-                first_field(v, "GroupCapacity", "Capacity"),
+                v.name,
+                v.uuid,
+                "-" if v.free_space_mib is None else str(v.free_space_mib),
+                "-" if v.capacity_mib is None else str(v.capacity_mib),
             )
-    output(vgs, as_json, table, "No volume groups found")
+    output([asdict(vg) for vg in vgs], as_json, table, "No volume groups found")
 
 
 def storage_create_vg(
@@ -378,7 +378,7 @@ def storage_list_optical_media(
     )
 
     if as_json:
-        print_json(media_list)
+        print_json([asdict(media) for media in media_list])
     elif media_list:
         console.print(
             f"[green]Optical Media in repository on VG {vg} (VIOS {vios}):[/green]"
@@ -389,9 +389,9 @@ def storage_list_optical_media(
         table.add_column("Type", style="green")
         for media in media_list:
             table.add_row(
-                media.get("MediaName", "N/A"),
-                str(media.get("MediaSize", "N/A")),
-                media.get("MediaType", "N/A"),
+                media.name,
+                "N/A" if media.size_mib is None else str(media.size_mib),
+                media.media_type or "N/A",
             )
         console.print(table)
     else:
@@ -410,7 +410,7 @@ def storage_list_mappings(
 ) -> None:
     """List VirtualSCSIMappings on a VIOS (optionally scoped to an LPAR)."""
 
-    async def _go() -> list[dict[str, Any]]:
+    async def _go():
         config = load_profile()
         async with HMCClient(config) as hmc:
             return await list_storage_mappings(
@@ -419,7 +419,7 @@ def storage_list_mappings(
 
     mappings = run(_go)
     if as_json:
-        print_json(mappings)
+        print_json([asdict(mapping) for mapping in mappings])
     else:
         table = Table(title=f"Storage Mappings on {vios}")
         table.add_column("Mapping UUID", style="cyan")
@@ -427,22 +427,12 @@ def storage_list_mappings(
         table.add_column("Backing Storage", style="yellow")
         table.add_column("Type", style="magenta")
         for m in mappings:
-            mapping_uuid = m.get("UUID", "")
-            storage = m.get("Storage", {})
-            client = m.get("AssociatedLogicalPartition", {})
-            client_name = client.get("PartitionName", "")
-
-            backing = ""
-            stype = ""
-            if storage:
-                if "PhysicalVolume" in storage:
-                    backing = storage["PhysicalVolume"].get("VolumeName", "")
-                    stype = "PhysicalVolume"
-                elif "VirtualDisk" in storage:
-                    backing = storage["VirtualDisk"].get("DiskName", "")
-                    stype = "VirtualDisk"
-
-            table.add_row(mapping_uuid, client_name, backing, stype)
+            table.add_row(
+                m.uuid,
+                m.lpar_uuid or "",
+                m.backing_name or "",
+                m.backing_kind or "",
+            )
         console.print(table)
 
 

@@ -8,7 +8,7 @@ import logging
 import os
 import re
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
@@ -34,6 +34,105 @@ class StorageMapResult:
     resource: dict[str, Any] | None
 
 
+@dataclass(frozen=True)
+class VolumeGroup:
+    """Stable inventory projection for one VIOS volume group."""
+
+    uuid: str
+    name: str
+    capacity_mib: int | None
+    free_space_mib: int | None
+
+
+@dataclass(frozen=True)
+class OpticalMedia:
+    """Stable inventory projection for one virtual optical medium."""
+
+    name: str
+    size_mib: int | None
+    media_type: str | None
+
+
+@dataclass(frozen=True)
+class StorageMapping:
+    """Stable inventory projection for one virtual SCSI mapping."""
+
+    uuid: str
+    lpar_uuid: str | None
+    backing_kind: str | None
+    backing_name: str | None
+
+
+def _resource(entry: Mapping[str, Any], operation: str) -> Mapping[str, Any]:
+    resource = entry.get("Resource", entry)
+    if not isinstance(resource, Mapping):
+        raise HMCError(f"{operation} returned a resource with an invalid shape")
+    return resource
+
+
+def _required_text(resource: Mapping[str, Any], field: str, operation: str) -> str:
+    value = resource.get(field)
+    if isinstance(value, str) and value:
+        return value
+    raise HMCError(f"{operation} returned no usable {field}")
+
+
+def _optional_int(resource: Mapping[str, Any], field: str, operation: str) -> int | None:
+    value = resource.get(field)
+    if value is None:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.isdecimal():
+        return int(value)
+    raise HMCError(f"{operation} returned an invalid {field}")
+
+
+def _volume_group(entry: Mapping[str, Any]) -> VolumeGroup:
+    operation = "list_volume_groups"
+    resource = _resource(entry, operation)
+    uuid = entry.get("UUID") or resource.get("VolumeGroupUUID")
+    if not isinstance(uuid, str) or not uuid:
+        raise HMCError(f"{operation} returned no usable UUID")
+    return VolumeGroup(
+        uuid=uuid,
+        name=_required_text(resource, "GroupName", operation),
+        capacity_mib=_optional_int(resource, "GroupCapacity", operation),
+        free_space_mib=_optional_int(resource, "FreeSpace", operation),
+    )
+
+
+def _optical_media(entry: Mapping[str, Any]) -> OpticalMedia:
+    operation = "list_optical_media"
+    resource = _resource(entry, operation)
+    media_type = resource.get("MediaType")
+    if media_type is not None and not isinstance(media_type, str):
+        raise HMCError(f"{operation} returned an invalid MediaType")
+    return OpticalMedia(
+        name=_required_text(resource, "MediaName", operation),
+        size_mib=_optional_int(resource, "MediaSize", operation),
+        media_type=media_type,
+    )
+
+
+def _storage_mapping(entry: Mapping[str, Any]) -> StorageMapping:
+    operation = "list_storage_mappings"
+    resource = _resource(entry, operation)
+    uuid = _required_text(resource, "UUID", operation)
+    associated = resource.get("AssociatedLogicalPartition")
+    href = associated.get("href") if isinstance(associated, Mapping) else None
+    marker = "/rest/api/uom/LogicalPartition/"
+    lpar_uuid = href[len(marker) :] if isinstance(href, str) and href.startswith(marker) else None
+    storage = resource.get("Storage")
+    backing = storage if isinstance(storage, Mapping) else {}
+    for kind in ("VirtualDisk", "PhysicalVolume", "VirtualOpticalMedia"):
+        candidate = backing.get(kind)
+        if isinstance(candidate, Mapping):
+            name = candidate.get("DiskName") or candidate.get("VolumeName") or candidate.get("MediaName")
+            return StorageMapping(uuid, lpar_uuid, kind, name if isinstance(name, str) else None)
+    return StorageMapping(uuid, lpar_uuid, None, None)
+
+
 # HTTP download configuration
 CONNECT_TIMEOUT = 30.0
 READ_TIMEOUT = 300.0
@@ -52,12 +151,12 @@ async def list_volume_groups(
     vios_name_or_uuid: str,
     *,
     system_name_or_uuid: str | None = None,
-) -> list[dict[str, Any]]:
+) -> list[VolumeGroup]:
     """List volume groups on a VIOS."""
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
-    return await hmc.list_volume_groups(vios_uuid)
+    return [_volume_group(entry) for entry in await hmc.list_volume_groups(vios_uuid)]
 
 
 async def create_volume_group(
@@ -220,7 +319,7 @@ async def list_storage_mappings(
     lpar_name_or_uuid: str | None = None,
     *,
     system_name_or_uuid: str | None = None,
-) -> list[dict[str, Any]]:
+) -> list[StorageMapping]:
     """List VirtualSCSIMappings on a VIOS, optionally scoped to an LPAR.
 
     Returns mappings with backing storage details and client LPAR information.
@@ -234,7 +333,10 @@ async def list_storage_mappings(
         lpar_uuid = await resolve_lpar_uuid(
             hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
         )
-    return await hmc.list_storage_mappings(vios_uuid, lpar_uuid)
+    return [
+        _storage_mapping(entry)
+        for entry in await hmc.list_storage_mappings(vios_uuid, lpar_uuid)
+    ]
 
 
 async def detach_storage_mapping(
@@ -567,19 +669,17 @@ async def list_optical_media(
     vg_uuid: str,
     *,
     system_name_or_uuid: str | None = None,
-) -> list[dict[str, Any]]:
+) -> list[OpticalMedia]:
     """List Virtual Optical Media in the Virtual Media Repository.
 
     Returns a list of optical media entries (ISO containers) with their
     MediaName, MediaSize, and MediaType. The repository must exist
     (VMLibrary on the specified Volume Group).
     """
-    return await hmc.list_optical_media(
-        await resolve_vios_uuid(
-            hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
-        ),
-        vg_uuid,
+    vios_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
+    return [_optical_media(entry) for entry in await hmc.list_optical_media(vios_uuid, vg_uuid)]
 
 
 async def _upload_iso_via_broker(

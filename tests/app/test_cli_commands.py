@@ -36,6 +36,7 @@ from hmc_mcp.operations import ownership as lpar_ownership
 from hmc_mcp.operations.io_virtualization.vnic import VnicChangeResult, VnicPartialError
 from hmc_mcp.operations.lpar.assignments import LparPcieWorkflowResult
 from hmc_mcp.operations.lpar.workflow_contract import WorkflowStep
+from hmc_mcp.operations.storage import OpticalMedia, StorageMapping, VolumeGroup
 from hmc_mcp.ssh import affinity as ssh_affinity
 from hmc_mcp.ssh import commands as ssh_commands
 from hmc_mcp.ssh import lpar as ssh_lpar
@@ -1715,16 +1716,7 @@ def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
         system = system_name_or_uuid
         assert system == "system-a"
         assert vios == VIOS_UUID
-        return [
-            {
-                "UUID": VG_UUID,
-                "Resource": {
-                    "GroupName": "rootvg",
-                    "FreeSpaceInMBytes": "5120",
-                    "GroupCapacity": "102400",
-                },
-            }
-        ]
+        return [VolumeGroup(VG_UUID, "rootvg", 102400, 5120)]
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_volume_groups", fake_list)
 
@@ -1974,7 +1966,7 @@ def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
 def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
     async def fake_list(_hmc, vios, vg, *, system_name_or_uuid=None):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
-        return [{"MediaName": "aix.iso", "MediaSize": 4096, "MediaType": "ISO"}]
+        return [OpticalMedia("aix.iso", 4096, "ISO")]
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_optical_media", fake_list)
 
@@ -2003,7 +1995,7 @@ def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
 
 def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
     async def fake_list(_hmc, _vios, _vg, *, system_name_or_uuid=None):
-        return [{"MediaName": "aix.iso"}]
+        return [OpticalMedia("aix.iso", None, None)]
 
     monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_optical_media", fake_list)
 
@@ -2012,20 +2004,16 @@ def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert json.loads(result.stdout) == [{"MediaName": "aix.iso"}]
+    assert json.loads(result.stdout) == [
+        {"name": "aix.iso", "size_mib": None, "media_type": None}
+    ]
 
 
 def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
     async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
         system = system_name_or_uuid
         assert (system, vios, lpar) == (None, VIOS_UUID, None)
-        return [
-            {
-                "UUID": "map-1",
-                "AssociatedLogicalPartition": {"PartitionName": "lpar1"},
-                "Storage": {"VirtualDisk": {"DiskName": "bootvol"}},
-            }
-        ]
+        return [StorageMapping("map-1", "lpar1", "VirtualDisk", "bootvol")]
 
     monkeypatch.setattr(
         "hmc_mcp.cli_commands.storage.list_storage_mappings", fake_mappings
@@ -2044,13 +2032,7 @@ def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatc
     async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
         system = system_name_or_uuid
         assert (system, vios, lpar) == (None, VIOS_UUID, LPAR_UUID)
-        return [
-            {
-                "UUID": "map-2",
-                "AssociatedLogicalPartition": {"PartitionName": "lpar1"},
-                "Storage": {"PhysicalVolume": {"VolumeName": "hdisk9"}},
-            }
-        ]
+        return [StorageMapping("map-2", "lpar1", "PhysicalVolume", "hdisk9")]
 
     monkeypatch.setattr(
         "hmc_mcp.cli_commands.storage.list_storage_mappings", fake_mappings
@@ -2067,7 +2049,7 @@ def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatc
 
 def test_storage_list_mappings_json(direct_client, monkeypatch):
     async def fake_mappings(_hmc, _vios, _lpar, *, system_name_or_uuid=None):
-        return [{"UUID": "map-1"}]
+        return [StorageMapping("map-1", None, None, None)]
 
     monkeypatch.setattr(
         "hmc_mcp.cli_commands.storage.list_storage_mappings", fake_mappings
@@ -2076,7 +2058,9 @@ def test_storage_list_mappings_json(direct_client, monkeypatch):
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID, "--json"])
 
     assert result.exit_code == 0
-    assert json.loads(result.stdout) == [{"UUID": "map-1"}]
+    assert json.loads(result.stdout) == [
+        {"uuid": "map-1", "lpar_uuid": None, "backing_kind": None, "backing_name": None}
+    ]
 
 
 def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatch):

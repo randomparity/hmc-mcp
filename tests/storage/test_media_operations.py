@@ -109,7 +109,7 @@ async def test_list_optical_media_operation(mock_hmc):
 
     assert route.called
     assert len(media_list) == 1
-    assert media_list[0]["MediaName"] == "aix.iso"
+    assert media_list[0].name == "aix.iso"
 
 
 @pytest.mark.asyncio

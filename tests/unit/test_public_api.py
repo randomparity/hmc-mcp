@@ -306,6 +306,9 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "delete_virtual_disk",
         "map_storage",
         "StorageMapResult",
+        "VolumeGroup",
+        "OpticalMedia",
+        "StorageMapping",
         "upload_iso",
         "create_media_repository",
         "create_optical_media",
@@ -2076,8 +2079,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
-    # ADR 0116 adds HMCConfig.ssh_verify_host_key with a verified default.
-    expected_digest = "9aba0a6c6192c488cf942723a9247acb0d67209b9da9bb541b10647b6656e5af"  # pragma: allowlist secret
+    # ADR 0117 bounds supported storage inventory results.
+    expected_digest = "77ee6d72594c0611ac1c438f74690eeb1640883b30d1125175d436c53abad7be"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

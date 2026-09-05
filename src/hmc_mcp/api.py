@@ -313,7 +313,10 @@ from .operations.cluster import (
     list_shared_storage_pools,
 )
 from .operations.storage import (
+    OpticalMedia,
+    StorageMapping,
     StorageMapResult,
+    VolumeGroup,
     create_media_repository,
     create_optical_media,
     create_virtual_disk,
@@ -518,6 +521,9 @@ __all__ = [  # noqa: RUF022 - grouped by subsystem to mirror ADR 0029, not sorte
     "delete_virtual_disk",
     "map_storage",
     "StorageMapResult",
+    "VolumeGroup",
+    "OpticalMedia",
+    "StorageMapping",
     "upload_iso",
     "create_media_repository",
     "create_optical_media",

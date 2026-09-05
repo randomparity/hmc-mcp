@@ -81,6 +81,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `None` when they intentionally request fleet-wide LPAR-name resolution.
 - Exported VIOS storage operations now require `vios_name_or_uuid` first and
   accept the optional `system_name_or_uuid` selector as a keyword-only argument.
+- Storage inventory operations now return bounded `VolumeGroup`, `OpticalMedia`,
+  and `StorageMapping` values instead of raw HMC response mappings (ADR 0117).
 
 ### Added
 
@@ -106,6 +108,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 - `StorageMapResult` records the authorized LPAR UUID beside the resource returned by
   `map_storage`, so library and CLI callers no longer resolve the partition independently
   before the guarded storage operation (ADR 0104).
+- `VolumeGroup`, `OpticalMedia`, and `StorageMapping` provide stable storage
+  inventory values for reusable Python callers (ADR 0117).
 - Opt-in ADR 0011 ownership guard on LPAR power operations (#371, ADR 0092 §4): the new
   `authorize_power_operations` setting (`HMC_AUTHORIZE_POWER_OPERATIONS`, TOML profile key
   `authorize_power_operations`) defaults to `false`, leaving the `power_lpar` call path
@@ -549,6 +553,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   ownership authorization moved to the cross-cutting `operations.ownership` module.
 - Added: `StorageMapResult`; `map_storage` now returns this concrete result instead of the
   mapped resource alone.
+- Added: `VolumeGroup`, `OpticalMedia`, and `StorageMapping` replace raw HMC storage
+  inventory mappings at the supported operation boundary (ADR 0117).
 - Added: `upgrade_vios`, splitting VIOS upgrades from `update_vios`; `update_vios` now accepts
   only `VIOSUpdateSource` and has no `kind` mode selector.
 - Removed: `add_vios_adapter`; use the explicit `add_vscsi_adapter` or `add_vfc_adapter`

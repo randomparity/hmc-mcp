@@ -173,10 +173,10 @@ wildcard records the operation's actual scope.
 | `add_vscsi_adapter` | `operations/adapters.py:69` | guarded (`:80`) | #372 |
 | `add_vfc_adapter` | `operations/adapters.py:92` | guarded (`:103`) | #372 |
 | `delete_adapter` | `operations/adapters.py:115` | guarded (`:130`) | #372 |
-| `map_storage` | `operations/storage.py:152` | guarded (`:167`) | #372 |
+| `map_storage` | `operations/storage.py:251` | guarded (`:266`) | #372 |
 | `attach_disk_to_lpar` | `operations/lpar/provision.py:332` | guarded before the storage workflow (`:351`) | #372 |
-| `mount_optical_media` | `operations/storage.py:748` | guarded (`:766`) | — |
-| `unmount_optical_media` | `operations/storage.py:778` | guarded (`:814`) | — |
+| `mount_optical_media` | `operations/storage.py:848` | guarded (`:866`) | — |
+| `unmount_optical_media` | `operations/storage.py:878` | guarded (`:930`) | — |
 | `migrate_lpar` | `operations/lpm.py:357` | guarded after optional validation and before migration submission (`:386`) | #373 |
 | `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:254` | guarded by delegation to `migrate_lpar` | #373 |
 | `abort_lpar_migration` | `operations/lpm.py:422` | guarded (`:422`) | #373 |
@@ -208,7 +208,7 @@ The remaining direct entry points and their guard state are:
 | `configure_lpar_processor_compatibility` | `operations/lpar/configuration.py:71` | guarded (`:80`) | — |
 | `hmc_modify_lpar` | `server_tools/lpar/lifecycle.py:45` | guarded by `operations/lpar/dlpar.py:35` before any write | — |
 | `hmc lpar modify` (CLI) | `cli_commands/lpar/modify.py:16` | guarded by `operations/lpar/dlpar.py:35` before any write | — |
-| `detach_storage_mapping` | `operations/storage.py:240` | resolves the mapping's client LPAR and guards it before deletion (`:275`) | #448 |
+| `detach_storage_mapping` | `operations/storage.py:342` | resolves the mapping's client LPAR and guards it before deletion (`:377`) | #448 |
 
 `hmc_dlpar_proc` and `hmc_dlpar_mem` were rows in this table at `b41e658`. #365
 extracted `set_lpar_processors` and `set_lpar_memory` from those tool bodies and
