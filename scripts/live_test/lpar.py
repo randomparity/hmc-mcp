@@ -17,17 +17,28 @@ if TYPE_CHECKING:
 
 
 async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
-    context = state.context
     print("\n=== ST8: LPAR Lifecycle ===")
+    await _discover_system_uuid(client, state)
+    await _create_and_confirm_scratch_lpar(client, state)
+    await _modify_and_summarize_scratch_lpar(client, state)
+    await _power_off_and_delete_scratch_lpar(client, state)
 
+
+async def _discover_system_uuid(client: Client, state: RunState) -> None:
+    """Discover the managed-system UUID when prior inventory did not provide it."""
+    context = state.context
     if not context.system_uuid:
-        st2, d2 = await state.call(
+        status, data = await state.call(
             client, "hmc_get_system", system_name_or_uuid=context.system_name
         )
-        if st2 == "PASS" and isinstance(d2, dict):
-            context.system_uuid = d2.get("UUID") or d2.get("uuid")
+        if status == "PASS" and isinstance(data, dict):
+            context.system_uuid = data.get("UUID") or data.get("uuid")
 
-    st, data = await state.call(
+
+async def _create_and_confirm_scratch_lpar(client: Client, state: RunState) -> None:
+    """Create the scratch LPAR and retain its identity from either response."""
+    context = state.context
+    status, data = await state.call(
         client,
         "hmc_create_lpar",
         system_name_or_uuid=context.system_name,
@@ -39,20 +50,24 @@ async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
             "max_vcpus": context.scratch_create_max_vcpus,
         },
     )
-    state.record(8, "hmc_create_lpar", st, data)
-    if st == "PASS" and isinstance(data, dict):
+    state.record(8, "hmc_create_lpar", status, data)
+    if status == "PASS" and isinstance(data, dict):
         created = data.get("lpar")
         if isinstance(created, dict):
             context.scratch_uuid = created.get("uuid") or created.get("UUID")
 
-    st, data = await state.call(
+    status, data = await state.call(
         client, "hmc_get_lpar", lpar_name_or_uuid=context.scratch_name
     )
-    state.record(8, "hmc_get_lpar (confirm created)", st, data)
-    if st == "PASS" and isinstance(data, dict) and not context.scratch_uuid:
+    state.record(8, "hmc_get_lpar (confirm created)", status, data)
+    if status == "PASS" and isinstance(data, dict) and not context.scratch_uuid:
         context.scratch_uuid = data.get("uuid") or data.get("UUID")
 
-    st, data = await state.call(
+
+async def _modify_and_summarize_scratch_lpar(client: Client, state: RunState) -> None:
+    """Exercise the known REST modification path and read its resulting summary."""
+    context = state.context
+    status, data = await state.call(
         client,
         "hmc_modify_lpar",
         lpar_name_or_uuid=context.scratch_name,
@@ -64,52 +79,56 @@ async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
     state.record_expected_or_real(
         8,
         "hmc_modify_lpar",
-        st,
+        status,
         data,
         expected_fail_substrings=["406", "not acceptable"],
         skip_reason="HMC firmware returns HTTP 406 for REST LPAR modify (same limitation as create — REST write path unsupported)",
     )
 
-    st, data = await state.call(
+    status, data = await state.call(
         client, "hmc_lpar_summary", lpar_name_or_uuid=context.scratch_name
     )
-    state.record(8, "hmc_lpar_summary (post-modify)", st, data)
+    state.record(8, "hmc_lpar_summary (post-modify)", status, data)
 
-    st, data = await state.call(
+
+async def _power_off_and_delete_scratch_lpar(client: Client, state: RunState) -> None:
+    """Exercise power operations, then delete and confirm the scratch LPAR is gone."""
+    context = state.context
+    status, data = await state.call(
         client, "hmc_power_on_lpar", lpar_name_or_uuid=context.scratch_name, wait=True
     )
     state.record(
         8,
         "hmc_power_on_lpar",
-        st,
+        status,
         data,
         "boot failure expected — no OS installed",
     )
-    if st == "PASS" and isinstance(data, dict):
+    if status == "PASS" and isinstance(data, dict):
         context.job_uuid_sample = (
             data.get("job_uuid") or data.get("UUID") or context.job_uuid_sample
         )
 
-    st, data = await state.call(
+    status, data = await state.call(
         client,
         "hmc_power_off_lpar",
         lpar_name_or_uuid=context.scratch_name,
         immediate=True,
         wait=True,
     )
-    state.record(8, "hmc_power_off_lpar", st, data)
-    if st == "PASS" and isinstance(data, dict) and not context.job_uuid_sample:
+    state.record(8, "hmc_power_off_lpar", status, data)
+    if status == "PASS" and isinstance(data, dict) and not context.job_uuid_sample:
         context.job_uuid_sample = data.get("job_uuid") or data.get("UUID")
 
-    st, data = await state.call(
+    status, data = await state.call(
         client, "hmc_delete_lpar", lpar_name_or_uuid=context.scratch_name
     )
-    state.record(8, "hmc_delete_lpar", st, data)
-    if st == "PASS":
+    state.record(8, "hmc_delete_lpar", status, data)
+    if status == "PASS":
         context.scratch_uuid = None
 
-    st, data = await state.call(client, "hmc_list_lpars")
-    state.record(8, "hmc_list_lpars (confirm deleted)", st, data)
+    status, data = await state.call(client, "hmc_list_lpars")
+    state.record(8, "hmc_list_lpars (confirm deleted)", status, data)
 
 
 # ---------------------------------------------------------------------------
