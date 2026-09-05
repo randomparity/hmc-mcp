@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import overload
 
 from hmc_mcp.client.core import HMCClient
@@ -14,22 +15,26 @@ from .lpar import resolve_lpar_cli_name, resolve_system_cli_name
 
 async def _system_name_from_rest(hmc: HMCClient, system_uuid: str) -> str:
     entry = await hmc.get_managed_system(system_uuid)
-    if not entry or "SystemName" not in entry.get("Resource", {}):
+    resource = entry.get("Resource") if entry else None
+    name = resource.get("SystemName") if isinstance(resource, Mapping) else None
+    if not isinstance(name, str) or not name.strip():
         raise ValueError(
             f"Could not resolve system UUID {system_uuid!r} to a system name. "
             "List managed systems to find the system UUID."
         )
-    return entry["Resource"]["SystemName"]
+    return name
 
 
 async def _lpar_name_from_rest(hmc: HMCClient, lpar_uuid: str) -> str:
     entry = await hmc.get_logical_partition(lpar_uuid)
-    if not entry or "PartitionName" not in entry.get("Resource", {}):
+    resource = entry.get("Resource") if entry else None
+    name = resource.get("PartitionName") if isinstance(resource, Mapping) else None
+    if not isinstance(name, str) or not name.strip():
         raise ValueError(
             f"Could not resolve LPAR UUID {lpar_uuid!r} to a partition name. "
             "List logical partitions to find the partition UUID."
         )
-    return entry["Resource"]["PartitionName"]
+    return name
 
 
 async def resolve_system_name(
