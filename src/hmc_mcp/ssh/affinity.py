@@ -34,6 +34,33 @@ _RESOURCE_GROUP_CALCULATED_FIELDS = (
 _HMC_ERROR_CODE = re.compile(r"(?:^|[\r\n]|:\s)(HSCL[A-Z0-9]{4})\b")
 
 
+def _validate_selector_names(names: tuple[str, ...], label: str) -> None:
+    invalid = any(
+        not isinstance(name, str)
+        or not name.strip()
+        or "," in name
+        or any(ord(character) < 32 or ord(character) == 127 for character in name)
+        for name in names
+    )
+    if invalid:
+        raise ValueError(f"{label} must be nonblank and contain no commas or control characters")
+    if len(set(names)) != len(names):
+        raise ValueError(f"{label} must not contain duplicates")
+
+
+def _validate_selector_ids(ids: tuple[int, ...], label: str, minimum: int) -> None:
+    invalid = any(
+        not isinstance(identifier, int)
+        or isinstance(identifier, bool)
+        or identifier < minimum
+        for identifier in ids
+    )
+    if invalid:
+        raise ValueError(f"{label} must be {('positive' if minimum else 'non-negative')} integers")
+    if len(set(ids)) != len(ids):
+        raise ValueError(f"{label} must not contain duplicates")
+
+
 @dataclass(frozen=True)
 class MemoptLparSelector:
     """Select LPARs by name or ID for an affinity-planning scenario."""
@@ -53,33 +80,9 @@ class MemoptLparSelector:
         if self.names and self.ids:
             raise ValueError("memopt LPAR selector must contain names or ids, not both")
         if self.names:
-            if any(
-                not isinstance(name, str)
-                or not name.strip()
-                or "," in name
-                or any(
-                    ord(character) < 32 or ord(character) == 127 for character in name
-                )
-                for name in self.names
-            ):
-                raise ValueError(
-                    "memopt LPAR selector names must be nonblank and contain no "
-                    "commas or control characters"
-                )
-            if len(set(self.names)) != len(self.names):
-                raise ValueError(
-                    "memopt LPAR selector names must not contain duplicates"
-                )
+            _validate_selector_names(self.names, "memopt LPAR selector names")
         if self.ids:
-            if any(
-                not isinstance(lpar_id, int)
-                or isinstance(lpar_id, bool)
-                or lpar_id <= 0
-                for lpar_id in self.ids
-            ):
-                raise ValueError("memopt LPAR selector ids must be positive integers")
-            if len(set(self.ids)) != len(self.ids):
-                raise ValueError("memopt LPAR selector ids must not contain duplicates")
+            _validate_selector_ids(self.ids, "memopt LPAR selector ids", 1)
 
 
 @dataclass(frozen=True)
@@ -103,32 +106,9 @@ class MemoptResourceGroupSelector:
         if modes != 1:
             raise ValueError("resource-group selector must contain names, ids, or all")
         if self.names:
-            invalid = any(
-                not isinstance(name, str)
-                or not name.strip()
-                or "," in name
-                or any(
-                    ord(character) < 32 or ord(character) == 127 for character in name
-                )
-                for name in self.names
-            )
-            if invalid:
-                raise ValueError(
-                    "resource-group names must be nonblank and contain no commas or control characters"
-                )
-            if len(set(self.names)) != len(self.names):
-                raise ValueError("resource-group names must not contain duplicates")
+            _validate_selector_names(self.names, "resource-group names")
         if self.ids:
-            invalid = any(
-                not isinstance(group_id, int)
-                or isinstance(group_id, bool)
-                or group_id < 0
-                for group_id in self.ids
-            )
-            if invalid:
-                raise ValueError("resource-group ids must be non-negative integers")
-            if len(set(self.ids)) != len(self.ids):
-                raise ValueError("resource-group ids must not contain duplicates")
+            _validate_selector_ids(self.ids, "resource-group ids", 0)
         if (
             len(_resource_group_selector_option(self).encode("utf-8"))
             > _MEMOPT_SELECTOR_SAFETY_CEILING_BYTES
