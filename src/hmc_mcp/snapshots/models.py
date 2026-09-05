@@ -339,7 +339,7 @@ def _relabel(error: SnapshotValidationError, operation: str) -> SnapshotValidati
     )
 
 
-def _bounded(text: str) -> None:
+def _validate_snapshot_size(text: str) -> None:
     if len(text.encode("utf-8")) > MAX_SNAPSHOT_BYTES:
         _error("/", "document exceeds 1 MiB", "provide a snapshot no larger than 1 MiB")
 
@@ -441,7 +441,7 @@ class _DuplicateScanner:
 
 
 def _load(text: str) -> Any:
-    _bounded(text)
+    _validate_snapshot_size(text)
     try:
         _DuplicateScanner(text).scan()
         return json.loads(
@@ -625,7 +625,7 @@ def serialize_snapshot(snapshot: LparSnapshot) -> str:
             "correct the snapshot document",
         ) from exc
     try:
-        _bounded(text)
+        _validate_snapshot_size(text)
     except SnapshotValidationError as exc:
         raise _relabel(exc, "snapshot serialization") from exc
     return text
