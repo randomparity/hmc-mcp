@@ -1775,22 +1775,28 @@ def test_storage_attach_disk_json_incomplete_workflow_exits_1(fake_hmc):
 # --------------------------------------------------------------------------- #
 
 
+def _storage_app() -> typer.Typer:
+    app = typer.Typer()
+    app.callback()(cli_command_app.main)
+    cli_storage_resources.register_commands(app)
+    return app
+
+
 @pytest.mark.parametrize(
     ("command", "operation", "operation_result"),
     [
         (
-            ["storage", "list-mappings", VIOS_UUID],
+            ["list-mappings", VIOS_UUID],
             "list_storage_mappings",
             [StorageMapping("map-1", None, None, None)],
         ),
         (
-            ["storage", "detach-mapping", VIOS_UUID, "map-1", "--confirm"],
+            ["detach-mapping", VIOS_UUID, "map-1", "--confirm"],
             "detach_storage_mapping",
             None,
         ),
         (
             [
-                "storage",
                 "upload-iso",
                 VIOS_UUID,
                 VG_UUID,
@@ -1818,7 +1824,7 @@ def test_storage_commands_use_root_connection_options(
     )
 
     result = RUNNER.invoke(
-        cli.app, ["--profile", "operator", "--host", "root-hmc", *command]
+        _storage_app(), ["--profile", "operator", "--host", "root-hmc", *command]
     )
 
     assert result.exit_code == 0
