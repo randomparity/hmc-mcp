@@ -300,6 +300,152 @@ async def test_sriov_cleanup_removes_owned_port_and_verifies_baseline() -> None:
 
 
 @pytest.mark.asyncio
+async def test_profile_inventory_records_all_selector_scoped_probes() -> None:
+    tools = [
+        "hmc_get_lpar_description",
+        "hmc_get_lpar_msp",
+        "hmc_get_proc_compat_modes",
+        "hmc_get_lpar_proc_compat",
+        "hmc_list_vnics",
+        "hmc_get_lpar_memopt_score",
+        "hmc_list_lpar_memopt_scores",
+        "hmc_get_system_memopt_score",
+        "hmc_plan_lpar_memopt_scores",
+        "hmc_plan_system_memopt_score",
+        "hmc_list_resource_group_memopt_scores",
+        "hmc_plan_resource_group_memopt_scores",
+        "hmc_get_minimum_affinity_policy",
+    ]
+    state = _ScriptedSriovState([(tool, "PASS", {}) for tool in tools])
+
+    await profiles.inventory_lpar_profiles(object(), state)
+
+    assert [tool for tool, _ in state.calls] == tools
+    assert all(entry["subtask"] == 4 for entry in state.results)
+    for tool, kwargs in state.calls:
+        if tool in {
+            "hmc_get_proc_compat_modes",
+            "hmc_list_lpar_memopt_scores",
+            "hmc_get_system_memopt_score",
+            "hmc_plan_lpar_memopt_scores",
+            "hmc_plan_system_memopt_score",
+            "hmc_list_resource_group_memopt_scores",
+            "hmc_plan_resource_group_memopt_scores",
+        }:
+            assert kwargs == {"system_name_or_uuid": state.context.system_name}
+        else:
+            assert kwargs["system_name_or_uuid"] == state.context.system_name
+            if tool != "hmc_get_proc_compat_modes":
+                assert kwargs.get("lpar_name_or_uuid") == state.context.lp3_name
+
+
+@pytest.mark.asyncio
+async def test_connectivity_inventory_discovers_context_and_records_probes() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_console_info", "PASS", {"UUID": "console-uuid"}),
+            ("hmc_list_systems", "PASS", {"entries": []}),
+            ("hmc_get_system", "PASS", {"UUID": "system-uuid"}),
+            ("hmc_list_lpars", "PASS", {"entries": "malformed"}),
+            ("hmc_get_lpar", "PASS", {"UUID": "lp3-uuid"}),
+            (
+                "hmc_list_vios",
+                "PASS",
+                {"entries": [{"UUID": "vios-uuid", "Resource": {"PartitionID": "3"}}]},
+            ),
+            ("hmc_capacity_report", "PASS", {}),
+            ("hmc_find_placement", "PASS", {}),
+            ("hmc_get_system", "PASS", {}),
+            ("hmc_list_resources", "PASS", {}),
+            ("hmc_list_recent_jobs", "PASS", {"entries": [{"UUID": "job-uuid"}]}),
+            ("hmc_system_summary", "PASS", {}),
+            ("hmc_lpar_summary", "PASS", {}),
+        ]
+    )
+
+    await connectivity.inventory_connectivity(object(), state)
+
+    assert (state.context.console_uuid, state.context.system_uuid) == (
+        "console-uuid",
+        "system-uuid",
+    )
+    assert (
+        state.context.lp3_uuid,
+        state.context.vios_uuid,
+        state.context.vios_partition_id,
+    ) == (
+        "lp3-uuid",
+        "vios-uuid",
+        3,
+    )
+    assert state.context.job_uuid_sample == "job-uuid"
+    assert state.calls[7] == (
+        "hmc_find_placement",
+        {"desired_memory_mib": state.context.placement_memory_mib},
+    )
+    assert all(entry["subtask"] == 1 for entry in state.results)
+
+
+@pytest.mark.asyncio
+async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_pcm_preferences", "PASS", {"long_term_monitor": True}),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", {"long_term_monitor": False}),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_job", "PASS", {}),
+            ("hmc_wait_for_job", "PASS", {}),
+            ("hmc_list_recent_jobs", "PASS", {"entries": []}),
+            ("hmc_get_pcm_preferences", "FAIL", "PCM unavailable"),
+            ("hmc_processed_metric_links", "FAIL", "PCM unavailable"),
+            ("hmc_aggregated_metric_links", "FAIL", "PCM unavailable"),
+            ("hmc_list_partition_templates", "FAIL", "template unavailable"),
+        ]
+    )
+    state.context.job_uuid_sample = "job-uuid"
+
+    await metrics.inspect_metrics_jobs(object(), state)
+    await metrics.inspect_metrics_templates(object(), state)
+
+    assert state.calls[1][1]["long_term_monitor"] is False
+    assert state.calls[3][1]["long_term_monitor"] is True
+    assert state.calls[5][1] == {
+        "job_uuid": "job-uuid",
+        "timeout_seconds": 10,
+        "poll_interval": 2,
+    }
+    assert state.context.lp3_baseline.get("pcm_prefs") is None
+    assert [entry["status"] for entry in state.results if entry["subtask"] == 5] == [
+        "SKIP",
+        "SKIP",
+        "SKIP",
+        "SKIP",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_escape_hatch_uses_only_bounded_commands() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_run_command", "PASS", "version"),
+            ("hmc_run_command", "PASS", "systems"),
+        ]
+    )
+
+    await escape_hatch.exercise_cli_escape_hatch(object(), state)
+
+    assert state.calls == [
+        ("hmc_run_command", {"cmd": "lshmc -V"}),
+        ("hmc_run_command", {"cmd": "lssyscfg -r sys"}),
+    ]
+    assert [(entry["subtask"], entry["status"]) for entry in state.results] == [
+        (7, "PASS"),
+        (7, "PASS"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_sriov_orchestrator_runs_phases_in_order_and_cleans_up() -> None:
     """A successful round trip invokes every phase and always reaches cleanup."""
     calls: list[str] = []
