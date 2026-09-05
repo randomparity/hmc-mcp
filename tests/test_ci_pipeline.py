@@ -17,6 +17,30 @@ TOOL_PINS = {
     "zizmor==1.29.0",
 }
 TY_INCLUDE = ["src/hmc_mcp"]
+RUFF_EXTEND_SELECT = {
+    "E401",
+    "E402",
+    "E701",
+    "E702",
+    "E703",
+    "E711",
+    "E712",
+    "E713",
+    "E714",
+    "E721",
+    "E731",
+    "E741",
+    "E742",
+    "E743",
+    "F403",
+    "F405",
+    "F406",
+    "F722",
+}
+RUFF_PER_FILE_IGNORE_MODULES = {
+    "tests/unit/test_audit.py",
+    "tests/unit/test_ownership.py",
+}
 BASELINED_FINDINGS = {
     "justfile": 1,
     "tests/app/test_cli.py": 2,
@@ -157,6 +181,11 @@ def test_quality_tools_are_pinned_with_a_strict_type_boundary() -> None:
     assert TOOL_PINS <= set(project["dependency-groups"]["dev"])
     assert project["tool"]["ty"]["src"]["include"] == TY_INCLUDE
     assert "rules" not in project["tool"]["ty"]
+    ruff = project["tool"]["ruff"]
+    assert "exclude" not in ruff
+    assert "ignore" not in ruff["lint"]
+    assert set(ruff["lint"]["extend-select"]) == RUFF_EXTEND_SELECT
+    assert set(ruff["lint"]["per-file-ignores"]) == RUFF_PER_FILE_IGNORE_MODULES
 
 
 def test_justfile_exposes_one_composed_verification_graph() -> None:
