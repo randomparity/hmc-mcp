@@ -38,7 +38,7 @@ from hmc_mcp.server_tools import (
 mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))
 
 
-README = Path(__file__).parents[2] / "README.md"
+GUIDE = Path(__file__).parents[2] / "docs/operations.md"
 COLLECTION_LIMIT_HEADING = "### Collection limits"
 COLLECTION_LIMIT_NEXT = "### Public parameter units and selectors"
 COLLECTION_LIMIT_CLAIMS = ("client-side", "complete HMC feed", "transferred and parsed")
@@ -291,32 +291,32 @@ def test_arbitrary_resource_type_runs_before_results_are_capped():
 
 
 def _collection_limit_section(readme: str) -> str:
-    """Return the body of README's '### Collection limits' section.
+    """Return the body of operation guide's '### Collection limits' section.
 
     Heading *order* is asserted first: without it a renamed or reordered heading makes
     the second split return the rest of the file, and the slice silently stops being a
     section.
     """
     for heading in (COLLECTION_LIMIT_HEADING, COLLECTION_LIMIT_NEXT):
-        assert heading in readme, f"README has no '{heading}' heading"
+        assert heading in readme, f"operation guide has no '{heading}' heading"
     assert readme.index(COLLECTION_LIMIT_HEADING) < readme.index(
         COLLECTION_LIMIT_NEXT
-    ), f"README must keep '{COLLECTION_LIMIT_HEADING}' before '{COLLECTION_LIMIT_NEXT}'"
+    ), f"operation guide must keep '{COLLECTION_LIMIT_HEADING}' before '{COLLECTION_LIMIT_NEXT}'"
     return readme.split(COLLECTION_LIMIT_HEADING, 1)[1].split(COLLECTION_LIMIT_NEXT, 1)[
         0
     ]
 
 
 def _relocated(readme: str) -> str:
-    """Move the collection-limit disclosure into an unrelated README section."""
+    """Move the collection-limit disclosure into an unrelated operation guide section."""
     body = _collection_limit_section(readme)
     return readme.replace(body, "\n\n", 1).replace(
-        "## Install\n", f"## Install\n{body}", 1
+        "# Operation details\n", f"# Operation details\n{body}", 1
     )
 
 
-def test_readme_discloses_collection_limit_costs():
-    section = _collection_limit_section(README.read_text(encoding="utf-8"))
+def test_operations_guide_discloses_collection_limit_costs():
+    section = _collection_limit_section(GUIDE.read_text(encoding="utf-8"))
 
     for claim in COLLECTION_LIMIT_CLAIMS:
         assert claim in section, f"'{COLLECTION_LIMIT_HEADING}' must state {claim!r}"
@@ -329,7 +329,7 @@ def test_collection_limit_disclosure_relocated_out_of_its_section_is_caught():
     bare ``in readme`` check certifies presence, not placement. Relocation keeps every
     phrase in the file and must still fail.
     """
-    relocated = _relocated(README.read_text(encoding="utf-8"))
+    relocated = _relocated(GUIDE.read_text(encoding="utf-8"))
 
     assert all(claim in relocated for claim in COLLECTION_LIMIT_CLAIMS)
     moved = _collection_limit_section(relocated)
