@@ -6,11 +6,10 @@ import os
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
-from typing import NoReturn
 
 import typer
 
-from hmc_mcp.cli_commands.output import print_json
+from hmc_mcp.cli_commands.output import fail, print_json
 from hmc_mcp.cli_commands.runtime import client, run_cli_coroutine
 from hmc_mcp.operations.affinity import PolicyState
 from hmc_mcp.snapshots.models import (
@@ -21,11 +20,6 @@ from hmc_mcp.snapshots.models import (
     serialize_snapshot,
 )
 from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
-
-
-def fail(error: Exception) -> NoReturn:
-    typer.echo(f"Error: {error}", err=True)
-    raise typer.Exit(1) from error
 
 
 def _publish(path: Path, text: str) -> None:
