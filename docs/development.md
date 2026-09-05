@@ -75,12 +75,11 @@ src/hmc_mcp/
   jobs/*.py          # job outcome normalization, polling, and request builders
   operations/        # presentation-neutral workflows and authorization policy
     affinity/        # affinity REST and SSH workflows
-    io_virtualization/ # PCIe, SR-IOV, and vNIC operations
     lpar/            # lifecycle, provisioning, migration, and DLPAR operations
     storage/         # VIOS storage resources and shared-storage clusters
     systems/         # managed-system configuration and health operations
     updates/         # management-console update workflows
-    virtualization/  # virtual adapter operations
+    virtualization/  # virtual adapters, networks, PCIe/SR-IOV, vNIC, and validation
   server_tools/      # MCP adapters grouped by domain (lpar, storage, systems, virtualization)
   cli_commands/      # Typer adapters grouped by domain (lpar, storage, systems, virtualization)
   snapshots/         # portable LPAR snapshots and affinity assessment
