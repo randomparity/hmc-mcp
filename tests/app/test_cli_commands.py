@@ -31,11 +31,13 @@ from hmc_mcp.cli_commands import vnic as cli_vnic
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
 from hmc_mcp.cli_commands.lpar import migration as cli_lpar_migration
 from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
+from hmc_mcp.cli_commands.lpar import provision as cli_lpar_provision
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations import ownership as lpar_ownership
 from hmc_mcp.operations.io_virtualization.vnic import VnicChangeResult, VnicPartialError
 from hmc_mcp.operations.lpar.assignments import LparPcieWorkflowResult
+from hmc_mcp.operations.lpar.provision import ProvisionResult
 from hmc_mcp.operations.lpar.workflow_contract import WorkflowStep
 from hmc_mcp.operations.storage import OpticalMedia, StorageMapping, VolumeGroup
 from hmc_mcp.ssh import affinity as ssh_affinity
@@ -1028,6 +1030,86 @@ def test_lpars_provision_rejects_invalid_vocabulary_before_client_call(
     assert result.exit_code == 2
     assert message in result.stderr
     assert fake_hmc.calls == []
+
+
+def test_lpars_provision_passes_nondefault_request_to_operation(monkeypatch, fake_hmc):
+    provision = AsyncMock(
+        return_value=ProvisionResult(
+            resource_created=True,
+            workflow_completed=True,
+            lpar_uuid=LPAR_UUID,
+            dry_run=False,
+            ownership_stamped=True,
+            steps=(),
+            warnings=(),
+        )
+    )
+    monkeypatch.setattr(cli_lpar_provision, "provision_lpar", provision)
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "provision",
+            "--system",
+            SYSTEM_UUID,
+            "--name",
+            "newlpar",
+            "--vlan",
+            "200",
+            "--vios-uuid",
+            VIOS_UUID,
+            "--vios-partition-id",
+            "3",
+            "--vios-slot",
+            "12",
+            "--storage-name",
+            "hdisk7",
+            "--storage-kind",
+            "PhysicalVolume",
+            "--vg-uuid",
+            VG_UUID,
+            "--type",
+            "OS400",
+            "--min-mem",
+            "512",
+            "--mem",
+            "6144",
+            "--max-mem",
+            "12288",
+            "--vcpus",
+            "4",
+            "--max-vcpus",
+            "8",
+            "--no-power-on",
+            "--yes",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"workflow_completed": true' in result.output
+    provision.assert_awaited_once()
+    request = provision.await_args.kwargs["request"]
+    assert provision.await_args.args == (fake_hmc,)
+    assert request.name == "newlpar"
+    assert request.partition_type == "OS400"
+    assert request.adapters.port_vlan_id == 200
+    assert (request.adapters.vios_partition_id, request.adapters.vios_slot) == (3, 12)
+    assert request.storage.vios_uuid == VIOS_UUID
+    assert (request.storage.storage_name, request.storage.kind, request.storage.vg_uuid) == (
+        "hdisk7",
+        "PhysicalVolume",
+        VG_UUID,
+    )
+    assert (
+        request.resources.min_memory,
+        request.resources.desired_memory,
+        request.resources.max_memory,
+        request.resources.desired_vcpus,
+        request.resources.max_vcpus,
+    ) == (512, 6144, 12288, 4, 8)
+    assert request.power_on is False
 
 
 def test_lpars_modify_renames(fake_hmc):
