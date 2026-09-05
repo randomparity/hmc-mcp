@@ -35,7 +35,7 @@ class FleetHealthResult:
     warnings: tuple[str, ...]
 
 
-def _text(value: object) -> str:
+def _bounded_text_or_unknown(value: object) -> str:
     if isinstance(value, str) and value.strip():
         normalized = value.strip()
         if len(normalized) > _MAX_SCALAR_LENGTH:
@@ -76,12 +76,12 @@ def _check_job_parameter_budget(resource: dict[str, Any]) -> None:
 
 def _system_issue(system: dict[str, Any]) -> dict[str, Any] | None:
     resource = _resource(system)
-    state = _text(resource.get("State")).lower()
+    state = _bounded_text_or_unknown(resource.get("State")).lower()
     if state == "operating":
         return None
     return {
-        "uuid": _text(system.get("UUID")),
-        "name": _text(resource.get("SystemName")),
+        "uuid": _bounded_text_or_unknown(system.get("UUID")),
+        "name": _bounded_text_or_unknown(resource.get("SystemName")),
         "state": state,
     }
 
@@ -90,12 +90,12 @@ def _vios_issue(
     vios: dict[str, Any], system_uuid: str, system_name: str
 ) -> dict[str, Any] | None:
     resource = _resource(vios)
-    state = _text(resource.get("PartitionState")).lower()
+    state = _bounded_text_or_unknown(resource.get("PartitionState")).lower()
     if state == "running":
         return None
     return {
-        "uuid": _text(vios.get("UUID")),
-        "name": _text(resource.get("PartitionName")),
+        "uuid": _bounded_text_or_unknown(vios.get("UUID")),
+        "name": _bounded_text_or_unknown(resource.get("PartitionName")),
         "state": state,
         "system_uuid": system_uuid,
         "system_name": system_name,
@@ -106,15 +106,15 @@ def _lpar_issue(
     lpar: dict[str, Any], system_uuid: str, system_name: str
 ) -> dict[str, Any] | None:
     resource = _resource(lpar)
-    rmc_state = _text(
+    rmc_state = _bounded_text_or_unknown(
         resource.get("ResourceMonitoringControlState") or resource.get("RMCState")
     ).lower()
     if rmc_state in {"active", "busy"}:
         return None
     return {
-        "uuid": _text(lpar.get("UUID")),
-        "name": _text(resource.get("PartitionName")),
-        "state": _text(resource.get("PartitionState")).lower(),
+        "uuid": _bounded_text_or_unknown(lpar.get("UUID")),
+        "name": _bounded_text_or_unknown(resource.get("PartitionName")),
+        "state": _bounded_text_or_unknown(resource.get("PartitionState")).lower(),
         "rmc_state": rmc_state,
         "system_uuid": system_uuid,
         "system_name": system_name,
@@ -124,10 +124,10 @@ def _lpar_issue(
 def _failed_job(job: dict[str, Any]) -> dict[str, Any] | None:
     resource = _resource(job)
     _check_job_parameter_budget(resource)
-    status = _text(resource.get("Status")).upper()
+    status = _bounded_text_or_unknown(resource.get("Status")).upper()
     if status not in FAILED_JOB_STATUSES:
         return None
-    uuid = _text(job.get("UUID"))
+    uuid = _bounded_text_or_unknown(job.get("UUID"))
     normalized_job = {**job, "Resource": {**resource, "Status": status}}
     error = job_outcome(uuid, normalized_job).error
     bounded_error = (
@@ -137,7 +137,7 @@ def _failed_job(job: dict[str, Any]) -> dict[str, Any] | None:
     )
     return {
         "uuid": uuid,
-        "name": _text(resource.get("JobName")),
+        "name": _bounded_text_or_unknown(resource.get("JobName")),
         "status": status,
         "error": bounded_error,
     }
@@ -200,8 +200,8 @@ async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
         uuid_value = system.get("UUID")
         if not isinstance(uuid_value, str) or not uuid_value.strip():
             raise ValueError("Managed system entry must contain a valid UUID")
-        system_uuid = _text(uuid_value)
-        system_name = _text(_resource(system).get("SystemName"))
+        system_uuid = _bounded_text_or_unknown(uuid_value)
+        system_name = _bounded_text_or_unknown(_resource(system).get("SystemName"))
         queue.put_nowait((system, system_uuid, system_name))
         issue = _system_issue(system)
         if issue is not None:
