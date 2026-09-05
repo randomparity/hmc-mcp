@@ -722,17 +722,25 @@ class StorageMixin:
         # Older firmware may use a bare path without the wrappers.
         optical_media: list[dict[str, Any]] = []
         for entry in entries:
-            resource = entry.get("Resource", {})
-            mr_container = resource.get("MediaRepositories") or resource
-            repo = mr_container.get("VirtualMediaRepository", {})
+            resource = entry.get("Resource")
+            if not isinstance(resource, dict):
+                continue
+            mr_container = resource.get("MediaRepositories")
+            if mr_container is None:
+                mr_container = resource
+            if not isinstance(mr_container, dict):
+                continue
+            repo = mr_container.get("VirtualMediaRepository")
             if not isinstance(repo, dict):
-                repo = {}
-            opt_media_container = repo.get("OpticalMedia", repo)
-            if not isinstance(opt_media_container, dict):
+                continue
+            opt_media_container = repo.get("OpticalMedia")
+            if opt_media_container is None:
                 opt_media_container = repo
+            if not isinstance(opt_media_container, dict):
+                continue
             media_list = opt_media_container.get("VirtualOpticalMedia", [])
             if isinstance(media_list, list):
-                optical_media.extend(media_list)
+                optical_media.extend(item for item in media_list if isinstance(item, dict))
             elif isinstance(media_list, dict):
                 optical_media.append(media_list)
 
