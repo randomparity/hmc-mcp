@@ -68,6 +68,7 @@ src/hmc_mcp/
   config.py      # pydantic-settings config (TOML profile + env vars + CLI flags)
   xmlutil.py     # defusedxml Atom-feed -> dict parsing
   errors.py      # HMCError (shared by client and its mixins)
+  jobs/          # job request builders, polling contracts, and XML request helper
   client/        # HMCClient, domain mixins, response parsing, and PCM payload builders
   resource_identity.py      # managed-system, partition, and VIOS name/UUID resolution
   operations/    # shared workflows; ownership.py owns protocol and name resolution
