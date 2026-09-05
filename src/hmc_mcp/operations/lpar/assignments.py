@@ -30,8 +30,8 @@ from hmc_mcp.operations.virtualization.vnic import (
     VnicPartialError,
     add_vnic,
 )
-from hmc_mcp.ssh.network import (
-    list_sriov_configured_logical_port_rows,
+from hmc_mcp.ssh.sriov import list_sriov_configured_logical_port_rows
+from hmc_mcp.ssh.vnic import (
     list_vnic_backing_rows,
     read_vios_identity,
 )

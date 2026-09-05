@@ -41,7 +41,7 @@ from hmc_mcp.server_tools.vios.core import (
     hmc_backup_vios,
     hmc_restore_vios,
 )
-from hmc_mcp.ssh.network import list_io_slots
+from hmc_mcp.ssh.io_inventory import list_io_slots
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"

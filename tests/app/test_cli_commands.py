@@ -46,8 +46,8 @@ from hmc_mcp.operations.storage.resources import (
 from hmc_mcp.operations.virtualization.vnic import VnicChangeResult, VnicPartialError
 from hmc_mcp.ssh import affinity as ssh_affinity
 from hmc_mcp.ssh import commands as ssh_commands
+from hmc_mcp.ssh import io_inventory, sriov, vnic
 from hmc_mcp.ssh import lpar as ssh_lpar
-from hmc_mcp.ssh import network as ssh_network
 from hmc_mcp.ssh import profiles as ssh_profiles
 
 LPAR_NAME = "lpar1"
@@ -64,7 +64,7 @@ def _patch_ssh_command(monkeypatch, replacement) -> None:
     )
     for module in (cli_lpars, cli_pcie, cli_vnic):
         monkeypatch.setattr(module, "ssh_config", lambda: config, raising=False)
-    for module in (ssh_affinity, ssh_lpar, ssh_network, ssh_profiles):
+    for module in (ssh_affinity, ssh_lpar, io_inventory, sriov, vnic, ssh_profiles):
         monkeypatch.setattr(module, "run_hmc_command", replacement)
 
 

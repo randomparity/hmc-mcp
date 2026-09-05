@@ -13,10 +13,11 @@ from hmc_mcp.operations.virtualization.validation import (
     require_command_safe_text,
     validate_capacity_percent,
 )
-from hmc_mcp.ssh.network import (
+from hmc_mcp.ssh.io_inventory import list_dedicated_pcie_slot_rows
+from hmc_mcp.ssh.selectors import resolve_ssh_names
+from hmc_mcp.ssh.sriov import (
     SriovMode,
     assign_sriov_logical_port_dynamic,
-    list_dedicated_pcie_slot_rows,
     list_sriov_adapter_rows,
     list_sriov_configured_logical_port_rows,
     list_sriov_physical_port_rows,
@@ -27,7 +28,6 @@ from hmc_mcp.ssh.network import (
     unassign_sriov_logical_port_profile,
     validate_sriov_mode,
 )
-from hmc_mcp.ssh.selectors import resolve_ssh_names
 from hmc_mcp.ssh.transport import HMCCLIError
 
 CapabilityState = Literal["available", "capability-unavailable"]

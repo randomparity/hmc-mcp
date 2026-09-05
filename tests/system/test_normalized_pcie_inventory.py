@@ -15,7 +15,7 @@ from hmc_mcp.operations.virtualization.pcie import (
     list_sriov_logical_ports,
     list_sriov_physical_ports,
 )
-from hmc_mcp.ssh.network import list_dedicated_pcie_slot_rows
+from hmc_mcp.ssh.io_inventory import list_dedicated_pcie_slot_rows
 from hmc_mcp.ssh.transport import HMCCLIError
 
 
@@ -36,7 +36,7 @@ def _hmc() -> SimpleNamespace:
 async def test_dedicated_slot_reader_uses_the_admitted_projection() -> None:
     output = "drc_index,description,lpar_name\n21010003,PCIe slot,lpar1\n"
     with patch(
-        "hmc_mcp.ssh.network.run_hmc_command", AsyncMock(return_value=output)
+        "hmc_mcp.ssh.io_inventory.run_hmc_command", AsyncMock(return_value=output)
     ) as run:
         rows = await list_dedicated_pcie_slot_rows(_config(), "sys one")
 
@@ -53,7 +53,7 @@ async def test_dedicated_slot_reader_uses_the_admitted_projection() -> None:
 @pytest.mark.asyncio
 async def test_dedicated_slot_reader_accepts_header_only_output() -> None:
     with patch(
-        "hmc_mcp.ssh.network.run_hmc_command",
+        "hmc_mcp.ssh.io_inventory.run_hmc_command",
         AsyncMock(return_value="drc_index,description,lpar_name\n"),
     ):
         assert await list_dedicated_pcie_slot_rows(_config(), "sys1") == []
@@ -69,7 +69,7 @@ async def test_dedicated_slot_reader_accepts_header_only_output() -> None:
 )
 async def test_dedicated_slot_reader_rejects_schema_drift(output: str) -> None:
     with (
-        patch("hmc_mcp.ssh.network.run_hmc_command", AsyncMock(return_value=output)),
+        patch("hmc_mcp.ssh.io_inventory.run_hmc_command", AsyncMock(return_value=output)),
         pytest.raises(ValueError, match="header|columns"),
     ):
         await list_dedicated_pcie_slot_rows(_config(), "sys1")

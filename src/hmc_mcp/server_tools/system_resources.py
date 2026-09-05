@@ -11,8 +11,8 @@ from ..operations.virtualization.pcie import (
     list_sriov_logical_ports,
     list_sriov_physical_ports,
 )
+from ..ssh.io_inventory import PciClass, list_io_slots
 from ..ssh.memory import list_memory_pools, remove_memory_pool
-from ..ssh.network import PciClass, list_io_slots
 from ..ssh.profiles import get_proc_compat_modes
 from ..tool_registry import tool_module
 

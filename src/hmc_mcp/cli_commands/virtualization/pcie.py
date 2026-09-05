@@ -20,7 +20,8 @@ from ...operations.virtualization.pcie import (
     unassign_dedicated_pcie_slot,
     unassign_sriov_logical_port,
 )
-from ...ssh.network import PciClass, SriovMode, list_io_slots
+from ...ssh.io_inventory import PciClass, list_io_slots
+from ...ssh.sriov import SriovMode
 from ..output import console, output, print_json
 from ..runtime import run_cli_coroutine, ssh_config, with_client
 

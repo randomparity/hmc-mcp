@@ -14,26 +14,28 @@ from hmc_mcp.operations.virtualization.validation import (
     require_command_safe_text,
     validate_capacity_percent,
 )
-from hmc_mcp.ssh.network import (
-    add_vnic_backing,
+from hmc_mcp.ssh.io_inventory import (
+    list_fc_ports as _list_fc_ports,
+)
+from hmc_mcp.ssh.io_inventory import (
+    list_sea_adapters as _list_sea_adapters,
+)
+from hmc_mcp.ssh.selectors import resolve_ssh_names
+from hmc_mcp.ssh.sriov import (
     list_sriov_adapter_rows,
     list_sriov_configured_logical_port_rows,
     list_sriov_physical_port_rows,
+)
+from hmc_mcp.ssh.vnic import (
+    add_vnic_backing,
     list_vnic_backing_rows,
     list_vnic_rows,
     read_vios_identity,
     remove_vnic_slot,
 )
-from hmc_mcp.ssh.network import (
-    list_fc_ports as _list_fc_ports,
-)
-from hmc_mcp.ssh.network import (
-    list_sea_adapters as _list_sea_adapters,
-)
-from hmc_mcp.ssh.network import (
+from hmc_mcp.ssh.vnic import (
     list_vnics as _list_vnics,
 )
-from hmc_mcp.ssh.selectors import resolve_ssh_names
 
 
 @dataclass(frozen=True)

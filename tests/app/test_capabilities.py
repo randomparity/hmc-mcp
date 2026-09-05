@@ -281,7 +281,8 @@ def test_closed_vocab_enum_matches_runtime_constant():
     from hmc_mcp.operations.users.contracts import VALID_AUTHENTICATION_FILTERS
     from hmc_mcp.operations.vios.core import _VALID_BACKUP_TYPES
     from hmc_mcp.operations.virtualization.contracts import ADAPTER_TYPES
-    from hmc_mcp.ssh.network import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
+    from hmc_mcp.ssh.io_inventory import _VALID_PCI_CLASSES
+    from hmc_mcp.ssh.sriov import _VALID_SRIOV_MODES
 
     by_name = _tools_by_name()
 
