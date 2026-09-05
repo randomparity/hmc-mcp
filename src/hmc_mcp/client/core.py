@@ -217,23 +217,7 @@ def _normalize_platform_update_response(payload: Any) -> PlatformUpdateJobEntry:
     ):
         raise _platform_response_error("selfLink")
 
-    resource = dict(response)
-    if "Result" in resource:
-        results = resource.pop("Result")
-        if not isinstance(results, list):
-            raise _platform_response_error("Result")
-        normalized_results: list[PlatformUpdateJobParameter] = []
-        for entry in results:
-            if not isinstance(entry, dict):
-                raise _platform_response_error("Result entry")
-            name = entry.get("ParameterName")
-            value = entry.get("ParameterValue")
-            if not isinstance(name, str) or not name.strip():
-                raise _platform_response_error("Result ParameterName")
-            if not isinstance(value, str):
-                raise _platform_response_error("Result ParameterValue")
-            normalized_results.append({"ParameterName": name, "ParameterValue": value})
-        resource["Results"] = {"JobParameter": normalized_results}
+    resource = _normalize_platform_update_results(response)
 
     normalized: PlatformUpdateJobEntry = {
         "UUID": job_id.strip(),
@@ -242,6 +226,35 @@ def _normalize_platform_update_response(payload: Any) -> PlatformUpdateJobEntry:
     if isinstance(self_link, str):
         normalized["link"] = self_link.strip()
     return normalized
+
+
+def _normalize_platform_update_results(
+    response: dict[str, Any],
+) -> dict[str, Any]:
+    """Convert IBM's optional singular Result shape to the shared plural form."""
+    resource = dict(response)
+    if "Result" not in resource:
+        return resource
+    results = resource.pop("Result")
+    if not isinstance(results, list):
+        raise _platform_response_error("Result")
+    resource["Results"] = {
+        "JobParameter": [_normalize_platform_update_result(entry) for entry in results]
+    }
+    return resource
+
+
+def _normalize_platform_update_result(entry: Any) -> PlatformUpdateJobParameter:
+    """Validate and normalize one IBM PlatformUpdate result parameter."""
+    if not isinstance(entry, dict):
+        raise _platform_response_error("Result entry")
+    name = entry.get("ParameterName")
+    value = entry.get("ParameterValue")
+    if not isinstance(name, str) or not name.strip():
+        raise _platform_response_error("Result ParameterName")
+    if not isinstance(value, str):
+        raise _platform_response_error("Result ParameterValue")
+    return {"ParameterName": name, "ParameterValue": value}
 
 
 class HMCClient(
