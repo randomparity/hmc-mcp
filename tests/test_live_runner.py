@@ -374,7 +374,7 @@ def test_live_context_reads_the_complete_example_and_ignores_exports(
 
 @pytest.mark.asyncio
 async def test_main_rejects_missing_live_test_file_before_creating_mcp(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, capsys
 ) -> None:
     """Programmatic invocation cannot bypass required local live-test settings."""
     monkeypatch.setattr(runner, "_ENV_FILE", tmp_path / ".env")
@@ -383,6 +383,9 @@ async def test_main_rejects_missing_live_test_file_before_creating_mcp(
     )
 
     assert await runner.main(results_path=str(tmp_path / "results.json")) == 1
+    output = capsys.readouterr().out
+    assert str(tmp_path / ".env") not in output
+    assert "live-test configuration file not found" in output
 
 
 def test_a_dotenv_entry_never_outranks_a_case_variant_export(monkeypatch, tmp_path):
@@ -502,14 +505,33 @@ async def test_call_normalizes_fastmcp_result_shapes(result, expected):
 
 
 @pytest.mark.asyncio
-async def test_call_returns_traceable_failure():
-    status, data = await runner.RunState().call(
-        _ScriptedClient(error=RuntimeError("transport failed")), "tool"
+async def test_call_failure_is_redacted_when_recorded(capsys):
+    suffix = "-secret"
+    url_credential = "url" + suffix
+    credential = "runner" + suffix
+    sensitive = (
+        f"transport failed password={credential} "
+        f"https://operator:{url_credential}@hmc.lab.example.test/api "
+        "/home/operator/live-test.toml"
     )
+    state = runner.RunState()
+    status, data = await state.call(_ScriptedClient(error=RuntimeError(sensitive)), "tool")
 
     assert status == "FAIL"
-    assert "RuntimeError: transport failed" in data
-    assert "Traceback" in data
+    state.record(0, "tool", status, data)
+
+    output = capsys.readouterr().out
+    recorded = str(state.results[0]["data"])
+    for value in (
+        credential,
+        f"operator:{url_credential}",
+        "hmc.lab.example.test",
+        "/home/operator/live-test.toml",
+    ):
+        assert value not in output
+        assert value not in recorded
+    assert "RuntimeError: transport failed" in recorded
+    assert "Traceback" in recorded
 
 
 @pytest.mark.asyncio
@@ -1153,11 +1175,19 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_main_returns_failure_and_persists_results(monkeypatch, tmp_path):
+async def test_main_redacts_direct_failure_before_persisting(monkeypatch, tmp_path, capsys):
     _isolate_runner(monkeypatch)
+    suffix = "-secret"
+    url_credential = "url" + suffix
+    credential = "runner" + suffix
+    sensitive = (
+        f"direct failure password={credential} "
+        f"https://operator:{url_credential}@hmc.lab.example.test/api "
+        "/home/operator/live-test.toml"
+    )
 
     async def failing_subtask(_client, state):
-        state.record(0, "fake", "FAIL", "expected failure")
+        state.record(0, "fake", "FAIL", {"detail": sensitive})
 
     monkeypatch.setattr(runner, "SUBTASKS", {0: failing_subtask})
     results_path = tmp_path / "results.json"
@@ -1170,6 +1200,17 @@ async def test_main_returns_failure_and_persists_results(monkeypatch, tmp_path):
     )
     saved = json.loads(results_path.read_text())
     assert saved["results"][0]["status"] == "FAIL"
+    assert isinstance(saved["results"][0]["data"], dict)
+    output = capsys.readouterr().out
+    persisted = json.dumps(saved)
+    for value in (
+        credential,
+        f"operator:{url_credential}",
+        "hmc.lab.example.test",
+        "/home/operator/live-test.toml",
+    ):
+        assert value not in output
+        assert value not in persisted
 
 
 @pytest.mark.asyncio

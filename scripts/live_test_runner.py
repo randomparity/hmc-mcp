@@ -21,6 +21,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 import traceback
 from dataclasses import asdict, dataclass, field
@@ -69,6 +70,36 @@ from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 # ---------------------------------------------------------------------------
 
 _ENV_FILE = Path(".env")
+
+_SECRET_VALUE_RE = re.compile(
+    r"(?i)\b(?P<name>password|passwd|token|secret|api[_-]?key)"
+    r"(?P<separator>\s*(?:=|:)\s*)(?P<quote>['\"]?)(?P<value>[^\s,;'\"&]+)"
+    r"(?P=quote)"
+)
+_URL_USERINFO_RE = re.compile(r"(?i)\b(?P<scheme>[a-z][a-z0-9+.-]*://)[^/\s@]+@")
+_HOSTNAME_RE = re.compile(
+    r"(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b"
+)
+_ABSOLUTE_PATH_RE = re.compile(r"(?<![:\w])/(?:[^\s/]+/)*[^\s,;:'\")]+")
+
+
+def _redact_failure_text(value: str) -> str:
+    """Replace sensitive values in runner failure diagnostics."""
+    value = _SECRET_VALUE_RE.sub(
+        r"\g<name>\g<separator><REDACTED-SECRET>", value
+    )
+    value = _URL_USERINFO_RE.sub(r"\g<scheme><REDACTED-URL-USERINFO>@", value)
+    value = _HOSTNAME_RE.sub("<REDACTED-HOST>", value)
+    return _ABSOLUTE_PATH_RE.sub("<REDACTED-PATH>", value)
+
+
+def _redact_failure_data(data: Any) -> Any:
+    """Preserve failure result shapes while redacting their string leaves."""
+    if isinstance(data, dict):
+        return {key: _redact_failure_data(value) for key, value in data.items()}
+    if isinstance(data, list):
+        return [_redact_failure_data(value) for value in data]
+    return _redact_failure_text(str(data))
 
 #: The `HMC_*` names whose reader folds their casing: `HMCConfig`'s own fields,
 #: and only those. `HMC_PROFILE` and a profile's `password_env` target carry the
@@ -121,7 +152,7 @@ def _bootstrap_config() -> None:
 
     Exits with a clear message when no usable credentials are found.
     """
-    from hmc_mcp.config import ConfigError, load_profile, resolve_config_path
+    from hmc_mcp.config import ConfigError, load_profile
 
     # Try the TOML config first.
     try:
@@ -138,8 +169,7 @@ def _bootstrap_config() -> None:
         for key, val in mapping.items():
             if val and not _already_set(key):
                 os.environ[key] = val
-        config_path = resolve_config_path()
-        print(f"  Credentials loaded from {config_path} (profile: {cfg.host})")
+        print("  Credentials loaded from configured profile")
         return
     except ConfigError as exc:
         print(f"  ⚠️  config.toml: {exc} — falling back to .env")
@@ -441,20 +471,25 @@ class RunState:
         self, subtask: int, tool: str, status: str, data: Any, note: str = ""
     ) -> None:
         """Append and print one result entry."""
+        safe_data = _redact_failure_data(data) if status == "FAIL" else data
         entry = {
             "subtask": subtask,
             "tool": tool,
             "status": status,
             "timestamp": datetime.now(UTC).isoformat(),
             "note": note,
-            "data": data if isinstance(data, (dict, list)) else str(data)[:2000],
+            "data": (
+                safe_data
+                if isinstance(safe_data, (dict, list))
+                else str(safe_data)[:2000]
+            ),
         }
         self.results.append(entry)
         icon = "✅" if status == "PASS" else ("⚠️" if status == "SKIP" else "❌")
         note_str = f" — {note}" if note else ""
         print(f"  {icon} ST{subtask} {tool}{note_str}")
         if status == "FAIL":
-            print(f"     ERROR: {str(data)[:300]}")
+            print(f"     ERROR: {str(safe_data)[:300]}")
 
     def skip(self, subtask: int, tool: str, reason: str) -> None:
         """Record a skipped operation."""
@@ -629,7 +664,7 @@ async def main(
         try:
             context = LiveTestContext.from_env_file()
         except ValueError as exc:
-            print(f"❌ {exc}")
+            print(f"❌ {_redact_failure_text(str(exc))}")
             return 1
     state = RunState(context=context)
     context = state.context
