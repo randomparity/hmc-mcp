@@ -16,6 +16,8 @@ from threading import Lock
 from typing import Any, Literal, Self, get_args
 from urllib.parse import quote, unquote, urlparse
 
+import httpx
+
 from ..audit import records as audit
 from ..config import HMCConfig, env_var_value
 from ..documents import (
@@ -26,7 +28,6 @@ from ..jobs import TERMINAL_JOB_STATUSES
 from ..resource_identity import is_uuid
 from .client_adapters import AdaptersMixin
 from .client_cluster import ClusterMixin
-from .client_contracts import httpx
 from .client_lpars import LparsMixin
 from .client_lpm import LpmMixin
 from .client_network import NetworkMixin
