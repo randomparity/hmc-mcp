@@ -69,8 +69,8 @@ pager, or a prompt will stall the agent with no recovery path.
     is the only control.
   - **A single-parent commit on `main` is not evidence of a squash.** This repo
     has also landed PRs with `--rebase`, which replays each commit onto `main`
-    and preserves the per-commit history the policy protects — PR #455's seven
-    commits landed that way as `aec6125^..f528e94`. To tell a squash from a
+    and preserves the per-commit history the policy protects — seven commits
+    from PR #455 landed that way as `aec6125^..f528e94`. To tell a squash from a
     rebase, compare the commit's own diff with the PR's: on a squash they are
     equal, on a rebase the commit carries only its own slice. This paragraph is
     forensic — how to read history after the fact. It does not prefer one
