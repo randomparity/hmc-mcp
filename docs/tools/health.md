@@ -6,4 +6,4 @@
 
 | Tool | Effect | Operation | Target | Summary |
 | --- | --- | --- | --- | --- |
-| `hmc_fleet_health` | `read` | `health.fleet` | `console` | Return exception-only health across managed systems, partitions, and jobs. |
+| `hmc_fleet_health` | `read` | `health.fleet` | `console` | Return issue-only health across managed systems, partitions, and jobs. |

@@ -14,7 +14,7 @@ hmc-mcp console info                 # connectivity check / HMC version
 hmc-mcp systems list                 # table of managed systems
 hmc-mcp systems show <uuid>
 hmc-mcp systems summary <uuid>       # one-call summary: state, MTMS, firmware, LPARs, free resources
-hmc-mcp systems health               # exception-only fleet health; add --json for automation
+hmc-mcp systems health               # issue-only fleet health; add --json for automation
 hmc-mcp lpars list                   # all LPARs
 hmc-mcp lpars list --system <uuid>   # LPARs of one system
 hmc-mcp lpars show mylpar            # by name or UUID (JSON)

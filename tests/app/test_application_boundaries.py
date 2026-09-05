@@ -259,7 +259,7 @@ def test_fleet_health_cli_does_not_claim_healthy_when_telemetry_is_unavailable()
     ):
         result = CliRunner().invoke(app, ["systems", "health"])
     assert result.exit_code == 0
-    assert "No fleet health exceptions found" not in result.stdout
+    assert "No fleet health issues found" not in result.stdout
     assert warning in result.stderr
 
 

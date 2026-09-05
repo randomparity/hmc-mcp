@@ -23,14 +23,14 @@ from ..runtime import with_client
 def systems_health(
     as_json: bool = typer.Option(False, "--json", help="Output JSON"),
 ) -> None:
-    """Show exception-only health across the managed estate."""
+    """Show issue-only health across the managed estate."""
 
     result = asdict(with_client(fetch_fleet_health))
     if as_json:
         print_json(result)
         return
     if not any(result.values()):
-        console.print("[green]No fleet health exceptions found[/green]")
+        console.print("[green]No fleet health issues found[/green]")
     for category in ("systems", "vios", "lpars", "failed_jobs"):
         entries = result[category]
         if not entries:

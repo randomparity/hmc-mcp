@@ -1,4 +1,4 @@
-"""MCP tool for curated fleet-health exceptions."""
+"""MCP tool for curated fleet-health issues."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ tool, register_tools, tool_security = tool_module()
 
 @tool(effect="read", operation="health.fleet", target_kind="console")
 def hmc_fleet_health(profile: str | None = None) -> dict[str, Any]:
-    """Return exception-only health across managed systems, partitions, and jobs.
+    """Return issue-only health across managed systems, partitions, and jobs.
 
     Args:
         profile: TOML profile name, or the environment-default HMC when omitted.
