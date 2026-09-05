@@ -10,6 +10,7 @@ from ..._app import (
     with_client,
 )
 from ...operations.io_virtualization.pcie import (
+    InventorySelector,
     SriovMode,
     assign_sriov_logical_port,
     set_sriov_adapter_mode,
@@ -89,9 +90,7 @@ def hmc_assign_sriov_logical_port(
                 hmc,
                 system_name_or_uuid,
                 lpar_name_or_uuid,
-                adapter_id,
-                physical_port_id,
-                logical_port_id,
+                InventorySelector(adapter_id, physical_port_id, logical_port_id),
                 Decimal(str(capacity_percent)),
                 profile_name=profile_name,
                 ownership_override=ownership_override,
@@ -131,9 +130,7 @@ def hmc_unassign_sriov_logical_port(
                 hmc,
                 system_name_or_uuid,
                 lpar_name_or_uuid,
-                adapter_id,
-                physical_port_id,
-                logical_port_id,
+                InventorySelector(adapter_id, physical_port_id, logical_port_id),
                 profile_name=profile_name,
                 ownership_override=ownership_override,
             )

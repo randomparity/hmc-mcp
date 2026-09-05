@@ -10,6 +10,7 @@ from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.io_virtualization.pcie import (
     PCIE_ASSIGNMENT_UNAVAILABLE_REASON,
+    InventorySelector,
     PcieAssignmentUnavailableError,
     SriovLogicalPortCapabilityError,
     SriovLogicalPortPartialError,
@@ -332,9 +333,9 @@ async def apply_validated_lpar_pcie_assignments(
                 hmc,
                 system,
                 lpar,
-                item.adapter_id,
-                item.physical_port_id,
-                item.logical_port_id,
+                InventorySelector(
+                    item.adapter_id, item.physical_port_id, item.logical_port_id
+                ),
                 item.capacity_percent,
                 profile_name=item.profile_name,
                 ownership_override=ownership_override,

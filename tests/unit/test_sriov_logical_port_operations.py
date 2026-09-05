@@ -5,6 +5,7 @@ import pytest
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.io_virtualization.pcie import (
+    InventorySelector,
     SriovLogicalPortCapabilityError,
     SriovLogicalPortPartialError,
     assign_sriov_logical_port,
@@ -92,7 +93,8 @@ async def test_assign_mutates_and_verifies_effective_readback(monkeypatch):
     _common(monkeypatch)
     mutate = AsyncMock(return_value="")
     monkeypatch.setattr(
-        "hmc_mcp.operations.io_virtualization.pcie.assign_sriov_logical_port_dynamic", mutate
+        "hmc_mcp.operations.io_virtualization.pcie.assign_sriov_logical_port_dynamic",
+        mutate,
     )
     after = {
         "config_id": "0",
@@ -108,11 +110,17 @@ async def test_assign_mutates_and_verifies_effective_readback(monkeypatch):
     }
     rows = AsyncMock(side_effect=[[], [after]])
     monkeypatch.setattr(
-        "hmc_mcp.operations.io_virtualization.pcie.list_sriov_configured_logical_port_rows", rows
+        "hmc_mcp.operations.io_virtualization.pcie.list_sriov_configured_logical_port_rows",
+        rows,
     )
 
     result = await assign_sriov_logical_port(
-        _hmc(), "sys", "lpar", "1", "0", "3", Decimal("2.0"), profile_name="prof"
+        _hmc(),
+        "sys",
+        "lpar",
+        InventorySelector("1", "0", "3"),
+        Decimal("2.0"),
+        profile_name="prof",
     )
 
     assert result.changed is True
@@ -137,10 +145,16 @@ async def test_assign_is_idempotent_and_refuses_foreign_owner(monkeypatch):
     _common(monkeypatch, configured=[owned])
     mutate = AsyncMock()
     monkeypatch.setattr(
-        "hmc_mcp.operations.io_virtualization.pcie.assign_sriov_logical_port_dynamic", mutate
+        "hmc_mcp.operations.io_virtualization.pcie.assign_sriov_logical_port_dynamic",
+        mutate,
     )
     unchanged = await assign_sriov_logical_port(
-        _hmc(), "sys", "lpar", "1", "0", "3", Decimal("2.0"), profile_name="prof"
+        _hmc(),
+        "sys",
+        "lpar",
+        InventorySelector("1", "0", "3"),
+        Decimal("2.0"),
+        profile_name="prof",
     )
     assert unchanged.changed is False
     mutate.assert_not_awaited()
@@ -148,7 +162,12 @@ async def test_assign_is_idempotent_and_refuses_foreign_owner(monkeypatch):
     owned["lpar_name"] = "other"
     with pytest.raises(PermissionError, match="already assigned"):
         await assign_sriov_logical_port(
-            _hmc(), "sys", "lpar", "1", "0", "3", Decimal("2.0"), profile_name="prof"
+            _hmc(),
+            "sys",
+            "lpar",
+            InventorySelector("1", "0", "3"),
+            Decimal("2.0"),
+            profile_name="prof",
         )
 
 
@@ -157,11 +176,21 @@ async def test_assign_rejects_capacity_and_unsupported_running_state(monkeypatch
     _common(monkeypatch, state="Running", rmc="inactive")
     with pytest.raises(SriovLogicalPortCapabilityError, match="active RMC"):
         await assign_sriov_logical_port(
-            _hmc(), "sys", "lpar", "1", "0", "3", Decimal("2.0"), profile_name="prof"
+            _hmc(),
+            "sys",
+            "lpar",
+            InventorySelector("1", "0", "3"),
+            Decimal("2.0"),
+            profile_name="prof",
         )
     with pytest.raises(ValueError, match="between 1 and 100"):
         await assign_sriov_logical_port(
-            _hmc(), "sys", "lpar", "1", "0", "3", Decimal("0.5"), profile_name="prof"
+            _hmc(),
+            "sys",
+            "lpar",
+            InventorySelector("1", "0", "3"),
+            Decimal("0.5"),
+            profile_name="prof",
         )
 
 
@@ -170,10 +199,11 @@ async def test_profile_unassign_is_idempotent_and_verified(monkeypatch):
     _common(monkeypatch)
     mutate = AsyncMock(return_value="")
     monkeypatch.setattr(
-        "hmc_mcp.operations.io_virtualization.pcie.unassign_sriov_logical_port_profile", mutate
+        "hmc_mcp.operations.io_virtualization.pcie.unassign_sriov_logical_port_profile",
+        mutate,
     )
     unchanged = await unassign_sriov_logical_port(
-        _hmc(), "sys", "lpar", "1", "0", "3", profile_name="prof"
+        _hmc(), "sys", "lpar", InventorySelector("1", "0", "3"), profile_name="prof"
     )
     assert unchanged.changed is False
 
@@ -184,9 +214,11 @@ async def test_profile_unassign_is_idempotent_and_verified(monkeypatch):
             {"name": "prof", "sriov_eth_logical_ports": "none"},
         ]
     )
-    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.pcie.read_sriov_profile_ports", reads)
+    monkeypatch.setattr(
+        "hmc_mcp.operations.io_virtualization.pcie.read_sriov_profile_ports", reads
+    )
     changed = await unassign_sriov_logical_port(
-        _hmc(), "sys", "lpar", "1", "0", "3", profile_name="prof"
+        _hmc(), "sys", "lpar", InventorySelector("1", "0", "3"), profile_name="prof"
     )
     assert changed.changed is True
     mutate.assert_awaited_once()
@@ -197,7 +229,8 @@ async def test_unassign_rejects_multiple_profile_records_before_dispatch(monkeyp
     _common(monkeypatch)
     mutate = AsyncMock()
     monkeypatch.setattr(
-        "hmc_mcp.operations.io_virtualization.pcie.unassign_sriov_logical_port_profile", mutate
+        "hmc_mcp.operations.io_virtualization.pcie.unassign_sriov_logical_port_profile",
+        mutate,
     )
     record = "0:1:0:3:0:0:0:all::all:0:0:2.0:100.0,0:1:0:4:0:0:0:all::all:0:0:2.0:100.0"
     monkeypatch.setattr(
@@ -206,7 +239,7 @@ async def test_unassign_rejects_multiple_profile_records_before_dispatch(monkeyp
     )
     with pytest.raises(ValueError, match="exactly the selected"):
         await unassign_sriov_logical_port(
-            _hmc(), "sys", "lpar", "1", "0", "3", profile_name="prof"
+            _hmc(), "sys", "lpar", InventorySelector("1", "0", "3"), profile_name="prof"
         )
     mutate.assert_not_awaited()
 
@@ -227,9 +260,7 @@ async def test_assign_wraps_post_dispatch_read_failure(monkeypatch):
             _hmc(),
             "sys",
             "lpar",
-            "1",
-            "0",
-            "3",
+            InventorySelector("1", "0", "3"),
             Decimal("2.0"),
             profile_name="prof",
         )

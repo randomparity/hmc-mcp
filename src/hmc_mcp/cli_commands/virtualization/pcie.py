@@ -9,6 +9,7 @@ import typer
 from rich.table import Table
 
 from ...operations.io_virtualization.pcie import (
+    InventorySelector,
     assign_dedicated_pcie_slot,
     assign_sriov_logical_port,
     list_dedicated_slots,
@@ -156,9 +157,7 @@ def network_assign_sriov_logical_port(
             hmc,
             system_name,
             lpar_name,
-            adapter_id,
-            physical_port_id,
-            logical_port_id,
+            InventorySelector(adapter_id, physical_port_id, logical_port_id),
             Decimal(str(capacity_percent)),
             profile_name=profile_name,
             ownership_override=ownership_override,
@@ -182,9 +181,7 @@ def network_unassign_sriov_logical_port(
             hmc,
             system_name,
             lpar_name,
-            adapter_id,
-            physical_port_id,
-            logical_port_id,
+            InventorySelector(adapter_id, physical_port_id, logical_port_id),
             profile_name=profile_name,
             ownership_override=ownership_override,
         )

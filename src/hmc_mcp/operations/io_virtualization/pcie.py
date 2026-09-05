@@ -420,17 +420,13 @@ async def _preflight_sriov_assignment(
     hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    adapter_id: str,
-    physical_port_id: str,
-    logical_port_id: str,
+    selector: InventorySelector,
     capacity_percent: Decimal,
     profile_name: str,
     ownership_override: bool,
 ) -> _SriovAssignmentPreflight:
-    selector = InventorySelector(
-        require_command_safe_text(adapter_id, "adapter_id"),
-        require_command_safe_text(physical_port_id, "physical_port_id"),
-        require_command_safe_text(logical_port_id, "logical_port_id"),
+    selector, adapter_id, physical_port_id, logical_port_id = _required_sriov_selector(
+        selector
     )
     capacity = validate_capacity_percent(capacity_percent)
     system_name, lpar_name = await resolve_and_authorize_lpar_names(
@@ -499,13 +495,30 @@ async def _preflight_sriov_assignment(
     )
 
 
+def _required_sriov_selector(
+    selector: InventorySelector,
+) -> tuple[InventorySelector, str, str, str]:
+    """Validate and normalize the three IDs required for an SR-IOV mutation."""
+    adapter_id = require_command_safe_text(selector.adapter_id or "", "adapter_id")
+    physical_port_id = require_command_safe_text(
+        selector.physical_port_id or "", "physical_port_id"
+    )
+    logical_port_id = require_command_safe_text(
+        selector.logical_port_id or "", "logical_port_id"
+    )
+    return (
+        InventorySelector(adapter_id, physical_port_id, logical_port_id),
+        adapter_id,
+        physical_port_id,
+        logical_port_id,
+    )
+
+
 async def assign_sriov_logical_port(
     hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    adapter_id: str,
-    physical_port_id: str,
-    logical_port_id: str,
+    selector: InventorySelector,
     capacity_percent: Decimal,
     *,
     profile_name: str,
@@ -522,9 +535,7 @@ async def assign_sriov_logical_port(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
-        adapter_id,
-        physical_port_id,
-        logical_port_id,
+        selector,
         capacity_percent,
         profile_name,
         ownership_override,
@@ -535,6 +546,9 @@ async def assign_sriov_logical_port(
     system_name = preflight.system_name
     lpar_name = preflight.lpar_name
     selector = preflight.selector
+    _selector, adapter_id, physical_port_id, logical_port_id = _required_sriov_selector(
+        selector
+    )
     capacity = preflight.capacity
     before = preflight.effective_before
     profile_before = preflight.profile_before
@@ -606,9 +620,7 @@ async def unassign_sriov_logical_port(
     hmc: HMCClient,
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    adapter_id: str,
-    physical_port_id: str,
-    logical_port_id: str,
+    selector: InventorySelector,
     *,
     profile_name: str,
     ownership_override: bool = False,
@@ -620,10 +632,8 @@ async def unassign_sriov_logical_port(
         SriovLogicalPortCapabilityError: If current state forbids unassignment.
         SriovLogicalPortPartialError: If a dispatched mutation cannot be reconciled.
     """
-    selector = InventorySelector(
-        require_command_safe_text(adapter_id, "adapter_id"),
-        require_command_safe_text(physical_port_id, "physical_port_id"),
-        require_command_safe_text(logical_port_id, "logical_port_id"),
+    selector, adapter_id, physical_port_id, logical_port_id = _required_sriov_selector(
+        selector
     )
     require_command_safe_text(profile_name, "profile_name")
     system_name, lpar_name = await resolve_and_authorize_lpar_names(
