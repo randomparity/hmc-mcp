@@ -11,7 +11,7 @@ from ...documents import LparResources
 from ...operations.lpar.assignments import LparPcieAssignments
 from ...operations.lpar.dlpar import modify_lpar
 from ..output import console, partition_not_found, print_json, usage_error
-from ..runtime import client, run
+from ..runtime import client, run_cli_coroutine
 from .assignment_input import load_pcie_assignments
 
 
@@ -99,7 +99,7 @@ def lpars_modify(
                 ownership_override=ownership_override,
             )
 
-    result = run(_go)
+    result = run_cli_coroutine(_go)
 
     if not result.workflow_completed:
         print_json(asdict(result))

@@ -7,7 +7,7 @@ import typer
 from ...jobs import validate_wait_timing
 from ...operations.lpar.core import delete_lpar, power_lpar
 from ..output import console, err_console, print_json
-from ..runtime import client, run
+from ..runtime import client, run_cli_coroutine
 
 
 def lpars_power_on(
@@ -120,7 +120,7 @@ def _power_lpar(
                 ownership_override=ownership_override,
             )
 
-    result = run(_go)
+    result = run_cli_coroutine(_go)
     uuid, job = result.lpar_uuid, result.job
     if job and job.get("already_running"):
         console.print(f"[yellow]{job['message']}[/yellow]")
@@ -157,7 +157,7 @@ def lpars_delete(
                 ownership_override=ownership_override,
             )
 
-    uuid = run(_go)
+    uuid = run_cli_coroutine(_go)
     console.print(f"[green]Deleted LPAR {uuid}[/green]")
 
 

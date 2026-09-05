@@ -23,7 +23,7 @@ from ...operations.lpar.provision import (
     provision_lpar,
 )
 from ..output import console, print_json, usage_error
-from ..runtime import client, run
+from ..runtime import client, run_cli_coroutine
 from .assignment_input import load_pcie_assignments
 
 
@@ -117,7 +117,7 @@ def lpars_provision(
                 ),
             )
 
-    result = run(_go)
+    result = run_cli_coroutine(_go)
 
     _render_provision_result(result, name, dry_run, as_json)
 

@@ -31,7 +31,7 @@ from ..operations.storage import (
     upload_iso,
 )
 from .output import console, output, print_json, usage_error
-from .runtime import client, run, with_client
+from .runtime import client, run_cli_coroutine, with_client
 
 
 def storage_list_vgs(
@@ -240,7 +240,7 @@ def storage_map(
                 ownership_override=ownership_override,
             )
 
-    result: StorageMapResult = run(_go)
+    result: StorageMapResult = run_cli_coroutine(_go)
 
     console.print(f"[green]Mapped '{disk}'[/green] to {result.lpar_uuid}")
     print_json(asdict(result))
@@ -417,7 +417,7 @@ def storage_list_mappings(
                 hmc, vios, lpar, system_name_or_uuid=system
             )
 
-    mappings = run(_go)
+    mappings = run_cli_coroutine(_go)
     if as_json:
         print_json([asdict(mapping) for mapping in mappings])
     else:
@@ -472,7 +472,7 @@ def storage_detach_mapping(
                 ownership_override=ownership_override,
             )
 
-    run(_go)
+    run_cli_coroutine(_go)
     console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")
 
 
@@ -513,7 +513,7 @@ def storage_upload_iso(
                 system_name_or_uuid=system,
             )
 
-    result = run(_go)
+    result = run_cli_coroutine(_go)
 
     if as_json:
         print_json(result)

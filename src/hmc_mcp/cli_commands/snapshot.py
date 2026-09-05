@@ -11,7 +11,7 @@ from typing import NoReturn
 import typer
 
 from hmc_mcp.cli_commands.output import print_json
-from hmc_mcp.cli_commands.runtime import client, run
+from hmc_mcp.cli_commands.runtime import client, run_cli_coroutine
 from hmc_mcp.operations.affinity import PolicyState
 from hmc_mcp.snapshots.models import (
     SnapshotValidationError,
@@ -63,7 +63,7 @@ def snapshot_capture(
             )
 
     try:
-        snapshot = run(_go)
+        snapshot = run_cli_coroutine(_go)
         _publish(output, serialize_snapshot(snapshot))
     except (SnapshotValidationError, OSError) as exc:
         fail(exc)
@@ -100,7 +100,7 @@ def snapshot_assess_affinity(
 ) -> None:
     """Assess captured and explicit current affinity evidence without mutation."""
     try:
-        result = run(
+        result = run_cli_coroutine(
             lambda: assess_snapshot_affinity(
                 read_snapshot_text(path),
                 current_score=current_score,

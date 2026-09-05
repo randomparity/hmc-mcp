@@ -66,7 +66,7 @@ def ssh_config() -> HMCConfig:
     )
 
 
-def run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
+def run_cli_coroutine(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     """Run a coroutine-returning closure through the CLI error path."""
     try:
         return asyncio.run(fn())
@@ -83,4 +83,4 @@ def with_client(fn: Callable[[HMCClient], Awaitable[_T]]) -> _T:
         async with client() as hmc:
             return await fn(hmc)
 
-    return run(operation)
+    return run_cli_coroutine(operation)

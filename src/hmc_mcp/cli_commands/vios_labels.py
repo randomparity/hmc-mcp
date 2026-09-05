@@ -18,7 +18,7 @@ from ..operations.vios_labels import (
 )
 from ..ssh.vios_labels import ViosGroupUpdateAction
 from .output import output, print_json
-from .runtime import run, ssh_config
+from .runtime import run_cli_coroutine, ssh_config
 
 
 def _confirm_on_stderr(prompt: str) -> bool:
@@ -50,7 +50,7 @@ def vios_list_fc_port_labels(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List FC-port labels on a managed system."""
-    rows = run(
+    rows = run_cli_coroutine(
         lambda: list_vios_fc_port_labels(
             ssh_config(), system_name_or_uuid, vios_name=vios_name, vios_id=vios_id
         )
@@ -73,7 +73,7 @@ def vios_set_fc_port_label(
         f"label={_prompt_value(label)}?"
     ):
         raise typer.Abort()
-    result = run(
+    result = run_cli_coroutine(
         lambda: set_vios_fc_port_label(
             ssh_config(),
             system_name_or_uuid,
@@ -99,7 +99,7 @@ def vios_remove_fc_port_label(
         f"port={_prompt_value(port_name)}, {_selected(vios_name, vios_id)}?"
     ):
         raise typer.Abort()
-    result = run(
+    result = run_cli_coroutine(
         lambda: remove_vios_fc_port_label(
             ssh_config(),
             system_name_or_uuid,
@@ -116,7 +116,7 @@ def vios_list_vfc_group_labels(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List vFC placement group labels on a managed system."""
-    rows = run(lambda: list_vios_vfc_group_labels(ssh_config(), system_name_or_uuid))
+    rows = run_cli_coroutine(lambda: list_vios_vfc_group_labels(ssh_config(), system_name_or_uuid))
     output(rows, as_json, None, "No VIOS vFC group labels found")
 
 
@@ -134,7 +134,7 @@ def vios_create_vfc_group_label(
         f"{_members(vios_names, vios_ids)}?"
     ):
         raise typer.Abort()
-    result = run(
+    result = run_cli_coroutine(
         lambda: create_vios_vfc_group_label(
             ssh_config(),
             system_name_or_uuid,
@@ -166,7 +166,7 @@ def vios_update_vfc_group_label(
         f"label={_prompt_value(label)}, action={_prompt_value(action)}, {detail}?"
     ):
         raise typer.Abort()
-    result = run(
+    result = run_cli_coroutine(
         lambda: update_vios_vfc_group_label(
             ssh_config(),
             system_name_or_uuid,
@@ -191,7 +191,7 @@ def vios_remove_vfc_group_label(
         f"label={_prompt_value(label)}?"
     ):
         raise typer.Abort()
-    result = run(
+    result = run_cli_coroutine(
         lambda: remove_vios_vfc_group_label(ssh_config(), system_name_or_uuid, label)
     )
     print_json(result)

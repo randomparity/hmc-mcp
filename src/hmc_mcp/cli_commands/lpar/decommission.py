@@ -9,7 +9,7 @@ from rich.table import Table
 
 from ...operations.lpar.decommission import decommission_lpar
 from ..output import console, print_json
-from ..runtime import client, run
+from ..runtime import client, run_cli_coroutine
 
 
 def lpars_decommission(
@@ -58,7 +58,7 @@ def lpars_decommission(
                 poll_interval=poll_interval,
             )
 
-    result = run(_go)
+    result = run_cli_coroutine(_go)
 
     if as_json:
         print_json(asdict(result))

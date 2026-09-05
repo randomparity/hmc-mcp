@@ -29,7 +29,7 @@ from ...operations.lpm import (
     validate_lpar_migration,
 )
 from ..output import console, print_json
-from ..runtime import client, run
+from ..runtime import client, run_cli_coroutine
 
 
 def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) -> None:
@@ -45,7 +45,7 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) 
                     raise typer.Abort()
             return await fn(hmc)
 
-    result = run(_go)
+    result = run_cli_coroutine(_go)
     if isinstance(result, LpmAffinityMigrationResult):
         status = "Submitted" if result.job is not None else "Stopped"
         console.print(f"[green]{status} {action}[/green]")

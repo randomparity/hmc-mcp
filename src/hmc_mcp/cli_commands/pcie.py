@@ -21,7 +21,7 @@ from ..operations.io_virtualization.pcie import (
 )
 from ..ssh.network import PciClass, SriovMode, list_io_slots
 from .output import console, output, print_json
-from .runtime import run, ssh_config, with_client
+from .runtime import run_cli_coroutine, ssh_config, with_client
 
 
 def _print_pcie_inventory(result, as_json: bool) -> None:
@@ -201,7 +201,7 @@ def network_list_io_slots(
 ) -> None:
     """List physical I/O slots on a managed system (HMC CLI via SSH)."""
 
-    slots = run(lambda: list_io_slots(ssh_config(), system_name, pci_class))
+    slots = run_cli_coroutine(lambda: list_io_slots(ssh_config(), system_name, pci_class))
 
     output(slots, as_json, None, "No I/O slots found")
 

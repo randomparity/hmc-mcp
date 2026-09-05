@@ -2221,7 +2221,7 @@ def test_run_propagates_a_typer_exit_code_unchanged():
         raise typer.Exit(code=2)
 
     with pytest.raises(typer.Exit) as excinfo:
-        cli_runtime.run(_go)
+        cli_runtime.run_cli_coroutine(_go)
 
     assert excinfo.value.exit_code == 2
 

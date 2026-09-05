@@ -7,7 +7,7 @@ from rich.table import Table
 
 from ..ssh.memory import list_memory_pools, remove_memory_pool
 from .output import console, err_console, print_json
-from .runtime import run, ssh_config
+from .runtime import run_cli_coroutine, ssh_config
 
 
 def memory_pools_list(
@@ -16,7 +16,7 @@ def memory_pools_list(
 ) -> None:
     """List shared memory pools on a managed system (HMC CLI via SSH)."""
     config = ssh_config()
-    pools = run(lambda: list_memory_pools(config, system_name))
+    pools = run_cli_coroutine(lambda: list_memory_pools(config, system_name))
     if as_json:
         print_json(pools)
         return
@@ -50,7 +50,7 @@ def memory_pools_remove(
         raise typer.Abort()
 
     config = ssh_config()
-    result = run(lambda: remove_memory_pool(config, system_name, pool_name))
+    result = run_cli_coroutine(lambda: remove_memory_pool(config, system_name, pool_name))
 
     console.print(
         f"[green]Memory pool '{pool_name}' removed from '{system_name}'[/green]"

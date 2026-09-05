@@ -15,7 +15,7 @@ from ..operations.pcm import (
     validate_pcm_preferences_category,
 )
 from .output import console, print_json, usage_error
-from .runtime import client, run, with_client
+from .runtime import client, run_cli_coroutine, with_client
 
 
 def metrics_prefs(
@@ -110,7 +110,7 @@ def metrics_show(
                 system_name_or_uuid=system_name_or_uuid,
             )
 
-    result = run(_go)
+    result = run_cli_coroutine(_go)
 
     print_json(result)
 

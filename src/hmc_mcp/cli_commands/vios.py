@@ -9,7 +9,7 @@ from ..jobs import validate_wait_timing
 from ..operations.partition_state import PartitionState
 from ..operations.vios import list_vios, power_vios
 from .output import console, first_field, output, print_json
-from .runtime import client, run, with_client
+from .runtime import client, run_cli_coroutine, with_client
 
 
 def vios_list(
@@ -69,7 +69,7 @@ def vios_power_on(
                 poll_interval=interval,
             )
 
-    job = run(_go)
+    job = run_cli_coroutine(_go)
 
     console.print(f"[green]Submitted PowerOn for {name_or_uuid}[/green]")
     print_json(job)
@@ -106,7 +106,7 @@ def vios_power_off(
                 poll_interval=interval,
             )
 
-    job = run(_go)
+    job = run_cli_coroutine(_go)
 
     console.print(f"[green]Submitted {op} for {name_or_uuid}[/green]")
     print_json(job)

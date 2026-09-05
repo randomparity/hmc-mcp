@@ -13,7 +13,7 @@ from ..operations.adapters import (
     list_adapters,
 )
 from .output import console, output, print_json
-from .runtime import client, run
+from .runtime import client, run_cli_coroutine
 
 _ADAPTER_TYPES = " | ".join(sorted(ADAPTER_TYPES))
 
@@ -31,7 +31,7 @@ def adapters_list(
         async with client() as hmc:
             return await list_adapters(hmc, None, lpar, adapter_type)
 
-    adapters = run(_go)
+    adapters = run_cli_coroutine(_go)
 
     output(adapters, as_json, None, f"No {adapter_type} adapters on {lpar}")
 
@@ -165,13 +165,13 @@ def adapters_delete(
                 ownership_override=ownership_override,
             )
 
-    deleted_uuid = run(_go)
+    deleted_uuid = run_cli_coroutine(_go)
 
     console.print(f"[green]Deleted {adapter_type} {deleted_uuid}[/green] from {lpar}")
 
 
 def _adapter_mutation(go_coro, lpar: str, kind: str) -> None:
-    result = run(go_coro)
+    result = run_cli_coroutine(go_coro)
     console.print(f"[green]Added {kind} adapter[/green] to {result.lpar_uuid}")
     print_json(result.resource)
 
