@@ -9,11 +9,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from hmc_mcp.audit import records as audit
-from hmc_mcp.client.client_resolution import (
+from hmc_mcp.client.core import HMCClient
+from hmc_mcp.discovery_limits import (
     MAX_PARENT_DISCOVERY_SYSTEMS,
     PARENT_DISCOVERY_TIMEOUT_SECONDS,
 )
-from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
 from hmc_mcp.resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
 from hmc_mcp.ssh.description_validation import validate_lpar_description
@@ -29,9 +29,9 @@ def _fleet_within_discovery_bound(
 ) -> list[dict[str, Any]]:
     """Reject an owning-system search whose request fan-out is too large.
 
-    The bound is `client_resolution`'s, but not its message: that one reads
-    "ambiguous LPAR name", and nothing is ambiguous here — the partition UUID
-    resolved uniquely before this ran.
+    The shared bound also protects ambiguous-name resolution. Its message is
+    not suitable here because the partition UUID resolved uniquely before this
+    parent discovery began.
     """
     if len(systems) > MAX_PARENT_DISCOVERY_SYSTEMS:
         raise ValueError(
