@@ -104,14 +104,15 @@ def hmc_list_lpars(
     profile: str | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
-    """List LPARs, optionally filtered by system or state.
+    """List LPARs, optionally filtered by system and state.
 
-    Supply at most one of system_name_or_uuid and state. Use hmc_get_lpar for a
-    single partition or hmc_get_lpar_state for a lightweight state lookup.
+    When both filters are supplied, retrieves the managed system's LPAR feed and
+    retains entries with the requested state. Use hmc_get_lpar for a single
+    partition or hmc_get_lpar_state for a lightweight state lookup.
 
     Args:
         system_name_or_uuid: Optional SystemName or UUID whose partitions to list.
-        state: Optional exact PartitionState value to filter server-side.
+        state: Optional exact PartitionState value to filter.
         profile: Optional configured HMC profile name; uses the default when omitted.
         limit: Maximum entries returned after the complete HMC feed is transferred
             and parsed; omitted returns all entries. This client-side cap does not

@@ -83,20 +83,27 @@ async def list_lpars(
     system_name_or_uuid: str | None = None,
     state: PartitionState | None = None,
 ) -> list[dict[str, Any]]:
-    """List LPARs, optionally scoped to one system or one partition state."""
-    if system_name_or_uuid is not None and state is not None:
-        raise ValueError("Provide at most one of system_name_or_uuid or state")
-    if state is not None:
-        if state not in PARTITION_STATES:
-            allowed = ", ".join(sorted(PARTITION_STATES))
-            raise ValueError(f"state must be one of: {allowed}")
-        return await hmc.search_uom("LogicalPartition", "PartitionState", state)
+    """List LPARs, optionally scoped to one system and partition state."""
+    if state is not None and state not in PARTITION_STATES:
+        allowed = ", ".join(sorted(PARTITION_STATES))
+        raise ValueError(f"state must be one of: {allowed}")
     system_uuid = (
         await resolve_system_uuid(hmc, system_name_or_uuid)
         if system_name_or_uuid is not None
         else None
     )
-    return await hmc.list_logical_partitions(system_uuid)
+    lpars = (
+        await hmc.search_uom("LogicalPartition", "PartitionState", state)
+        if system_uuid is None and state is not None
+        else await hmc.list_logical_partitions(system_uuid)
+    )
+    if state is None or system_uuid is None:
+        return lpars
+    return [
+        entry
+        for entry in lpars
+        if (entry.get("Resource") or {}).get("PartitionState") == state
+    ]
 
 
 async def get_lpar(
