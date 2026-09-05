@@ -424,16 +424,9 @@ def resolve_power_guards(
     report comes from the same document version. The blocking read remains off
     the event loop; the tool handler awaits this function in a thread.
 
-    **Constructing a config re-runs ``HMCConfig``'s model validators.** The
-    ``audit_memento`` collision warning among them is undeduplicated, so a
-    profile pairing ``agent_id`` with a customised ``audit_memento`` emits one
-    line per connection per call — a client-rate stream on the same descriptor
-    this module deduplicates its own unresolved warning to protect, defeating
-    that dedup from two functions away. It is recorded rather than filtered:
-    silencing ``hmc_mcp.config`` around this loop means adding a filter to a
-    process-global logger, and with the resolution now running in a worker
-    thread that filter would also swallow a concurrent warning from a real
-    client construction on another task — a worse failure than the noise.
+    **Constructing a config re-runs ``HMCConfig``'s model validators per
+    connection.** The ``audit_memento`` override diagnostic among them is
+    throttled by :meth:`HMCConfig._warn_audit_memento_override` after #546.
     """
     if reported_unresolved is None:
         reported_unresolved = set()
