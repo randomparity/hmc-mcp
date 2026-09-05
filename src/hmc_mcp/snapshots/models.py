@@ -50,11 +50,11 @@ class SnapshotValidationError(ValueError):
         self.correction = correction
 
 
-class _Value(BaseModel):
+class _StrictSnapshotModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-class HMCIdentity(_Value):
+class HMCIdentity(_StrictSnapshotModel):
     uuid: str = Field(min_length=1)
     name: str | None
     version: str | None
@@ -70,7 +70,7 @@ class HMCIdentity(_Value):
         return _nonblank(value) if value is not None else None
 
 
-class SystemIdentity(_Value):
+class SystemIdentity(_StrictSnapshotModel):
     uuid: str = Field(min_length=1)
     name: str | None
     machine_type_model: str = Field(min_length=1)
@@ -87,7 +87,7 @@ class SystemIdentity(_Value):
         return _nonblank(value) if value is not None else None
 
 
-class LparIdentity(_Value):
+class LparIdentity(_StrictSnapshotModel):
     uuid: str = Field(min_length=1)
     name: str = Field(min_length=1)
     partition_id: int = Field(gt=0)
@@ -98,13 +98,13 @@ class LparIdentity(_Value):
         return _nonblank(value)
 
 
-class SnapshotSource(_Value):
+class SnapshotSource(_StrictSnapshotModel):
     hmc: HMCIdentity
     system: SystemIdentity
     lpar: LparIdentity
 
 
-class SnapshotCapability(_Value):
+class SnapshotCapability(_StrictSnapshotModel):
     name: Literal[
         "affinity-scores",
         "lpar-profile-record",
@@ -122,12 +122,12 @@ class SnapshotCapability(_Value):
         return _nonblank(value) if value is not None else None
 
 
-class NativeProfile(_Value):
+class NativeProfile(_StrictSnapshotModel):
     media_type: Literal["text/vnd.ibm.hmc.lssyscfg-profile;version=1;charset=utf-8"]
     data: str = Field(min_length=1)
 
 
-class MemoryProjection(_Value):
+class MemoryProjection(_StrictSnapshotModel):
     minimum: int = Field(gt=0)
     desired: int = Field(gt=0)
     maximum: int = Field(gt=0)
@@ -139,7 +139,7 @@ class MemoryProjection(_Value):
         return self
 
 
-class ProcessorProjection(_Value):
+class ProcessorProjection(_StrictSnapshotModel):
     dedicated: bool
     minimum: float = Field(gt=0)
     desired: float = Field(gt=0)
@@ -183,12 +183,12 @@ class ProcessorProjection(_Value):
         return self
 
 
-class NormalizedConfiguration(_Value):
+class NormalizedConfiguration(_StrictSnapshotModel):
     memory_mib: MemoryProjection
     processors: ProcessorProjection
 
 
-class SnapshotConfiguration(_Value):
+class SnapshotConfiguration(_StrictSnapshotModel):
     profile_name: str = Field(min_length=1)
     native: NativeProfile
     normalized: NormalizedConfiguration
@@ -199,19 +199,19 @@ class SnapshotConfiguration(_Value):
         return _nonblank(value)
 
 
-class ObservationEnvelope(_Value):
+class ObservationEnvelope(_StrictSnapshotModel):
     media_type: str = Field(min_length=1)
     data: dict[str, Any]
 
 
-class SnapshotObservations(_Value):
+class SnapshotObservations(_StrictSnapshotModel):
     observed_at: datetime
     runtime_placement: ObservationEnvelope | None = None
     scores: ObservationEnvelope | None = None
     minimum_affinity_policy: ObservationEnvelope | None = None
 
 
-class LparSnapshot(_Value):
+class LparSnapshot(_StrictSnapshotModel):
     format: Literal["hmc-mcp.lpar-snapshot"]
     version: Literal[1]
     captured_at: datetime
@@ -307,7 +307,7 @@ class LparSnapshot(_Value):
             raise ValueError(f"{name} observation media_type is unsupported")
 
 
-class SnapshotInspection(_Value):
+class SnapshotInspection(_StrictSnapshotModel):
     format: str | None
     version: int | None
     supported: bool
