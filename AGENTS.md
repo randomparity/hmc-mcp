@@ -21,7 +21,7 @@ pager, or a prompt will stall the agent with no recovery path.
 - **Never squash-merge** (`gh pr merge --squash` / `git merge --squash`) unless
   the PR is documentation-only. Squash merges collapse commit history and break
   `git bisect`. For all code, test, config, and script changes, use either
-  `--merge` (merge commit) or `--rebase` (rebase merge).
+  `gh pr merge --merge` (merge commit) or `gh pr merge --rebase` (rebase merge).
   - **Documentation-only** means **no changed file's content is asserted by a
     test or a `static` gate.** *Content*, specifically: repo-wide scans like
     `just secrets` read every tracked file, and counting those would make the
