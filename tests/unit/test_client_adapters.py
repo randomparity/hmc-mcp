@@ -8,6 +8,15 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.client.client_adapters import AdaptersMixin
+from hmc_mcp.client.client_contracts import ADAPTER_TYPES, validate_adapter_type
+
+
+def test_adapter_type_validation_accepts_only_the_published_vocabulary():
+    for adapter_type in ADAPTER_TYPES:
+        assert validate_adapter_type(adapter_type) == adapter_type
+
+    with pytest.raises(ValueError, match="Invalid adapter_type"):
+        validate_adapter_type("not-an-adapter")  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
