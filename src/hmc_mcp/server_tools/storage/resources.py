@@ -9,6 +9,7 @@ from ..._app import (
     serialize_tool_result,
     with_client,
 )
+from ...client.core import HMCClient
 from ...documents import StorageKind
 from ...jobs import (
     DeviceType,
@@ -275,7 +276,7 @@ def hmc_map_storage_to_lpar(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def mapping(hmc):
+    async def mapping(hmc: HMCClient):
         return serialize_tool_result(
             await map_storage(
                 hmc,
@@ -852,7 +853,7 @@ def hmc_unmount_optical_media(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def unmount_media_and_confirm(hmc):
+    async def unmount_media_and_confirm(hmc: HMCClient):
         await unmount_optical_media(
             hmc,
             vios_name_or_uuid,
