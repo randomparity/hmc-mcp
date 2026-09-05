@@ -24,11 +24,13 @@ from typer.main import get_command
 from typer.testing import CliRunner
 
 from hmc_mcp import cli
+from hmc_mcp.cli_commands import app as cli_command_app
 from hmc_mcp.cli_commands import runtime as cli_runtime
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
 from hmc_mcp.cli_commands.lpar import migration as cli_lpar_migration
 from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
 from hmc_mcp.cli_commands.lpar import provision as cli_lpar_provision
+from hmc_mcp.cli_commands.storage import cluster as cli_storage_cluster
 from hmc_mcp.cli_commands.storage import resources as cli_storage_resources
 from hmc_mcp.cli_commands.vios import labels as cli_vios_labels
 from hmc_mcp.cli_commands.virtualization import pcie as cli_pcie
@@ -3578,8 +3580,15 @@ def test_console_info_none_reports_empty(fake_hmc):
 # --------------------------------------------------------------------------- #
 
 
+def _cluster_app() -> typer.Typer:
+    app = typer.Typer()
+    app.callback()(cli_command_app.main)
+    cli_storage_cluster.register_commands(app)
+    return app
+
+
 def test_cluster_list_table(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["cluster", "list"])
+    result = RUNNER.invoke(_cluster_app(), ["list"])
 
     assert result.exit_code == 0
     assert "cl1" in result.stdout
@@ -3587,7 +3596,7 @@ def test_cluster_list_table(fake_hmc):
 
 
 def test_cluster_list_json(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["cluster", "list", "--json"])
+    result = RUNNER.invoke(_cluster_app(), ["list", "--json"])
 
     assert result.exit_code == 0
     assert CLUSTER_UUID in result.stdout
@@ -3595,7 +3604,7 @@ def test_cluster_list_json(fake_hmc):
 
 
 def test_cluster_list_ssps(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["cluster", "list-ssps"])
+    result = RUNNER.invoke(_cluster_app(), ["list-ssps"])
 
     assert result.exit_code == 0
     assert "pool1" in result.stdout
@@ -3605,9 +3614,8 @@ def test_cluster_list_ssps(fake_hmc):
 
 def test_cluster_create_lu(fake_hmc):
     result = RUNNER.invoke(
-        cli.app,
+        _cluster_app(),
         [
-            "cluster",
             "create-lu",
             CLUSTER_UUID,
             "--name",
@@ -3632,9 +3640,8 @@ def test_cluster_create_lu(fake_hmc):
 
 def test_cluster_create_lu_declined_confirm_aborts(fake_hmc):
     result = RUNNER.invoke(
-        cli.app,
+        _cluster_app(),
         [
-            "cluster",
             "create-lu",
             CLUSTER_UUID,
             "--name",
@@ -3656,9 +3663,8 @@ def test_cluster_create_lu_declined_confirm_aborts(fake_hmc):
 )
 def test_cluster_create_lu_rejects_invalid_vocabulary(fake_hmc, option, value):
     result = RUNNER.invoke(
-        cli.app,
+        _cluster_app(),
         [
-            "cluster",
             "create-lu",
             CLUSTER_UUID,
             "--name",
@@ -3678,8 +3684,8 @@ def test_cluster_create_lu_rejects_invalid_vocabulary(fake_hmc, option, value):
 
 def test_cluster_delete_lu(fake_hmc):
     result = RUNNER.invoke(
-        cli.app,
-        ["cluster", "delete-lu", CLUSTER_UUID, "--udid", "udid-1", "--yes"],
+        _cluster_app(),
+        ["delete-lu", CLUSTER_UUID, "--udid", "udid-1", "--yes"],
     )
 
     assert result.exit_code == 0
@@ -3689,8 +3695,8 @@ def test_cluster_delete_lu(fake_hmc):
 
 def test_cluster_delete_lu_declined_confirm_aborts(fake_hmc):
     result = RUNNER.invoke(
-        cli.app,
-        ["cluster", "delete-lu", CLUSTER_UUID, "--udid", "udid-1"],
+        _cluster_app(),
+        ["delete-lu", CLUSTER_UUID, "--udid", "udid-1"],
         input="n\n",
     )
 
