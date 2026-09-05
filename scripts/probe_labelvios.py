@@ -27,6 +27,7 @@ import pathlib
 import sys
 import tomllib
 from dataclasses import dataclass
+from typing import NotRequired, TypedDict
 
 import asyncssh
 
@@ -43,6 +44,36 @@ class Profile:
     host: str
     user: str
     password: str
+
+
+class ConnectionOptions(TypedDict):
+    host: str
+    port: int
+    username: str
+    password: str
+    known_hosts: str | None
+    preferred_auth: str
+    client_keys: list[str]
+
+
+class QueryResult(TypedDict):
+    cmd: str
+    exit_status: int
+    stdout: str
+    stderr: str
+
+
+class SystemRecord(TypedDict):
+    name: str
+    state: str
+
+
+class ProbeResult(TypedDict):
+    profile: str
+    host: str
+    queries: dict[str, QueryResult | dict[str, QueryResult]]
+    systems: list[SystemRecord]
+    error: NotRequired[str]
 
 
 def load_profiles() -> list[Profile]:
@@ -81,7 +112,7 @@ async def run(conn: asyncssh.SSHClientConnection, cmd: str) -> tuple[int, str, s
         return -1, "", str(exc)
 
 
-def connect_kwargs(profile: Profile, *, insecure: bool = False) -> dict:
+def connect_kwargs(profile: Profile, *, insecure: bool = False) -> ConnectionOptions:
     if insecure:
         print(
             f"WARNING: SSH host-key verification disabled for {profile.host} (--insecure)",
@@ -103,9 +134,9 @@ def connect_kwargs(profile: Profile, *, insecure: bool = False) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def probe_profile(profile: Profile, *, insecure: bool = False) -> dict:
+async def probe_profile(profile: Profile, *, insecure: bool = False) -> ProbeResult:
     """Stage-1 + Stage-2 probe for one HMC profile."""
-    result: dict = {
+    result: ProbeResult = {
         "profile": profile.name,
         "host": profile.host,
         "queries": {},
@@ -147,7 +178,7 @@ async def probe_profile(profile: Profile, *, insecure: bool = False) -> dict:
             for sys_name in systems:
                 import shlex
                 m = shlex.quote(sys_name)
-                sys_queries: dict = {}
+                sys_queries: dict[str, QueryResult] = {}
 
                 for label, cmd in [
                     (
@@ -189,7 +220,7 @@ async def probe_profile(profile: Profile, *, insecure: bool = False) -> dict:
 DIVIDER = "=" * 72
 
 
-def report(results: list[dict]) -> None:
+def report(results: list[ProbeResult]) -> None:
     for r in results:
         print(f"\n{DIVIDER}")
         print(f"PROFILE : {r['profile']}  ({r['host']})")
@@ -212,7 +243,7 @@ def report(results: list[dict]) -> None:
                 _print_query(f"  {label}", q)
 
 
-def _print_query(label: str, q: dict) -> None:
+def _print_query(label: str, q: QueryResult) -> None:
     print(f"\n  --- {label} ---")
     print(f"  cmd         : {q['cmd']}")
     print(f"  exit_status : {q['exit_status']}")
