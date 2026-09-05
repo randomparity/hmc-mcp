@@ -64,7 +64,12 @@ async def create_virtual_network(
 async def delete_virtual_network(
     hmc: HMCClient, system_name_or_uuid: str, network_uuid: str
 ) -> str:
-    """Delete a virtual network and return its UUID."""
+    """Delete a virtual network and return its UUID.
+
+    Raises:
+        ResourceNotFoundError: If the managed-system selector cannot be resolved.
+        HMCError: If the HMC rejects the delete request or it cannot be completed.
+    """
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     await hmc.delete_virtual_network(system_uuid, network_uuid)
     return network_uuid

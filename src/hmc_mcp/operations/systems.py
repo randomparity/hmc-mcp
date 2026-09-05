@@ -61,7 +61,13 @@ async def modify_system(
     system_name_or_uuid: str,
     patch: ManagedSystemPatch,
 ) -> dict[str, Any] | None:
-    """Apply the supplied configuration fields to a managed system."""
+    """Apply the supplied configuration fields to a managed system.
+
+    Raises:
+        ResourceNotFoundError: If the managed-system selector cannot be resolved.
+        ValueError: If the requested patch values are invalid.
+        HMCError: If the HMC rejects the update or the request cannot be completed.
+    """
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     document = build_managed_system_document(
         new_name=patch.new_name,

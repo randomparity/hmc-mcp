@@ -48,7 +48,15 @@ async def add_network_adapter(
     mac_address: str | None = None,
     ownership_override: bool = False,
 ) -> AdapterResult:
-    """Authorize the LPAR and add a virtual Ethernet adapter."""
+    """Authorize the LPAR and add a virtual Ethernet adapter.
+
+    Raises:
+        ResourceNotFoundError: If a supplied LPAR or managed-system selector cannot
+            be resolved.
+        PermissionError: If the LPAR ownership authorization rejects the mutation.
+        ValueError: If selector scope cannot be verified.
+        HMCError: If the HMC rejects the adapter request or it cannot be completed.
+    """
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
