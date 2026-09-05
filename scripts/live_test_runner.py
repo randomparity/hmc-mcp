@@ -23,7 +23,6 @@ import asyncio
 import json
 import os
 import re
-import sys
 import traceback
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -143,7 +142,7 @@ def _load_dotenv() -> None:
             os.environ[key] = val
 
 
-def _bootstrap_config() -> None:
+def _bootstrap_config() -> bool:
     """Populate HMC_* env vars from config.toml profile, then .env fallback.
 
     Priority (highest first):
@@ -171,7 +170,7 @@ def _bootstrap_config() -> None:
             if val and not _already_set(key):
                 os.environ[key] = val
         print("  Credentials loaded from configured profile")
-        return
+        return True
     except ConfigError as exc:
         print(f"  ⚠️  config.toml: {exc} — falling back to .env")
 
@@ -185,19 +184,20 @@ def _bootstrap_config() -> None:
     if not env_var_value("HMC_PASSWORD"):
         print("❌  No HMC credentials found.")
         print("   Configure ~/.config/hmc-mcp/config.toml or a local .env file.")
-        sys.exit(1)
+        return False
+    return True
 
 
-def _ensure_schema_version() -> None:
+def _ensure_schema_version() -> bool:
     """Warn when HMC_SCHEMA_VERSION is absent; the operator must set it explicitly."""
     _load_dotenv()
     if env_var_value("HMC_SCHEMA_VERSION"):
-        return
+        return True
     print("⚠️  HMC_SCHEMA_VERSION is not set in .env or the environment.")
     print("   Add 'HMC_SCHEMA_VERSION=V1_0' to your .env file and re-run.")
     print("   Note: this variable only affects GET requests; it does NOT fix")
     print("   HTTP 406 on write paths (LPAR create, adapter PUT, etc.).")
-    sys.exit(1)
+    return False
 
 
 @dataclass
@@ -602,8 +602,8 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"❌ {exc}")
         return 1
-    _bootstrap_config()
-    _ensure_schema_version()
+    if not _bootstrap_config() or not _ensure_schema_version():
+        return 1
     return asyncio.run(
         main(
             subtask_filter=arguments.subtask,

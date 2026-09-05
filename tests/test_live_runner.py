@@ -778,10 +778,7 @@ def test_schema_preflight_is_explicit_and_actionable(monkeypatch, capsys):
     _clear(monkeypatch, "HMC_SCHEMA_VERSION")
     monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
 
-    with pytest.raises(SystemExit) as exc_info:
-        runner._ensure_schema_version()
-
-    assert exc_info.value.code == 1
+    assert runner._ensure_schema_version() is False
     assert "Add 'HMC_SCHEMA_VERSION=V1_0'" in capsys.readouterr().out
 
 
@@ -793,8 +790,7 @@ def test_schema_preflight_does_not_patch_dotenv(monkeypatch, capsys, tmp_path):
     dotenv.write_text(original)
     monkeypatch.setattr(runner, "_ENV_FILE", dotenv)
 
-    with pytest.raises(SystemExit):
-        runner._ensure_schema_version()
+    assert runner._ensure_schema_version() is False
 
     assert dotenv.read_text() == original
     assert "Add 'HMC_SCHEMA_VERSION=V1_0'" in capsys.readouterr().out
