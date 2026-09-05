@@ -17,23 +17,6 @@ from ...jobs import (
 )
 
 
-async def list_clusters(hmc: HMCClient) -> list[dict[str, Any]]:
-    """List clusters through the HMC client."""
-    return await hmc.list_clusters()
-
-
-async def list_shared_storage_pools(hmc: HMCClient) -> list[dict[str, Any]]:
-    """List shared storage pools through the HMC client."""
-    return await hmc.list_shared_storage_pools()
-
-
-async def get_shared_storage_pool(
-    hmc: HMCClient, ssp_uuid: str
-) -> dict[str, Any] | None:
-    """Get one shared storage pool by UUID."""
-    return await hmc.get_shared_storage_pool(ssp_uuid)
-
-
 async def create_logical_unit(
     hmc: HMCClient,
     cluster_uuid: str,

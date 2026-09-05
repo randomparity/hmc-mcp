@@ -73,20 +73,3 @@ async def modify_user(
     """Apply the supplied fields to an HMC user profile."""
     document = build_hmc_user_document(**asdict(patch))
     return await hmc.modify_hmc_user(console_uuid, user_profile_uuid, document)
-
-
-async def delete_user(
-    hmc: HMCClient, console_uuid: str, user_profile_uuid: str
-) -> None:
-    """Delete an HMC user profile."""
-    await hmc.delete_hmc_user(console_uuid, user_profile_uuid)
-
-
-async def configure_remote_access(
-    hmc: HMCClient,
-    console_uuid: str,
-    values: dict[str, str | int | bool] | None,
-    clear_fields: list[str] | None,
-) -> dict[str, Any] | None:
-    """Set and clear HMC remote-access fields."""
-    return await hmc.configure_remote_access(console_uuid, values, clear_fields)

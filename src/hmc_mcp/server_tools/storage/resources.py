@@ -22,9 +22,6 @@ from ...operations.lpar.provision import (
 from ...operations.storage.cluster import (
     create_logical_unit,
     delete_logical_unit,
-    get_shared_storage_pool,
-    list_clusters,
-    list_shared_storage_pools,
 )
 from ...operations.storage.resources import (
     create_media_repository,
@@ -561,7 +558,7 @@ def hmc_list_clusters(
             reduce HMC work or network transfer.
     """
 
-    return run_limited_collection(list_clusters, limit, profile=profile)
+    return run_limited_collection(lambda hmc: hmc.list_clusters(), limit, profile=profile)
 
 
 @tool(effect="read", operation="cluster.list_pools", target_kind="console")
@@ -578,7 +575,9 @@ def hmc_list_shared_storage_pools(
             reduce HMC work or network transfer.
     """
 
-    return run_limited_collection(list_shared_storage_pools, limit, profile=profile)
+    return run_limited_collection(
+        lambda hmc: hmc.list_shared_storage_pools(), limit, profile=profile
+    )
 
 
 @tool(effect="read", operation="cluster.get_pool", target_kind="shared_storage_pool")
@@ -592,9 +591,7 @@ def hmc_get_shared_storage_pool(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_client(
-        lambda hmc: get_shared_storage_pool(hmc, ssp_uuid), profile=profile
-    )
+    return with_client(lambda hmc: hmc.get_shared_storage_pool(ssp_uuid), profile=profile)
 
 
 @tool(effect="mutate", operation="cluster.create_logical_unit", target_kind="cluster")

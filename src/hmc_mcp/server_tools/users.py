@@ -10,9 +10,7 @@ from ..documents import AuthenticationType
 from ..operations.users import (
     CreateUserRequest,
     ModifyUserPatch,
-    configure_remote_access,
     create_user,
-    delete_user,
     modify_user,
 )
 from ..tool_registry import tool_module
@@ -240,7 +238,7 @@ def hmc_delete_user(
     """
 
     async def _go(hmc):
-        await delete_user(hmc, console_uuid, user_profile_uuid)
+        await hmc.delete_hmc_user(console_uuid, user_profile_uuid)
         return f"Deleted HMC user profile {user_profile_uuid}"
 
     return with_client(_go, profile=profile)
@@ -318,6 +316,6 @@ def hmc_configure_remote_access(
     """
 
     return with_client(
-        lambda hmc: configure_remote_access(hmc, console_uuid, values, clear_fields),
+        lambda hmc: hmc.configure_remote_access(console_uuid, values, clear_fields),
         profile=profile,
     )

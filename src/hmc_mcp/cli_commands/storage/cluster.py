@@ -9,8 +9,6 @@ from ...jobs import DeviceType, LuType
 from ...operations.storage.cluster import (
     create_logical_unit,
     delete_logical_unit,
-    list_clusters,
-    list_shared_storage_pools,
     validate_logical_unit_create,
     validate_logical_unit_wait,
 )
@@ -23,7 +21,7 @@ def cluster_list(
 ) -> None:
     """List Clusters (VIOS node sets sharing a storage pool)."""
 
-    clusters = with_client(lambda hmc: list_clusters(hmc))
+    clusters = with_client(lambda hmc: hmc.list_clusters())
 
     table = None
     if not as_json:
@@ -40,7 +38,7 @@ def cluster_list_ssps(
 ) -> None:
     """List Shared Storage Pools (capacity, free space, logical units)."""
 
-    ssps = with_client(lambda hmc: list_shared_storage_pools(hmc))
+    ssps = with_client(lambda hmc: hmc.list_shared_storage_pools())
 
     table = None
     if not as_json:
