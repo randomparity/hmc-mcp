@@ -73,7 +73,7 @@ LEGACY_READ_ONLY = frozenset(
         "hmc_get_lpar_state",
         "hmc_lpar_summary",
         "hmc_list_vios",
-        "hmc_get_vios",
+        "hmc_get_vios_storage_detail",
         "hmc_list_resources",
         "hmc_get_job",
         "hmc_list_recent_jobs",

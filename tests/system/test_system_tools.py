@@ -20,7 +20,7 @@ from hmc_mcp.server_tools.systems import (
     hmc_get_lpar,
     hmc_get_lpar_state,
     hmc_get_system,
-    hmc_get_vios,
+    hmc_get_vios_storage_detail,
     hmc_list_lpars,
     hmc_list_resources,
     hmc_list_systems,
@@ -304,7 +304,7 @@ def test_vios_with_uuid_returns_storage_detail(monkeypatch, mock_hmc):
             200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1")
         )
     )
-    result = hmc_get_vios(VIOS_UUID)
+    result = hmc_get_vios_storage_detail(VIOS_UUID)
     assert route.called
     assert result["UUID"] == VIOS_UUID
 

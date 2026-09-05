@@ -343,7 +343,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "deploy_partition_template",
         "list_vios_backups",
         "list_vios",
-        "get_vios",
+        "get_vios_storage_detail",
         "backup_vios",
         "create_vios",
         "delete_vios",
@@ -2015,10 +2015,15 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         assert selector_names == ["vios_name_or_uuid", "system_name_or_uuid"]
         assert parameters["system_name_or_uuid"].kind is inspect.Parameter.KEYWORD_ONLY
         assert parameters["system_name_or_uuid"].default is None
-    get_vios_parameters = inspect.signature(api.get_vios).parameters
-    assert list(get_vios_parameters)[:2] == ["hmc", "vios_name_or_uuid"]
-    assert get_vios_parameters["system_name_or_uuid"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert get_vios_parameters["system_name_or_uuid"].default is None
+    storage_detail_parameters = inspect.signature(
+        api.get_vios_storage_detail
+    ).parameters
+    assert list(storage_detail_parameters)[:2] == ["hmc", "vios_name_or_uuid"]
+    assert (
+        storage_detail_parameters["system_name_or_uuid"].kind
+        is inspect.Parameter.KEYWORD_ONLY
+    )
+    assert storage_detail_parameters["system_name_or_uuid"].default is None
     assert "capacity_mib" in inspect.signature(api.create_virtual_disk).parameters
     assert "size_mib" not in inspect.signature(api.create_virtual_disk).parameters
     provision_parameters = inspect.signature(api.provision_lpar).parameters
@@ -2055,12 +2060,12 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Every LPAR operation now places the system selector before the LPAR selector.
     # VIOS inventory operations and their PartitionState selector joined the facade.
     # System and VIOS power operations now use power_on like the LPAR operation.
-        # VIOS mutations share system-before-partition selector order; get_vios
-        # makes its optional system scope keyword-only after the required selector.
-        # VIOS update and upgrade operations now place the required VIOS selector
-        # before the optional managed-system scope, matching the other VIOS mutations.
-        # ProvisionRequest's mixed network/storage group is named adapters to
-        # describe its vSCSI and virtual-Ethernet contents accurately.
+    # VIOS mutations share system-before-partition selector order; the storage-detail getter
+    # makes its optional system scope keyword-only after the required selector.
+    # VIOS update and upgrade operations now place the required VIOS selector
+    # before the optional managed-system scope, matching the other VIOS mutations.
+    # ProvisionRequest's mixed network/storage group is named adapters to
+    # describe its vSCSI and virtual-Ethernet contents accurately.
     # Virtual-disk creation now uses capacity_mib at every public layer.
     # ProvisionAdapters replaces the network-only name for its mixed adapter inputs.
     # SSH-only operations accept HMCConfig directly instead of an unused REST client.
@@ -2080,7 +2085,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
     # ADR 0117 bounds supported storage inventory results.
-    expected_digest = "77ee6d72594c0611ac1c438f74690eeb1640883b30d1125175d436c53abad7be"  # pragma: allowlist secret
+    expected_digest = "40621b350bcc01a584029aef03c8acd40698c22392a38adb07dd5a4ad377829d"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

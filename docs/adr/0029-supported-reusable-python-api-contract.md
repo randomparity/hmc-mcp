@@ -266,7 +266,7 @@ names are internal everywhere and are never inventoried.
 - `operations.users` — operations: `configure_remote_access`, `create_user`, `delete_user`,
   `modify_user`; types: `CreateUserRequest`, `ModifyUserPatch`; excluded synchronous: none.
 - `operations.vios` — operations: `backup_vios`, `create_vios`, `delete_vios`,
-  `get_vios`, `list_vios`, `list_vios_backups`, `power_vios`, `restore_vios`; types:
+  `get_vios_storage_detail`, `list_vios`, `list_vios_backups`, `power_vios`, `restore_vios`; types:
   `BackupType`, `RestoreBackupType`;
   excluded synchronous: `validate_vios_backup_name`, `validate_vios_backup_request`,
   `validate_vios_restore_request`.

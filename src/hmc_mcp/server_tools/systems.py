@@ -29,7 +29,7 @@ from ..operations.systems import (
     modify_system,
     power_system,
 )
-from ..operations.vios import get_vios, list_vios
+from ..operations.vios import get_vios_storage_detail, list_vios
 from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
@@ -189,7 +189,7 @@ def hmc_list_vios(
     When state is provided without a system scope, returns only
     VIOS entries whose PartitionState matches the given value, using the HMC
     server-side search endpoint. With a system scope, the returned feed is
-    filtered locally after the scoped request. Use hmc_get_vios
+    filtered locally after the scoped request. Use hmc_get_vios_storage_detail
     for the storage-detail mappings of one VIOS.
 
     Args:
@@ -208,7 +208,7 @@ def hmc_list_vios(
 
 
 @tool(effect="read", operation="vios.get", target_kind="vios")
-def hmc_get_vios(
+def hmc_get_vios_storage_detail(
     vios_name_or_uuid: str,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
@@ -222,7 +222,7 @@ def hmc_get_vios(
     """
 
     return with_client(
-        lambda hmc: get_vios(
+        lambda hmc: get_vios_storage_detail(
             hmc,
             vios_name_or_uuid,
             system_name_or_uuid=system_name_or_uuid,

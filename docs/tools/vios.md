@@ -9,7 +9,7 @@
 | `hmc_backup_vios` | `mutate` | `vios.backup` | `vios` | Create a named VIOS backup with the supported ``mkviosbk`` command. |
 | `hmc_create_vios` | `mutate` | `vios.create` | `managed_system` | Create a new Virtual IO Server (VIOS) partition on a managed system. |
 | `hmc_delete_vios` | `destructive` | `vios.delete` | `vios` | Delete (destroy) a VIOS partition by name or UUID. |
-| `hmc_get_vios` | `read` | `vios.get` | `vios` | Get storage-detail mappings for one VIOS by partition name or UUID. |
+| `hmc_get_vios_storage_detail` | `read` | `vios.get` | `vios` | Get storage-detail mappings for one VIOS by partition name or UUID. |
 | `hmc_install_vios` | `destructive` | `vios.install` | `vios` | Install a VIOS onto an existing partition via the HMC ``installios`` CLI. |
 | `hmc_list_vios` | `read` | `vios.list` | `managed_system` | List Virtual I/O Servers, optionally filtered by system or state. |
 | `hmc_list_vios_backups` | `read` | `vios.list_backups` | `vios` | List a VIOS backup catalog with the supported ``lsviosbk`` command. |

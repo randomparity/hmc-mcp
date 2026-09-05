@@ -81,6 +81,9 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `None` when they intentionally request fleet-wide LPAR-name resolution.
 - Exported VIOS storage operations now require `vios_name_or_uuid` first and
   accept the optional `system_name_or_uuid` selector as a keyword-only argument.
+- The supported VIOS storage-detail operation and MCP tool are now
+  `get_vios_storage_detail` and `hmc_get_vios_storage_detail`; the ambiguous
+  `get_vios` and `hmc_get_vios` names were removed.
 - Storage inventory operations now return bounded `VolumeGroup`, `OpticalMedia`,
   and `StorageMapping` values instead of raw HMC response mappings (ADR 0117).
 
@@ -521,8 +524,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   matching the CLI and MCP tool boundary.
 - Changed: `list_systems` accepts any exact HMC state string; removed the
   misleading finite `ManagedSystemState` facade type and tool-schema enum.
-- Changed: `get_vios` now accepts the required VIOS selector first and makes its
-  optional managed-system scope keyword-only.
+- Renamed: `get_vios` is now `get_vios_storage_detail`.
 - Added: `DecommissionBlastRadius` and `DecommissionAdapterRecord` type the
   stable inventory returned through `DecommissionResult.blast_radius`.
 - Added: `list_clusters`, `list_shared_storage_pools`, and
@@ -535,11 +537,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 - Changed: SSH affinity result types and workflows now live in
   `operations.affinity.ssh`; network inventory and vNIC mutation now live in
   `operations.vnic`.
-- Changed: `get_vios`, `delete_vios`, `update_vios`, and `upgrade_vios` now place the
+- Changed: `delete_vios`, `update_vios`, and `upgrade_vios` now place the
   optional managed-system selector before the VIOS selector, matching sibling VIOS
   operations and allowing update and upgrade names to be disambiguated.
 
-- Added: `get_vios`, `list_vios`, and the latter's `PartitionState` selector
+- Added: `get_vios_storage_detail`, `list_vios`, and the latter's `PartitionState` selector
   type as the shared VIOS inventory boundary used by both presentation layers.
 - Changed: `power_system` and `power_vios` now name their action flag
   `power_on`, matching `power_lpar`.

@@ -52,7 +52,7 @@ async def list_vios(
     ]
 
 
-async def get_vios(
+async def get_vios_storage_detail(
     hmc: HMCClient,
     vios_name_or_uuid: str,
     *,
