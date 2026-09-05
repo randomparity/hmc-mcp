@@ -1133,6 +1133,7 @@ def test_from_mapping_applies_every_supplied_key():
         "user": "rowuser",
         "password": "rowpass",  # pragma: allowlist secret
         "ssh_key_file": "/keys/row",
+        "ssh_verify_host_key": False,
         "verify_ssl": True,
         "timeout": 15.0,
         "ssh_timeout": 30.0,

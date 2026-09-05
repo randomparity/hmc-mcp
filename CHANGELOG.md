@@ -29,6 +29,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- SSH commands and consoles now verify host keys against the process user's
+  `~/.ssh/known_hosts`; provision independently verified keys before upgrading.
+  `ssh_verify_host_key=false` (or `HMC_SSH_VERIFY_HOST_KEY=false`) explicitly
+  bypasses verification with a warning. The operator probe requires `--insecure`
+  for its own per-run bypass (#605, ADR 0116).
 - The HMC PTF query operation and MCP tool now use submission-oriented names:
   `submit_available_hmc_ptfs_query` and `hmc_submit_available_hmc_ptfs_query`.
 - SR-IOV physical-port inventory now queries both evidenced `roce` and `ethc`

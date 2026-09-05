@@ -21,8 +21,10 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import pathlib
+import sys
 import tomllib
 from dataclasses import dataclass
 
@@ -79,13 +81,18 @@ async def run(conn: asyncssh.SSHClientConnection, cmd: str) -> tuple[int, str, s
         return -1, "", str(exc)
 
 
-def connect_kwargs(profile: Profile) -> dict:
+def connect_kwargs(profile: Profile, *, insecure: bool = False) -> dict:
+    if insecure:
+        print(
+            f"WARNING: SSH host-key verification disabled for {profile.host} (--insecure)",
+            file=sys.stderr,
+        )
     return {
         "host": profile.host,
         "port": 22,
         "username": profile.user,
         "password": profile.password,
-        "known_hosts": None,
+        "known_hosts": None if insecure else str(pathlib.Path.home() / ".ssh" / "known_hosts"),
         "preferred_auth": "password",
         "client_keys": [],
     }
@@ -96,7 +103,7 @@ def connect_kwargs(profile: Profile) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def probe_profile(profile: Profile) -> dict:
+async def probe_profile(profile: Profile, *, insecure: bool = False) -> dict:
     """Stage-1 + Stage-2 probe for one HMC profile."""
     result: dict = {
         "profile": profile.name,
@@ -105,7 +112,7 @@ async def probe_profile(profile: Profile) -> dict:
         "systems": [],
     }
     try:
-        async with asyncssh.connect(**connect_kwargs(profile)) as conn:
+        async with asyncssh.connect(**connect_kwargs(profile, insecure=insecure)) as conn:
             # --- Stage 1: HMC version and managed-system list ---
             rc, stdout, stderr = await run(conn, "lshmc -V")
             result["queries"]["lshmc -V"] = {
@@ -224,11 +231,11 @@ def _print_query(label: str, q: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def main() -> None:
+async def main(*, insecure: bool = False) -> None:
     profiles = load_profiles()
     print(f"Probing {len(profiles)} HMC profile(s) …\n")
 
-    tasks = [probe_profile(p) for p in profiles]
+    tasks = [probe_profile(p, insecure=insecure) for p in profiles]
     results = await asyncio.gather(*tasks)
 
     report(list(results))
@@ -248,4 +255,10 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--insecure", action="store_true",
+        help="Disable SSH host-key verification for this run (credentials may be intercepted)",
+    )
+    args = parser.parse_args()
+    asyncio.run(main(insecure=args.insecure))
