@@ -45,13 +45,12 @@ pager, or a prompt will stall the agent with no recovery path.
       and H1, never its body — so editing an ADR's prose is not caught by that
       gate. Most ADRs are in this class, which is why a prose-only ADR edit is
       one of the few real documentation-only changes here.
-    - **Content-unasserted** today: the `docs/plan-*`, `docs/spec-*`,
-      `docs/scorecard-*`, `docs/workflow/` and `docs/superpowers/` pages. Test
-      modules cite some of those specs in module docstrings, which asserts
-      nothing about the file. `just doc-freshness` does read every tracked
-      Markdown file's *first line*, looking for a generation banner — so a page
-      here can still redden it by opening with something banner-shaped, but its
-      body is unchecked.
+    - **Content-unasserted** today: the `docs/scorecard-*` and `docs/workflow/`
+      pages. Test modules cite some of those specs in module docstrings, which
+      asserts nothing about the file. `just doc-freshness` does read every
+      tracked Markdown file's *first line*, looking for a generation banner —
+      so a page here can still redden it by opening with something
+      banner-shaped, but its body is unchecked.
   - **When the answer is not obvious, use `--merge`.** It costs one merge
     commit. A wrong `--squash` is not reversible once it is on `main`.
   - Two shell mechanics, for whatever check you do write over
