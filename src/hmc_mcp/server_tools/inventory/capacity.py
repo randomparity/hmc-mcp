@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import serialize_tool_result, with_client
-from ..operations.capacity import fetch_capacity_report, find_placement
-from ..tool_registry import tool_module
+from ..._app import serialize_tool_result, with_client
+from ...operations.inventory.capacity import fetch_capacity_report, find_placement
+from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

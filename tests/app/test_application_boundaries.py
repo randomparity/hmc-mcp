@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 from typer.testing import CliRunner
 
 from hmc_mcp.cli import app
-from hmc_mcp.operations.composite import _lpar_summary, _system_summary
+from hmc_mcp.operations.inventory.composite import _lpar_summary, _system_summary
 
 
 class _ClientContext:

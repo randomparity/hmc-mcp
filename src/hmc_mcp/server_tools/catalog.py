@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from hmc_mcp.server_tools import (
-    capacity,
-    composite,
     console,
     jobs,
     lpm,
@@ -20,6 +18,7 @@ from hmc_mcp.server_tools import (
     vios_labels,
 )
 from hmc_mcp.server_tools.command import HMC_RUN_COMMAND_SECURITY
+from hmc_mcp.server_tools.inventory import capacity, composite
 from hmc_mcp.server_tools.lpar import (
     configuration,
     lifecycle,

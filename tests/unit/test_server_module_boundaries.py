@@ -30,7 +30,7 @@ def test_domain_handlers_live_in_focused_modules() -> None:
         storage.hmc_attach_disk_to_lpar: "hmc_mcp.server_tools.storage.resources",
         adapters.hmc_list_adapters: "hmc_mcp.server_tools.virtualization.adapters",
         jobs.hmc_get_job: "hmc_mcp.server_tools.jobs",
-        capacity.hmc_capacity_report: "hmc_mcp.server_tools.capacity",
+        capacity.hmc_capacity_report: "hmc_mcp.server_tools.inventory.capacity",
         command.hmc_run_command: "hmc_mcp.server_tools.command",
         systems.hmc_modify_system: "hmc_mcp.server_tools.systems.core",
         systems.hmc_power_on_system: "hmc_mcp.server_tools.systems.core",

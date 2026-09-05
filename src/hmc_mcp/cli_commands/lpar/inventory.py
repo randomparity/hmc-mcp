@@ -7,7 +7,7 @@ from dataclasses import asdict
 import typer
 from rich.table import Table
 
-from ...operations.composite import fetch_lpar_summary
+from ...operations.inventory.composite import fetch_lpar_summary
 from ...operations.lpar.core import (
     get_lpar,
     get_lpar_state,

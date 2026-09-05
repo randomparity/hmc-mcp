@@ -8,8 +8,8 @@ import typer
 from rich.table import Table
 
 from ...jobs import validate_wait_timing
-from ...operations.capacity import fetch_capacity_report, find_placement
-from ...operations.composite import fetch_system_summary
+from ...operations.inventory.capacity import fetch_capacity_report, find_placement
+from ...operations.inventory.composite import fetch_system_summary
 from ...operations.systems.core import (
     get_system,
     list_systems,

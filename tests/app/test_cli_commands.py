@@ -757,7 +757,7 @@ def test_lpars_list_state_filter(fake_hmc):
 
 
 def test_lpars_summary_renders_numeric_zero(monkeypatch):
-    from hmc_mcp.operations.composite import _lpar_summary
+    from hmc_mcp.operations.inventory.composite import _lpar_summary
 
     summary = _lpar_summary(
         {

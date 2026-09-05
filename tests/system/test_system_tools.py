@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.server_tools.capacity import (
+from hmc_mcp.server_tools.inventory.capacity import (
     hmc_capacity_report,
     hmc_find_placement,
 )
