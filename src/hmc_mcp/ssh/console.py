@@ -378,51 +378,21 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
                 exc,
             )
             return False
-        saw_sentinel = False
-        acquired_evidence = False
-        remote_exited = False
         try:
-            loop = asyncio.get_running_loop()
-            deadline = loop.time() + _RELEASE_PROBE_SECONDS
-            buf = bytearray()
-            while True:
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    break
-                try:
-                    chunk = await asyncio.wait_for(
-                        process.stdout.read(_CHUNK), remaining
-                    )
-                except TimeoutError:
-                    break
-                except Exception:  # noqa: BLE001 - transport trouble ends the probe; there is nothing more to learn
-                    break  # transport trouble: unproven, nothing more to learn
-                if not chunk:
-                    remote_exited = True
-                    break
-                buf += chunk
-                if HELD_SENTINEL in buf:
-                    saw_sentinel = True
-                    break
-                if ACQUIRED_SENTINEL in buf:
-                    # The recorded HMC acquisition banner proves the probe's
-                    # mkvterm owns the slot. Arbitrary partial output does not:
-                    # it may be the beginning of the contention sentinel.
-                    acquired_evidence = True
-                    break
+            outcome = await _read_release_probe(process)
         finally:
             stdin.close()
             connection.close()
-        if saw_sentinel:
+        if outcome == "held":
             return False
-        if remote_exited:
+        if outcome == "remote-exited":
             logger.warning(
                 "release probe for %s/%s exited without proof of release",
                 system_name,
                 lpar_name,
             )
             return False
-        if acquired_evidence:
+        if outcome == "acquired":
             try:
                 await run_hmc_command(config, rmvterm_command)
             except HMCCLIError as exc:
@@ -448,6 +418,30 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
         return False
     finally:
         stdin.close()
+
+
+async def _read_release_probe(process: Any) -> Literal[
+    "acquired", "held", "remote-exited", "unproven"
+]:
+    """Classify one bounded probe stream without making ownership decisions."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _RELEASE_PROBE_SECONDS
+    output = bytearray()
+    while (remaining := deadline - loop.time()) > 0:
+        try:
+            chunk = await asyncio.wait_for(process.stdout.read(_CHUNK), remaining)
+        except TimeoutError:
+            break
+        except Exception:  # noqa: BLE001 - transport trouble leaves ownership unproven
+            break
+        if not chunk:
+            return "remote-exited"
+        output += chunk
+        if HELD_SENTINEL in output:
+            return "held"
+        if ACQUIRED_SENTINEL in output:
+            return "acquired"
+    return "unproven"
 
 
 async def _open_capture_stream(
