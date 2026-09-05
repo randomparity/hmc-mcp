@@ -20,8 +20,8 @@ pager, or a prompt will stall the agent with no recovery path.
 - Suppress the pager: `git --no-pager <subcommand>` or set `GIT_PAGER=cat`.
 - **Never squash-merge** (`gh pr merge --squash` / `git merge --squash`) unless
   the PR is documentation-only. Squash merges collapse commit history and break
-  `git bisect`. Use `--merge` (merge commit) for all code, test, config, and
-  script changes.
+  `git bisect`. For all code, test, config, and script changes, use either
+  `--merge` (merge commit) or `--rebase` (rebase merge).
   - **Documentation-only** means **no changed file's content is asserted by a
     test or a `static` gate.** *Content*, specifically: repo-wide scans like
     `just secrets` read every tracked file, and counting those would make the
@@ -63,7 +63,9 @@ pager, or a prompt will stall the agent with no recovery path.
     output, and treat an unanswered query as "not documentation-only".
   - The policy is prose, not a gate: **nothing in the repo enforces it** —
     `rg -ni squash` over `.github/`, `tests/`, `scripts/`, `justfile`, and
-    `.pre-commit-config.yaml` returns nothing. Your own reading before the merge
+    `.pre-commit-config.yaml` returns nothing. The maintainer has intentionally
+    retained squash-merge availability and selected this documented human
+    pre-merge check as the sufficient control; your own reading before the merge
     is the only control.
   - **A single-parent commit on `main` is not evidence of a squash.** This repo
     has also landed PRs with `--rebase`, which replays each commit onto `main`
@@ -71,9 +73,9 @@ pager, or a prompt will stall the agent with no recovery path.
     commits landed that way as `aec6125^..f528e94`. To tell a squash from a
     rebase, compare the commit's own diff with the PR's: on a squash they are
     equal, on a rebase the commit carries only its own slice. This paragraph is
-    forensic — how to read history after the fact. It is **not** a second
-    blessed strategy: the rule above still says `--merge`, and whether
-    `--rebase` should join it is open in #530.
+    forensic — how to read history after the fact. It does not prefer one
+    permitted non-squash strategy over the other: both `--merge` and `--rebase`
+    preserve the per-commit history this policy protects.
 
 **Other common interactive traps**
 
