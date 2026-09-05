@@ -14,7 +14,6 @@ from .adapters import (  # noqa: F401
 )
 from .boot import (  # noqa: F401
                       BOOT_DEVICE_SELECTORS,
-                      _build_pending_boot_string,
                       build_boot_order_document,
                       build_clear_boot_order_document,
 )
