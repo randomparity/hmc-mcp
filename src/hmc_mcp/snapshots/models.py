@@ -273,27 +273,32 @@ class LparSnapshot(_StrictSnapshotModel):
         if capability.collection != "hmc-cli":
             raise ValueError(f"{name} capability must use hmc-cli collection")
         if capability.supported:
-            if capability.unavailable_reason is not None or observation is None:
-                raise ValueError(
-                    f"supported {name} requires an observation and no unavailable reason"
-                )
-            if observation.media_type != MINIMUM_AFFINITY_POLICY_MEDIA_TYPE:
-                raise ValueError(f"{name} observation media_type is unsupported")
-            expected = {"min_affinity_score", "min_affinity_score_action"}
-            if set(observation.data) != expected:
-                raise ValueError(f"{name} observation fields are invalid")
-            score = observation.data["min_affinity_score"]
-            action = observation.data["min_affinity_score_action"]
-            if (
-                isinstance(score, bool)
-                or not isinstance(score, int)
-                or not 0 <= score <= 100
-            ):
-                raise ValueError(f"{name} score must be an integer from 0 through 100")
-            if action not in {"none", "warn", "fail"}:
-                raise ValueError(f"{name} action must be none, warn, or fail")
-        elif capability.unavailable_reason is None or observation is not None:
+            self._check_supported_minimum_affinity_policy(capability, observation)
+            return
+        if capability.unavailable_reason is None or observation is not None:
             raise ValueError(f"unsupported {name} requires a reason and no observation")
+
+    def _check_supported_minimum_affinity_policy(
+        self,
+        capability: SnapshotCapability,
+        observation: ObservationEnvelope | None,
+    ) -> None:
+        name = "minimum-affinity-policy"
+        if capability.unavailable_reason is not None or observation is None:
+            raise ValueError(
+                f"supported {name} requires an observation and no unavailable reason"
+            )
+        if observation.media_type != MINIMUM_AFFINITY_POLICY_MEDIA_TYPE:
+            raise ValueError(f"{name} observation media_type is unsupported")
+        expected = {"min_affinity_score", "min_affinity_score_action"}
+        if set(observation.data) != expected:
+            raise ValueError(f"{name} observation fields are invalid")
+        score = observation.data["min_affinity_score"]
+        action = observation.data["min_affinity_score_action"]
+        if isinstance(score, bool) or not isinstance(score, int) or not 0 <= score <= 100:
+            raise ValueError(f"{name} score must be an integer from 0 through 100")
+        if action not in {"none", "warn", "fail"}:
+            raise ValueError(f"{name} action must be none, warn, or fail")
 
     def _check_observation(
         self, name: str, value: ObservationEnvelope | None, media_type: str
@@ -404,25 +409,31 @@ class _DuplicateScanner:
         if index < len(self.text) and self.text[index] == "}":
             return index + 1
         while index < len(self.text):
-            try:
-                key, end = self.decoder.raw_decode(self.text, index)
-            except json.JSONDecodeError:
-                return len(self.text)
-            if not isinstance(key, str):
-                return len(self.text)
-            if key in keys:
-                _error(_pointer((*path, key)), "duplicate JSON member")
-            keys.add(key)
-            index = self._space(end)
-            if index >= len(self.text) or self.text[index] != ":":
-                return len(self.text)
-            index = self._space(self._value(index + 1, (*path, key), len(path) + 1))
+            _, index = self._object_member(index, path, keys)
             if index < len(self.text) and self.text[index] == "}":
                 return index + 1
             if index >= len(self.text) or self.text[index] != ",":
                 return len(self.text)
             index = self._space(index + 1)
         return index
+
+    def _object_member(
+        self, index: int, path: tuple[Any, ...], keys: set[str]
+    ) -> tuple[str, int]:
+        try:
+            key, end = self.decoder.raw_decode(self.text, index)
+        except json.JSONDecodeError:
+            return "", len(self.text)
+        if not isinstance(key, str):
+            return "", len(self.text)
+        if key in keys:
+            _error(_pointer((*path, key)), "duplicate JSON member")
+        keys.add(key)
+        index = self._space(end)
+        if index >= len(self.text) or self.text[index] != ":":
+            return "", len(self.text)
+        value = self._value(index + 1, (*path, key), len(path) + 1)
+        return key, self._space(value)
 
     def _array(self, index: int, path: tuple[Any, ...]) -> int:
         index = self._space(index + 1)
