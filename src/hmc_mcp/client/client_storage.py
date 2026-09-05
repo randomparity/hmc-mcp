@@ -84,6 +84,56 @@ def _extract_system_uuid_from_vios(vios_elem: ET.Element) -> str:
     return match.group(1)
 
 
+def _extract_optical_media(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return media entries from documented and legacy repository shapes."""
+    optical_media: list[dict[str, Any]] = []
+    for entry in entries:
+        resource = entry.get("Resource")
+        if not isinstance(resource, dict):
+            continue
+        repositories = resource.get("MediaRepositories") or resource
+        if not isinstance(repositories, dict):
+            continue
+        repository = repositories.get("VirtualMediaRepository")
+        if not isinstance(repository, dict):
+            continue
+        media_container = repository.get("OpticalMedia") or repository
+        if not isinstance(media_container, dict):
+            continue
+        media = media_container.get("VirtualOpticalMedia", [])
+        if isinstance(media, list):
+            optical_media.extend(item for item in media if isinstance(item, dict))
+        elif isinstance(media, dict):
+            optical_media.append(media)
+    return optical_media
+
+
+def _filter_optical_mappings(
+    mappings: list[dict[str, Any]], lpar_uuid: str | None
+) -> list[dict[str, Any]]:
+    """Keep optical-backed mappings, optionally scoped to one client LPAR."""
+    optical = [
+        mapping
+        for mapping in mappings
+        if isinstance(mapping.get("Storage"), dict)
+        and "VirtualOpticalMedia" in mapping["Storage"]
+    ]
+    if lpar_uuid is None:
+        return optical
+    expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
+    return [
+        mapping
+        for mapping in optical
+        if _mapping_targets_lpar(mapping, expected_link)
+    ]
+
+
+def _mapping_targets_lpar(mapping: dict[str, Any], expected_link: str) -> bool:
+    partition = mapping.get("AssociatedLogicalPartition")
+    href = partition.get("href") if isinstance(partition, dict) else None
+    return isinstance(href, str) and urlparse(href).path == expected_link
+
+
 class StorageMixin:
     async def _broker_file_create(
         self: StorageClient, vios_uuid: str, vg_uuid: str, filename: str
@@ -801,36 +851,7 @@ class StorageMixin:
         if not entries:
             return []
 
-        # The HMC V10R3 structure is:
-        #   Resource.MediaRepositories.VirtualMediaRepository.OpticalMedia.VirtualOpticalMedia
-        # Older firmware may use a bare path without the wrappers.
-        optical_media: list[dict[str, Any]] = []
-        for entry in entries:
-            resource = entry.get("Resource")
-            if not isinstance(resource, dict):
-                continue
-            mr_container = resource.get("MediaRepositories")
-            if mr_container is None:
-                mr_container = resource
-            if not isinstance(mr_container, dict):
-                continue
-            repo = mr_container.get("VirtualMediaRepository")
-            if not isinstance(repo, dict):
-                continue
-            opt_media_container = repo.get("OpticalMedia")
-            if opt_media_container is None:
-                opt_media_container = repo
-            if not isinstance(opt_media_container, dict):
-                continue
-            media_list = opt_media_container.get("VirtualOpticalMedia", [])
-            if isinstance(media_list, list):
-                optical_media.extend(
-                    item for item in media_list if isinstance(item, dict)
-                )
-            elif isinstance(media_list, dict):
-                optical_media.append(media_list)
-
-        return optical_media
+        return _extract_optical_media(entries)
 
     # Virtual Optical Mapping (VirtualSCSIMapping for VirtualOpticalMedia)
     async def list_optical_mappings(
@@ -862,26 +883,9 @@ class StorageMixin:
         if not isinstance(mappings, list):
             mappings = [mappings] if mappings else []
 
-        optical_mappings = []
-        for m in mappings:
-            if not isinstance(m, dict):
-                continue
-
-            storage = m.get("Storage", {})
-            if "VirtualOpticalMedia" in storage:
-                optical_mappings.append(m)
-
-        if lpar_uuid:
-            expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
-            filtered_mappings = []
-            for mapping in optical_mappings:
-                partition = mapping.get("AssociatedLogicalPartition")
-                href = partition.get("href") if isinstance(partition, dict) else None
-                if isinstance(href, str) and urlparse(href).path == expected_link:
-                    filtered_mappings.append(mapping)
-            optical_mappings = filtered_mappings
-
-        return optical_mappings
+        return _filter_optical_mappings(
+            [mapping for mapping in mappings if isinstance(mapping, dict)], lpar_uuid
+        )
 
     async def create_optical_mapping(
         self: StorageClient,
