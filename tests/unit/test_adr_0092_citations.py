@@ -38,6 +38,53 @@ _BACKTICKED = re.compile(r"`([^`]+)`")
 # silently stops matching; §6 only ever adds rows, so it never needs lowering.
 _MINIMUM_ROWS = 40
 
+_MUTATOR_PREFIXES = (
+    "add_", "apply_", "assign_", "attach_", "abort_", "clear_", "configure_", "create_",
+    "decommission_", "delete_", "deploy_", "detach_", "install_", "map_", "migrate_",
+    "modify_", "mount_", "power_", "provision_", "recover_", "remote_", "remove_",
+    "rename_", "restore_", "set_", "synchronize_", "unassign_", "unmount_",
+)
+_INVENTORY_PATHS = tuple(
+    _SOURCE_ROOT / path
+    for path in (
+        "operations/lpar/assignments.py", "operations/lpar/boot_order.py",
+        "operations/lpar/configuration.py", "operations/lpar/core.py",
+        "operations/lpar/decommission.py", "operations/lpar/dlpar.py",
+        "operations/lpar/migration.py", "operations/lpar/ownership.py",
+        "operations/lpar/provision.py", "operations/affinity/ssh.py",
+        "operations/virtualization/adapters.py", "operations/virtualization/pcie.py",
+        "operations/virtualization/vnic.py", "operations/storage/resources.py",
+        "operations/templates/core.py", "operations/install.py",
+    )
+)
+_CLASSIFIED_MUTATORS = frozenset({
+    "apply_lpar_pcie_assignments", "apply_validated_lpar_pcie_assignments",
+    "assign_dedicated_pcie_slot", "unassign_dedicated_pcie_slot",
+    "assign_sriov_logical_port", "unassign_sriov_logical_port", "attach_disk_to_lpar",
+    "abort_lpar_migration", "recover_lpar_migration", "remote_restart_lpar",
+    "add_network_adapter", "add_vscsi_adapter", "add_vfc_adapter", "delete_adapter",
+    "add_vnic", "remove_vnic", "clear_lpar_boot_order", "set_lpar_boot_order",
+    "configure_lpar_msp", "configure_lpar_processor_compatibility", "synchronize_lpar_profile",
+    "restore_system_lpar_profiles", "delete_lpar", "rename_lpar", "decommission_lpar",
+    "modify_lpar", "set_lpar_processors", "set_lpar_memory", "migrate_lpar",
+    "migrate_lpar_with_affinity_preflight", "map_storage", "detach_storage_mapping",
+    "mount_optical_media", "unmount_optical_media", "set_minimum_affinity_policy",
+    "set_lpar_ownership_description",
+})
+_OPERATIONAL_MUTATORS = frozenset({"power_lpar"})
+_CREATION_MUTATORS = frozenset({"create_and_stamp_lpar", "provision_lpar", "deploy_partition_template"})
+_NON_LPAR_MUTATORS = frozenset({
+    "create_volume_group", "create_virtual_disk", "delete_virtual_disk", "create_media_repository",
+    "create_optical_media", "delete_media_repository", "delete_optical_media", "power_on_lpar",
+    "set_sriov_adapter_mode", "install_vios", "install_vios_by_lpar_selector",
+})
+_GUARDED_DELEGATES = {
+    "add_vnic": "_preflight_add",
+    "assign_sriov_logical_port": "_preflight_sriov_assignment",
+    "apply_lpar_pcie_assignments": "apply_validated_lpar_pcie_assignments",
+    "migrate_lpar_with_affinity_preflight": "migrate_lpar",
+}
+
 # The one §3 row whose subject is not a Python definition: it names a CLI command, and
 # cites the line inside the command body that writes without an ownership check.
 _UNCHECKED_ROWS = frozenset({"`hmc lpar modify` (CLI)"})
@@ -142,6 +189,35 @@ def test_section_3_rows_are_all_parsed() -> None:
         f"parsed only {len(_CITATIONS)} §3 citations; the table format changed and "
         "this guard is no longer reading it"
     )
+
+
+def test_every_exposed_mutator_has_an_ownership_classification() -> None:
+    discovered = {
+        node.name
+        for path in _INVENTORY_PATHS
+        for node in ast.parse(path.read_text(encoding="utf-8")).body
+        if isinstance(node, ast.AsyncFunctionDef)
+        and node.name.startswith(_MUTATOR_PREFIXES)
+    }
+    classified = (
+        _CLASSIFIED_MUTATORS | _OPERATIONAL_MUTATORS | _CREATION_MUTATORS | _NON_LPAR_MUTATORS
+    )
+    assert discovered == classified, (
+        "ADR 0092 ownership inventory is incomplete: "
+        f"unclassified={sorted(discovered - classified)}, stale={sorted(classified - discovered)}"
+    )
+
+
+def test_guarded_mutators_reach_an_ownership_helper() -> None:
+    source = "\n".join(path.read_text(encoding="utf-8") for path in _INVENTORY_PATHS)
+    for operation in _CLASSIFIED_MUTATORS:
+        definition = re.search(
+            rf"async def {operation}\b.*?(?=\nasync def |\Z)", source, re.DOTALL
+        )
+        assert definition is not None
+        body = definition.group()
+        delegate = _GUARDED_DELEGATES.get(operation)
+        assert "authorize" in body or (delegate is not None and delegate in body), operation
 
 
 @pytest.mark.parametrize("citation", _CITATIONS, ids=str)

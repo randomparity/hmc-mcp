@@ -101,10 +101,10 @@ decision in this class.
 ### 3. Classification
 
 Exhaustive as of `b41e658`, and extended in place by §6 as later PRs add operations —
-each such row names the issue that added it. That extension is a **reviewer obligation, not yet
-mechanically enforced**: §5's partition test does not exist, and #369 owns it. Until it lands, the
-anchor commit is where the tables were last verified exhaustive, not a standing guarantee that a
-later export cannot arrive without a row. Guard-call sites are `authorize_lpar_mutation` unless
+each such row names the issue that added it. ADR 0119's executable inventory in
+`tests/unit/test_adr_0092_citations.py` now enforces the extension: every discovered mutator in
+the governed operation modules must be classified, and guarded entries must reach an existing
+ownership helper. Guard-call sites are `authorize_lpar_mutation` unless
 noted. "Unguarded" is a defect against this ADR, not a standing exemption; standing
 exemptions are §3.4 only. The **Tracking** column names the issue that closes each
 defect; a row with no issue must read `none yet` rather than be left blank, so the
