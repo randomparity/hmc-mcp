@@ -179,7 +179,7 @@ def _print_baseline_summary(state: RunState) -> None:
 
 
 async def capture_lpar_baseline(client: Client, state: RunState) -> None:
-    print("\n=== ST0: Capture ltczz386-lp3 Baseline ===")
+    print("\n=== ST0: Capture baseline LPAR ===")
     await _capture_lpar_properties(client, state)
     await _capture_adapter_topology(client, state)
     await _capture_vios_identity(client, state)

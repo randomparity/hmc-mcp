@@ -152,6 +152,7 @@ async def mutate_virtual_networking(client: Client, state: RunState) -> None:
     else:
         state.skip(9, "hmc_delete_lpar (nettest)", "nettest LPAR not created")
 
+
 # ---------------------------------------------------------------------------
 # ST2 — Network Inventory
 # ---------------------------------------------------------------------------
@@ -174,7 +175,7 @@ async def _discover_virtual_switch(client: Client, state: RunState) -> None:
             context.test_vswitch_id = 0
 
 
-def _unused_vlan(data: Any) -> tuple[int | None, list[object]]:
+def _unused_vlan(data: Any, start: int, end: int) -> tuple[int | None, list[object]]:
     used_vlans: set[int] = set()
     malformed_vlans: list[object] = []
     for entry in entries(data):
@@ -194,7 +195,7 @@ def _unused_vlan(data: Any) -> tuple[int | None, list[object]]:
         available = next(
             (
                 candidate
-                for candidate in range(3000, 3100)
+                for candidate in range(start, end + 1)
                 if candidate not in used_vlans
             ),
             None,
@@ -209,7 +210,9 @@ async def _select_unused_vlan(client: Client, state: RunState) -> None:
         client, "hmc_list_virtual_networks", system_name_or_uuid=context.system_name
     )
     if st == "PASS":
-        context.test_vlan_id, malformed_vlans = _unused_vlan(data)
+        context.test_vlan_id, malformed_vlans = _unused_vlan(
+            data, context.vlan_range_start, context.vlan_range_end
+        )
         if malformed_vlans:
             st = "FAIL"
             data = (

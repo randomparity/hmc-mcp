@@ -17,7 +17,7 @@ from .results import entries
 from .results import resource as get_resource
 
 if TYPE_CHECKING:
-    from live_test_runner import RunState
+    from live_test_runner import LiveTestContext, RunState
 
 
 async def _discover_vmedia_prerequisites(client: Client, state: RunState) -> bool:
@@ -148,7 +148,7 @@ async def _create_and_confirm_vmedia_repository(
 
 async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> None:
     print("\n=== ST16: VG Free-Space Check + Repository Create ===")
-    repo_size_mib = 7000
+    repo_size_mib = state.context.vmedia_repository_size_mib
 
     if not await _discover_vmedia_prerequisites(client, state):
         return
@@ -165,9 +165,6 @@ async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> N
 async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
     context = state.context
     print("\n=== ST17: Short Repository Lifecycle (no ISO) ===")
-
-    _SMALL_SIZE = 512
-    _MAIN_SIZE = 7000
 
     if not context.vmedia_repo_created:
         for name in [
@@ -200,7 +197,7 @@ async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
         "hmc_create_media_repository",
         vios_name_or_uuid=vios,
         vg_uuid=vg,
-        size_mib=_SMALL_SIZE,
+        size_mib=context.vmedia_short_repository_size_mib,
     )
     state.record(17, "hmc_create_media_repository (small)", st, data)
 
@@ -246,7 +243,7 @@ async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
         "hmc_create_media_repository",
         vios_name_or_uuid=vios,
         vg_uuid=vg,
-        size_mib=_MAIN_SIZE,
+        size_mib=context.vmedia_repository_size_mib,
     )
     state.record(17, "hmc_create_media_repository (restore main)", st, data)
     if st == "PASS":
@@ -260,13 +257,6 @@ async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
 # ST18 — ISO Upload via HTTP
 # ---------------------------------------------------------------------------
 
-_ISO_FILENAME = "ubuntu-26.04-live-server-ppc64el.iso"
-_ISO_PATH = str(Path.home() / "Downloads" / _ISO_FILENAME)
-_ISO_MEDIA_NAME = "ubuntu-26.04-test.iso"
-_HTTP_PORT = 18765
-_ISO_HOST = f"localhost:{_HTTP_PORT}"
-_ISO_URL = f"http://{_ISO_HOST}/{_ISO_FILENAME}"
-
 
 class IsoHttpServer:
     """Invocation-owned HTTP fixture for virtual-media ISO uploads."""
@@ -274,16 +264,18 @@ class IsoHttpServer:
     def __init__(self) -> None:
         self._server: http.server.HTTPServer | None = None
 
-    def start(self) -> None:
+    def start(self, context: LiveTestContext) -> None:
         """Start serving the configured ISO directory once for this invocation."""
-        _allow_iso_host()
+        _allow_iso_host(context)
         if self._server is not None:
             return
         handler = functools.partial(
             http.server.SimpleHTTPRequestHandler,
-            directory=str(Path(_ISO_PATH).parent),
+            directory=str(Path(context.iso_path).parent),
         )
-        self._server = http.server.HTTPServer(("localhost", _HTTP_PORT), handler)
+        self._server = http.server.HTTPServer(
+            (context.iso_bind_host, context.iso_http_port), handler
+        )
         threading.Thread(target=self._server.serve_forever, daemon=True).start()
 
     def close(self) -> None:
@@ -295,7 +287,7 @@ class IsoHttpServer:
         self._server = None
 
 
-def _allow_iso_host() -> None:
+def _allow_iso_host(context: LiveTestContext) -> None:
     """Put this runner's own ISO server on ``HMC_ISO_URL_ALLOWLIST``.
 
     ADR 0050 made ``hmc_upload_iso`` refuse every URL whose host an operator has
@@ -311,9 +303,9 @@ def _allow_iso_host() -> None:
     name = "HMC_ISO_URL_ALLOWLIST"
     configured = env_var_value(name) or ""
     entries = [entry.strip() for entry in configured.split(",") if entry.strip()]
-    if _ISO_HOST in entries:
+    if context.iso_host in entries:
         return
-    entries.append(_ISO_HOST)
+    entries.append(context.iso_host)
     # The merged value has to be the one that reaches the field, so every other
     # casing goes first. Assigning to a key that already exists updates it in
     # place rather than moving it, so a variant inserted after the canonical name
@@ -336,48 +328,50 @@ def _prepare_iso_upload(state: RunState, skip_names: list[str]) -> bool:
             state.skip(18, name, "vmedia_repo_created=False (ST16/ST17 failed)")
         return False
 
-    if not Path(_ISO_PATH).is_file():
+    if not Path(context.iso_path).is_file():
         state.record(
             18,
             "iso_file_check",
             "FAIL",
-            f"ISO not found: {_ISO_PATH}",
+            f"ISO not found: {context.iso_path}",
         )
         for name in skip_names:
-            state.skip(18, name, f"ISO file missing: {_ISO_PATH}")
+            state.skip(18, name, f"ISO file missing: {context.iso_path}")
         return False
 
-    state.record(18, "iso_file_check", "PASS", f"ISO found: {_ISO_PATH}")
+    state.record(18, "iso_file_check", "PASS", f"ISO found: {context.iso_path}")
 
     try:
-        state.iso_http_server.start()
+        state.iso_http_server.start(context)
     except OSError as exc:
         state.record(
             18,
             "iso_http_server",
             "FAIL",
             str(exc),
-            f"HTTP server could not bind to port {_HTTP_PORT}",
+            f"HTTP server could not bind to port {context.iso_http_port}",
         )
         for name in skip_names:
-            state.skip(18, name, f"no HTTP server on port {_HTTP_PORT}")
+            state.skip(18, name, f"no HTTP server on port {context.iso_http_port}")
         return False
 
-    state.record(18, "iso_http_server", "PASS", f"serving {_ISO_URL}")
+    state.record(18, "iso_http_server", "PASS", f"serving {context.iso_url}")
     return True
 
 
 async def _upload_and_discover_iso(client: Client, state: RunState) -> None:
     """Upload the ST18 ISO and capture the media name returned by the HMC."""
     context = state.context
-    print(f"  ⏳ Uploading ISO via HTTP ({_ISO_URL}) — may take several minutes…")
+    print(
+        f"  ⏳ Uploading ISO via HTTP ({context.iso_url}) — may take several minutes…"
+    )
     st, data = await state.call(
         client,
         "hmc_upload_iso",
         vios_name_or_uuid=context.vios_uuid,
         vg_uuid=context.vg_uuid,
-        media_name=_ISO_MEDIA_NAME,
-        iso_source=_ISO_URL,
+        media_name=context.iso_media_name,
+        iso_source=context.iso_url,
     )
     state.record(18, "hmc_upload_iso (http)", st, data)
 
@@ -396,20 +390,20 @@ async def _upload_and_discover_iso(client: Client, state: RunState) -> None:
             context.vmedia_iso_name = name
             break
     if not context.vmedia_iso_name and isinstance(data, list) and data:
-        context.vmedia_iso_name = data[0].get("MediaName") or _ISO_MEDIA_NAME
+        context.vmedia_iso_name = data[0].get("MediaName") or context.iso_media_name
 
 
 async def _verify_iso_deduplication(client: Client, state: RunState) -> None:
     """Re-upload the ST18 content and verify the broker deduplicates it."""
     context = state.context
-    print(f"  ⏳ Uploading ISO via HTTP ({_ISO_URL}) again — expect dedup hit…")
+    print(f"  ⏳ Uploading ISO via HTTP ({context.iso_url}) again — expect dedup hit…")
     st_http, data_http = await state.call(
         client,
         "hmc_upload_iso",
         vios_name_or_uuid=context.vios_uuid,
         vg_uuid=context.vg_uuid,
-        media_name="ubuntu-26.04-http-test.iso",
-        iso_source=_ISO_URL,
+        media_name=context.iso_http_media_name,
+        iso_source=context.iso_url,
     )
     http_status = data_http.get("status") if isinstance(data_http, dict) else ""
     if st_http == "PASS" and http_status == "existing":
@@ -446,7 +440,7 @@ async def _reset_iso_for_mount_scenario(client: Client, state: RunState) -> None
         "hmc_delete_optical_media",
         vios_name_or_uuid=context.vios_uuid,
         vg_uuid=context.vg_uuid,
-        media_name=_ISO_MEDIA_NAME,
+        media_name=context.iso_media_name,
     )
     state.record(18, "hmc_delete_optical_media", st, data)
     if st == "PASS":
@@ -466,12 +460,12 @@ async def _reset_iso_for_mount_scenario(client: Client, state: RunState) -> None
         "hmc_upload_iso",
         vios_name_or_uuid=context.vios_uuid,
         vg_uuid=context.vg_uuid,
-        media_name=_ISO_MEDIA_NAME,
-        iso_source=_ISO_URL,
+        media_name=context.iso_media_name,
+        iso_source=context.iso_url,
     )
     state.record(18, "hmc_upload_iso (re-upload for ST19)", st, data)
     if st == "PASS" and isinstance(data, dict):
-        context.vmedia_iso_name = data.get("media_name") or _ISO_MEDIA_NAME
+        context.vmedia_iso_name = data.get("media_name") or context.iso_media_name
     print(f"  vmedia_iso_name: {context.vmedia_iso_name}")
 
 
@@ -645,8 +639,6 @@ async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
 # ST20 — Boot Verification: Power Off → CD Boot → Power On → Verify → Restore
 # ---------------------------------------------------------------------------
 
-_PROTECTED_LPARS = {"ltczz386-lp1", "ltczz386-lp2"}
-
 
 async def _prepare_boot_media(
     client: Client,
@@ -659,10 +651,12 @@ async def _prepare_boot_media(
     context = state.context
     print("  ⏳ Re-uploading ISO for boot test (may take several minutes)…")
     try:
-        state.iso_http_server.start()
+        state.iso_http_server.start(context)
     except OSError as exc:
         for name in remaining_steps:
-            state.skip(20, name, f"no HTTP server on port {_HTTP_PORT}: {exc}")
+            state.skip(
+                20, name, f"no HTTP server on port {context.iso_http_port}: {exc}"
+            )
         return False
 
     status, data = await state.call(
@@ -670,8 +664,8 @@ async def _prepare_boot_media(
         "hmc_upload_iso",
         vios_name_or_uuid=vios_uuid,
         vg_uuid=vg_uuid,
-        media_name=_ISO_MEDIA_NAME,
-        iso_source=_ISO_URL,
+        media_name=context.iso_media_name,
+        iso_source=context.iso_url,
     )
     state.record(20, "hmc_upload_iso (re-upload for boot test)", status, data)
     if status != "PASS":
@@ -679,7 +673,7 @@ async def _prepare_boot_media(
             state.skip(20, name, "ISO re-upload failed")
         return False
     if isinstance(data, dict):
-        context.vmedia_iso_name = data.get("media_name") or _ISO_MEDIA_NAME
+        context.vmedia_iso_name = data.get("media_name") or context.iso_media_name
 
     status, data = await state.call(
         client,
@@ -862,7 +856,7 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
         return
 
     # Safety belt — never touch protected LPARs, even under ``python -O``.
-    if context.lp3_name in _PROTECTED_LPARS:
+    if context.lp3_name in context.protected_lpar_names:
         raise ValueError(f"ST20 refuses to mutate protected LPAR {context.lp3_name!r}")
 
     vios = context.vios_uuid
@@ -966,9 +960,7 @@ async def _restore_teardown_boot_order(client: Client, state: RunState) -> None:
         )
 
 
-async def _remove_orphan_mappings(
-    client: Client, state: RunState, vios: str
-) -> None:
+async def _remove_orphan_mappings(client: Client, state: RunState, vios: str) -> None:
     """Unmount every optical mapping left behind by earlier vMedia stages."""
     st, data = await state.call(
         client,

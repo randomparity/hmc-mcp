@@ -30,6 +30,8 @@ class ScenarioState:
             vios_partition_id=None,
             test_vswitch_id=None,
             test_vlan_id=None,
+            vlan_range_start=3000,
+            vlan_range_end=3099,
             vdisk_name="disk-one",
             vdisk_size_mib=None,
             vg_uuid=None,

@@ -33,10 +33,10 @@ async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
         system_name_or_uuid=context.system_name,
         name=context.scratch_name,
         resources={
-            "desired_memory": 512,
-            "max_memory": 1024,
-            "desired_vcpus": 1,
-            "max_vcpus": 2,
+            "desired_memory": context.scratch_create_desired_memory_mib,
+            "max_memory": context.scratch_create_max_memory_mib,
+            "desired_vcpus": context.scratch_create_desired_vcpus,
+            "max_vcpus": context.scratch_create_max_vcpus,
         },
     )
     state.record(8, "hmc_create_lpar", st, data)
@@ -56,7 +56,10 @@ async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
         client,
         "hmc_modify_lpar",
         lpar_name_or_uuid=context.scratch_name,
-        resources={"desired_memory": 768, "max_memory": 1536},
+        resources={
+            "desired_memory": context.scratch_modify_desired_memory_mib,
+            "max_memory": context.scratch_modify_max_memory_mib,
+        },
     )
     state.record_expected_or_real(
         8,
@@ -139,9 +142,7 @@ def _baseline_description(state: RunState) -> str:
     return str(description) if description else ""
 
 
-async def _restore_description(
-    client: Client, state: RunState, scenario: int
-) -> None:
+async def _restore_description(client: Client, state: RunState, scenario: int) -> None:
     """Restore the captured description when the CLI can represent it."""
     description = _baseline_description(state)
     blocked = _unrestorable_description(description)
@@ -236,7 +237,8 @@ async def _exercise_msp_behavior(client: Client, state: RunState) -> None:
     )
     rejection = str(data).lower()
     expected = status == "FAIL" and any(
-        text in rejection for text in ("only valid for a vios", "vioserver", "not found")
+        text in rejection
+        for text in ("only valid for a vios", "vioserver", "not found")
     )
     if expected:
         state.record(
@@ -337,13 +339,13 @@ async def mutate_lpar_properties(client: Client, state: RunState) -> None:
 
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-# ST15 — Restore ltczz386-lp3 to Baseline
+# ST15 — Restore the baseline LPAR
 # ---------------------------------------------------------------------------
 
 
 async def restore_lpar_baseline(client: Client, state: RunState) -> None:
     context = state.context
-    print("\n=== ST15: Restore ltczz386-lp3 to Baseline ===")
+    print("\n=== ST15: Restore baseline LPAR ===")
 
     st, data = await state.call(
         client, "hmc_lpar_summary", lpar_name_or_uuid=context.lp3_name
