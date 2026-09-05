@@ -29,6 +29,7 @@ from hmc_mcp.cli_commands import runtime as cli_runtime
 from hmc_mcp.cli_commands import vios_labels as cli_vios_labels
 from hmc_mcp.cli_commands import vnic as cli_vnic
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
+from hmc_mcp.cli_commands.lpar import migration as cli_lpar_migration
 from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
@@ -2649,6 +2650,108 @@ def test_migrate_cli_can_bypass_validation(fake_hmc):
     names = [name for name, _args, _kwargs in fake_hmc.calls]
     assert "lpar_migrate_validate" not in names
     assert "lpar_migrate" in names
+
+
+@pytest.mark.parametrize(
+    ("args", "expected_request", "expected_controls"),
+    [
+        (
+            ["lpars", "migrate-affinity", LPAR_NAME, "--target", "sys1", "--yes"],
+            {
+                "source_current_score": None,
+                "destination_estimated_score": None,
+                "destination_check_basis": "calculated",
+                "configured_minimum": None,
+                "capability": "available",
+                "response": "warn",
+                "preflight_timeout_seconds": 5.0,
+            },
+            {
+                "wait": False,
+                "timeout_seconds": 300,
+                "poll_interval": 5,
+                "ownership_override": False,
+            },
+        ),
+        (
+            [
+                "lpars",
+                "migrate-affinity",
+                LPAR_NAME,
+                "--target",
+                "sys1",
+                "--source-score",
+                "90",
+                "--destination-estimate",
+                "80",
+                "--check-basis",
+                "migration-check",
+                "--configured-minimum",
+                "70",
+                "--capability",
+                "unavailable",
+                "--response",
+                "fail",
+                "--preflight-timeout",
+                "1.25",
+                "--wait",
+                "--timeout",
+                "120",
+                "--interval",
+                "10",
+                "--ownership-override",
+                "--yes",
+            ],
+            {
+                "source_current_score": 90,
+                "destination_estimated_score": 80,
+                "destination_check_basis": "migration-check",
+                "configured_minimum": 70,
+                "capability": "unavailable",
+                "response": "fail",
+                "preflight_timeout_seconds": 1.25,
+            },
+            {
+                "wait": True,
+                "timeout_seconds": 120,
+                "poll_interval": 10,
+                "ownership_override": True,
+            },
+        ),
+    ],
+)
+def test_migrate_affinity_cli_builds_preflight_request(
+    monkeypatch, args, expected_request, expected_controls
+):
+    calls = []
+
+    async def migrate_with_preflight(*operation_args, **operation_controls):
+        calls.append((operation_args, operation_controls))
+
+    def run_operation(_name, operation, _action, _target, _yes):
+        asyncio.run(operation(object()))
+
+    monkeypatch.setattr(
+        cli_lpar_migration,
+        "migrate_lpar_with_affinity_preflight",
+        migrate_with_preflight,
+    )
+    monkeypatch.setattr(cli_lpar_migration, "_lpm_run", run_operation)
+
+    result = RUNNER.invoke(cli.app, args)
+
+    assert result.exit_code == 0, result.output
+    [(operation_args, operation_controls)] = calls
+    assert operation_args[1] is None
+    assert operation_args[2] == LPAR_NAME
+    assert operation_args[3].target_system_name_or_uuid == "sys1"
+    request = operation_args[4]
+    for field, expected in expected_request.items():
+        assert getattr(request, field) == expected
+    assert request.capability_limits == (
+        "Destination affinity is estimated, not guaranteed.",
+    )
+    assert operation_controls == expected_controls
 
 
 def test_migrate_cli_rejects_effective_wait_timing_before_confirmation(fake_hmc):
