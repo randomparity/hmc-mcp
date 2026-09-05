@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from ..._app import with_client
-from ...client.client_users import AuthenticationFilter
 from ...documents import AuthenticationType
+from ...operations.users.contracts import AuthenticationFilter
 from ...operations.users.core import (
     CreateUserRequest,
     ModifyUserPatch,

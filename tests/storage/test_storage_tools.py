@@ -16,7 +16,7 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY
 
-from hmc_mcp.client.client_adapters import ADAPTER_TYPES
+from hmc_mcp.operations.virtualization.contracts import ADAPTER_TYPES
 from hmc_mcp.server_tools.storage.resources import (
     hmc_create_logical_unit,
     hmc_create_media_repository,
