@@ -90,6 +90,41 @@ class _ScriptedClient:
         return self.result
 
 
+class _ScriptedSriovState(runner.RunState):
+    """Run SR-IOV phases against an ordered in-memory tool transcript."""
+
+    def __init__(self, responses: list[tuple[str, str, object]]):
+        super().__init__()
+        self._responses = iter(responses)
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def call(self, _client, tool, **kwargs):
+        self.calls.append((tool, kwargs))
+        expected_tool, status, data = next(self._responses)
+        assert tool == expected_tool
+        return status, data
+
+
+def _logical_port_state(
+    state: _ScriptedSriovState, *, owner: str | None = None, capacity: float = 7.5
+) -> dict[str, object]:
+    items: list[dict[str, object]] = []
+    if owner is not None:
+        items.append(
+            {
+                "logical_port_id": state.context.sriov_logical_port_id,
+                "availability": "1",
+                "owner_lpar": owner,
+                "capacity_percent": capacity,
+            }
+        )
+    return {"items": items}
+
+
+def _profile_state(value: str = "none") -> tuple[str, str, object]:
+    return ("hmc_run_command", "PASS", value)
+
+
 def test_sriov_baseline_helpers_require_healthy_adapter() -> None:
     """Baseline predicates reject wrong mode/availability and accept healthy data."""
     assert pcie._adapter_is_healthy(
@@ -116,6 +151,152 @@ def test_sriov_baseline_helpers_compute_capacity_and_configuration() -> None:
         {"items": [{"logical_port_id": 917003, "availability": "1"}]},
         917003,
     )
+
+
+@pytest.mark.asyncio
+async def test_sriov_phases_assign_verify_unassign_and_reassign() -> None:
+    state = _ScriptedSriovState([])
+    owned = _logical_port_state(state, owner=state.context.lp3_name)
+    state._responses = iter(
+        [
+            ("hmc_assign_sriov_logical_port", "PASS", {"changed": True}),
+            ("hmc_list_sriov_logical_ports", "PASS", owned),
+            _profile_state(),
+            ("hmc_unassign_sriov_logical_port", "PASS", {"changed": True}),
+            ("hmc_list_sriov_logical_ports", "PASS", owned),
+            _profile_state(),
+            ("hmc_assign_sriov_logical_port", "PASS", {"changed": True}),
+            ("hmc_list_sriov_logical_ports", "PASS", owned),
+            _profile_state(),
+        ]
+    )
+
+    assert await pcie.assign_sriov_to_lp3(object(), state)
+    assert await pcie.verify_sriov_assigned(object(), state)
+    assert await pcie.unassign_sriov_from_lp3(object(), state)
+    assert await pcie.reassign_sriov_to_lp3(object(), state)
+
+    assign_tool, assign_args = state.calls[0]
+    assert assign_tool == "hmc_assign_sriov_logical_port"
+    assert assign_args == {
+        "system_name_or_uuid": state.context.system_name,
+        "lpar_name_or_uuid": state.context.lp3_name,
+        "adapter_id": state.context.sriov_adapter_id,
+        "physical_port_id": state.context.sriov_physical_port_id,
+        "logical_port_id": state.context.sriov_logical_port_id,
+        "capacity_percent": state.context.sriov_capacity_percent,
+        "profile_name": state.context.sriov_profile_name,
+        "ownership_override": True,
+    }
+    assert state.calls[3][0] == "hmc_unassign_sriov_logical_port"
+    assert state.calls[3][1]["ownership_override"] is True
+    assert [entry["status"] for entry in state.results if entry["subtask"] == 26] == [
+        "PASS",
+        "PASS",
+        "PASS",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sriov_verify_records_wrong_owner_without_mutation() -> None:
+    state = _ScriptedSriovState([])
+    state._responses = iter(
+        [
+            (
+                "hmc_list_sriov_logical_ports",
+                "PASS",
+                _logical_port_state(state, owner="another-lpar"),
+            ),
+            _profile_state(),
+        ]
+    )
+
+    assert not await pcie.verify_sriov_assigned(object(), state)
+
+    assert [tool for tool, _ in state.calls] == [
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+    ]
+    assert any(
+        entry["tool"] == "sriov owner check" and entry["status"] == "FAIL"
+        for entry in state.results
+    )
+
+
+@pytest.mark.asyncio
+async def test_sriov_cleanup_refuses_unowned_or_unconfigured_ports() -> None:
+    unconfigured = _ScriptedSriovState([])
+    unconfigured._responses = iter(
+        [
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(unconfigured)),
+            _profile_state(),
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(unconfigured)),
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(unconfigured)),
+            _profile_state(),
+        ]
+    )
+    await pcie.cleanup_sriov(object(), unconfigured)
+    assert "hmc_unassign_sriov_logical_port" not in [
+        tool for tool, _ in unconfigured.calls
+    ]
+
+    foreign = _ScriptedSriovState([])
+    foreign._responses = iter(
+        [
+            (
+                "hmc_list_sriov_logical_ports",
+                "PASS",
+                _logical_port_state(foreign, owner="another-lpar"),
+            ),
+            _profile_state(),
+        ]
+    )
+    await pcie.cleanup_sriov(object(), foreign)
+    assert [tool for tool, _ in foreign.calls] == [
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+    ]
+    assert any(
+        entry["tool"] == "sriov cleanup: owner mismatch"
+        and "MANUAL RECOVERY REQUIRED" in str(entry["data"])
+        for entry in foreign.results
+    )
+
+
+@pytest.mark.asyncio
+async def test_sriov_cleanup_removes_owned_port_and_verifies_baseline() -> None:
+    state = _ScriptedSriovState([])
+    state._responses = iter(
+        [
+            (
+                "hmc_list_sriov_logical_ports",
+                "PASS",
+                _logical_port_state(state, owner=state.context.lp3_name),
+            ),
+            _profile_state("configured-port"),
+            ("hmc_unassign_sriov_logical_port", "PASS", {"changed": True}),
+            ("hmc_run_command", "PASS", "removed"),
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(state)),
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(state)),
+            _profile_state(),
+        ]
+    )
+
+    await pcie.cleanup_sriov(object(), state)
+
+    assert [tool for tool, _ in state.calls] == [
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+        "hmc_unassign_sriov_logical_port",
+        "hmc_run_command",
+        "hmc_list_sriov_logical_ports",
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+    ]
+    cleanup_command = state.calls[3][1]["cmd"]
+    assert "chhwres -r sriov --rsubtype logport" in cleanup_command
+    assert " -o r -p " in cleanup_command
+    assert all(entry["status"] == "PASS" for entry in state.results)
 
 
 @pytest.mark.asyncio
@@ -530,7 +711,9 @@ async def test_call_failure_is_redacted_when_recorded(capsys):
         "/home/operator/live-test.toml"
     )
     state = runner.RunState()
-    status, data = await state.call(_ScriptedClient(error=RuntimeError(sensitive)), "tool")
+    status, data = await state.call(
+        _ScriptedClient(error=RuntimeError(sensitive)), "tool"
+    )
 
     assert status == "FAIL"
     state.record(0, "tool", status, data)
@@ -1198,7 +1381,9 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_main_redacts_direct_failure_before_persisting(monkeypatch, tmp_path, capsys):
+async def test_main_redacts_direct_failure_before_persisting(
+    monkeypatch, tmp_path, capsys
+):
     _isolate_runner(monkeypatch)
     suffix = "-secret"
     url_credential = "url" + suffix
@@ -1584,7 +1769,9 @@ async def test_malformed_inventory_capacity_blocks_storage_mutation(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_storage_provisioning_runs_the_complete_successful_orchestration(monkeypatch):
+async def test_storage_provisioning_runs_the_complete_successful_orchestration(
+    monkeypatch,
+):
     calls = []
 
     async def scripted_call(_state, _client, tool, **kwargs):
