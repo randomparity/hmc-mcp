@@ -565,14 +565,22 @@ def test_expected_hmc_limitation_is_classified_as_skip():
     assert state.results[0]["note"] == "feature unavailable"
 
 
-def test_result_helpers_preserve_resource_shapes():
-    entries = [{"Resource": {"UUID": "nested"}}]
+def test_result_helpers_filter_malformed_entries_and_resource_shapes():
+    raw_entries = [
+        {"Resource": {"UUID": "nested"}},
+        "not-a-mapping",
+        {"UUID": "flat"},
+    ]
 
-    assert results.entries(entries) is entries
-    assert results.entries({"entries": entries}) is entries
+    assert results.entries(raw_entries) == [raw_entries[0], raw_entries[2]]
+    assert results.entries({"entries": raw_entries}) == [raw_entries[0], raw_entries[2]]
+    assert results.entries({"entries": {"UUID": "not-a-list"}}) == []
     assert results.entries("invalid") == []
-    assert results.resource(entries[0]) == {"UUID": "nested"}
+    assert results.resource(raw_entries[0]) == {"UUID": "nested"}
     assert results.resource({"UUID": "flat"}) == {"UUID": "flat"}
+    assert results.resource({"Resource": "not-a-mapping"}) == {
+        "Resource": "not-a-mapping"
+    }
 
 
 def test_restore_context_restores_identifiers_and_baseline(tmp_path):

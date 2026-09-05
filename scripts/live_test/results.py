@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 
-def entries(data: Any) -> list[dict]:
-    """Normalize a tool result to a flat list of entry dictionaries."""
+def entries(data: Any) -> list[Mapping[str, object]]:
+    """Normalize a tool result to mapping entries, discarding malformed values."""
     if isinstance(data, list):
-        return data
-    if isinstance(data, dict):
-        return data.get("entries", [])
-    return []
+        raw_entries = data
+    elif isinstance(data, Mapping):
+        raw_entries = data.get("entries", [])
+    else:
+        raw_entries = []
+    if not isinstance(raw_entries, list):
+        return []
+    return [entry for entry in raw_entries if isinstance(entry, Mapping)]
 
 
-def resource(entry: dict) -> dict:
-    """Return the nested Resource dictionary, or the entry itself."""
-    return entry.get("Resource") or entry
+def resource(entry: Mapping[str, object]) -> Mapping[str, object]:
+    """Return a nested Resource mapping, or retain the outer mapping."""
+    nested = entry.get("Resource")
+    return nested if isinstance(nested, Mapping) else entry
