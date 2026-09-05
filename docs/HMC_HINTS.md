@@ -1,12 +1,15 @@
-# HMC SSH Access Notes
+# HMC hints
+
+[Documentation index](index.md) · [Configuration](configuration.md)
 
 Operational notes for running ad-hoc read-only queries against lab HMCs.
 Derived from the live-testing session for issue #559.
 
 ## Config file
 
-Profiles are stored in `~/.config/hmc-mcp/config.toml`.  Each profile has a
-`host`, `port`, `user`, and `password`.
+Profiles live in the platform-native `config.toml`; see the
+[configuration guide](configuration.md) for paths and password sources.
+The examples below use a password-authenticated profile.
 
 ```toml
 [profiles.myhmc]
@@ -196,7 +199,7 @@ empty when no label has been applied.
 
 ## Probe script
 
-[`scripts/probe_labelvios.py`](scripts/probe_labelvios.py) is a reusable
+[`scripts/probe_labelvios.py`](../scripts/probe_labelvios.py) is a reusable
 asyncssh-based probe template that applies all of the above.  It reads
 `~/.config/hmc-mcp/config.toml`, connects in parallel to all profiles on
 port 22 with password-only auth, and runs a two-stage read-only query:

@@ -1,4 +1,4 @@
-"""The README '## Layout' block must name every top-level package module."""
+"""The development guide '## Layout' block must name every top-level package module."""
 
 import fnmatch
 import re
@@ -13,7 +13,7 @@ ENTRY = re.compile(r"^\s+(\S+\.py)")
 def _layout_block(readme: str) -> str:
     """Return the fenced code block that follows the '## Layout' heading."""
     _, _, after = readme.partition(f"\n{LAYOUT_HEADING}\n")
-    assert after, f"README.md has no '{LAYOUT_HEADING}' section"
+    assert after, f"docs/development.md has no '{LAYOUT_HEADING}' section"
     fences = after.split("```")
     assert len(fences) >= 3, f"'{LAYOUT_HEADING}' is not followed by a code block"
     return fences[1]
@@ -41,22 +41,22 @@ def _uncovered(module_names: list[str], entries: list[str]) -> list[str]:
     ]
 
 
-def _readme() -> str:
-    return (ROOT / "README.md").read_text(encoding="utf-8")
+def _guide() -> str:
+    return (ROOT / "docs/development.md").read_text(encoding="utf-8")
 
 
 def test_layout_block_lists_filenames_and_globs() -> None:
     """A parse that silently found nothing would make the coverage check vacuous."""
-    entries = _layout_entries(_readme())
+    entries = _layout_entries(_guide())
 
     assert "ssh/*.py" in entries
     assert "config.py" in entries
-    layout = _layout_block(_readme())
+    layout = _layout_block(_guide())
     assert all(name in layout for name in ("client/", "operations/", "server_tools/", "cli_commands/"))
 
 
 def test_every_module_has_a_layout_entry() -> None:
-    entries = _layout_entries(_readme())
+    entries = _layout_entries(_guide())
     modules = _module_names(PACKAGE)
 
     assert modules, f"no modules found under {PACKAGE}"
@@ -71,7 +71,7 @@ def test_every_named_entry_is_a_module_that_exists() -> None:
     """The other drift direction: an entry left behind by a deleted module."""
     phantoms = [
         entry
-        for entry in _layout_entries(_readme())
+        for entry in _layout_entries(_guide())
         if "*" not in entry and not (PACKAGE / entry).is_file()
     ]
 

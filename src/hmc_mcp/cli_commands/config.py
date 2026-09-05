@@ -38,7 +38,7 @@ from .output import console, err_console, fail
 from .serve import _policy_file
 
 _STARTER_TOML = """\
-# hmc-mcp configuration — see README for the full schema
+# hmc-mcp configuration — see docs/configuration.md for profile setup
 # default_profile = "prod"
 
 [profiles.example]
@@ -188,8 +188,8 @@ def _write_exclusive(target: Path, text: str) -> None:
     Two residuals, named rather than implied closed. The parent directory is not
     synced, so the new directory entry itself is not durable against the same event.
     And a signal or an OOM kill between the create and the flush leaves a partial file
-    with no handler to run. The README's migration section carries the recovery for
-    both — delete the file and re-run.
+    with no handler to run. docs/mcp-server.md carries the recovery for both:
+    preserve the file, generate a scratch copy, and restore reviewed decisions.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
     if sys.platform != "win32":
