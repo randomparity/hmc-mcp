@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import with_client
-from ..client.client_users import AuthenticationFilter
-from ..documents import AuthenticationType
-from ..operations.users import (
+from ..._app import with_client
+from ...client.client_users import AuthenticationFilter
+from ...documents import AuthenticationType
+from ...operations.users.core import (
     CreateUserRequest,
     ModifyUserPatch,
     create_user,
     modify_user,
 )
-from ..tool_registry import tool_module
+from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

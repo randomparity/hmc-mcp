@@ -265,7 +265,7 @@ names are internal everywhere and are never inventoried.
   `VIOSUpgradeSFTPSource`, `VIOSUpgradeUSBSource`.
 - `operations.updates.service` — exports: `submit_available_hmc_ptfs_query`,
   `update_console_software`, `update_firmware`, `update_vios`, `upgrade_vios`.
-- `operations.users` — operations: `configure_remote_access`, `create_user`, `delete_user`,
+- `operations.users.core` — operations: `configure_remote_access`, `create_user`, `delete_user`,
   `modify_user`; types: `CreateUserRequest`, `ModifyUserPatch`; excluded synchronous: none.
 - `operations.vios` — operations: `backup_vios`, `create_vios`, `delete_vios`,
   `get_vios_storage_detail`, `list_vios`, `list_vios_backups`, `power_vios`, `restore_vios`; types:

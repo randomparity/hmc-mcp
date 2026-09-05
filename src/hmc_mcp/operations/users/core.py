@@ -7,7 +7,7 @@ from typing import Any
 
 from hmc_mcp.client.core import HMCClient
 
-from ..documents import (
+from ...documents import (
     AuthenticationType,
     build_hmc_user_document,
 )
