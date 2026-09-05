@@ -5,7 +5,7 @@ import pytest
 from conftest import JOB_ENTRY, make_config
 from pydantic import ValidationError
 
-from hmc_mcp.client.core import HMCClient
+from hmc_mcp.client.core import HMCClient, _normalize_platform_update_response
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import build_job_request, job_outcome
 from hmc_mcp.operations.updates.models import (
@@ -506,6 +506,34 @@ async def test_submit_platform_update_normalizes_documented_response(mock_hmc):
         },
     }
     assert job_outcome("platform-job", job).error == "firmware failed"
+
+
+@pytest.mark.parametrize(
+    ("status", "result", "expected_error"),
+    [
+        (
+            "COMPLETED_WITH_ERROR",
+            [{"ParameterName": "result", "ParameterValue": "failed"}],
+            "failed",
+        ),
+        ("COMPLETED", None, None),
+    ],
+)
+def test_platform_update_normalizes_native_singular_result(
+    status, result, expected_error
+):
+    response = {"Status": status}
+    if result is not None:
+        response["Result"] = result
+
+    normalized = _normalize_platform_update_response(
+        {"id": "job", "content": {"JobResponse": response}}
+    )
+
+    expected = {"Results": {"JobParameter": result}} if result is not None else {}
+    assert normalized["Resource"] == {"Status": status, **expected}
+    assert "Result" not in normalized["Resource"]
+    assert job_outcome("job", normalized).error == expected_error
 
 
 @pytest.mark.asyncio
