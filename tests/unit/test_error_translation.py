@@ -19,13 +19,21 @@ from hmc_mcp.operations.error_translation import (
         (translate_virtual_network_create_error, 406, "virtual network create"),
     ],
 )
-def test_error_translators_preserve_body_and_chain_cause(translator, status, message):
+def test_error_translators_return_translated_errors(translator, status, message):
     original = HMCError("raw failure", status, "sensitive response body")
 
-    with pytest.raises(HMCError, match=message) as exc_info:
-        translator(original)
+    translated = translator(original)
 
-    assert exc_info.value.status_code == status
-    assert exc_info.value.body == "sensitive response body"
-    assert "sensitive response body" in str(exc_info.value)
-    assert exc_info.value.__cause__ is original
+    assert translated.status_code == status
+    assert translated.body == "sensitive response body"
+    assert message in str(translated)
+
+
+@pytest.mark.parametrize(
+    "translator",
+    [translate_pcm_error, translate_template_error, translate_virtual_network_create_error],
+)
+def test_error_translators_return_unmatched_errors_unchanged(translator):
+    original = HMCError("raw failure", 500)
+
+    assert translator(original) is original
