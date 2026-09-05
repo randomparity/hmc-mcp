@@ -152,7 +152,13 @@ async def list_volume_groups(
     *,
     system_name_or_uuid: str | None = None,
 ) -> list[VolumeGroup]:
-    """List volume groups on a VIOS."""
+    """List volume groups on a VIOS.
+
+    Raises:
+        ResourceNotFoundError: If the VIOS or optional managed-system selector cannot
+            be resolved.
+        HMCError: If the HMC request fails or returns an invalid resource shape.
+    """
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
@@ -167,7 +173,13 @@ async def create_volume_group(
     *,
     system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
-    """Create a volume group from the selected physical volumes."""
+    """Create a volume group from the selected physical volumes.
+
+    Raises:
+        ResourceNotFoundError: If the VIOS or optional managed-system selector cannot
+            be resolved.
+        HMCError: If the HMC rejects the creation request or it cannot be completed.
+    """
     return await hmc.create_volume_group(
         await resolve_vios_uuid(
             hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
@@ -186,7 +198,13 @@ async def create_virtual_disk(
     *,
     system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
-    """Create a virtual disk of ``capacity_mib`` in a volume group."""
+    """Create a virtual disk of ``capacity_mib`` in a volume group.
+
+    Raises:
+        ResourceNotFoundError: If the VIOS or optional managed-system selector cannot
+            be resolved.
+        HMCError: If the HMC rejects the creation request or it cannot be completed.
+    """
     return await hmc.create_virtual_disk(
         await resolve_vios_uuid(
             hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
@@ -259,7 +277,15 @@ async def map_storage(
     target: str | None = None,
     ownership_override: bool = False,
 ) -> StorageMapResult:
-    """Authorize an LPAR and map VIOS storage to it."""
+    """Authorize an LPAR and map VIOS storage to it.
+
+    Raises:
+        ResourceNotFoundError: If a supplied VIOS, LPAR, or managed-system selector
+            cannot be resolved.
+        PermissionError: If the LPAR ownership authorization rejects the mutation.
+        ValueError: If selector scope cannot be verified.
+        HMCError: If the HMC rejects the mapping request or it cannot be completed.
+    """
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
@@ -350,6 +376,14 @@ async def detach_storage_mapping(
     """Authorize the mapped LPAR, then detach its VirtualSCSIMapping.
 
     ``mapping_uuid`` is the exact UUID returned by ``list_storage_mappings``.
+
+    Raises:
+        ResourceNotFoundError: If the VIOS or optional managed-system selector cannot
+            be resolved.
+        PermissionError: If the mapped LPAR ownership authorization rejects the
+            mutation.
+        ValueError: If the mapping or its client-LPAR identity cannot be verified.
+        HMCError: If the HMC request fails.
     """
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
@@ -860,6 +894,13 @@ async def mount_optical_media(
     Creates a read-only optical mapping from a VirtualOpticalMedia (ISO container)
     to a client LPAR. The media_name must exist in the VIOS media repository.
     target_device optionally pins the vtscsi name. Returns the created mapping resource.
+
+    Raises:
+        ResourceNotFoundError: If a supplied VIOS, LPAR, or managed-system selector
+            cannot be resolved.
+        PermissionError: If the LPAR ownership authorization rejects the mutation.
+        ValueError: If selector scope cannot be verified.
+        HMCError: If the HMC rejects the mapping request or it cannot be completed.
     """
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
@@ -905,6 +946,13 @@ async def unmount_optical_media(
     The read-modify-write rewrites the whole VirtualIOServer document from a GET
     snapshot, so another writer's change in that window is lost; ADR 0079 puts
     the duty to serialize concurrent VIOS mapping changes on the caller.
+
+    Raises:
+        ResourceNotFoundError: If a supplied VIOS, LPAR, or managed-system selector
+            cannot be resolved.
+        PermissionError: If the LPAR ownership authorization rejects the mutation.
+        ValueError: If the mapping identity or selector scope cannot be verified.
+        HMCError: If the HMC rejects the deletion or it cannot be completed.
     """
     if not media_name:
         raise HMCError("Optical media name must not be empty")

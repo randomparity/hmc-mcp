@@ -84,7 +84,15 @@ async def add_vscsi_adapter(
     slot_number: int | None = None,
     ownership_override: bool = False,
 ) -> AdapterResult:
-    """Authorize the LPAR and add a virtual SCSI adapter."""
+    """Authorize the LPAR and add a virtual SCSI adapter.
+
+    Raises:
+        ResourceNotFoundError: If a supplied LPAR or managed-system selector cannot
+            be resolved.
+        PermissionError: If the LPAR ownership authorization rejects the mutation.
+        ValueError: If selector scope cannot be verified.
+        HMCError: If the HMC rejects the adapter request or it cannot be completed.
+    """
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
@@ -107,7 +115,15 @@ async def add_vfc_adapter(
     slot_number: int | None = None,
     ownership_override: bool = False,
 ) -> AdapterResult:
-    """Authorize the LPAR and add a virtual Fibre Channel adapter."""
+    """Authorize the LPAR and add a virtual Fibre Channel adapter.
+
+    Raises:
+        ResourceNotFoundError: If a supplied LPAR or managed-system selector cannot
+            be resolved.
+        PermissionError: If the LPAR ownership authorization rejects the mutation.
+        ValueError: If selector scope cannot be verified.
+        HMCError: If the HMC rejects the adapter request or it cannot be completed.
+    """
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
@@ -133,6 +149,10 @@ async def delete_adapter(
 
     Raises:
         ValueError: If ``adapter_type`` is unsupported.
+        ResourceNotFoundError: If a supplied LPAR or managed-system selector cannot
+            be resolved.
+        PermissionError: If the LPAR ownership authorization rejects the mutation.
+        HMCError: If the HMC rejects the deletion or it cannot be completed.
     """
     validate_adapter_type(adapter_type)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(

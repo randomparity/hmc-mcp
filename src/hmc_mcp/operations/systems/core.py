@@ -90,7 +90,13 @@ async def power_system(
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
 ) -> dict[str, Any] | None:
-    """Resolve a system selector, submit its power job, and optionally wait."""
+    """Resolve a system selector, submit its power job, and optionally wait.
+
+    Raises:
+        ValueError: If wait timing is invalid.
+        ResourceNotFoundError: If the managed-system selector cannot be resolved.
+        HMCError: If job submission, polling, or the HMC request fails.
+    """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     if power_on:
