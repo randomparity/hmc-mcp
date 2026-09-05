@@ -326,6 +326,10 @@ class FakeHMC:
     async def list_optical_media(self, vios_uuid, vg_uuid):
         return []
 
+    async def raw_get(self, path):
+        self._record("raw_get", path)
+        return "<response/>", {}
+
     async def raw_post(self, path, body, content_type="application/xml"):
         self._record("raw_post", path, body, content_type)
         return "<ok/>"
@@ -3156,6 +3160,14 @@ def test_raw_post_requires_confirmation(fake_hmc):
     assert result.exit_code == 1
     assert "Aborted" in result.stderr
     assert fake_hmc.calls == []
+
+
+def test_raw_get_prints_response_body(fake_hmc):
+    result = RUNNER.invoke(cli.app, ["raw", "get", "/rest/api/uom/VirtualSwitch"])
+
+    assert result.exit_code == 0
+    assert "<response/>" in result.stdout
+    assert fake_hmc.calls == [("raw_get", ("/rest/api/uom/VirtualSwitch",), {})]
 
 
 def test_raw_post_with_yes_sends_request(fake_hmc):
