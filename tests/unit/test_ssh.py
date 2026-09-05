@@ -53,7 +53,7 @@ async def test_ssh_host_key_policy_reaches_each_connection(operation, verify, ke
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", [run_hmc_command, open_hmc_connection])
-@pytest.mark.parametrize("trust", ["trusted", "changed", "unknown", "missing", "insecure"])
+@pytest.mark.parametrize("trust", ["trusted", "changed", "unknown", "missing", "malformed", "insecure"])
 async def test_ssh_host_key_handshake_precedes_password(operation, trust, tmp_path, monkeypatch):
     """Use a real local SSH peer; rejected keys must never receive credentials."""
     passwords = []
@@ -86,7 +86,7 @@ async def test_ssh_host_key_handshake_precedes_password(operation, trust, tmp_pa
                 asyncssh.generate_private_key("ssh-ed25519") if trust == "changed" else host_key
             )
             entry = f"[127.0.0.1]:{port} " + recorded_key.export_public_key().decode()
-            trust_file.write_text("" if trust == "unknown" else entry)
+            trust_file.write_text({"unknown": "", "malformed": "invalid-entry\n"}.get(trust, entry))
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
         # Pin an ephemeral port and isolate ambient SSH config, keeping the actual handshake.
         connect = asyncssh.connect
@@ -113,8 +113,12 @@ async def test_ssh_host_key_handshake_precedes_password(operation, trust, tmp_pa
         else:
             with pytest.raises(HMCCLIError) as exc:
                 await invoke()
-            expected_error = OSError if trust == "missing" else asyncssh.HostKeyNotVerifiable
+            expected_error = {"missing": OSError, "malformed": ValueError}.get(
+                trust, asyncssh.HostKeyNotVerifiable
+            )
             assert isinstance(exc.value.__cause__, expected_error)
+            if trust == "malformed":
+                assert "Invalid known hosts entry" in str(exc.value)
             assert passwords == []
 
 # ---------------------------------------------------------------------------
@@ -136,6 +140,17 @@ def _make_ssh_mock(stdout: str = "output\n") -> MagicMock:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", [run_hmc_command, open_hmc_connection])
+async def test_invalid_credentials_preserve_value_error(operation):
+    config = HMCConfig.from_mapping({})
+    with pytest.raises(ValueError, match="Missing HMC configuration"):
+        if operation is run_hmc_command:
+            await operation(config, "lshmc -V")
+        else:
+            await operation(config)
 
 
 @pytest.mark.asyncio

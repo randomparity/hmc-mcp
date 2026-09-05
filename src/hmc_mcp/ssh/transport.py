@@ -49,9 +49,10 @@ def _connect_kwargs(config: HMCConfig) -> dict[str, Any]:
 
 async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
     """Execute one HMC CLI command over SSH and return its stdout."""
+    connect_kwargs = _connect_kwargs(config)
     try:
         async with asyncio.timeout(config.ssh_timeout):
-            async with asyncssh.connect(**_connect_kwargs(config)) as connection:
+            async with asyncssh.connect(**connect_kwargs) as connection:
                 result = await connection.run(
                     cmd, check=True, timeout=config.ssh_timeout
                 )
@@ -64,7 +65,7 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
             f"SSH command timed out after {config.ssh_timeout:.0f}s: {cmd!r}. "
             "The HMC CLI may be hung or the HMC may be under load."
         ) from exc
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         raise HMCCLIError(
             f"SSH command connection failed for {cmd!r}: {exc}"
         ) from exc
@@ -95,15 +96,16 @@ async def open_hmc_connection(config: HMCConfig) -> asyncssh.SSHClientConnection
     owns the lifetime and must close the connection. The connect itself stays
     bounded by ``config.ssh_timeout`` so an unreachable HMC fails actionably.
     """
+    connect_kwargs = _connect_kwargs(config)
     try:
         async with asyncio.timeout(config.ssh_timeout):
-            return await asyncssh.connect(**_connect_kwargs(config))
+            return await asyncssh.connect(**connect_kwargs)
     except TimeoutError as exc:
         raise HMCCLIError(
             f"SSH connection to {config.host} timed out after "
             f"{config.ssh_timeout:.0f}s."
         ) from exc
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         raise HMCCLIError(
             f"SSH connection to {config.host} failed: {exc}"
         ) from exc
