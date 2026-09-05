@@ -29,8 +29,9 @@ from hmc_mcp.ssh.commands import (
     build_attribute_record,
     build_filter,
 )
+from hmc_mcp.ssh.description_validation import validate_lpar_description
 from hmc_mcp.ssh.io_inventory import list_fc_ports
-from hmc_mcp.ssh.lpar import create_lpar_via_cli, validate_lpar_description
+from hmc_mcp.ssh.lpar import create_lpar_via_cli
 from hmc_mcp.ssh.profiles import (
     assign_profile_io_slot,
     set_lpar_description,
@@ -359,6 +360,15 @@ def test_validate_lpar_description_rejects_record_delimiters(bad, wording):
 def test_validate_lpar_description_still_accepts_an_ownership_token():
     """ADR 0011's ownership token has no record delimiter and stays valid."""
     validate_lpar_description("[hmc-mcp owner:agent-a created:2026-08-19]")
+
+
+@pytest.mark.parametrize(
+    "description", ["owner\x01alice", "owner\x7falice", "owner-alicé"]
+)
+def test_validate_lpar_description_rejects_non_printable_or_non_ascii_text(description):
+    """Descriptions sent to the HMC must be printable ASCII."""
+    with pytest.raises(ValueError, match="printable ASCII"):
+        validate_lpar_description(description)
 
 
 # ---------------------------------------------------------------------- #
