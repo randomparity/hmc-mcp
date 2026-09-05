@@ -244,7 +244,7 @@ async def test_unmount_optical_media_deletes_only_the_exact_mapping_identity():
 async def test_unmount_optical_media_rejects_empty_media_before_inventory():
     hmc = AsyncMock()
 
-    with pytest.raises(HMCError, match="must not be empty"):
+    with pytest.raises(ValueError, match="must not be empty"):
         await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, media_name="")
 
     hmc.list_optical_mappings.assert_not_awaited()

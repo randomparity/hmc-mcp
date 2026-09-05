@@ -19,9 +19,9 @@ _MAX_GROUP_MEMBER_BYTES = 16 * 1024
 
 def _nonblank(value: str, field: str) -> str:
     if not value.strip():
-        raise HMCCLIError(f"VIOS label operation requires a nonblank {field}")
+        raise ValueError(f"VIOS label operation requires a nonblank {field}")
     if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
-        raise HMCCLIError(
+        raise ValueError(
             f"VIOS label operation {field} {value!r} contains a control character"
         )
     return value
@@ -35,14 +35,14 @@ def _single_vios_selector(
 ) -> tuple[str, str | int] | None:
     if (vios_name is None) == (vios_id is None):
         expectation = "exactly one" if required else "at most one"
-        raise HMCCLIError(
+        raise ValueError(
             f"VIOS label operation accepts {expectation} of vios_name or vios_id"
         )
     if vios_name is not None:
         return "vios_names", _nonblank(vios_name, "vios_name")
     assert vios_id is not None
     if vios_id <= 0:
-        raise HMCCLIError("VIOS label operation vios_id must be positive")
+        raise ValueError("VIOS label operation vios_id must be positive")
     return "vios_ids", vios_id
 
 
@@ -59,36 +59,36 @@ def _member_selector(
     vios_ids: Sequence[int] | None,
 ) -> tuple[str, list[str] | list[int]]:
     if (vios_names is None) == (vios_ids is None):
-        raise HMCCLIError(
+        raise ValueError(
             "VIOS group label operation requires exactly one of vios_names or vios_ids"
         )
     if vios_names is not None:
         if len(vios_names) > _MAX_GROUP_MEMBERS:
-            raise HMCCLIError(
+            raise ValueError(
                 f"VIOS group label vios_names accepts at most {_MAX_GROUP_MEMBERS} members"
             )
         members = list(vios_names)
         if not members:
-            raise HMCCLIError("VIOS group label vios_names must not be empty")
+            raise ValueError("VIOS group label vios_names must not be empty")
         validated = [_nonblank(name, "vios_names member") for name in members]
         if len(set(validated)) != len(validated):
-            raise HMCCLIError("VIOS group label vios_names must not contain duplicates")
+            raise ValueError("VIOS group label vios_names must not contain duplicates")
         for name in validated:
             build_attribute_record([("vios_names", name)])
         _require_bounded_member_bytes("vios_names", validated)
         return "vios_names", validated
     assert vios_ids is not None
     if len(vios_ids) > _MAX_GROUP_MEMBERS:
-        raise HMCCLIError(
+        raise ValueError(
             f"VIOS group label vios_ids accepts at most {_MAX_GROUP_MEMBERS} members"
         )
     identifiers = list(vios_ids)
     if not identifiers:
-        raise HMCCLIError("VIOS group label vios_ids must not be empty")
+        raise ValueError("VIOS group label vios_ids must not be empty")
     if any(identifier <= 0 for identifier in identifiers):
-        raise HMCCLIError("VIOS group label vios_ids must all be positive")
+        raise ValueError("VIOS group label vios_ids must all be positive")
     if len(set(identifiers)) != len(identifiers):
-        raise HMCCLIError("VIOS group label vios_ids must not contain duplicates")
+        raise ValueError("VIOS group label vios_ids must not contain duplicates")
     _require_bounded_member_bytes("vios_ids", identifiers)
     return "vios_ids", identifiers
 
@@ -101,7 +101,7 @@ def _require_bounded_member_bytes(attribute: str, members: Sequence[str | int]) 
         try:
             text = member if isinstance(member, str) else str(member)
         except ValueError as error:
-            raise HMCCLIError(
+            raise ValueError(
                 f"VIOS group label {attribute} member cannot be encoded as text: {error}"
             ) from error
         if remaining < 0 or len(text) > remaining:
@@ -109,7 +109,7 @@ def _require_bounded_member_bytes(attribute: str, members: Sequence[str | int]) 
         try:
             remaining -= len(text.encode("utf-8"))
         except UnicodeEncodeError as error:
-            raise HMCCLIError(
+            raise ValueError(
                 f"VIOS group label {attribute} members must be valid UTF-8 text"
             ) from error
         if remaining < 0:
@@ -117,7 +117,7 @@ def _require_bounded_member_bytes(attribute: str, members: Sequence[str | int]) 
 
 
 def _raise_member_payload_too_large(attribute: str) -> None:
-    raise HMCCLIError(
+    raise ValueError(
         f"VIOS group label {attribute} accepts at most "
         f"{_MAX_GROUP_MEMBER_BYTES} bytes including separators"
     )
@@ -297,13 +297,13 @@ async def update_vios_vfc_group_label(
     label_value = _nonblank(label, "label")
     if action == "rename":
         if vios_names is not None or vios_ids is not None or new_name is None:
-            raise HMCCLIError("rename requires only new_name")
+            raise ValueError("rename requires only new_name")
         renamed = _nonblank(new_name, "new_name")
         record = build_attribute_record([("new_name", renamed)])
         values: dict[str, object] = {"label": label_value, "new_name": renamed}
     elif action in {"add-members", "remove-members"}:
         if new_name is not None:
-            raise HMCCLIError(f"{action} does not accept new_name")
+            raise ValueError(f"{action} does not accept new_name")
         attribute, members = _member_selector(vios_names, vios_ids)
         operator = "+" if action == "add-members" else "-"
         operated_attribute = f"{attribute}{operator}"
@@ -313,7 +313,7 @@ async def update_vios_vfc_group_label(
         )
         values = {"label": label_value, attribute: members}
     else:
-        raise HMCCLIError(f"unsupported VIOS group label update action {action!r}")
+        raise ValueError(f"unsupported VIOS group label update action {action!r}")
     command = (
         f"labelvios -m {shlex.quote(system)} -o s -l {shlex.quote(label_value)} "
         f"-i {shlex.quote(record)}"

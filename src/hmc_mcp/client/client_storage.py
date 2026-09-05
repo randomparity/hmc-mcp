@@ -354,7 +354,7 @@ class StorageMixin:
     ) -> None:
         """Detach one mapping through its parent VirtualIOServer document."""
         if not mapping_uuid:
-            raise HMCError("Storage mapping UUID must not be empty")
+            raise ValueError("Storage mapping UUID must not be empty")
         ET.register_namespace("", _UOM_NS)
         ET.register_namespace("atom", _ATOM_NS)
 

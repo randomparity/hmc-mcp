@@ -151,7 +151,7 @@ def test_a_uuid_only_path_argument_is_refused_before_transport():
 
     client._http.request = _forbidden  # type: ignore[method-assign]
 
-    with pytest.raises(HMCError, match=r"^vg_uuid must be a UUID$") as error:
+    with pytest.raises(ValueError, match=r"^vg_uuid must be a UUID$") as error:
         asyncio.run(
             client._request_with_uuid_path_arguments(
                 "GET",
@@ -246,7 +246,7 @@ def test_platform_update_rejects_a_non_uuid_system_before_transport():
 
     client._http.request = _forbidden  # type: ignore[method-assign]
 
-    with pytest.raises(HMCError, match=r"^system_uuid must be a UUID$"):
+    with pytest.raises(ValueError, match=r"^system_uuid must be a UUID$"):
         asyncio.run(client.submit_platform_update("not-a-uuid", {}))
 
     assert sent == []
@@ -341,7 +341,7 @@ def test_no_unsafe_sub_resource_identifier_reaches_transport(method, args):
     """
     client = _client()
     call = getattr(client, method)
-    with pytest.raises(HMCError, match=r"refused|must be a UUID"):
+    with pytest.raises((HMCError, ValueError), match=r"refused|must be a UUID"):
         asyncio.run(call(*[a.replace("{X}", TRAVERSAL) if isinstance(a, str) else a
                            for a in args]))
 

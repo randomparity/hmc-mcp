@@ -444,7 +444,7 @@ class HMCClient(
         """Validate UUID-only path arguments before entering the transport."""
         for argument, value in uuid_path_arguments.items():
             if not is_uuid(value):
-                raise HMCError(f"{argument} must be a UUID")
+                raise ValueError(f"{argument} must be a UUID")
         return await self._request(method, path, **kwargs)
 
     def _uom_headers(

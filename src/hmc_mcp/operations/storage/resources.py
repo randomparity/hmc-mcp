@@ -956,7 +956,7 @@ async def unmount_optical_media(
         HMCError: If the HMC rejects the deletion or it cannot be completed.
     """
     if not media_name:
-        raise HMCError("Optical media name must not be empty")
+        raise ValueError("Optical media name must not be empty")
 
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
