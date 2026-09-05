@@ -8,14 +8,14 @@ import pytest
 from conftest import make_config
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.pcm import (
+from hmc_mcp.operations.metrics.pcm import (
     fetch_metric_links,
     get_pcm_preferences,
     resolve_pcm_resource,
     set_pcm_preferences,
 )
-from hmc_mcp.server_tools import metrics as server_metrics
-from hmc_mcp.server_tools.metrics import (
+from hmc_mcp.server_tools.metrics import pcm as server_metrics
+from hmc_mcp.server_tools.metrics.pcm import (
     hmc_aggregated_metric_links,
     hmc_aggregated_metrics,
     hmc_processed_metric_links,

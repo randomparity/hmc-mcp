@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from hmc_mcp.server_tools import (
     console,
     jobs,
-    metrics,
     snapshot,
     system_resources,
     updates,
@@ -25,6 +24,7 @@ from hmc_mcp.server_tools.lpar import (
     profiles,
     provision,
 )
+from hmc_mcp.server_tools.metrics import pcm as metrics
 from hmc_mcp.server_tools.permissions import EFFECTIVE_PERMISSIONS_SECURITY
 from hmc_mcp.server_tools.storage import resources as storage
 from hmc_mcp.server_tools.systems import core as systems

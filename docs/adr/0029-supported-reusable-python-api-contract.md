@@ -241,7 +241,7 @@ names are internal everywhere and are never inventoried.
   `parse_lpar_ownership_caller_token`, `parse_lpar_ownership_owner`.
 - `operations.partition_state` — types: `PartitionState`; operations: none; excluded
   synchronous: none.
-- `operations.pcm` — operations: `fetch_metric_data`, `fetch_metric_links`, `get_pcm_preferences`,
+- `operations.metrics.pcm` — operations: `fetch_metric_data`, `fetch_metric_links`, `get_pcm_preferences`,
   `resolve_pcm_resource`, `set_pcm_preferences`; types: `MetricKind`, `PcmCategory`,
   `PcmResource`; excluded synchronous: `preference_flags`, `validate_pcm_metric_target`,
   `validate_pcm_preferences_category`.

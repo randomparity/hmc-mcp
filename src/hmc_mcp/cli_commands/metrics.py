@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from ..operations.pcm import (
+from ..operations.metrics.pcm import (
     PcmCategory,
     fetch_metric_data,
     fetch_metric_links,

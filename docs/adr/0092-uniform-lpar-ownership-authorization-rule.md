@@ -70,7 +70,7 @@ premise is stated there at `:232` and still in the tool docstring at
 Also out of scope: read operations; managed-system-, user- and cluster-scoped
 mutations that name no partition (`create_volume_group`, `create_media_repository`,
 `power_system`, `set_sriov_adapter_mode`, `set_pcm_preferences` — which rejects
-every category but `ManagedSystem` at `operations/pcm.py:52` — and the user and
+every category but `ManagedSystem` at `operations/metrics/pcm.py:52` — and the user and
 cluster tools); and operations that *create* a partition, which have no prior
 owner to check and stamp instead (ADR 0011, ADR 0014).
 

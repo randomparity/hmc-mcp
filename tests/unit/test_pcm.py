@@ -19,7 +19,7 @@ from hmc_mcp.jobs import (
     create_logical_unit_job,
     delete_logical_unit_job,
 )
-from hmc_mcp.server_tools.metrics import (
+from hmc_mcp.server_tools.metrics.pcm import (
     hmc_aggregated_metric_links,
     hmc_aggregated_metrics,
     hmc_get_pcm_preferences,

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import (
+from ..._app import (
     with_client,
 )
-from ..operations.pcm import (
+from ...operations.metrics.pcm import (
     MetricKind,
     PcmCategory,
     fetch_metric_data,
@@ -18,7 +18,7 @@ from ..operations.pcm import (
     validate_pcm_metric_target,
     validate_pcm_preferences_category,
 )
-from ..tool_registry import tool_module
+from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 
