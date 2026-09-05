@@ -10,9 +10,10 @@ Usage:
 If SUBTASK_NUMBER is omitted, all sub-tasks (ST0–ST15) are run in order.
 If a specific number is given (0-15), only that sub-task runs.
 
-Pre-run requirement: HMC_SCHEMA_VERSION=V1_0 must be set in .env.
-The script warns and patches .env automatically if it is missing, then exits
-so the updated environment is loaded on restart.
+Pre-run requirement: HMC_SCHEMA_VERSION=V1_0 must be available from the
+environment or an existing local .env file. The preflight never creates or
+patches .env: when the value is absent, it exits with manual configuration
+instructions.
 """
 
 from __future__ import annotations

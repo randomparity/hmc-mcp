@@ -293,6 +293,21 @@ def test_schema_preflight_is_explicit_and_actionable(monkeypatch, capsys):
     assert "Add 'HMC_SCHEMA_VERSION=V1_0'" in capsys.readouterr().out
 
 
+def test_schema_preflight_does_not_patch_dotenv(monkeypatch, capsys, tmp_path):
+    _clear(monkeypatch, "HMC_SCHEMA_VERSION")
+    _isolated_environ(monkeypatch)
+    dotenv = tmp_path / ".env"
+    original = "HMC_HOST=example.test\n"
+    dotenv.write_text(original)
+    monkeypatch.setattr(runner, "_ENV_FILE", dotenv)
+
+    with pytest.raises(SystemExit):
+        runner._ensure_schema_version()
+
+    assert dotenv.read_text() == original
+    assert "Add 'HMC_SCHEMA_VERSION=V1_0'" in capsys.readouterr().out
+
+
 def test_schema_preflight_accepts_a_case_variant_the_loader_reads(monkeypatch):
     """#543. It must not refuse to start on a value the server will send."""
     _clear(monkeypatch, "HMC_SCHEMA_VERSION")

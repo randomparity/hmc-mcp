@@ -1,4 +1,8 @@
-"""Client-side exception type shared by client.py and its domain mixins."""
+"""Client exceptions shared by the transport core and domain mixins.
+
+The :mod:`hmc_mcp.client` package uses these exceptions from its transport
+implementation in :mod:`hmc_mcp.client.core` and from its domain mixin modules.
+"""
 
 from __future__ import annotations
 
