@@ -36,6 +36,7 @@ sequence, but decoding remains the caller's decision (issue #385).
 from __future__ import annotations
 
 import asyncio
+import errno
 import logging
 import math
 import os
@@ -166,14 +167,16 @@ class _SealedStdin:
         if self._read_fd != -1:
             try:
                 os.close(self._read_fd)
-            except OSError:
-                pass
+            except OSError as exc:
+                if exc.errno != errno.EBADF:
+                    raise
             self._read_fd = -1
         if self._write_fd != -1:
             try:
                 os.close(self._write_fd)
-            except OSError:
-                pass
+            except OSError as exc:
+                if exc.errno != errno.EBADF:
+                    raise
             self._write_fd = -1
 
 
