@@ -1742,6 +1742,24 @@ async def test_main_rejects_unknown_numeric_workflow(monkeypatch, tmp_path):
     assert saved["results"][0]["data"] == "Unknown sub-task 999"
 
 
+def test_result_write_preserves_existing_report_when_replacement_fails(
+    monkeypatch, tmp_path
+) -> None:
+    path = tmp_path / "results.json"
+    path.write_text('{"old": true}', encoding="utf-8")
+
+    def fail_replace(_temporary, _path):
+        raise OSError("replacement failed")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="replacement failed"):
+        runner._write_results(path, '{"new": true}')
+
+    assert path.read_text(encoding="utf-8") == '{"old": true}'
+    assert not list(tmp_path.glob(".results.json.*.tmp"))
+
+
 @pytest.mark.asyncio
 async def test_connectivity_inventory_forwards_selectors_and_captures_context(
     monkeypatch,

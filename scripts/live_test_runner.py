@@ -23,6 +23,7 @@ import asyncio
 import json
 import os
 import re
+import tempfile
 import traceback
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -655,6 +656,21 @@ def _restore_ctx_from_results(
     )
 
 
+def _write_results(path: Path, document: str) -> None:
+    """Atomically replace the persisted live-test report."""
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", text=True
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(document)
+        temporary.replace(path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 async def main(
     subtask_filter: int | None = None,
     results_path: str = "test-results-round2.json",
@@ -716,12 +732,11 @@ async def main(
     finally:
         state.iso_http_server.close()
 
-    Path(results_path).write_text(
+    _write_results(
+        Path(results_path),
         json.dumps(
-            {"context": asdict(context), "results": state.results},
-            indent=2,
-            default=str,
-        )
+            {"context": asdict(context), "results": state.results}, indent=2, default=str
+        ),
     )
 
     total = len(state.results)
