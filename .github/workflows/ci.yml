@@ -126,7 +126,7 @@ jobs:
           from pathlib import Path
           import sys
 
-          from hmc_mcp.operations.capacity import CapacitySummary, fetch_capacity_report
+          from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report
 
           package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
           environment = Path(".library-wheel-venv").resolve()
@@ -269,7 +269,7 @@ jobs:
           from pathlib import Path
           import sys
 
-          from hmc_mcp.operations.capacity import CapacitySummary, fetch_capacity_report
+          from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report
 
           package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
           environment = Path(".floor-venv").resolve()

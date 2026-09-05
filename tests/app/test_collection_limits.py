@@ -17,10 +17,8 @@ from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.server_tools import (
     jobs as server_jobs,
 )
-from hmc_mcp.server_tools import (
-    systems as server_systems,
-)
 from hmc_mcp.server_tools.storage import resources as server_storage
+from hmc_mcp.server_tools.systems import core as server_systems
 from hmc_mcp.server_tools.virtualization import adapters as server_adapters
 from hmc_mcp.server_tools.virtualization import network as server_network
 

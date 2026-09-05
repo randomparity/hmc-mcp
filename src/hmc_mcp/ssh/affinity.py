@@ -512,12 +512,12 @@ async def get_system_memopt_score(
     """Return the current system memory-affinity score via SSH."""
     command = f"lsmemopt -m {shlex.quote(system_name)} -r sys -o currscore"
     output = await run_hmc_command(config, command)
-    rows = _validated_memopt_rows(output, {"curr_sys_score"})
+    rows = _parse_lshwres_output(output)
     if len(rows) != 1:
         raise HMCCLIError(
             f"lsmemopt system query returned {len(rows)} rows; expected exactly 1"
         )
-    return rows[0]
+    return _validated_memopt_rows(output, {"curr_sys_score"})[0]
 
 
 async def plan_lpar_memopt_scores(
@@ -548,11 +548,13 @@ async def plan_system_memopt_score(
     command = f"lsmemopt -m {shlex.quote(system_name)} -r sys -o calcscore"
     command += _memopt_selector_options(prioritized, excluded)
     output = await run_hmc_command(config, command)
-    rows = _validated_memopt_rows(output, {"curr_sys_score", "predicted_sys_score"})
+    rows = _parse_lshwres_output(output)
     if len(rows) != 1:
         raise HMCCLIError(
             f"lsmemopt system query returned {len(rows)} rows; expected exactly 1"
         )
-    result = rows[0]
+    result = _validated_memopt_rows(
+        output, {"curr_sys_score", "predicted_sys_score"}
+    )[0]
     result["prediction_guaranteed"] = False
     return result

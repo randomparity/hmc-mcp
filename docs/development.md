@@ -63,6 +63,7 @@ lifecycle all work; everything else uses the same path.
 
 ```
 src/hmc_mcp/
+  *.py              # package-level modules and composition roots
   api.py             # supported connection/configuration facade (ADR 0118)
   config.py          # TOML profiles, environment values, and CLI configuration
   errors.py          # shared HMC error hierarchy
@@ -71,9 +72,7 @@ src/hmc_mcp/
   authorization/     # access policy plus dispatch-time scope enforcement
   client/            # HMCClient transport, response parsing, and domain mixins
   documents/         # domain XML request builders and common envelopes
-  jobs/
-    core.py          # job outcome normalization and polling helpers
-    requests.py      # JobRequest XML builders and request vocabularies
+  jobs/*.py          # job outcome normalization, polling, and request builders
   operations/        # presentation-neutral workflows and authorization policy
     affinity/        # affinity REST and SSH workflows
     io_virtualization/ # PCIe, SR-IOV, and vNIC operations
@@ -85,7 +84,7 @@ src/hmc_mcp/
   server_tools/      # MCP adapters grouped by domain (lpar, storage, systems, virtualization)
   cli_commands/      # Typer adapters grouped by domain (lpar, storage, systems, virtualization)
   snapshots/         # portable LPAR snapshots and affinity assessment
-  ssh/               # asyncssh transport and resource-specific HMC CLI commands
+  ssh/*.py           # asyncssh transport and resource-specific HMC CLI commands
   tool_registry.py   # local MCP tool collection and ToolSecurity metadata
   _app.py            # FastMCP factory and shared execution helpers
   server.py          # MCP composition, startup validation, and serving bootstrap

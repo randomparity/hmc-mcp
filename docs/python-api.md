@@ -45,7 +45,7 @@ They remain available for pre-release consumers that explicitly choose those
 imports, but they are not compatibility promises. For example:
 
 ```python
-from hmc_mcp.operations.capacity import fetch_capacity_report
+from hmc_mcp.operations.inventory.capacity import fetch_capacity_report
 
 report = await fetch_capacity_report(hmc)
 ```
