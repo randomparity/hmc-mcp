@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
 
 
-def entries(data: Any) -> list[Mapping[str, object]]:
+def entries(data: object) -> list[Mapping[str, object]]:
     """Normalize a tool result to mapping entries, discarding malformed values."""
     if isinstance(data, list):
         raw_entries = data
