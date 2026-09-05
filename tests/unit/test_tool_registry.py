@@ -19,6 +19,7 @@ from hmc_mcp.tool_registry import (
     tool_module,
     validate_security,
 )
+
 # Both gates are required since ADR 0041: `register_tools` is the bulk registration
 # site, and while they defaulted to None a caller that omitted them registered a
 # module's whole tool set with no ceiling and no authorizer. These tests are about
@@ -142,6 +143,22 @@ def test_extra_targets_supply_a_kind_the_table_cannot_name():
     assert [(t.kind, t.argument, t.required) for t in targets] == [("user", "name", True)]
 
 
+def test_affinity_operations_bind_only_the_managed_system_selector():
+    from hmc_mcp.server import TOOL_SECURITY
+
+    names = (
+        "hmc_get_system_memopt_score",
+        "hmc_plan_lpar_memopt_scores",
+        "hmc_plan_system_memopt_score",
+    )
+    for name in names:
+        security = TOOL_SECURITY[name]
+        assert security.effect == "read"
+        assert [(target.kind, target.argument) for target in security.targets] == [
+            ("managed_system", "system_name_or_uuid")
+        ]
+
+
 
 # ---------------------------------------------------------------------------
 # #260 — declared nested target selectors, one level below the signature
@@ -208,13 +225,13 @@ def test_a_nested_field_with_a_default_is_optional():
         operation="provision.lpar",
         target_kind="managed_system",
         extra_targets=(
-            ("vios", "network.vios_partition_id"),
+            ("vios", "adapters.vios_partition_id"),
             ("vios", "storage.vios_uuid"),
         ),
     )
     def provision(
         system_name_or_uuid: str,
-        network: _Network,
+        adapters: _Network,
         storage: _Storage,
         profile: str | None = None,
     ) -> str:

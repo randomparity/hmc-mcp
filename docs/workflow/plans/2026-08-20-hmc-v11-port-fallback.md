@@ -40,12 +40,12 @@ ty, and the repository `just` recipes.
 
 - `src/hmc_mcp/config.py`: change the default port only; retain existing
   precedence and `base_url` contract.
-- `src/hmc_mcp/client.py`: record fallback eligibility and implement the bounded
+- `src/hmc_mcp/client/__init__.py`: record fallback eligibility and implement the bounded
   logon retry, cleanup/error behavior, and private active REST base.
-- `src/hmc_mcp/client_contracts.py` and `src/hmc_mcp/client_network.py`: declare
+- `src/hmc_mcp/client/client_contracts.py` and `src/hmc_mcp/client/client_network.py`: declare
   the private active-base attribute required by typed mixin boundaries.
-- `src/hmc_mcp/client_pcm.py`, `src/hmc_mcp/client_storage.py`, and
-  `src/hmc_mcp/client_network.py`: use the active base at the five existing sites
+- `src/hmc_mcp/client/client_pcm.py`, `src/hmc_mcp/client/client_storage.py`, and
+  `src/hmc_mcp/client/client_network.py`: use the active base at the five existing sites
   that expand relative links or generate absolute REST relationship links.
 - `tests/unit/test_config.py`: prove default and explicit TOML/environment port
   provenance.
@@ -106,7 +106,7 @@ is distinguishable without a new public setting.
    443, deliberate legacy behavior that must construct an explicit 12443
    config/profile, or unrelated literal data. This includes alternate hosts in
    `tests/app/test_profile_routing.py` and the default assertion in
-   `tests/unit/test_server_hosts.py`; do not limit the sweep to `hmc.test`.
+   `tests/unit/test_server_tools/hosts.py`; do not limit the sweep to `hmc.test`.
 2. Move all implicit-default routes and assertions needed by
    `tests/unit/test_client.py`, `tests/unit/test_config.py`, and their
    `tests/conftest.py` fixtures to 443. Retain 12443 only with explicit port
@@ -151,7 +151,7 @@ is distinguishable without a new public setting.
     `tests/unit/test_client_domain_mixins.py`. Prove each targets 12443 after
     fallback, and prove an absolute HMC-supplied PCM link remains unchanged.
 11. Run
-    `rg -n 'self\.config\.base_url' src/hmc_mcp/client_pcm.py src/hmc_mcp/client_storage.py src/hmc_mcp/client_network.py`;
+    `rg -n 'self\.config\.base_url' src/hmc_mcp/client/client_pcm.py src/hmc_mcp/client/client_storage.py src/hmc_mcp/client/client_network.py`;
     expect no matches, structurally guarding all five migrations.
 12. Run the focused client and affected mixin/storage tests; expect all to pass.
 13. Run

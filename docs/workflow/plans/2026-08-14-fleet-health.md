@@ -22,7 +22,7 @@ pytest, uv, Ruff, ty.
 
 ## Task 1: Implement and test the fleet operation
 
-**Files:** create `src/hmc_mcp/operations_health.py` and
+**Files:** create `src/hmc_mcp/operations/health.py` and
 `tests/system/test_fleet_health.py`.
 
 **Interfaces:** provide
@@ -59,7 +59,7 @@ Later tasks consume both names unchanged.
    deterministic sorting, and `fleet_health`. Do not eagerly create one inspection task per managed
    system; the global Job read remains one separate task.
 4. Run `uv run pytest -q --no-cov tests/system/test_fleet_health.py`; expect all tests pass.
-5. Run `uv run ruff check src/hmc_mcp/operations_health.py tests/system/test_fleet_health.py`
+5. Run `uv run ruff check src/hmc_mcp/operations/health.py tests/system/test_fleet_health.py`
    and `uv run ty check`; expect both pass. Commit with
    `feat: compute fleet health exceptions`.
 
@@ -69,8 +69,8 @@ executable tests.
 
 ## Task 2: Expose the MCP and CLI contract
 
-**Files:** create `src/hmc_mcp/server_health.py`; modify `src/hmc_mcp/server.py`,
-`src/hmc_mcp/_app.py`, `src/hmc_mcp/cli_systems.py`, `tests/app/test_capabilities.py`,
+**Files:** create `src/hmc_mcp/server_tools/health.py`; modify `src/hmc_mcp/server.py`,
+`src/hmc_mcp/_app.py`, `src/hmc_mcp/cli_commands/systems.py`, `tests/app/test_capabilities.py`,
 `tests/unit/test_server_module_boundaries.py`, `tests/app/test_cli_commands.py`, and
 `tests/app/test_application_boundaries.py`; create `tests/system/test_health_tools.py`.
 
@@ -85,9 +85,9 @@ executable tests.
    exactly one awaited call to the shared operation, and the exact serialized five-key mapping.
    Add CLI tests asserting delegation, JSON arrays for every collection, degraded category output,
    and warning output. Run the named test files; expect failures for the missing surface.
-2. Implement `server_health.py`, compose and re-export it in `server.py`, add the tool to
+2. Implement `server_tools/health.py`, compose and re-export it in `server.py`, add the tool to
    `READ_ONLY_TOOLS`, and add one concise composite-tool guidance line in `_app.py`.
-3. Implement `systems health` in `cli_systems.py`; JSON uses `dataclasses.asdict`, while human
+3. Implement `systems health` in `cli_commands/systems.py`; JSON uses `dataclasses.asdict`, while human
    output prints only non-empty exception tables plus warnings and a healthy message when all
    categories and warnings are empty.
 4. Run

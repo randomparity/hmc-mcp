@@ -1,23 +1,23 @@
 """Tool-layer tests for the partition-template library MCP tools.
 
 The client methods and job builder are covered in test_templates_api.py;
-these tests call the actual ``@mcp.tool`` functions in ``server_templates``
+these tests call the actual ``@mcp.tool`` functions in ``server_tools.templates``
 against the respx ``mock_hmc`` router so the argument->URL mapping in the
 tool bodies is exercised.
 """
 
-import httpx
-import pytest
 from unittest.mock import ANY, AsyncMock, patch
 
-from hmc_mcp.client import HMCError
-from hmc_mcp.server import (
+import httpx
+import pytest
+from conftest import JOB_ENTRY
+
+from hmc_mcp.errors import HMCError
+from hmc_mcp.server_tools.templates import (
     hmc_deploy_partition_template,
     hmc_get_partition_template,
     hmc_list_partition_templates,
 )
-
-from conftest import JOB_ENTRY
 
 TEMPLATE_UUID = "tmpl-uuid-1"
 TARGET_SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
@@ -126,14 +126,23 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     result = hmc_deploy_partition_template("draft-uuid", TARGET_SYSTEM_UUID)
     body = route.calls.last.request.content.decode()
     assert "Deploy</OperationName>" in body
-    assert "TargetUuid" in body and TARGET_SYSTEM_UUID in body
+    assert (
+        f"<ParameterName kb=\"ROR\" kxe=\"false\">TargetUuid</ParameterName>\n"
+        f"      <ParameterValue kb=\"CUR\" kxe=\"false\">{TARGET_SYSTEM_UUID}"
+        "</ParameterValue>" in body
+    )
+    assert (
+        '<ParameterName kb="ROR" kxe="false">TemplateUuid</ParameterName>\n'
+        '      <ParameterValue kb="CUR" kxe="false">draft-uuid</ParameterValue>'
+        in body
+    )
     assert "K_X_API_SESSION_MEMENTO" in body
     assert set(result) == {"job", "ownership_stamped", "warnings"}
     assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
     assert result["ownership_stamped"] is None
     assert result["warnings"] == [
-        "ownership stamp not attempted: template deployment does not identify and stamp "
-        "the new LPAR; list partitions to identify it, then set its description"
+        ("ownership stamp not attempted: template deployment does not identify and stamp "
+         "the new LPAR; list partitions to identify it, then set its description")
     ]
 
 
@@ -144,7 +153,7 @@ def test_deploy_partition_template_resolves_target_system_name(monkeypatch, mock
     )
     resolver = AsyncMock(return_value=TARGET_SYSTEM_UUID)
 
-    with patch("hmc_mcp.operations_templates.resolve_system_uuid", new=resolver):
+    with patch("hmc_mcp.operations.templates.resolve_system_uuid", new=resolver):
         hmc_deploy_partition_template("draft-uuid", "system-prod")
 
     resolver.assert_awaited_once_with(ANY, "system-prod")
@@ -177,7 +186,7 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
     submit_route = mock_hmc.put(
         "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_deploy_partition_template(
@@ -226,11 +235,11 @@ def test_deploy_partition_template_completed_stamps_the_new_lpar(monkeypatch, mo
     mock_hmc.put("/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     stamp = AsyncMock(return_value=(True, []))
-    with patch("hmc_mcp.operations_templates.stamp_created_lpar_ownership", new=stamp):
+    with patch("hmc_mcp.operations.templates.stamp_created_lpar_ownership", new=stamp):
         result = hmc_deploy_partition_template(
             "draft-uuid",
             TARGET_SYSTEM_UUID,

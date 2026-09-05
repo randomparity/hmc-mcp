@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.client_cluster import ClusterMixin
+from hmc_mcp.client.client_cluster import ClusterMixin
 
 
 class ClusterHarness(ClusterMixin):

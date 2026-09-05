@@ -18,10 +18,10 @@ subcommand group.
 
 ## Decision
 
-Add a `cli_config.py` module that registers on a new `config_app` Typer wired
+Add a `cli_commands/config.py` module that registers on a new `config_app` Typer wired
 into the root CLI. The three commands delegate entirely to the existing
 `config.py` API (`resolve_config_path`, `list_profiles`, `load_profile`);
-`cli_config.py` owns only presentation and the `init` write path.
+`cli_commands/config.py` owns only presentation and the `init` write path.
 
 `config show` inspects the loaded `HMCConfig` and emits non-secret metadata.
 It never resolves `password_env` — it reports only whether a password or key
@@ -48,7 +48,7 @@ On Windows, `0o600` is a no-op; the file inherits the user-account ACL from
   passwords or private-key contents. This is the same exposure level as
   `hmc-mcp --help`.
 - Adding `from . import cli_config` to `cli.py` is the only change outside the
-  new file and the two lines in `cli_app.py` that register the group.
+  new file and the two lines in `cli_commands/app.py` that register the group.
 
 ## Considered & Rejected
 
@@ -60,8 +60,8 @@ absent and applies restrictive file permissions (`0o600`) on first creation.
 `config list` and `config show` reduce the support burden for operators who
 need to verify their setup without inspecting raw TOML.
 
-**Inline `config` commands in `cli_app.py`.** The pattern in this repo is one
-file per domain group. Inlining would make `cli_app.py` the right place to look
+**Inline `config` commands in `cli_commands/app.py`.** The pattern in this repo is one
+file per domain group. Inlining would make `cli_commands/app.py` the right place to look
 for connection-plumbing code and the wrong place to look for command bodies —
 they serve different readers.
 

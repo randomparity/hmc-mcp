@@ -55,10 +55,10 @@ tools. Issue #128 completes the configuration story with two deliverables:
 ### 2.2 Implementation location
 
 `hmc_list_configured_hosts` is implemented in the existing
-`src/hmc_mcp/server_system.py` module, which already holds other lightweight
+`src/hmc_mcp/server_tools/system.py` module, which already holds other lightweight
 metadata and inventory tools. A new file is not warranted.
 
-**Rationale:** `server_system.py` contains `hmc_console_info`, which is the
+**Rationale:** `server_tools/system.py` contains `hmc_console_info`, which is the
 closest analogue — a lightweight HMC metadata query. Keeping the tool in an
 existing module avoids a new import in `server.py` and a new test fixture file.
 
@@ -123,7 +123,7 @@ escalation (the process already has whatever access the operator's user does).
 
 - **Remove `.env.example`** from the repository root. It references the old
   repo-root `.env` credential pattern, which is superseded by ADR 0006 (TOML
-  profiles). The starter TOML example in `cli_config.py` replaces it.
+  profiles). The starter TOML example in `cli_commands/config.py` replaces it.
 
 - **Update the README `## Configure` section** to lead with the TOML profile
   (already there) and remove the `(or point your MCP client's env at
@@ -153,7 +153,7 @@ entries — run `just verify` to confirm.
 
 ### 4.1 Unit tests (no network)
 
-New test file `tests/unit/test_server_hosts.py` covering:
+New test file `tests/unit/test_server_tools/hosts.py` covering:
 
 1. **No config file** → returns `{"profiles": [], "config_file": None}`.
 2. **Single profile, is default** → correct fields, `is_default=True`.

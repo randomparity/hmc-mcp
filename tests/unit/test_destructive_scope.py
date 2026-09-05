@@ -3,9 +3,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.operations_lpar import delete_lpar, power_lpar, rename_lpar
-from hmc_mcp.operations_vios import power_vios
-from hmc_mcp import operations_vios, server_lpars, server_vios
+from hmc_mcp.config import HMCConfig
+from hmc_mcp.operations import vios as operations_vios
+from hmc_mcp.operations.lpar.core import delete_lpar, power_lpar, rename_lpar
+from hmc_mcp.operations.vios import power_vios
+from hmc_mcp.server_tools import vios as server_vios
+from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
 
 
 def _client_factory(hmc):
@@ -64,15 +67,20 @@ async def test_rename_lpar_uses_required_system_to_scope_name_resolution():
 @pytest.mark.asyncio
 async def test_power_lpar_forwards_optional_system_scope():
     hmc = AsyncMock()
+    # A real config: power_lpar reads authorize_power_operations off it, and a
+    # child mock would be truthy — silently enabling the ADR 0092 §4 guard.
+    # from_mapping so an exported HMC_AUTHORIZE_POWER_OPERATIONS cannot enable
+    # it either (ADR 0096).
+    hmc.config = HMCConfig.from_mapping({"host": "hmc.test", "user": "u", "password": "p"})
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-uuid"}
     hmc.submit_job.return_value = {"UUID": "job-uuid"}
 
     await power_lpar(
         hmc,
+        "system-name",
         "aix1",
         power_on=False,
-        system_name_or_uuid="system-name",
     )
 
     hmc.find_partition_by_name.assert_awaited_once_with(
@@ -90,8 +98,8 @@ async def test_power_vios_forwards_optional_system_scope():
     await power_vios(
         hmc,
         "vios1",
-        on=False,
         system_name_or_uuid="system-name",
+        power_on=False,
     )
 
     hmc.find_vios_by_name.assert_awaited_once_with(
@@ -102,14 +110,14 @@ async def test_power_vios_forwards_optional_system_scope():
 def test_power_off_lpar_tool_forwards_system_scope(monkeypatch):
     hmc = AsyncMock()
     operation = AsyncMock(return_value=AsyncMock(job={"UUID": "job-uuid"}))
-    monkeypatch.setattr(server_lpars, "client_from_env", _client_factory(hmc))
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _client_factory(hmc))
     monkeypatch.setattr(server_lpars, "power_lpar", operation)
 
     server_lpars.hmc_power_off_lpar(
         "aix1", system_name_or_uuid="system-name"
     )
 
-    assert operation.await_args.kwargs["system_name_or_uuid"] == "system-name"
+    assert operation.await_args.args[1] == "system-name"
 
 
 def test_delete_vios_tool_scopes_name_before_mutation(monkeypatch):
@@ -117,7 +125,7 @@ def test_delete_vios_tool_scopes_name_before_mutation(monkeypatch):
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     hmc.find_vios_by_name.return_value = {"UUID": "vios-uuid"}
     hmc.get_quick_property.return_value = "not activated"
-    monkeypatch.setattr(server_vios, "client_from_env", _client_factory(hmc))
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _client_factory(hmc))
 
     server_vios.hmc_delete_vios(
         "vios1", system_name_or_uuid="system-name"
@@ -134,8 +142,8 @@ def test_restore_vios_tool_forwards_system_scope(monkeypatch):
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     hmc.find_vios_by_name.return_value = {"UUID": "vios-uuid"}
     command = AsyncMock(return_value="restored")
-    monkeypatch.setattr(server_vios, "HMCClient", _client_factory(hmc))
-    monkeypatch.setattr(server_vios, "run_hmc_cli", command)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _client_factory(hmc))
+    monkeypatch.setattr(operations_vios, "run_hmc_cli", command)
 
     assert server_vios.hmc_restore_vios(
         "system-name",
@@ -153,11 +161,12 @@ def test_restore_vios_tool_forwards_system_scope(monkeypatch):
 def test_power_off_vios_tool_forwards_system_scope(monkeypatch):
     hmc = AsyncMock()
     operation = AsyncMock(return_value={"UUID": "job-uuid"})
-    monkeypatch.setattr(server_vios, "client_from_env", _client_factory(hmc))
-    monkeypatch.setattr(operations_vios, "power_vios", operation)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _client_factory(hmc))
+    monkeypatch.setattr(server_vios, "power_vios", operation)
 
     server_vios.hmc_power_off_vios(
         "vios1", system_name_or_uuid="system-name"
     )
 
+    assert operation.await_args.args[1] == "vios1"
     assert operation.await_args.kwargs["system_name_or_uuid"] == "system-name"

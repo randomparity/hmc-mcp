@@ -4,7 +4,7 @@
 
 Issue #332 requires the canonical verification commands to conserve agent
 context on success without weakening their gates or hiding actionable failures.
-This design is governed by [ADR 0054](../../adr/0054-structured-quiet-verification-output.md).
+This design is governed by [ADR 0099](../../adr/0099-structured-quiet-verification-output.md).
 
 The change is limited to developer verification presentation: `justfile`,
 pytest/coverage presentation configuration, the smoke script, one focused test

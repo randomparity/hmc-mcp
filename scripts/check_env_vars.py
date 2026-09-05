@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Guard: every HMC_* env var defined in HMCConfig must appear in the doc.
 
 Usage:

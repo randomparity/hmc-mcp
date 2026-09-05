@@ -6,6 +6,9 @@
 #   just test-verbose     # pytest diagnostics and missing-lines coverage
 #   just smoke             # MCP handshake / tool count
 #   just smoke-verbose     # MCP handshake / exposed tool names
+#   just tool-docs         # regenerate docs/tools/ from the registry
+#   just tool-docs-check   # fail when docs/tools/ has fallen behind the registry
+#   just doc-freshness     # fail when any generated document has fallen behind
 
 # synchronize locked dependencies and install repository hooks
 setup:
@@ -37,8 +40,25 @@ env-vars:
 nicknames:
     uv run --no-sync python scripts/check_nicknames.py
 
+# regenerate docs/tools/ from the MCP tool registry
+tool-docs:
+    uv run --no-sync python scripts/gen_tool_reference.py
+
+# verify the committed docs/tools/ still matches the registry
+tool-docs-check:
+    uv run --no-sync python scripts/gen_tool_reference.py --check
+
+# verify every decision record in docs/adr/ carries a unique number
+adr-numbering:
+    uv run --no-sync python scripts/check_adr_numbering.py
+
+# verify every generated document still matches its declared regeneration command
+doc-freshness:
+    uv run --no-sync python scripts/check_generated_docs.py
+
 # local and hosted static-analysis gate
-static: lint typecheck secrets workflow-security env-vars nicknames
+static: lint typecheck secrets workflow-security env-vars nicknames \
+        tool-docs-check adr-numbering doc-freshness
 
 # run the full pytest suite with one semantic summary
 test:
@@ -65,11 +85,9 @@ verify-artifacts:
     uv run --no-sync python tests/validate_release_artifacts.py dist .
 
 # full verification: tests + handshake + CLI groups load
+# The root help goes through the installed console script, so the entry point is
+# covered; the group helps are derived from the Typer app rather than listed here.
 verify: static test smoke build verify-artifacts
     uv run --no-sync hmc-mcp --help >/dev/null
-    uv run --no-sync hmc-mcp lpars --help >/dev/null
-    uv run --no-sync hmc-mcp storage --help >/dev/null
-    uv run --no-sync hmc-mcp network --help >/dev/null
-    uv run --no-sync hmc-mcp templates --help >/dev/null
-    uv run --no-sync hmc-mcp metrics --help >/dev/null
+    uv run --no-sync python scripts/smoke_cli_groups.py
     @echo "verify: all groups load OK"

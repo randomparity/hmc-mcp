@@ -1,20 +1,24 @@
-from unittest.mock import AsyncMock
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp import common
-from hmc_mcp.common import build_config, resolve_lpar_uuid, resolve_vios_uuid
-from hmc_mcp.config import HMCConfig
+import hmc_mcp.config as config_module
+from hmc_mcp.config import HMCConfig, build_config
+from hmc_mcp.resource_identity import (
+    ResourceNotFoundError,
+    resolve_lpar_uuid,
+    resolve_vios_uuid,
+)
 
 
 @pytest.mark.parametrize(
     ("base", "port_is_explicit"),
     [
-        (HMCConfig(host="h", user="u", password="p", _env_file=None), False),
+        (HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"}), False),
         (
-            HMCConfig(
-                host="h", user="u", password="p", port=12443, _env_file=None
+            HMCConfig.from_mapping(
+                {"host": "h", "user": "u", "password": "p", "port": 12443}
             ),
             True,
         ),
@@ -24,8 +28,10 @@ def test_build_config_preserves_port_provenance_across_unrelated_override(
     monkeypatch, base, port_is_explicit
 ):
     monkeypatch.delenv("HMC_HOST", raising=False)
-    monkeypatch.setattr(common, "resolve_config_path", lambda: Path("config.toml"))
-    monkeypatch.setattr(common, "load_profile", lambda profile=None: base)
+    monkeypatch.setattr(
+        config_module, "resolve_config_path", lambda: Path("config.toml")
+    )
+    monkeypatch.setattr(config_module, "load_profile", lambda profile=None: base)
 
     config = build_config(profile="prod", verify_ssl=True)
 
@@ -78,7 +84,11 @@ async def test_lpar_resolver_preserves_no_match_guidance():
     hmc.find_partition_by_name.return_value = None
 
     with pytest.raises(
-        ValueError,
+        ResourceNotFoundError,
         match="No LPAR named 'missing' found. Use hmc_list_lpars to list available partitions.",
-    ):
+    ) as raised:
         await resolve_lpar_uuid(hmc, "missing")
+
+    assert raised.value.resource_kind == "LPAR"
+    assert raised.value.selector == "missing"
+    assert isinstance(raised.value, ValueError)

@@ -5,11 +5,11 @@ import inspect
 import io
 import os
 import signal
-import time
-from typing import Any
 import subprocess
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -51,6 +51,20 @@ class BinaryStderr:
 
     def __init__(self) -> None:
         self.buffer = RecordingBuffer()
+
+
+def _wait_for_process_marker(
+    marker: Path, process: subprocess.Popen[bytes], timeout_seconds: float = 10
+) -> None:
+    """Wait until the child declares readiness or exits unexpectedly."""
+    deadline = time.monotonic() + timeout_seconds
+    while not marker.exists():
+        if process.poll() is not None:
+            pytest.fail(f"child exited with {process.returncode} before becoming ready")
+        if time.monotonic() >= deadline:
+            process.kill()
+            pytest.fail(f"child did not create readiness marker {marker}")
+        time.sleep(0.01)
 
 
 def _stub_pytest(
@@ -217,8 +231,10 @@ def test_signal_return_code_maps_to_shell_status() -> None:
 
 
 def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
+    ready = tmp_path / "pytest-ready"
     tmp_path.joinpath("test_slow.py").write_text(
-        "import time\n\ndef test_slow():\n    time.sleep(30)\n"
+        "import pathlib\nimport time\n\ndef test_slow():\n"
+        "    pathlib.Path('pytest-ready').touch()\n    time.sleep(30)\n"
     )
     process = subprocess.Popen(
         [sys.executable, str(MODULE_PATH)],
@@ -227,7 +243,7 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         start_new_session=True,
     )
-    time.sleep(1)
+    _wait_for_process_marker(ready, process)
     os.killpg(process.pid, signal.SIGINT)
     stdout, stderr = process.communicate(timeout=10)
 

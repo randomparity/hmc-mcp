@@ -1,254 +1,99 @@
-"""Tests for HMC LDAP configuration tools (list/configure/remove)."""
+"""ManagementConsole RemoteAccess LDAP and Kerberos contracts."""
 
 import httpx
 import pytest
-
-from hmc_mcp.client import HMCClient, HMCError
-from hmc_mcp.client_users import LDAP_REMOVAL_RESOURCES
-from hmc_mcp.server import (
-    hmc_configure_ldap,
-    hmc_get_ldap_config,
-    hmc_remove_ldap_config,
-)
-from hmc_mcp.documents import build_ldap_config_document
-
 from conftest import make_config
+from defusedxml import ElementTree as DET
+
+from hmc_mcp.client.core import HMCClient
+from hmc_mcp.documents import build_remote_access_document
+from hmc_mcp.errors import HMCError
+
+CONSOLE = "console-1"
+PATH = f"/rest/api/uom/ManagementConsole/{CONSOLE}?group=RemoteAccess"
+REMOTE_ACCESS = """<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>urn:uuid:console-1</id>
+<content><ManagementConsole xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+<LdapEnabled>true</LdapEnabled><PrimaryLdapUri>ldaps://directory</PrimaryLdapUri>
+<KerberosAuthenticationEnabled>false</KerberosAuthenticationEnabled>
+</ManagementConsole></content></entry></feed>"""
 
 
-BASE = "https://hmc.test"
-
-# Minimal XML responses for LDAP endpoints
-LDAP_CONFIG_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:ibm:hmc:ldap:config</id>
-    <title>HmcLdapServer</title>
-    <content type="application/vnd.ibm.powervm.web+xml">
-      <HmcLdapServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">
-        <LdapServerUrl>ldap://ldap.example.com</LdapServerUrl>
-        <BaseDN>dc=example,dc=com</BaseDN>
-      </HmcLdapServer>
-    </content>
-  </entry>
-</feed>
-"""
-
-LDAP_CONFIG_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<HmcLdapServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/" schemaVersion="V1_0">
-  <Metadata><Atom/></Metadata>
-  <LdapServerUrl>ldap://ldap.example.com</LdapServerUrl>
-  <BaseDN>dc=example,dc=com</BaseDN>
-  <BindDN>cn=admin,dc=example,dc=com</BindDN>
-</HmcLdapServer>
-"""
-
-
-# ------------------------------------------------------------------ #
-# XML builder unit tests
-# ------------------------------------------------------------------ #
-
-def test_build_ldap_config_document_full():
-    xml = build_ldap_config_document(
-        server_url="ldap://ldap.example.com",
-        base_dn="dc=example,dc=com",
-        bind_dn="cn=admin,dc=example,dc=com",
-        bind_pw="secret",
-        search_filter="(objectClass=person)",
-        hmc_groups="HMCAdmins",
-        group_member_attributes="member",
+def test_remote_access_builder_sets_clears_and_escapes() -> None:
+    xml = build_remote_access_document(
+        {"LdapEnabled": True, "BindPassword": "<&", "ClockSkew": 300},
+        ["SecondaryLdapUri"],
     )
-    assert "<LdapServerUrl" in xml and "ldap://ldap.example.com" in xml
-    assert "<BaseDN" in xml and "dc=example,dc=com" in xml
-    assert "<BindDN" in xml and "cn=admin,dc=example,dc=com" in xml
-    assert "<BindPw" in xml and "secret" in xml
-    assert "<SearchFilter" in xml and "(objectClass=person)" in xml
-    assert "<HmcGroups" in xml and "HMCAdmins" in xml
-    assert "<GroupMemberAttributes" in xml and "member" in xml
-    assert "HmcLdapServer" in xml
+    assert "ManagementConsole" in xml and "HmcLdapServer" not in xml
+    assert ">true</LdapEnabled>" in xml
+    assert "&lt;&amp;" in xml
+    assert '<SecondaryLdapUri kb="CUR" kxe="false"/>' in xml
 
 
-def test_build_ldap_config_document_partial():
-    xml = build_ldap_config_document(
-        server_url="ldaps://ldap.corp.com:636",
-        base_dn="ou=users,dc=corp,dc=com",
+def test_remote_access_builder_covers_documented_kerberos_names() -> None:
+    xml = build_remote_access_document(
+        {"KerberosEnabled": True, "kerberosRemoteUserId": "directory-user"}
     )
-    assert "<LdapServerUrl" in xml and "ldaps://ldap.corp.com:636" in xml
-    assert "<BaseDN" in xml and "ou=users,dc=corp,dc=com" in xml
-    assert "BindDN" not in xml   # not passed
-    assert "BindPw" not in xml   # not passed
+    assert ">true</KerberosEnabled>" in xml
+    assert ">directory-user</kerberosRemoteUserId>" in xml
 
 
-def test_build_ldap_config_document_minimal():
-    xml = build_ldap_config_document(server_url="ldap://localhost")
-    assert "ldap://localhost" in xml
-    assert "HmcLdapServer" in xml
+@pytest.mark.parametrize(
+    ("values", "clears", "message"),
+    [
+        ({}, [], "at least one"),
+        ({"NoSuchField": "x"}, [], "Unknown"),
+        ({"Realm": "x"}, ["Realm"], "both set and cleared"),
+    ],
+)
+def test_remote_access_builder_rejects_invalid_updates(values, clears, message) -> None:
+    with pytest.raises(ValueError, match=message):
+        build_remote_access_document(values, clears)
 
-
-# ------------------------------------------------------------------ #
-# Client-level tests (respx-mocked HTTP)
-# ------------------------------------------------------------------ #
 
 @pytest.mark.asyncio
-async def test_get_ldap_config(mock_hmc):
-    mock_hmc.get("/rest/api/web/HmcLdapServer").mock(
-        return_value=httpx.Response(200, text=LDAP_CONFIG_FEED)
+async def test_remote_access_get_merge_and_post_preserve_unmodified_fields(mock_hmc) -> None:
+    get_route = mock_hmc.get(PATH).mock(
+        return_value=httpx.Response(200, text=REMOTE_ACCESS)
+    )
+    post_route = mock_hmc.post(PATH).mock(
+        return_value=httpx.Response(200, text=REMOTE_ACCESS)
     )
     async with HMCClient(make_config()) as hmc:
-        cfg = await hmc.get_ldap_config()
-    assert cfg["Resource"]["LdapServerUrl"] == "ldap://ldap.example.com"
-    assert cfg["Resource"]["BaseDN"] == "dc=example,dc=com"
-
-
-@pytest.mark.asyncio
-async def test_get_ldap_config_empty(mock_hmc):
-    mock_hmc.get("/rest/api/web/HmcLdapServer").mock(
-        return_value=httpx.Response(204)
-    )
-    async with HMCClient(make_config()) as hmc:
-        cfg = await hmc.get_ldap_config()
-    assert cfg is None
-
-
-@pytest.mark.asyncio
-async def test_configure_ldap(mock_hmc):
-    route = mock_hmc.post("/rest/api/web/HmcLdapServer").mock(
-        return_value=httpx.Response(200, text=LDAP_CONFIG_ENTRY)
-    )
-    ldap_xml = build_ldap_config_document(
-        server_url="ldap://ldap.example.com",
-        base_dn="dc=example,dc=com",
-        bind_dn="cn=admin,dc=example,dc=com",
-        bind_pw="secret",
-    )
-    async with HMCClient(make_config()) as hmc:
-        cfg = await hmc.configure_ldap(ldap_xml)
-    assert route.called
-    body = route.calls.last.request.content.decode()
-    assert "ldap://ldap.example.com" in body
-    assert "dc=example,dc=com" in body
-    assert cfg["Resource"]["LdapServerUrl"] == "ldap://ldap.example.com"
-
-
-@pytest.mark.asyncio
-async def test_remove_ldap_config_ldap(mock_hmc):
-    route = mock_hmc.post("/rest/api/web/HmcLdapServer").mock(
-        return_value=httpx.Response(200, text=LDAP_CONFIG_ENTRY)
-    )
-    async with HMCClient(make_config()) as hmc:
-        await hmc.remove_ldap_config("ldap")
-    assert route.called
-    url_str = str(route.calls.last.request.url)
-    assert "Remove=ldap" in url_str
-
-
-@pytest.mark.asyncio
-async def test_remove_ldap_config_binddn(mock_hmc):
-    route = mock_hmc.post("/rest/api/web/HmcLdapServer").mock(
-        return_value=httpx.Response(200, text="<ok/>")
-    )
-    async with HMCClient(make_config()) as hmc:
-        await hmc.remove_ldap_config("binddn")
-    assert route.called
-    url_str = str(route.calls.last.request.url)
-    assert "Remove=binddn" in url_str
-
-
-@pytest.mark.asyncio
-async def test_all_ldap_removal_resources_serialize_unchanged(mock_hmc):
-    for resource in LDAP_REMOVAL_RESOURCES:
-        route = mock_hmc.post("/rest/api/web/HmcLdapServer").mock(
-            return_value=httpx.Response(200, text="<ok/>")
+        result = await hmc.get_remote_access(CONSOLE)
+        updated = await hmc.configure_remote_access(
+            CONSOLE, {"LdapEnabled": False}, ["KerberosAuthenticationEnabled"]
         )
-        async with HMCClient(make_config()) as hmc:
-            await hmc.remove_ldap_config(resource)
-        assert f"Remove={resource}" in str(route.calls.last.request.url)
-
-
-def test_invalid_ldap_removal_resource_fails_before_transport(monkeypatch, mock_hmc):
-    monkeypatch.setenv("HMC_HOST", "hmc.test")
-    monkeypatch.setenv("HMC_USER", "hscroot")
-    monkeypatch.setenv("HMC_PASSWORD", "abc123")
-
-    with pytest.raises(ValueError, match="LDAP removal resource"):
-        hmc_remove_ldap_config("../../HmcUser")
-    assert not mock_hmc.calls
-
-
-@pytest.mark.asyncio
-async def test_get_ldap_config_error_raises(mock_hmc):
-    mock_hmc.get("/rest/api/web/HmcLdapServer").mock(
-        return_value=httpx.Response(403, text="<error>forbidden</error>")
-    )
-    async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError) as exc_info:
-            await hmc.get_ldap_config()
-    assert exc_info.value.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_configure_ldap_error_raises(mock_hmc):
-    mock_hmc.post("/rest/api/web/HmcLdapServer").mock(
-        return_value=httpx.Response(500, text="<error>internal error</error>")
-    )
-    ldap_xml = build_ldap_config_document(server_url="ldap://bad.host")
-    async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError) as exc_info:
-            await hmc.configure_ldap(ldap_xml)
-    assert exc_info.value.status_code == 500
-
-
-# ------------------------------------------------------------------ #
-# Server-tool tests (parsed dict returns, not raw XML)
-# ------------------------------------------------------------------ #
-
-def _hmc_env(monkeypatch) -> None:
-    """Set env vars so HMCConfig() succeeds inside the tool."""
-    monkeypatch.setenv("HMC_HOST", "hmc.test")
-    monkeypatch.setenv("HMC_USER", "hscroot")
-    monkeypatch.setenv("HMC_PASSWORD", "abc123")
-
-
-def test_hmc_get_ldap_config_parses(monkeypatch, mock_hmc):
-    """hmc_get_ldap_config returns a single parsed resource dict."""
-    _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/web/HmcLdapServer").mock(
-        return_value=httpx.Response(200, text=LDAP_CONFIG_FEED)
-    )
-    result = hmc_get_ldap_config()
-    assert isinstance(result, dict)
-    assert result["Resource"]["LdapServerUrl"] == "ldap://ldap.example.com"
-    assert result["Resource"]["BaseDN"] == "dc=example,dc=com"
-
-
-def test_hmc_get_ldap_config_empty_returns_none(monkeypatch, mock_hmc):
-    """hmc_get_ldap_config returns None when no LDAP is configured."""
-    _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/web/HmcLdapServer").mock(
-        return_value=httpx.Response(204)
-    )
-    assert hmc_get_ldap_config() is None
-
-
-def test_hmc_configure_ldap_returns_dict(monkeypatch, mock_hmc):
-    """hmc_configure_ldap returns the updated LDAP resource dict."""
-    _hmc_env(monkeypatch)
-    mock_hmc.post("/rest/api/web/HmcLdapServer").mock(
-        return_value=httpx.Response(200, text=LDAP_CONFIG_ENTRY)
-    )
-    result = hmc_configure_ldap(
-        "ldap://ldap.example.com", base_dn="dc=example,dc=com"
-    )
-    assert isinstance(result, dict)
-    assert result["Resource"]["LdapServerUrl"] == "ldap://ldap.example.com"
-
-
-def test_hmc_remove_ldap_config_returns_confirmation(monkeypatch, mock_hmc):
-    """hmc_remove_ldap_config returns a confirmation string, not XML."""
-    _hmc_env(monkeypatch)
-    mock_hmc.post("/rest/api/web/HmcLdapServer").mock(
-        return_value=httpx.Response(200, text="<ok/>")
+    assert result["Resource"]["PrimaryLdapUri"] == "ldaps://directory"
+    assert updated is not None
+    assert get_route.called and post_route.called
+    assert (
+        get_route.calls[0].request.headers["accept"]
+        == "application/vnd.ibm.powervm.web+xml; type=ManagementConsole"
     )
     assert (
-        hmc_remove_ldap_config("ldap")
-        == "Removed LDAP configuration component: ldap"
+        "type=ManagementConsole" in post_route.calls[0].request.headers["content-type"]
     )
+    posted = DET.fromstring(post_route.calls[0].request.content)
+    fields = {node.tag.rsplit("}", 1)[-1]: node.text for node in posted}
+    assert fields["LdapEnabled"] == "false"
+    assert fields["PrimaryLdapUri"] == "ldaps://directory"
+    assert fields["KerberosAuthenticationEnabled"] is None
+
+
+@pytest.mark.asyncio
+async def test_remote_access_empty_responses_are_none(mock_hmc) -> None:
+    mock_hmc.get(PATH).mock(return_value=httpx.Response(200, text=REMOTE_ACCESS))
+    mock_hmc.post(PATH).mock(return_value=httpx.Response(202, text=""))
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.configure_remote_access(CONSOLE, {"LdapEnabled": True}, []) is None
+
+
+@pytest.mark.asyncio
+async def test_remote_access_get_failure_does_not_post(mock_hmc) -> None:
+    get_route = mock_hmc.get(PATH).mock(return_value=httpx.Response(503, text="down"))
+    post_route = mock_hmc.post(PATH).mock(return_value=httpx.Response(200))
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="GET"):
+            await hmc.configure_remote_access(CONSOLE, {"LdapEnabled": True}, [])
+    assert get_route.called
+    assert not post_route.called

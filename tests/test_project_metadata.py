@@ -1,7 +1,7 @@
+import ast
 import re
 import tomllib
 from pathlib import Path
-
 
 ROOT = Path(__file__).parents[1]
 POLICY_LINKS = {
@@ -15,6 +15,29 @@ PROJECT_URLS = {
     "Security": "https://github.com/randomparity/hmc-mcp/security/policy",
 }
 PRIVATE_ADVISORY_URL = "https://github.com/randomparity/hmc-mcp/security/advisories/new"
+GOVERNANCE_HEADING = "## Contributing, security, and license"
+GOVERNANCE_NEXT = "## Install"
+CONTRIBUTING_HEADING = "# Contributing"
+CONTRIBUTING_NEXT = "## Changelog"
+LOCAL_PATH_COMMANDS = (
+    "just setup",
+    "just verify",
+    "UV_NO_SYNC=1 uv run prek run --all-files",
+)
+LOCAL_PATH_EXPECTATIONS = (
+    "focused",
+    "test",
+    "pull request",
+    "[security policy](security.md)",
+    "keep dependencies pinned",
+    "agents.md",
+)
+SECURITY_TITLE = "# Security policy"
+SECURITY_HEADING = "## Reporting a vulnerability"
+SECURITY_EXPECTATIONS = (
+    "do not open a public issue",
+    "do not include passwords, access tokens, production data, or other secrets",
+)
 VIOS_BACKUP_TOOLS = (
     "hmc_list_vios_backups",
     "hmc_backup_vios",
@@ -33,10 +56,51 @@ FIXED_TOOL_COUNT = re.compile(
 )
 
 
+def _section(text: str, heading: str, next_heading: str | None = None) -> str:
+    """Return the body between ``heading`` and the heading that follows it.
+
+    Heading *order* is asserted, not mere presence: without it a renamed or reordered
+    heading makes the second split return the rest of the document and the slice stops
+    being a section.
+    """
+    assert heading in text, f"missing heading: {heading}"
+    if next_heading is None:
+        return text.split(heading, 1)[1]
+    assert next_heading in text, f"missing heading: {next_heading}"
+    assert text.index(heading) < text.index(next_heading), (
+        f"'{heading}' must come before '{next_heading}'"
+    )
+    return text.split(heading, 1)[1].split(next_heading, 1)[0]
+
+
+def _relocate(text: str, body: str, destination: str) -> str:
+    """Move ``body`` out of its own section and under ``destination``."""
+    return text.replace(body, "\n\n", 1).replace(
+        destination, f"{destination}{body}", 1
+    )
+
+
 def _project_metadata() -> dict[str, object]:
     with (ROOT / "pyproject.toml").open("rb") as file:
         document = tomllib.load(file)
     return document["project"]
+
+
+def test_architecture_documents_name_current_adapter_and_selector_modules() -> None:
+    adr = (ROOT / "docs/adr/0013-resource-domain-module-ownership.md").read_text()
+    server_doc = ast.get_docstring(
+        ast.parse((ROOT / "src/hmc_mcp/server.py").read_text())
+    )
+    app_doc = ast.get_docstring(ast.parse((ROOT / "src/hmc_mcp/_app.py").read_text()))
+
+    assert "`ssh/selectors.py` for HMC CLI selectors" in adr
+    assert "`ssh_selectors.py`" not in adr
+    assert server_doc is not None
+    assert "domain adapters under ``server_tools/``" in server_doc
+    assert "``server_lpars``" not in server_doc
+    assert app_doc is not None
+    assert "every ``server_tools/`` domain adapter" in app_doc
+    assert "every ``server_*`` domain module" not in app_doc
 
 
 def test_project_declares_mit_license_and_policy_urls() -> None:
@@ -51,10 +115,54 @@ def test_project_declares_mit_license_and_policy_urls() -> None:
 
 def test_readme_links_canonical_governance_files() -> None:
     readme = (ROOT / "README.md").read_text()
+    governance = _section(readme, GOVERNANCE_HEADING, GOVERNANCE_NEXT)
 
     for path, link in POLICY_LINKS.items():
         assert (ROOT / path).is_file(), f"missing canonical policy file: {path}"
-        assert link in readme, f"README must link {path}"
+        assert link in governance, (
+            f"'{GOVERNANCE_HEADING}' must link {path}"
+        )
+
+
+def test_governance_links_relocated_out_of_their_section_are_caught() -> None:
+    """The negative variant: every link stays in the file but leaves its section."""
+    readme = (ROOT / "README.md").read_text()
+    relocated = _relocate(
+        readme, _section(readme, GOVERNANCE_HEADING, GOVERNANCE_NEXT), "## Stack\n"
+    )
+
+    assert all(link in relocated for link in POLICY_LINKS.values())
+    moved = _section(relocated, GOVERNANCE_HEADING, GOVERNANCE_NEXT)
+    assert [link for link in POLICY_LINKS.values() if link in moved] == []
+
+
+def test_readme_documents_the_typed_facade_and_its_covered_surface() -> None:
+    readme = (ROOT / "README.md").read_text()
+    # Fail loudly on a renamed *or reordered* heading: without this the second
+    # split silently returns the rest of the file and the section gate stops
+    # being a section. Ordering subsumes mere presence.
+    assert readme.index("## Reusable Python API") < readme.index("## Configure")
+    library = " ".join(
+        readme.split("## Reusable Python API", 1)[1].split("## Configure", 1)[0].split()
+    )
+
+    assert "PEP 561" in library
+    assert "py.typed" in library
+    # Pins the note's covered-surface wording so an edit cannot quietly narrow
+    # or widen what the marker is documented to cover.
+    for covered in (
+        "call signature",
+        "package-owned model",
+        "exception type",
+        "enum and literal alias",
+    ):
+        assert covered in library
+    # The fake-client remedy has to be a mechanism that actually type-checks.
+    assert "typing.cast(HMCClient, fake)" in library
+    # The limit is pinned next to the claim: 36 exported operations return raw
+    # HMC mappings, so a bare "everything is typed" note would oversell it.
+    assert "`dict[str, Any]`" in library
+    assert "payload contents stay opaque" in library
 
 
 def test_vios_backup_hmc_floor_is_published_without_narrowing_general_support() -> None:
@@ -124,27 +232,84 @@ def test_generated_policy_guidance_does_not_pin_a_stale_tool_count() -> None:
     assert not FIXED_TOOL_COUNT.search("31 total non-exhaustive tools")
 
 
+def test_readme_preserves_reviewed_policy_during_recovery() -> None:
+    readme = (ROOT / "README.md").read_text()
+    migration = readme.split("### Migrating to a required access policy", 1)[1].split(
+        "### Detecting access-policy drift", 1
+    )[0]
+
+    assert "unknown tool" in migration
+    assert "TOML" in migration
+    assert "config diff-access-policy" in migration
+    assert "init-access-policy --output" in migration
+    assert "merge" in migration.lower()
+    assert "preserve" in migration.lower()
+    assert "Delete it" not in migration
+
+
 def test_contribution_guide_defines_the_complete_local_path() -> None:
     guide = (ROOT / "CONTRIBUTING.md").read_text()
+    local_path = _section(guide, CONTRIBUTING_HEADING, CONTRIBUTING_NEXT)
 
-    for command in (
-        "just setup",
-        "just verify",
-        "UV_NO_SYNC=1 uv run prek run --all-files",
-    ):
-        assert f"`{command}`" in guide
-    assert "focused" in guide.lower()
-    assert "test" in guide.lower()
-    assert "pull request" in guide.lower()
-    assert "[security policy](security.md)" in guide.lower()
+    for command in LOCAL_PATH_COMMANDS:
+        assert f"`{command}`" in local_path, (
+            f"'{CONTRIBUTING_HEADING}' must name `{command}`"
+        )
+    for expectation in LOCAL_PATH_EXPECTATIONS:
+        assert expectation in local_path.lower(), (
+            f"'{CONTRIBUTING_HEADING}' must state {expectation!r}"
+        )
+
+
+def test_local_path_relocated_into_another_section_is_caught() -> None:
+    """The negative variant: the guidance stays in the guide but leaves its section."""
+    guide = (ROOT / "CONTRIBUTING.md").read_text()
+    relocated = _relocate(
+        guide,
+        _section(guide, CONTRIBUTING_HEADING, CONTRIBUTING_NEXT),
+        f"{CONTRIBUTING_NEXT}\n",
+    )
+
+    assert all(f"`{command}`" in relocated for command in LOCAL_PATH_COMMANDS)
+    assert all(
+        expectation in relocated.lower() for expectation in LOCAL_PATH_EXPECTATIONS
+    )
+    moved = _section(relocated, CONTRIBUTING_HEADING, CONTRIBUTING_NEXT)
+    assert [
+        command for command in LOCAL_PATH_COMMANDS if f"`{command}`" in moved
+    ] == []
+    assert [
+        expectation
+        for expectation in LOCAL_PATH_EXPECTATIONS
+        if expectation in moved.lower()
+    ] == []
 
 
 def test_security_policy_uses_only_private_vulnerability_reporting() -> None:
     policy = (ROOT / "SECURITY.md").read_text()
-
-    assert PRIVATE_ADVISORY_URL in policy
-    assert "do not open a public issue" in policy.lower()
-    assert (
-        "do not include passwords, access tokens, production data, or other secrets"
-        in policy.lower()
+    assert policy.index(SECURITY_TITLE) < policy.index(SECURITY_HEADING), (
+        f"'{SECURITY_TITLE}' must come before '{SECURITY_HEADING}'"
     )
+    reporting = _section(policy, SECURITY_HEADING)
+
+    assert PRIVATE_ADVISORY_URL in reporting
+    for expectation in SECURITY_EXPECTATIONS:
+        assert expectation in reporting.lower()
+
+
+def test_reporting_guidance_relocated_out_of_its_section_is_caught() -> None:
+    """The negative variant: the guidance stays in the file but leaves its section."""
+    policy = (ROOT / "SECURITY.md").read_text()
+    relocated = _relocate(
+        policy, _section(policy, SECURITY_HEADING), f"{SECURITY_TITLE}\n"
+    )
+
+    assert PRIVATE_ADVISORY_URL in relocated
+    assert all(
+        expectation in relocated.lower() for expectation in SECURITY_EXPECTATIONS
+    )
+    moved = _section(relocated, SECURITY_HEADING).lower()
+    assert PRIVATE_ADVISORY_URL not in moved
+    assert [
+        expectation for expectation in SECURITY_EXPECTATIONS if expectation in moved
+    ] == []

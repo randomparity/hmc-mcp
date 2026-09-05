@@ -5,10 +5,11 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from hmc_mcp.server import hmc_set_sriov_adapter_mode
-
 from conftest import mock_uuid_resolution
+
+from hmc_mcp.server_tools.pcie import (
+    hmc_set_sriov_adapter_mode,
+)
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"
@@ -49,8 +50,8 @@ def test_set_sriov_mode_sriov(monkeypatch, mock_hmc):
     )
 
     with (
-        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock),
-        patch("hmc_mcp.operations_pcie._require_admitted_environment"),
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        patch("hmc_mcp.operations.io_virtualization.pcie.require_admitted_environment"),
     ):
         result = hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "sriov")
 
@@ -75,8 +76,8 @@ def test_set_sriov_mode_dedicated(monkeypatch, mock_hmc):
     )
 
     with (
-        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock),
-        patch("hmc_mcp.operations_pcie._require_admitted_environment"),
+        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        patch("hmc_mcp.operations.io_virtualization.pcie.require_admitted_environment"),
     ):
         result = hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "dedicated")
 

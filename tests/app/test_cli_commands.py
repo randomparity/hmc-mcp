@@ -1,12 +1,11 @@
 """Direct CLI command tests via ``typer.testing.CliRunner``.
 
-The REST-backed commands all funnel through ``cli_app._client`` →
-``cli_app.client_from_env`` (imported at ``cli_app.py``), and the SSH-backed
+The REST-backed commands all funnel through ``cli_runtime.client`` and the SSH-backed
 commands through ``ssh_commands.run_hmc_command``. These tests monkeypatch those
-two factories so every command runs against a scripted fake — no HTTP, no SSH.
+two boundaries so every command runs against a scripted fake — no HTTP, no SSH.
 
-This closes the CLI blind spot where only the helpers (``_ssh_config``,
-``_output``) were exercised and no command body was ever invoked, so the
+This closes the CLI blind spot where only the helpers (``ssh_config``,
+``output``) were exercised and no command body was ever invoked, so the
 highest-complexity commands (lpars power/create/modify/delete, storage
 create-vg/create-disk) had zero direct coverage.
 """
@@ -15,20 +14,52 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Self
+from unittest.mock import AsyncMock
 
 import pytest
 import typer
 from click import unstyle
-from unittest.mock import AsyncMock
 from typer.main import get_command
 from typer.testing import CliRunner
 
-from hmc_mcp import cli, cli_app, operations_lpar, ssh_commands
+from hmc_mcp import cli
+from hmc_mcp.cli_commands import pcie as cli_pcie
+from hmc_mcp.cli_commands import runtime as cli_runtime
+from hmc_mcp.cli_commands import vios_labels as cli_vios_labels
+from hmc_mcp.cli_commands import vnic as cli_vnic
+from hmc_mcp.cli_commands.lpar import config as cli_lpars
+from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations_ssh_network import VnicChangeResult, VnicPartialError
+from hmc_mcp.operations import ownership as lpar_ownership
+from hmc_mcp.operations.io_virtualization.vnic import VnicChangeResult, VnicPartialError
+from hmc_mcp.operations.lpar.assignments import LparPcieWorkflowResult
+from hmc_mcp.operations.lpar.workflow_contract import WorkflowStep
+from hmc_mcp.ssh import affinity as ssh_affinity
+from hmc_mcp.ssh import commands as ssh_commands
+from hmc_mcp.ssh import lpar as ssh_lpar
+from hmc_mcp.ssh import network as ssh_network
+from hmc_mcp.ssh import profiles as ssh_profiles
 
 LPAR_NAME = "lpar1"
+
+
+def _patch_ssh_command(monkeypatch, replacement) -> None:
+    """Replace the transport name owned by every SSH domain used by the CLI."""
+    config = HMCConfig.from_mapping(
+        {
+            "host": "hmc.test",
+            "user": "hscroot",
+            "password": "test",  # pragma: allowlist secret
+        }
+    )
+    for module in (cli_lpars, cli_pcie, cli_vnic):
+        monkeypatch.setattr(module, "ssh_config", lambda: config, raising=False)
+    for module in (ssh_affinity, ssh_lpar, ssh_network, ssh_profiles):
+        monkeypatch.setattr(module, "run_hmc_command", replacement)
+
+
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 VG_UUID = "33333333-3333-4333-8333-333333333333"
@@ -41,17 +72,30 @@ TEMPLATE_UUID = "99999999-9999-4999-8999-999999999999"
 RUNNER = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def _configured_ssh_config(monkeypatch) -> None:
+    config = HMCConfig.from_mapping(
+        {
+            "host": "hmc.test",
+            "user": "hscroot",
+            "password": "test",  # pragma: allowlist secret
+        }
+    )
+    for module in (cli_lpars, cli_pcie, cli_vnic):
+        monkeypatch.setattr(module, "ssh_config", lambda: config, raising=False)
+
+
 class FakeHMC:
     """Scripted async-context-manager stand-in for :class:`HMCClient`.
 
     Each method records its call on ``calls`` (name, args, kwargs) and returns
     canned data; set ``fail_on`` to a method name to make that method raise
-    :class:`HMCError`, exercising the CLI's ``_fail`` error path.
+    :class:`HMCError`, exercising the CLI's ``fail`` error path.
     """
 
     def __init__(self):
         self.calls: list[tuple[str, tuple, dict]] = []
-        self.config = HMCConfig(host="hmc.test", user="user", _env_file=None)
+        self.config = HMCConfig.from_mapping({"host": "hmc.test", "user": "user"})
         self.fail_on: str | None = None
         self.fail_status = 500
         self.lpar = {
@@ -135,7 +179,7 @@ class FakeHMC:
                 "<xml><Message>boom</Message></xml>",
             )
 
-    async def __aenter__(self) -> "FakeHMC":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *exc_info) -> None:
@@ -143,6 +187,10 @@ class FakeHMC:
 
     async def list_logical_partitions(self, system_uuid=None):
         self._record("list_logical_partitions", system_uuid)
+        return [self.lpar]
+
+    async def search_uom(self, resource_type, property_name, value):
+        self._record("search_uom", resource_type, property_name, value)
         return [self.lpar]
 
     async def get_logical_partition(self, uuid):
@@ -195,8 +243,8 @@ class FakeHMC:
         self._record("lpar_migrate_recover", lpar_uuid)
         return self.job
 
-    async def lpar_remote_restart(self, lpar_uuid, target):
-        self._record("lpar_remote_restart", lpar_uuid, target)
+    async def lpar_remote_restart(self, lpar_uuid, operation, source, **kwargs):
+        self._record("lpar_remote_restart", lpar_uuid, operation, source, **kwargs)
         return self.job
 
     async def create_volume_group(self, vios_uuid, name, physical_volumes):
@@ -288,7 +336,7 @@ class FakeHMC:
 
     async def wait_for_job(
         self,
-        job_uuid,
+        job_id,
         timeout_seconds=300,
         poll_interval=5,
         *,
@@ -296,7 +344,7 @@ class FakeHMC:
     ):
         self._record(
             "wait_for_job",
-            job_uuid,
+            job_id,
             timeout_seconds,
             poll_interval,
             job_href=job_href,
@@ -387,9 +435,9 @@ class FakeHMC:
         return self.job
 
     # -- jobs ------------------------------------------------------------ #
-    async def get_job(self, job_uuid, *, job_href=None):
-        self._record("get_job", job_uuid, job_href=job_href)
-        return self.job if job_uuid == JOB_UUID else None
+    async def get_job(self, job_id, *, job_href=None):
+        self._record("get_job", job_id, job_href=job_href)
+        return self.job if job_id == JOB_UUID else None
 
     # -- pcm metrics ----------------------------------------------------- #
     async def get_pcm_preferences(self, category, uuid):
@@ -400,8 +448,16 @@ class FakeHMC:
         self._record("set_pcm_preferences", category, uuid, **flags)
 
     async def get_processed_metric_links(
-        self, category, uuid, start_ts, end_ts=None, no_of_samples=None
+        self,
+        category,
+        uuid,
+        start_ts,
+        end_ts=None,
+        no_of_samples=None,
+        *,
+        system_uuid=None,
     ):
+        kwargs = {"system_uuid": system_uuid} if system_uuid is not None else {}
         self._record(
             "get_processed_metric_links",
             category,
@@ -409,12 +465,21 @@ class FakeHMC:
             start_ts,
             end_ts,
             no_of_samples,
+            **kwargs,
         )
         return self.metric_links
 
     async def get_aggregated_metric_links(
-        self, category, uuid, start_ts, end_ts=None, no_of_samples=None
+        self,
+        category,
+        uuid,
+        start_ts,
+        end_ts=None,
+        no_of_samples=None,
+        *,
+        system_uuid=None,
     ):
+        kwargs = {"system_uuid": system_uuid} if system_uuid is not None else {}
         self._record(
             "get_aggregated_metric_links",
             category,
@@ -422,6 +487,7 @@ class FakeHMC:
             start_ts,
             end_ts,
             no_of_samples,
+            **kwargs,
         )
         return self.metric_links
 
@@ -436,7 +502,7 @@ class FakeHMC:
 def fake_hmc(monkeypatch):
     """Wire the CLI's client factory to a scripted FakeHMC for every command."""
     hmc = FakeHMC()
-    monkeypatch.setattr(cli_app, "client_from_env", lambda **kwargs: hmc)
+    monkeypatch.setattr(cli_runtime, "HMCClient", lambda _config: hmc)
 
     async def legacy_description(*_args):
         return "legacy partition"
@@ -444,8 +510,8 @@ def fake_hmc(monkeypatch):
     async def stamped(*_args, **_kwargs):
         return "[hmc-mcp owner:hmc-mcp created:2026-08-14]"
 
-    monkeypatch.setattr(operations_lpar, "get_lpar_description", legacy_description)
-    monkeypatch.setattr(operations_lpar, "stamp_lpar_ownership", stamped)
+    monkeypatch.setattr(lpar_ownership, "get_lpar_description", legacy_description)
+    monkeypatch.setattr(lpar_ownership, "stamp_lpar_ownership", stamped)
     return hmc
 
 
@@ -453,11 +519,17 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
     seen = []
     hmc = FakeHMC()
 
-    def client_factory(**kwargs):
-        seen.append(kwargs)
+    def client_factory(config):
+        seen.append(config)
         return hmc
 
-    monkeypatch.setattr(cli_app, "client_from_env", client_factory)
+    monkeypatch.setattr(cli_runtime, "HMCClient", client_factory)
+    # HMC_HOST env var (any casing) and the real config.toml both leak a host
+    # value into the second bare invocation. Suppress both.
+    for name in tuple(__import__("os").environ):
+        if name.casefold() == "hmc_host":
+            monkeypatch.delenv(name)
+    monkeypatch.setattr("hmc_mcp.config.resolve_config_path", lambda: None)
 
     first = RUNNER.invoke(
         cli.app,
@@ -466,10 +538,10 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
     second = RUNNER.invoke(cli.app, ["lpars", "list"])
 
     assert first.exit_code == second.exit_code == 0
-    assert seen[0]["host"] == "first-hmc"
-    assert seen[0]["user"] == "first-user"
-    assert seen[1]["host"] is None
-    assert seen[1]["user"] is None
+    assert seen[0].host == "first-hmc"
+    assert seen[0].user == "first-user"
+    assert seen[1].host == ""
+    assert seen[1].user == ""
 
 
 @pytest.mark.parametrize(
@@ -666,15 +738,34 @@ def test_lpars_list_json(fake_hmc):
     assert fake_hmc.calls == [("list_logical_partitions", (None,), {})]
 
 
+def test_lpars_list_state_filter(fake_hmc):
+    result = RUNNER.invoke(cli.app, ["lpars", "list", "--state", "running"])
+
+    assert result.exit_code == 0
+    assert LPAR_NAME in result.stdout
+    assert fake_hmc.calls == [
+        ("search_uom", ("LogicalPartition", "PartitionState", "running"), {})
+    ]
+
+
 def test_lpars_summary_renders_numeric_zero(monkeypatch):
-    summary = {
-        "name": "zero-lpar",
-        "current_memory_mb": 0,
-        "desired_memory_mb": 0,
-        "current_proc_units": 0.0,
-        "desired_proc_units": 0.0,
-    }
-    monkeypatch.setattr("hmc_mcp.cli_lpars._run", lambda _operation: summary)
+    from hmc_mcp.operations.composite import _lpar_summary
+
+    summary = _lpar_summary(
+        {
+            "Resource": {
+                "PartitionName": "zero-lpar",
+                "CurrentMemory": 0,
+                "DesiredMemory": 0,
+                "CurrentProcessingUnits": 0.0,
+                "DesiredProcessingUnits": 0.0,
+            }
+        },
+        [],
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.lpar.inventory.with_client", lambda _operation: summary
+    )
 
     result = RUNNER.invoke(cli.app, ["lpars", "summary", "zero-lpar"])
 
@@ -723,6 +814,21 @@ def test_lpars_state_entry_without_uuid_reports_not_found(fake_hmc, monkeypatch)
     assert result.exit_code == 1
     assert "not found" in result.stderr
     assert fake_hmc.calls == [("find_partition_by_name", (LPAR_NAME,), {})]
+
+
+def test_lpars_state_uses_typed_resolver_miss(fake_hmc, monkeypatch):
+    from hmc_mcp.cli_commands.lpar import inventory
+    from hmc_mcp.resource_identity import ResourceNotFoundError
+
+    async def missing_lpar(*_args, **_kwargs):
+        raise ResourceNotFoundError("LPAR", LPAR_NAME, "typed resolver miss")
+
+    monkeypatch.setattr(inventory, "get_lpar_state", missing_lpar)
+
+    result = RUNNER.invoke(cli.app, ["lpars", "state", LPAR_NAME])
+
+    assert result.exit_code == 1
+    assert "not found" in result.stderr
 
 
 def test_lpars_state(fake_hmc):
@@ -945,6 +1051,32 @@ def test_lpars_modify_renames(fake_hmc):
     assert "renamed" in args[1]
 
 
+def test_lpars_modify_reports_incomplete_workflow_with_nonzero_exit(monkeypatch, fake_hmc):
+    monkeypatch.setattr(
+        cli_lpar_modify,
+        "modify_lpar",
+        AsyncMock(
+            return_value=LparPcieWorkflowResult(
+                False,
+                False,
+                {"UUID": LPAR_UUID},
+                None,
+                (WorkflowStep("assign", "error", "failed"),),
+                ("assignment failed",),
+            )
+        ),
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "modify", LPAR_UUID, "--system", SYSTEM_UUID, "--name", "renamed", "--yes"],
+    )
+
+    assert result.exit_code == 1
+    assert '"workflow_completed": false' in result.output
+    assert "assignment failed" in result.output
+
+
 def test_lpars_modify_rename_requires_system_before_client_use(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
@@ -973,7 +1105,10 @@ def test_lpars_modify_procs_only_keeps_sharing_mode(fake_hmc):
     )
 
     assert result.exit_code == 0
-    body = fake_hmc.calls[0][1][1]
+    _, args, _ = next(
+        call for call in fake_hmc.calls if call[0] == "modify_logical_partition"
+    )
+    body = args[1]
     assert "DesiredProcessingUnits" in body and ">0.5<" in body
     assert "HasDedicatedProcessors" not in body
     assert "SharingMode" not in body
@@ -986,7 +1121,10 @@ def test_lpars_modify_dedicated_flag_sets_mode(fake_hmc):
     )
 
     assert result.exit_code == 0
-    body = fake_hmc.calls[0][1][1]
+    _, args, _ = next(
+        call for call in fake_hmc.calls if call[0] == "modify_logical_partition"
+    )
+    body = args[1]
     assert "DedicatedProcessorConfiguration" in body
     assert "HasDedicatedProcessors" in body and ">true<" in body
 
@@ -1033,7 +1171,7 @@ def test_lpars_delete_denies_foreign_owned_partition_without_transport(
     async def foreign_description(*_args):
         return "[hmc-mcp owner:other-agent created:2026-08-14]"
 
-    monkeypatch.setattr(operations_lpar, "get_lpar_description", foreign_description)
+    monkeypatch.setattr(lpar_ownership, "get_lpar_description", foreign_description)
 
     result = RUNNER.invoke(
         cli.app,
@@ -1197,7 +1335,7 @@ def test_lpars_decommission_denies_foreign_owned_partition(fake_hmc, monkeypatch
     async def foreign_description(*_args):
         return "[hmc-mcp owner:other-agent created:2026-08-14]"
 
-    monkeypatch.setattr(operations_lpar, "get_lpar_description", foreign_description)
+    monkeypatch.setattr(lpar_ownership, "get_lpar_description", foreign_description)
 
     result = RUNNER.invoke(
         cli.app,
@@ -1539,7 +1677,7 @@ def test_storage_attach_disk_json_incomplete_workflow_exits_1(fake_hmc):
 # storage: command bodies (#240)
 #
 # cli_storage's commands come in three shapes with different injection points:
-#   A  _with_client(lambda hmc: op(...))          -> patch hmc_mcp.cli_storage.<op>
+#   A  with_client(lambda hmc: op(...))          -> patch hmc_mcp.cli_commands.storage.<op>
 #   B  _run(_go) building its own HMCClient, op   -> patch load_profile/HMCClient here
 #      imported inside the function                 and the op on operations_storage
 #   C  as B, but the op is imported at module top -> patch all three on cli_storage
@@ -1565,13 +1703,17 @@ class _FakeClientContext:
 def direct_client(monkeypatch):
     """Neutralise load_profile()/HMCClient() for the commands that build their own client."""
     client = _FakeClientContext()
-    monkeypatch.setattr("hmc_mcp.cli_storage.load_profile", lambda: None)
-    monkeypatch.setattr("hmc_mcp.cli_storage.HMCClient", lambda _config: client)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.load_profile", lambda: None)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.HMCClient", lambda _config: client
+    )
     return client
 
 
 def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
-    async def fake_list(_hmc, vios):
+    async def fake_list(_hmc, vios, *, system_name_or_uuid=None):
+        system = system_name_or_uuid
+        assert system == "system-a"
         assert vios == VIOS_UUID
         return [
             {
@@ -1584,9 +1726,11 @@ def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
             }
         ]
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.list_volume_groups", fake_list)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_volume_groups", fake_list)
 
-    result = RUNNER.invoke(cli.app, ["storage", "list-vgs", VIOS_UUID])
+    result = RUNNER.invoke(
+        cli.app, ["storage", "list-vgs", VIOS_UUID, "--system", "system-a"]
+    )
 
     assert result.exit_code == 0
     assert "rootvg" in result.stdout
@@ -1596,11 +1740,11 @@ def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
 def test_storage_delete_disk_deletes_when_confirmed(fake_hmc, monkeypatch):
     seen = {}
 
-    async def fake_delete(_hmc, vios, vg, name):
+    async def fake_delete(_hmc, vios, vg, name, *, system_name_or_uuid=None):
         seen.update(vios=vios, vg=vg, name=name)
         return {"UUID": "disk-1"}
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.delete_virtual_disk", fake_delete)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.delete_virtual_disk", fake_delete)
 
     result = RUNNER.invoke(
         cli.app,
@@ -1627,7 +1771,7 @@ def test_storage_delete_disk_declined_confirmation_aborts(fake_hmc, monkeypatch)
     async def fake_delete(*args):
         called.append(args)
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.delete_virtual_disk", fake_delete)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.delete_virtual_disk", fake_delete)
 
     result = RUNNER.invoke(
         cli.app,
@@ -1646,7 +1790,7 @@ def test_storage_map_declined_confirmation_aborts(fake_hmc, monkeypatch):
     async def fake_map(*args):
         called.append(args)
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.map_storage", fake_map)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.map_storage", fake_map)
 
     result = RUNNER.invoke(
         cli.app,
@@ -1665,7 +1809,9 @@ def test_storage_create_media_repo_declined_confirmation_aborts(fake_hmc, monkey
     async def fake_create(*args):
         called.append(args)
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.create_media_repository", fake_create)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.create_media_repository", fake_create
+    )
 
     result = RUNNER.invoke(
         cli.app,
@@ -1681,11 +1827,13 @@ def test_storage_create_media_repo_declined_confirmation_aborts(fake_hmc, monkey
 def test_storage_create_media_creates_when_confirmed(fake_hmc, monkeypatch):
     seen = {}
 
-    async def fake_create(_hmc, vios, vg, name, size_mib):
+    async def fake_create(_hmc, vios, vg, name, size_mib, *, system_name_or_uuid=None):
         seen.update(vios=vios, vg=vg, name=name, size_mib=size_mib)
         return {"MediaName": "aix.iso"}
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.create_optical_media", fake_create)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.create_optical_media", fake_create
+    )
 
     result = RUNNER.invoke(
         cli.app,
@@ -1718,7 +1866,9 @@ def test_storage_create_media_declined_confirmation_aborts(fake_hmc, monkeypatch
     async def fake_create(*args):
         called.append(args)
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.create_optical_media", fake_create)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.create_optical_media", fake_create
+    )
 
     result = RUNNER.invoke(
         cli.app,
@@ -1743,10 +1893,12 @@ def test_storage_create_media_declined_confirmation_aborts(fake_hmc, monkeypatch
 def test_storage_delete_media_deletes_when_confirmed(fake_hmc, monkeypatch):
     seen = {}
 
-    async def fake_delete(_hmc, vios, vg, media_name):
+    async def fake_delete(_hmc, vios, vg, media_name, *, system_name_or_uuid=None):
         seen.update(vios=vios, vg=vg, media_name=media_name)
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.delete_optical_media", fake_delete)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.delete_optical_media", fake_delete
+    )
 
     result = RUNNER.invoke(
         cli.app,
@@ -1764,7 +1916,9 @@ def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch
     async def fake_delete(*args):
         called.append(args)
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.delete_optical_media", fake_delete)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.delete_optical_media", fake_delete
+    )
 
     result = RUNNER.invoke(
         cli.app,
@@ -1778,11 +1932,11 @@ def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch
 
 
 def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
-    async def fake_get(_hmc, vios, vg):
+    async def fake_get(_hmc, vios, vg, *, system_name_or_uuid=None):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
         return {"Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "10240"}}
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.get_media_repository", fake_get)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.get_media_repository", fake_get)
 
     result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
 
@@ -1792,10 +1946,10 @@ def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
 
 
 def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
-    async def fake_get(_hmc, _vios, _vg):
+    async def fake_get(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return {}
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.get_media_repository", fake_get)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.get_media_repository", fake_get)
 
     result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
 
@@ -1804,10 +1958,10 @@ def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
 
 
 def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
-    async def fake_get(_hmc, _vios, _vg):
+    async def fake_get(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return {"Resource": {"RepositoryName": "VMLibrary"}}
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.get_media_repository", fake_get)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.get_media_repository", fake_get)
 
     result = RUNNER.invoke(
         cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID, "--json"]
@@ -1818,11 +1972,11 @@ def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
 
 
 def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
-    async def fake_list(_hmc, vios, vg):
+    async def fake_list(_hmc, vios, vg, *, system_name_or_uuid=None):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
         return [{"MediaName": "aix.iso", "MediaSize": 4096, "MediaType": "ISO"}]
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.list_optical_media", fake_list)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_optical_media", fake_list)
 
     result = RUNNER.invoke(
         cli.app, ["storage", "list-optical-media", VIOS_UUID, VG_UUID]
@@ -1834,10 +1988,10 @@ def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
 
 
 def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
-    async def fake_list(_hmc, _vios, _vg):
+    async def fake_list(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return []
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.list_optical_media", fake_list)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_optical_media", fake_list)
 
     result = RUNNER.invoke(
         cli.app, ["storage", "list-optical-media", VIOS_UUID, VG_UUID]
@@ -1848,10 +2002,10 @@ def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
 
 
 def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
-    async def fake_list(_hmc, _vios, _vg):
+    async def fake_list(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return [{"MediaName": "aix.iso"}]
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.list_optical_media", fake_list)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_optical_media", fake_list)
 
     result = RUNNER.invoke(
         cli.app, ["storage", "list-optical-media", VIOS_UUID, VG_UUID, "--json"]
@@ -1862,41 +2016,44 @@ def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
 
 
 def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
-    async def fake_mappings(_hmc, vios, lpar):
-        assert (vios, lpar) == (VIOS_UUID, None)
+    async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
+        system = system_name_or_uuid
+        assert (system, vios, lpar) == (None, VIOS_UUID, None)
         return [
             {
-                "ElementID": "map-1",
+                "UUID": "map-1",
                 "AssociatedLogicalPartition": {"PartitionName": "lpar1"},
                 "Storage": {"VirtualDisk": {"DiskName": "bootvol"}},
             }
         ]
 
     monkeypatch.setattr(
-        "hmc_mcp.operations_storage.list_storage_mappings", fake_mappings
+        "hmc_mcp.cli_commands.storage.list_storage_mappings", fake_mappings
     )
 
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID])
 
     assert result.exit_code == 0
+    assert "map-1" in result.stdout
     assert "bootvol" in result.stdout
     assert "VirtualDisk" in result.stdout
     assert direct_client.entered
 
 
 def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatch):
-    async def fake_mappings(_hmc, _vios, lpar):
-        assert lpar == LPAR_UUID
+    async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
+        system = system_name_or_uuid
+        assert (system, vios, lpar) == (None, VIOS_UUID, LPAR_UUID)
         return [
             {
-                "ElementID": "map-2",
+                "UUID": "map-2",
                 "AssociatedLogicalPartition": {"PartitionName": "lpar1"},
                 "Storage": {"PhysicalVolume": {"VolumeName": "hdisk9"}},
             }
         ]
 
     monkeypatch.setattr(
-        "hmc_mcp.operations_storage.list_storage_mappings", fake_mappings
+        "hmc_mcp.cli_commands.storage.list_storage_mappings", fake_mappings
     )
 
     result = RUNNER.invoke(
@@ -1909,27 +2066,35 @@ def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatc
 
 
 def test_storage_list_mappings_json(direct_client, monkeypatch):
-    async def fake_mappings(_hmc, _vios, _lpar):
-        return [{"ElementID": "map-1"}]
+    async def fake_mappings(_hmc, _vios, _lpar, *, system_name_or_uuid=None):
+        return [{"UUID": "map-1"}]
 
     monkeypatch.setattr(
-        "hmc_mcp.operations_storage.list_storage_mappings", fake_mappings
+        "hmc_mcp.cli_commands.storage.list_storage_mappings", fake_mappings
     )
 
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID, "--json"])
 
     assert result.exit_code == 0
-    assert json.loads(result.stdout) == [{"ElementID": "map-1"}]
+    assert json.loads(result.stdout) == [{"UUID": "map-1"}]
 
 
 def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatch):
     seen = {}
 
-    async def fake_detach(_hmc, vios, mapping_uuid):
-        seen.update(vios=vios, mapping_uuid=mapping_uuid)
+    async def fake_detach(
+        _hmc, vios, mapping_uuid, *, system_name_or_uuid=None, ownership_override
+    ):
+        system = system_name_or_uuid
+        seen.update(
+            system=system,
+            vios=vios,
+            mapping_uuid=mapping_uuid,
+            ownership_override=ownership_override,
+        )
 
     monkeypatch.setattr(
-        "hmc_mcp.operations_storage.detach_storage_mapping", fake_detach
+        "hmc_mcp.cli_commands.storage.detach_storage_mapping", fake_detach
     )
 
     result = RUNNER.invoke(
@@ -1938,7 +2103,12 @@ def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatc
 
     assert result.exit_code == 0
     assert "Deleted storage mapping map-1" in result.stdout
-    assert seen == {"vios": VIOS_UUID, "mapping_uuid": "map-1"}
+    assert seen == {
+        "system": None,
+        "vios": VIOS_UUID,
+        "mapping_uuid": "map-1",
+        "ownership_override": False,
+    }
     assert direct_client.entered
 
 
@@ -1952,11 +2122,14 @@ def test_storage_detach_mapping_reports_one_failure_and_exits_1(
     ``RuntimeError`` -- and printed a second, information-free line on stdout.
     """
 
-    async def fake_detach(_hmc, vios, mapping_uuid):
+    async def fake_detach(
+        _hmc, _vios, _mapping_uuid, *, system_name_or_uuid=None, ownership_override: bool
+    ):
+        assert not ownership_override
         raise HMCError("mapping is in use")
 
     monkeypatch.setattr(
-        "hmc_mcp.operations_storage.detach_storage_mapping", fake_detach
+        "hmc_mcp.cli_commands.storage.detach_storage_mapping", fake_detach
     )
 
     result = RUNNER.invoke(
@@ -1973,7 +2146,7 @@ def test_run_propagates_a_typer_exit_code_unchanged():
     """``_run`` must not rewrite a closure's chosen exit code to 1.
 
     ``typer.Exit`` subclasses ``RuntimeError``, so the catch-all would otherwise
-    route the sentinel through ``_fail`` and report exit 1 -- turning a usage
+    route the sentinel through ``fail`` and report exit 1 -- turning a usage
     error (code 2) into a generic failure.
     """
 
@@ -1981,39 +2154,40 @@ def test_run_propagates_a_typer_exit_code_unchanged():
         raise typer.Exit(code=2)
 
     with pytest.raises(typer.Exit) as excinfo:
-        cli_app._run(_go)
+        cli_runtime.run(_go)
 
     assert excinfo.value.exit_code == 2
 
 
 def test_with_client_propagates_a_typer_exit_code_unchanged(monkeypatch):
-    """``_with_client`` shares ``_run``'s control-flow passthrough."""
+    """``with_client`` shares ``_run``'s control-flow passthrough."""
 
-    def boom(_factory, _fn):
+    def boom(coroutine):
+        coroutine.close()
         raise typer.Exit(code=2)
 
-    monkeypatch.setattr("hmc_mcp.cli_app.run_with_client", boom)
+    monkeypatch.setattr("hmc_mcp.cli_commands.runtime.asyncio.run", boom)
 
     with pytest.raises(typer.Exit) as excinfo:
-        cli_app._with_client(lambda hmc: None)
+        cli_runtime.with_client(lambda hmc: None)
 
     assert excinfo.value.exit_code == 2
 
 
-def test_storage_upload_iso_reports_an_existing_duplicate(direct_client, monkeypatch):
-    async def fake_upload(_hmc, vios, vg, media_name, iso_source):
+def test_storage_upload_iso_reports_uploaded_media(direct_client, monkeypatch):
+    async def fake_upload(_hmc, vios, vg, media_name, iso_source, *, system_name_or_uuid):
         assert (vios, vg, media_name) == (VIOS_UUID, VG_UUID, "aix.iso")
         assert iso_source == "https://images.test/aix.iso"
+        assert system_name_or_uuid is None
         return {
-            "status": "existing",
+            "status": "uploaded",
             "media_name": "aix.iso",
             "media_size_bytes": 1048576,
             "sha256": "abc123",
-            "existing_name": "aix-old.iso",
             "media": {"MediaName": "aix.iso"},
         }
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.upload_iso", fake_upload)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.upload_iso", fake_upload)
 
     result = RUNNER.invoke(
         cli.app,
@@ -2028,16 +2202,19 @@ def test_storage_upload_iso_reports_an_existing_duplicate(direct_client, monkeyp
     )
 
     assert result.exit_code == 0
-    assert "Upload status: existing" in result.stdout
-    assert "aix-old.iso" in result.stdout
+    assert "Upload status: uploaded" in result.stdout
+    assert "Media entry: aix.iso" in result.stdout
     assert "1,048,576 bytes" in result.stdout
 
 
 def test_storage_upload_iso_json(direct_client, monkeypatch):
-    async def fake_upload(_hmc, _vios, _vg, _media_name, _iso_source):
+    async def fake_upload(
+        _hmc, _vios, _vg, _media_name, _iso_source, *, system_name_or_uuid
+    ):
+        assert system_name_or_uuid is None
         return {"status": "uploaded", "media_name": "aix.iso"}
 
-    monkeypatch.setattr("hmc_mcp.cli_storage.upload_iso", fake_upload)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.upload_iso", fake_upload)
 
     result = RUNNER.invoke(
         cli.app,
@@ -2057,7 +2234,7 @@ def test_storage_upload_iso_json(direct_client, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# failure path (_fail)
+# failure path (fail)
 # --------------------------------------------------------------------------- #
 
 
@@ -2079,7 +2256,7 @@ def test_lpars_get_description_via_ssh(monkeypatch):
     async def fake(cfg, cmd):
         return "my lpar description\n"
 
-    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
+    _patch_ssh_command(monkeypatch, fake)
     result = RUNNER.invoke(cli.app, ["lpars", "get-description", "lpar1", "sys1"])
 
     assert result.exit_code == 0
@@ -2090,11 +2267,304 @@ def test_lpars_get_msp_via_ssh(monkeypatch):
     async def fake(cfg, cmd):
         return "1\n"
 
-    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
+    _patch_ssh_command(monkeypatch, fake)
     result = RUNNER.invoke(cli.app, ["lpars", "get-msp", "lpar1", "sys1"])
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "enabled"
+
+
+def test_lpars_memopt_score_via_ssh(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake(cfg, cmd):
+        captured["cmd"] = cmd
+        return "lpar_name=lpar1,lpar_id=1,curr_lpar_score=100\n"
+
+    _patch_ssh_command(monkeypatch, fake)
+    result = RUNNER.invoke(cli.app, ["lpars", "memopt-score", "lpar1", "sys1"])
+
+    assert result.exit_code == 0
+    assert captured["cmd"] == (
+        "lsmemopt -m sys1 -r lpar -o currscore --filter lpar_names=lpar1"
+    )
+    assert "100" in result.stdout
+
+
+def test_lpars_memopt_score_json(monkeypatch):
+    async def fake(cfg, cmd):
+        return "lpar_name=lpar1,lpar_id=1,curr_lpar_score=none\n"
+
+    _patch_ssh_command(monkeypatch, fake)
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "memopt-score", "lpar1", "sys1", "--json"]
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "lpar_name": "lpar1",
+        "lpar_id": "1",
+        "curr_lpar_score": "none",
+    }
+
+
+def test_lpars_memopt_score_error(monkeypatch):
+    async def fake(cfg, cmd):
+        raise ssh_commands.HMCCLIError("The partition named lpar1 was not found.")
+
+    _patch_ssh_command(monkeypatch, fake)
+    result = RUNNER.invoke(cli.app, ["lpars", "memopt-score", "lpar1", "sys1"])
+
+    assert result.exit_code == 1
+    assert "Error:" in result.stderr
+
+
+def test_lpars_memopt_scores_via_ssh(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake(cfg, cmd):
+        captured["cmd"] = cmd
+        return (
+            "lpar_name=lpar1,lpar_id=1,curr_lpar_score=100\n"
+            "lpar_name=lpar2,lpar_id=2,curr_lpar_score=95\n"
+        )
+
+    _patch_ssh_command(monkeypatch, fake)
+    result = RUNNER.invoke(cli.app, ["lpars", "memopt-scores", "sys1"])
+
+    assert result.exit_code == 0
+    assert captured["cmd"] == "lsmemopt -m sys1 -r lpar -o currscore"
+    assert "lpar2" in result.stdout
+
+
+def test_lpars_memopt_scores_with_lpar_filter(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake(cfg, cmd):
+        captured["cmd"] = cmd
+        return "lpar_name=lpar1,lpar_id=1,curr_lpar_score=100\n"
+
+    _patch_ssh_command(monkeypatch, fake)
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "memopt-scores", "sys1", "--lpar", "lpar1", "--json"]
+    )
+
+    assert result.exit_code == 0
+    assert captured["cmd"] == (
+        "lsmemopt -m sys1 -r lpar -o currscore --filter lpar_names=lpar1"
+    )
+    data = json.loads(result.stdout)
+    assert len(data) == 1
+    assert data[0]["lpar_name"] == "lpar1"
+
+
+def test_lpars_memopt_scores_missing_system(monkeypatch):
+    result = RUNNER.invoke(cli.app, ["lpars", "memopt-scores"])
+
+    assert result.exit_code == 2
+    assert "Missing" in result.stderr
+
+
+def test_lpars_memopt_scores_empty(monkeypatch):
+    async def fake(cfg, cmd):
+        return ""
+
+    _patch_ssh_command(monkeypatch, fake)
+    result = RUNNER.invoke(cli.app, ["lpars", "memopt-scores", "sys1"])
+
+    assert result.exit_code == 0
+    assert "No memory-optimization scores reported" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("command", "operation", "payload", "expected"),
+    [
+        (
+            "system-memopt-score",
+            "get_system_memopt_score",
+            {"curr_sys_score": "72"},
+            "current: 72",
+        ),
+        (
+            "plan-memopt-scores",
+            "plan_lpar_memopt_scores",
+            [
+                {
+                    "lpar_name": "web",
+                    "lpar_id": "3",
+                    "curr_lpar_score": "61",
+                    "predicted_lpar_score": "84",
+                    "prediction_guaranteed": False,
+                }
+            ],
+            "prediction guaranteed: no",
+        ),
+        (
+            "plan-system-memopt-score",
+            "plan_system_memopt_score",
+            {
+                "curr_sys_score": "70",
+                "predicted_sys_score": "88",
+                "prediction_guaranteed": False,
+            },
+            "predicted: 88",
+        ),
+    ],
+)
+def test_affinity_cli_human_output(monkeypatch, command, operation, payload, expected):
+    async def fake_operation(*_args, **_kwargs):
+        return payload
+
+    monkeypatch.setattr(cli_lpars, operation, fake_operation)
+    result = RUNNER.invoke(cli.app, ["lpars", command, "sys1"])
+
+    assert result.exit_code == 0
+    assert expected in unstyle(result.stdout)
+
+
+def test_affinity_planning_cli_json_and_name_selectors(monkeypatch):
+    captured = {}
+
+    async def fake_operation(_config, system, prioritized, excluded):
+        captured.update(system=system, prioritized=prioritized, excluded=excluded)
+        return [{"prediction_guaranteed": False}]
+
+    monkeypatch.setattr(cli_lpars, "plan_lpar_memopt_scores", fake_operation)
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "plan-memopt-scores",
+            "sys1",
+            "--prioritize-name",
+            "web",
+            "--prioritize-name",
+            "api",
+            "--exclude-name",
+            "batch",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == [{"prediction_guaranteed": False}]
+    assert captured["system"] == "sys1"
+    assert captured["prioritized"].names == ("web", "api")
+    assert captured["excluded"].names == ("batch",)
+
+
+def test_affinity_planning_cli_id_selectors(monkeypatch):
+    captured = {}
+
+    async def fake_operation(_config, _system, prioritized, excluded):
+        captured.update(prioritized=prioritized, excluded=excluded)
+        return {"prediction_guaranteed": False}
+
+    monkeypatch.setattr(cli_lpars, "plan_system_memopt_score", fake_operation)
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "plan-system-memopt-score",
+            "sys1",
+            "--prioritize-id",
+            "2",
+            "--exclude-id",
+            "9",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["prioritized"].ids == (2,)
+    assert captured["excluded"].ids == (9,)
+
+
+def test_affinity_planning_cli_rejects_mixed_selector_forms(monkeypatch):
+    called = False
+
+    async def fake_operation(*_args, **_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(cli_lpars, "plan_lpar_memopt_scores", fake_operation)
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "plan-memopt-scores",
+            "sys1",
+            "--prioritize-name",
+            "web",
+            "--exclude-id",
+            "9",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "must use the same representation" in result.output
+    assert called is False
+
+
+def test_affinity_planning_cli_rejects_oversized_selector_before_operation(
+    monkeypatch,
+):
+    operation = AsyncMock()
+    monkeypatch.setattr(cli_lpars, "plan_lpar_memopt_scores", operation)
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "plan-memopt-scores",
+            "sys1",
+            "--prioritize-name",
+            "'" * 400 + "a" * 42,
+            "--exclude-name",
+            "'" * 400 + "b" * 43,
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "option package exceeds 4096 UTF-8 bytes" in result.output
+    operation.assert_not_awaited()
+
+
+def test_affinity_planning_cli_rejects_overlapping_selectors(monkeypatch):
+    called = False
+
+    async def fake_operation(*_args, **_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(cli_lpars, "plan_system_memopt_score", fake_operation)
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "plan-system-memopt-score",
+            "sys1",
+            "--prioritize-name",
+            "web",
+            "--exclude-name",
+            "web",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "must not overlap" in result.output
+    assert called is False
+
+
+def test_affinity_cli_propagates_hmc_errors(monkeypatch):
+    async def fail(*_args, **_kwargs):
+        raise ssh_commands.HMCCLIError("calcscore unavailable")
+
+    monkeypatch.setattr(cli_lpars, "plan_system_memopt_score", fail)
+    result = RUNNER.invoke(cli.app, ["lpars", "plan-system-memopt-score", "sys1"])
+
+    assert result.exit_code == 1
+    assert "calcscore unavailable" in result.output
 
 
 @pytest.mark.parametrize(
@@ -2132,8 +2602,28 @@ def test_lpars_get_msp_via_ssh(monkeypatch):
             ("lpar_migrate_recover", (LPAR_UUID,), {}),
         ),
         (
-            ["lpars", "remote-restart", LPAR_NAME, "--target", "sys1", "--yes"],
-            ("lpar_remote_restart", (LPAR_UUID, "sys1"), {}),
+            [
+                "lpars",
+                "remote-restart",
+                LPAR_NAME,
+                "--operation",
+                "restart",
+                "--system",
+                "sys1",
+                "--target",
+                "target",
+                "--yes",
+            ],
+            (
+                "lpar_remote_restart",
+                (LPAR_UUID, "restart", "sys1"),
+                {
+                    "target_managed_system": "target",
+                    "target_managed_system_uuid": None,
+                    "use_current_data": False,
+                    "retain_devices": False,
+                },
+            ),
         ),
     ],
 )
@@ -2196,8 +2686,12 @@ def test_migrate_cli_rejects_effective_wait_timing_before_confirmation(fake_hmc)
             "lpars",
             "remote-restart",
             LPAR_NAME,
-            "--target",
+            "--operation",
+            "restart",
+            "--system",
             "sys1",
+            "--target",
+            "target",
             "--yes",
         ],
     ],
@@ -2297,7 +2791,7 @@ def test_destructive_ssh_commands_delegate_valid_arguments(
             return "vioserver\n"
         return "updated\n"
 
-    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
+    _patch_ssh_command(monkeypatch, fake)
 
     result = RUNNER.invoke(cli.app, args)
 
@@ -2359,9 +2853,10 @@ def _vnic_result(operation: str) -> VnicChangeResult:
 
 def test_add_vnic_cli_default_confirmation_keeps_stdout_json(monkeypatch):
     operation = AsyncMock(return_value=_vnic_result("add"))
-    monkeypatch.setattr("hmc_mcp.cli_network.add_vnic", operation)
+    monkeypatch.setattr("hmc_mcp.cli_commands.vnic.add_vnic", operation)
     monkeypatch.setattr(
-        "hmc_mcp.cli_network._with_client", lambda fn: asyncio.run(fn(object()))
+        "hmc_mcp.cli_commands.vnic.with_client",
+        lambda fn: asyncio.run(fn(object())),
     )
 
     result = RUNNER.invoke(
@@ -2397,9 +2892,10 @@ def test_add_vnic_cli_default_confirmation_keeps_stdout_json(monkeypatch):
 def test_remove_vnic_cli_default_confirmation_keeps_partial_stdout_json(monkeypatch):
     partial = VnicPartialError("incomplete", _vnic_result("remove"))
     operation = AsyncMock(side_effect=partial)
-    monkeypatch.setattr("hmc_mcp.cli_network.remove_vnic", operation)
+    monkeypatch.setattr("hmc_mcp.cli_commands.vnic.remove_vnic", operation)
     monkeypatch.setattr(
-        "hmc_mcp.cli_network._with_client", lambda fn: asyncio.run(fn(object()))
+        "hmc_mcp.cli_commands.vnic.with_client",
+        lambda fn: asyncio.run(fn(object())),
     )
 
     result = RUNNER.invoke(
@@ -2430,7 +2926,7 @@ def test_network_list_io_slots_via_ssh(monkeypatch):
     async def fake(cfg, cmd):
         return "drc_name=U78DA.ND1.ABC1234-P1-C1,pci_class=0200,lpar_name=lpar1\n"
 
-    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
+    _patch_ssh_command(monkeypatch, fake)
     result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys1"])
 
     assert result.exit_code == 0
@@ -2442,7 +2938,7 @@ def test_network_list_io_slots_invalid_pci_class_exits_2(monkeypatch):
     async def fake(cfg, cmd):
         return ""
 
-    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
+    _patch_ssh_command(monkeypatch, fake)
     result = RUNNER.invoke(
         cli.app, ["network", "list-io-slots", "sys1", "--pci-class", "bogus"]
     )
@@ -2676,6 +3172,171 @@ def test_vios_power_off_declined_confirm_aborts(fake_hmc):
     assert result.exit_code == 1
     assert "Aborted" in result.stderr
     assert fake_hmc.calls == []
+
+
+def _patch_vios_label_cli(
+    monkeypatch, operation_name: str, result: object
+) -> AsyncMock:
+    operation = AsyncMock(return_value=result)
+    monkeypatch.setattr(cli_vios_labels, operation_name, operation)
+    monkeypatch.setattr(
+        cli_vios_labels, "ssh_config", lambda: HMCConfig.from_mapping({})
+    )
+    return operation
+
+
+def test_vios_label_commands_are_registered():
+    result = RUNNER.invoke(cli.app, ["vios", "--help"])
+    assert result.exit_code == 0, result.output
+    for name in (
+        "list-fc-port-labels",
+        "set-fc-port-label",
+        "remove-fc-port-label",
+        "list-vfc-group-labels",
+        "create-vfc-group-label",
+        "update-vfc-group-label",
+        "remove-vfc-group-label",
+    ):
+        assert name in result.stdout
+
+
+def test_vios_list_fc_port_labels_json(monkeypatch):
+    operation = _patch_vios_label_cli(
+        monkeypatch, "list_vios_fc_port_labels", [{"port_name": "fcs0"}]
+    )
+    result = RUNNER.invoke(
+        cli.app,
+        ["vios", "list-fc-port-labels", "system-a", "--vios-id", "2", "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [{"port_name": "fcs0"}]
+    operation.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("arguments", "operation_name", "prompt_parts"),
+    [
+        (
+            [
+                "set-fc-port-label",
+                "system-a",
+                "fcs0",
+                "label-a",
+                "--vios-name",
+                "vios-a",
+            ],
+            "set_vios_fc_port_label",
+            ["system-a", "fcs0", "vios-a", "label-a"],
+        ),
+        (
+            ["remove-fc-port-label", "system-a", "fcs0", "--vios-id", "2"],
+            "remove_vios_fc_port_label",
+            ["system-a", "fcs0", "vios_id=2"],
+        ),
+        (
+            [
+                "create-vfc-group-label",
+                "system-a",
+                "group-a",
+                "--vios-name",
+                "a",
+                "--vios-name",
+                "b",
+            ],
+            "create_vios_vfc_group_label",
+            ["system-a", "group-a", "vios_names=['a', 'b']"],
+        ),
+        (
+            [
+                "update-vfc-group-label",
+                "system-a",
+                "group-a",
+                "--action",
+                "rename",
+                "--new-name",
+                "group-b",
+            ],
+            "update_vios_vfc_group_label",
+            ["system-a", "group-a", "group-b"],
+        ),
+        (
+            ["remove-vfc-group-label", "system-a", "group-a"],
+            "remove_vios_vfc_group_label",
+            ["system-a", "group-a"],
+        ),
+    ],
+)
+def test_vios_label_mutations_confirm_on_stderr_and_emit_json(
+    monkeypatch, arguments: list[str], operation_name: str, prompt_parts: list[str]
+):
+    operation = _patch_vios_label_cli(
+        monkeypatch, operation_name, {"operation": "done"}
+    )
+    result = RUNNER.invoke(cli.app, ["vios", *arguments], input="y\n")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"operation": "done"}
+    assert all(part in result.stderr for part in prompt_parts)
+    operation.assert_awaited_once()
+
+
+def test_vios_label_declined_confirmation_does_not_dispatch(monkeypatch):
+    operation = _patch_vios_label_cli(monkeypatch, "remove_vios_fc_port_label", {})
+    result = RUNNER.invoke(
+        cli.app,
+        ["vios", "remove-fc-port-label", "system-a", "fcs0", "--vios-name", "a"],
+        input="n\n",
+    )
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    operation.assert_not_awaited()
+
+
+def test_vios_label_confirmation_escapes_control_characters(monkeypatch):
+    operation = _patch_vios_label_cli(monkeypatch, "set_vios_fc_port_label", {})
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "vios",
+            "set-fc-port-label",
+            "system-a",
+            "fcs0",
+            "safe\nspoofed-target",
+            "--vios-name",
+            "vios-a",
+        ],
+        input="n\n",
+    )
+    assert result.exit_code == 1
+    assert "safe\\nspoofed-target" in result.stderr
+    assert "safe\nspoofed-target" not in result.stderr
+    operation.assert_not_awaited()
+
+
+def test_vios_group_members_and_yes_are_preserved(monkeypatch):
+    operation = _patch_vios_label_cli(
+        monkeypatch, "update_vios_vfc_group_label", {"operation": "add"}
+    )
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "vios",
+            "update-vfc-group-label",
+            "system-a",
+            "group-a",
+            "--action",
+            "add-members",
+            "--vios-id",
+            "2",
+            "--vios-id",
+            "3",
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    assert json.loads(result.stdout) == {"operation": "add"}
+    assert operation.await_args.args[3] == "add-members"
+    assert operation.await_args.kwargs["vios_ids"] == [2, 3]
 
 
 # --------------------------------------------------------------------------- #
@@ -2997,11 +3658,20 @@ def test_jobs_list_rejects_negative_limit_before_client_call(fake_hmc):
 
 
 def test_jobs_wait(fake_hmc):
+    fake_hmc.job["Resource"]["Status"] = "COMPLETED"
     result = RUNNER.invoke(cli.app, ["jobs", "wait", JOB_UUID])
 
     assert result.exit_code == 0
     assert "COMPLETED" in result.stdout
-    assert fake_hmc.calls == [("wait_for_job", (JOB_UUID, 300, 5), {"job_href": None})]
+    assert fake_hmc.calls == [("get_job", (JOB_UUID,), {"job_href": None})]
+
+
+def test_jobs_wait_not_found_exits_1_after_one_poll(fake_hmc):
+    result = RUNNER.invoke(cli.app, ["jobs", "wait", "ghost"])
+
+    assert result.exit_code == 1
+    assert "not found" in result.stderr
+    assert fake_hmc.calls == [("get_job", ("ghost",), {"job_href": None})]
 
 
 # --------------------------------------------------------------------------- #
@@ -3143,6 +3813,79 @@ def test_metrics_show_aggregated(fake_hmc):
     ]
 
 
+def test_metrics_show_logical_partition_forwards_owning_system(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "metrics",
+            "show",
+            "LogicalPartition",
+            LPAR_UUID,
+            "--system",
+            SYSTEM_UUID,
+            "--start",
+            "2024-01-01T00:00:00Z",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_hmc.calls == [
+        (
+            "get_processed_metric_links",
+            ("LogicalPartition", LPAR_UUID, "2024-01-01T00:00:00Z", None, None),
+            {"system_uuid": SYSTEM_UUID},
+        )
+    ]
+
+
+def test_metrics_show_logical_partition_requires_owning_system(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "metrics",
+            "show",
+            "LogicalPartition",
+            LPAR_UUID,
+            "--start",
+            "2024-01-01T00:00:00Z",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "system_name_or_uuid" in str(result.exception)
+    assert fake_hmc.calls == []
+
+
+def test_metrics_show_rejects_system_selector_for_managed_system(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "metrics",
+            "show",
+            "ManagedSystem",
+            SYSTEM_UUID,
+            "--system",
+            SYSTEM_UUID,
+            "--start",
+            "2024-01-01T00:00:00Z",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "only for LogicalPartition" in str(result.exception)
+    assert fake_hmc.calls == []
+
+
+@pytest.mark.parametrize("command", ["prefs", "set-prefs"])
+def test_metrics_preference_help_is_managed_system_only(command):
+    result = RUNNER.invoke(cli.app, ["metrics", command, "--help"])
+
+    assert result.exit_code == 0
+    assert "ManagedSystem" in result.stdout
+    assert "preferences are" in result.stdout
+    assert "unavailable" in result.stdout
+
+
 def test_metrics_show_fetch_downloads_latest(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
@@ -3193,7 +3936,9 @@ def test_memory_pools_list_table(monkeypatch):
     async def fake_list(config, system_name):
         return [{"pool_name": "pool1", "size": "1024", "lpar_names": "lpar1"}]
 
-    monkeypatch.setattr("hmc_mcp.cli_memory_pools.list_memory_pools", fake_list)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.memory_pools.list_memory_pools", fake_list
+    )
     result = RUNNER.invoke(cli.app, ["memory-pools", "list", "sys1"])
 
     assert result.exit_code == 0
@@ -3205,7 +3950,9 @@ def test_memory_pools_list_json(monkeypatch):
     async def fake_list(config, system_name):
         return [{"pool_name": "pool1", "size": "1024"}]
 
-    monkeypatch.setattr("hmc_mcp.cli_memory_pools.list_memory_pools", fake_list)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.memory_pools.list_memory_pools", fake_list
+    )
     result = RUNNER.invoke(cli.app, ["memory-pools", "list", "sys1", "--json"])
 
     assert result.exit_code == 0
@@ -3216,7 +3963,9 @@ def test_memory_pools_list_empty(monkeypatch):
     async def fake_list(config, system_name):
         return []
 
-    monkeypatch.setattr("hmc_mcp.cli_memory_pools.list_memory_pools", fake_list)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.memory_pools.list_memory_pools", fake_list
+    )
     result = RUNNER.invoke(cli.app, ["memory-pools", "list", "sys1"])
 
     assert result.exit_code == 0
@@ -3227,7 +3976,9 @@ def test_memory_pools_remove_with_yes(monkeypatch):
     async def fake_remove(config, system_name, pool_name):
         return "pool removed\n"
 
-    monkeypatch.setattr("hmc_mcp.cli_memory_pools.remove_memory_pool", fake_remove)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.memory_pools.remove_memory_pool", fake_remove
+    )
     result = RUNNER.invoke(
         cli.app, ["memory-pools", "remove", "sys1", "pool1", "--yes"]
     )

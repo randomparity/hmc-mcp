@@ -2,25 +2,24 @@
 
 import httpx
 import pytest
-
-from hmc_mcp.client import HMCClient
-
 from conftest import make_config
+
+from hmc_mcp.client.core import HMCClient
 
 BASE = "https://hmc.test"
 
-# Minimal ViosStorageDetail entry with a vSCSI server mapping and an NPIV port mapping.
-VIOS_STORAGE_DETAIL_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+# Minimal VIOS mapping entry with a vSCSI server mapping and an NPIV port mapping.
+VIOS_STORAGE_DETAIL_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:vios-uuid-1</id>
   <title>VirtualIOServer:vios1</title>
-  <link rel="SELF" href="{base}/rest/api/uom/VirtualIOServer/vios-uuid-1"/>
+  <link rel="SELF" href="{BASE}/rest/api/uom/VirtualIOServer/vios-uuid-1"/>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <PartitionName>vios1</PartitionName>
       <VirtualSCSIMappings>
         <VirtualSCSIMapping>
-          <AssociatedLogicalPartition href="{base}/rest/api/uom/LogicalPartition/lpar-uuid-1"/>
+          <AssociatedLogicalPartition href="{BASE}/rest/api/uom/LogicalPartition/lpar-uuid-1"/>
           <ServerAdapter>
             <VirtualSlotNumber>2</VirtualSlotNumber>
           </ServerAdapter>
@@ -33,7 +32,7 @@ VIOS_STORAGE_DETAIL_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="
       </VirtualSCSIMappings>
       <VirtualFibreChannelMappings>
         <VirtualFibreChannelMapping>
-          <AssociatedLogicalPartition href="{base}/rest/api/uom/LogicalPartition/lpar-uuid-2"/>
+          <AssociatedLogicalPartition href="{BASE}/rest/api/uom/LogicalPartition/lpar-uuid-2"/>
           <Port>
             <WWPNPair>C05076099999AAA0 C05076099999AAA1</WWPNPair>
           </Port>
@@ -42,16 +41,16 @@ VIOS_STORAGE_DETAIL_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="
     </VirtualIOServer>
   </content>
 </entry>
-""".format(base=BASE)
+"""
 
 
 
 @pytest.mark.asyncio
 async def test_get_vios_storage_detail(mock_hmc):
-    """get_vios_storage_detail GETs the ViosStorageDetail group and returns parsed data."""
+    """get_vios_storage_detail requests both documented mapping groups."""
     route = mock_hmc.get(
         "/rest/api/uom/VirtualIOServer/vios-uuid-1",
-        params={"group": "ViosStorageDetail"},
+        params=[("group", "ViosSCSIMapping"), ("group", "ViosFCMapping")],
     ).mock(return_value=httpx.Response(200, text=VIOS_STORAGE_DETAIL_ENTRY))
 
     async with HMCClient(make_config()) as hmc:
@@ -77,7 +76,7 @@ async def test_get_vios_storage_detail_not_found(mock_hmc):
     """get_vios_storage_detail returns None on 204 (empty)."""
     mock_hmc.get(
         "/rest/api/uom/VirtualIOServer/missing-uuid",
-        params={"group": "ViosStorageDetail"},
+        params=[("group", "ViosSCSIMapping"), ("group", "ViosFCMapping")],
     ).mock(return_value=httpx.Response(204))
 
     async with HMCClient(make_config()) as hmc:

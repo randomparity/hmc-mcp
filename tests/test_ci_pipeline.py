@@ -8,22 +8,44 @@ import textwrap
 import tomllib
 from pathlib import Path
 
-
 ROOT = Path(__file__).parents[1]
 TOOL_PINS = {
     "detect-secrets==1.5.0",
-    "prek==0.4.10",
-    "ruff==0.15.22",
-    "ty==0.0.62",
+    "prek==0.4.14",
+    "ruff==0.16.4",
+    "ty==0.0.74",
     "zizmor==1.29.0",
 }
 TY_INCLUDE = ["src/hmc_mcp"]
+RUFF_EXTEND_SELECT = {
+    "E401",
+    "E402",
+    "E701",
+    "E702",
+    "E703",
+    "E711",
+    "E712",
+    "E713",
+    "E714",
+    "E721",
+    "E731",
+    "E741",
+    "E742",
+    "E743",
+    "F403",
+    "F405",
+    "F406",
+    "F722",
+}
+RUFF_PER_FILE_IGNORE_MODULES = {
+    "tests/unit/test_audit.py",
+    "tests/unit/test_ownership.py",
+}
 BASELINED_FINDINGS = {
     "justfile": 1,
     "tests/app/test_cli.py": 2,
     "tests/app/test_cli_e2e.py": 1,
     "tests/conftest.py": 1,
-    "tests/security/test_users.py": 2,
     "tests/unit/test_ssh.py": 1,
     "tests/unit/test_client.py": 1,
 }
@@ -52,6 +74,20 @@ ACTION_PINS = {
         "96fe6ef7f33517b61c61be40b68a1882f3264fb8",  # pragma: allowlist secret
         "v4.2.0",
     ),
+}
+# The gates this repository must not lose. Not derived on purpose: `static` and
+# .pre-commit-config.yaml agreeing with each other is silent when a gate is deleted
+# from both, and which gates must exist is a judgement no file states (ADR 0098 §1b).
+STATIC_GATES = {
+    "lint",
+    "typecheck",
+    "secrets",
+    "workflow-security",
+    "env-vars",
+    "nicknames",
+    "tool-docs-check",
+    "adr-numbering",
+    "doc-freshness",
 }
 SUPPORTED_PYTHONS = ["3.11", "3.12", "3.13", "3.14"]
 NATIVE_MATRIX = [
@@ -86,6 +122,22 @@ def _copy_tracked_project(destination: Path) -> None:
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
+
+
+def _job_body(workflow: str, name: str) -> str:
+    """Slice one job at its structural boundary — the next top-level job header.
+
+    Anchoring on a named neighbour instead lets the body swallow every job
+    between the two, so an assertion meant for one job passes while sitting in
+    another, and inserting a job silently widens the window.
+    """
+    match = re.search(
+        rf"^  {re.escape(name)}:\n(?P<body>.*?)(?=^  \S+:$|\Z)",
+        workflow,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, f"job not found in workflow: {name}"
+    return match["body"]
 
 
 def _inactive_ppc64le_job(workflow: str) -> tuple[str, str]:
@@ -129,6 +181,11 @@ def test_quality_tools_are_pinned_with_a_strict_type_boundary() -> None:
     assert TOOL_PINS <= set(project["dependency-groups"]["dev"])
     assert project["tool"]["ty"]["src"]["include"] == TY_INCLUDE
     assert "rules" not in project["tool"]["ty"]
+    ruff = project["tool"]["ruff"]
+    assert "exclude" not in ruff
+    assert "ignore" not in ruff["lint"]
+    assert set(ruff["lint"]["extend-select"]) == RUFF_EXTEND_SELECT
+    assert set(ruff["lint"]["per-file-ignores"]) == RUFF_PER_FILE_IGNORE_MODULES
 
 
 def test_justfile_exposes_one_composed_verification_graph() -> None:
@@ -142,6 +199,10 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "workflow-security",
         "env-vars",
         "nicknames",
+        "tool-docs",
+        "tool-docs-check",
+        "adr-numbering",
+        "doc-freshness",
         "static",
         "test",
         "test-verbose",
@@ -149,7 +210,29 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "smoke-verbose",
     ):
         assert f"\n{recipe}:" in justfile
-    assert "\nstatic: lint typecheck secrets workflow-security env-vars nicknames\n" in justfile
+    # `static`'s membership is not restated here. It is derived and compared against
+    # the prek hook set by test_prek_hooks_delegate_to_focused_just_recipes, and a
+    # literal copy of it would only pin how the line happens to wrap today.
+    assert (
+        "\nadr-numbering:\n"
+        "    uv run --no-sync python scripts/check_adr_numbering.py\n"
+        in justfile
+    )
+    assert (
+        "\ndoc-freshness:\n"
+        "    uv run --no-sync python scripts/check_generated_docs.py\n"
+        in justfile
+    )
+    assert (
+        "\ntool-docs:\n"
+        "    uv run --no-sync python scripts/gen_tool_reference.py\n"
+        in justfile
+    )
+    assert (
+        "\ntool-docs-check:\n"
+        "    uv run --no-sync python scripts/gen_tool_reference.py --check\n"
+        in justfile
+    )
     assert "\nbuild:\n    uv build --clear --wheel --sdist --out-dir dist .\n" in justfile
     assert (
         "\nverify-artifacts:\n"
@@ -174,7 +257,15 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         in justfile
     )
     assert "--baseline .secrets.baseline --no-verify --" in justfile
-    assert "uv run --no-sync hmc-mcp metrics --help" in justfile
+    assert "uv run --no-sync hmc-mcp --help >/dev/null" in justfile
+    assert "uv run --no-sync python scripts/smoke_cli_groups.py" in justfile
+    # The group helps are derived, so a per-group line is the hand-maintained
+    # mirror growing back. `hmc-mcp --help` above is not one: the pattern needs a
+    # group token before the flag, which `--help` itself cannot supply.
+    assert re.search(r"hmc-mcp [a-z][a-z-]* --help", justfile) is None, (
+        "name a group's help here and it is a hand-maintained list again; "
+        "scripts/smoke_cli_groups.py derives them from the Typer app"
+    )
 
 
 def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> None:
@@ -192,20 +283,81 @@ def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> Non
     assert all("uv run --no-sync" in line for line in run_lines)
 
 
+def _static_members(justfile: str) -> list[str]:
+    """`static`'s dependency list, with `just`'s backslash continuation joined."""
+    static = re.search(
+        r"^static:(?P<dependencies>[^\n]*)$",
+        justfile.replace("\\\n", ""),
+        re.MULTILINE,
+    )
+    assert static
+    return static["dependencies"].split()
+
+
+def _prek_hook_blocks(config: str) -> list[str]:
+    """Each hook's own slice of the config, split at the `- id:` that opens it.
+
+    Per-hook, not per-file: a whole-file `count(...)` cannot tell one hook carrying
+    a setting twice from two hooks carrying it once, which is the shape of mistake
+    a config edit actually makes.
+    """
+    _, _, body = config.partition("hooks:\n")
+    blocks = [
+        block
+        for block in re.split(r"\n(?=\s*- id: )", body)
+        if re.match(r"^\s*- id: ", block)
+    ]
+    # One indentation for all of them. A block at another level is a different node
+    # in the document, and prek would not run it as a hook.
+    indents = {len(block) - len(block.lstrip(" ")) for block in blocks}
+    assert len(indents) == 1, f"hook blocks sit at {len(indents)} indentation levels"
+    return blocks
+
+
 def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
+    """One hook per `static` member, derived from both files rather than restated.
+
+    The recipe list and the hook list both live in the tree, so a test that writes
+    either one down again is a hand-maintained mirror and a literal hook count is a
+    number kept in step by memory -- exactly what ADR 0098 §1c calls a defect. What
+    is derived is the *correspondence*: every gate `just verify` reaches is a
+    commit-time hook, and no hook runs something `just verify` does not.
+
+    STATIC_GATES is deliberately not derived. Two files agreeing with each other
+    says nothing when a gate is deleted from both, and which gates this repository
+    must not lose is a judgement, not a fact any file states.
+    """
+    justfile = (ROOT / "justfile").read_text()
     config = (ROOT / ".pre-commit-config.yaml").read_text()
 
+    members = _static_members(justfile)
+    assert STATIC_GATES <= set(members), "a static gate was deleted"
+    for member in members:
+        assert f"\n{member}:" in justfile, f"static depends on undefined {member!r}"
+
+    blocks = _prek_hook_blocks(config)
+    entries = []
+    for block in blocks:
+        identifier = re.search(r"^ *- id: (\S+)$", block, re.MULTILINE)
+        entry = re.search(r"^ +entry: just (\S+)$", block, re.MULTILINE)
+        assert entry, f"hook does not delegate to a just recipe: {block!r}"
+        # The id is the recipe, so `SKIP=<id>` and `prek run <id>` name the gate
+        # the reader thinks they name. Swap the two and the wrong gate is skipped.
+        assert identifier and identifier[1] == entry[1]
+        # Each setting as its own key, not the string anywhere in the block.
+        assert len(re.findall(r"^ +pass_filenames: false$", block, re.MULTILINE)) == 1
+        # `entry` is only executed when the hook is a system hook that always has
+        # files to run on. `language: pygrep`, `stages: [manual]` and `exclude: .*`
+        # each leave the recipe unrun while the entry line still reads correctly.
+        assert len(re.findall(r"^ +language: system$", block, re.MULTILINE)) == 1
+        narrowing = re.search(
+            r"^ +(stages|exclude|files|types|types_or|always_run):", block, re.MULTILINE
+        )
+        assert narrowing is None, f"hook narrows when it must always run: {narrowing}"
+        entries.append(entry[1])
+
     assert config.count("repo: local") == 1
-    for recipe in (
-        "lint",
-        "typecheck",
-        "secrets",
-        "workflow-security",
-        "env-vars",
-        "nicknames",
-    ):
-        assert f"entry: just {recipe}" in config
-    assert config.count("pass_filenames: false") == 6
+    assert sorted(entries) == sorted(members)
     assert "entry: uv run" not in config
 
 
@@ -274,6 +426,10 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert 'just-version: "1.58.0"' in workflow
     for command in (
         "just setup",
+        # Named as its own step as well as reached through `static` -> `verify`,
+        # so generated-docs drift is its own failed check (ADR 0097, ADR 0098).
+        "just tool-docs-check",
+        "just doc-freshness",
         "just verify",
         "UV_NO_SYNC=1 uv run prek run --all-files",
     ):
@@ -395,14 +551,8 @@ def test_github_ci_uses_a_bounded_native_architecture_matrix() -> None:
 def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     active_workflow, _ = _inactive_ppc64le_job(workflow)
-    consumer = re.search(
-        r"^  wheel-smoke:\n(?P<body>.*?)(?=^  python-support-drift:)",
-        active_workflow,
-        re.MULTILINE | re.DOTALL,
-    )
+    body = _job_body(active_workflow, "wheel-smoke")
 
-    assert consumer
-    body = consumer["body"]
     expected_matrix = "      matrix:\n        include:\n" + "".join(
         f"          - architecture: {architecture}\n"
         f"            runner: {runner}\n"
@@ -443,12 +593,16 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     assert "uv pip install --no-deps --python .wheel-venv/bin/python" in body
     assert '"${wheels[0]}[app]"' in body
     assert "import hmc_mcp" in body
+    assert "from hmc_mcp.api import HMCClient" in body
+    assert "from hmc_mcp.client import HMCClient" not in body
+    assert 'HMCClient.__module__ == "hmc_mcp.client.core"' in body
     assert "is_relative_to(environment)" in body
-    for group in ("", "lpars", "storage", "network", "templates", "metrics"):
-        command = ".wheel-venv/bin/hmc-mcp"
-        if group:
-            command += f" {group}"
-        assert f"{command} --help" in body
+    assert ".wheel-venv/bin/hmc-mcp --help" in body
+    # Group help pages are rendered off the tree the installed wheel builds, so
+    # the job names no subcommand at all: anything after `hmc-mcp` other than
+    # the root `--help` is the hand-maintained mirror growing back.
+    assert ".wheel-venv/bin/python scripts/smoke_cli_groups.py" in body
+    assert not re.search(r"\.wheel-venv/bin/hmc-mcp (?!--help)", body)
     assert ".wheel-venv/bin/python scripts/smoke_mcp.py" in body
     assert "just setup" not in body
     assert "uv sync" not in body
@@ -461,14 +615,8 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
 ):
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     active_workflow, _ = _inactive_ppc64le_job(workflow)
-    consumer = re.search(
-        r"^  library-wheel-smoke:\n(?P<body>.*?)(?=^  wheel-smoke:)",
-        active_workflow,
-        re.MULTILINE | re.DOTALL,
-    )
+    body = _job_body(active_workflow, "library-wheel-smoke")
 
-    assert consumer
-    body = consumer["body"]
     assert "    needs: ci\n" in body
     assert "    name: amd64 / Python 3.13 / library wheel smoke\n" in body
     assert "    runs-on: ubuntu-24.04\n" in body
@@ -476,16 +624,30 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "name: release-wheel-amd64-py3.13" in body
     assert "uv pip install --python .library-wheel-venv/bin/python" in body
     assert '            "${wheels[0]}"' in body
-    assert "from hmc_mcp.api import capacity_report" in body
+    assert "from hmc_mcp.api import CapacitySummary, fetch_capacity_report" in body
     assert "import hmc_mcp.api" not in body
     for package in ("fastmcp", "mcp", "rich", "typer"):
         assert f'assert find_spec("{package}") is None' in body
+    # PEP 561: the marker is asserted against the installed distribution, so a
+    # build-configuration regression that omits it fails this job.
+    assert 'assert (package_path.parent / "py.typed").is_file(), package_path' in body
+    # Presence is not usability: a second step makes a PEP 561-enforcing checker
+    # read the installed distribution, and fails on the diagnostic that means
+    # the marker was not read. Both directions are asserted so the gate cannot
+    # pass vacuously against an untyped package.
+    assert "--python-executable .library-wheel-venv/bin/python" in body
+    assert "grep -q 'import-untyped' probe.txt" in body
+    assert "grep -q 'attr-defined' probe.txt" in body
     assert "class FakeHMC:" in body
     assert "async def list_managed_systems(" in body
     assert "async def list_logical_partitions(" in body
-    assert "asyncio.run(capacity_report(FakeHMC()))" in body
-    assert '"system_name": "p10"' in body
+    assert "asyncio.run(fetch_capacity_report(FakeHMC()))" in body
+    assert "CapacitySummary(" in body
+    assert 'system_name="p10"' in body
     assert "assert report ==" in body
+    for field in ("total_memory_mib", "assigned_memory_mib", "free_memory_mib"):
+        assert f"{field}=" in body
+        assert field.replace("_mib", "_mb") not in body
     assert "[app]" not in body
     assert "uv export" not in body
     assert "--no-deps" not in body
@@ -493,18 +655,19 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "pip install -e" not in body
 
 
+def test_readme_reusable_api_example_uses_exported_operation() -> None:
+    readme = (ROOT / "README.md").read_text()
+    assert "from hmc_mcp.api import HMCClient, HMCConfig, fetch_capacity_report" in readme
+    assert "await fetch_capacity_report(hmc)" in readme
+    assert " hmc_capacity_report" not in readme
+
+
 def test_github_ci_exercises_each_declared_range_floor() -> None:
     """ADR 0068: a declared range is a claim only if its low end is exercised."""
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     active_workflow, _ = _inactive_ppc64le_job(workflow)
-    floors_job = re.search(
-        r"^  library-range-floors:\n(?P<body>.*?)(?=^  wheel-smoke:)",
-        active_workflow,
-        re.MULTILINE | re.DOTALL,
-    )
+    body = _job_body(active_workflow, "library-range-floors")
 
-    assert floors_job
-    body = floors_job["body"]
     assert "    needs: ci\n" in body
     assert "    name: amd64 / Python 3.13 / library range floors\n" in body
     # The floors are derived from the declaration, never transcribed: a new or
@@ -514,9 +677,19 @@ def test_github_ci_exercises_each_declared_range_floor() -> None:
     assert '            "${wheels[0]}"' in body
     assert "uv venv" in body
     # The exercised surface is the bare installed API, not the app extra.
-    assert "from hmc_mcp.api import capacity_report" in body
+    assert "from hmc_mcp.api import CapacitySummary, fetch_capacity_report" in body
+    assert "CapacitySummary(" in body
+    for field in ("total_memory_mib", "assigned_memory_mib", "free_memory_mib"):
+        assert f"{field}=" in body
+        assert field.replace("_mib", "_mb") not in body
     assert "[app]" not in body
     assert "scripts/smoke_mcp.py" not in body
+    # Held here since narrowing the library-wheel-smoke match stopped its body
+    # from spilling into this job and covering these incidentally.
+    assert "uv export" not in body
+    assert "--no-deps" not in body
+    assert "pip install -e" not in body
+    assert "import hmc_mcp.api" not in body
 
 
 def test_the_floor_derivation_covers_every_declared_range(tmp_path: Path) -> None:
@@ -665,6 +838,26 @@ def test_scheduled_job_checks_the_same_explicit_versions() -> None:
     assert "just verify" not in body
 
 
+README_STACK_HEADING = "## Stack"
+README_STACK_NEXT = "## Contributing, security, and license"
+PYTHON_FLOOR_CLAIMS = ("Python ≥3.11", "stable, non-EOL CPython release")
+
+
+def _readme_stack(readme: str) -> str:
+    """Return the body of README's '## Stack' section.
+
+    Heading *order* is asserted, not mere presence: without it a renamed or reordered
+    heading makes the second split return the rest of the file and the slice stops
+    being a section.
+    """
+    for heading in (README_STACK_HEADING, README_STACK_NEXT):
+        assert heading in readme, f"README has no '{heading}' heading"
+    assert readme.index(README_STACK_HEADING) < readme.index(README_STACK_NEXT), (
+        f"README must keep '{README_STACK_HEADING}' before '{README_STACK_NEXT}'"
+    )
+    return readme.split(README_STACK_HEADING, 1)[1].split(README_STACK_NEXT, 1)[0]
+
+
 def test_python_policy_metadata_is_aligned() -> None:
     with (ROOT / "pyproject.toml").open("rb") as file:
         project = tomllib.load(file)
@@ -674,9 +867,22 @@ def test_python_policy_metadata_is_aligned() -> None:
     assert project["project"]["requires-python"] == ">=3.11"
     assert (ROOT / ".python-version").read_text().strip() == "3.11"
     assert lockfile["requires-python"] == ">=3.11"
+    stack = _readme_stack((ROOT / "README.md").read_text())
+    for claim in PYTHON_FLOOR_CLAIMS:
+        assert claim in stack, f"'{README_STACK_HEADING}' must state {claim!r}"
+
+
+def test_python_floor_relocated_out_of_the_stack_section_is_caught() -> None:
+    """The negative variant: the floor stays in the README but leaves '## Stack'."""
     readme = (ROOT / "README.md").read_text()
-    assert "Python ≥3.11" in readme
-    assert "stable, non-EOL CPython release" in readme
+    stack = _readme_stack(readme)
+    relocated = readme.replace(stack, "\n\n", 1).replace(
+        "## Install\n", f"## Install\n{stack}", 1
+    )
+
+    assert all(claim in relocated for claim in PYTHON_FLOOR_CLAIMS)
+    moved = _readme_stack(relocated)
+    assert [claim for claim in PYTHON_FLOOR_CLAIMS if claim in moved] == []
 
 
 def test_scorecard_workflow_is_bounded_and_uses_least_privilege() -> None:
@@ -819,6 +1025,9 @@ def _write_gate_project(root: Path, report: dict, covered: int) -> None:
         'pythonpath = ["."]\n'
         'addopts = "--cov=gatepkg --cov-report="\n'
         "\n"
+        "[tool.coverage.run]\n"
+        "branch = true\n"
+        "\n"
         "[tool.coverage.report]\n" + report_toml + "\n"
     )
 
@@ -848,8 +1057,9 @@ def test_coverage_gate_declares_one_exact_floor() -> None:
     project = _project_toml()
     addopts = project["tool"]["pytest"]["ini_options"]["addopts"]
 
-    assert floor == 90
+    assert floor == 90.5
     assert report["precision"] >= 2
+    assert project["tool"]["coverage"]["run"] == {"branch": True}
     # Without a measured source nothing consults fail_under at all. Token, not
     # substring: "--cov=hmc_mcp/config.py" contains "--cov=hmc_mcp" and would
     # narrow the measured source to one file, giving a total near 100%.
@@ -859,7 +1069,14 @@ def test_coverage_gate_declares_one_exact_floor() -> None:
     # Each of these silently disarms the gate: a command-line floor or precision
     # overrides the configured one, --no-cov switches measurement off, and
     # --cov-config sends coverage.py to a different file entirely.
-    for flag in ("--cov-fail-under", "--no-cov", "--cov-precision", "--cov-config"):
+    for flag in (
+        "--cov-fail-under",
+        "--no-cov",
+        "--cov-precision",
+        "--cov-config",
+        "--cov-branch",
+        "--cov-no-branch",
+    ):
         assert flag not in addopts, flag
     # A denominator key disarms the gate without touching the floor: it drops
     # statements from the total rather than covering them. Measured on the probe
@@ -969,6 +1186,8 @@ def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
             "--cov-fail-under",
             "--cov-precision",
             "--cov-config",
+            "--cov-branch",
+            "--cov-no-branch",
             "COVERAGE_RCFILE",
         ):
             assert flag not in text, f"{name}: {flag}"

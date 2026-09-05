@@ -5,10 +5,16 @@ Settings are resolved in priority order:
   2. Environment variables (HMC_*)
   3. TOML profile (~/.config/hmc-mcp/config.toml or platform equivalent)
 
-Checkout-local .env files are NOT loaded.
+Checkout-local .env files are NOT loaded: HMCConfig declares no ``env_file``, so
+no dotenv source is configured. Passing ``_env_file=None`` is therefore inert
+here, and it never suppressed environment variables in any case.
 
 Use load_profile() to load a named profile from the platform-native config file.
-Use HMCConfig(...) directly for explicit construction (tests, programmatic use).
+Use HMCConfig(...) directly for explicit construction that should still honour
+HMC_* — the CLI and MCP server paths.
+Use HMCConfig.from_mapping(...) when a value must come from the mapping or the
+field default and never from the ambient environment (ADR 0096); a library
+consumer building one config per HMC wants this one.
 """
 
 from __future__ import annotations
@@ -16,16 +22,32 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import threading
 import tomllib
-import warnings
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _logger = logging.getLogger(__name__)
+
+
+#: Whether :meth:`HMCConfig._warn_audit_memento_override` has reported in this
+#: process. Changing the values does not change the diagnostic's information:
+#: ``agent_id`` still overrides the configured memento.
+_reported_memento_override = False
+
+#: Serialises the check-then-act on :data:`_reported_memento_override`. Config
+#: construction is not confined to the event-loop thread — the permissions path
+#: resolves its guards in a worker thread, one config per granted connection — so
+#: without this two racers both miss the membership test and both emit. Held only
+#: across the flag check and update; logging is outside it, so a slow handler cannot
+#: block a config being built on another thread.
+_override_report_lock = threading.Lock()
 
 
 def validate_agent_id(agent_id: str) -> None:
@@ -131,6 +153,9 @@ class HMCConfig(BaseSettings):
     user: str = Field(default="", description="HMC user name")
     password: str = Field(default="", description="HMC password")
     ssh_key_file: str | None = Field(default=None, description="Path to SSH private key file (HMC_SSH_KEY_FILE)")
+    ssh_verify_host_key: bool = Field(
+        default=True, description="Verify SSH host keys against ~/.ssh/known_hosts"
+    )
     verify_ssl: bool = Field(default=False, description="Verify the HMC TLS certificate")
     timeout: float = Field(default=60.0, description="HTTP timeout in seconds")
     ssh_timeout: float = Field(
@@ -163,6 +188,19 @@ class HMCConfig(BaseSettings):
         ),
     )
 
+    authorize_power_operations: bool = Field(
+        default=False,
+        description=(
+            "Enforce the ADR 0011 ownership guard on LPAR power operations "
+            "(ADR 0092 §4). Off by default: the guard costs one SSH login plus "
+            "two REST GETs on every call that does not carry an ownership "
+            "override, and power is the one mutation class whose inverse is a "
+            "single call. When on, power_lpar requires a managed-system selector "
+            "and refuses to power a partition another agent owns unless the "
+            "caller passes ownership_override. (HMC_AUTHORIZE_POWER_OPERATIONS)"
+        ),
+    )
+
     iso_url_allowlist: str = Field(
         default="",
         description=(
@@ -173,6 +211,82 @@ class HMCConfig(BaseSettings):
             "there is no safe default destination. (HMC_ISO_URL_ALLOWLIST)"
         ),
     )
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, Any]) -> Self:
+        """Build a config from *values* alone, reading no environment and no dotenv.
+
+        The ordinary constructor resolves every field left unset from the ambient
+        ``HMC_*`` environment. That is what an operator running the CLI or the MCP
+        server wants. It is not what a process building one config per HMC from
+        database rows wants: a stray ``HMC_HOST`` in the deployment environment
+        points a backend at a different HMC than its row names, a stray
+        ``HMC_SSH_KEY_FILE`` offers the wrong private key, and a stray
+        ``HMC_AGENT_ID`` corrupts ownership attribution on every LPAR the process
+        stamps — none of which raises.
+
+        Here, a key in *values* naming a field is applied and every field *values*
+        omits takes its declared field default. Nothing else can supply a value:
+        every field is passed as an explicit constructor argument, and constructor
+        arguments are pydantic-settings' highest-priority source. Note that
+        ``_env_file=None`` would *not* achieve this — it suppresses a dotenv
+        source and never touches the environment (see
+        ``docs/environment-variables.md``).
+
+        Validation is unchanged: field validators and the model validator run
+        exactly as they do for ``HMCConfig(...)``. Keys naming no field are
+        ignored, matching the ``extra="ignore"`` in ``model_config``. A key whose
+        value is ``None`` is applied like any other — a nullable database column
+        arriving as ``None`` is a validation error for every field but
+        ``ssh_key_file`` and ``agent_id``, so omit the key rather than passing
+        ``None`` when the intent is "use the default".
+
+        ``model_fields_set`` reports the keys *values* supplied, not the full
+        field set, so ``model_dump(exclude_unset=True)`` round-trips and the
+        ``verify_ssl`` provenance in the TLS audit record stays accurate.
+
+        A field whose default comes from a factory that takes ``validated_data``
+        is not supported here and raises pydantic's own error; ``HMCConfig``
+        declares no such field, and a subclass that does should not inherit this
+        method.
+
+        Raises:
+            ValueError: When *values* omits a field that has no default. The
+                omission does not leak — the field is still passed explicitly,
+                so the environment is still shut out — but pydantic would report
+                it as a type error about ``PydanticUndefined``. This names the
+                field and says where to supply it instead.
+        """
+        missing = sorted(
+            name
+            for name, field in cls.model_fields.items()
+            if field.is_required() and name not in values
+        )
+        if missing:
+            raise ValueError(
+                f"{cls.__name__}.from_mapping is missing required settings: "
+                + ", ".join(missing)
+                + " — supply them in the mapping; from_mapping reads no "
+                "environment variables"
+            )
+        explicit = {
+            name: values[name] if name in values else field.get_default(
+                call_default_factory=True
+            )
+            for name, field in cls.model_fields.items()
+        }
+        config = cls(**explicit)
+        # Passing every field explicitly is what closes the leak, but it would
+        # also report every field as caller-set. ``model_fields_set`` is a
+        # consumer-visible fact: ``model_dump(exclude_unset=True)`` reads it, and
+        # ``client._verify_ssl_source`` uses it to name where ``verify_ssl`` came
+        # from in the ``tls-verification-disabled`` audit record (#379), which
+        # would otherwise say ``explicit-argument`` for a value that came from the
+        # field default. Restore it to the keys the caller actually supplied.
+        object.__setattr__(
+            config, "__pydantic_fields_set__", set(values) & set(cls.model_fields)
+        )
+        return config
 
     @field_validator("iso_url_allowlist")
     @classmethod
@@ -193,22 +307,23 @@ class HMCConfig(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def _warn_audit_memento_override(self) -> "HMCConfig":
-        """Warn when HMC_AGENT_ID is set and HMC_AUDIT_MEMENTO has been customised.
-
-        When both are set, effective_audit_memento returns ``hmc-mcp:<agent_id>``
-        and ignores the custom audit_memento.  Emitting a warning at construction
-        time prevents silent surprises in HMC audit logs.
-        """
-        if self.agent_id and self.audit_memento != "hmc-mcp":
-            msg = (
-                f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
-                f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
-                "ignored — X-Audit-Memento is always sent as "
-                f"hmc-mcp:{self.agent_id}"
-            )
-            warnings.warn(msg, UserWarning, stacklevel=2)
-            _logger.warning(msg)
+    def _warn_audit_memento_override(self) -> HMCConfig:
+        """Warn once per process when HMC_AGENT_ID overrides a custom audit memento."""
+        if not (self.agent_id and self.audit_memento != "hmc-mcp"):
+            return self
+        global _reported_memento_override
+        msg = (
+            f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
+            f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
+            "ignored — X-Audit-Memento is always sent as "
+            f"hmc-mcp:{self.agent_id}"
+        )
+        with _override_report_lock:
+            if _reported_memento_override:
+                _logger.debug(msg)
+                return self
+            _reported_memento_override = True
+        _logger.warning(msg)
         return self
 
     @property
@@ -253,6 +368,18 @@ class HMCConfig(BaseSettings):
 
 class ConfigError(ValueError):
     """Raised when hmc-mcp/config.toml is invalid or a profile cannot be selected."""
+
+
+class NoProfileSelectedError(ConfigError):
+    """Raised when no argument, environment variable, or default selects a profile."""
+
+
+@dataclass(frozen=True)
+class ConfigDocument:
+    """Package-internal snapshot of a resolved path and parsed config document."""
+
+    path: Path | None
+    data: dict[str, Any]
 
 
 def resolve_config_path() -> Path | None:
@@ -352,6 +479,13 @@ def _read_config_document(path: Path) -> dict[str, Any]:
         ) from exc
 
 
+def load_config_document() -> ConfigDocument:
+    """Resolve and read one fresh package-internal configuration snapshot."""
+    path = resolve_config_path()
+    data = {} if path is None else _read_config_document(path)
+    return ConfigDocument(path, data)
+
+
 def _coerce_profiles(raw: Any, path: str | Path | None) -> dict[str, Any]:
     """Validate and return the ``profiles`` table as ``dict[str, Any]``.
 
@@ -373,6 +507,13 @@ def _coerce_profiles(raw: Any, path: str | Path | None) -> dict[str, Any]:
     return {str(name): entry for name, entry in raw.items()}
 
 
+def _coerce_default_profile(raw: Any, path: str | Path | None) -> str | None:
+    """Validate and return the optional default profile name."""
+    if raw is not None and not isinstance(raw, str):
+        raise ConfigError(f"{path}: 'default_profile' must be a profile-name string")
+    return raw
+
+
 def list_profiles_with_default(
     config_path: Path | None = None,
 ) -> tuple[list[str], str | None]:
@@ -386,8 +527,8 @@ def list_profiles_with_default(
     if path is None:
         return [], None
     doc = _read_config_document(path)
-    return list(_coerce_profiles(doc.get("profiles"), path)), doc.get(
-        "default_profile"
+    return list(_coerce_profiles(doc.get("profiles"), path)), _coerce_default_profile(
+        doc.get("default_profile"), path
     )
 
 
@@ -463,6 +604,76 @@ def list_profiles_and_nicknames(
     )
 
 
+def env_var_value(name: str) -> str | None:
+    """*name*'s value from the environment, matched the way ``HMCConfig`` matches it.
+
+    ``HMCConfig`` matches environment names case-insensitively, and this helper
+    mirrors that behavior for callers that inspect effective settings.
+
+    Returns ``None`` only when no casing of *name* is set. When several casings
+    are set, the **last** one in ``os.environ`` order wins — the exact spelling
+    gets no precedence. That is not a tie-break chosen here: pydantic-settings'
+    ``parse_env_vars`` folds the whole environment into ``{key.lower(): value}``
+    in ``os.environ`` order, so the last match is the one that reaches the field.
+    Preferring the exact spelling instead would leave ``HMC_HOST=""`` beside a
+    non-empty ``hmc_host`` reading as an unset host to the ADR 0038 gates below
+    while the config resolved to the exported one — the fail-open this function
+    exists to close.
+
+    Keys are snapshotted before lookup so concurrent environment changes cannot
+    raise ``KeyError`` on the authorization path.
+    """
+    wanted = name.lower()
+    found: str | None = None
+    for key in list(os.environ):
+        if key.lower() == wanted:
+            found = os.environ.get(key, found)
+    return found
+
+
+@dataclass(frozen=True)
+class _ProfileSelection:
+    name: str
+    nickname: str | None = None
+
+
+def _select_profile(
+    profiles: Mapping[str, Any],
+    nicknames: Mapping[str, str],
+    default_profile: Any,
+    path: Path | None,
+    requested_profile: str | None,
+) -> _ProfileSelection:
+    """Select one profile and record the nickname that resolved to it."""
+    default_profile = _coerce_default_profile(default_profile, path)
+    requested = requested_profile or os.environ.get("HMC_PROFILE") or default_profile
+    if requested is None:
+        raise NoProfileSelectedError(
+            f"{path or 'config.toml'}: no default_profile set and no "
+            "--profile / HMC_PROFILE supplied"
+        )
+    if requested in profiles:
+        return _ProfileSelection(requested)
+    if requested in nicknames:
+        target = nicknames[requested]
+        if target in profiles:
+            return _ProfileSelection(target, requested)
+        profile_names = ", ".join(sorted(profiles)) or "(none)"
+        nickname_names = ", ".join(sorted(nicknames)) or "(none)"
+        raise ConfigError(
+            f"nickname {requested!r} targets missing profile {target!r} "
+            f"in {path}; available profiles: {profile_names}; "
+            f"available nicknames: {nickname_names}"
+        )
+    profile_names = ", ".join(sorted(profiles)) or "(none)"
+    nickname_names = ", ".join(sorted(nicknames)) or "(none)"
+    raise ConfigError(
+        f"profile {requested!r} not found in {path}; "
+        f"available profiles: {profile_names}; "
+        f"available nicknames: {nickname_names}"
+    )
+
+
 def _load_profile_from_document(
     doc: dict[str, Any],
     path: Path | None,
@@ -470,23 +681,10 @@ def _load_profile_from_document(
 ) -> HMCConfig:
     """Build an HMCConfig for *profile* from an already-parsed *doc*.
 
-    Shared by :func:`load_profile`, which reads and parses *path* itself, and
-    by a caller that already holds the parsed document for this invocation —
-    such as ``config_show``, which needs the same document for credential
-    presence and nickname resolution and must not parse ``config.toml`` a
-    second time to also select a profile (issue #295). *path* is used only for
+    Shared by :func:`load_profile` and callers that already hold the parsed
+    document for this invocation. *path* is used only for
     error messages; it is not re-read here.
     """
-    name = profile or os.environ.get("HMC_PROFILE")
-    if name is None:
-        name = doc.get("default_profile")
-
-    if name is None:
-        raise ConfigError(
-            f"{path or 'config.toml'}: no default_profile set and no "
-            "--profile / HMC_PROFILE supplied"
-        )
-
     profiles = _coerce_profiles(doc.get("profiles"), path)
 
     # Validate the nicknames table structure whenever the key is
@@ -494,31 +692,10 @@ def _load_profile_from_document(
     # which profile is selected (ADR 0030). No existing config
     # carries a nicknames key, so this cannot break current users.
     nicknames = _coerce_nicknames(doc.get("nicknames"), path)
-
-    # Nickname resolution: one level deep, case-sensitive. A profile
-    # key always wins over a same-named nickname because the branch
-    # below only runs when the name is not already a profile key.
-    if name not in profiles:
-        if name in nicknames:
-            target = nicknames[name]
-            if target in profiles:
-                name = target
-            else:
-                profile_names = ", ".join(sorted(profiles)) or "(none)"
-                nickname_names = ", ".join(sorted(nicknames)) or "(none)"
-                raise ConfigError(
-                    f"nickname {name!r} targets missing profile {target!r} "
-                    f"in {path}; available profiles: {profile_names}; "
-                    f"available nicknames: {nickname_names}"
-                  )
-        else:
-            profile_names = ", ".join(sorted(profiles)) or "(none)"
-            nickname_names = ", ".join(sorted(nicknames)) or "(none)"
-            raise ConfigError(
-                f"profile {name!r} not found in {path}; "
-                f"available profiles: {profile_names}; "
-                f"available nicknames: {nickname_names}"
-              )
+    selection = _select_profile(
+        profiles, nicknames, doc.get("default_profile"), path, profile
+    )
+    name = selection.name
 
     selected = profiles[name]
     if not isinstance(selected, dict):
@@ -548,13 +725,108 @@ def _load_profile_from_document(
     # pydantic-settings gives init-kwargs the highest priority, so we must NOT
     # pass TOML values as init-kwargs when a matching HMC_* env var is set —
     # otherwise the TOML value would win over the env var.
+    #
+    # Env-over-TOML is deliberate on this path: an operator overriding a
+    # committed profile with HMC_HOST for one invocation is the documented CLI
+    # behaviour. A field this profile omits therefore still resolves from HMC_*,
+    # and _env_file=None below does not change that — it suppresses a dotenv
+    # source (which HMCConfig does not configure at all) and never the
+    # environment. HMCConfig.from_mapping is the isolated path; see ADR 0096.
+    #
+    # The membership test matches the loader's own casing rule via
+    # env_var_value: an exact-case test would leave the TOML value in the init
+    # kwargs for a lower- or mixed-case export that pydantic-settings does read,
+    # and init kwargs outrank every environment source.
     env_prefix = "HMC_"
     filtered_entry = {
         k: v
         for k, v in entry.items()
-        if (env_prefix + k.upper()) not in os.environ
+        if env_var_value(env_prefix + k.upper()) is None
     }
-    return HMCConfig(_env_file=None, **filtered_entry)  # ty: ignore[unknown-argument]
+    return HMCConfig(_env_file=None, **filtered_entry)
+
+
+def config_inventory(
+    config_path: Path | None = None,
+    *,
+    selected_profile: str | None = None,
+    include_selected: bool = False,
+) -> dict[str, Any]:
+    """Read validated, secret-free profile metadata from one TOML snapshot.
+
+    ``include_selected`` adds the effective non-secret configuration for
+    ``selected_profile`` (or the normal environment/default selection). Raw
+    passwords, password environment-variable names, and SSH key paths are
+    never returned.
+    """
+    path = _selected_config_path(config_path)
+    if path is None:
+        return {"profiles": [], "config_file": None}
+    doc = _read_config_document(path)
+    profiles = _coerce_profiles(doc.get("profiles"), path)
+    nicknames = _coerce_nicknames(doc.get("nicknames"), path)
+    default_profile = doc.get("default_profile")
+
+    fields = HMCConfig.model_fields
+    default_port = int(fields["port"].default)
+    default_verify_ssl = bool(fields["verify_ssl"].default)
+    profile_entries: list[dict[str, Any]] = []
+    for name, entry in profiles.items():
+        if not isinstance(entry, dict):
+            raise ConfigError(
+                f"{path}: profile {name!r} must be a TOML table, "
+                f"got {type(entry).__name__}"
+            )
+        profile_entries.append(
+            {
+                "name": name,
+                "host": entry.get("host", ""),
+                "user": entry.get("user", ""),
+                "port": int(entry.get("port", default_port)),
+                "verify_ssl": bool(entry.get("verify_ssl", default_verify_ssl)),
+                "is_default": name == default_profile,
+                "has_password": "password" in entry  # pragma: allowlist secret
+                or "password_env" in entry,  # pragma: allowlist secret
+                "has_ssh_key": "ssh_key_file" in entry,
+            }
+        )
+    profile_names = set(profiles)
+    result: dict[str, Any] = {
+        "profiles": profile_entries,
+        "nicknames": [
+            {"name": name, "target": target, "target_exists": target in profile_names}
+            for name, target in nicknames.items()
+        ],
+        "config_file": str(path),
+    }
+    if not include_selected:
+        return result
+
+    selection = _select_profile(
+        profiles, nicknames, default_profile, path, selected_profile
+    )
+    raw_profile = profiles[selection.name]
+    cfg = _load_profile_from_document(doc, path, selected_profile)
+    result["selected"] = {
+        "profile": selection.name,
+        "resolved_from": selection.nickname,
+        "host": cfg.host,
+        "port": cfg.port,
+        "user": cfg.user,
+        "verify_ssl": cfg.verify_ssl,
+        "timeout": cfg.timeout,
+        "audit_memento": cfg.audit_memento,
+        "schema_version": cfg.schema_version or "(not set)",
+        "authorize_power_operations": cfg.authorize_power_operations,
+        "password_configured": bool(
+            isinstance(raw_profile, dict)
+            and (raw_profile.get("password") or raw_profile.get("password_env"))
+        ),
+        "ssh_key_configured": bool(
+            isinstance(raw_profile, dict) and raw_profile.get("ssh_key_file")
+        ),
+    }
+    return result
 
 
 def load_profile(
@@ -589,3 +861,39 @@ def load_profile(
     path = _selected_config_path(config_path)
     doc: dict[str, Any] = {} if path is None else _read_config_document(path)
     return _load_profile_from_document(doc, path, profile)
+
+
+def build_config(
+    profile: str | None = None,
+    *,
+    document: ConfigDocument | None = None,
+    **overrides: Any,
+) -> HMCConfig:
+    """Build configuration from CLI options, environment, and a TOML profile.
+
+    Environment-only construction is used when nothing selects a profile. Errors
+    reading or validating an authored configuration are propagated unchanged.
+    """
+    filtered = {key: value for key, value in overrides.items() if value is not None}
+
+    explicit_host = filtered.get("host")
+    if not explicit_host and not env_var_value("HMC_HOST"):
+        config_path = document.path if document is not None else resolve_config_path()
+        if config_path is not None or profile or os.environ.get("HMC_PROFILE"):
+            try:
+                base = (
+                    _load_profile_from_document(document.data, document.path, profile)
+                    if document is not None
+                    else load_profile(profile=profile)
+                )
+                if filtered:
+                    merged = {
+                        key: getattr(base, key) for key in base.model_fields_set
+                    }
+                    merged.update(filtered)
+                    base = HMCConfig(**merged)
+                return base
+            except NoProfileSelectedError:
+                pass
+
+    return HMCConfig(**filtered)

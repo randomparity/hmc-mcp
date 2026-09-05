@@ -1,7 +1,7 @@
 """Tool-layer tests for the virtual adapter / storage / SSP tools.
 
 The document builders are covered in this dir's other tests; these tests call
-the actual ``@mcp.tool`` functions in ``server_storage`` against the respx
+the actual ``@mcp.tool`` functions in ``server_tools.storage`` against the respx
 ``mock_hmc`` router so the argument->URL and argument->XML mapping in the
 tool bodies is exercised — the layer the client tests skip.  This mirrors
 ``tests/app/test_server_tools.py`` for the storage domain.
@@ -9,38 +9,58 @@ tool bodies is exercised — the layer the client tests skip.  This mirrors
 
 from __future__ import annotations
 
+import inspect
+from unittest.mock import ANY, AsyncMock, patch
+
 import httpx
 import pytest
+from conftest import JOB_ENTRY
 
-from hmc_mcp.client_adapters import ADAPTER_TYPES
-from hmc_mcp.server import (
+from hmc_mcp.client.client_adapters import ADAPTER_TYPES
+from hmc_mcp.server_tools.adapters import (
     hmc_add_network_adapter,
     hmc_add_vfc_adapter,
     hmc_add_vscsi_adapter,
+    hmc_delete_adapter,
+    hmc_list_adapters,
+)
+from hmc_mcp.server_tools.storage import (
     hmc_create_logical_unit,
     hmc_create_media_repository,
     hmc_create_optical_media,
     hmc_create_virtual_disk,
     hmc_create_volume_group,
-    hmc_delete_adapter,
     hmc_delete_logical_unit,
     hmc_delete_media_repository,
+    hmc_detach_storage_mapping,
     hmc_get_shared_storage_pool,
-    hmc_list_adapters,
     hmc_list_clusters,
+    hmc_list_shared_storage_pools,
     hmc_list_volume_groups,
     hmc_map_storage_to_lpar,
-    hmc_list_shared_storage_pools,
 )
 
-from conftest import JOB_ENTRY
+
+@pytest.fixture(autouse=True)
+def _authorize_lpar_mutations(monkeypatch):
+    async def authorize(_hmc, _system, lpar, **_kwargs):
+        return lpar
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar_mutation", authorize
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation", authorize
+    )
+
 
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
-VG_UUID = "vg-uuid-0001"
-ADAPTER_UUID = "adapter-uuid-0001"
+VG_UUID = "22222222-2222-2222-2222-222222220001"
+ADAPTER_UUID = "44444444-4444-4444-4444-444444440001"
 CLUSTER_UUID = "cluster-uuid-0001"
-SSP_UUID = "ssp-uuid-0001"
+SSP_UUID = "55555555-5555-5555-5555-555555555555"
+SYSTEM_UUID = "00000000-0000-0000-0000-000000000004"
 
 
 def _hmc_env(monkeypatch) -> None:
@@ -119,11 +139,58 @@ def test_all_adapter_types_reach_the_matching_resource(monkeypatch, mock_hmc):
         assert route.called
 
 
-def test_invalid_adapter_type_fails_before_transport(monkeypatch, mock_hmc):
+def test_invalid_adapter_type_fails_before_resource_request(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     with pytest.raises(ValueError, match="adapter_type"):
         hmc_list_adapters(LPAR_UUID, adapter_type="UnknownAdapter")
-    assert not mock_hmc.calls
+    assert {call.request.url.path for call in mock_hmc.calls} == {"/rest/api/web/Logon"}
+
+
+def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    parent = f"""<VirtualIOServer
+      xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <UUID>{VIOS_UUID}</UUID>
+      <AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
+      <VirtualSCSIMappings>
+        <VirtualSCSIMapping><UUID>map-1</UUID></VirtualSCSIMapping>
+        <VirtualSCSIMapping><UUID>map-2</UUID></VirtualSCSIMapping>
+      </VirtualSCSIMappings>
+    </VirtualIOServer>"""
+    inventory = f"""<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:uom="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <entry><content><VirtualIOServer><VirtualSCSIMappings>
+        <VirtualSCSIMapping><UUID>map-1</UUID>
+          <AssociatedLogicalPartition
+            href="/rest/api/uom/LogicalPartition/{LPAR_UUID}"/>
+        </VirtualSCSIMapping>
+      </VirtualSCSIMappings></VirtualIOServer></content></entry>
+    </feed>"""
+    mock_hmc.get(
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
+    ).mock(return_value=httpx.Response(200, text=inventory))
+    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(200, text=parent)
+    )
+    posted = mock_hmc.post(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer/{VIOS_UUID}"
+    ).mock(return_value=httpx.Response(200, text=""))
+
+    guard = AsyncMock(return_value=LPAR_UUID)
+    with patch(
+        "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation", new=guard
+    ):
+        assert hmc_detach_storage_mapping(VIOS_UUID, "map-1") == "map-1"
+
+    guard.assert_awaited_once_with(
+        ANY,
+        None,
+        LPAR_UUID,
+        ownership_override=False,
+    )
+    assert posted.called
+    assert "map-1" not in posted.calls.last.request.content.decode()
+    assert "map-2" in posted.calls.last.request.content.decode()
 
 
 def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
@@ -238,6 +305,12 @@ def test_create_volume_group_builds_xml(monkeypatch, mock_hmc):
     assert '<GroupName kb="CUD" kxe="false">vg_data</GroupName>' in body
     assert body.count("<PhysicalVolume ") == 2
     assert "hdisk10" in body and "hdisk11" in body
+
+
+def test_create_volume_group_declares_hmc_resource_result() -> None:
+    assert inspect.signature(hmc_create_volume_group).return_annotation == (
+        "dict[str, Any] | None"
+    )
 
 
 def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
@@ -456,7 +529,7 @@ def test_create_logical_unit_submits_job(monkeypatch, mock_hmc):
         ("THIN", "PhysicalDisk", "device_type"),
     ],
 )
-def test_create_logical_unit_rejects_invalid_types_before_transport(
+def test_create_logical_unit_rejects_invalid_types_before_resource_request(
     monkeypatch, mock_hmc, lu_type, device_type, match
 ):
     _hmc_env(monkeypatch)
@@ -468,7 +541,7 @@ def test_create_logical_unit_rejects_invalid_types_before_transport(
             lu_type=lu_type,
             device_type=device_type,
         )
-    assert not mock_hmc.calls
+    assert {call.request.url.path for call in mock_hmc.calls} == {"/rest/api/web/Logon"}
 
 
 def test_create_logical_unit_with_clone(monkeypatch, mock_hmc):
@@ -521,7 +594,7 @@ def test_create_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
     submit_route = mock_hmc.put(
         f"/rest/api/uom/Cluster/{CLUSTER_UUID}/do/CreateLogicalUnit"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_create_logical_unit(
@@ -538,7 +611,7 @@ def test_delete_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
     submit_route = mock_hmc.put(
         f"/rest/api/uom/Cluster/{CLUSTER_UUID}/do/DeleteLogicalUnit"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_delete_logical_unit(

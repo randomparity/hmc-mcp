@@ -40,7 +40,7 @@ Every task's requirements implicitly include this section.
 - **Do not modify** `src/hmc_mcp/tool_registry.py`, `src/hmc_mcp/server.py`,
   `src/hmc_mcp/config.py`, `src/hmc_mcp/common.py`, `src/hmc_mcp/api.py`, or
   `pyproject.toml`. The change is two new files only.
-- **Do not add** `hmc_mcp.access_policy` to `tests/test_optional_dependencies.py`'s
+- **Do not add** `hmc_mcp.authorization.access_policy` to `tests/test_optional_dependencies.py`'s
   core-only import contract. The module imports `tool_registry`, which imports `fastmcp`
   and `mcp.types` unconditionally, so it legitimately requires the `app` extra.
 - **Never write `# pragma: no cover`.** `tests/test_ci_pipeline.py::test_coverage_gate_denominator_is_not_shrunk_in_source`
@@ -56,7 +56,7 @@ Every task's requirements implicitly include this section.
 
 | file | responsibility |
 |---|---|
-| `src/hmc_mcp/access_policy.py` | new — constants, `AccessPolicyError`, pydantic shape models, the compiled `AllTargets`/`Grant`/`AccessPolicy` types, `compile_access_policy`, `resolve_access_policy_path`, `load_access_policy` |
+| `src/hmc_mcp/authorization/access_policy.py` | new — constants, `AccessPolicyError`, pydantic shape models, the compiled `AllTargets`/`Grant`/`AccessPolicy` types, `compile_access_policy`, `resolve_access_policy_path`, `load_access_policy` |
 | `tests/unit/test_access_policy.py` | new — acceptance criteria A1–A16 |
 
 ### Interfaces the whole change publishes
@@ -113,7 +113,7 @@ Validates document shape (spec rules P1–P6) with pydantic and renders any
 `ValidationError` into the repository's fail-fast message convention. Binds every policy
 in the document, not just the selected one.
 
-**Creates:** `src/hmc_mcp/access_policy.py`
+**Creates:** `src/hmc_mcp/authorization/access_policy.py`
 **Creates:** `tests/unit/test_access_policy.py`
 **Consumes from earlier tasks:** nothing — this is the first task.
 **Later tasks rely on:** `AccessPolicyError`, `_parse_document(document, source) ->
@@ -133,7 +133,7 @@ from __future__ import annotations
 
 import pytest
 
-from hmc_mcp.access_policy import AccessPolicyError, _parse_document
+from hmc_mcp.authorization.access_policy import AccessPolicyError, _parse_document
 
 
 def _document(**grant: object) -> dict[str, object]:
@@ -166,11 +166,11 @@ uv run --no-sync pytest tests/unit/test_access_policy.py -q --no-cov
 ```
 
 Expected: collection fails with
-`ModuleNotFoundError: No module named 'hmc_mcp.access_policy'`.
+`ModuleNotFoundError: No module named 'hmc_mcp.authorization.access_policy'`.
 
 ### Step 1.3 — Write the module's shape tier
 
-Create `src/hmc_mcp/access_policy.py`:
+Create `src/hmc_mcp/authorization/access_policy.py`:
 
 ```python
 """Server access policies: strict TOML loading, validation, and compilation.
@@ -565,7 +565,7 @@ just secrets
 Expected: all tests pass; each `just` target prints its command and exits 0.
 
 ```sh
-git add src/hmc_mcp/access_policy.py tests/unit/test_access_policy.py
+git add src/hmc_mcp/authorization/access_policy.py tests/unit/test_access_policy.py
 GIT_EDITOR=true git commit -m "feat(access-policy): validate policy document shape"
 ```
 
@@ -581,7 +581,7 @@ them; and validates every policy in the document, not only one.
 Adds the frozen `AllTargets`/`Grant`/`AccessPolicy` types and `compile_access_policy`,
 which applies spec rules P7–P10 and P12 against the injected tool index.
 
-**Modifies:** `src/hmc_mcp/access_policy.py`
+**Modifies:** `src/hmc_mcp/authorization/access_policy.py`
 **Modifies:** `tests/unit/test_access_policy.py`
 
 **Consumes from Task 1:** `AccessPolicyError`, `_parse_document(document, source) ->
@@ -601,7 +601,7 @@ only when one single grant covers its tool, its connection, and its targets toge
 ### Step 2.1 — Write the failing test
 
 Append to `tests/unit/test_access_policy.py`, and add
-`from hmc_mcp.access_policy import ALL_TARGETS, compile_access_policy` plus
+`from hmc_mcp.authorization.access_policy import ALL_TARGETS, compile_access_policy` plus
 `from hmc_mcp.server import TOOL_SECURITY` to the imports at the top of the file:
 
 ```python
@@ -625,11 +625,11 @@ def test_read_only_policy_ceiling_is_exactly_the_read_tools() -> None:
 uv run --no-sync pytest tests/unit/test_access_policy.py -q --no-cov -k ceiling
 ```
 
-Expected: `ImportError: cannot import name 'ALL_TARGETS' from 'hmc_mcp.access_policy'`.
+Expected: `ImportError: cannot import name 'ALL_TARGETS' from 'hmc_mcp.authorization.access_policy'`.
 
 ### Step 2.3 — Add the compiled types and the compile function
 
-In `src/hmc_mcp/access_policy.py`, replace the import block with:
+In `src/hmc_mcp/authorization/access_policy.py`, replace the import block with:
 
 ```python
 from collections.abc import Mapping
@@ -1148,7 +1148,7 @@ just secrets
 Expected: all tests pass.
 
 ```sh
-git add src/hmc_mcp/access_policy.py tests/unit/test_access_policy.py
+git add src/hmc_mcp/authorization/access_policy.py tests/unit/test_access_policy.py
 GIT_EDITOR=true git commit -m "feat(access-policy): compile a validated policy into a frozen evaluator"
 ```
 
@@ -1168,7 +1168,7 @@ and do not retain the caller's dict.
 Adds `resolve_access_policy_path` and `load_access_policy`, converting file-level
 failures (spec rule P11) into `AccessPolicyError`.
 
-**Modifies:** `src/hmc_mcp/access_policy.py`
+**Modifies:** `src/hmc_mcp/authorization/access_policy.py`
 **Modifies:** `tests/unit/test_access_policy.py`
 
 **Consumes from Task 2:** `compile_access_policy(document, name, tool_security, source)`,
@@ -1202,7 +1202,7 @@ def test_load_round_trips_a_written_file(tmp_path) -> None:
     assert loaded.source == str(path)
 ```
 
-Add `import tomllib` and extend the `hmc_mcp.access_policy` import with
+Add `import tomllib` and extend the `hmc_mcp.authorization.access_policy` import with
 `ACCESS_POLICY_FILENAME`, `load_access_policy`, and `resolve_access_policy_path`.
 
 ### Step 3.2 — Run it and confirm it fails
@@ -1266,7 +1266,7 @@ Expected: `1 passed`.
 
 Move `test_module_exposes_no_mutator` here from Task 2 step 2.5 — it needs
 `load_access_policy` and `resolve_access_policy_path`, which only now exist. Confirm the
-test module's `hmc_mcp.access_policy` import gains `AccessPolicy` — the test body names
+test module's `hmc_mcp.authorization.access_policy` import gains `AccessPolicy` — the test body names
 it, and importing it in Task 2 would have failed `just lint` with F401 and blocked that
 task's commit through the prek hook. Then append:
 
@@ -1300,7 +1300,7 @@ def test_load_uses_the_resolved_path_when_none_is_given(monkeypatch, tmp_path) -
     target = tmp_path / ACCESS_POLICY_FILENAME
     target.write_text(POLICY_FILE, encoding="utf-8")
     monkeypatch.setattr(
-        "hmc_mcp.access_policy.resolve_access_policy_path", lambda: target
+        "hmc_mcp.authorization.access_policy.resolve_access_policy_path", lambda: target
     )
 
     policy = load_access_policy("lab", TOOL_SECURITY)
@@ -1345,7 +1345,7 @@ def test_directory_in_place_of_the_file_is_an_access_policy_error(tmp_path) -> N
 def test_module_does_not_import_server() -> None:
     script = (
         "import sys\n"
-        "from hmc_mcp.access_policy import load_access_policy\n"
+        "from hmc_mcp.authorization.access_policy import load_access_policy\n"
         "assert 'hmc_mcp.server' not in sys.modules, sorted(sys.modules)\n"
     )
 
@@ -1356,7 +1356,7 @@ def test_module_imports_only_the_declared_first_party_modules() -> None:
     import ast
     from pathlib import Path as _Path
 
-    import hmc_mcp.access_policy as module
+    import hmc_mcp.authorization.access_policy as module
 
     tree = ast.parse(_Path(module.__file__).read_text(encoding="utf-8"))
     first_party = {
@@ -1401,7 +1401,7 @@ completes its stdio handshake, the wheel and sdist build, artifact validation pa
 the six CLI group help checks print `verify: all groups load OK`.
 
 ```sh
-git add src/hmc_mcp/access_policy.py tests/unit/test_access_policy.py
+git add src/hmc_mcp/authorization/access_policy.py tests/unit/test_access_policy.py
 GIT_EDITOR=true git commit -m "feat(access-policy): load a policy file with fail-fast errors"
 ```
 

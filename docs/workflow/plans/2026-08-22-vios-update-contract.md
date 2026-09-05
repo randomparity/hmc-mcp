@@ -1,0 +1,232 @@
+# VIOS update and upgrade implementation plan
+
+## Goal and architecture
+
+Correct `hmc_vios_update` to build and submit IBM's documented VIOS operations,
+validate the selected request contract before I/O, and expose waited `stdOut`
+without discarding the raw HMC job. `jobs.py` owns typed input contracts, XML
+builders, and result parsing; `server_tools/updates.py` owns operation selection,
+path construction, submission, and the public tool result.
+
+Tech stack: Python 3.11–3.14, `TypedDict`, Pydantic/FastMCP schema generation,
+pytest/respx, ruff, ty, and uv.
+
+## Global constraints
+
+- Preserve the consolidated `kind="update" | "upgrade"` entry point.
+- Update uses `UpdateVIOS`, `/do/UpdateVIOS`, and ResourceType values `HMC`,
+  `NFS`, `SFTP`, `USB`, `IBMWebsite`.
+- Upgrade uses `UpgradeVIOS`, `/do/UpgradeVIOS`, and ResourceType values `HMC`,
+  `NFS`, `SFTP`, `USB`.
+- Common optional parameters are `Name`, `ServerHostOrIP`, `UserName`,
+  `Password`, `SSHKey`, `PassPhrase`, `RemoteDirectory`, `FileNames`,
+  `MountLocation`, `MountOptions`, `USBDevice`, and `SaveFile`.
+- Only update accepts `RestartVIOS`; only upgrade accepts `Disks`.
+- `ResourceType`, resource-specific source fields, upgrade `Disks`, and
+  `Name` when saving an image are required in both schema and runtime.
+  Unknown keys, cross-operation keys, and upgrade `IBMWebsite` fail before
+  client creation.
+- Encode the resolved VIOS UUID as one URL path segment.
+- Only a waited result whose `Resource.Status` belongs to
+  `TERMINAL_JOB_STATUSES` projects the first non-empty string `stdOut`, trimmed,
+  at the top level; preserve raw, nonterminal, and submission-only results and
+  never overwrite a pre-existing top-level `stdOut`.
+- Keep `RepositorySource` and firmware behavior unchanged. Do not restore the
+  removed generic console update behavior or add compatibility shims.
+- Use no new dependency. Keep Python functions within repository complexity,
+  line-length, positional-argument, and warning limits.
+- Guardrails are `just test`, `just smoke`, and `just verify`; CI hard-gates
+  `just verify`. ADR-index coupling is `no index`.
+
+## File map
+
+- `src/hmc_mcp/jobs.py`: VIOS request types, validation/builders, `stdOut`
+  extraction.
+- `src/hmc_mcp/server_tools/updates.py`: public annotation/docs, fail-fast selection,
+  encoded path, wait-only result projection.
+- `tests/system/test_update_upgrade.py`: XML builders and HTTP paths.
+- `tests/app/test_server_tools.py`: tool validation, path encoding, async/waited
+  result behavior.
+- `tests/app/test_capabilities.py`: rendered VIOS schema.
+- `tests/unit/test_job_lifecycle.py`: typed-source schema and result parser edge
+  cases.
+- `README.md`: corrected operator-facing request and result contract.
+
+## Task 1: Correct the request contract and submission path
+
+**Interfaces**
+
+- Produces `VIOSUpdateSource`, `VIOSUpgradeSource`, `VIOSSource`,
+  `update_vios_job(VIOSUpdateSource) -> str`, and
+  `upgrade_vios_job(VIOSUpgradeSource) -> str` in `hmc_mcp.jobs`.
+- Produces the public `hmc_vios_update(..., repository: VIOSSource, ...)`
+  signature and exact operation selection/path in `server_tools/updates.py`.
+- Task 2 consumes the corrected public path and adds only result projection.
+- Existing `RepositorySource` remains the input to `update_firmware_job`.
+
+1. Replace old VIOS fixtures in `tests/system/test_update_upgrade.py` with
+   documented dictionaries and assertions for exact operation/group and
+   parameter names. Add failing tests for missing `ResourceType`, unknown keys,
+   `Disks` on update, `RestartVIOS` on upgrade, and `IBMWebsite` on upgrade.
+2. Update `tests/unit/test_job_lifecycle.py` to construct Pydantic adapters for
+   both VIOS source types and assert their exact property sets and required
+   discriminator.
+3. Change VIOS application tests to expect exact `/do/UpdateVIOS` and
+   `/do/UpgradeVIOS` paths and bodies. Add a hostile selector test matching the
+   console path-segment test. Parameterize public-tool calls for missing
+   `ResourceType`, an unknown key, `Disks` on update, `RestartVIOS` on upgrade,
+   and `IBMWebsite` on upgrade; replace `client_from_env` with a function that
+   raises `AssertionError("client created")` and assert each call raises its
+   expected `ValueError`, proving the invalid matrix fails before I/O. Update
+   `tests/app/test_capabilities.py` to assert the public tool schema is the
+   union of both source contracts and that each branch has its exact enum.
+4. Run the focused tests and confirm they fail against the old generic
+   `RepositorySource` and bare operation names:
+
+   ```sh
+   uv run --no-sync pytest -q --no-cov tests/system/test_update_upgrade.py \
+     tests/unit/test_job_lifecycle.py tests/app/test_server_tools.py \
+     tests/app/test_capabilities.py
+   ```
+
+5. In `src/hmc_mcp/jobs.py`, define one described TypedDict variant per
+   operation and `ResourceType`, then expose their union as `VIOSSource`.
+   Each variant's schema requires its discriminator and source-specific fields:
+   HMC requires `Name`, NFS/SFTP require `ServerHostOrIP` and
+   `RemoteDirectory`, USB requires `USBDevice`, and every upgrade requires
+   `Disks`. Keep `RestartVIOS` update-only and `Disks` upgrade-only.
+
+   Add operation-specific key/type constants and a validator that rejects
+   unknown or missing parameters with operation-named actionable messages,
+   stringifies non-`None` values, and is called by the two builders. Render
+   `UpdateVIOS` and `UpgradeVIOS` respectively.
+6. In `src/hmc_mcp/server_tools/updates.py`, annotate `repository: VIOSSource`,
+   select `operation = "UpdateVIOS" | "UpgradeVIOS"`, build and validate before
+   `client_from_env`, encode `quote(vios_uuid, safe="")`, and submit to the
+   fixed operation suffix.
+7. Run the builder, application, lifecycle, and capabilities tests with
+   `--no-cov`; expect all selected tests to pass. Run
+   `uv run --no-sync ruff check src/hmc_mcp/jobs.py src/hmc_mcp/server_tools/updates.py`
+   and the full configured `uv run --no-sync ty check`; expect exit 0.
+8. Commit the explicit source and test paths with subject
+   `fix: use documented VIOS update job requests`.
+
+Acceptance: generated XML and HTTP requests contain only the selected
+documented operation/path/keys; every invalid contract fails before I/O; the
+public schema contains both precise request types; firmware remains unchanged.
+
+## Task 2: Project waited terminal stdOut
+
+**Interfaces**
+
+- Consumes Task 1's corrected public operation and request contract.
+- Produces `vios_stdout(job: dict[str, Any] | None) -> str | None` in
+  `hmc_mcp.jobs` and corrected `hmc_vios_update` behavior.
+- Preserves `_update_op` and shared wait lifecycle semantics.
+
+1. Add failing unit fixtures in `tests/unit/test_job_lifecycle.py` for
+   `Resource.Results.JobParameter` as one mapping and a list. Cover a malformed
+   entry before a valid value; exact case-sensitive name; whitespace-only and
+   non-string values; and a first valid value followed by empty, malformed, and
+   valid duplicates. Assert the first non-empty string is trimmed and wins.
+2. Add application wait tests proving the raw terminal mapping is
+   retained with top-level `stdOut`, and non-wait submission metadata is
+   unchanged without a projection. Add a timed-out `RUNNING` waited result that
+   contains `stdOut` and assert no top-level projection. Add a terminal result
+   with an existing top-level `stdOut` and assert that raw value is preserved.
+3. Run:
+
+   ```sh
+   uv run --no-sync pytest -q --no-cov tests/unit/test_job_lifecycle.py \
+     tests/app/test_server_tools.py -k 'vios or stdout'
+   ```
+
+   Expect failures on the absent parser and result projection.
+4. Add this structural parser in `src/hmc_mcp/jobs.py`:
+
+   ```python
+   def vios_stdout(job: dict[str, Any] | None) -> str | None:
+       resource = (job or {}).get("Resource")
+       if not isinstance(resource, dict):
+           return None
+       results = resource.get("Results")
+       if not isinstance(results, dict):
+           return None
+       parameters = results.get("JobParameter", [])
+       if isinstance(parameters, dict):
+           parameters = [parameters]
+       if not isinstance(parameters, list):
+           return None
+       for parameter in parameters:
+           if not isinstance(parameter, dict):
+               continue
+           value = parameter.get("ParameterValue")
+           if parameter.get("ParameterName") == "stdOut" and isinstance(value, str):
+               value = value.strip()
+               if value:
+                   return value
+       return None
+   ```
+
+5. In `server_tools/updates.py`, after `_update_op` add a top-level `stdOut` only when
+   `wait is True`, the result is a mapping, its nested `Resource.Status` is in
+   `TERMINAL_JOB_STATUSES`, no top-level `stdOut` exists, and
+   `vios_stdout(result)` returns a value. Copy the mapping before augmentation.
+6. Run the focused tests and static checks for the two changed modules; expect
+   exit 0. Run `just smoke`; expect the tool count summary and exit 0.
+7. Commit with subject `fix: submit documented VIOS update operations`.
+
+Acceptance: path selectors cannot redirect the operation; invalid input reaches
+no client; waited result projection follows the exhaustive ordering matrix;
+the complete job remains available; asynchronous output is byte-for-byte equal
+as a mapping to the submission parser result.
+
+## Task 3: Document and verify the complete contract
+
+**Interfaces**
+
+- Consumes the final public signature and behavior from Tasks 1 and 2.
+- Produces operator documentation only; no new runtime interface.
+
+1. Update the `README.md` tool row and nearby update documentation with one
+   update and one upgrade request example, exact operation-specific differences,
+   and the wait-only `stdOut` behavior. Remove statements that VIOS shares the
+   console repository format.
+2. Compare the implemented paths, enums, and parameter sets against all four
+   Power10/Power11 captures from the spec. Resolve the main repository root and
+   its sibling reference roots without embedding a host-private path:
+
+   ```sh
+   repo_root=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
+   reference_parent=$(dirname "$repo_root")
+   p10="$reference_parent/hmc-rest-api-p10/jobs/virtualioserver-jobs"
+   p11="$reference_parent/hmc-rest-api-p11/jobs/virtualioserver-jobs"
+   test -r "$p10/140-updatevios_virtualioserver-job.md"
+   test -r "$p10/141-upgradevios_virtualioserver-job.md"
+   test -r "$p11/160-updatevios_virtualioserver-job.md"
+   test -r "$p11/161-upgradevios_virtualioserver-job.md"
+   ```
+
+   Use `rg -n` and line-numbered reads on each exact file to compare the
+   Resource path, `OperationName`, every request-table parameter,
+   `ResourceType` values, and response-table `stdOut`. A missing reference is a
+   blocker; any disagreement is a source/test correction, not a doc caveat.
+3. Run `just test`, `just smoke`, then `just verify` bare. Each must exit 0.
+   Run `git status --porcelain` after verification and require no untracked or
+   unstaged generated artifact.
+4. Commit explicit documentation paths with subject
+   `docs: describe documented VIOS update inputs`.
+
+Acceptance: README instructions match the installable schema and tests; both
+reference generations agree; all guardrails pass with zero warnings. Live HMC
+testing runs only if a suitable non-production update target and credentials
+already exist; otherwise record `not run: no safe live VIOS update target` in
+the handoff.
+
+## Rollback and cleanup
+
+Each task is a separate conventional commit and can be reverted in reverse
+order. Reverting the runtime commits restores the broken operation and is not a
+compatibility strategy. No migration, generated registry, dependency, external
+state, or temporary fixture persists. Leave the external worktree and branch
+for the campaign orchestrator after PR handoff.

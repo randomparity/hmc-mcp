@@ -3,20 +3,53 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from typing import Any, get_type_hints
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from conftest import assert_only_these_client_methods_used
+
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations_decommission import DecommissionResult, decommission_lpar
-from hmc_mcp.server import hmc_decommission_lpar
+from hmc_mcp.operations.lpar.assignments import WorkflowStep
+from hmc_mcp.operations.lpar.decommission import (
+    DecommissionAdapterRecord,
+    DecommissionBlastRadius,
+    DecommissionResult,
+    decommission_lpar,
+)
+from hmc_mcp.server_tools.lpar.lifecycle import (
+    hmc_decommission_lpar,
+)
 
 SYSTEM_UUID = "11111111-1111-1111-1111-111111111111"
 LPAR_UUID = "22222222-2222-2222-2222-222222222222"
 VIOS_UUID = "33333333-3333-3333-3333-333333333333"
 TARGET_PARTITION_ID = "7"
+
+
+def test_decommission_blast_radius_schema_is_named_and_complete() -> None:
+    assert DecommissionBlastRadius.__required_keys__ == {
+        "lpar_uuid",
+        "lpar_name",
+        "partition_id",
+        "state",
+        "owner",
+        "adapters",
+        "storage_mappings",
+        "unresolved_storage_mapping_count",
+        "unavailable_storage_source_count",
+    }
+    hints = get_type_hints(DecommissionBlastRadius)
+    assert hints["adapters"] == tuple[DecommissionAdapterRecord, ...]
+    assert DecommissionAdapterRecord.__required_keys__ == {"type", "uuid"}
+
+
+def _workflow_steps(*entries: dict[str, Any]) -> tuple[WorkflowStep, ...]:
+    return tuple(
+        WorkflowStep(entry["step"], entry["status"], entry.get("result"))
+        for entry in entries
+    )
 
 
 def _lpar(
@@ -117,7 +150,7 @@ def _client() -> AsyncMock:
 
 
 def _patch_common(monkeypatch: pytest.MonkeyPatch, calls: list[str]) -> None:
-    from hmc_mcp import operations_decommission as ops
+    from hmc_mcp.operations.lpar import decommission as ops
 
     async def resolve_system_uuid(hmc, value: str) -> str:
         calls.append(f"resolve_system_uuid:{value}")
@@ -142,7 +175,7 @@ def _tool_result() -> DecommissionResult:
         workflow_completed=True,
         lpar_uuid=LPAR_UUID,
         dry_run=False,
-        steps=(
+        steps=_workflow_steps(
             {
                 "step": "power_off",
                 "status": "ok",
@@ -178,9 +211,9 @@ def test_hmc_decommission_lpar_delegates_with_one_configured_client() -> None:
         return fake_client_context(profile)
 
     with (
-        patch("hmc_mcp.server_lpars.client_from_env", side_effect=fake_client_from_env),
+        patch("hmc_mcp._app.client_from_env", side_effect=fake_client_from_env),
         patch(
-            "hmc_mcp.server_lpars.decommission_lpar",
+            "hmc_mcp.server_tools.lpar.lifecycle.decommission_lpar",
             new=AsyncMock(return_value=expected),
         ) as decommission_mock,
     ):
@@ -215,7 +248,7 @@ async def test_decommission_rejects_uuid_outside_selected_system(monkeypatch: py
     hmc.list_logical_partitions.return_value = [_lpar(uuid="other-uuid")]
     authorize = AsyncMock()
 
-    from hmc_mcp import operations_decommission as ops
+    from hmc_mcp.operations.lpar import decommission as ops
 
     monkeypatch.setattr(ops, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID))
     monkeypatch.setattr(ops, "authorize_decommission_lpar_ownership_snapshot", authorize)
@@ -301,8 +334,8 @@ async def test_decommission_warns_when_listed_vios_has_no_uuid(
     assert result.blast_radius["unresolved_storage_mapping_count"] == 0
     assert result.blast_radius["unavailable_storage_source_count"] == 1
     assert result.warnings == (
-        "Storage blast radius may be incomplete: listed VIOS 'vios-missing-id' "
-        "has no UUID, so its storage mappings could not be inventoried.",
+        ("Storage blast radius may be incomplete: listed VIOS 'vios-missing-id' "
+         "has no UUID, so its storage mappings could not be inventoried."),
     )
     hmc.get_vios_storage_detail.assert_not_awaited()
 
@@ -322,8 +355,8 @@ async def test_decommission_warns_when_vios_storage_detail_is_unavailable(
     assert result.blast_radius["unresolved_storage_mapping_count"] == 0
     assert result.blast_radius["unavailable_storage_source_count"] == 1
     assert result.warnings == (
-        f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
-        "storage detail, so its storage mappings could not be inventoried.",
+        (f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
+         "storage detail, so its storage mappings could not be inventoried."),
     )
     hmc.get_vios_storage_detail.assert_awaited_once_with(VIOS_UUID)
 
@@ -366,12 +399,12 @@ async def test_decommission_continues_when_vios_storage_detail_is_unavailable(
 
     assert result.resource_deleted is True
     assert result.workflow_completed is True
-    assert [step["status"] for step in result.steps] == ["ok", "ok", "ok"]
+    assert [step.status for step in result.steps] == ["ok", "ok", "ok"]
     assert result.blast_radius["unresolved_storage_mapping_count"] == 0
     assert result.blast_radius["unavailable_storage_source_count"] == 1
     assert result.warnings == (
-        f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
-        "storage detail, so its storage mappings could not be inventoried.",
+        (f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
+         "storage detail, so its storage mappings could not be inventoried."),
     )
     assert calls == [
         "resolve_system_uuid:system-a",
@@ -398,7 +431,7 @@ async def test_decommission_dry_run_inventories_without_mutating(monkeypatch: py
         workflow_completed=True,
         lpar_uuid=LPAR_UUID,
         dry_run=True,
-        steps=(
+        steps=_workflow_steps(
             {"step": "power_off", "status": "dry_run", "result": {"state": "running"}},
             {
                 "step": "detach_adapters",
@@ -473,7 +506,7 @@ async def test_decommission_dry_run_inventories_without_mutating(monkeypatch: py
 async def test_decommission_enforces_ownership_even_for_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
     hmc = _client()
 
-    from hmc_mcp import operations_decommission as ops
+    from hmc_mcp.operations.lpar import decommission as ops
 
     monkeypatch.setattr(ops, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID))
     monkeypatch.setattr(
@@ -517,10 +550,10 @@ async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
 ) -> None:
     hmc = _client()
     hmc.config = HMCConfig(
-        host="hmc.test", user="user", agent_id="alice", _env_file=None
+        host="hmc.test", user="user", agent_id="alice"
     )
 
-    from hmc_mcp import operations_decommission as ops
+    from hmc_mcp.operations.lpar import decommission as ops
 
     monkeypatch.setattr(ops, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID))
     monkeypatch.setattr(
@@ -534,7 +567,7 @@ async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
             "[hmc-mcp owner:bob created:2026-08-14]",
         )
     )
-    monkeypatch.setattr("hmc_mcp.operations_lpar.get_lpar_description", descriptions)
+    monkeypatch.setattr("hmc_mcp.operations.ownership.get_lpar_description", descriptions)
 
     result = await decommission_lpar(
         hmc, "system-a", "aix-prod", ownership_override=True
@@ -551,10 +584,10 @@ async def test_decommission_revalidates_changed_owner_before_mutation(
 ) -> None:
     hmc = _client()
     hmc.config = HMCConfig(
-        host="hmc.test", user="user", agent_id="alice", _env_file=None
+        host="hmc.test", user="user", agent_id="alice"
     )
 
-    from hmc_mcp import operations_decommission as ops
+    from hmc_mcp.operations.lpar import decommission as ops
 
     monkeypatch.setattr(ops, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID))
     monkeypatch.setattr(
@@ -568,7 +601,7 @@ async def test_decommission_revalidates_changed_owner_before_mutation(
             "[hmc-mcp owner:bob created:2026-08-15]",
         )
     )
-    monkeypatch.setattr("hmc_mcp.operations_lpar.get_lpar_description", descriptions)
+    monkeypatch.setattr("hmc_mcp.operations.ownership.get_lpar_description", descriptions)
 
     with pytest.raises(PermissionError, match="owned by 'bob'"):
         await decommission_lpar(hmc, "system-a", "aix-prod")
@@ -617,7 +650,7 @@ async def test_decommission_runs_power_off_adapter_delete_and_lpar_delete_in_ord
 
     assert result.resource_deleted is True
     assert result.workflow_completed is True
-    assert result.steps == (
+    assert result.steps == _workflow_steps(
         {
             "step": "power_off",
             "status": "ok",
@@ -690,11 +723,9 @@ async def test_decommission_marks_already_off_lpar_without_power_job(monkeypatch
 
     result = await decommission_lpar(hmc, "system-a", "aix-prod")
 
-    assert result.steps[0] == {
-        "step": "power_off",
-        "status": "ok",
-        "result": {"already_off": True, "state": "not activated"},
-    }
+    assert result.steps[0] == WorkflowStep(
+        "power_off", "ok", {"already_off": True, "state": "not activated"}
+    )
     hmc.submit_job.assert_not_awaited()
     hmc.wait_for_job.assert_not_awaited()
     assert calls == [
@@ -721,7 +752,7 @@ async def test_decommission_stops_when_initially_off_lpar_restarts_before_detach
     result = await decommission_lpar(hmc, "system-a", "aix-prod")
 
     assert result.workflow_completed is False
-    assert result.steps == (
+    assert result.steps == _workflow_steps(
         {
             "step": "power_off",
             "status": "ok",
@@ -757,17 +788,17 @@ async def test_decommission_stops_when_lpar_restarts_after_power_off_job(
     result = await decommission_lpar(hmc, "system-a", "aix-prod")
 
     assert result.workflow_completed is False
-    assert result.steps[0]["status"] == "ok"
-    assert result.steps[0]["result"]["already_off"] is False
-    assert result.steps[1] == {
-        "step": "detach_adapters",
-        "status": "error",
-        "result": (
+    assert result.steps[0].status == "ok"
+    assert result.steps[0].result["already_off"] is False
+    assert result.steps[1] == WorkflowStep(
+        "detach_adapters",
+        "error",
+        (
             "Cannot detach adapters from LPAR 'aix-prod': current state is "
             "'running'; expected 'not activated'."
         ),
-    }
-    assert result.steps[2] == {"step": "delete_lpar", "status": "skipped"}
+    )
+    assert result.steps[2] == WorkflowStep("delete_lpar", "skipped")
     hmc.submit_job.assert_awaited_once()
     hmc.wait_for_job.assert_awaited_once()
     hmc.get_quick_property.assert_awaited_once_with(
@@ -789,12 +820,12 @@ async def test_decommission_stops_when_detach_state_cannot_be_read(
     result = await decommission_lpar(hmc, "system-a", "aix-prod")
 
     assert result.workflow_completed is False
-    assert result.steps[1] == {
-        "step": "detach_adapters",
-        "status": "error",
-        "result": "Could not verify LPAR 'aix-prod' state before detaching adapters: state read failed",
-    }
-    assert result.steps[2] == {"step": "delete_lpar", "status": "skipped"}
+    assert result.steps[1] == WorkflowStep(
+        "detach_adapters",
+        "error",
+        "Could not verify LPAR 'aix-prod' state before detaching adapters: state read failed",
+    )
+    assert result.steps[2] == WorkflowStep("delete_lpar", "skipped")
     hmc.delete_adapter.assert_not_awaited()
     hmc.delete_logical_partition.assert_not_awaited()
 
@@ -827,9 +858,9 @@ async def test_decommission_reports_power_off_failure_and_skips_later_steps(
 
     assert result.resource_deleted is False
     assert result.workflow_completed is False
-    assert result.steps[0]["status"] == "error"
-    assert fragment in result.steps[0]["result"]
-    assert result.steps[1:] == (
+    assert result.steps[0].status == "error"
+    assert fragment in result.steps[0].result
+    assert result.steps[1:] == _workflow_steps(
         {"step": "detach_adapters", "status": "skipped"},
         {"step": "delete_lpar", "status": "skipped"},
     )
@@ -854,7 +885,7 @@ async def test_decommission_stops_after_first_adapter_failure(monkeypatch: pytes
 
     assert result.resource_deleted is False
     assert result.workflow_completed is False
-    assert result.steps == (
+    assert result.steps == _workflow_steps(
         {
             "step": "power_off",
             "status": "ok",

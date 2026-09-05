@@ -85,10 +85,10 @@ avoids runtime type errors and lets FastMCP render a generic schema.
 
 | File | Change |
 |---|---|
-| `src/hmc_mcp/server_system.py` | Replace 7 tools with 2: `hmc_systems`, `hmc_lpars` (absorbing `hmc_list_systems`, `hmc_get_system`, `hmc_list_lpars`, `hmc_get_lpar`, `hmc_find_lpar`, `hmc_lpar_state`, and moving `hmc_vios_mappings` away; `hmc_list_vios` + `hmc_vios_mappings` → `hmc_vios` in this file) |
-| `src/hmc_mcp/server_storage.py` | Replace 2 tools with 1: `hmc_shared_storage_pools` (absorbs `hmc_list_shared_storage_pools` + `hmc_get_shared_storage_pool`) |
-| `src/hmc_mcp/server_templates.py` | Replace 2 tools with 1: `hmc_partition_templates` (absorbs list + get) |
-| `src/hmc_mcp/server_users.py` | Replace 2 tools with 1: `hmc_users` (absorbs `hmc_list_users` + `hmc_get_user`) |
+| `src/hmc_mcp/server_tools/system.py` | Replace 7 tools with 2: `hmc_systems`, `hmc_lpars` (absorbing `hmc_list_systems`, `hmc_get_system`, `hmc_list_lpars`, `hmc_get_lpar`, `hmc_find_lpar`, `hmc_lpar_state`, and moving `hmc_vios_mappings` away; `hmc_list_vios` + `hmc_vios_mappings` → `hmc_vios` in this file) |
+| `src/hmc_mcp/server_tools/storage.py` | Replace 2 tools with 1: `hmc_shared_storage_pools` (absorbs `hmc_list_shared_storage_pools` + `hmc_get_shared_storage_pool`) |
+| `src/hmc_mcp/server_tools/templates.py` | Replace 2 tools with 1: `hmc_partition_templates` (absorbs list + get) |
+| `src/hmc_mcp/server_tools/users.py` | Replace 2 tools with 1: `hmc_users` (absorbs `hmc_list_users` + `hmc_get_user`) |
 | `src/hmc_mcp/_app.py` | Update `READ_ONLY_TOOLS` frozenset |
 | `src/hmc_mcp/server.py` | Update re-exports |
 | `tests/system/test_system_tools.py` | Update imports and test function names |
@@ -109,6 +109,6 @@ avoids runtime type errors and lets FastMCP render a generic schema.
 ## Non-Goals
 
 - No new client-layer methods are added; all client methods remain unchanged
-- No change to CLI commands (`cli_systems.py`, etc.)
+- No change to CLI commands (`cli_commands/systems.py`, etc.)
 - No change to `_DESTRUCTIVE` tools
 - No behavioral change in any currently working path

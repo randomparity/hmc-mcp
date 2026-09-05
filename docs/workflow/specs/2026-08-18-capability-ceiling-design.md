@@ -175,7 +175,7 @@ value in it is drawn from one of five sources: (a) a tool name, operation, effec
 target kind read from the compiled-in `TOOL_SECURITY` index; (b) an operator-authored
 identifier in the selected policy document (its name, a connection token, a target
 selector); (c) the resolved policy path; (d) a fixed literal defined in
-`server_permissions.py` or `access_policy.py` — the two dimension labels `"tools"`,
+`server_tools/permissions.py` or `access_policy.py` — the two dimension labels `"tools"`,
 `"connections"`, `"targets"`, the `"unknown"` classification fallback, and
 `DEFAULT_CONNECTION_TOKEN` (`"<default>"`), which is synthesised for a compiled `None`; and
 (e) a tool name read from the live registry. (e) is the only unbounded source — a name
@@ -238,7 +238,7 @@ the loop and a hand-applied copy beside it. Nothing is ever registered and remov
 
 ### The inspection tool
 
-`src/hmc_mcp/server_permissions.py` owns the result types and a factory:
+`src/hmc_mcp/server_tools/permissions.py` owns the result types and a factory:
 
 ```python
 @dataclass(frozen=True)
@@ -291,7 +291,7 @@ R12 from being a tautology. It maps each name through `tool_security`, falling b
 `"unknown"` for all three classification fields rather than raising on a miss, and renders
 the policy's compiled grants.
 
-`server_permissions.py` must not import `server.py` (`server.py` imports it), which is why
+`server_tools/permissions.py` must not import `server.py` (`server.py` imports it), which is why
 the tool index arrives as a parameter — the same one-way dependency ADR 0036 fixed for
 `load_access_policy`.
 

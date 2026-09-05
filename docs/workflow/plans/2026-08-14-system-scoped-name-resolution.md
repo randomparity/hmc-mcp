@@ -21,8 +21,8 @@ finder's system UUID; operation and tool layers only forward the selector.
 
 ## Task 1: Fail closed in client finders
 
-**Files:** Modify `src/hmc_mcp/client_lpars.py`,
-`src/hmc_mcp/client_systems.py`, `src/hmc_mcp/client_contracts.py`; test in
+**Files:** Modify `src/hmc_mcp/client/client_lpars.py`,
+`src/hmc_mcp/client/client_systems.py`, `src/hmc_mcp/client/client_contracts.py`; test in
 `tests/unit/test_client.py` and `tests/unit/test_client_domain_mixins.py`.
 
 **Interfaces:** Define
@@ -71,9 +71,9 @@ no-match guidance is unchanged.
 
 ## Task 3: Expose scope on destructive tools
 
-**Files:** Modify `src/hmc_mcp/operations_lpar.py`,
-`src/hmc_mcp/operations_vios.py`, `src/hmc_mcp/server_lpars.py`, and
-`src/hmc_mcp/server_vios.py`; test in `tests/app/test_server_tools.py`,
+**Files:** Modify `src/hmc_mcp/operations/lpar/core.py`,
+`src/hmc_mcp/operations/vios.py`, `src/hmc_mcp/server_tools/lpars.py`, and
+`src/hmc_mcp/server_tools/vios.py`; test in `tests/app/test_server_tools.py`,
 `tests/app/test_capabilities.py`, `tests/lpar/test_power_tools.py`,
 `tests/vios/test_vios_lifecycle.py`, and `tests/vios/test_vios_backup.py`.
 

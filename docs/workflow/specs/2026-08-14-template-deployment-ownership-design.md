@@ -11,13 +11,13 @@ one partition, without making best-effort ownership metadata a deployment failur
 
 ## Architecture
 
-`operations_templates.deploy_partition_template` owns the orchestration. For `wait=True`,
+`operations.templates.deploy_partition_template` owns the orchestration. For `wait=True`,
 it obtains a system-scoped LPAR baseline before submission, waits through the existing job
 helper, and only after a `COMPLETED` terminal result obtains the second snapshot. A pure
 selection helper compares top-level parsed-feed `UUID` values and returns the sole new
 entry or explains why identification is inconclusive.
 
-The existing ownership operation in `operations_lpar` remains responsible for resolving
+The existing ownership operation in `operations.lpar` remains responsible for resolving
 the managed-system name and calling the SSH stamp. Its private helper becomes a named
 presentation-neutral operation so the template workflow can reuse exactly the same
 `True`/`False`/`None` and warning semantics as direct creation.
@@ -61,7 +61,7 @@ misattribution.
 
 ## Documentation
 
-Remove statements in `server_templates`, `_app.py`, and ADR 0011 that claim template
+Remove statements in `server_tools.templates`, `_app.py`, and ADR 0011 that claim template
 deployment never stamps. Replace them with the exact `wait=True` and unambiguous-diff
 condition. ADR 0011 remains accepted; its known-gap consequence becomes a link to the
 resolving issue and ADR rather than being rewritten.

@@ -34,9 +34,11 @@ Addressing:
     REST resolution and has no ``lssyscfg`` fallback; a system UUID resolves to
     its unique MTMS identity rather than its CLI name.
 
-This module is a thin aggregator: the tool handlers live in domain
-submodules (``server_lpars``, ``server_storage``, ...). ``create_mcp``
-explicitly registers each domain on a fresh application instance.
+This module is the MCP composition and serving bootstrap boundary. Tool handlers
+live in domain adapters under ``server_tools/``, and
+``create_mcp`` explicitly registers each domain on a fresh application instance.
+The serving entry points also validate startup policy, emit startup diagnostics,
+and configure the logging boundaries for stdio and HTTP transports.
 """
 
 from __future__ import annotations
@@ -45,7 +47,7 @@ import asyncio
 import ipaddress
 import logging
 import socket
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Final
 
 from fastmcp import FastMCP
@@ -57,241 +59,34 @@ from fastmcp.server.server import logger as _fastmcp_logger
 
 from ._app import (
     ceiling_aware_instructions,
+)
+from ._app import (
     create_mcp as _create_base_mcp,
 )
-from .access_policy import AccessPolicy, unboundable_effect_tools
-from .audit import (
+from .audit import records as audit
+from .audit.sink import (
     StreamSafeFormatter,
     install_audit_sink,
     set_audit_level,
     sink_handler,
     write_diagnostic,
 )
-from .connection_scope import ConnectionScopeError
-from .dispatch_scope import dispatch_authorizer
-from .target_scope import TargetScopeError
-from .tool_registry import Authorize, ToolSecurity, build_tool_security
-from . import (
-    server_adapters,
-    server_capacity,
-    server_composite,
-    server_health,
-    server_jobs,
-    server_lpar_config,
-    server_lpars,
-    server_lpm,
-    server_metrics,
-    server_network,
-    server_profiles,
-    server_provision,
-    server_storage,
-    server_system_resources,
-    server_systems,
-    server_templates,
-    server_updates,
-    server_users,
-    server_vios,
-)
-
-from .server_systems import (
-    hmc_console_info as hmc_console_info,
-    hmc_get_system as hmc_get_system,
-    hmc_get_lpar as hmc_get_lpar,
-    hmc_get_lpar_state as hmc_get_lpar_state,
-    hmc_get_vios as hmc_get_vios,
-    hmc_list_configured_hosts as hmc_list_configured_hosts,
-    hmc_list_resources as hmc_list_resources,
-    hmc_list_lpars as hmc_list_lpars,
-    hmc_modify_system as hmc_modify_system,
-    hmc_power_off_system as hmc_power_off_system,
-    hmc_power_on_system as hmc_power_on_system,
-    hmc_list_systems as hmc_list_systems,
-    hmc_list_vios as hmc_list_vios,
-)
-from .server_capacity import (
-    hmc_capacity_report as hmc_capacity_report,
-    hmc_find_placement as hmc_find_placement,
-)
-from .server_command import (
-    HMC_RUN_COMMAND_SECURITY,
-    hmc_run_command as hmc_run_command,
+from .authorization.access_policy import AccessPolicy, unboundable_effect_tools
+from .authorization.connection_scope import ConnectionScopeError
+from .authorization.dispatch_scope import dispatch_authorizer
+from .authorization.target_scope import TargetScopeError
+from .server_tools.catalog import TOOL_MODULES, TOOL_SECURITY
+from .server_tools.command import (
     configure_arbitrary_command_tool,
 )
-from .server_jobs import (
-    hmc_get_job as hmc_get_job,
-    hmc_list_recent_jobs as hmc_list_recent_jobs,
-    hmc_wait_for_job as hmc_wait_for_job,
-)
-from .server_health import hmc_fleet_health as hmc_fleet_health
-from .server_permissions import (
-    EFFECTIVE_PERMISSIONS_SECURITY,
+from .server_tools.permissions import (
     TOOL_NAME as PERMISSIONS_TOOL_NAME,
+)
+from .server_tools.permissions import (
     register_permissions_tool,
+    resolve_power_guards,
 )
-
-from .server_lpars import (
-    hmc_create_lpar as hmc_create_lpar,
-    hmc_decommission_lpar as hmc_decommission_lpar,
-    hmc_delete_lpar as hmc_delete_lpar,
-    hmc_dlpar_mem as hmc_dlpar_mem,
-    hmc_dlpar_proc as hmc_dlpar_proc,
-    hmc_modify_lpar as hmc_modify_lpar,
-    hmc_rename_lpar as hmc_rename_lpar,
-    hmc_power_off_lpar as hmc_power_off_lpar,
-    hmc_power_on_lpar as hmc_power_on_lpar,
-)
-from .server_vios import (
-    hmc_backup_vios as hmc_backup_vios,
-    hmc_create_vios as hmc_create_vios,
-    hmc_delete_vios as hmc_delete_vios,
-    hmc_install_lpar_os as hmc_install_lpar_os,
-    hmc_install_vios as hmc_install_vios,
-    hmc_list_vios_backups as hmc_list_vios_backups,
-    hmc_power_off_vios as hmc_power_off_vios,
-    hmc_power_on_vios as hmc_power_on_vios,
-    hmc_restore_vios as hmc_restore_vios,
-)
-from .server_adapters import (
-    hmc_add_network_adapter as hmc_add_network_adapter,
-    hmc_add_vfc_adapter as hmc_add_vfc_adapter,
-    hmc_add_vscsi_adapter as hmc_add_vscsi_adapter,
-    hmc_delete_adapter as hmc_delete_adapter,
-    hmc_list_adapters as hmc_list_adapters,
-)
-from .server_storage import (
-    hmc_attach_disk_to_lpar as hmc_attach_disk_to_lpar,
-    hmc_create_logical_unit as hmc_create_logical_unit,
-    hmc_create_media_repository as hmc_create_media_repository,
-    hmc_create_optical_media as hmc_create_optical_media,
-    hmc_create_virtual_disk as hmc_create_virtual_disk,
-    hmc_create_volume_group as hmc_create_volume_group,
-    hmc_delete_logical_unit as hmc_delete_logical_unit,
-    hmc_delete_media_repository as hmc_delete_media_repository,
-    hmc_get_shared_storage_pool as hmc_get_shared_storage_pool,
-    hmc_list_clusters as hmc_list_clusters,
-    hmc_list_volume_groups as hmc_list_volume_groups,
-    hmc_map_storage_to_lpar as hmc_map_storage_to_lpar,
-    hmc_list_shared_storage_pools as hmc_list_shared_storage_pools,
-)
-from .server_network import (
-    hmc_assign_sriov_logical_port as hmc_assign_sriov_logical_port,
-    hmc_add_vnic as hmc_add_vnic,
-    hmc_create_virtual_network as hmc_create_virtual_network,
-    hmc_delete_virtual_network as hmc_delete_virtual_network,
-    hmc_list_fc_ports as hmc_list_fc_ports,
-    hmc_list_network_bridges as hmc_list_network_bridges,
-    hmc_list_sea_adapters as hmc_list_sea_adapters,
-    hmc_list_virtual_networks as hmc_list_virtual_networks,
-    hmc_list_virtual_switches as hmc_list_virtual_switches,
-    hmc_list_vnics as hmc_list_vnics,
-    hmc_remove_vnic as hmc_remove_vnic,
-    hmc_set_sriov_adapter_mode as hmc_set_sriov_adapter_mode,
-    hmc_unassign_sriov_logical_port as hmc_unassign_sriov_logical_port,
-)
-from .server_lpm import (
-    hmc_migrate_abort_lpar as hmc_migrate_abort_lpar,
-    hmc_migrate_lpar as hmc_migrate_lpar,
-    hmc_migrate_recover_lpar as hmc_migrate_recover_lpar,
-    hmc_migrate_validate_lpar as hmc_migrate_validate_lpar,
-    hmc_remote_restart_lpar as hmc_remote_restart_lpar,
-)
-from .server_templates import (
-    hmc_deploy_partition_template as hmc_deploy_partition_template,
-    hmc_get_partition_template as hmc_get_partition_template,
-    hmc_list_partition_templates as hmc_list_partition_templates,
-)
-from .server_metrics import (
-    hmc_aggregated_metric_links as hmc_aggregated_metric_links,
-    hmc_aggregated_metrics as hmc_aggregated_metrics,
-    hmc_get_pcm_preferences as hmc_get_pcm_preferences,
-    hmc_processed_metric_links as hmc_processed_metric_links,
-    hmc_processed_metrics as hmc_processed_metrics,
-    hmc_set_pcm_preferences as hmc_set_pcm_preferences,
-)
-from .server_users import (
-    hmc_configure_ldap as hmc_configure_ldap,
-    hmc_create_password_policy as hmc_create_password_policy,
-    hmc_create_user as hmc_create_user,
-    hmc_delete_password_policy as hmc_delete_password_policy,
-    hmc_delete_user as hmc_delete_user,
-    hmc_get_ldap_config as hmc_get_ldap_config,
-    hmc_list_password_policy_status as hmc_list_password_policy_status,
-    hmc_get_user as hmc_get_user,
-    hmc_list_password_policies as hmc_list_password_policies,
-    hmc_modify_password_policy as hmc_modify_password_policy,
-    hmc_modify_user as hmc_modify_user,
-    hmc_remove_ldap_config as hmc_remove_ldap_config,
-    hmc_list_users as hmc_list_users,
-)
-from .server_updates import (
-    hmc_get_available_hmc_ptfs as hmc_get_available_hmc_ptfs,
-    hmc_update_console_software as hmc_update_console_software,
-    hmc_update_firmware as hmc_update_firmware,
-    hmc_vios_update as hmc_vios_update,
-)
-from .server_profiles import (
-    hmc_assign_dedicated_pcie_slot as hmc_assign_dedicated_pcie_slot,
-    hmc_backup_lpar_profiles as hmc_backup_lpar_profiles,
-    hmc_restore_lpar_profiles as hmc_restore_lpar_profiles,
-    hmc_sync_lpar_profile as hmc_sync_lpar_profile,
-    hmc_unassign_dedicated_pcie_slot as hmc_unassign_dedicated_pcie_slot,
-)
-from .server_lpar_config import (
-    hmc_get_lpar_description as hmc_get_lpar_description,
-    hmc_get_lpar_msp as hmc_get_lpar_msp,
-    hmc_get_lpar_proc_compat as hmc_get_lpar_proc_compat,
-    hmc_set_lpar_description as hmc_set_lpar_description,
-    hmc_set_lpar_msp as hmc_set_lpar_msp,
-    hmc_set_lpar_proc_compat as hmc_set_lpar_proc_compat,
-)
-from .server_system_resources import (
-    hmc_get_proc_compat_modes as hmc_get_proc_compat_modes,
-    hmc_list_dedicated_pcie_slots as hmc_list_dedicated_pcie_slots,
-    hmc_list_io_slots as hmc_list_io_slots,
-    hmc_list_memory_pools as hmc_list_memory_pools,
-    hmc_list_sriov_adapters as hmc_list_sriov_adapters,
-    hmc_list_sriov_logical_ports as hmc_list_sriov_logical_ports,
-    hmc_list_sriov_physical_ports as hmc_list_sriov_physical_ports,
-    hmc_remove_memory_pool as hmc_remove_memory_pool,
-)
-from .server_composite import (
-    hmc_lpar_summary as hmc_lpar_summary,
-    hmc_system_summary as hmc_system_summary,
-)
-from .server_provision import (
-    hmc_provision_lpar as hmc_provision_lpar,
-)
-
-TOOL_MODULES = (
-    server_systems,
-    server_capacity,
-    server_jobs,
-    server_health,
-    server_lpars,
-    server_vios,
-    server_adapters,
-    server_storage,
-    server_network,
-    server_lpm,
-    server_templates,
-    server_metrics,
-    server_users,
-    server_updates,
-    server_profiles,
-    server_lpar_config,
-    server_system_resources,
-    server_composite,
-    server_provision,
-)
-
-
-TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
-    [module.tool_security() for module in TOOL_MODULES],
-    {
-        "hmc_run_command": HMC_RUN_COMMAND_SECURITY,
-        "hmc_effective_permissions": EFFECTIVE_PERMISSIONS_SECURITY,
-    },
-)
+from .tool_registry import Authorize
 
 
 def _gates(policy: AccessPolicy) -> tuple[Callable[[str], bool], Authorize]:
@@ -491,14 +286,21 @@ def install_denial_log_filter() -> None:
 #: reaches them by propagation.
 _FASTMCP_LOGGER_NAME: Final = "fastmcp"
 
-#: How a FastMCP record renders once its ``RichHandler``s are gone. Taken from
-#: ``configure_logging``'s non-rich branch, which is FastMCP's own answer to
-#: rendering these records without ``rich``. Installing a ``Formatter`` at all is
-#: the load-bearing part: ``logging.Formatter.format`` is what appends
-#: ``exc_info``'s traceback, and without one the sink-backed handler would render
-#: the bare message and silently undo ADR 0046's guarantee that a genuine handler
-#: bug keeps its traceback.
-_FASTMCP_LINE_FORMAT: Final = "%(levelname)s: %(message)s"
+#: How a record renders on the sink, for both bindings below. The string is taken
+#: from FastMCP's ``configure_logging`` non-rich branch — its own answer to
+#: rendering these records without ``rich`` — and reused for the ``hmc_mcp``
+#: namespace rather than a second one invented for it. Installing a ``Formatter``
+#: at all is the load-bearing part, and it is load-bearing for both: it is
+#: ``logging.Formatter.format`` that appends ``exc_info``'s traceback, so without
+#: one the sink-backed handler renders the bare message and drops the traceback —
+#: undoing ADR 0046's guarantee for a FastMCP handler bug, and losing the cause on
+#: this package's own ``exc_info=`` call sites the same way.
+_SINK_LINE_FORMAT: Final = "%(levelname)s: %(message)s"
+
+#: This package's own logger namespace, and the parent of every logger in it
+#: except the one ``audit.AUDIT_LOGGER_NAME`` reserves — which sets ``propagate = False`` at
+#: import, so binding here never touches its stream. ADR 0043 amendment (#534).
+_PACKAGE_LOGGER_NAME: Final = "hmc_mcp"
 
 #: The third-party loggers the served path binds to ADR 0043's sink (ADR 0051,
 #: widened by #330). Each gets its own handler and its own producer-named prefix;
@@ -506,7 +308,13 @@ _FASTMCP_LINE_FORMAT: Final = "%(levelname)s: %(message)s"
 #: their own ``LOGGING_CONFIG`` would have given them, because the lever this
 #: takes -- ``log_config=None`` -- runs no ``dictConfig`` at all. ``fastmcp`` and
 #: ``mcp`` stay handlers-only: neither sits inside another bound namespace.
-_THIRD_PARTY_LOGGERS: Final = ("fastmcp", "uvicorn", "uvicorn.access", "mcp")
+_THIRD_PARTY_LOGGERS: Final = (
+    "fastmcp",
+    "uvicorn",
+    "uvicorn.access",
+    "mcp",
+    "py.warnings",
+)
 
 #: The uvicorn namespaces whose level the install pins to INFO. Access records are
 #: emitted at INFO, and with no ``dictConfig`` they would inherit root's WARNING --
@@ -514,7 +322,7 @@ _THIRD_PARTY_LOGGERS: Final = ("fastmcp", "uvicorn", "uvicorn.access", "mcp")
 _UVICORN_LEVEL_LOGGERS: Final = ("uvicorn", "uvicorn.access")
 
 #: What ``main_http`` passes FastMCP so the ``uvicorn.Config`` it constructs never
-#: runs uvicorn's own ``configure_logging`` ``dictConfig`` (uvicorn 0.52.1 skips it
+#: runs uvicorn's own ``configure_logging`` ``dictConfig`` (uvicorn 0.52.4 skips it
 #: entirely on a null config, ``config.py:384``): the default ``StreamHandler``
 #: that would otherwise land on fd 2 *after* the sink install never attaches, and
 #: nothing has to re-install after it. Deliberately without ``log_level``: that
@@ -524,70 +332,78 @@ _UVICORN_CONFIG: Final = {"log_config": None}
 
 
 def install_third_party_stderr_sinks() -> None:
-    """Put the bound third-party loggers' stderr output on ADR 0043's queue. ADR 0051.
+    """Route third-party stderr records through the bounded sink.
 
-    ADR 0043 bounded every write *this package* makes to fd 2, on the reasoning
-    that a blocked ``write()`` there wedges the server. FastMCP's two
-    ``RichHandler``s write to the same descriptor and were not on that queue, so
-    the bound was on this package's contribution rather than on the stream. This
-    replaces them with one handler feeding the same sink.
-
-    **A handler attached here survives.** ``fastmcp/__init__.py`` calls
-    ``configure_logging`` once, at import of ``fastmcp`` and only when
-    ``settings.log_enabled``. The only other caller is ``temporary_log_level``,
-    which reconfigures nothing when its level is falsy, and neither ``main_stdio``
-    nor ``main_http`` passes ``log_level`` to ``.run()``. Verified against
-    ``fastmcp-slim==3.4.7``, which this project pins exactly.
-
-    **Every handler goes, not only a recognized ``RichHandler``.** Deciding a
-    handler's destination means reading ``rich``'s ``Console.file``, and when
-    ``settings.log_enabled`` is false there is no handler to recognize at all.
-    Taking the list wholesale is ADR 0051's accepted cost — it also displaces a
-    handler an operator attached to any bound logger themselves — and it is what makes
-    "no handler on this logger writes to fd 2" something a test asserts rather
-    than infers. Removing and re-adding is what makes this idempotent: a second
-    call takes out the handler the first one left. A removed handler is not
-    ``close()``d: it is no longer reachable through this logger, ``logging.shutdown``
-    flushes and closes it at exit anyway, and closing a handler this package did not
-    open would be a second liberty on top of removing it.
-
-    **Only the handlers — with one documented exception.** For ``fastmcp`` and
-    ``mcp`` the level, ``propagate`` flag, and filters are untouched — including
-    ``_DenialFilter``, which sits on the child logger and solves a different
-    problem: this handler decides *where* a record goes, that filter decides *what*
-    a denial record says. The ``uvicorn`` pair is the exception ADR 0051's
-    amendment records: skipping uvicorn's ``dictConfig`` skips its level and
-    propagation configuration too, so the install reproduces it — both loggers at
-    INFO (access records are INFO; left alone they would inherit root's WARNING and
-    the access log would silently vanish) and ``propagate = False`` (with the
-    parent-plus-child bindings left propagating, ``callHandlers`` would render
-    every access record twice). One thing the wholesale removal takes with it in a
-    test process is ``pytest``'s own ``LogCaptureHandler``, so a test that serves
-    and then asserts on a bound record through ``caplog`` would pass vacuously;
-    nothing does today.
-
-    **The rendering is marked, not just formatted.** ``StreamSafeFormatter`` puts a
-    fixed non-JSON prefix on every physical line and escapes the control
-    characters, because a rendered exception carries HMC-returned text onto a
-    stream whose grammar is one line of JSON per record. See ADR 0051.
-
-    **Called unconditionally**, including when ``settings.log_enabled`` is false
-    and the removal loop finds nothing to remove. That case is the reason not to
-    skip rather than a reason to: a logger with no handler anywhere above it falls
-    through to ``logging.lastResort``, a ``StreamHandler`` on fd 2 that writes
-    synchronously and unbounded, which is precisely the writer this exists to
-    remove.
+    Replaces every handler on each bound logger, making repeated installation
+    idempotent and preventing fallback to synchronous ``logging.lastResort``.
+    Uvicorn additionally needs INFO level and propagation disabled because its
+    normal ``dictConfig`` is bypassed. Formatting preserves the sink's one-record-
+    per-line grammar. See ADRs 0043 and 0051.
     """
     for name in _THIRD_PARTY_LOGGERS:
         logger = logging.getLogger(name)
         for existing in logger.handlers[:]:
             logger.removeHandler(existing)
         handler = sink_handler()
-        handler.setFormatter(StreamSafeFormatter(_FASTMCP_LINE_FORMAT, f"{name}: "))
+        handler.setFormatter(StreamSafeFormatter(_SINK_LINE_FORMAT, f"{name}: "))
         logger.addHandler(handler)
         if name in _UVICORN_LEVEL_LOGGERS:
             logger.setLevel(logging.INFO)
             logger.propagate = False
+
+
+def install_package_stderr_sink() -> None:
+    """Put this package's own non-audit log records on ADR 0043's queue. Idempotent.
+
+    ADR 0043 decided that every stderr write this package makes goes onto the
+    bounded queue, and ADR 0051 widened the queue to the third-party loggers. The
+    `hmc_mcp` namespace itself was on neither: ``install_audit_sink`` binds the
+    reserved audit logger alone, so a record on any other
+    ``hmc_mcp.*`` logger found no handler in its ``callHandlers`` walk and fell
+    through to ``logging.lastResort`` — a ``StreamHandler`` on fd 2 that writes
+    synchronously and unbounded, without the prefix or the escaping. That is #534,
+    and this closes it: the one binding covers every current and future producer
+    in the namespace, because ``callHandlers`` reaches a parent's handler.
+
+    **Shaped like ``install_audit_sink``, not like the third-party install.** No
+    handler is removed. The third-party install takes the list wholesale because
+    FastMCP attaches ``RichHandler``s on fd 2 that must go; nothing attaches a
+    handler here but an operator, and displacing theirs would be a liberty with no
+    defect behind it. So the sink goes on only when the logger is bare, which is
+    also what makes a second call add nothing — and either way the walk finds a
+    handler, so ``logging.lastResort`` is unreachable. That makes this logger a
+    second operator attachment point, with the two unenforced constraints ADR 0040
+    wrote down for the audit one: such a handler must not write to ``sys.stdout``,
+    and it is called on the dispatch path — ``_log_unresolved`` emits inside a tool
+    call — so one that blocks there blocks the call, which this cannot fix from here.
+
+    **``propagate`` is left alone**, unlike ``install_audit_sink``. ADR 0040 clears
+    the flag on the reserved logger because a record goes out there on every
+    authorized call, so a ``StreamHandler(sys.stdout)`` above it puts one into the
+    JSON-RPC stream on every call. This namespace carries ordinary library
+    diagnostics, and clearing the flag for them would take every ``hmc_mcp.*``
+    record out of an operator's own centralized logging the moment they serve —
+    silently, and on ``--http`` too, where stdout carries no protocol at all. The
+    defect this closes needs a handler on the walk, nothing more. So an operator's
+    root handler keeps receiving these records and renders them a second time,
+    which is the accepted cost; the stdout hazard is the one ADR 0040 already tells
+    them about, and it is neither created nor widened here.
+
+    **No level is set**, so at the shipped default — root at ``WARNING`` — the floor
+    is the one ``logging.lastResort`` enforced. It is not volume-neutral for this
+    sink: a record that previously reached an operator's root handler *instead* of
+    ``lastResort`` never entered the queue at all, and now enters it as well. With
+    root below ``WARNING`` that includes records ``lastResort`` used to discard
+    outright, and ``_log_unresolved``'s repeat branch is ``DEBUG`` on every call.
+    See the queue-pressure clause in ADR 0043's amendment.
+    """
+    logger = logging.getLogger(_PACKAGE_LOGGER_NAME)
+    if not logger.handlers:
+        handler = sink_handler()
+        handler.setFormatter(
+            StreamSafeFormatter(_SINK_LINE_FORMAT, f"{_PACKAGE_LOGGER_NAME}: ")
+        )
+        logger.addHandler(handler)
 
 
 def _serve_application(
@@ -620,8 +436,19 @@ def _serve_application(
     if audit_level is not None:
         set_audit_level(audit_level)
     install_audit_sink()
+    install_package_stderr_sink()
     install_third_party_stderr_sinks()
+    # The standard warning path writes directly to stderr. Capture only after the
+    # process is known to be serving and py.warnings has its bounded handler.
+    logging.captureWarnings(True)
     install_denial_log_filter()
+    for guard in resolve_power_guards(access_policy):
+        audit.record_power_ownership_guard(
+            connection=guard.connection,
+            authorize_power_operations=guard.authorize_power_operations,
+            source=guard.source,
+            detail=guard.detail,
+        )
     _warn(_startup_warnings(tool_count, access_policy, enable_arbitrary_command))
     return application
 

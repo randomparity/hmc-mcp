@@ -8,20 +8,29 @@ after the mutation.
 
 import httpx
 import pytest
-
 from conftest import make_config
+from defusedxml.common import EntitiesForbidden
 
-from hmc_mcp.client import HMCClient
-from hmc_mcp.documents import (
-    build_media_repository_document,
-    build_virtual_optical_media_document,
-)
+from hmc_mcp.client.core import HMCClient
+from hmc_mcp.errors import HMCError
+
+
+@pytest.mark.asyncio
+async def test_media_repository_rejects_xml_entities(mock_hmc):
+    document = '<!DOCTYPE x [<!ENTITY payload "expanded">]><x>&payload;</x>'
+    mock_hmc.get(
+        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
+    ).mock(return_value=httpx.Response(200, text=document))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(EntitiesForbidden):
+            await hmc.create_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", 2048)
 
 # Minimal VolumeGroup feed — no MediaRepositories block (bare VG).
 _VG_FEED_BARE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:vg-uuid</id>
+    <id>urn:uuid:22222222-2222-2222-2222-222222222222</id>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <GroupName>clientvg1</GroupName>
@@ -35,7 +44,7 @@ _VG_FEED_BARE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 _VG_FEED_WITH_VMLIB = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:vg-uuid</id>
+    <id>urn:uuid:22222222-2222-2222-2222-222222222222</id>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <GroupName>clientvg1</GroupName>
@@ -54,32 +63,16 @@ _VG_FEED_WITH_VMLIB = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 _VG_POST_RESPONSE = _VG_FEED_BARE
 
 
-def test_media_repository_document():
-    """build_media_repository_document still produces valid XML (legacy builder)."""
-    xml = build_media_repository_document(2048)
-    assert "VirtualMediaRepository" in xml
-    assert "RepositoryName" in xml and "VMLibrary" in xml
-    assert "RepositorySize" in xml and ">2048<" in xml
-
-
-def test_virtual_optical_media_document():
-    """build_virtual_optical_media_document still produces valid XML (legacy builder)."""
-    xml = build_virtual_optical_media_document("aix.iso", 1400)
-    assert "VirtualOpticalMedia" in xml
-    assert "MediaName" in xml and "aix.iso" in xml
-    assert "MediaSize" in xml and ">1400<" in xml
-
-
 @pytest.mark.asyncio
 async def test_create_media_repository(mock_hmc):
     """create_media_repository GETs the VG, injects VMLibrary, then POSTs."""
-    vg_path = "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid"
+    vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
     mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VG_FEED_BARE))
     post_route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(200, text=_VG_POST_RESPONSE)
     )
     async with HMCClient(make_config()) as hmc:
-        await hmc.create_media_repository("vios-uuid", "vg-uuid", 2048)
+        await hmc.create_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", 2048)
     # POST body must contain the injected VMLibrary block.
     body = post_route.calls.last.request.content.decode()
     assert "VirtualMediaRepository" in body
@@ -88,9 +81,46 @@ async def test_create_media_repository(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_create_media_repository_returns_matching_existing_repository(mock_hmc):
+    """A matching create is idempotent and never rewrites the volume group."""
+    vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
+    mock_hmc.get(vg_path).mock(
+        return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB)
+    )
+    post_route = mock_hmc.post(vg_path)
+
+    async with HMCClient(make_config()) as hmc:
+        result = await hmc.create_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", 7000)
+
+    assert result == {
+        "Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "7000"}
+    }
+    assert not post_route.called
+
+
+@pytest.mark.asyncio
+async def test_create_media_repository_refuses_to_replace_different_size(mock_hmc):
+    """Changing repository size requires a separately destructive operation."""
+    vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
+    mock_hmc.get(vg_path).mock(
+        return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB)
+    )
+    post_route = mock_hmc.post(vg_path)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(
+            HMCError,
+            match="already exists with size 7000 MiB.*requested 2048 MiB",
+        ):
+            await hmc.create_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", 2048)
+
+    assert not post_route.called
+
+
+@pytest.mark.asyncio
 async def test_create_optical_media(mock_hmc):
     """create_optical_media GETs the VG, appends VirtualOpticalMedia, then POSTs."""
-    vg_path = "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid"
+    vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
     mock_hmc.get(vg_path).mock(
         return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB)
     )
@@ -98,7 +128,7 @@ async def test_create_optical_media(mock_hmc):
         return_value=httpx.Response(200, text=_VG_POST_RESPONSE)
     )
     async with HMCClient(make_config()) as hmc:
-        await hmc.create_optical_media("vios-uuid", "vg-uuid", "aix.iso", 1400)
+        await hmc.create_optical_media("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "aix.iso", 1400)
     body = post_route.calls.last.request.content.decode()
     assert "VirtualOpticalMedia" in body
     assert "aix.iso" in body
@@ -108,7 +138,7 @@ async def test_create_optical_media(mock_hmc):
 @pytest.mark.asyncio
 async def test_delete_media_repository(mock_hmc):
     """delete_media_repository GETs the VG, removes MediaRepositories, then POSTs."""
-    vg_path = "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid"
+    vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
     mock_hmc.get(vg_path).mock(
         return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB)
     )
@@ -116,7 +146,7 @@ async def test_delete_media_repository(mock_hmc):
         return_value=httpx.Response(200, text=_VG_POST_RESPONSE)
     )
     async with HMCClient(make_config()) as hmc:
-        await hmc.delete_media_repository("vios-uuid", "vg-uuid")
+        await hmc.delete_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
     # VMLibrary must be absent from the POST body.
     body = post_route.calls.last.request.content.decode()
     assert "MediaRepositories" not in body

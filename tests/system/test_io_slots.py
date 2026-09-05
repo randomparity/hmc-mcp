@@ -5,11 +5,9 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from hmc_mcp.ssh_commands import list_io_slots
-
 from conftest import make_config
 
+from hmc_mcp.ssh.network import list_io_slots
 
 IO_SLOT_OUTPUT = (
     "drc_name=U78DA.ND1.ABC1234-P1-C1,pci_class=0200,feature_codes=EN0S,lpar_name=lpar1\n"
@@ -33,7 +31,7 @@ def _make_ssh_mock(stdout: str = "") -> MagicMock:
 async def test_list_io_slots_all_returns_list():
     """list_io_slots(pci_class='all') returns a list of dicts from parsed output."""
     conn = _make_ssh_mock(IO_SLOT_OUTPUT)
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         slots = await list_io_slots(make_config(), "sys1")
 
     assert isinstance(slots, list)
@@ -47,7 +45,7 @@ async def test_list_io_slots_all_returns_list():
 async def test_list_io_slots_command_all():
     """pci_class='all' issues lshwres without a grep filter."""
     conn = _make_ssh_mock(IO_SLOT_OUTPUT)
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         await list_io_slots(make_config(), "sys1", pci_class="all")
 
     cmd_called = conn.run.call_args[0][0]
@@ -62,7 +60,7 @@ async def test_list_io_slots_eth_filter():
     """pci_class='eth' appends a pci_class=0200 grep."""
     eth_output = "drc_name=U78DA.ND1.ABC1234-P1-C1,pci_class=0200,feature_codes=EN0S,lpar_name=lpar1\n"
     conn = _make_ssh_mock(eth_output)
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         slots = await list_io_slots(make_config(), "sys1", pci_class="eth")
 
     cmd_called = conn.run.call_args[0][0]
@@ -75,7 +73,7 @@ async def test_list_io_slots_eth_filter():
 async def test_list_io_slots_sas_filter():
     """pci_class='sas' appends a pci_class=0104 grep."""
     conn = _make_ssh_mock("")
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         await list_io_slots(make_config(), "sys1", pci_class="sas")
 
     cmd_called = conn.run.call_args[0][0]
@@ -86,7 +84,7 @@ async def test_list_io_slots_sas_filter():
 async def test_list_io_slots_san_filter():
     """pci_class='san' appends a pci_class=0C04 grep."""
     conn = _make_ssh_mock("")
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         await list_io_slots(make_config(), "sys1", pci_class="san")
 
     cmd_called = conn.run.call_args[0][0]
@@ -97,7 +95,7 @@ async def test_list_io_slots_san_filter():
 async def test_list_io_slots_nvme_filter():
     """pci_class='nvme' appends a pci_class=0108 grep."""
     conn = _make_ssh_mock("")
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         await list_io_slots(make_config(), "sys1", pci_class="nvme")
 
     cmd_called = conn.run.call_args[0][0]
@@ -108,7 +106,7 @@ async def test_list_io_slots_nvme_filter():
 async def test_list_io_slots_empty_output():
     """Empty output returns an empty list (no errors)."""
     conn = _make_ssh_mock("")
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         slots = await list_io_slots(make_config(), "sys1")
 
     assert slots == []

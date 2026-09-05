@@ -56,7 +56,7 @@ coverage would leave a commit whose guardrails are red.
   `just test`; `just verify`; `UV_NO_SYNC=1 uv run prek run --all-files`.
 - Every commit leaves `just verify` green.
 
-## Task 1: Cover the `cli_storage` command bodies
+## Task 1: Cover the `cli_commands.storage` command bodies
 
 **Files:** Modify `tests/app/test_cli_commands.py`.
 
@@ -64,25 +64,25 @@ coverage would leave a commit whose guardrails are red.
 the `fake_hmc` fixture, and the constants `VIOS_UUID`, `VG_UUID`, `LPAR_UUID`. Produces new test
 functions only; it defines nothing that later tasks consume.
 
-`src/hmc_mcp/cli_storage.py` is the largest single gap: 110 missed statements of 199 (45%). Its
+`src/hmc_mcp/cli_commands/storage.py` is the largest single gap: 110 missed statements of 199 (45%). Its
 commands come in three shapes, and each shape has a different injection point. Getting the
 injection point wrong produces a test that passes without executing the command body, so the
 shape table below is load-bearing.
 
 | Shape | Commands | Patch target |
 |---|---|---|
-| A — `_with_client(lambda hmc: op(...))`, operation imported at module top | `list-vgs`, `delete-disk`, `create-media`, `delete-media`, `get-media-repo`, `list-optical-media` | `hmc_mcp.cli_storage.<operation>` |
-| B — `_run(_go)` with `load_profile()` + `HMCClient(config)`, operation imported **inside** the function | `list-mappings`, `detach-mapping` | `hmc_mcp.cli_storage.load_profile`, `hmc_mcp.cli_storage.HMCClient`, and `hmc_mcp.operations_storage.<operation>` |
-| C — `_run(_go)` with `load_profile()` + `HMCClient(config)`, operation imported at module top | `upload-iso` | `hmc_mcp.cli_storage.load_profile`, `hmc_mcp.cli_storage.HMCClient`, `hmc_mcp.cli_storage.upload_iso` |
+| A — `_with_client(lambda hmc: op(...))`, operation imported at module top | `list-vgs`, `delete-disk`, `create-media`, `delete-media`, `get-media-repo`, `list-optical-media` | `hmc_mcp.cli_commands.storage.<operation>` |
+| B — `_run(_go)` with `load_profile()` + `HMCClient(config)`, operation imported **inside** the function | `list-mappings`, `detach-mapping` | `hmc_mcp.cli_commands.storage.load_profile`, `hmc_mcp.cli_commands.storage.HMCClient`, and `hmc_mcp.operations.storage.<operation>` |
+| C — `_run(_go)` with `load_profile()` + `HMCClient(config)`, operation imported at module top | `upload-iso` | `hmc_mcp.cli_commands.storage.load_profile`, `hmc_mcp.cli_commands.storage.HMCClient`, `hmc_mcp.cli_commands.storage.upload_iso` |
 
-Shape B imports its operation inside `_go`, so patching `hmc_mcp.cli_storage.list_storage_mappings`
+Shape B imports its operation inside `_go`, so patching `hmc_mcp.cli_commands.storage.list_storage_mappings`
 has no effect — the name does not exist on that module. It must be patched on
-`hmc_mcp.operations_storage`.
+`hmc_mcp.operations.storage`.
 
 **Check for an existing test before writing each row.** `tests/app/test_cli_commands.py` already
 carries two parametrized tests that cover part of this surface, and they are easy to miss because
 they are table-driven rather than named after the commands they exercise:
-`test_cli_command_wiring_matrix` (`def` at line 587, cases from line 543) and
+`test_cli_commands.command_wiring_matrix` (`def` at line 587, cases from line 543) and
 `test_destructive_cli_commands_abort_without_confirmation` (`def` at line 633, cases from line
 619). Read both before starting. The coverage table below has already been reconciled against
 them, but a row you are unsure about is answered by grepping those two tables, not by writing a
@@ -97,7 +97,7 @@ confirmation is uncovered, and that path never reaches the operation.
 
    ```python
    class _FakeClientContext:
-       """Async context manager standing in for HMCClient in cli_storage._go bodies."""
+       """Async context manager standing in for HMCClient in cli_commands.storage._go bodies."""
 
        def __init__(self) -> None:
            self.entered = False
@@ -114,8 +114,8 @@ confirmation is uncovered, and that path never reaches the operation.
    def direct_client(monkeypatch):
        """Neutralise load_profile()/HMCClient() for the commands that build their own client."""
        client = _FakeClientContext()
-       monkeypatch.setattr("hmc_mcp.cli_storage.load_profile", lambda: None)
-       monkeypatch.setattr("hmc_mcp.cli_storage.HMCClient", lambda _config: client)
+       monkeypatch.setattr("hmc_mcp.cli_commands.storage.load_profile", lambda: None)
+       monkeypatch.setattr("hmc_mcp.cli_commands.storage.HMCClient", lambda _config: client)
        return client
    ```
 
@@ -149,7 +149,7 @@ confirmation is uncovered, and that path never reaches the operation.
                                                   "FreeSpaceInMBytes": "5120",
                                                   "GroupCapacity": "102400"}}]
 
-       monkeypatch.setattr("hmc_mcp.cli_storage.list_volume_groups", fake_list)
+       monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_volume_groups", fake_list)
 
        result = RUNNER.invoke(cli.app, ["storage", "list-vgs", VIOS_UUID])
 
@@ -166,7 +166,7 @@ confirmation is uncovered, and that path never reaches the operation.
                     "Storage": {"VirtualDisk": {"DiskName": "bootvol"}}}]
 
        monkeypatch.setattr(
-           "hmc_mcp.operations_storage.list_storage_mappings", fake_mappings
+           "hmc_mcp.operations.storage.list_storage_mappings", fake_mappings
        )
 
        result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID])
@@ -185,7 +185,7 @@ confirmation is uncovered, and that path never reaches the operation.
                    "media_size_bytes": 1048576, "sha256": "abc123",
                    "existing_name": "aix-old.iso", "media": {"MediaName": "aix.iso"}}
 
-       monkeypatch.setattr("hmc_mcp.cli_storage.upload_iso", fake_upload)
+       monkeypatch.setattr("hmc_mcp.cli_commands.storage.upload_iso", fake_upload)
 
        result = RUNNER.invoke(
            cli.app,
@@ -216,8 +216,8 @@ confirmation is uncovered, and that path never reaches the operation.
    | `attach-disk` | `--json` with an incomplete workflow exits 1 | none — see below |
 
    **`attach-disk` patches nothing.** It is not a shape-A command. Its `--json` branch
-   (`cli_storage.py:175-179`) calls `dataclasses.asdict(result)`, and the real return type is the
-   frozen dataclass `AttachDiskResult` (`operations_provision.py:96-103`). A fake returning a dict
+   (`cli_commands/storage.py:175-179`) calls `dataclasses.asdict(result)`, and the real return type is the
+   frozen dataclass `AttachDiskResult` (`operations/provision.py:96-103`). A fake returning a dict
    or a `SimpleNamespace` makes `asdict()` raise `TypeError` before line 176 runs; `CliRunner`
    catches it and reports `exit_code == 1`, so an exit-code-only assertion passes while the
    branch stays uncovered. Instead reuse the setup of the existing
@@ -246,7 +246,7 @@ confirmation is uncovered, and that path never reaches the operation.
    requirement. The success path (`--confirm` deletes) is unaffected by #242 and stays.
 
 4. Confirm the new tests bite. Pick `test_storage_get_media_repo_reports_empty`, temporarily change
-   `cli_storage.storage_get_media_repo`'s `else` branch message, run the focused suite, and
+   `cli_commands.storage.storage_get_media_repo`'s `else` branch message, run the focused suite, and
    confirm that test fails; then revert the source edit. Record both results. This step is the
    substitute for TDD's confirm-it-fails, since these tests characterize code that already exists.
 
@@ -254,20 +254,20 @@ confirmation is uncovered, and that path never reaches the operation.
    pass.
 
 6. Measure: `uv run --no-sync pytest -q 2>&1 | tail -3`. Record the TOTAL line. Expect
-   `src/hmc_mcp/cli_storage.py` to move from 45% toward full coverage and the package total to be
+   `src/hmc_mcp/cli_commands/storage.py` to move from 45% toward full coverage and the package total to be
    at or above 90.50% (567 or fewer missed statements).
 
 7. Run `just verify`. Expect green — the gate is still the lenient one at this point, so this
    confirms no regression rather than confirming the gate.
 
-8. Commit: `test: cover the cli_storage command bodies (#240)`.
+8. Commit: `test: cover the cli_commands.storage command bodies (#240)`.
 
 **Acceptance criteria:** `tests/app/test_cli_commands.py` gains tests for every row above and no
 test duplicating a case already in the two parametrized tables at lines 543 and 619; the
 focused suite passes; the package total is at or above 90.50% on CPython 3.11; no file under
 `src/hmc_mcp/` is modified; `just verify` is green.
 
-## Task 2: Cover the `cli_systems` render paths — only if Task 1 fell short
+## Task 2: Cover the `cli_commands.systems` render paths — only if Task 1 fell short
 
 **Files:** Modify `tests/app/test_cli_commands.py`.
 
@@ -284,30 +284,30 @@ raise the shortfall with the operator rather than looping. The enforced floor is
 half-point margin is a landing target the operator chose, so continuing to chase it is their call
 — and `src/hmc_mcp/` stays off-limits either way.
 
-`src/hmc_mcp/cli_systems.py` has 43 missed statements of 141 (70%), all in render paths. Every one
+`src/hmc_mcp/cli_commands/systems.py` has 43 missed statements of 141 (70%), all in render paths. Every one
 of them is reached through `_client()` / `_with_client`, so the `fake_hmc` fixture does cover the
-*client* seam — but that does not make `hmc_mcp.cli_systems` the patch target. Three of these five
+*client* seam — but that does not make `hmc_mcp.cli_commands.systems` the patch target. Three of these five
 commands import their operation **inside** the command body, exactly as Task 1's shape B, and one
 does not go through an operation at all:
 
 | Command | Import site | Patch target |
 |---|---|---|
-| `health` | module top (`cli_systems.py:22`) | `hmc_mcp.cli_systems.fleet_health` |
+| `health` | module top (`cli_commands/systems.py:22`) | `hmc_mcp.cli_commands.systems.fleet_health` |
 | `list --state` | none — calls a **client method** | no operation exists; extend `FakeHMC` (below) |
-| `summary` | inside the body (`cli_systems.py:189`) | `hmc_mcp.operations_composite.system_summary` |
-| `capacity` | inside the body (`cli_systems.py:223`) | `hmc_mcp.operations_capacity.capacity_report` |
-| `find-placement` | inside the body (`cli_systems.py:273`) | `hmc_mcp.operations_capacity.find_placement` |
+| `summary` | inside the body (`cli_commands/systems.py:189`) | `hmc_mcp.operations.composite.system_summary` |
+| `capacity` | inside the body (`cli_commands/systems.py:223`) | `hmc_mcp.operations.capacity.capacity_report` |
+| `find-placement` | inside the body (`cli_commands/systems.py:273`) | `hmc_mcp.operations.capacity.find_placement` |
 
-`monkeypatch.setattr("hmc_mcp.cli_systems.capacity_report", ...)` raises
-`AttributeError: module 'hmc_mcp.cli_systems' has no attribute 'capacity_report'` — monkeypatch
+`monkeypatch.setattr("hmc_mcp.cli_commands.systems.capacity_report", ...)` raises
+`AttributeError: module 'hmc_mcp.cli_commands.systems' has no attribute 'capacity_report'` — monkeypatch
 raises on a missing attribute by default, so this fails loudly rather than silently, but it fails.
 
 Two further traps:
 
-- **`health` must be faked with a dataclass.** `cli_systems.py:37` is `asdict(_run(_go))`, so the
-  fake must return a `FleetHealthResult` (`operations_health.py:26-34`; fields `systems`, `vios`,
+- **`health` must be faked with a dataclass.** `cli_commands/systems.py:37` is `asdict(_run(_go))`, so the
+  fake must return a `FleetHealthResult` (`operations/health.py:26-34`; fields `systems`, `vios`,
   `lpars`, `failed_jobs`, `warnings`) — construct the real one, do not hand back a dict.
-- **`list --state` has no operation to patch.** `cli_systems.py:67-69` is
+- **`list --state` has no operation to patch.** `cli_commands/systems.py:67-69` is
   `_with_client(lambda hmc: hmc.search_uom("ManagedSystem", "State", state))`, and `FakeHMC`
   defines no `search_uom`. Add one to `FakeHMC` returning `[self.system]`; this is the single
   place in Tasks 1–2 where extending `FakeHMC` is the right move rather than patching.
@@ -316,17 +316,17 @@ Two further traps:
 *different* file, in a second CLI idiom this plan does not otherwise use:
 `tests/app/test_application_boundaries.py:91-165` drives `summary --json`, `health --json`,
 `health` with a warning, `capacity --json` and `find-placement --json` through
-`patch("hmc_mcp.cli_systems._client", ...)` with a `_ClientContext`. Read lines 91–165 before
+`patch("hmc_mcp.cli_commands.systems._client", ...)` with a `_ClientContext`. Read lines 91–165 before
 writing any row. The table below is what remains after reconciling against it; in particular the
 `health` warnings loop is **not** a row, because
-`test_fleet_health_cli_does_not_claim_healthy_when_telemetry_is_unavailable` (line 118) already
+`test_fleet_health_cli_commands.does_not_claim_healthy_when_telemetry_is_unavailable` (line 118) already
 asserts it on stderr.
 
 1. Add tests covering. The line numbers come from
    `uv run --no-sync pytest -q --cov=hmc_mcp --cov-report=term-missing --cov-fail-under=0` on
    `main`, whose missing set for this module is exactly `42, 47-53, 68, 200-215, 233-263,
    283-297`. **If this task is re-entered after Task 1 has landed, re-derive that set rather than
-   trusting this table** — Task 1 does not touch `cli_systems`, but a re-entry means something
+   trusting this table** — Task 1 does not touch `cli_commands.systems`, but a re-entry means something
    about the measurement moved:
 
    | Branch | Lines | Stream |
@@ -345,17 +345,17 @@ asserts it on stderr.
    is mutually exclusive with the table build at 47–53.
 
 2. **Task 1's "Assert on the right stream" rule applies here unchanged.** The stream column above
-   is not decoration: `cli_systems.py:234` and `:284` write through `err_console`, so those
+   is not decoration: `cli_commands/systems.py:234` and `:284` write through `err_console`, so those
    assertions go on `result.stderr`. Each test invokes through `RUNNER.invoke(cli.app, [...])`,
    asserts exit code 0, and asserts **both** the table title and at least one cell value the fake
-   supplied. The title alone is not enough: `cli_systems.py:236` emits it as soon as `report` is
+   supplied. The title alone is not enough: `cli_commands/systems.py:236` emits it as soon as `report` is
    non-empty, whatever the rows contain, so a title-only assertion cannot tell correctly-shaped
    data from the wrong-shaped data the comment below warns about.
 
    ```python
    def test_systems_capacity_renders_a_table(fake_hmc, monkeypatch):
        async def fake_report(_hmc):
-           # snake_case keys, not the column titles: cli_systems.py:252-261 reads
+           # snake_case keys, not the column titles: cli_commands/systems.py:252-261 reads
            # r.get("system_name"), r.get("free_memory_mb"), and so on. A row keyed
            # by the displayed headings renders "-" and "0" in every cell, so the
            # assertion below would still pass while proving nothing about the data.
@@ -365,7 +365,7 @@ asserts it on stderr.
                     "assigned_proc_units": 1.5, "free_proc_units": 2.5,
                     "running_lpars": 2, "total_lpars": 3}]
 
-       monkeypatch.setattr("hmc_mcp.operations_capacity.capacity_report", fake_report)
+       monkeypatch.setattr("hmc_mcp.operations.capacity.capacity_report", fake_report)
 
        result = RUNNER.invoke(cli.app, ["systems", "capacity"])
 
@@ -379,7 +379,7 @@ asserts it on stderr.
        async def fake_report(_hmc):
            return []
 
-       monkeypatch.setattr("hmc_mcp.operations_capacity.capacity_report", fake_report)
+       monkeypatch.setattr("hmc_mcp.operations.capacity.capacity_report", fake_report)
 
        result = RUNNER.invoke(cli.app, ["systems", "capacity"])
 
@@ -401,7 +401,7 @@ asserts it on stderr.
 
 5. Run `just verify`. Expect green.
 
-6. Commit: `test: cover the cli_systems render paths (#240)`.
+6. Commit: `test: cover the cli_commands.systems render paths (#240)`.
 
 **Acceptance criteria:** package total at or above 90.50% on CPython 3.11; `just verify` green;
 no file under `src/hmc_mcp/` modified.
@@ -659,7 +659,7 @@ because the gate is broken, and passes once it is fixed.
    - Delete `precision = 2` from `pyproject.toml` → the behavioral test fails.
    - Append `--cov-precision=0` to `addopts` → `..._declares_one_exact_floor` fails.
    - Delete `--cov=hmc_mcp` from `addopts` → `..._declares_one_exact_floor` fails.
-   - Add `omit = ["*/cli_storage.py"]` to `[tool.coverage.report]` →
+   - Add `omit = ["*/cli_commands/storage.py"]` to `[tool.coverage.report]` →
      `..._declares_one_exact_floor` fails on the exact-key-set assertion. (This is the vector
      that otherwise reports 100.00% and exits 0.)
    The next four probe `..._is_not_defeated_at_the_invocation_sites`, which carries three
@@ -729,7 +729,7 @@ four invocation-site probes, and every mutation reverted;
 **Interfaces:** Consumes the finished state of Task 3.
 
 A local run cannot confirm the margin. The eight CI legs vary by interpreter **and** by platform —
-`config.py` and `cli_config.py` carry five `sys.platform` branches, worth roughly four statements
+`config.py` and `cli_commands/config.py` carry five `sys.platform` branches, worth roughly four statements
 or 0.067 points — and a local run measures at most two interpreters on an architecture no leg
 uses. The binding measurement is therefore the branch's own CI run; this task is the cheaper
 pre-push check that the target is plausibly met, so CI is not the first thing to discover a
@@ -800,5 +800,5 @@ no unintended change, `uv.lock` included; `just verify` green; every CI leg repo
 | Coverage at or above 90.50% on 3.11 | 1, 2 |
 | Coverage at or above 90.50% on 3.14 (pre-push check) | 4 |
 | Every CI leg at or above 90.00%, and 90.50% unless the operator accepts less | 4 step 4 |
-| `cli_storage` as the primary vehicle | 1 |
+| `cli_commands.storage` as the primary vehicle | 1 |
 | No `src/hmc_mcp/` runtime change | 1, 2 constraints |

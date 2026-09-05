@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, fields
 from decimal import Decimal
-import json
 from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
 from hmc_mcp import api
 from hmc_mcp.cli import app
-from hmc_mcp.operations_pcie import (
+from hmc_mcp.config import HMCConfig
+from hmc_mcp.operations.io_virtualization.pcie import (
     DedicatedSlot,
     InventoryResult,
     InventorySelector,
@@ -19,13 +20,34 @@ from hmc_mcp.operations_pcie import (
     SriovLogicalPort,
     SriovPhysicalPort,
 )
-from hmc_mcp.server_system_resources import (
+from hmc_mcp.server_tools.system_resources import (
     hmc_list_dedicated_pcie_slots,
     hmc_list_sriov_adapters,
     hmc_list_sriov_logical_ports,
     hmc_list_sriov_physical_ports,
     tool_security,
 )
+
+
+def _config() -> HMCConfig:
+    return HMCConfig.from_mapping(
+        {
+            "host": "hmc.test",
+            "user": "hscroot",
+            "password": "test",  # pragma: allowlist secret
+        }
+    )
+
+
+class _ClientContext:
+    def __init__(self, client: object) -> None:
+        self.client = client
+
+    async def __aenter__(self) -> object:
+        return self.client
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
 
 
 def test_model_fields_are_the_documented_stable_schema() -> None:
@@ -122,7 +144,7 @@ def test_supported_api_exports_inventory_contract_directly() -> None:
     ):
         assert name in api.__all__
         assert getattr(api, name) is getattr(
-            __import__("hmc_mcp.operations_pcie", fromlist=[name]), name
+            __import__("hmc_mcp.operations.io_virtualization.pcie", fromlist=[name]), name
         )
 
 
@@ -152,10 +174,16 @@ def test_mcp_logical_tool_forwards_every_selector(monkeypatch) -> None:
         [],
         "ADR 0053 admits selectors but no SR-IOV read projection",
     )
-    with patch(
-        "hmc_mcp.server_system_resources.list_sriov_logical_ports",
-        AsyncMock(return_value=result),
-    ) as operation:
+    with (
+        patch(
+            "hmc_mcp._app.client_from_env",
+            return_value=_ClientContext(object()),
+        ),
+        patch(
+            "hmc_mcp.server_tools.system_resources.list_sriov_logical_ports",
+            AsyncMock(return_value=result),
+        ) as operation,
+    ):
         value = hmc_list_sriov_logical_ports("sys1", "a1", "p2", "l3")
 
     assert value == asdict(result)
@@ -180,9 +208,15 @@ def test_other_mcp_inventory_tools_return_serialized_results(monkeypatch) -> Non
         result = InventoryResult(
             resource_kind, "available", "sys1", InventorySelector(), [], None
         )
-        with patch(
-            f"hmc_mcp.server_system_resources.{operation_name}",
-            AsyncMock(return_value=result),
+        with (
+                patch(
+                    "hmc_mcp._app.client_from_env",
+                    return_value=_ClientContext(object()),
+            ),
+            patch(
+                f"hmc_mcp.server_tools.system_resources.{operation_name}",
+                AsyncMock(return_value=result),
+            ),
         ):
             assert tool("sys1") == asdict(result)
 
@@ -196,10 +230,16 @@ def test_cli_logical_inventory_forwards_selectors_and_prints_json() -> None:
         [],
         "ADR 0053 admits selectors but no SR-IOV read projection",
     )
-    with patch(
-        "hmc_mcp.cli_network.list_sriov_logical_ports",
-        AsyncMock(return_value=result),
-    ) as operation:
+    with (
+            patch(
+                "hmc_mcp.cli_commands.runtime.client",
+                return_value=_ClientContext(object()),
+            ),
+        patch(
+            "hmc_mcp.cli_commands.pcie.list_sriov_logical_ports",
+            AsyncMock(return_value=result),
+        ) as operation,
+    ):
         response = CliRunner().invoke(
             app,
             [
@@ -230,9 +270,15 @@ def test_cli_text_mode_reports_unavailable_capability() -> None:
         [],
         "ADR 0053 admits selectors but no SR-IOV read projection",
     )
-    with patch(
-        "hmc_mcp.cli_network.list_sriov_adapters",
-        AsyncMock(return_value=result),
+    with (
+            patch(
+                "hmc_mcp.cli_commands.runtime.client",
+                return_value=_ClientContext(object()),
+            ),
+        patch(
+            "hmc_mcp.cli_commands.pcie.list_sriov_adapters",
+            AsyncMock(return_value=result),
+        ),
     ):
         response = CliRunner().invoke(app, ["network", "list-sriov-adapters", "sys1"])
 
@@ -251,7 +297,13 @@ def test_cli_text_mode_distinguishes_available_empty_and_records() -> None:
         "dedicated_slot", "available", "sys1", InventorySelector(), [item], None
     )
     operation = AsyncMock(side_effect=[empty, populated])
-    with patch("hmc_mcp.cli_network.list_dedicated_slots", operation):
+    with (
+            patch(
+                "hmc_mcp.cli_commands.runtime.client",
+                return_value=_ClientContext(object()),
+            ),
+        patch("hmc_mcp.cli_commands.pcie.list_dedicated_slots", operation),
+    ):
         empty_response = CliRunner().invoke(
             app, ["network", "list-dedicated-pcie-slots", "sys1"]
         )

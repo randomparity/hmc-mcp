@@ -1,8 +1,9 @@
 # Authorization audit records
 
-The server writes one structured record for every authorization decision it makes at
-the MCP dispatch boundary, and one for every approved LPAR ownership override. This
-document is the contract those records keep. The decision behind it is
+The server writes one structured record for every authorization decision it makes at the
+MCP dispatch boundary, and further records for the other things an operator has to be
+able to audit. The sections under [The records](#the-records) are the full set; this
+document is the contract they keep. The decision behind it is
 [ADR 0040](adr/0040-authorization-audit-events.md).
 
 ## What you get, and when you get nothing
@@ -14,12 +15,19 @@ record at all, for the same reason it enforced nothing at all. There is no such 
 so every deployment writes one record per decision, and the delivery guarantee below
 applies to every deployment rather than only to those that opted in.
 
-**`ownership-override` records are not policy-gated.** They come from the ADR 0011
-ownership check inside the handler, which runs whether or not a policy is selected — and
-on the CLI and Python API paths, which have no policy at all. So an unpolicied server can
-still produce those, and only those.
+**`ownership-override` and `ownership-denied` records are not policy-gated.** They come
+from the ADR 0011 ownership check inside the handler, which runs whether or not a policy
+is selected — and on the CLI and Python API paths, which have no policy at all. So an
+unpolicied server can still produce those. For an `hmc_mcp.api` consumer that check is the
+only authorization boundary that applies, which is why its refusals are recorded here
+rather than left to the `authorization` event ([ADR 0100](adr/0100-ownership-denial-audit-record.md)).
 
-Two other things produce no record, by design:
+**`install-attempted` records are not policy-gated either**, and for a stronger reason:
+the detached `installios` path has no ownership check to gate and no HMC job to poll, so
+for an `hmc_mcp.api` consumer this record is the only trace an irreversible install
+leaves in this process ([ADR 0102](adr/0102-install-submission-audit-record.md)).
+
+Other things produce no record, by design:
 
 - a call to a tool the policy's ceiling withheld — it is never registered, so nothing
   reaches the boundary;
@@ -35,10 +43,10 @@ to `"<default>"`.
 
 **An empty audit stream is therefore not evidence that nothing was attempted.**
 
-## The two records
+## The records
 
-Both are one physical line of ASCII JSON. `time` and `event` come first on both, and
-every caller-supplied value is truncated to **128 characters** with no marker — a
+Each is one physical line of ASCII JSON. `time` and `event` come first on every one,
+and every caller-supplied value is truncated to **128 characters** with no marker — a
 truncated value is exactly that long, so you can measure it.
 
 ### `event: "authorization"`
@@ -51,7 +59,7 @@ truncated value is exactly that long, so you can measure it.
 | `tool` | the MCP tool name |
 | `effect` | `read`, `mutate`, `destructive`, or `arbitrary-command` |
 | `decision` | `"allow"` or `"deny"` |
-| `reason` | one of the seven codes below |
+| `reason` | one of the codes below |
 | `connection` | `{"state", "selector", "resolved"}` |
 | `targets` | a list of `{"kind", "argument", "state", "value"}`, or `null` |
 | `attribution` | `{"claim", "source", "verified"}` |
@@ -62,8 +70,9 @@ truncated value is exactly that long, so you can measure it.
 
 `connection.state` is `present` when the caller supplied a connection string, `absent`
 when it supplied nothing or an empty string, and `unreadable` when it supplied a value
-of another type — whose `repr()` is never rendered. `connection.selector` is the
-caller's own string, or `null` in the other two states.
+of another type. That value's `repr()` is never rendered. `connection.selector` is the
+caller's own string, or `null` in the other two states. A `targets` entry's `state` is
+the same vocabulary, describing one selector instead of the connection.
 
 `connection.resolved` is which HMC the call would actually have used: a profile key,
 `"<default>"` for the environment/default connection, `"<unresolved>"` when the token
@@ -90,8 +99,31 @@ rendering; a boolean records `unreadable`.
 
 ### `event: "ownership-override"`
 
-Emitted when an operator approves an [ADR 0011](adr/0011-multi-agent-lpar-ownership.md)
-LPAR ownership override. Always `WARNING`.
+Emitted when an [ADR 0011](adr/0011-multi-agent-lpar-ownership.md) LPAR ownership
+override is exercised. Always `WARNING`.
+
+**Not every record is a human decision.** Most are: a caller passing
+`ownership_override` is an operator-approved exception to a single mutation. One
+internal caller also emits it — `provision_lpar`'s activation leg passes the
+override unconditionally, because the ownership token it would authorize against is
+the one the same workflow stamped moments earlier
+([ADR 0092](adr/0092-uniform-lpar-ownership-authorization-rule.md) Consequences).
+That leg is reached only when `HMC_AUTHORIZE_POWER_OPERATIONS` is on, so with the
+guard off — the default — every record in this stream is caller-supplied. With it
+on, expect one record per `provision_lpar(power_on=True)`. The record carries no
+field distinguishing the two sources; an alert on this event should account for that
+before the guard is enabled.
+
+The converse holds too, and it is the more surprising half: while the guard is off,
+the power path emits **no** record even when a caller passes `ownership_override`.
+The parameter is read only inside the guarded branch, so with the setting off it is
+inert — nothing was bypassed, because nothing was checked. Silence in this stream on
+the power path is therefore not evidence that no override was requested.
+
+**This event records ownership checks that were *bypassed*, never ones that
+*refused*.** A refusal is the `ownership-denied` record below, which #467 added; an
+alert on *this* event therefore counts approved exceptions rather than attempts, and
+the one below is what tells "nobody tried" from "many were refused".
 
 ```json
 {"time":"2026-08-19T18:00:00+00:00","event":"ownership-override","system":"sys-a","lpar":"db-01","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
@@ -103,9 +135,238 @@ machine, not a grant, so it is its own field rather than an arm of the
 authorization record's `connection` object. An unset `HMC_HOST` renders as an
 empty string.
 
+For a system-wide profile restore, `lpar` is `"*"`: the approved bypass covers every
+current profile and any backup-only definition, not one named partition. Other override
+records continue to name the individual partition whose ownership check was bypassed.
+
 It carries no `policy`, `decision`, `reason`, or `targets`, and not as nulls —
 an ownership check on a token parsed from an LPAR description is not an
 access-policy decision, and empty fields would read as one.
+
+### `event: "ownership-denied"`
+
+Emitted when an [ADR 0011](adr/0011-multi-agent-lpar-ownership.md) LPAR ownership
+check *refuses*, immediately before the `PermissionError` is raised. Always
+`WARNING`, so `--audit-level WARNING` — the setting that drops permits — keeps
+these. The decision is [ADR 0100](adr/0100-ownership-denial-audit-record.md).
+
+| field | value |
+|---|---|
+| `time` | UTC, ISO 8601 |
+| `event` | `"ownership-denied"` |
+| `operation` | `lpar-decommission-snapshot`, `lpar-mutation`, or `lpar-profile-restore` |
+| `denial` | `malformed-token` or `foreign-owner` |
+| `system` | the managed system the partition lives on |
+| `lpar` | the partition whose mutation was refused |
+| `owner` | the owner the LPAR's token claims, or `null` |
+| `host` | the HMC the check read the token from |
+| `attribution` | `{"claim", "source", "verified"}` |
+
+```json
+{"time":"2026-08-26T18:00:00+00:00","event":"ownership-denied","operation":"lpar-mutation","denial":"foreign-owner","system":"sys-a","lpar":"db-01","owner":"agent-3","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+```
+
+`operation` names which guard entry point refused — `lpar-mutation` covers ordinary
+single-partition mutations, `lpar-decommission-snapshot` the ownership read that
+precedes a decommission, and `lpar-profile-restore` the current-partition checks before
+a system-wide profile restore — and not which MCP tool or API function called it.
+Per-tool granularity is deliberately out of scope; where the caller matters and the
+transport is MCP, join on the `authorization` record for the same call.
+
+`denial` names which of the guard's two rules refused. `foreign-owner` is a
+well-formed token naming another agent, and the record carries *both* halves of the
+comparison that failed: `owner` is the claimed owner, `attribution.claim` the agent
+that was refused. `malformed-token` is a description carrying `[hmc-mcp` that no
+token could be parsed from, and there `owner` is `null` — nothing parsed, so the
+record carries the actor alone.
+
+A `malformed-token` record identifies the partition but not the malformation. Triage
+means reading the description off the HMC out of band, and two alerts on one
+permanently-broken token read the same as an ongoing incident. That is accepted
+rather than closed: a description is unbounded operator-authored text that would be
+cut at 128 characters — often before the malformation — and it can carry an ADR 0064
+caller token beside the ownership one, so a field for it would disclose more than it
+triages.
+
+**A denial count is not a count of hostile attempts.** `docs/environment-variables.md`
+prescribes retry-after-refusal as the sanctioned override procedure, so a legitimate
+override is now *preceded* by a denial record carrying the same `system`, `lpar`, and
+`attribution.claim` as the `ownership-override` record seconds later. There is no
+correlation identifier, so pairing them means matching those three fields inside a
+time window — and an override that was never refused (`provision_lpar`'s activation
+leg, or any caller who passes `ownership_override` on the first attempt) will pair
+against an unrelated earlier denial if one is in the window. A refused `--dry-run`
+decommission preflight — the sequence `README.md` prescribes — emits the same record
+as a refused destructive one, because the inventory read authorizes ahead of the
+dry-run return. No field distinguishes either case; this is the same caveat the
+override record above carries for its own two sources.
+
+**Silence here is not proof of no refusal**, for one specific reason worth writing
+down: with `HMC_AUTHORIZE_POWER_OPERATIONS` off — the default — the power path never
+runs the guard, so no denial is possible there and none is recorded.
+
+A denied caller can drive these at attempt rate, bounded in practice by the HMC round
+trip each denial costs. Under `hmc-mcp serve` they land on the bounded sink, which
+drops and says so with a `records-dropped` count; on the CLI and Python API paths
+nothing installs a sink, so the line goes synchronously to stderr through
+`logging.lastResort` with no bound and no drop count — exactly as the
+`ownership-override` record already does there.
+
+The denial record names its `operation` and the override record does not. Closing
+that asymmetry would mean adding a field to the override record, which #467
+deliberately left alone; the denial stream is complete without it.
+
+It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as
+nulls, for the reason the override record gives.
+
+### `event: "install-attempted"`
+
+Emitted immediately **before** `install_vios_by_lpar_selector` or `install_vios` submits a detached
+`installios` to the HMC. Always `WARNING`, so `--audit-level WARNING` keeps it. The
+decision is [ADR 0102](adr/0102-install-submission-audit-record.md).
+
+```json
+{"time":"2026-08-26T18:00:00+00:00","event":"install-attempted","system":"sys-a","partition":"vios-01","log_path":"/tmp/hmc-mcp-installios-vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+```
+
+`system` and `partition` are the resolved HMC CLI names the submission was composed
+with; `host` is the `HMCConfig.host` of the client that submitted, and an unset
+`HMC_HOST` renders as an empty string. `attribution.claim` is the acting agent —
+`HMC_AGENT_ID`, or `hmc-mcp` when unset — the same claim the ownership records carry,
+so an unconfigured deployment's records name one actor and can be joined.
+
+`log_path` is the HMC-side path the install writes to, and the field to read when a
+submission raises. It is `/tmp/hmc-mcp-installios-<slug>.log`, where `<slug>` is the
+partition name with every character outside `[A-Za-z0-9._-]` replaced by `_`
+([ADR 0070](adr/0070-installios-cli-bridge-for-install-tools.md)). Two things follow, and
+both are why `system` and `host` sit beside it here. The managed system is not part of the
+path, so same-named partitions on different managed systems behind one HMC share one file;
+and the slug collapses distinct names, so `vios 01` and `vios_01` do too. The redirect
+truncates, so each colliding install destroys the other's only diagnostic record — and the
+directory is `/tmp`, which a reboot or a tmpfiles sweep may clear.
+
+`log_path` takes the shared 128-character bound like every other value, with no marker.
+The template's fixed part is 28 characters and nothing bounds a partition name, so a long
+enough one yields a path the bound then cuts — leaving a value that does not exist and
+looks well-formed. Whether the record still tells you the real path depends on where the
+name falls: `partition` takes the same bound, so a name past 128 characters is cut too and
+the path is gone from both fields, while a name of 101 to 128 characters leaves `partition`
+whole and the path recoverable as `/tmp/hmc-mcp-installios-<partition>.log` — after applying
+the slug substitution yourself. Such a name is one `installios` would refuse anyway, but the
+record is written before the submit, so it exists.
+
+**This record names an attempt, never an outcome.** The submission is detached, so
+there is no HMC job to poll and nothing observes whether `installios` accepted the
+target. A record means the process reached the point of submitting against that
+partition's disks; whether anything started is in the log it names. It is emitted
+ahead of the submit deliberately, because a submission that raises cannot tell a
+resolution failure from a failed submit — the case where an operator most needs the
+partition and the path.
+
+**It is the only record naming the resolved partition and its log path.** There is no HMC
+job ([ADR 0069](adr/0069-installlpar-and-installvios-absent-from-hmc-rest.md)), and no
+[ADR 0011](adr/0011-multi-agent-lpar-ownership.md) ownership check and so no
+`ownership-denied` or `ownership-override`. A served deployment does write an
+`authorization` permit for the tool call, and `hmc_install_vios_by_lpar_selector` and `hmc_install_vios`
+each declare a partition and a managed-system selector — so that permit's `targets` already
+carry both, and at the default audit level the streams can be joined on them. What the
+permit cannot give you: it records the selector the caller passed, not the resolved name, so
+a UUID selector never names the partition; it has no `log_path`; and `--audit-level WARNING`
+drops it, because it is a permit. An `hmc_mcp.api` consumer gets no `authorization` record
+at all.
+
+**Absence of this record is not proof that no install was submitted**, for the reasons the
+lead section gives generally and these, which apply here specifically. Under `hmc-mcp serve`
+it lands on the bounded sink, which drops under load and reports only a `records-dropped`
+count — a number, not an identity, so a reader cannot tell whether a dropped line was an
+install; `--audit-level ERROR` or `CRITICAL` silences the reserved logger outright; and a
+record that fails to build or write is swallowed rather than failing the call, because a
+diagnostic must not abort an operation. Off the serve path the reserved logger is left at
+`NOTSET`, and level resolution walks the parent chain whatever `propagate` says — so an
+embedder that quiets the package the ordinary way, `logging.getLogger("hmc_mcp").setLevel`,
+suppresses the record before `logging.lastResort` is ever consulted. Alert on the records
+you have, not on their absence.
+
+It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as
+nulls: the record is not an access-policy decision, and it is also emitted on the Python
+API path, where no policy connection exists to name.
+
+### `event: "install-submitted"`
+
+Emitted immediately after the HMC returns the PID for a detached `installios` process.
+Always `WARNING`, so the PID remains visible with only `install_audit_sink` configured and
+when the served audit threshold is `WARNING`. The decision is
+[ADR 0109](adr/0109-install-submitted-audit-correlation.md).
+
+```json
+{"time":"2026-08-29T18:00:01+00:00","event":"install-submitted","system":"sys-a","partition":"vios-01","pid":4321,"log_path":"/tmp/hmc-mcp-installios-vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+```
+
+`pid` is the remote HMC process identifier needed to abort the detached install. The other
+fields have the meanings and shared 128-character string bounds documented for
+`install-attempted`. Correlate the records on `system`, `partition`, `log_path`, `host`, and
+`attribution`, using stream order when identical submissions overlap. The stream does not
+promise one-to-one pairing or an attempt identifier; each success record is independently
+actionable because it carries its own PID and target.
+
+A raised submit emits only `install-attempted`, never `install-submitted`, because the SSH
+failure cannot prove whether a process started. Absence of this success record therefore
+does not prove nothing started. Sink drops and audit filtering also mean absence of either
+record is not proof that no submission occurred.
+
+It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as nulls.
+
+### `event: "power-ownership-guard"`
+
+Emitted once at `serve` startup for every connection the selected access policy can route.
+Always `WARNING`, so the shipped audit threshold retains both the enforced (`true`) and
+fail-open (`false`) states even when the policy withholds `hmc_effective_permissions`.
+
+```json
+{"time":"2026-08-28T18:00:00+00:00","event":"power-ownership-guard","connection":"lab","authorize_power_operations":true,"source":"environment","detail":null}
+```
+
+`connection`, `authorize_power_operations`, `source`, and `detail` are the same closed
+per-connection values reported by `hmc_effective_permissions`. An unreadable connection emits
+`authorize_power_operations: null`, `source: "unresolved"`, and a bounded exception-class
+`detail`; configuration paths, values, and exception messages are not recorded. Resolution and
+audit delivery failures do not prevent startup.
+
+On stdio, the launching MCP host owns stderr and can read these records. Withholding
+`hmc_effective_permissions` therefore withholds this inventory from MCP protocol calls, not from
+the operator-trusted launcher. Use an HTTP deployment with operator-controlled server logs when
+the MCP client must not own the audit descriptor.
+
+<!-- The `source` values below are read by tests/test_authorization_audit_doc.py and held
+     to `client.VERIFY_SSL_SOURCES`. Keep them a comma-and-`or` run introduced by the
+     words "where the effective setting came from"; that clause is the anchor. -->
+### `event: "tls-verification-disabled"`
+
+Emitted when an `HMCClient` is constructed with `verify_ssl` off, so the audit stream
+can answer "were credentials ever sent over an unverified channel, and to which HMC".
+Always `WARNING`. The logon-time `warnings.warn` stays and is the CLI user's channel;
+under the default warning filter it renders once per process per location, which is
+why this record exists alongside it.
+
+```json
+{"time":"2026-08-22T18:00:00+00:00","event":"tls-verification-disabled","host":"hmc-a.example","source":"environment:HMC_VERIFY_SSL"}
+```
+
+`host` is `HMCConfig.host`, the HMC the unverified session would reach; an unset
+`HMC_HOST` renders as an empty string. `source` names where the effective setting came
+from — `explicit-argument`, `environment:HMC_VERIFY_SSL`, or `field-default` — because
+that is which knob an operator has to turn.
+
+**One record per client construction**, not per request — which would flood the sink —
+and not per process, which would miss a later client built with different settings.
+Read the rate accordingly: an MCP tool invocation builds a fresh client, so on a server
+left at the insecure default (`HMC_VERIFY_SSL` is `false` until 1.0, per
+`docs/environment-variables.md`) this stream carries roughly one record per tool call
+rather than one at startup. Deduplicate on `host` and `source` if you are alerting.
+
+It carries no `policy`, `decision`, `reason`, `targets`, or `attribution`. Building a
+client is not an access-policy decision, and it happens on the CLI and Python API paths
+too, where there is no policy to name.
 
 ### `event: "records-dropped"`
 
@@ -142,18 +403,22 @@ template on purpose. To find malformed calls, filter
 
 ## Attribution is never identity
 
-`verified` is always `false` on both records, and neither value influences an
-authorization decision at the dispatch boundary. Where they come from differs, and the
-`source` field is what tells you which you are reading.
+Not every record carries `attribution`; each section above says whether its own does.
+Where it appears, `verified` is always `false`, and neither value influences an
+authorization decision at the dispatch boundary. Where the claim comes from differs, and
+the `source` field is what tells you which you are reading.
 
 **`source: "environment:HMC_AGENT_ID"`** — on the `authorization` record. Read straight
 from the server process's environment at emission.
 
-**`source: "config:agent_id"`** — on the `ownership-override` record. This is
-`HMCConfig.agent_id`, the effective value the ADR 0011 check compared, and it differs
-from the other in three ways worth knowing: it may come from a `config.toml` profile
-rather than the environment, it *is* validated by `validate_agent_id`, and it renders
-the literal `hmc-mcp` when no identity is configured at all rather than `null`.
+**`source: "config:agent_id"`** — on the `ownership-override` and `ownership-denied`
+records. This is `HMCConfig.agent_id`, the effective value the ADR 0011 check compared,
+and it differs from the other in three ways worth knowing: it may come from a
+`config.toml` profile rather than the environment, it *is* validated by
+`validate_agent_id`, and it renders the literal `hmc-mcp` when no identity is configured
+at all rather than `null`. The last of those is what lets an unconfigured deployment's
+ownership records be joined on the actor: the guard compares that literal, so the record
+names it too.
 
 Two things follow for the `authorization` record that are easy to get wrong:
 
@@ -161,7 +426,7 @@ Two things follow for the `authorization` record that are easy to get wrong:
   client and the two coincide. Under streamable HTTP one process serves many clients,
   so every record carries the same claim and the field tells you nothing per-caller.
 - **It is the raw environment value, unvalidated.** This applies to the `authorization`
-  record only — the ownership-override claim goes through `validate_agent_id`.
+  record only — the ownership records' claims go through `validate_agent_id`.
   `docs/environment-variables.md` documents
   `HMC_AGENT_ID` as 1–64 printable ASCII with a forbidden-character set; that is the
   rule for *configuration*, and this record deliberately bypasses it so a malformed
@@ -174,8 +439,8 @@ than the value's authority everywhere.
 
 ## Routing, levels, and silencing
 
-Records go to the `hmc_mcp.audit` logger. Denials and ownership overrides are
-`WARNING`; permits are `INFO`.
+Records go to the `hmc_mcp.audit` logger. A permit is `INFO`; everything else the
+logger emits is `WARNING`.
 
 Importing `hmc_mcp.audit` sets `propagate = False`, so no ancestor handler receives
 audit records — including on the in-process path, where an embedder composes an
@@ -191,8 +456,13 @@ defers to a handler that is already there and will not add a second.
 > for the same reason.
 
 > To set the level from the command line, pass `--audit-level LEVEL` to `hmc-mcp serve`:
-> `DEBUG` and `INFO` keep both records, `WARNING` keeps denials only, and `ERROR` or
-> `CRITICAL` silences the stream. The name is validated — a misspelling is a usage error
+> `DEBUG` and `INFO` keep everything the logger emits, `WARNING` drops permits and keeps
+> the rest, and `ERROR` or `CRITICAL` silences the stream. Read `WARNING` as a volume floor
+> rather than a quiet
+> setting: on a server left at the insecure `HMC_VERIFY_SSL` default it still carries one
+> TLS record per tool call, which the deduplication advice above applies to. The
+> `records-dropped` marker survives every setting, since it comes from the sink rather
+> than the logger. The name is validated — a misspelling is a usage error
 > that starts nothing. Omitted, the shipped sink's own `INFO` default stands. An in-process
 > caller keeps configuring the logger directly, before calling `main_stdio` / `main_http`.
 
@@ -209,7 +479,23 @@ Three things to know if you consume this stream:
   [ADR 0051](adr/0051-fastmcp-logging-through-the-bounded-sink.md) FastMCP's own records
   arrive on the same queue as these — one concise line for a denial, a plain traceback for
   a genuine handler bug — and its startup banner is written straight to the stream by
-  `rich` before serving begins.
+  `rich` before serving begins. Since #534 this package's own non-audit diagnostics arrive
+  there too, each physical line prefixed `hmc_mcp: `, which is a marker chosen so it cannot
+  begin a JSON object. `hmc_mcp` is a second attachment point on the same terms as
+  `hmc_mcp.audit` above — attach a handler to it and the server leaves yours in place instead
+  of installing its own — with one difference, and it is the difference that matters here:
+  `propagate` is left alone on `hmc_mcp`, where `hmc_mcp.audit` clears it. So a handler you
+  already have *above* `hmc_mcp` keeps receiving these records after a serve, and if it writes
+  to stderr it puts a **second, unmarked and unescaped** copy of each on this stream. That copy
+  is the one that can carry a newline out of an interpolated value and place text at column 0.
+  It is not new — the same record reached the same handler the same way before #534 — but the
+  marker is a property of this package's own handler, not of the stream, and a consumer
+  hardening on it must know that. Do not attach a stderr handler above `hmc_mcp` in a
+  deployment whose stderr is parsed. One writer is unmarked with no operator handler
+  involved: `warnings.warn`, which this package uses beside the log record for the
+  `HMC_AGENT_ID` / `HMC_AUDIT_MEMENTO` override and which `logging` never sees, so it reaches
+  neither the marker nor the queue. Under default warning filters that is two unmarked lines
+  at column 0 once per process. #546 tracks it.
 
 ## What this is not
 
@@ -257,7 +543,10 @@ rather than the operator deploying it — choose one that reads its child's stde
 made a policy mandatory this applies to every deployment, and an ungranted caller can drive
 the writes at call rate, because the record precedes the denial. Since ADR 0051 a denied call
 puts *two* items on the queue — this record, then FastMCP's one-line denial — so the queue
-fills in about half the calls it used to. That caller can therefore make records drop —
-bounded to the queue, visible as a `records-dropped` count, and never able to stall a call.
+fills in about half the calls it used to. Size the destination for the permitted path too:
+on the insecure `HMC_VERIFY_SSL` default a permitted call also puts a TLS record on the
+queue, per the rate noted with that record above. That caller can therefore make records
+drop — bounded to the queue, visible as a `records-dropped` count, and never able to stall
+a call.
 `hmc-mcp serve --audit-level WARNING` halves what that caller can produce — permits are gone —
 but the denials themselves stay, because an unrecorded probe is worse than a recorded one.

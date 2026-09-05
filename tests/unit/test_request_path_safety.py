@@ -13,19 +13,24 @@ a declared selector".
 
 from __future__ import annotations
 
+import ast
 import asyncio
+import inspect
 
 import httpx
 import pytest
 
-from hmc_mcp.client import HMCClient, _reject_dot_segments, _reject_non_job_path
+from hmc_mcp.client.core import HMCClient, _reject_dot_segments, _reject_non_job_path
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
+
+UUID_A = "12345678-1234-1234-1234-1234567890ab"
+UUID_B = "ABCDEFAB-CDEF-CDEF-CDEF-ABCDEFABCDEF"
 
 
 def _client() -> HMCClient:
     return HMCClient(
-        HMCConfig(host="hmc.test", user="u", password="p", _env_file=None)  # pragma: allowlist secret
+        HMCConfig(host="hmc.test", user="u", password="p")  # pragma: allowlist secret
     )
 
 
@@ -136,6 +141,117 @@ def test_the_guard_runs_before_anything_leaves_the_process():
     assert sent == []
 
 
+def test_a_uuid_only_path_argument_is_refused_before_transport():
+    client = _client()
+    sent: list[str] = []
+
+    async def _forbidden(*args, **kwargs):
+        sent.append("request")
+        raise AssertionError("a refused UUID reached the transport")
+
+    client._http.request = _forbidden  # type: ignore[method-assign]
+
+    with pytest.raises(HMCError, match=r"^vg_uuid must be a UUID$") as error:
+        asyncio.run(
+            client._request_with_uuid_path_arguments(
+                "GET",
+                "/rest/api/uom/VirtualIOServer/vios/VolumeGroup/not-a-uuid",
+                uuid_path_arguments={"vg_uuid": "not-a-uuid"},
+            )
+        )
+
+    assert "hmc.test" not in str(error.value)
+    assert "not-a-uuid" not in str(error.value)
+    assert sent == []
+
+
+def test_canonical_mixed_case_uuid_path_arguments_reach_the_request_boundary():
+    client = _client()
+    requested: list[tuple[str, str]] = []
+
+    async def _record(method, path, **kwargs):
+        requested.append((method, path))
+        return httpx.Response(204)
+
+    client._request = _record  # type: ignore[method-assign]
+    path = f"/rest/api/uom/VirtualIOServer/{UUID_A}/VolumeGroup/{UUID_B}"
+
+    asyncio.run(
+        client._request_with_uuid_path_arguments(
+            "GET",
+            path,
+            uuid_path_arguments={"vios_uuid": UUID_A, "vg_uuid": UUID_B},
+        )
+    )
+
+    assert requested == [("GET", path)]
+
+
+_UUID_PATH_BUILDERS = {
+    "HMCClient": {
+        "get_uom": ("uuid",),
+        "get_quick_property": ("uuid",),
+        "list_child": ("parent_uuid",),
+        "create_child": ("parent_uuid",),
+        "delete_child": ("parent_uuid", "child_uuid"),
+        "_broker_file_create": ("vios_uuid", "vg_uuid"),
+        "_broker_iso_import": ("vios_uuid", "vg_uuid"),
+        "submit_platform_update": ("system_uuid",),
+    },
+    "StorageMixin": {
+        "list_volume_groups": ("vios_uuid",),
+        "get_volume_group": ("vios_uuid", "vg_uuid"),
+        "create_volume_group": ("vios_uuid",),
+        "create_virtual_disk": ("vios_uuid", "vg_uuid"),
+        "delete_virtual_disk": ("vios_uuid", "vg_uuid"),
+        "map_storage_to_lpar": ("vios_uuid",),
+        "list_storage_mappings": ("vios_uuid",),
+        "delete_storage_mapping": ("vios_uuid", "system_uuid"),
+        "_get_vg_raw_xml": ("vios_uuid", "vg_uuid"),
+        "_post_vg_xml": ("vios_uuid", "vg_uuid"),
+        "get_media_repository": ("vios_uuid", "vg_uuid"),
+        "list_optical_media": ("vios_uuid", "vg_uuid"),
+        "list_optical_mappings": ("vios_uuid",),
+        "create_optical_mapping": ("vios_uuid",),
+    },
+}
+
+
+@pytest.mark.parametrize(
+    "owner, method, arguments",
+    [
+        (owner, method, arguments)
+        for owner, methods in _UUID_PATH_BUILDERS.items()
+        for method, arguments in methods.items()
+    ],
+)
+def test_uuid_only_path_builder_inventory_uses_explicit_metadata(
+    owner, method, arguments
+):
+    from hmc_mcp.client.client_storage import StorageMixin
+
+    owner_type = HMCClient if owner == "HMCClient" else StorageMixin
+    source = inspect.getsource(getattr(owner_type, method))
+    for argument in arguments:
+        assert f'"{argument}": {argument}' in source
+
+
+def test_platform_update_rejects_a_non_uuid_system_before_transport():
+    client = _client()
+    sent: list[str] = []
+
+    async def _forbidden(*args, **kwargs):
+        sent.append("request")
+        raise AssertionError("an invalid system UUID reached the transport")
+
+    client._http.request = _forbidden  # type: ignore[method-assign]
+
+    with pytest.raises(HMCError, match=r"^system_uuid must be a UUID$"):
+        asyncio.run(client.submit_platform_update("not-a-uuid", {}))
+
+    assert sent == []
+
+
 # ---------------------------------------------------------------------------
 # job_href addresses a job, or nothing
 # ---------------------------------------------------------------------------
@@ -192,8 +308,6 @@ def test_a_non_job_link_is_refused(path):
 # which is the argument for guarding the waist rather than the call sites.
 _SUB_RESOURCE_CALLS = (
     ("delete_child", ("LogicalPartition", "AUTH", "ClientNetworkAdapter", "{X}")),
-    ("delete_storage_mapping", ("AUTH", "{X}")),
-    ("delete_optical_mapping", ("{X}", "lpar", "media")),
     ("create_virtual_disk", ("AUTH", "{X}", "disk", 1)),
     ("delete_virtual_disk", ("AUTH", "{X}", "disk")),
     ("_get_vg_raw_xml", ("AUTH", "{X}")),
@@ -211,8 +325,8 @@ TRAVERSAL = "../../../LogicalPartition/VICTIM"
 @pytest.mark.parametrize(
     "method, args", _SUB_RESOURCE_CALLS, ids=[name for name, _ in _SUB_RESOURCE_CALLS]
 )
-def test_no_sub_resource_identifier_can_walk_out_of_its_parent(method, args):
-    """One guard at the waist, not thirteen checks at the call sites.
+def test_no_unsafe_sub_resource_identifier_reaches_transport(method, args):
+    """One guard at the waist, not ten checks at the call sites.
 
     Each of these builds `/{Parent}/{authorized}/{Child}/{caller-supplied}` by
     f-string. A dot-segment in the trailing identifier resolves the authorized
@@ -227,7 +341,7 @@ def test_no_sub_resource_identifier_can_walk_out_of_its_parent(method, args):
     """
     client = _client()
     call = getattr(client, method)
-    with pytest.raises(HMCError, match="refused"):
+    with pytest.raises(HMCError, match=r"refused|must be a UUID"):
         asyncio.run(call(*[a.replace("{X}", TRAVERSAL) if isinstance(a, str) else a
                            for a in args]))
 
@@ -239,15 +353,22 @@ def test_the_guard_is_reached_by_every_transport_helper():
     guard above stops covering it. This asserts the property the placement
     depends on, rather than trusting that no such helper appears.
     """
-    import inspect
-
-    from hmc_mcp import client as client_module
+    from hmc_mcp.client import core as client_module
 
     source = inspect.getsource(client_module)
-    direct = [
-        line.strip()
-        for line in source.splitlines()
-        if "self._http." in line
-        and not any(k in line for k in ("aclose", "headers", "_http.request", "="))
-    ]
+    tree = ast.parse(source)
+    direct: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        expression = ast.unparse(node.func.value)
+        if expression != "self._http" or node.func.attr in {"aclose"}:
+            continue
+        owner = next(
+            (parent.name for parent in ast.walk(tree) if isinstance(parent, ast.AsyncFunctionDef)
+             and any(child is node for child in ast.walk(parent))),
+            None,
+        )
+        if owner != "_request":
+            direct.append(ast.unparse(node.func))
     assert not direct, f"a transport call bypassing _request: {direct}"

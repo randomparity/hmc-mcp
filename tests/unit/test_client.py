@@ -3,23 +3,25 @@
 import asyncio
 import json
 import logging
+import threading
 import traceback
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 import respx
+from conftest import LOGON_RESPONSE, make_config
 from defusedxml import ElementTree as DET
 
-from hmc_mcp import audit
-from hmc_mcp.client import HMCClient, HMCError
+from hmc_mcp.audit import sink as audit_sink
+from hmc_mcp.client import core as client_core
+from hmc_mcp.client.core import HMCClient, TLSVerificationDisabledWarning
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCTransportError
+from hmc_mcp.errors import HMCError, HMCTransportError
 from hmc_mcp.jobs import build_job_request
 from hmc_mcp.xmlutil import localname
-
-from conftest import LOGON_RESPONSE, make_config
 
 BASE = "https://hmc.test"
 
@@ -144,7 +146,7 @@ async def test_cancellation_while_closing_aborts_fallback():
     client._new_http_client = MagicMock()
 
     logon = asyncio.create_task(client.logon())
-    await close_started.wait()
+    await asyncio.wait_for(close_started.wait(), timeout=5)
     logon.cancel()
 
     with pytest.raises(asyncio.CancelledError):
@@ -180,12 +182,12 @@ async def test_rest_timeout_names_configured_timeout_and_guidance(mock_hmc):
     assert "HMC_TIMEOUT" in message
 
 
-LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>urn:uuid:11111111-1111-1111-1111-111111111111</id>
     <title>LogicalPartition:lpar1</title>
-    <link rel="SELF" href="{base}/rest/api/uom/LogicalPartition/11111111-1111-1111-1111-111111111111"/>
+    <link rel="SELF" href="{BASE}/rest/api/uom/LogicalPartition/11111111-1111-1111-1111-111111111111"/>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>lpar1</PartitionName>
@@ -196,7 +198,7 @@ LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <entry>
     <id>urn:uuid:22222222-2222-2222-2222-222222222222</id>
     <title>LogicalPartition:lpar2</title>
-    <link rel="SELF" href="{base}/rest/api/uom/LogicalPartition/22222222-2222-2222-2222-222222222222"/>
+    <link rel="SELF" href="{BASE}/rest/api/uom/LogicalPartition/22222222-2222-2222-2222-222222222222"/>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>lpar2</PartitionName>
@@ -205,7 +207,7 @@ LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </content>
   </entry>
 </feed>
-""".format(base=BASE)
+"""
 
 QUICK_STATE = "running"
 
@@ -340,9 +342,124 @@ async def test_logon_with_test_config_is_silent_by_default(mock_hmc):
 @pytest.mark.asyncio
 async def test_logon_warns_when_verify_ssl_disabled(mock_hmc):
     """Logon with verify_ssl=False emits an explicit MITM warning."""
-    with pytest.warns(UserWarning, match="certificate verification is disabled"):
+    with pytest.warns(
+        TLSVerificationDisabledWarning,
+        match="certificate verification is disabled",
+    ):
         async with HMCClient(make_config(verify_ssl=False)):
             pass
+
+
+@pytest.mark.asyncio
+async def test_tls_warning_is_emitted_once_per_host_and_setting_source(
+    monkeypatch,
+):
+    monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
+
+    async def logon(client):
+        client._logon_once = AsyncMock(return_value="token")
+        await client.logon()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        await logon(HMCClient(make_config(host="first.test", verify_ssl=False)))
+        await logon(HMCClient(make_config(host="first.test", verify_ssl=False)))
+        await logon(HMCClient(make_config(host="second.test", verify_ssl=False)))
+        await logon(
+            HMCClient(
+                HMCConfig.from_mapping(
+                    {
+                        "host": "first.test",
+                        "user": "hscroot",
+                        "password": "abc123",  # pragma: allowlist secret
+                    }
+                )
+            )
+        )
+
+    tls_warnings = [
+        warning
+        for warning in caught
+        if warning.category is TLSVerificationDisabledWarning
+    ]
+    assert len(tls_warnings) == 3
+
+
+@pytest.mark.asyncio
+async def test_tls_warning_key_retains_the_construction_time_source(monkeypatch):
+    monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
+    monkeypatch.setenv("HMC_VERIFY_SSL", "false")
+    environment_client = HMCClient(
+        HMCConfig(host="hmc.test", user="hscroot", password="abc123")
+    )
+
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+    explicit_client = HMCClient(make_config(host="hmc.test", verify_ssl=False))
+    for client in (environment_client, explicit_client):
+        client._logon_once = AsyncMock(return_value="token")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", TLSVerificationDisabledWarning)
+        await environment_client.logon()
+        await explicit_client.logon()
+
+    await environment_client._http.aclose()
+    await explicit_client._http.aclose()
+    tls_warnings = [
+        warning
+        for warning in caught
+        if warning.category is TLSVerificationDisabledWarning
+    ]
+    assert len(tls_warnings) == 2
+
+
+@pytest.mark.asyncio
+async def test_tls_warning_promoted_to_error_does_not_consume_the_key(monkeypatch):
+    monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
+    client = HMCClient(make_config(verify_ssl=False))
+    client._logon_once = AsyncMock(return_value="token")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", TLSVerificationDisabledWarning)
+        with pytest.raises(TLSVerificationDisabledWarning):
+            await client.logon()
+
+    with pytest.warns(TLSVerificationDisabledWarning):
+        await client.logon()
+
+
+def test_concurrent_logons_emit_one_tls_warning(monkeypatch):
+    monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
+    first_warning_entered = threading.Event()
+    second_warning_entered = threading.Event()
+    warning_calls = 0
+    calls_lock = threading.Lock()
+
+    def slow_warning(*args, **kwargs):
+        nonlocal warning_calls
+        with calls_lock:
+            warning_calls += 1
+            call_number = warning_calls
+        if call_number == 1:
+            first_warning_entered.set()
+            second_warning_entered.wait(timeout=0.2)
+        else:
+            second_warning_entered.set()
+
+    async def logon():
+        client = HMCClient(make_config(verify_ssl=False))
+        client._logon_once = AsyncMock(return_value="token")
+        await client.logon()
+        await client._http.aclose()
+
+    monkeypatch.setattr(client_core.warnings, "warn", slow_warning)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(asyncio.run, logon()) for _ in range(2)]
+        for future in futures:
+            future.result()
+
+    assert first_warning_entered.is_set()
+    assert warning_calls == 1
 
 
 @pytest.mark.asyncio
@@ -368,6 +485,21 @@ async def test_logon_failure(mock_hmc):
     assert client._http.is_closed
 
 
+@pytest.mark.asyncio
+async def test_session_entry_preserves_logon_failure_when_close_also_fails():
+    client = HMCClient(make_config())
+    logon_error = HMCError("bad credentials", 401)
+    client.logon = AsyncMock(side_effect=logon_error)
+    client._http.aclose = AsyncMock(side_effect=RuntimeError("close failed"))
+
+    with pytest.raises(HMCError) as exc_info:
+        async with client:
+            pass
+
+    assert exc_info.value is logon_error
+    assert "session cleanup failed: close failed" in exc_info.value.__notes__
+
+
 def _capture_audit() -> list[dict]:
     """Collect parsed audit records. Logger isolation is conftest's autouse fixture."""
     events: list[dict] = []
@@ -376,7 +508,7 @@ def _capture_audit() -> list[dict]:
         def emit(self, record: logging.LogRecord) -> None:
             events.append(json.loads(record.getMessage()))
 
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
     logger.addHandler(_Collect())
     logger.setLevel(logging.INFO)
     logger.propagate = False
@@ -459,6 +591,62 @@ def test_tls_audit_record_names_where_the_setting_came_from(
     assert caught[0]["host"] == "hmc.test"
     # No credential material in the record — construction-time state only.
     assert "abc123" not in json.dumps(caught[0])
+
+
+@pytest.mark.parametrize("env_name", ["hmc_verify_ssl", "Hmc_Verify_Ssl"])
+def test_tls_audit_record_names_the_environment_for_a_case_variant_export(
+    monkeypatch, env_name
+):
+    """#531. pydantic-settings folded the variant in, so the record must name it.
+
+    The vocabulary keeps the canonical spelling — it names the knob, not the
+    operator's spelling of it — but reading only that spelling would report
+    ``explicit-argument`` for a value nothing in the call supplied.
+    """
+    monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
+    monkeypatch.setenv(env_name, "false")
+    caught = _capture_audit()
+
+    HMCClient(
+        HMCConfig(
+            host="hmc.test",
+            user="hscroot",
+            password="abc123",  # pragma: allowlist secret
+
+        )
+    )
+
+    assert len(caught) == 1
+    assert caught[0]["source"] == "environment:HMC_VERIFY_SSL"
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected_source"),
+    [
+        # from_mapping restores model_fields_set to the keys the caller
+        # supplied, so an omitted verify_ssl is absent from it. Naming
+        # HMC_VERIFY_SSL here would point the operator at a variable that has
+        # no effect on this connection — and, set to "true" against an
+        # effective False, at one that contradicts the value in the same record.
+        ({}, "field-default"),
+        ({"verify_ssl": False}, "explicit-argument"),
+    ],
+)
+def test_tls_audit_record_ignores_the_environment_for_an_isolated_config(
+    monkeypatch, kwargs, expected_source
+):
+    """ADR 0096: a config the environment cannot reach must not cite it."""
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+    caught = _capture_audit()
+
+    HMCClient(
+        HMCConfig.from_mapping(
+            {"host": "hmc.test", "user": "hscroot", "password": "abc123", **kwargs}
+        )
+    )
+
+    assert len(caught) == 1
+    assert caught[0]["source"] == expected_source
 
 
 @pytest.mark.asyncio
@@ -574,12 +762,12 @@ async def test_list_lpars_for_system(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_quick_property(mock_hmc):
-    mock_hmc.get("/rest/api/uom/LogicalPartition/lpar-uuid/quick/PartitionState").mock(
+    mock_hmc.get("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/quick/PartitionState").mock(
         return_value=httpx.Response(200, text=QUICK_STATE)
     )
     async with HMCClient(make_config()) as hmc:
         state = await hmc.get_quick_property(
-            "LogicalPartition", "lpar-uuid", "PartitionState"
+            "LogicalPartition", "33333333-3333-3333-3333-333333333333", "PartitionState"
         )
     assert state == "running"
 
@@ -604,13 +792,50 @@ async def test_find_partition_by_name(mock_hmc):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("property_name", "property_value", "encoded_expression"),
+    [
+        (
+            "Partition Name",
+            "web server & db%#1+café",
+            "Partition%20Name==web%20server%20%26%20db%25%231%2Bcaf%C3%A9",
+        ),
+        ("State", "running", "State==running"),
+    ],
+)
+async def test_search_uom_encodes_only_interpolated_grammar_components(
+    mock_hmc, property_name, property_value, encoded_expression
+):
+    path = f"/rest/api/uom/LogicalPartition/search/({encoded_expression})"
+    route = mock_hmc.get(path).mock(return_value=httpx.Response(204))
+
+    async with HMCClient(make_config()) as hmc:
+        assert (
+            await hmc.search_uom("LogicalPartition", property_name, property_value)
+            == []
+        )
+
+    assert route.calls.last.request.url.raw_path.decode() == path
+
+
+@pytest.mark.asyncio
+async def test_search_uom_error_names_encoded_request_path(mock_hmc):
+    path = "/rest/api/uom/LogicalPartition/search/(PartitionName==web%20server)"
+    mock_hmc.get(path).mock(return_value=httpx.Response(500, text="failed"))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="PartitionName==web%20server"):
+            await hmc.search_uom("LogicalPartition", "PartitionName", "web server")
+
+
+@pytest.mark.asyncio
 async def test_submit_power_on_job(mock_hmc):
-    route = mock_hmc.put("/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn").mock(
+    route = mock_hmc.put("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/do/PowerOn").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
-            "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn",
+            "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/do/PowerOn",
             build_job_request("PowerOn", "LogicalPartition"),
         )
     assert route.called
@@ -674,7 +899,7 @@ async def test_managed_system_serialization_failure_is_not_empty_inventory(mock_
 
 CREATED_LPAR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:new-lpar-uuid</id>
+  <id>urn:uuid:new-33333333-3333-3333-3333-333333333333</id>
   <title>LogicalPartition:newlpar</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -714,14 +939,14 @@ async def test_create_logical_partition(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_modify_logical_partition(mock_hmc):
-    route = mock_hmc.post("/rest/api/uom/LogicalPartition/lpar-uuid").mock(
+    route = mock_hmc.post("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333").mock(
         return_value=httpx.Response(200, text=CREATED_LPAR)
     )
     from hmc_mcp.documents import LparResources, build_lpar_document
 
     xml = build_lpar_document(name=None, resources=LparResources(desired_memory=2048))
     async with HMCClient(make_config()) as hmc:
-        updated = await hmc.modify_logical_partition("lpar-uuid", xml)
+        updated = await hmc.modify_logical_partition("33333333-3333-3333-3333-333333333333", xml)
     assert route.called
     assert "2048" in route.calls.last.request.content.decode()
     assert updated is not None
@@ -729,17 +954,17 @@ async def test_modify_logical_partition(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_delete_logical_partition(mock_hmc):
-    route = mock_hmc.delete("/rest/api/uom/LogicalPartition/lpar-uuid").mock(
+    route = mock_hmc.delete("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333").mock(
         return_value=httpx.Response(204)
     )
     async with HMCClient(make_config()) as hmc:
-        await hmc.delete_logical_partition("lpar-uuid")
+        await hmc.delete_logical_partition("33333333-3333-3333-3333-333333333333")
     assert route.called
 
 
 ADAPTER_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:adapter-uuid-1</id>
+  <id>urn:uuid:44444444-4444-4444-4444-444444444444</id>
   <title>ClientNetworkAdapter</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ClientNetworkAdapter xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -754,11 +979,11 @@ ADAPTER_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 @pytest.mark.asyncio
 async def test_add_network_adapter(mock_hmc):
     route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/ClientNetworkAdapter"
+        "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/ClientNetworkAdapter"
     ).mock(return_value=httpx.Response(201, text=ADAPTER_ENTRY))
     async with HMCClient(make_config()) as hmc:
         adapter = await hmc.add_network_adapter(
-            "lpar-uuid", port_vlan_id=100, slot_number=9
+            "33333333-3333-3333-3333-333333333333", port_vlan_id=100, slot_number=9
         )
     assert route.called
     body = route.calls.last.request.content.decode()
@@ -770,10 +995,10 @@ async def test_add_network_adapter(mock_hmc):
 @pytest.mark.asyncio
 async def test_add_vscsi_adapter(mock_hmc):
     route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/VirtualSCSIClientAdapter"
+        "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/VirtualSCSIClientAdapter"
     ).mock(return_value=httpx.Response(201, text=ADAPTER_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        await hmc.add_vscsi_adapter("lpar-uuid", vios_partition_id=1, vios_slot=5)
+        await hmc.add_vscsi_adapter("33333333-3333-3333-3333-333333333333", vios_partition_id=1, vios_slot=5)
     body = route.calls.last.request.content.decode()
     assert "VirtualSCSIClientAdapter" in body
     assert "RemoteLogicalPartitionID" in body and "RemoteSlotNumber" in body
@@ -782,10 +1007,10 @@ async def test_add_vscsi_adapter(mock_hmc):
 @pytest.mark.asyncio
 async def test_add_vfc_adapter(mock_hmc):
     route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/VirtualFibreChannelClientAdapter"
+        "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/VirtualFibreChannelClientAdapter"
     ).mock(return_value=httpx.Response(201, text=ADAPTER_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        await hmc.add_vfc_adapter("lpar-uuid", vios_partition_id=1, vios_slot=6)
+        await hmc.add_vfc_adapter("33333333-3333-3333-3333-333333333333", vios_partition_id=1, vios_slot=6)
     body = route.calls.last.request.content.decode()
     assert "VirtualFibreChannelClientAdapter" in body
     assert "ConnectingPartitionID" in body and "ConnectingVirtualSlotNumber" in body
@@ -793,12 +1018,12 @@ async def test_add_vfc_adapter(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_list_adapters(mock_hmc):
-    mock_hmc.get("/rest/api/uom/LogicalPartition/lpar-uuid/ClientNetworkAdapter").mock(
+    mock_hmc.get("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/ClientNetworkAdapter").mock(
         return_value=httpx.Response(200, text=ADAPTER_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
         adapters = await hmc.list_child(
-            "LogicalPartition", "lpar-uuid", "ClientNetworkAdapter"
+            "LogicalPartition", "33333333-3333-3333-3333-333333333333", "ClientNetworkAdapter"
         )
     assert len(adapters) == 1
     assert adapters[0]["ResourceType"] == "ClientNetworkAdapter"
@@ -807,11 +1032,11 @@ async def test_list_adapters(mock_hmc):
 @pytest.mark.asyncio
 async def test_delete_adapter(mock_hmc):
     route = mock_hmc.delete(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/ClientNetworkAdapter/adapter-uuid-1"
+        "/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333/ClientNetworkAdapter/44444444-4444-4444-4444-444444444444"
     ).mock(return_value=httpx.Response(204))
     async with HMCClient(make_config()) as hmc:
         await hmc.delete_child(
-            "LogicalPartition", "lpar-uuid", "ClientNetworkAdapter", "adapter-uuid-1"
+            "LogicalPartition", "33333333-3333-3333-3333-333333333333", "ClientNetworkAdapter", "44444444-4444-4444-4444-444444444444"
         )
     assert route.called
 
@@ -819,7 +1044,7 @@ async def test_delete_adapter(mock_hmc):
 VG_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:vg-uuid-1</id>
+    <id>urn:uuid:22222222-2222-2222-2222-222222222221</id>
     <title>VolumeGroup:vg_1</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -834,7 +1059,7 @@ VG_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 VG_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:vg-uuid-1</id>
+  <id>urn:uuid:22222222-2222-2222-2222-222222222221</id>
   <title>VolumeGroup:vg_1</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -846,7 +1071,7 @@ VG_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 VIOS_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:vios-uuid-1</id>
+  <id>urn:uuid:11111111-1111-1111-1111-111111111111-1</id>
   <title>VirtualIOServer:vios1</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -859,11 +1084,11 @@ VIOS_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 @pytest.mark.asyncio
 async def test_list_volume_groups(mock_hmc):
-    mock_hmc.get("/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup").mock(
+    mock_hmc.get("/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup").mock(
         return_value=httpx.Response(200, text=VG_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        vgs = await hmc.list_volume_groups("vios-uuid")
+        vgs = await hmc.list_volume_groups("11111111-1111-1111-1111-111111111111")
     assert len(vgs) == 1
     assert vgs[0]["Resource"]["GroupName"] == "vg_1"
     assert vgs[0]["Resource"]["FreeSpace"] == "51200"
@@ -871,11 +1096,11 @@ async def test_list_volume_groups(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_create_volume_group(mock_hmc):
-    route = mock_hmc.put("/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup").mock(
+    route = mock_hmc.put("/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup").mock(
         return_value=httpx.Response(201, text=VG_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
-        vg = await hmc.create_volume_group("vios-uuid", "vg_1", ["hdisk10"])
+        vg = await hmc.create_volume_group("11111111-1111-1111-1111-111111111111", "vg_1", ["hdisk10"])
     assert route.called
     body = route.calls.last.request.content.decode()
     assert "vg_1" in body and "hdisk10" in body
@@ -885,22 +1110,22 @@ async def test_create_volume_group(mock_hmc):
 @pytest.mark.asyncio
 async def test_create_virtual_disk(mock_hmc):
     route = mock_hmc.post(
-        "/rest/api/uom/VirtualIOServer/vios-uuid/VolumeGroup/vg-uuid"
+        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        await hmc.create_virtual_disk("vios-uuid", "vg-uuid", "lv_boot", 51200)
+        await hmc.create_virtual_disk("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "lv_boot", 51200)
     body = route.calls.last.request.content.decode()
     assert "VirtualDisks" in body and "lv_boot" in body and "51200" in body
 
 
 @pytest.mark.asyncio
 async def test_map_storage_to_lpar(mock_hmc):
-    route = mock_hmc.post("/rest/api/uom/VirtualIOServer/vios-uuid").mock(
+    route = mock_hmc.post("/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111").mock(
         return_value=httpx.Response(200, text=VIOS_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
         await hmc.map_storage_to_lpar(
-            "vios-uuid", "VirtualDisk", "lv_boot", "lpar-uuid"
+            "11111111-1111-1111-1111-111111111111", "VirtualDisk", "lv_boot", "lpar-uuid"
         )
     body = route.calls.last.request.content.decode()
     assert "VirtualSCSIMapping" in body
@@ -1282,7 +1507,7 @@ async def test_get_job_uses_href_when_provided(mock_hmc):
     href_route = mock_hmc.get(_JOB_HREF).mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
-    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
     async with HMCClient(make_config()) as hmc:
@@ -1295,8 +1520,8 @@ async def test_get_job_uses_href_when_provided(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_get_job_falls_back_to_global_path_when_no_href(mock_hmc):
-    """get_job(uuid) without job_href uses the legacy /rest/api/uom/Job/{uuid} path."""
-    route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    """get_job(uuid) without job_href uses the documented global jobs path."""
+    route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
@@ -1306,12 +1531,60 @@ async def test_get_job_falls_back_to_global_path_when_no_href(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_get_job_global_path_propagates_http_error(mock_hmc):
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(404, text="Unknown job")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(
+            HMCError, match="GET /rest/api/uom/jobs/job-uuid-999 failed"
+        ):
+            await hmc.get_job("job-uuid-999")
+
+
+@pytest.mark.asyncio
+async def test_delete_job_uses_documented_global_path(mock_hmc):
+    route = mock_hmc.delete("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(204)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc.delete_job("job-uuid-999")
+
+    assert route.called
+
+
+@pytest.mark.asyncio
+async def test_delete_job_prefers_self_href(mock_hmc):
+    route = mock_hmc.delete(_JOB_HREF).mock(return_value=httpx.Response(204))
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc.delete_job("job-uuid-999", job_href=_JOB_HREF)
+
+    assert route.called
+
+
+@pytest.mark.asyncio
+async def test_delete_job_propagates_http_error(mock_hmc):
+    mock_hmc.delete("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(500, text="Delete failed")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(
+            HMCError, match="DELETE /rest/api/uom/jobs/job-uuid-999 failed"
+        ):
+            await hmc.delete_job("job-uuid-999")
+
+
+@pytest.mark.asyncio
 async def test_wait_for_job_uses_href_when_provided(mock_hmc):
     """wait_for_job passes job_href to get_job so polling uses the SELF link."""
     href_route = mock_hmc.get(_JOB_HREF).mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
-    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
     async with HMCClient(make_config()) as hmc:

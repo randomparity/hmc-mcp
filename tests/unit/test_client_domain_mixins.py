@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from hmc_mcp.client_lpars import LparsMixin
-from hmc_mcp.client_lpm import LpmMixin
-from hmc_mcp.client_network import NetworkMixin
-from hmc_mcp.client_storage import StorageMixin
-from hmc_mcp.client_systems import SystemsMixin
-from hmc_mcp.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
-from hmc_mcp.client_templates import TemplatesMixin
+from hmc_mcp.client.client_lpars import LparsMixin
+from hmc_mcp.client.client_lpm import LpmMixin
+from hmc_mcp.client.client_network import NetworkMixin
+from hmc_mcp.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
+from hmc_mcp.client.client_storage import StorageMixin
+from hmc_mcp.client.client_systems import SystemsMixin
+from hmc_mcp.client.client_templates import TemplatesMixin
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 
@@ -222,7 +222,9 @@ async def test_lpar_parent_discovery_has_total_deadline(monkeypatch):
         _entry("sys-a", "system-a", "ManagedSystem")
     ]
     client.list_logical_partitions = AsyncMock(side_effect=_yield_empty)
-    monkeypatch.setattr("hmc_mcp.client_lpars.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr(
+        "hmc_mcp.client.client_resolution.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0
+    )
 
     with pytest.raises(ValueError, match="timed out; supply managed-system scope"):
         await client.find_partition_by_name("shared")
@@ -300,7 +302,9 @@ async def test_lpm_mixin_submits_each_operation_to_lpar_endpoint():
     await client.lpar_migrate_validate("lpar-1", "target-system")
     await client.lpar_migrate_abort("lpar-1")
     await client.lpar_migrate_recover("lpar-1")
-    await client.lpar_remote_restart("lpar-1", "target-system")
+    await client.lpar_remote_restart(
+        "lpar-1", "restart", "source-system", target_managed_system="target-system"
+    )
 
     operations = [
         call.args[0].rsplit("/", 1)[-1] for call in client.submit_job.await_args_list
@@ -341,8 +345,7 @@ async def test_network_mixin_routes_empty_feeds_and_delete():
     client._put.assert_awaited_once()
     assert (
         "https://hmc.test:12443/rest/api/uom/ManagedSystem/system-1/"
-        "VirtualSwitch/switch-1"
-        in client._put.await_args.args[1]
+        "VirtualSwitch/switch-1" in client._put.await_args.args[1]
     )
     assert client._put.await_args.kwargs == {
         "resource_type": "VirtualNetwork",
@@ -389,22 +392,26 @@ async def test_templates_mixin_routes_deployment_job():
 @pytest.mark.asyncio
 async def test_storage_mixin_routes_schema_sensitive_operations():
     client = StorageHarness()
+    vios_uuid = "11111111-1111-1111-1111-111111111111"
+    vg_uuid = "22222222-2222-2222-2222-222222222222"
 
     assert client.get_lpar_link("lpar-1") == (
         "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-1"
     )
-    assert await client.list_volume_groups("vios-1") == []
-    assert await client.create_virtual_disk("vios-1", "vg-1", "disk", 1024) is None
+    assert await client.list_volume_groups(vios_uuid) == []
+    assert await client.create_virtual_disk(vios_uuid, vg_uuid, "disk", 1024) is None
 
     client._get.assert_awaited_once_with(
-        "/rest/api/uom/VirtualIOServer/vios-1/VolumeGroup",
+        f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup",
         "VolumeGroup",
         include_schema_version=False,
+        uuid_path_arguments={"vios_uuid": vios_uuid},
     )
     client._post.assert_awaited_once()
     assert client._post.await_args.kwargs == {
         "resource_type": "VolumeGroup",
         "include_schema_version": False,
+        "uuid_path_arguments": {"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
     }
 
 
@@ -416,27 +423,19 @@ async def test_storage_mixin_uses_active_base_for_volume_group_url():
     url, _ = await client._get_vg_raw_xml("vios-1", "vg-1")
 
     assert url == (
-        "https://hmc.test:12443/rest/api/uom/VirtualIOServer/vios-1/"
-        "VolumeGroup/vg-1"
+        "https://hmc.test:12443/rest/api/uom/VirtualIOServer/vios-1/VolumeGroup/vg-1"
     )
 
 
 @pytest.mark.asyncio
 async def test_storage_mixin_uses_active_base_in_optical_mapping():
     client = StorageHarness()
-    system_uuid = "11111111-1111-1111-1111-111111111111"
-    client._get.return_value = """<VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <AssociatedManagedSystem href="https://source.example/rest/api/uom/ManagedSystem/{system_uuid}"/>
-      <VirtualSCSIMappings/>
-    </VirtualIOServer>""".format(system_uuid=system_uuid)
 
     await client.create_optical_mapping("vios-1", "install.iso", "lpar-1")
 
-    body = client._request.await_args.kwargs["content"]
+    body = client._post.await_args.args[1]
     assert (
-        f"https://hmc.test:12443/rest/api/uom/ManagedSystem/{system_uuid}/"
-        "LogicalPartition/lpar-1"
-        in body
+        "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-1" in body
     )
 
 
@@ -571,7 +570,9 @@ async def test_vios_parent_discovery_has_total_deadline(monkeypatch):
         return_value=[_entry("sys-a", "system-a", "ManagedSystem")]
     )
     client.list_vios = AsyncMock(side_effect=_yield_empty)
-    monkeypatch.setattr("hmc_mcp.client_systems.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr(
+        "hmc_mcp.client.client_resolution.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0
+    )
 
     with pytest.raises(ValueError, match="timed out; supply managed-system scope"):
         await client.find_vios_by_name("shared")

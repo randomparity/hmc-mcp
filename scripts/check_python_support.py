@@ -1,11 +1,9 @@
-#!/usr/bin/env python3
 """Compare reviewed Python versions with Python's lifecycle dataset."""
 
 from __future__ import annotations
 
 import json
 import re
-import socket
 import sys
 from collections.abc import Sequence
 from urllib.error import HTTPError, URLError
@@ -42,20 +40,20 @@ def supported_versions(payload: bytes) -> tuple[str, ...]:
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError("lifecycle response must be valid JSON") from error
     if not isinstance(document, dict):
-        raise ValueError("lifecycle response must have a JSON object root")
+        raise ValueError("lifecycle response must have a JSON object root")  # noqa: TRY004 - ValueError is the contract; tests/scripts/test_check_python_support.py parametrizes pytest.raises(ValueError) over these
 
     selected: list[tuple[tuple[int, int], str]] = []
     for version, entry in document.items():
         if not isinstance(version, str):
-            raise ValueError(
+            raise ValueError(  # noqa: TRY004 - ValueError is the contract; tests/scripts/test_check_python_support.py parametrizes pytest.raises(ValueError) over these
                 "lifecycle version keys must be strings in major.minor form"
             )
         parsed_version = _parse_version(version)
         if not isinstance(entry, dict):
-            raise ValueError(f"lifecycle version {version} must have an object entry")
+            raise ValueError(f"lifecycle version {version} must have an object entry")  # noqa: TRY004 - ValueError is the contract; tests/scripts/test_check_python_support.py parametrizes pytest.raises(ValueError) over these
         status = entry.get("status")
         if not isinstance(status, str):
-            raise ValueError(f"lifecycle version {version} must have a string status")
+            raise ValueError(f"lifecycle version {version} must have a string status")  # noqa: TRY004 - ValueError is the contract; tests/scripts/test_check_python_support.py parametrizes pytest.raises(ValueError) over these
         if status not in KNOWN_STATUSES:
             raise ValueError(
                 f"lifecycle version {version} has unsupported status {status!r}"
@@ -106,7 +104,7 @@ def _fetch_payload() -> bytes:
         raise RuntimeError(
             f"failed to fetch Python lifecycle data ({detail}); inspect the authority and retry"
         ) from error
-    except (URLError, socket.timeout, TimeoutError, OSError) as error:
+    except (URLError, TimeoutError, OSError) as error:
         raise RuntimeError(
             "failed to fetch Python lifecycle data; check network availability and retry"
         ) from error

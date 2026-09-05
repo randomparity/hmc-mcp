@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.28.1,<1",
     "pydantic>=2.13.4,<3",
     "pydantic-settings>=2.15.0,<3",
+    "typing-extensions>=4.16.0,<5",
 ]
 
 [project.optional-dependencies]
@@ -20,7 +21,7 @@ app = [
     "mcp==1.29.0",
     "rich==15.0.0",
     "typer==0.27.1",
-    "uvicorn==0.52.1",
+    "uvicorn==0.52.4",
 ]
 
 [project.urls]
@@ -49,15 +50,46 @@ dev = [
     "detect-secrets==1.5.0",
     "fastmcp-slim[client]==3.4.7",
     "hatchling==1.32.0",
-    "prek==0.4.10",
+    "prek==0.4.14",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
     "respx==0.23.1",
-    "ruff==0.15.22",
-    "ty==0.0.62",
+    "ruff==0.16.4",
+    "ty==0.0.74",
     "zizmor==1.29.0",
 ]
+
+[tool.ruff.lint]
+# Ruff 0.16 dropped these eighteen rules from its defaults. They were enforced here
+# under 0.15.22, and ten existing `# noqa: E402` directives in tests/ depend on E402
+# staying enabled -- without this list they become RUF100 findings whose only fix is
+# deleting documented suppressions. See ADR 0114.
+extend-select = [
+    "E401", "E402", "E701", "E702", "E703", "E711", "E712", "E713", "E714",
+    "E721", "E731", "E741", "E742", "E743", "F403", "F405", "F406", "F722",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# B008 guards against a *mutable* default shared across calls. typer.Option and
+# typer.Argument are Typer's declarative parameter constructors, which the framework
+# requires in that position; LparResources and LparPcieAssignments are both
+# @dataclass(frozen=True). B008 stays enabled and still fires on a genuinely mutable
+# default. See ADR 0114.
+extend-immutable-calls = [
+    "typer.Option",
+    "typer.Argument",
+    "hmc_mcp.documents.LparResources",
+    "hmc_mcp.operations.lpar.assignments.LparPcieAssignments",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# These two modules assert that the audit stream cannot be forged with bidirectional
+# and control characters, so their fixtures must literally contain U+202E and U+2028.
+# PLE2502's premise -- that such characters in source are unintended -- is false here
+# and only here. See ADR 0114.
+"tests/unit/test_audit.py" = ["PLE2502"]
+"tests/unit/test_ownership.py" = ["PLE2502"]
 
 [tool.ty.src]
 include = ["src/hmc_mcp"]
@@ -68,6 +100,9 @@ pythonpath = ["tests"]
 # subset with `--no-cov` when package-wide coverage is not meaningful.
 addopts = "--cov=hmc_mcp --cov-report="
 
+[tool.coverage.run]
+branch = true
+
 [tool.coverage.report]
-fail_under = 90
+fail_under = 90.5
 precision = 2

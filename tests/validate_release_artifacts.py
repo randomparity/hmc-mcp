@@ -23,9 +23,13 @@ from typing import BinaryIO, Never, Protocol
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
-
 PROJECT_NAME = "hmc-mcp"
 PACKAGE_NAME = "hmc_mcp"
+# PEP 561: without this marker in the distribution a type-checker reads every
+# exported model, alias, and signature as Any, so it is a shipped-artifact
+# invariant rather than a source-tree convenience.
+TYPE_MARKER = "py.typed"
+PACKAGE_SENTINELS = ("__init__.py", "server.py", TYPE_MARKER)
 CORE_METADATA_VERSION = "2.5"
 MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
 MAX_ARCHIVE_MEMBERS = 4096
@@ -402,7 +406,7 @@ def _read_sdist(path: Path) -> tuple[str, dict[str, bytes]]:
 def _parse_message(data: bytes, artifact: str, member: str) -> Message:
     try:
         message = BytesParser(policy=default).parsebytes(data)
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - any parse failure is reported through _fail with the artifact named
         _fail(artifact, f"{member} is malformed: {type(error).__name__}")
     if message.defects:
         _fail(artifact, f"{member} has parser defects")
@@ -424,7 +428,7 @@ def _requirements(message: Message, artifact: str) -> set[str]:
         return {
             str(Requirement(value)) for value in message.get_all("Requires-Dist", [])
         }
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - any parse failure is reported through _fail with the artifact named
         _fail(artifact, f"Requires-Dist is malformed: {type(error).__name__}")
 
 
@@ -608,12 +612,13 @@ def _source_members(root: Path) -> dict[str, bytes]:
     package = root / "src" / PACKAGE_NAME
     members = {
         path.relative_to(root / "src").as_posix(): path.read_bytes()
-        for path in package.rglob("*.py")
+        for path in (*package.rglob("*.py"), package / TYPE_MARKER)
         if path.is_file()
     }
-    for sentinel in (f"{PACKAGE_NAME}/__init__.py", f"{PACKAGE_NAME}/server.py"):
-        if sentinel not in members:
-            _fail("source checkout", f"missing package sentinel: {sentinel}")
+    for sentinel in PACKAGE_SENTINELS:
+        name = f"{PACKAGE_NAME}/{sentinel}"
+        if name not in members:
+            _fail("source checkout", f"missing package sentinel: {name}")
     return members
 
 

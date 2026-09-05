@@ -7,7 +7,7 @@ Decision: [ADR 0017](../../adr/0017-stable-lpm-wait-outcomes.md)
 
 Give LPM abort, recover, and remote-restart the standard optional wait controls
 and one stable job-outcome contract in MCP and CLI. The change is limited to
-`operations_lpm.py`, `server_lpm.py`, `cli_lpars.py`, focused LPM/CLI/schema
+`operations/lpm.py`, `server_tools/lpm.py`, `cli_commands/lpars.py`, focused LPM/CLI/schema
 tests, and these design artifacts. It does not add #151's validate-first
 sequence, change migrate or migrate-validate result shapes, or perform #145's
 broad documentation pass.

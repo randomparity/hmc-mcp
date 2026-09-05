@@ -12,22 +12,26 @@ hmc_remove_memory_pool.
 
 import asyncio
 from dataclasses import asdict
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.dispatch_scope import dispatch_authorizer
-from hmc_mcp.legacy_policy import compile_legacy_policy
-from hmc_mcp.client import HMCError
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.errors import HMCError
+from hmc_mcp.operations.affinity import ProvisionAffinityAssessment
 from hmc_mcp.server import (
     TOOL_SECURITY,
     create_mcp,
+)
+from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_decommission_lpar,
     hmc_delete_lpar,
-    hmc_delete_vios,
 )
+from hmc_mcp.server_tools.vios import hmc_delete_vios
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
 # every consumer builds its own. The legacy-equivalent policy registers exactly the
@@ -140,7 +144,7 @@ def test_schema_description_checker_rejects_top_level_and_nested_gaps():
 @pytest.mark.parametrize("arbitrary_command_enabled", [False, True])
 def test_every_registered_parameter_has_a_description(arbitrary_command_enabled):
     """Every exposed object property must carry useful rendered guidance."""
-    from hmc_mcp import server_command
+    from hmc_mcp.server_tools import command as server_command
 
     try:
         asyncio.run(
@@ -158,9 +162,14 @@ def test_every_registered_parameter_has_a_description(arbitrary_command_enabled)
         }
         assert missing == {}
     finally:
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
 
 
 def test_arbitrary_command_tool_is_disabled_by_default():
@@ -182,21 +191,41 @@ def test_fleet_health_is_read_only():
 
 
 def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
-    from hmc_mcp import server_command
+    from hmc_mcp.server_tools import command as server_command
 
     try:
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            True, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            True, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                True,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                True,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
 
         tools = [
             tool
@@ -206,17 +235,32 @@ def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
         assert len(tools) == 1
         assert tools[0].annotations is not None
         assert tools[0].annotations.readOnlyHint is False
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
         assert "hmc_run_command" not in _tools_by_name()
     finally:
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
 
 
 def test_closed_vocab_enum_matches_runtime_constant():
@@ -227,20 +271,17 @@ def test_closed_vocab_enum_matches_runtime_constant():
     adding a value must be a single edit. This pins the rendered schema to the
     constant so either side changing alone is caught.
     """
-    from hmc_mcp.client_adapters import ADAPTER_TYPES
-    from hmc_mcp.client_users import (
-        LDAP_REMOVAL_RESOURCES,
-        _VALID_USER_TYPES,
-    )
+    from hmc_mcp.client.client_adapters import ADAPTER_TYPES
+    from hmc_mcp.client.client_users import _VALID_AUTHENTICATION_FILTERS
     from hmc_mcp.documents import (
+        AUTHENTICATION_TYPES,
         PARTITION_TYPES,
         SHARING_MODES,
         STORAGE_KINDS,
-        TASK_ROLES,
     )
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
-    from hmc_mcp.server_vios import _VALID_BACKUP_TYPES
-    from hmc_mcp.ssh_commands import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
+    from hmc_mcp.operations.vios import _VALID_BACKUP_TYPES
+    from hmc_mcp.ssh.network import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
 
     by_name = _tools_by_name()
 
@@ -263,14 +304,13 @@ def test_closed_vocab_enum_matches_runtime_constant():
     assert backup_type["default"] in _VALID_BACKUP_TYPES
 
     expected_enums = {
-        ("hmc_create_user", "taskrole"): TASK_ROLES,
+        ("hmc_create_user", "authentication_type"): AUTHENTICATION_TYPES,
         ("hmc_list_adapters", "adapter_type"): ADAPTER_TYPES,
         ("hmc_delete_adapter", "adapter_type"): ADAPTER_TYPES,
         ("hmc_map_storage_to_lpar", "storage_kind"): STORAGE_KINDS,
         ("hmc_create_logical_unit", "lu_type"): LU_TYPES,
         ("hmc_create_logical_unit", "device_type"): DEVICE_TYPES,
-        ("hmc_remove_ldap_config", "resource"): LDAP_REMOVAL_RESOURCES,
-        ("hmc_list_users", "user_type"): _VALID_USER_TYPES,
+        ("hmc_list_users", "authentication_type"): _VALID_AUTHENTICATION_FILTERS,
         ("hmc_set_sriov_adapter_mode", "mode"): _VALID_SRIOV_MODES,
         ("hmc_list_io_slots", "pci_class"): _VALID_PCI_CLASSES,
     }
@@ -318,14 +358,14 @@ def test_vios_backup_and_restore_schemas_pin_the_supported_contracts():
 
 
 def test_parameter_normalization_contract_is_schema_pinned():
-    from hmc_mcp.operations_pcm import PCM_CATEGORIES
-    from hmc_mcp.server_lpar_config import PROCESSOR_COMPATIBILITY_MODES
-    from hmc_mcp.server_systems import MANAGED_SYSTEM_STATES, PARTITION_STATES
+    from hmc_mcp.operations.lpar.core import PROCESSOR_COMPATIBILITY_MODES
+    from hmc_mcp.operations.partition_state import PARTITION_STATES
+    from hmc_mcp.operations.pcm import PCM_CATEGORIES
 
     by_name = _tools_by_name()
     replacements = {
-        "hmc_install_vios": {"hmc_timeout_minutes", "wait_timeout_seconds"},
-        "hmc_install_lpar_os": {"hmc_timeout_minutes", "wait_timeout_seconds"},
+        "hmc_install_vios": {"install_source", "system_name_or_uuid"},
+        "hmc_install_vios_by_lpar_selector": {"install_source", "system_name_or_uuid"},
         "hmc_attach_disk_to_lpar": {"capacity_mib"},
         "hmc_create_virtual_disk": {"capacity_mib"},
         "hmc_create_media_repository": {"size_mib"},
@@ -363,14 +403,22 @@ def test_parameter_normalization_contract_is_schema_pinned():
         by_name["hmc_remove_vnic"].parameters["properties"],
     ):
         assert properties["ownership_override"]["default"] is False
-    for install_tool in ("hmc_install_vios", "hmc_install_lpar_os"):
+    for install_tool in ("hmc_install_vios", "hmc_install_vios_by_lpar_selector"):
         properties = by_name[install_tool].parameters["properties"]
-        assert "timeout_seconds" not in properties
-        assert properties["hmc_timeout_minutes"]["default"] == 60
-        assert properties["wait_timeout_seconds"]["default"] is None
+        # ADR 0070: the REST job-polling surface is gone with the dead
+        # InstallLPAR/InstallVIOS endpoints; the CLI bridge exposes no wait.
+        assert not set(properties) & {
+            "nim_ip",
+            "wait",
+            "wait_timeout_seconds",
+            "poll_interval",
+            "hmc_timeout_minutes",
+        }
+        assert properties["profile_name"]["default"] == "default"
+        assert properties["vlan_id"]["default"] == "0"
+        assert properties["mac_address"]["default"] is None
 
     enum_contracts = {
-        ("hmc_list_systems", "state"): MANAGED_SYSTEM_STATES,
         ("hmc_list_lpars", "state"): PARTITION_STATES,
         ("hmc_list_vios", "state"): PARTITION_STATES,
         ("hmc_set_lpar_proc_compat", "mode"): PROCESSOR_COMPATIBILITY_MODES,
@@ -474,31 +522,73 @@ def test_partition_creation_tools_share_resource_object_schema():
         assert legacy_name not in vios_properties
 
 
-def test_password_policy_mutations_use_settings_object_schema():
+def test_password_policy_tools_are_absent_without_a_documented_target():
     by_name = _tools_by_name()
     for tool_name in ("hmc_create_password_policy", "hmc_modify_password_policy"):
-        properties = by_name[tool_name].parameters["properties"]
-        assert set(properties) == {"policy_name", "settings", "profile"}
-        assert properties["settings"]["type"] == "object"
+        assert tool_name not in by_name
 
 
-def test_repository_type_enum_matches_runtime_constant():
-    """The MCP enum for RepositorySource.type must not drift from the Literal.
+def test_update_source_enums_match_runtime_constants():
+    """Rendered console and VIOS source enums must not drift from runtime.
 
-    The repository TypedDict's ``type`` field is annotated with the
-    RepositoryType Literal, which renders as an enum in the tool schema; the
-    jobs layer validates against _REQUIRED_KEYS keyed by that same set. This
-    pins the rendered schema to the runtime set so either side changing alone
-    is caught.
+    Each public tool schema is pinned to the corresponding runtime Literal.
     """
-    from hmc_mcp.jobs import _REPOSITORY_TYPES
+    from hmc_mcp.operations.updates.models import (
+        _CONSOLE_UPDATE_MEDIA_TYPES,
+        _VIOS_UPDATE_RESOURCE_TYPES,
+        _VIOS_UPGRADE_RESOURCE_TYPES,
+    )
 
     by_name = _tools_by_name()
 
-    repo_type = by_name["hmc_update_console_software"].parameters["properties"][
+    media_type = by_name["hmc_update_console_software"].parameters["properties"][
         "repository"
-    ]["properties"]["type"]
-    assert set(repo_type["enum"]) == set(_REPOSITORY_TYPES)
+    ]["properties"]["MediaType"]
+    assert set(media_type["enum"]) == set(_CONSOLE_UPDATE_MEDIA_TYPES)
+    repository = by_name["hmc_update_console_software"].parameters["properties"][
+        "repository"
+    ]
+    assert repository["required"] == ["MediaType"]
+
+    update_sources = by_name["hmc_vios_update"].parameters["properties"]["repository"][
+        "anyOf"
+    ]
+    upgrade_sources = by_name["hmc_vios_upgrade"].parameters["properties"][
+        "repository"
+    ]["anyOf"]
+    assert {
+        source["properties"]["ResourceType"]["const"] for source in update_sources
+    } == set(_VIOS_UPDATE_RESOURCE_TYPES)
+    assert {
+        source["properties"]["ResourceType"]["const"] for source in upgrade_sources
+    } == set(_VIOS_UPGRADE_RESOURCE_TYPES)
+    assert all(
+        "ResourceType" in source["required"]
+        for source in (*update_sources, *upgrade_sources)
+    )
+    assert all(
+        property_schema.get("description")
+        for source in (*update_sources, *upgrade_sources)
+        for property_schema in source["properties"].values()
+    )
+    update_required = {
+        source["properties"]["ResourceType"]["const"]: set(source["required"])
+        for source in update_sources
+    }
+    upgrade_required = {
+        source["properties"]["ResourceType"]["const"]: set(source["required"])
+        for source in upgrade_sources
+    }
+    assert update_required["HMC"] == {"ResourceType", "Name"}
+    assert update_required["NFS"] == {
+        "ResourceType",
+        "ServerHostOrIP",
+        "RemoteDirectory",
+    }
+    assert update_required["USB"] == {"ResourceType", "USBDevice"}
+    assert all("Disks" in required for required in upgrade_required.values())
+    assert all("Disks" not in source["properties"] for source in update_sources)
+    assert all("RestartVIOS" not in source["properties"] for source in upgrade_sources)
 
 
 def test_metrics_tools_have_stable_output_schemas():
@@ -517,6 +607,18 @@ def test_metrics_tools_have_stable_output_schemas():
         assert "mode" not in tool.parameters.get("properties", {})
 
 
+@pytest.mark.parametrize(
+    "tool_name", ["hmc_get_pcm_preferences", "hmc_set_pcm_preferences"]
+)
+def test_pcm_preference_tools_describe_managed_system_only(tool_name):
+    tool = _tools_by_name()[tool_name]
+    category = tool.parameters["properties"]["category"]
+
+    assert "ManagedSystem" in tool.description
+    assert "ManagedSystem" in category["description"]
+    assert "LogicalPartition" not in category["description"]
+
+
 def test_wait_for_job_has_one_stable_output_schema():
     by_name = _tools_by_name()
     schema = by_name["hmc_wait_for_job"].output_schema
@@ -528,11 +630,14 @@ def test_wait_for_job_has_one_stable_output_schema():
         "timed_out",
         "error",
         "job",
+        "found",
+        "job_href",
     }
     assert set(schema["required"]) == set(schema["properties"])
     assert schema["properties"]["job_id"] == {"type": "string"}
     assert schema["properties"]["timed_out"] == {"type": "boolean"}
-    for nullable_field in ("status", "error", "job"):
+    assert schema["properties"]["found"] == {"type": "boolean"}
+    for nullable_field in ("status", "error", "job", "job_href"):
         assert {
             variant["type"] for variant in schema["properties"][nullable_field]["anyOf"]
         } == {
@@ -574,6 +679,8 @@ def test_lpm_recovery_tools_have_standard_wait_contract():
             "timed_out",
             "error",
             "job",
+            "found",
+            "job_href",
         }
         assert set(tool.output_schema["required"]) == set(
             tool.output_schema["properties"]
@@ -601,11 +708,8 @@ def test_delete_lpar_refuses_when_active(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
-            new=AsyncMock(return_value=("system-1", "lpar-1")),
-        ),
-        patch(
-            "hmc_mcp.operations_lpar.authorize_lpar_mutation", new=AsyncMock()
+            "hmc_mcp.operations.lpar.core.resolve_and_authorize_lpar_mutation",
+            new=AsyncMock(return_value=LPAR_UUID),
         ) as guard,
         pytest.raises(HMCError) as exc_info,
     ):
@@ -621,15 +725,10 @@ def test_delete_lpar_succeeds_when_powered_off(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     _mock_state_and_delete(mock_hmc, "not activated")
 
-    with (
-        patch(
-            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
-            new=AsyncMock(return_value=("system-1", "lpar-1")),
-        ),
-        patch(
-            "hmc_mcp.operations_lpar.authorize_lpar_mutation", new=AsyncMock()
-        ) as guard,
-    ):
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_and_authorize_lpar_mutation",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ) as guard:
         result = hmc_delete_lpar(SYSTEM_UUID, LPAR_UUID, ownership_override=True)
 
     assert result == f"Deleted LPAR {LPAR_UUID}"
@@ -653,7 +752,7 @@ def test_delete_vios_succeeds_when_powered_off(monkeypatch, mock_hmc):
 
     result = hmc_delete_vios(LPAR_UUID)
 
-    assert result == f"Deleted VIOS {LPAR_UUID}"
+    assert result == LPAR_UUID
 
 
 # ------------------------------------------------------------------ #
@@ -683,9 +782,26 @@ def _mock_power_on_guard(router, state: str):
     )
 
 
+def _affinity_request() -> ProvisionAffinityAssessment:
+    return ProvisionAffinityAssessment(
+        system_name_or_uuid=SYSTEM_UUID,
+        lpar_name=LPAR_UUID,
+        captured_score=80,
+        captured_policy_state="absent",
+        captured_minimum=None,
+        captured_at=datetime.now(UTC),
+        stale_after_seconds=300,
+        response="warn",
+        regression_threshold=5,
+        optimization_threshold=5,
+    )
+
+
 def test_power_on_lpar_already_running_returns_message(monkeypatch, mock_hmc):
     """The already-running path returns the stable PowerOn outcome."""
-    from hmc_mcp.server import hmc_power_on_lpar
+    from hmc_mcp.server_tools.lpar.lifecycle import (
+        hmc_power_on_lpar,
+    )
 
     _hmc_env(monkeypatch)
     power_on_route = _mock_power_on_guard(mock_hmc, "running")
@@ -693,16 +809,25 @@ def test_power_on_lpar_already_running_returns_message(monkeypatch, mock_hmc):
     result = hmc_power_on_lpar(LPAR_UUID)
 
     assert not power_on_route.called
-    assert set(asdict(result)) == {"already_running", "job", "message"}
+    assert set(asdict(result)) == {
+        "already_running",
+        "job",
+        "message",
+        "affinity_assessment",
+    }
     assert result.already_running is True
     assert result.job is None
     assert isinstance(result.message, str)
     assert LPAR_UUID in result.message
+    assert result.affinity_assessment.status == "skipped"
+    assert result.affinity_assessment.measured is False
 
 
 def test_power_on_lpar_not_activated_submits_job(monkeypatch, mock_hmc):
     """hmc_power_on_lpar submits the PowerOn job when partition is not activated."""
-    from hmc_mcp.server import hmc_power_on_lpar
+    from hmc_mcp.server_tools.lpar.lifecycle import (
+        hmc_power_on_lpar,
+    )
 
     _hmc_env(monkeypatch)
     power_on_route = _mock_power_on_guard(mock_hmc, "not activated")
@@ -710,17 +835,28 @@ def test_power_on_lpar_not_activated_submits_job(monkeypatch, mock_hmc):
     result = hmc_power_on_lpar(LPAR_UUID)
 
     assert power_on_route.called
-    assert set(asdict(result)) == {"already_running", "job", "message"}
+    assert set(asdict(result)) == {
+        "already_running",
+        "job",
+        "message",
+        "affinity_assessment",
+    }
     assert result.already_running is False
     assert result.job["Resource"]["JobID"] == "job-uuid-power-on"
     assert result.message is None
+    assert result.affinity_assessment.status == "skipped"
 
 
 def test_power_on_lpar_has_one_stable_output_schema():
     schema = _tools_by_name()["hmc_power_on_lpar"].output_schema
 
     assert schema["type"] == "object"
-    assert set(schema["properties"]) == {"already_running", "job", "message"}
+    assert set(schema["properties"]) == {
+        "already_running",
+        "job",
+        "message",
+        "affinity_assessment",
+    }
     assert set(schema["required"]) == set(schema["properties"])
     assert schema["properties"]["already_running"] == {"type": "boolean"}
     assert {variant["type"] for variant in schema["properties"]["job"]["anyOf"]} == {
@@ -734,7 +870,9 @@ def test_power_on_lpar_has_one_stable_output_schema():
 
 def test_power_on_lpar_force_skips_guard(monkeypatch, mock_hmc):
     """hmc_power_on_lpar(force=True) submits the job even when running."""
-    from hmc_mcp.server import hmc_power_on_lpar
+    from hmc_mcp.server_tools.lpar.lifecycle import (
+        hmc_power_on_lpar,
+    )
 
     _hmc_env(monkeypatch)
     # When force=True the state check endpoint is not called; only the job PUT matters.
@@ -750,14 +888,59 @@ def test_power_on_lpar_force_skips_guard(monkeypatch, mock_hmc):
     assert result.message is None
 
 
+def test_power_on_lpar_non_waiting_assessment_does_not_measure(monkeypatch, mock_hmc):
+    """Opt-in assessment preserves non-waiting submission semantics."""
+    from hmc_mcp.server_tools.lpar.lifecycle import (
+        hmc_power_on_lpar,
+    )
+
+    _hmc_env(monkeypatch)
+    _mock_power_on_guard(mock_hmc, "not activated")
+
+    result = hmc_power_on_lpar(
+        LPAR_UUID,
+        system_name_or_uuid=SYSTEM_UUID,
+        affinity_assessment=_affinity_request(),
+    )
+
+    assert result.job["Resource"]["JobID"] == "job-uuid-power-on"
+    assert result.affinity_assessment.measured is False
+    assert result.affinity_assessment.status == "skipped"
+    assert "wait=true" in result.affinity_assessment.reason
+
+
+def test_power_on_lpar_already_running_assessment_does_not_measure(
+    monkeypatch, mock_hmc
+):
+    """Already running is not an activation observed by this call."""
+    from hmc_mcp.server_tools.lpar.lifecycle import (
+        hmc_power_on_lpar,
+    )
+
+    _hmc_env(monkeypatch)
+    _mock_power_on_guard(mock_hmc, "running")
+
+    result = hmc_power_on_lpar(
+        LPAR_UUID,
+        wait=True,
+        system_name_or_uuid=SYSTEM_UUID,
+        affinity_assessment=_affinity_request(),
+    )
+
+    assert result.already_running is True
+    assert result.affinity_assessment.measured is False
+    assert result.affinity_assessment.status == "skipped"
+    assert "already running" in result.affinity_assessment.reason
+
+
 # ------------------------------------------------------------------ #
 # hmc_create_lpar name-collision guard
 # ------------------------------------------------------------------ #
 
-EXISTING_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+EXISTING_LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:{uuid}</id>
+    <id>urn:uuid:{LPAR_UUID}</id>
     <title>LogicalPartition:existing-lpar</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -767,7 +950,7 @@ EXISTING_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </content>
   </entry>
 </feed>
-""".format(uuid=LPAR_UUID)
+"""
 
 EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom"/>
@@ -792,7 +975,7 @@ NEW_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 def test_create_lpar_refuses_name_collision(monkeypatch, mock_hmc):
     """hmc_create_lpar raises ValueError when a partition with the same name exists."""
-    from hmc_mcp.server import hmc_create_lpar
+    from hmc_mcp.server_tools.lpar.lifecycle import hmc_create_lpar
 
     _hmc_env(monkeypatch)
     mock_hmc.get(
@@ -811,7 +994,8 @@ def test_create_lpar_refuses_name_collision(monkeypatch, mock_hmc):
 def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
     """hmc_create_lpar creates the partition when no LPAR with the same name exists."""
     from unittest.mock import AsyncMock, patch
-    from hmc_mcp.server import hmc_create_lpar
+
+    from hmc_mcp.server_tools.lpar.lifecycle import hmc_create_lpar
 
     _hmc_env(monkeypatch)
     mock_hmc.get(
@@ -823,11 +1007,11 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            "hmc_mcp.operations.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
         patch(
-            "hmc_mcp.operations_lpar._system_name",
+            "hmc_mcp.operations.ownership._resolve_system_name",
             new=AsyncMock(return_value="sys1"),
         ),
     ):

@@ -27,7 +27,7 @@ audit events (#224), fail-closed startup and policy generation (#225).
 | `READ_ONLY_TOOLS` (53 names) / `DESTRUCTIVE_TOOLS` (26 names) | `src/hmc_mcp/_app.py:135-222` |
 | Re-exported from `server.py` | `src/hmc_mcp/server.py:43-44` |
 | 19 domain modules call `tool_module()` | `src/hmc_mcp/server_*.py` |
-| `hmc_run_command` registers outside the collector | `src/hmc_mcp/server_command.py:26-32` |
+| `hmc_run_command` registers outside the collector | `src/hmc_mcp/server_tools/command.py:26-32` |
 | Category test with a passing `else` branch | `tests/app/test_capabilities.py:144-160` |
 | Direct collector contract tests using the removed forms | `tests/unit/test_tool_registry.py:17-69` |
 
@@ -131,7 +131,7 @@ and a new partition on `hmc_create_lpar`. `tool()` builds the final `targets` tu
 table intersection plus `extra_targets`, filling `required` from each parameter's default.
 
 All validation lives in one function, `validate_security(security, handler) -> None`.
-`tool()` calls it at decoration time; `server_command.py` calls it at import on its own
+`tool()` calls it at decoration time; `server_tools/command.py` calls it at import on its own
 constant, so the escape hatch's declaration is checked by the same rules as every other.
 
 | id | rule | failure |
@@ -159,7 +159,7 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = {
     "cluster_uuid": "cluster",
     "ssp_uuid": "shared_storage_pool",
     "console_uuid": "console",
-    "job_uuid": "job",
+    "job_id": "job",
     "template_uuid": "template",
     "draft_template_uuid": "template",
     "policy_name": "password_policy",
@@ -244,7 +244,7 @@ gaining `destructiveHint=True`, and `hmc_read_lpar_boot_order` gaining `readOnly
 
 ### 3.4 The escape hatch
 
-`server_command.py` defines
+`server_tools/command.py` defines
 
 ```python
 HMC_RUN_COMMAND_SECURITY = ToolSecurity(
@@ -271,7 +271,7 @@ Effect assignment preserves today's classification exactly, with one correction:
 - the 53 tools carrying `readOnlyHint=True` become `read`;
 - the 26 carrying `destructiveHint=True` become `destructive`;
 - the 49 carrying neither become `mutate`, except `hmc_read_lpar_boot_order`, which becomes
-  `read` (one GET returning boot-order state), and `hmc_install_vios` / `hmc_install_lpar_os`,
+  `read` (one GET returning boot-order state), and `hmc_install_vios` / `hmc_install_vios_by_lpar_selector`,
   which become `destructive` (they overwrite an existing partition's OS and boot disk — the
   same irreversible overwrite that already made `hmc_restore_vios` destructive). See ADR 0035;
 - `hmc_run_command` becomes `arbitrary-command`.
@@ -372,7 +372,7 @@ requirement 2 requires that ordinary MCP tool arguments never select or widen po
 - Annotations remain hints. A client that ignores them is unaffected, before and after.
 - `metric_resource` cannot be bound to an exact per-kind constraint without resolving the
   `category` argument. Stated here and left to #223 rather than guessed at declaration time.
-- HMC-side authorization, the LPAR ownership-token convention in `operations_lpar.py`, and
+- HMC-side authorization, the LPAR ownership-token convention in `operations/ownership.py`, and
   the password-policy DTO in `documents.py` are unrelated pre-existing mechanisms and are
   not touched.
 - Effect assignment is a human judgment recorded in source. The guardrail proves a
@@ -426,7 +426,7 @@ re-expressed against the required keywords, since both the bare `@tool` form and
 | `src/hmc_mcp/tool_registry.py` | add `Effect`, `TargetKind`, `TargetSelector`, `ToolSecurity`, `REQUIRED_TARGET_ARGUMENTS`, `annotations_for`, `validate_security`, `build_tool_security`; rewrite `ToolDefinition` and `tool_module()` |
 | `src/hmc_mcp/_app.py` | delete the three annotation constants, both frozensets, and the stale comment block |
 | `src/hmc_mcp/server.py` | drop the two re-exports; unpack the three-tuple from each domain module; build `TOOL_SECURITY` at module scope |
-| `src/hmc_mcp/server_command.py` | declare and validate `HMC_RUN_COMMAND_SECURITY`; register with the derived annotation |
+| `src/hmc_mcp/server_tools/command.py` | declare and validate `HMC_RUN_COMMAND_SECURITY`; register with the derived annotation |
 | 19 `src/hmc_mcp/server_*.py` domain modules | declare `effect`, `operation`, `target_kind` on all 128 collected tools, plus `extra_targets=(("user", "name"),)` on the four user tools and `connection_argument=None` on `hmc_list_configured_hosts`; unpack the three-tuple; drop the `_READ_ONLY` / `_DESTRUCTIVE` / `_STATE_CHANGING` imports |
 | `tests/app/test_tool_security.py` | new — G1–G11 |
 | `tests/app/test_capabilities.py` | remove the superseded category tests; re-point three assertions at `TOOL_SECURITY` |

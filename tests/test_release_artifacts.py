@@ -1,24 +1,23 @@
-import os
 import base64
 import copy
 import csv
 import hashlib
 import io
+import os
+import re
 import shutil
 import stat
 import struct
 import subprocess
 import tarfile
-import re
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import BinaryIO, Callable
+from typing import BinaryIO
 
 import pytest
-
 import validate_release_artifacts as validator
 from validate_release_artifacts import _read_bounded, main
-
 
 ROOT = Path(__file__).parents[1]
 
@@ -88,6 +87,20 @@ def test_validates_clean_wheel_and_sdist(built_project: tuple[Path, Path]) -> No
     artifacts, project = built_project
 
     assert main([str(artifacts), str(project)]) == 0
+
+
+def test_built_artifacts_ship_the_pep_561_marker(
+    built_project: tuple[Path, Path],
+) -> None:
+    """PEP 561: the marker is only meaningful where a consumer reads it — the
+    built distribution, not the source checkout."""
+    artifacts, _ = built_project
+
+    wheel = validator._read_wheel(next(artifacts.glob("*.whl")))
+    _, sdist = validator._read_sdist(next(artifacts.glob("*.tar.gz")))
+
+    assert wheel["hmc_mcp/py.typed"] == b""
+    assert sdist["src/hmc_mcp/py.typed"] == b""
 
 
 def _artifact_copy(
@@ -456,9 +469,8 @@ def test_rejects_malformed_zip64_record_offset(tmp_path: Path) -> None:
 
     with pytest.raises(
         validator.ValidationError, match="wheel archive is malformed: ZIP64 record"
-    ):
-        with wheel.open("rb") as stream:
-            validator._preflight_zip_directory(stream, wheel.name)
+    ), wheel.open("rb") as stream:
+        validator._preflight_zip_directory(stream, wheel.name)
 
 
 @pytest.mark.parametrize(
@@ -833,6 +845,36 @@ def test_rejects_unexpected_wheel_payload_with_valid_record(
     )
 
     _assert_invalid(artifacts, project, capsys, "wheel member set is not closed")
+
+
+def test_rejects_wheel_that_drops_the_pep_561_marker(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A build-configuration regression that silently omits the marker must fail
+    validation rather than ship an untyped distribution."""
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+
+    _rewrite_wheel(wheel, lambda members: members.pop("hmc_mcp/py.typed"))
+
+    _assert_invalid(artifacts, project, capsys, "wheel member set is not closed")
+
+
+def test_rejects_checkout_without_the_pep_561_marker(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    stripped = tmp_path / "stripped"
+    shutil.copytree(project, stripped, ignore=shutil.ignore_patterns("dist"))
+    (stripped / "src" / "hmc_mcp" / "py.typed").unlink()
+
+    _assert_invalid(
+        artifacts, stripped, capsys, "missing package sentinel: hmc_mcp/py.typed"
+    )
 
 
 @pytest.mark.parametrize(

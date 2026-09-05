@@ -35,7 +35,7 @@ unstated rule and neither can drift from the other unnoticed.
 | File | Change |
 |---|---|
 | `docs/adr/0044-containment-decides-unbounded-arguments.md` | The decision record. |
-| `src/hmc_mcp/server_vios.py` | `_validate_backup_name` refuses a `backup_name` that is empty or differs from its stripped form, carries `/` or `\`, is made only of dots, or starts with `-`; docstring states the refusal. |
+| `src/hmc_mcp/server_tools/vios.py` | `_validate_backup_name` refuses a `backup_name` that is empty or differs from its stripped form, carries `/` or `\`, is made only of dots, or starts with `-`; docstring states the refusal. |
 | `src/hmc_mcp/tool_registry.py` | `UNBOUNDED_ARGUMENTS` comment states the containment criterion and points at ADR 0044. |
 | `tests/app/test_tool_security.py` | Guardrail comment rewritten to the containment rule; a test pinning `hmc_restore_vios`'s classification to the guard; a test requiring every `UNBOUNDED_ARGUMENTS` member to carry its reason beside the set. |
 | `tests/vios/test_vios_backup.py` | The refused shapes, and a legitimate name still reaching the command unchanged. |

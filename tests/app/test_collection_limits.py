@@ -8,17 +8,27 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from hmc_mcp import (
-    server_adapters,
-    server_jobs,
-    server_network,
-    server_storage,
-    server_systems,
-)
-from hmc_mcp._app import _run_limited_collection
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp import _app as app_runtime
+from hmc_mcp._app import run_limited_collection
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.operations.lpar import core as lpar_core
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmc_mcp.server_tools import (
+    adapters as server_adapters,
+)
+from hmc_mcp.server_tools import (
+    jobs as server_jobs,
+)
+from hmc_mcp.server_tools import (
+    network as server_network,
+)
+from hmc_mcp.server_tools import (
+    storage as server_storage,
+)
+from hmc_mcp.server_tools import (
+    systems as server_systems,
+)
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
 # every consumer builds its own. The legacy-equivalent policy registers exactly the
@@ -27,6 +37,11 @@ from hmc_mcp.server import TOOL_SECURITY, create_mcp
 # so every assertion below reads the same registry it always did.
 mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))
 
+
+README = Path(__file__).parents[2] / "README.md"
+COLLECTION_LIMIT_HEADING = "### Collection limits"
+COLLECTION_LIMIT_NEXT = "### Public parameter units and selectors"
+COLLECTION_LIMIT_CLAIMS = ("client-side", "complete HMC feed", "transferred and parsed")
 
 
 EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8"?>
@@ -54,7 +69,13 @@ COLLECTION_TOOLS = {
     "hmc_list_adapters": (
         server_adapters,
         ("lpar-1",),
-        ["lpar_name_or_uuid", "adapter_type", "profile", "limit", "system_name_or_uuid"],
+        [
+            "lpar_name_or_uuid",
+            "adapter_type",
+            "profile",
+            "limit",
+            "system_name_or_uuid",
+        ],
     ),
     "hmc_list_virtual_switches": (
         server_network,
@@ -74,7 +95,7 @@ COLLECTION_TOOLS = {
     "hmc_list_volume_groups": (
         server_storage,
         ("vios-1",),
-        ["vios_name_or_uuid", "profile", "limit"],
+        ["vios_name_or_uuid", "profile", "limit", "system_name_or_uuid"],
     ),
     "hmc_list_clusters": (server_storage, (), ["profile", "limit"]),
     "hmc_list_shared_storage_pools": (
@@ -97,18 +118,22 @@ COLLECTION_TOOLS = {
 def test_run_limited_collection_caps_after_operation(limit, expected):
     entries = [{"id": 1}, {"id": 2}, {"id": 3}]
     operation = AsyncMock(return_value=entries)
+    client = MagicMock()
 
-    result = _run_limited_collection(operation, limit)
+    with patch.object(
+        app_runtime, "client_from_env", return_value=_client_context(client)
+    ):
+        result = run_limited_collection(operation, limit)
 
     assert result == expected
-    operation.assert_awaited_once_with()
+    operation.assert_awaited_once_with(client)
 
 
 def test_run_limited_collection_rejects_negative_limit_before_operation():
     operation = AsyncMock(return_value=[])
 
     with pytest.raises(ValueError, match="^limit must be greater than or equal to 0$"):
-        _run_limited_collection(operation, -1)
+        run_limited_collection(operation, -1)
 
     operation.assert_not_called()
 
@@ -138,7 +163,9 @@ def test_collection_tools_delegate_limit_to_shared_helper(tool_name, entry, limi
     module, args, _expected_parameters = entry
     function = getattr(module, tool_name)
 
-    with patch.object(module, "_run_limited_collection", return_value=[{"id": 1}]) as run:
+    with patch.object(
+        module, "run_limited_collection", return_value=[{"id": 1}]
+    ) as run:
         result = function(*args, limit=limit)
 
     assert result == [{"id": 1}]
@@ -166,9 +193,9 @@ def test_limit_is_not_sent_on_root_child_search_or_job_requests(monkeypatch, moc
             ),
         ),
         (
-            mock_hmc.get(
-                "/rest/api/uom/ManagedSystem/search/(State==operating)"
-            ).mock(return_value=httpx.Response(200, text=EMPTY_FEED)),
+            mock_hmc.get("/rest/api/uom/ManagedSystem/search/(State==operating)").mock(
+                return_value=httpx.Response(200, text=EMPTY_FEED)
+            ),
             lambda: server_systems.hmc_list_systems(state="operating", limit=1),
         ),
         (
@@ -198,7 +225,7 @@ def test_system_state_selector_runs_before_results_are_capped():
     client = MagicMock()
     client.search_uom = AsyncMock(return_value=entries)
     with patch.object(
-        server_systems, "client_from_env", return_value=_client_context(client)
+        app_runtime, "client_from_env", return_value=_client_context(client)
     ):
         result = server_systems.hmc_list_systems(state="operating", limit=2)
 
@@ -212,10 +239,10 @@ def test_lpar_parent_selector_runs_before_results_are_capped():
     client.list_logical_partitions = AsyncMock(return_value=entries)
     with (
         patch.object(
-            server_systems, "client_from_env", return_value=_client_context(client)
+            app_runtime, "client_from_env", return_value=_client_context(client)
         ),
         patch.object(
-            server_systems,
+            lpar_core,
             "resolve_system_uuid",
             new=AsyncMock(return_value="system-uuid"),
         ) as resolve,
@@ -232,12 +259,12 @@ def test_adapter_type_selector_runs_before_results_are_capped():
     client = MagicMock()
     with (
         patch.object(
-            server_adapters, "client_from_env", return_value=_client_context(client)
+            app_runtime, "client_from_env", return_value=_client_context(client)
         ),
         patch.object(
             server_adapters,
             "list_adapters",
-            new=AsyncMock(return_value=("lpar-uuid", entries)),
+            new=AsyncMock(return_value=entries),
         ) as list_selected,
     ):
         result = server_adapters.hmc_list_adapters(
@@ -246,7 +273,7 @@ def test_adapter_type_selector_runs_before_results_are_capped():
 
     assert result == entries[:2]
     list_selected.assert_awaited_once_with(
-        client, "lpar-name", "VirtualSCSIClientAdapter", None
+        client, None, "lpar-name", "VirtualSCSIClientAdapter"
     )
 
 
@@ -255,7 +282,7 @@ def test_arbitrary_resource_type_runs_before_results_are_capped():
     client = MagicMock()
     client.list_uom = AsyncMock(return_value=entries)
     with patch.object(
-        server_systems, "client_from_env", return_value=_client_context(client)
+        app_runtime, "client_from_env", return_value=_client_context(client)
     ):
         result = server_systems.hmc_list_resources("Cluster", limit=2)
 
@@ -263,8 +290,47 @@ def test_arbitrary_resource_type_runs_before_results_are_capped():
     client.list_uom.assert_awaited_once_with("Cluster")
 
 
+def _collection_limit_section(readme: str) -> str:
+    """Return the body of README's '### Collection limits' section.
+
+    Heading *order* is asserted first: without it a renamed or reordered heading makes
+    the second split return the rest of the file, and the slice silently stops being a
+    section.
+    """
+    for heading in (COLLECTION_LIMIT_HEADING, COLLECTION_LIMIT_NEXT):
+        assert heading in readme, f"README has no '{heading}' heading"
+    assert readme.index(COLLECTION_LIMIT_HEADING) < readme.index(
+        COLLECTION_LIMIT_NEXT
+    ), f"README must keep '{COLLECTION_LIMIT_HEADING}' before '{COLLECTION_LIMIT_NEXT}'"
+    return readme.split(COLLECTION_LIMIT_HEADING, 1)[1].split(COLLECTION_LIMIT_NEXT, 1)[
+        0
+    ]
+
+
+def _relocated(readme: str) -> str:
+    """Move the collection-limit disclosure into an unrelated README section."""
+    body = _collection_limit_section(readme)
+    return readme.replace(body, "\n\n", 1).replace(
+        "## Install\n", f"## Install\n{body}", 1
+    )
+
+
 def test_readme_discloses_collection_limit_costs():
-    readme = (Path(__file__).parents[2] / "README.md").read_text(encoding="utf-8")
-    assert "client-side" in readme
-    assert "complete HMC feed" in readme
-    assert "transferred and parsed" in readme
+    section = _collection_limit_section(README.read_text(encoding="utf-8"))
+
+    for claim in COLLECTION_LIMIT_CLAIMS:
+        assert claim in section, f"'{COLLECTION_LIMIT_HEADING}' must state {claim!r}"
+
+
+def test_collection_limit_disclosure_relocated_out_of_its_section_is_caught():
+    """The negative variant a whole-file substring check cannot see.
+
+    'client-side' also appears under '### Public parameter units and selectors', so a
+    bare ``in readme`` check certifies presence, not placement. Relocation keeps every
+    phrase in the file and must still fail.
+    """
+    relocated = _relocated(README.read_text(encoding="utf-8"))
+
+    assert all(claim in relocated for claim in COLLECTION_LIMIT_CLAIMS)
+    moved = _collection_limit_section(relocated)
+    assert [claim for claim in COLLECTION_LIMIT_CLAIMS if claim in moved] == []

@@ -2,10 +2,9 @@
 
 import httpx
 import pytest
-
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.documents import (
     LparResources,
     build_dlpar_mem_document,
@@ -14,9 +13,9 @@ from hmc_mcp.documents import (
 
 LPAR_UUID = "aaaa0000-0000-0000-0000-000000000001"
 
-LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+LPAR_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:{uuid}</id>
+  <id>urn:uuid:{LPAR_UUID}</id>
   <title>LogicalPartition:lpar1</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -25,7 +24,7 @@ LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </LogicalPartition>
   </content>
 </entry>
-""".format(uuid=LPAR_UUID)
+"""
 
 
 # ------------------------------------------------------------------ #

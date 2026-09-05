@@ -11,13 +11,12 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 import sys
-from types import ModuleType
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from hmc_mcp.config import HMCConfig
-
 
 ROOT = Path(__file__).parents[1]
 GUARD = ROOT / "scripts" / "check_env_vars.py"
@@ -37,6 +36,33 @@ def guard_module() -> ModuleType:
     return module
 
 
+#: The one Reference row that is not an HMCConfig field. HMC_PROFILE selects a
+#: profile inside load_profile(); it never reaches the settings model. The
+#: "Library Consumers" section of the doc states this, so it is pinned here.
+NON_FIELD_ENV_VARS = {"HMC_PROFILE"}
+
+
+def _reference_table_text() -> str:
+    """Return the Markdown table rows inside the doc's ## Reference section.
+
+    Same slicing the production guard uses, so this module and the guard agree
+    on what "documented" means: a table row, not prose.
+    """
+    import re as _re
+
+    doc_text = DOC.read_text()
+    ref_match = _re.search(r"^## Reference\b", doc_text, _re.MULTILINE)
+    assert ref_match, "docs/environment-variables.md must have a ## Reference section"
+    next_section = _re.search(r"^## ", doc_text[ref_match.end() :], _re.MULTILINE)
+    section_end = (
+        ref_match.end() + next_section.start() if next_section else len(doc_text)
+    )
+    ref_section = doc_text[ref_match.start() : section_end]
+    return "\n".join(
+        ln for ln in ref_section.splitlines() if ln.strip().startswith("|")
+    )
+
+
 def test_guard_script_exists() -> None:
     assert GUARD.exists(), f"Guard script not found: {GUARD}"
 
@@ -53,23 +79,37 @@ def test_env_var_doc_lists_all_expected_vars() -> None:
     """
     import re as _re
 
-    doc_text = DOC.read_text()
-    ref_match = _re.search(r"^## Reference\b", doc_text, _re.MULTILINE)
-    assert ref_match, "docs/environment-variables.md must have a ## Reference section"
-    next_section = _re.search(r"^## ", doc_text[ref_match.end() :], _re.MULTILINE)
-    section_end = (
-        ref_match.end() + next_section.start() if next_section else len(doc_text)
-    )
-    ref_section = doc_text[ref_match.start() : section_end]
-    table_text = "\n".join(
-        ln for ln in ref_section.splitlines() if ln.strip().startswith("|")
-    )
+    table_text = _reference_table_text()
     missing = [
         var
         for var in EXPECTED_ENV_VARS
         if not _re.search(rf"\b{_re.escape(var)}\b", table_text)
     ]
     assert not missing, f"Doc Reference table is missing env vars: {missing}"
+
+
+def test_env_var_doc_lists_no_var_that_is_not_a_field() -> None:
+    """The opposite direction: a row that no longer names a field must fail.
+
+    The production guard only checks that every field has a row, so a var
+    removed from HMCConfig leaves a documented row that lies about what the
+    package reads. docs/environment-variables.md's "Library Consumers" section
+    points at this table as the *exhaustive* field list, and a partial or
+    over-broad list is the same trap issue #368 is about, so the claim is
+    enforced here in both directions.
+    """
+    import re as _re
+
+    # First cell only. Scanning the whole row would let a `HMC_X` mentioned in
+    # another row's Description satisfy the equality — HMC_AGENT_ID's
+    # description names HMC_AUDIT_MEMENTO, so deleting the latter's row would
+    # otherwise leave this green.
+    documented = set()
+    for line in _reference_table_text().splitlines():
+        cells = line.strip().strip("|").split("|")
+        documented.update(_re.findall(r"\bHMC_[A-Z0-9_]+\b", cells[0]))
+
+    assert documented == EXPECTED_ENV_VARS | NON_FIELD_ENV_VARS
 
 
 def _make_doc(vars_to_include: set[str]) -> str:
@@ -89,6 +129,7 @@ def test_guard_passes_on_complete_doc(tmp_path: Path) -> None:
         [sys.executable, str(GUARD), "--doc", str(doc)],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
 
@@ -104,6 +145,7 @@ def test_guard_fails_on_incomplete_doc(tmp_path: Path) -> None:
         [sys.executable, str(GUARD), "--doc", str(doc)],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 1
     assert "HMC_TIMEOUT" in result.stdout + result.stderr
@@ -123,6 +165,7 @@ def test_guard_ignores_vars_only_in_prose(tmp_path: Path) -> None:
         [sys.executable, str(GUARD), "--doc", str(doc)],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 1
     assert "HMC_TIMEOUT" in result.stdout + result.stderr
@@ -148,6 +191,7 @@ def test_guard_ignores_vars_in_prose_inside_reference_section(tmp_path: Path) ->
         [sys.executable, str(GUARD), "--doc", str(doc)],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 1
     assert "HMC_TIMEOUT" in result.stdout + result.stderr
@@ -164,6 +208,7 @@ def test_guard_fails_when_reference_section_missing(tmp_path: Path) -> None:
         [sys.executable, str(GUARD), "--doc", str(doc)],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 1
     assert "Reference" in result.stdout + result.stderr
@@ -179,6 +224,7 @@ def test_guard_uses_default_doc_path_when_no_arg(
         capture_output=True,
         text=True,
         cwd=ROOT,
+        check=False,
     )
     assert result.returncode == 0, f"Guard failed:\n{result.stdout}\n{result.stderr}"
 

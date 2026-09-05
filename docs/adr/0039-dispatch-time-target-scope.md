@@ -362,7 +362,7 @@ churn and only the genuine composites carry an explicit declaration.
 
 Eight tools declare `exhaustive_targets=False`:
 
-- **`hmc_provision_lpar`** — the nested `vios_uuid` above, plus `ProvisionNetwork.vios_partition_id`.
+- **`hmc_provision_lpar`** — the nested `vios_uuid` above, plus `ProvisionAdapters.vios_partition_id`.
 - **`hmc_backup_lpar_profiles`** and **`hmc_restore_lpar_profiles`** — both act on an arbitrary
   HMC-side `file_path` (the backup with `force=True` overwriting whatever is there), a console
   filesystem object no `TargetKind` names. ADR 0036 already placed `file_path` outside every grant;
@@ -377,8 +377,8 @@ Eight tools declare `exhaustive_targets=False`:
   These are the tools an earlier draft of this record silently authorized under a table; the
   guardrail below is what found them.
 - **`hmc_get_job`** and **`hmc_wait_for_job`** — both declare a required `job` selector on
-  `job_uuid` and then accept `job_href`, whose *path* replaces it outright: `client.get_job`
-  fetches `urlparse(job_href).path` and never reads `job_uuid`. A table would authorize one
+  `job_id` and then accept `job_href`, whose *path* replaces it outright: `client.get_job`
+  fetches `urlparse(job_href).path` and never reads `job_id`. A table would authorize one
   job identity while the server read another. These two were found by the threat scan rather
   than by the guardrail, for the reason the next paragraph gives, and they are the concrete
   instance of its stated limit.
@@ -433,7 +433,7 @@ omissions:
   UUIDs. Refusing a legitimate non-canonical identifier would be a regression traded for
   reach that dot-segment refusal has already removed.
 - **Remote endpoints a call reads from.** `hmc_update_firmware`, `hmc_update_console_software`, and
-  `hmc_vios_update` take a `repository`; `hmc_install_lpar_os` and `hmc_install_vios` take NIM
+  `hmc_vios_update` take a `repository`; `hmc_install_vios_by_lpar_selector` and `hmc_install_vios` take NIM
   server addresses. These are not HMC resources, so no `TargetKind` names one and no allowlist can
   hold one. Each still mutates exactly the resource its selectors declare — a system, a console, a
   VIOS, a partition — while loading the payload from an address the caller chose. Constraining
@@ -708,7 +708,7 @@ operator would otherwise discover as an unexplained denial.
 ## Considered & rejected
 
 - **Extend `build_targets` to descend into structured parameters**, so `hmc_provision_lpar`'s
-  `ProvisionStorage.vios_uuid` and `ProvisionNetwork.vios_partition_id` become real selectors and
+  `ProvisionStorage.vios_uuid` and `ProvisionAdapters.vios_partition_id` become real selectors and
   the tool becomes narrowable. This fixes the cause where `exhaustive_targets` refuses the case, and
   it is the better end state. Rejected here as more machinery than this entry needs and more than
   the issue asks for: #223's own words are that "unsupported composite behaviour … fail[s] closed",

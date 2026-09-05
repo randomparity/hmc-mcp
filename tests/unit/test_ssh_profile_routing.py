@@ -1,7 +1,7 @@
 """Tests for per-call profile routing in SSH-backed MCP tools (issue #127).
 
 These tests verify that:
-1. `_ssh_with_client` threads a caller-supplied profile to the SSH config and
+1. `ssh_with_client` threads a caller-supplied profile to the SSH config and
    both name resolvers.
 2. SSH selector resolution builds its REST client from the same profile-selected
    config used for SSH.
@@ -13,14 +13,14 @@ These tests verify that:
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCTransportError
-from hmc_mcp.ssh import run_hmc_cli
-
-from conftest import mock_uuid_resolution
+from hmc_mcp.ssh.transport import run_hmc_cli
 
 # ---------------------------------------------------------------------------
 # Shared test constants
@@ -39,8 +39,12 @@ PROD_HOST = "prod-hmc.example.com"
 PROD_USER = "produser"
 PROD_PASSWORD = "prodpass"  # pragma: allowlist secret
 
-DEV_CONFIG = HMCConfig(host=DEV_HOST, user=DEV_USER, password=DEV_PASSWORD)
-PROD_CONFIG = HMCConfig(host=PROD_HOST, user=PROD_USER, password=PROD_PASSWORD)
+DEV_CONFIG = HMCConfig.from_mapping(
+    {"host": DEV_HOST, "user": DEV_USER, "password": DEV_PASSWORD}
+)
+PROD_CONFIG = HMCConfig.from_mapping(
+    {"host": PROD_HOST, "user": PROD_USER, "password": PROD_PASSWORD}
+)
 
 
 def _make_ssh_mock(stdout: str = "") -> MagicMock:
@@ -63,6 +67,7 @@ def _set_env(monkeypatch, host: str, user: str, password: str) -> None:
 
 def _vios_client_factory():
     hmc = AsyncMock()
+    hmc.config = DEV_CONFIG
     hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
     hmc.find_vios_by_name.return_value = {"UUID": SYSTEM_UUID}
 
@@ -82,7 +87,7 @@ def _vios_client_factory():
 async def test_run_hmc_cli_uses_supplied_config():
     """run_hmc_cli(cmd, config=...) passes the supplied config to run_hmc_command."""
     conn = _make_ssh_mock("output")
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
         await run_hmc_cli("lshmc -v", DEV_CONFIG)
 
     call_kwargs = mock_connect.call_args.kwargs
@@ -96,7 +101,7 @@ async def test_run_hmc_cli_no_config_uses_hmcconfig(monkeypatch):
     """run_hmc_cli(cmd) with no config falls back to HMCConfig() from env."""
     _set_env(monkeypatch, PROD_HOST, PROD_USER, PROD_PASSWORD)
     conn = _make_ssh_mock("output")
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
         await run_hmc_cli("lshmc -v")
 
     call_kwargs = mock_connect.call_args.kwargs
@@ -104,23 +109,23 @@ async def test_run_hmc_cli_no_config_uses_hmcconfig(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Task 1.1 — _ssh_with_client profile threading
+# Task 1.1 — ssh_with_client profile threading
 # ---------------------------------------------------------------------------
 
 
 def test_ssh_with_client_profile_reaches_ssh(monkeypatch, mock_hmc):
-    """_ssh_with_client with profile routes SSH to the profile's HMC host."""
+    """ssh_with_client with profile routes SSH to the profile's HMC host."""
     # mock_hmc router handles REST resolution for system UUID
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
     # Stub config-only resolution for the selected profile.
     with patch("hmc_mcp._app.build_config", return_value=DEV_CONFIG) as mock_config:
         conn = _make_ssh_mock("")
-        with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
-            from hmc_mcp._app import _ssh_with_client
-            from hmc_mcp.ssh_commands import list_memory_pools
+        with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
+            from hmc_mcp._app import ssh_with_client
+            from hmc_mcp.ssh.memory import list_memory_pools
 
-            _ssh_with_client(
+            ssh_with_client(
                 lambda config, system_name, _: list_memory_pools(config, system_name),
                 system_name_or_uuid=SYSTEM_NAME,  # plain name → no UUID resolution
                 profile="dev",
@@ -132,16 +137,16 @@ def test_ssh_with_client_profile_reaches_ssh(monkeypatch, mock_hmc):
 
 
 def test_ssh_with_client_profile_none_uses_env(monkeypatch, mock_hmc):
-    """_ssh_with_client with profile=None uses env-default credentials."""
+    """ssh_with_client with profile=None uses env-default credentials."""
     _set_env(monkeypatch, PROD_HOST, PROD_USER, PROD_PASSWORD)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
     conn = _make_ssh_mock("")
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
-        from hmc_mcp._app import _ssh_with_client
-        from hmc_mcp.ssh_commands import list_memory_pools
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
+        from hmc_mcp._app import ssh_with_client
+        from hmc_mcp.ssh.memory import list_memory_pools
 
-        _ssh_with_client(
+        ssh_with_client(
             lambda config, system_name, _: list_memory_pools(config, system_name),
             system_name_or_uuid=SYSTEM_NAME,
             # no profile argument — should default to None → env fallback
@@ -159,7 +164,7 @@ def test_ssh_with_client_profile_none_uses_env(monkeypatch, mock_hmc):
 @pytest.mark.asyncio
 async def test_resolve_system_name_uses_supplied_config():
     """System resolution builds its REST client from the supplied config."""
-    with patch("hmc_mcp.ssh_selectors.HMCClient") as mock_client_type:
+    with patch("hmc_mcp.ssh.selectors.HMCClient") as mock_client_type:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -168,7 +173,7 @@ async def test_resolve_system_name_uses_supplied_config():
         )
         mock_client_type.return_value = mock_client
 
-        from hmc_mcp.ssh_selectors import resolve_system_name
+        from hmc_mcp.ssh.selectors import resolve_system_name
 
         result = await resolve_system_name(DEV_CONFIG, SYSTEM_UUID)
 
@@ -179,7 +184,7 @@ async def test_resolve_system_name_uses_supplied_config():
 @pytest.mark.asyncio
 async def test_resolve_system_name_uses_one_rest_client():
     """System resolution opens exactly one REST client."""
-    with patch("hmc_mcp.ssh_selectors.HMCClient") as mock_client_type:
+    with patch("hmc_mcp.ssh.selectors.HMCClient") as mock_client_type:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -188,7 +193,7 @@ async def test_resolve_system_name_uses_one_rest_client():
         )
         mock_client_type.return_value = mock_client
 
-        from hmc_mcp.ssh_selectors import resolve_system_name
+        from hmc_mcp.ssh.selectors import resolve_system_name
 
         await resolve_system_name(DEV_CONFIG, SYSTEM_UUID)
 
@@ -198,7 +203,7 @@ async def test_resolve_system_name_uses_one_rest_client():
 @pytest.mark.asyncio
 async def test_resolve_lpar_name_uses_supplied_config():
     """LPAR resolution builds its REST client from the supplied config."""
-    with patch("hmc_mcp.ssh_selectors.HMCClient") as mock_client_type:
+    with patch("hmc_mcp.ssh.selectors.HMCClient") as mock_client_type:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -207,7 +212,7 @@ async def test_resolve_lpar_name_uses_supplied_config():
         )
         mock_client_type.return_value = mock_client
 
-        from hmc_mcp.ssh_selectors import resolve_lpar_name
+        from hmc_mcp.ssh.selectors import resolve_lpar_name
 
         result = await resolve_lpar_name(DEV_CONFIG, LPAR_UUID)
 
@@ -227,11 +232,11 @@ async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
     The config passed to the fallback is the same one given to the resolver, so
     both transports use the same profile-selected credentials.
     """
-    from hmc_mcp.ssh_selectors import resolve_system_name
+    from hmc_mcp.ssh.selectors import resolve_system_name
 
     fallback_output = f"{SYSTEM_UUID},{SYSTEM_NAME}\n"
 
-    with patch("hmc_mcp.ssh_selectors.HMCClient") as mock_client_type:
+    with patch("hmc_mcp.ssh.selectors.HMCClient") as mock_client_type:
         # REST leg raises a transport error → SSH fallback runs
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -242,7 +247,7 @@ async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
         mock_client_type.return_value = mock_client
 
         conn = _make_ssh_mock(fallback_output)
-        with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
+        with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
             result = await resolve_system_name(DEV_CONFIG, SYSTEM_UUID)
 
     # SSH fallback used the config we supplied (DEV_CONFIG)
@@ -257,13 +262,13 @@ async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
 
 def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
     """hmc_run_command(cmd, profile=...) routes SSH to the profile's HMC host."""
-    from hmc_mcp.server import hmc_run_command
+    from hmc_mcp.server_tools.command import hmc_run_command
 
     with patch(
-        "hmc_mcp.server_command.build_config", return_value=DEV_CONFIG
+        "hmc_mcp.server_tools.command.build_config", return_value=DEV_CONFIG
     ) as mock_config:
         conn = _make_ssh_mock("output")
-        with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
+        with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
             hmc_run_command("lshmc -v", profile="dev")
 
     mock_config.assert_called_once_with(profile="dev")
@@ -272,35 +277,35 @@ def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
 
 def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
     """hmc_restore_vios with profile routes SSH to the profile's HMC host."""
-    from hmc_mcp.server import hmc_restore_vios
+    from hmc_mcp.server_tools.vios import hmc_restore_vios
 
-    monkeypatch.setattr("hmc_mcp.server_vios.client_from_env", _vios_client_factory())
-    with patch(
-        "hmc_mcp.server_vios.build_config", return_value=DEV_CONFIG
-    ) as mock_config:
-        conn = _make_ssh_mock("")
-        with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
-            hmc_restore_vios(
-                SYSTEM_NAME,
-                SYSTEM_UUID,
-                "backup.tar.gz",
-                backup_type="ssp",
-                profile="dev",
-            )
+    client_factory = MagicMock(side_effect=_vios_client_factory())
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", client_factory)
+    conn = _make_ssh_mock("")
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
+        hmc_restore_vios(
+            SYSTEM_NAME,
+            SYSTEM_UUID,
+            "backup.tar.gz",
+            backup_type="ssp",
+            profile="dev",
+        )
 
-    mock_config.assert_called_once_with(profile="dev")
+    client_factory.assert_called_once_with("dev")
     assert mock_connect.call_args.kwargs["host"] == DEV_HOST
 
 
 def test_hmc_list_memory_pools_profile_reaches_ssh(monkeypatch, mock_hmc):
-    """hmc_list_memory_pools with profile threads profile through _ssh_with_client."""
-    from hmc_mcp.server import hmc_list_memory_pools
+    """hmc_list_memory_pools with profile threads profile through ssh_with_client."""
+    from hmc_mcp.server_tools.system_resources import (
+        hmc_list_memory_pools,
+    )
 
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
     with patch("hmc_mcp._app.build_config", return_value=DEV_CONFIG) as mock_config:
         conn = _make_ssh_mock("")
-        with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
+        with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
             hmc_list_memory_pools(SYSTEM_NAME, profile="dev")
 
     mock_config.assert_called_once_with(profile="dev")
@@ -316,38 +321,38 @@ def test_different_profiles_produce_independent_configs():
 
     def capture_connect(**kwargs):
         configs_seen.append(kwargs["host"])
-        raise Exception("abort after capture")  # abort the SSH connection attempt
+        raise RuntimeError("abort after capture")  # abort the SSH connection attempt
 
     with patch("hmc_mcp._app.build_config") as mock_config:
         # First call: profile="dev" → DEV_CONFIG
         mock_config.return_value = DEV_CONFIG
-        with patch("hmc_mcp.ssh.asyncssh.connect", side_effect=capture_connect):
+        with patch("hmc_mcp.ssh.transport.asyncssh.connect", side_effect=capture_connect):
             try:
-                from hmc_mcp._app import _ssh_with_client
-                from hmc_mcp.ssh_commands import list_memory_pools
+                from hmc_mcp._app import ssh_with_client
+                from hmc_mcp.ssh.memory import list_memory_pools
 
-                _ssh_with_client(
+                ssh_with_client(
                     lambda config, system_name, _: list_memory_pools(
                         config, system_name
                     ),
                     system_name_or_uuid=SYSTEM_NAME,
                     profile="dev",
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - the connection is aborted on purpose once the config is captured
                 pass
 
         # Second call: profile="prod" → PROD_CONFIG
         mock_config.return_value = PROD_CONFIG
-        with patch("hmc_mcp.ssh.asyncssh.connect", side_effect=capture_connect):
+        with patch("hmc_mcp.ssh.transport.asyncssh.connect", side_effect=capture_connect):
             try:
-                _ssh_with_client(
+                ssh_with_client(
                     lambda config, system_name, _: list_memory_pools(
                         config, system_name
                     ),
                     system_name_or_uuid=SYSTEM_NAME,
                     profile="prod",
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - the connection is aborted on purpose once the config is captured
                 pass
 
     assert configs_seen[0] == DEV_HOST

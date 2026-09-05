@@ -9,17 +9,24 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+import warnings
 from types import SimpleNamespace
 
 import pytest
+from conftest import make_config
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp import server_command, server_lpars
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
-from hmc_mcp.legacy_policy import compile_legacy_policy
-from hmc_mcp.dispatch_scope import dispatch_authorizer
+from hmc_mcp.audit import sink as audit_sink
+from hmc_mcp.authorization.access_policy import (
+    DEFAULT_CONNECTION_TOKEN,
+    compile_access_policy,
+)
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmc_mcp.server_tools import command as server_command
+from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
 from hmc_mcp.tool_registry import ToolSecurity, authorized
 
 SOURCE = "test-access-policy.toml"
@@ -123,8 +130,8 @@ def _registered(application) -> dict:
 
 
 # Every name a handler could reach an HMC through, patched at *every* module
-# that rebound it at import. Patching only `hmc_mcp.common.build_config` proves
-# nothing: `server_vios`, `server_command`, and `_app` each hold their own
+# that rebound it at import. Patching only `hmc_mcp.config.build_config` proves
+# nothing: `server_tools.vios`, `server_command`, and `_app` each hold their own
 # reference, so a call through one of those would sail past an unpatched source
 # module and the test would still be green.
 _OUTBOUND_NAMES = ("build_config", "client_from_env", "run_hmc_cli", "run_hmc_command")
@@ -136,7 +143,7 @@ def _seal_every_outbound_path(monkeypatch, opened: list[str]):
     import pkgutil
 
     import hmc_mcp
-    from hmc_mcp import client as client_module
+    from hmc_mcp.client import core as client_module
 
     def _forbidden(label):
         def _refuse(*args, **kwargs):
@@ -149,11 +156,12 @@ def _seal_every_outbound_path(monkeypatch, opened: list[str]):
     monkeypatch.setattr("httpx.AsyncClient.__init__", _forbidden("httpx.AsyncClient"))
 
     sealed = 0
-    for info in pkgutil.iter_modules(hmc_mcp.__path__):
-        module = importlib.import_module(f"hmc_mcp.{info.name}")
+    for info in pkgutil.walk_packages(hmc_mcp.__path__, prefix="hmc_mcp."):
+        module = importlib.import_module(info.name)
+        label = info.name.removeprefix("hmc_mcp.")
         for name in _OUTBOUND_NAMES:
             if callable(getattr(module, name, None)):
-                monkeypatch.setattr(module, name, _forbidden(f"{info.name}.{name}"))
+                monkeypatch.setattr(module, name, _forbidden(f"{label}.{name}"))
                 sealed += 1
     assert sealed > 10, f"only {sealed} outbound bindings sealed; the sweep missed"
 
@@ -218,7 +226,7 @@ def test_a_permitted_call_reaches_the_handler(monkeypatch):
         reached.append(profile)
         raise RuntimeError("stop before any HMC request")
 
-    monkeypatch.setattr(server_lpars, "client_from_env", _capture)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _capture)
 
     application = create_mcp(_policy(LAB_ONLY))
     with pytest.raises(ToolError):
@@ -401,7 +409,7 @@ def test_compositions_authorize_independently(monkeypatch):
         reached.append(profile)
         raise RuntimeError("stop before any HMC request")
 
-    monkeypatch.setattr(server_lpars, "client_from_env", _capture)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _capture)
 
     restricted = create_mcp(_policy(LAB_ONLY))
     # A policy granting the connection the call selects, standing in for the
@@ -480,6 +488,9 @@ def test_the_served_escape_hatch_denies_a_withheld_connection(monkeypatch):
     opened: list[str] = []
     _seal_every_outbound_path(monkeypatch, opened)
     application = _serve(_policy(LAB_ONLY + ESCAPE_HATCH_GRANT))
+    # Serve startup now resolves the effective ownership guard once per reachable
+    # connection (#533). This assertion owns the denied dispatch, not bootstrap.
+    opened.clear()
 
     with pytest.raises(ToolError) as error:
         _call(application, "hmc_run_command", {"cmd": "lssyscfg", "profile": "prod"})
@@ -559,7 +570,7 @@ def test_the_permissions_site_routes_through_the_shared_helper(monkeypatch):
     that this site honours the same contract as the other two rather than
     deciding for itself.
     """
-    from hmc_mcp import server_permissions
+    from hmc_mcp.server_tools import permissions as server_permissions
 
     calls: list[tuple] = []
     real = server_permissions.authorized
@@ -640,9 +651,10 @@ def _stderr(capsys) -> str:
     width, so an assertion against the unnormalized text asserts against the
     terminal size of whoever ran it.
     """
-    from hmc_mcp import audit
 
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
+        "the sink must settle, not stall"
+    )
     return " ".join(capsys.readouterr().err.split())
 
 
@@ -759,9 +771,9 @@ def test_the_served_path_takes_fastmcps_handlers_off_fd_2(capsys):
     assert "a fastmcp line" in _stderr(capsys)
 
 
-#: Every logger the served path binds to ADR 0043's sink (#330): the original
-#: ``fastmcp`` takeover plus the three namespaces the amendment added.
-SUNK_LOGGERS = ("fastmcp", "uvicorn", "uvicorn.access", "mcp")
+#: Every external logger the served path binds to ADR 0043's sink: the original
+#: ``fastmcp`` takeover, #330's three namespaces, and #550's warning bridge.
+SUNK_LOGGERS = ("fastmcp", "uvicorn", "uvicorn.access", "mcp", "py.warnings")
 
 
 def test_installing_the_sink_twice_leaves_one_handler_per_logger():
@@ -773,6 +785,66 @@ def test_installing_the_sink_twice_leaves_one_handler_per_logger():
 
     for name in SUNK_LOGGERS:
         assert len(logging.getLogger(name).handlers) == 1
+
+
+def test_served_warnings_use_the_bounded_escaped_sink(capsys, monkeypatch):
+    """#550: capture replaces the default fd-2 writer on the served path."""
+    called = []
+    monkeypatch.setattr(warnings, "showwarning", lambda *args, **kwargs: called.append(args))
+
+    _serve(_policy(LAB_ONLY))
+    with warnings.catch_warnings():
+        warnings.simplefilter("always")
+        warnings.warn("unsafe\x1bwarning", UserWarning)
+
+    captured = _stderr(capsys)
+    assert called == []
+    assert "py.warnings: WARNING:" in captured
+    assert "unsafe\\x1bwarning" in captured
+    assert "\x1b" not in captured
+
+
+def test_library_warnings_keep_the_default_showwarning(monkeypatch):
+    """#550: importing and composing without serving do not capture warnings."""
+    called = []
+    monkeypatch.setattr(warnings, "showwarning", lambda *args, **kwargs: called.append(args))
+
+    create_mcp(_policy(LAB_ONLY))
+    with warnings.catch_warnings():
+        warnings.simplefilter("always")
+        warnings.warn("library warning", UserWarning)
+
+    assert len(called) == 1
+
+
+def test_warning_capture_can_be_reinstalled_after_test_isolation(capsys, monkeypatch):
+    """#550: disabling capture clears logging's saved-callback sentinel."""
+    first = []
+
+    def first_callback(*args, **kwargs):
+        first.append(args)
+
+    monkeypatch.setattr(warnings, "showwarning", first_callback)
+    _serve(_policy(LAB_ONLY))
+    warnings.warn("first served warning", UserWarning)
+    assert warnings.showwarning is not first_callback
+
+    logging.captureWarnings(False)
+    second = []
+
+    def second_callback(*args, **kwargs):
+        second.append(args)
+
+    monkeypatch.setattr(warnings, "showwarning", second_callback)
+    _serve(_policy(LAB_ONLY))
+    warnings.warn("second served warning", UserWarning)
+
+    assert warnings.showwarning is not second_callback
+    assert first == []
+    assert second == []
+    captured = _stderr(capsys)
+    assert "first served warning" in captured
+    assert "second served warning" in captured
 
 
 def test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled(
@@ -1014,9 +1086,9 @@ def test_a_hostile_tool_error_cannot_forge_an_audit_record(denial_filter, capsys
     with pytest.raises(ToolError):
         _call(application, "hostile", {})
 
-    from hmc_mcp import audit
-
-    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
+        "the sink must settle, not stall"
+    )
     err = capsys.readouterr().err
     for line in err.splitlines():
         try:
@@ -1027,6 +1099,130 @@ def test_a_hostile_tool_error_cannot_forge_an_audit_record(denial_filter, capsys
             f"a tool error forged a parseable audit record: {line!r}"
         )
     assert "hmc said" in err, "the text must still reach the operator"
+
+
+PACKAGE_LOGGER = logging.getLogger("hmc_mcp")
+
+
+def _handlers_the_walk_finds(name: str) -> list[logging.Handler]:
+    """Reproduce ``Logger.callHandlers``' ancestor walk for *name*.
+
+    The defect #534 names is invisible to a handler-set assertion on one logger:
+    ``callHandlers`` consults ``logging.lastResort`` when the *whole walk* finds
+    zero handlers, so the only faithful pin is the walk itself.
+    """
+    found: list[logging.Handler] = []
+    logger: logging.Logger | None = logging.getLogger(name)
+    while logger is not None:
+        found.extend(logger.handlers)
+        logger = logger.parent if logger.propagate else None
+    return found
+
+
+def test_the_served_path_binds_the_package_namespace_to_the_sink():
+    """#534: ``hmc_mcp.*`` is a producer on ADR 0043's queue like the rest.
+
+    One handler, none of it on fd 2 directly, rendering under this package's own
+    producer prefix — the same three properties #330 pins for the third-party set.
+    """
+    _serve(_policy(LAB_ONLY))
+
+    assert len(PACKAGE_LOGGER.handlers) == 1
+    handler = PACKAGE_LOGGER.handlers[0]
+    assert not _targets_stderr(handler)
+    assert _formatter_prefix(handler) == "hmc_mcp: "
+
+
+def test_last_resort_is_unreachable_for_a_non_audit_package_logger(capsys):
+    """#534's acceptance, on the mechanism rather than on a symptom.
+
+    ``hmc_mcp.server_permissions`` is the producer #470 added, and before this
+    change its walk found nothing: no handler on itself, none on ``hmc_mcp``, none
+    on root, so the record went to ``logging.lastResort`` — synchronous, unbounded,
+    and unprefixed. Root is cleared first so a stray handler cannot make the walk
+    succeed for a reason this change did not supply.
+    """
+    logging.root.handlers[:] = []
+
+    _serve(_policy(LAB_ONLY))
+
+    found = _handlers_the_walk_finds("hmc_mcp.server_permissions")
+    assert found, "the walk must find a handler, or lastResort writes the record"
+    assert logging.lastResort not in found
+    assert not any(_targets_stderr(each) for each in found)
+
+    logging.getLogger("hmc_mcp.server_permissions").warning("an unresolved profile")
+
+    assert "hmc_mcp: WARNING: an unresolved profile" in _stderr(capsys)
+
+
+def test_a_config_warning_reaches_stderr_only_through_the_sink(capsys):
+    """The other producer #534 names, driven through the code that emits it.
+
+    The bounded package logger owns the diagnostic; Python warnings must not add a
+    synchronous write to fd 2 beside it.
+    """
+    _serve(_policy(LAB_ONLY))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        make_config(agent_id="agent-1", audit_memento="custom")
+
+    captured = _stderr(capsys)
+    assert "hmc_mcp: WARNING: HMC_AGENT_ID is set" in captured
+
+
+def test_the_package_binding_leaves_the_audit_stream_unprefixed(capsys):
+    """#534's one carve-out: ``hmc_mcp.audit`` keeps its own contract.
+
+    Its ``propagate = False`` is what keeps the parent handler off the audit
+    stream, so the record stays bare one-line JSON and arrives exactly once.
+    """
+    _serve(_policy(LAB_ONLY))
+
+    audit_logger = logging.getLogger(audit_sink.AUDIT_LOGGER_NAME)
+    assert audit_logger.propagate is False
+    assert len(audit_logger.handlers) == 1
+    assert audit_logger.handlers[0].formatter is None
+
+    audit_logger.warning('{"event": "authorization", "outcome": "denied"}')
+
+    captured = _stderr(capsys)
+    assert "hmc_mcp: " not in captured
+    assert captured.count('"event": "authorization"') == 1
+
+
+def test_installing_the_package_sink_twice_leaves_one_handler():
+    """Idempotence, from the same defer-to-what-is-there rule the audit sink uses."""
+    from hmc_mcp.server import install_package_stderr_sink
+
+    install_package_stderr_sink()
+    install_package_stderr_sink()
+
+    assert len(PACKAGE_LOGGER.handlers) == 1
+
+
+def test_the_package_binding_leaves_an_ancestor_handler_receiving(capsys):
+    """The binding adds a destination; it does not take one away.
+
+    Unlike ``install_audit_sink`` this leaves ``propagate`` alone, so an operator
+    who routes `hmc_mcp.*` into their own centralized logging still gets these
+    records after a serve — the alternative loses them silently, including under
+    `--http`, where the stdout hazard ADR 0040 names does not even exist. Pinned
+    against a root handler because that is the shape an operator's `basicConfig`
+    leaves, and it is what would have gone quiet.
+    """
+    received: list[str] = []
+    catcher = logging.Handler()
+    catcher.emit = lambda record: received.append(record.getMessage())  # type: ignore[method-assign]
+    logging.root.handlers[:] = [catcher]
+
+    _serve(_policy(LAB_ONLY))
+    logging.getLogger("hmc_mcp.config").warning("a package warning")
+
+    assert received == ["a package warning"]
+    assert "hmc_mcp: WARNING: a package warning" in _stderr(capsys)
+    assert logging.getLogger("hmc_mcp").propagate is True
 
 
 def test_an_unexpected_handler_error_still_renders_its_traceback(denial_filter, capsys):

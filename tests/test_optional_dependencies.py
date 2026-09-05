@@ -1,8 +1,7 @@
-from pathlib import Path
 import subprocess
 import sys
 import tomllib
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 #: Packages only the ``app`` extra may pull in: the presentation stack plus
@@ -50,7 +49,8 @@ class BlockAppOnlyPackages(MetaPathFinder):
 sys.meta_path.insert(0, BlockAppOnlyPackages())
 
 import hmc_mcp
-from hmc_mcp.client import HMCClient
+from hmc_mcp import operations
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 
@@ -59,12 +59,12 @@ assert HMCConfig
 assert HMCError
 operation_modules = sorted(
     module.name
-    for module in iter_modules(hmc_mcp.__path__)
-    if module.name.startswith("operations_")
+    for module in iter_modules(operations.__path__)
+    if not module.name.startswith("_")
 )
 assert operation_modules
 for module in operation_modules:
-    import_module(f"hmc_mcp.{module}")
+    import_module(f"hmc_mcp.operations.{module}")
 assert not (_BLOCKED & set(sys.modules))
 """
 

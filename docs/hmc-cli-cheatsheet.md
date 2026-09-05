@@ -102,7 +102,7 @@ object.  With `--header` the first output line is the field names (required by
 **`--filter`** narrows the result set.  Format: `"filter_name=value1,value2"`.
 Common filter names: `lpar_names`, `lpar_ids`, `profile_names`.
 
-**Repository use:** UUID→name resolution (`_ssh_system_name`, `_ssh_lpar_name`);
+**Repository use:** UUID→name resolution (`resolve_system_cli_name`, `_ssh_lpar_name`);
 LPAR description, MSP, proc-compat reads (`get_lpar_description`, `get_lpar_msp`,
 `get_lpar_proc_compat`); SR-IOV LPAR-state and profile reads
 (`read_sriov_lpar_state`, `read_sriov_profile_ports`); live-test baseline and
@@ -157,10 +157,15 @@ lshwres -r sriov --rsubtype adapter -m <system> \
     -F adapter_id,slot_id,config_state,functional_state,\
 phys_ports,logical_ports,adapter_max_logical_ports,sriov_status --header
 
-# SR-IOV physical ports (requires --level roce)
+# SR-IOV physical ports (query both literal levels; exactly one must return rows)
 lshwres -r sriov --rsubtype physport -m <system> --level roce \
     --filter adapter_ids=<id> \
-    -F adapter_id,phys_port_id,phys_port_type,state,\
+    -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,\
+config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header
+
+lshwres -r sriov --rsubtype physport -m <system> --level ethc \
+    --filter adapter_ids=<id> \
+    -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,\
 config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header
 
 # SR-IOV configured logical ports (--level eth, filtered by adapter)
@@ -175,7 +180,14 @@ lshwres -r sriov --rsubtype logport -m <system>
 
 **`--level`** selects the granularity or sub-view: `sys` (system totals),
 `lpar` (per-partition), `slot`, `pool`, `roce` (SR-IOV physical ports),
-`eth` (SR-IOV configured Ethernet logical ports).
+`ethc` (SR-IOV physical ports), `eth` (SR-IOV configured Ethernet logical ports).
+
+**SR-IOV physical-port selection:** use the paired `roce` and `ethc` reads above
+for a positive decimal adapter ID. Exactly one level must return rows; both empty
+means the adapter type is unavailable, while rows at both levels are ambiguous and
+are rejected. Treat `phys_port_type` as returned HMC data, not a level selector.
+For accepted rows, HMC state `1` maps to `up` and `0` maps to `down`; any other
+state is rejected.
 
 **`--rsubtype`** further qualifies `-r io` and `-r virtualio`: `slot`, `bus`,
 `fc`, `eth`, `vnic`, `scsi`, `serial`, `vswitch`, …; and `-r sriov`: `adapter`,
@@ -623,5 +635,5 @@ Validated against live P9, P10, and P11 managed systems on HMC V10R3M1060 and HM
 
 - [IBM HMC commands reference (Power10)](https://www.ibm.com/docs/en/power10/7063-CR1?topic=hmc-commands)
 - [`src/hmc_mcp/ssh_commands.py`](../src/hmc_mcp/ssh_commands.py) — all SSH command construction
-- [`src/hmc_mcp/server_vios.py`](../src/hmc_mcp/server_vios.py) — VIOS backup commands
+- [`src/hmc_mcp/server_tools/vios.py`](../src/hmc_mcp/server_tools/vios.py) — VIOS backup commands
 - [`scripts/live_test_runner.py`](../scripts/live_test_runner.py) — live-test uses of HMC CLI

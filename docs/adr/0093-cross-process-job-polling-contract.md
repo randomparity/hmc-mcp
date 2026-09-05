@@ -1,0 +1,442 @@
+# ADR 0093: Cross-process job-polling contract
+
+## Status
+
+Accepted (2026-08-25). Amended 2026-08-26 by issue #474 — see *Amendment (#474)* below: the two
+job tools now read through `operations.jobs`, so the MCP surface gains the distinction this
+record's Consequences section said it did not. Amended 2026-08-28 by issue #532 to bound the
+delay before a confirming disappearance read. Amended 2026-08-28 by issue #537 to reject the
+three ASCII controls URL parsing deletes before validating a persisted link. Amended 2026-08-30
+by issue #526 to apply the operations contract to the CLI job commands.
+
+## Context
+
+Every long-running HMC operation returns a job, and the package has three ways to learn what
+happened to one. None is usable by a supported library consumer:
+
+- `jobs.wait_for_submitted_job` (`src/hmc_mcp/jobs.py:219`) lives in `jobs.py`, which ADR 0029's
+  selection rule does not reach — the rule governs `operations_*.py` modules
+  (`docs/adr/0029-supported-reusable-python-api-contract.md:47-49`).
+- `HMCClient.get_job` (`src/hmc_mcp/client/core.py:904`) and `HMCClient.wait_for_job` (`:931`) are
+  inherited mixin methods outside the supported lifecycle allowlist, which ADR 0029 fixes at
+  exactly `__init__`, `__aenter__`, `__aexit__`, `is_logged_on`, `logon`, and `logoff` (`:39-45`).
+  They remain callable, but "may change without a compatibility release".
+- `JobOutcome` (`src/hmc_mcp/jobs.py:50`), the normalized result ADR 0081 classifies, is not
+  exported.
+
+The `wait=True` parameter that the operations and MCP tools carry is not a substitute. It holds one
+open coroutine for the life of the job, so the job's identity exists only in the memory of the
+process that submitted it. A worker that restarts mid-job has lost the job. The downstream consumer
+(Bunson) runs NIM installs of 30–90 minutes and must survive a worker restart: the identifier has to
+be recoverable from Postgres and pollable by a different process than the one that submitted it.
+
+Polling from a restarted worker also exposes a failure the current code cannot express. The HMC
+reaps job resources, so an identifier read back from a database may no longer resolve.
+`HMCClient.get_job` turns that into `HMCError("GET /rest/api/uom/jobs/{id} failed", 404, ...)`
+through the generic `_web_get` path (`client.py:708-717`) — indistinguishable, at the call site,
+from any other transport failure. A restarted worker cannot tell "still running" from "gone".
+
+## Decision
+
+### 1. Two operations in `operations.jobs`
+
+`src/hmc_mcp/operations/jobs.py` owns exactly two presentation-neutral asynchronous operations,
+both exported from `hmc_mcp.api`:
+
+```python
+async def get_job(hmc, job_id, *, job_href=None) -> JobOutcome
+async def wait_for_job(hmc, job_id, *, job_href=None, timeout_seconds=300, poll_interval=5) -> JobOutcome
+```
+
+They take an injected `HMCClient` like every other operation, and they are ordinary coroutines: an
+in-process consumer awaits them from inside its own running event loop. Neither routes through
+`_app._run`, which calls `asyncio.run` and therefore cannot be called from a running loop.
+
+### 2. The job handle is two strings
+
+The supported handle a caller persists is `job_id`, plus an optional `job_href`. Both are plain
+strings, both are parameters of both operations, and both are fields of the returned `JobOutcome`.
+That is the whole portability requirement: a process reads the two strings back from storage,
+constructs a fresh `HMCClient`, and polls. No job object, no live coroutine, and no client instance
+survives from submission.
+
+`job_href` is optional because the documented global path `/rest/api/uom/jobs/{id}` resolves the
+identifier on ordinary firmware. It exists because some firmware cannot (issue #95), and the
+submission's SELF link is the only thing that works there. `HMCClient.get_job` already accepts it,
+and `client._reject_non_job_path` (`client.py:87`) constrains it to a job resource path before any
+request is made; that check is what bounds the parameter, and this ADR does not widen it.
+
+A supplied `job_href` therefore **decides which job is read** — `_reject_non_job_path` binds the
+resource class, not the identifier, and its own docstring records the residual: "a caller may read
+a *different* job". That residual was accepted for the MCP surface, where an ADR 0039 all-targets
+grant already means "any job". Here the pair is read back from storage, where the two columns of
+one row can be written out of step, so the residual becomes a mispaired handle returning another
+job's terminal status. `get_job` does not raise on the mismatch: `jobs.job_identifier` prefers the
+response's UUID or JobID over the link's last segment, so the two legitimately differ on some
+firmware, and refusing would break the case `job_href` exists to serve. It logs a warning instead,
+returns the **response-derived** `job_id` — which names the job actually read — and both the
+docstring and this clause tell a consumer to compare `job_id` against what it stored before acting.
+
+Rejected as too strong: raising on the mismatch. Rejected as too weak: returning the requested
+identifier, which would hide the substitution entirely.
+
+A consumer re-persists `job_href` from an outcome, never `job_id`. Overwriting a stored `job_id`
+with a response-derived one would, on a mispaired handle, replace the identifier that disagrees
+with the link by the one that agrees — destroying the only mispairing evidence that exists and
+making the mismatch permanent and self-consistent from the next poll onward.
+
+The comparison is **advisory**, and the ADR says so rather than leaning on it as the whole
+mitigation. `jobs.job_identifier` prefers the response's `UUID` over its `JobID`, so a handle a
+consumer stored as a JobID — which is what `hmc_wait_for_job`'s own docstring tells it to store —
+differs from the returned `job_id` on firmware that reports both, with no substitution involved.
+The warning therefore fires only when a `job_href` was supplied (without one the request path is
+built from the identifier, so a differing label cannot mean a different job was read) and at most
+once per `wait_for_job` call rather than once per poll — an hour at the default five-second
+interval would otherwise emit some seven hundred identical lines and bury the signal. It fires on
+**first detection**, not at loop exit: deferring it would leave a wait polling the wrong job silent
+for the whole multi-hour window, and silent altogether when the wait is cancelled or aborted by an
+`HMCError`, which are exactly the exits clauses 5 and 6 anticipate.
+
+A supplied link also carries a failure mode of its own. A per-operation SELF link embeds the
+target resource, not just the job — `.../LogicalPartition/{uuid}/do/PowerOn/Job/{id}` — so it can
+stop resolving while the job is fine, and this package ships decommission operations that remove
+such parents. A 404 raised against a supplied link is therefore **confirmed against the global
+jobs path** before it becomes `found=False`; when the second read finds the job, that result is
+returned and the stale link is logged. The confirmation is best-effort **about absence only**:
+firmware that does not serve the global path — a 404, or the HTTP 400 REST000E the client already
+turns into an actionable message — leaves the original 404 standing rather than replacing a
+documented `found=False` with an exception. It is not best-effort about failure. A 5xx, a
+connection reset, or a read timeout propagates as `HMCError`, exactly as it would on the primary
+read. `HMCTransportError` subclasses `HMCError`, so catching the base class here would quietly
+convert a degraded HMC into the one answer on this path a consumer acts on destructively — and it
+would do so hardest on issue #95 firmware, where a link is supplied and the global path is least
+likely to answer cleanly.
+
+A link proved stale is then **dropped**, not echoed. The outcome carries the href from the read
+that worked, so a consumer re-persisting the handle from every outcome never stores a link known
+not to resolve; and a wait stops using the link for its remaining polls, so the confirming second
+request and its warning happen once per wait rather than on all several hundred polls of a
+multi-hour install — the same flooding this ADR designs against for the substitution warning.
+
+"Dropped" has to mean dropped from the *outcome*, not merely not re-attached, and it has to hold
+for the rest of the wait rather than only on the read that detected it. An HMC job entry's SELF
+link is the per-operation link, so any later read through the global path can advertise the very
+link that 404'd; a wait therefore carries the retired link and clears it from every subsequent
+outcome. A `found=False` outcome carries no link at all — nothing resolved, so there is no handle
+worth persisting.
+
+### 3. `JobOutcome` is a package-owned model contract
+
+`JobOutcome` is exported and its fields are supported under ADR 0029 — unlike the `job` field it
+carries, which stays an opaque HMC resource mapping whose keys, nesting, and firmware-dependent
+extensions are explicitly not a package contract (ADR 0029 `:109-113`). Consumers read `status`,
+`timed_out`, `error`, `found`, `job_id`, and `job_href`; they read `job` at their own risk.
+
+The type is shared, and the polling reading of its fields is scoped to this decision's two
+operations. `jobs.job_outcome` has six other callers, all of them *submitting* operations
+reporting a submission rather than a poll, and they do not satisfy the handle promise:
+`operations/provision.py:300` and `operations/lpar/core.py:339` pass the literal `"PowerOn"` as the
+identifier, and `operations/lpm.py:261` and `operations/decommission.py:466` fall back to `""`
+when a submission returned no identifier. Their `found=False` means "this submission returned no
+job entry", not "the HMC reaped it", and `operations.lpm._finish_job` pairs it with
+`timed_out=False` for a fire-and-forget submission — a combination clause 4's table does not
+cover, because that table describes a poll.
+
+Making all seven producers satisfy one reading would mean rewriting five call sites and their
+tests for no consumer that asked for it, so this ADR bounds the claim instead: the handle and
+`found` semantics below apply to outcomes returned by `operations.jobs`, and both `JobOutcome`'s
+docstring and the changelog say so. A consumer polls a `job_id` that came from a polling operation
+or from the HMC's own submission response — never one a submitting operation labelled.
+
+Two fields are new: `found` (clause 4) and `job_href` (clause 2). Neither carries a default. The
+repository already tests that this result's MCP output schema has `required` equal to its full
+property set — `hmc_wait_for_job` and the LPM recovery tools are asserted to share one stable wait
+shape — and a defaulted field would drop out of `required` while still being serialized on every
+response. Every outcome therefore states both facts explicitly. The ADR 0081 classification of
+terminal statuses is untouched.
+
+### 4. A job the HMC no longer knows about is `found=False`, not an exception
+
+`get_job` reports a missing job as `JobOutcome(found=False, status=None, ...)`. This covers both
+ways the HMC declines to produce the job: an HTTP 404, and a response carrying no job entry. The
+translation lives in the operations layer, so `HMCClient.get_job` keeps raising and no other caller
+of it silently loses an error.
+
+The resulting distinction is the one a restarted worker needs — for an outcome this decision's two
+operations returned (clause 3 bounds the claim):
+
+| observation | meaning |
+| --- | --- |
+| `found=True`, `timed_out=False` | terminal; `status` and `error` describe the result (ADR 0081) |
+| `found=True`, `timed_out=True` | the HMC still has the job and it has not reached a terminal status |
+| `found=False` | the HMC does not know this identifier |
+
+`found` is read first. `timed_out` reports only that no terminal status was observed, so a
+vanished job carries `timed_out=True` as well; that value is not changed here because
+`job_outcome(id, None)` already produces it and existing callers assert on it.
+
+`found=False` deliberately does not say *why*. Reaped-after-completion, deleted, and never-existed
+are the same observation over REST, and inventing a distinction the HMC does not report would be a
+false contract. `error` stays `None`, because ADR 0081 reserves a non-empty `error` for an
+actionable *terminal* outcome and a vanished job has no status to classify.
+
+The translation keys on the status code alone, so it also absorbs a 404 that means "this
+deployment does not serve that path" — a base URL, reverse proxy, or firmware level where the
+global jobs path is absent, as distinct from issue #95's HTTP 400 REST000E, which
+`_check_web_rest000e` already turns into an actionable error. The code cannot tell that apart from
+a reaped job, and a deployment in that state answers `found=False` for every job forever. What it
+can do is be loud: the translation logs at **warning**, naming the identifier, whether a
+`job_href` was used, and the discarded `HMCError` detail. A `found=False` a consumer acts on
+destructively is not an INFO-level event, and a systematically 404-ing deployment shows up in
+ordinary logs rather than only under debug. Both routes log, not just the 404 one: an HMC that
+answers the jobs path with no content reports every identifier gone just as permanently, and does
+so without an exception to carry any detail, so silence there would be the worse of the two.
+
+### 5. `wait_for_job` owns its poll loop
+
+`wait_for_job` polls `get_job` and stops on the first of: a terminal status, `found=False`, or the
+deadline. It does not delegate to `HMCClient.wait_for_job`, for two reasons. The stop condition
+above is not expressible through that method — it raises on a 404 instead of returning, and keeps
+polling until timeout when an entry is absent, which would make a vanished job block a restarted
+worker for the full timeout. And ADR 0029 keeps client mixin methods unsupported and free to
+change, so a supported operation must not inherit its timing semantics from one.
+
+`timeout_seconds=0` performs exactly one poll, matching `validate_wait_timing` and the existing
+`hmc_wait_for_job` tool. Timing arguments are validated by the same `jobs.validate_wait_timing`
+every other operation uses; a `job_id` that is empty, that is a bare dot segment, or that carries a
+path, query, or whitespace character and so would address something other than one job, is rejected
+with `ValueError`. The dot-segment case is listed explicitly because the client's own
+`_reject_dot_segments` would otherwise catch it one layer down and raise `HMCError`, breaking the
+`ValueError` contract for exactly the input class that contract names.
+
+A job that vanishes **during** a wait is not reported gone on one read. The 404 translation is the
+only failure on this path that returns successfully instead of raising, so a momentary 404 — a
+proxy reload, a failover pair whose standby has not surfaced the job — would otherwise be handed to
+a consumer as a vanished install, and the re-call recovery above does not help because the caller
+has already been told the job is gone. The wait re-reads once, one poll interval later, and accepts
+`found=False` only when the second read agrees. This is not the retry clause 5 declines: that
+paragraph is scoped to failures that propagate as `HMCError`, where the caller knows something went
+wrong. A job missing from the *first* read is still reported immediately — there is no earlier
+observation for it to contradict.
+
+The confirming read is **owed**, which makes `timeout_seconds` a soft bound. For a positive
+timeout, it runs after `min(poll_interval, timeout_seconds)`. This preserves the full poll interval
+whenever the interval fits within the caller's timeout, including when the deadline falls partway
+through that interval. When `poll_interval` is larger than the timeout, the timeout caps the
+confirmation delay: the call therefore finishes no later than both one poll interval after its
+deadline and twice its timeout **on the poll schedule**. Those bounds exclude time spent awaiting
+HMC reads; each request keeps the client's independently configured HTTP timeout.
+`timeout_seconds=0` remains exactly one poll, so a missing first read returns immediately and no
+confirming read is owed because the wait never observed the job.
+
+Honouring the deadline strictly and skipping the confirmation would put the hole exactly where
+every bounded wait ends. Always sleeping the uncapped poll interval would preserve separation but
+let an agent-supplied interval make a short wait overshoot without a timeout-relative bound.
+
+Once accepted, the disappearance is returned as a bare `found=False`. The status observed on
+the poll before is not carried on the outcome: `found=False` means the HMC produced no entry, and
+attaching a last-known status to it would contradict that and put a fourth row in clause 4's table.
+The evidence is not discarded — the transition logs at warning with the last status seen — but a
+consumer that must distinguish "ran for twenty minutes, then disappeared" from "never resolved"
+polls in its own loop with `get_job`. Carrying it on the result would be better for that consumer
+and is a change to what `found=False` means, so it belongs in a later decision, not here.
+
+The loop has **no retry**. Any non-404 HMC failure — a 5xx, a network timeout, an expired session —
+propagates as `HMCError` and ends the wait. That matters at the ADR's own motivating scale:
+`HMCClient` performs no re-logon, so a wait sized to a 90-minute install will outlive the HMC's
+session lifetime and die partway through. Building retry and re-logon into the operation is the
+larger change and is not made here, because the design already survives the failure: the operation
+is a pure read, and re-calling it with the same two strings resumes exactly where it stopped. What
+was missing was saying so, which the `wait_for_job` docstring now does — size `timeout_seconds` to
+a session, not to the job, and drive a longer wait by calling again.
+
+### 6. Cancellation is safe by construction
+
+Neither operation logs the injected client on or off, opens a session, or issues a write. Waiting
+is a read followed by `asyncio.sleep`. Cancelling the waiting coroutine therefore propagates
+`CancelledError` out of the sleep with no session mutation to unwind and no submitted work
+abandoned mid-flight — the HMC-side job is unaffected by a client that stopped watching it, which
+is the same property that makes polling from a second process possible at all.
+
+### 7. Scope
+
+Job polling is a read, so ADR 0092 §1 does not apply: that rule governs operations that change an
+existing `LogicalPartition`'s existence, identity, configuration, resource shape, virtual-device
+attachments, placement, or run state, and explicitly excludes read operations. No ownership guard
+is added.
+
+The synchronous helpers in `jobs.py` — `job_identifier`, `job_outcome`, and `validate_wait_timing` —
+stay internal under ADR 0029's rule that a synchronous function is "a transformation, parser, or
+validator rather than an asynchronous domain operation" (`:49-51`).
+
+## Consequences
+
+A consumer can persist `job_id` and `job_href` in one process and poll them from another with a
+freshly constructed client, which is what unblocks worker-restart-tolerant long-running installs.
+`JobOutcome`'s field set becomes a compatibility promise: adding, removing, or renaming a field is
+now a minor release under ADR 0029, where before it was an internal edit.
+
+ADR 0029's inventory gains an `operations.jobs` entry, and the mechanical facade-drift test added by
+issue #363 now covers the module: both coroutines must stay exported or the test fails.
+
+The residual gap is the *first* identifier. A caller that submits work through an existing operation
+still receives the HMC's opaque job mapping and must read the identifier out of it; nothing in this
+decision makes that read a supported contract. Closing it means changing what submitting operations
+return, which is #361's submit-side work and a separate decision.
+
+`found=False` is not proof that a job ran, failed, or ever existed. A consumer that needs to know
+whether the work happened must observe the affected resource, not the reaped job record — and
+because the translation cannot distinguish a reaped job from a job path this deployment does not
+serve, a `found=False` that repeats for every identifier is a configuration signal, not a fleet of
+vanished jobs.
+
+`found` and `job_href` also land in the MCP output schema that `hmc_wait_for_job` shares with every
+submit-and-wait tool, because `jobs.job_outcome` is the one normalizer behind all of them.
+`hmc_wait_for_job`'s tool docstring describes both fields — including that on *that* tool a reaped
+job still surfaces as an `HMCError`, because it polls through `HMCClient.wait_for_job`, which
+raises on the 404 these operations translate. The MCP surface does not gain the reaped-versus-
+running distinction here; only `hmc_mcp.api` does.
+
+> **Amended by #474** (2026-08-26). **The two sentences above no longer hold.** `hmc_wait_for_job`
+> polls through `operations.jobs.wait_for_job` and `hmc_get_job` reads through
+> `operations.jobs.get_job`, so the MCP surface has the reaped-versus-running distinction too. See
+> *Amendment (#474)* below; the rest of this Consequences section stands.
+
+The submitting tools' own docstrings now describe both fields and their submission reading. The
+five presentation docstrings covered by issue #456 state that `found=False` means the submission
+returned no job entry, that `job_href` is the HMC submission link when available, and that
+`job_id` may be a synthetic, non-pollable label. An agent reading a submission report therefore
+has the same distinction on the tool it actually called as in this ADR and `JobOutcome`.
+
+## Amendment (#474): the MCP job tools read through `operations.jobs`
+
+`hmc_wait_for_job` polls `operations.jobs.wait_for_job` and `hmc_get_job` reads
+`operations.jobs.get_job`; neither calls `HMCClient` any more. Clause 3's "polling reading" of
+`JobOutcome` therefore covers what `hmc_wait_for_job` returns, because it now *is* an outcome one
+of clause 4's two operations produced.
+
+**A vanished job surfaces in the payload as `found=False`, not as a new exception.** `found` is
+already a `required` property of the output schema `hmc_wait_for_job` shares with every
+submit-and-wait tool, and the repository already tests that `required` equals the full property
+set, so nothing about the tool's shape changes — a value that was unreachable becomes reachable.
+The alternative the issue weighed, raising a distinct "job absent" error, is the
+`JobNotFoundError` this ADR already rejected one layer down; taking it here would give one
+question two answers inside one package, and would put an error channel on an observation that is
+ordinary for a worker polling hours after submission.
+
+`hmc_get_job` keeps its `dict | null` shape rather than becoming a `JobOutcome`: it returns the
+outcome's `job`, so a reaped job reads as null — the same answer the tool already gave for a
+response carrying no job entry, and clause 4 already treats those two as one observation. Widening
+it to the full outcome would be a second, larger shape change that nothing here needs. The price is
+a carve-out from clause 2: because `hmc_get_job` hands back the HMC entry rather than the outcome,
+the `job_href` `_handle` computed is discarded, so the guarantee that a consumer re-persisting from
+every outcome never stores a link known not to work does **not** reach that tool. Its `link` can be
+one a read just proved dead. Nothing else on this branch relies on that guarantee, and buying it
+back means the shape change this clause declines.
+
+What changes for a caller: a reaped job that used to raise `HMCError` now returns successfully, so
+a caller that only caught the exception must read `found` (or the null) instead; `timeout_seconds`
+becomes the soft bound clause 5 describes, because the owed confirming read can outlive the
+deadline by a whole poll interval, which is not bounded by `timeout_seconds`; and an identifier
+that addresses something other than one job now raises `ValueError` before any request for the job
+is made — including an empty one, and including the case where a `job_href` was supplied, which is
+where the client previously ignored the identifier altogether. The check runs inside the operation,
+so it lands after the session is opened rather than at the tool's own edge, and a malformed handle
+still costs a logon and logoff. Every non-404 HMC failure still raises, which is what keeps
+`found=False` meaning the HMC produced no entry rather than that the read failed.
+
+That last reading is bounded by clause 5, and the tool docstrings now say so: the confirming
+re-read applies only to a disappearance seen *after* the job was alive, so a 404 on the first poll
+becomes `found=False` unconfirmed, where the client path used to raise. Confirming the first read
+would change clause 5's stop condition and belongs in its own decision.
+
+Further residuals stay open, each named in the tool docstrings rather than fixed here.
+
+> **Amended by #529** (2026-08-28). A retired link is compared with a rediscovered SELF link by
+> resource path, so relative and absolute spellings of the same job resource cannot reintroduce a
+> link already proven stale. The caller's exact spelling is still echoed when it resolves, and an
+> unrelated valid link advertised by a successful global-path read is still returned.
+
+Clause 5's confirming re-read is owed a full poll interval past the deadline, but the loop shortens
+it to whatever remains when the disappearance is seen with less than an interval left — which is
+the case clause 5 names when it justifies owing the read at all. The docstring says "up to one
+`poll_interval`" until #532 closes it.
+
+Clause 2's echo rule now reaches a presentation surface, where "the link the caller passed" means
+the caller's exact string. The client validates only that its path addresses a job resource and
+requests only that path, so host, query and fragment round-trip unchecked into a field this record
+tells consumers to re-persist. `urlsplit` also *deletes* tab, carriage return and newline while
+building the path, so the string `_reject_non_job_path` validates is not the one echoed back — a
+mismatch #537 owns. Normalizing the echo to the requested path would change the persisted-handle
+shape clause 2 fixes, so the `hmc_wait_for_job` docstring says instead that an echoed link is the
+caller's own input rather than something the HMC attested.
+
+> **Amended by #537** (2026-08-28). `operations.jobs` rejects TAB, carriage return, and newline in
+> `job_href` before URL parsing. Those are the characters `urllib.parse` deletes before producing
+> the path checked by `_reject_non_job_path`; rejecting them prevents parsing from silently deleting
+> characters between the cleaned caller input and that validated path. The exact cleaned input is
+> then echoed after a successful read. Valid handles retain clause 2's exact relative or absolute
+> spelling, while host, query, and fragment remain unchecked and unrequested. Normalizing every
+> handle to the parsed path was rejected because it would discard those accepted components for all
+> callers to eliminate three invalid control-character cases.
+
+The same unsanitized value reaches `operations.jobs`' own warning records, and nothing binds a
+handler to the `hmc_mcp` logger, so they fall to `logging.lastResort` and land raw on the stderr
+stream ADR 0040 defines as one JSON record per line. Serving these tools from `operations.jobs` is
+what first makes those sites reachable with caller-controlled input, so this change closes it:
+every warning that interpolates the link uses `%r`. ADR 0051's Context weighed only HMC-returned
+text at that boundary; binding `hmc_mcp` to a `StreamSafeFormatter` sink is the general fix and is
+not made here. **#534 made it in part**, binding the namespace in a served process so these
+records land on the bounded sink marked and escaped, which makes the `%r` above a second layer
+rather than the only one. It is not a closure. That binding deliberately leaves `propagate`
+alone, so an ancestor handler on stderr — what `logging.basicConfig()` leaves — still renders
+the same record with no marker and no escaping, and outside a served process nothing installs
+the sink at all. `%r` remains the layer that holds on those paths.
+
+`_confirm_missing` treats the HTTP 400 REST000E of issue #95 firmware as absence, so on exactly the
+firmware `job_href` exists to serve, a link whose parent resource was removed makes one live job
+read as absent. ADR clause 2 settled that trade at the operations layer on the strength of a
+warning log; an MCP caller cannot read that log, so both tool docstrings now tell a caller who
+supplied a `job_href` to re-read by identifier alone before acting on absence.
+
+## Amendment (#526): the CLI job commands read through `operations.jobs`
+
+`jobs show` reads through `operations.jobs.get_job`, and `jobs wait` polls through
+`operations.jobs.wait_for_job`; neither command calls the corresponding `HMCClient` method
+directly. The CLI therefore shares this record's disappearance and polling behavior with the MCP
+tools while keeping its own presentation contract.
+
+For both commands, `found=False` prints `Job <id> not found` to stderr and exits with status 1.
+Without `--job-href`, `jobs wait` stops after the first absent poll instead of waiting until its
+timeout, and it performs exactly the one `get_job` call needed for that observation. With a
+supplied link, clause 2's existing confirmation rule still applies: an absent link is checked once
+through the global jobs path before the command reports the job missing. A found job retains the
+existing command behavior: `jobs show` prints the serialized outcome, while `jobs wait` prints the
+status followed by that outcome.
+
+## Considered & rejected
+
+**Raise a `JobNotFoundError` instead of returning `found=False`.** It is equally distinguishable,
+but it splits one poll into two result channels and forces every caller of `wait_for_job` into a
+`try/except` around a call that already returns a normalized outcome. It also reads as an error when
+"the HMC reaped a completed job" is an ordinary, expected observation for a worker that restarted
+hours later.
+
+**Reuse `HMCClient.wait_for_job` and translate a 404 around the whole call.** Simpler by about ten
+lines, and rejected in clause 5: it cannot stop early on an absent entry, and it makes a supported
+operation's timing depend on a method ADR 0029 declares free to change.
+
+**Return the raw job mapping like `HMCClient.get_job` does.** That would make IBM's open-ended
+resource schema the consumer's parsing problem for the one result the issue exists to make legible,
+and it has no place to put `found`.
+
+**Require `job_href` alongside `job_id`.** It would force every consumer to persist a link that most
+firmware does not need, and the submitting operation does not always return one.
+
+**Accept the submission mapping instead of a bare identifier.** The mapping is the thing that cannot
+be persisted and read back as a supported contract — its keys are explicitly not owned by this
+package — so accepting it would defeat the portability the issue asks for.
+
+**Add a `found` field to nothing and let `status=None` mean "gone".** `status=None` is already what a
+job with an unparseable or absent `Status` produces, so overloading it would conflate a firmware
+oddity with a reaped job and leave `timed_out=True` reading as "still running" in both cases.

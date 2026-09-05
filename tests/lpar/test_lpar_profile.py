@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+from conftest import mock_uuid_resolution
 
-from hmc_mcp.server import (
+from hmc_mcp.server_tools.lpar.profiles import (
     hmc_backup_lpar_profiles,
     hmc_restore_lpar_profiles,
     hmc_sync_lpar_profile,
 )
-
-from conftest import mock_uuid_resolution
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "managed_sys1"
@@ -53,11 +52,11 @@ def test_backup_lpar_profiles_runs_correct_command(monkeypatch, mock_hmc):
     BACKUP_OUTPUT = "Backup operation completed successfully.\n"
     conn_mock = _make_ssh_mock(BACKUP_OUTPUT)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_backup_lpar_profiles(SYSTEM_UUID, "/tmp/lpar_profiles.bak")
 
     expected_cmd = f"bkprofdata -m {SYSTEM_NAME} -f /tmp/lpar_profiles.bak"
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
+    conn_mock.run.assert_awaited_with(expected_cmd, check=True, timeout=300.0)
     assert "completed successfully" in result
 
 
@@ -68,7 +67,7 @@ def test_backup_lpar_profiles_returns_cli_output(monkeypatch, mock_hmc):
     RAW_OUTPUT = "Operation: backup\nStatus: OK\nFile: /tmp/profiles\n"
     conn_mock = _make_ssh_mock(RAW_OUTPUT)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_backup_lpar_profiles(SYSTEM_UUID, "/tmp/profiles")
 
     assert result == RAW_OUTPUT
@@ -81,7 +80,7 @@ def test_backup_lpar_profiles_force_flag_appended(monkeypatch, mock_hmc):
     BACKUP_OUTPUT = "Backup operation completed successfully.\n"
     conn_mock = _make_ssh_mock(BACKUP_OUTPUT)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_backup_lpar_profiles(SYSTEM_UUID, "/tmp/lpar_profiles.bak", force=True)
 
     expected_cmd = f"bkprofdata -m {SYSTEM_NAME} -f /tmp/lpar_profiles.bak --force"
@@ -95,7 +94,7 @@ def test_backup_lpar_profiles_no_force_by_default(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("OK\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         hmc_backup_lpar_profiles(SYSTEM_UUID, "/tmp/profiles")
 
     called_cmd = conn_mock.run.call_args[0][0]
@@ -132,8 +131,13 @@ def test_restore_lpar_profiles_runs_correct_command(monkeypatch, mock_hmc):
     RESTORE_OUTPUT = "Restore operation completed successfully.\n"
     conn_mock = _make_ssh_mock(RESTORE_OUTPUT)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_restore_lpar_profiles(SYSTEM_UUID, "/tmp/lpar_profiles.bak")
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
+        result = hmc_restore_lpar_profiles(
+            SYSTEM_UUID,
+            "/tmp/lpar_profiles.bak",
+            system_wide_restore_approved=True,
+            ownership_override=True,
+        )
 
     expected_cmd = f"rstprofdata -m {SYSTEM_NAME} -f /tmp/lpar_profiles.bak"
     conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
@@ -147,10 +151,24 @@ def test_restore_lpar_profiles_returns_cli_output(monkeypatch, mock_hmc):
     RAW_OUTPUT = "Operation: restore\nStatus: OK\nFile: /tmp/profiles.bak\n"
     conn_mock = _make_ssh_mock(RAW_OUTPUT)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_restore_lpar_profiles(SYSTEM_UUID, "/tmp/profiles.bak")
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
+        result = hmc_restore_lpar_profiles(
+            SYSTEM_UUID,
+            "/tmp/profiles.bak",
+            system_wide_restore_approved=True,
+            ownership_override=True,
+        )
 
     assert result == RAW_OUTPUT
+
+
+def test_restore_lpar_profiles_requires_system_wide_approval(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+
+    with pytest.raises(PermissionError, match="overwrites every profile"):
+        hmc_restore_lpar_profiles(SYSTEM_UUID, "/tmp/profiles.bak")
+
+    assert not mock_hmc.calls
 
 
 # ---------------------------------------------------------------------- #
@@ -165,13 +183,13 @@ def test_sync_lpar_profile_runs_correct_command(monkeypatch, mock_hmc):
     SYNC_OUTPUT = "Profile sync completed successfully.\n"
     conn_mock = _make_ssh_mock(SYNC_OUTPUT)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_sync_lpar_profile(SYSTEM_UUID, LPAR_UUID)
 
     expected_cmd = (
         f"chsyscfg -r lpar -m {SYSTEM_NAME} -i name={LPAR_NAME},sync_curr_profile=1"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
+    conn_mock.run.assert_awaited_with(expected_cmd, check=True, timeout=300.0)
     assert "successfully" in result
 
 
@@ -182,8 +200,7 @@ def test_sync_lpar_profile_returns_cli_output(monkeypatch, mock_hmc):
     RAW_OUTPUT = "Operation: sync\nStatus: OK\nLPAR: lpar1\n"
     conn_mock = _make_ssh_mock(RAW_OUTPUT)
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_sync_lpar_profile(SYSTEM_UUID, LPAR_UUID)
 
     assert result == RAW_OUTPUT
-

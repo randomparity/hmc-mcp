@@ -1,11 +1,12 @@
 """Tests for Template Library (query + deploy) — /rest/api/templates/."""
 
+from xml.etree import ElementTree
+
 import httpx
 import pytest
-
 from conftest import JOB_ENTRY, make_config
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCTransportError
 from hmc_mcp.jobs import deploy_partition_template_job
 
@@ -37,11 +38,19 @@ TEMPLATE_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 def test_deploy_job():
-    xml = deploy_partition_template_job("sys-uuid", "memento-1")
+    xml = deploy_partition_template_job("draft-uuid", "sys-uuid", "memento-1")
+    root = ElementTree.fromstring(xml)
+    parameters = {
+        parameter[1].text: parameter[2].text
+        for parameter in root.iter()
+        if parameter.tag.endswith("JobParameter")
+    }
     assert "Deploy" in xml
-    assert "TargetUuid" in xml and "sys-uuid" in xml
-    assert "TemplateUuid" not in xml  # draft UUID is in the URL, not a parameter
-    assert "K_X_API_SESSION_MEMENTO" in xml and "memento-1" in xml
+    assert parameters == {
+        "K_X_API_SESSION_MEMENTO": "memento-1",
+        "TargetUuid": "sys-uuid",
+        "TemplateUuid": "draft-uuid",
+    }
 
 
 @pytest.mark.asyncio
@@ -85,5 +94,14 @@ async def test_deploy_partition_template(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         job = await hmc.deploy_partition_template("draft-uuid", "sys-uuid")
     body = route.calls.last.request.content.decode()
-    assert "Deploy" in body and "TargetUuid" in body and "sys-uuid" in body
+    assert "Deploy" in body
+    root = ElementTree.fromstring(body)
+    parameters = {
+        parameter[1].text: parameter[2].text
+        for parameter in root.iter()
+        if parameter.tag.endswith("JobParameter")
+    }
+    assert parameters["K_X_API_SESSION_MEMENTO"]
+    assert parameters["TargetUuid"] == "sys-uuid"
+    assert parameters["TemplateUuid"] == "draft-uuid"
     assert job is not None and job["Resource"]["JobID"] == "job-uuid-999"

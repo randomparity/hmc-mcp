@@ -11,19 +11,23 @@ from __future__ import annotations
 import ast
 import asyncio
 from collections.abc import Iterator
-from dataclasses import dataclass, fields as dataclass_fields, is_dataclass
+from dataclasses import dataclass, is_dataclass
+from dataclasses import fields as dataclass_fields
 from pathlib import Path
-from unittest.mock import patch
 from typing import get_args, get_type_hints
+from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel
 
-from hmc_mcp import server_command, server_permissions, server_vios, tool_registry
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.dispatch_scope import dispatch_authorizer
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp import tool_registry
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_MODULES, TOOL_SECURITY, create_mcp
+from hmc_mcp.server_tools import command as server_command
+from hmc_mcp.server_tools import permissions as server_permissions
+from hmc_mcp.server_tools import vios as server_vios
 from hmc_mcp.tool_registry import (
     EFFECTS,
     REQUIRED_TARGET_ARGUMENTS,
@@ -61,7 +65,7 @@ _TOOL_MODULES = (*TOOL_MODULES, server_command, server_permissions)
 # 20f3068. A frozen regression snapshot: no tool is ever added here.
 LEGACY_READ_ONLY = frozenset(
     {
-        "hmc_console_info",
+        "hmc_get_console_info",
         "hmc_list_systems",
         "hmc_system_summary",
         "hmc_list_lpars",
@@ -96,12 +100,10 @@ LEGACY_READ_ONLY = frozenset(
         "hmc_processed_metric_links",
         "hmc_aggregated_metrics",
         "hmc_aggregated_metric_links",
-        "hmc_list_users",
         "hmc_get_user",
-        "hmc_list_password_policies",
-        "hmc_list_password_policy_status",
-        "hmc_get_ldap_config",
-        "hmc_get_available_hmc_ptfs",
+        "hmc_list_task_roles",
+        "hmc_list_resource_roles",
+        "hmc_get_remote_access",
         "hmc_list_vios_backups",
         "hmc_get_lpar_description",
         "hmc_get_lpar_msp",
@@ -130,8 +132,6 @@ LEGACY_DESTRUCTIVE = frozenset(
         "hmc_delete_virtual_disk",
         "hmc_delete_logical_unit",
         "hmc_delete_user",
-        "hmc_delete_password_policy",
-        "hmc_remove_ldap_config",
         "hmc_remove_memory_pool",
         "hmc_remove_vnic",
         "hmc_power_off_system",
@@ -143,7 +143,6 @@ LEGACY_DESTRUCTIVE = frozenset(
         "hmc_backup_lpar_profiles",
         "hmc_sync_lpar_profile",
         "hmc_unmount_optical_media",
-        "hmc_detach_optical_mapping",
         "hmc_detach_storage_mapping",
     }
 )
@@ -179,6 +178,18 @@ def test_every_live_tool_has_security_metadata():
     assert "hmc_run_command" in TOOL_SECURITY
 
 
+def test_the_duplicate_optical_detach_tool_stays_removed():
+    """#362: `hmc_detach_optical_mapping` is gone by name, not by arithmetic.
+
+    It duplicated `hmc_unmount_optical_media` byte for byte and was removed with
+    no alias. The exposed-tool count in test_application_boundaries.py would let
+    a later change re-add it and net back to the same number, so pin the name.
+    """
+    assert "hmc_detach_optical_mapping" not in TOOL_SECURITY
+    assert "hmc_detach_optical_mapping" not in _tools_by_name(True)
+    assert "hmc_unmount_optical_media" in TOOL_SECURITY
+
+
 def test_annotations_are_derived_from_the_effect_class():
     """G4: the shipped hint is a function of the declared effect, nothing else."""
     for name, tool in _tools_by_name(True).items():
@@ -188,6 +199,14 @@ def test_annotations_are_derived_from_the_effect_class():
 def test_declared_effects_use_the_closed_vocabulary():
     for name, security in TOOL_SECURITY.items():
         assert security.effect in EFFECTS, name
+
+
+def test_available_hmc_ptfs_is_mutating_job_submission():
+    security = TOOL_SECURITY["hmc_submit_available_hmc_ptfs_query"]
+    tool = _tools_by_name()["hmc_submit_available_hmc_ptfs_query"]
+
+    assert security.effect == "mutate"
+    assert tool.annotations.readOnlyHint is False
 
 
 def test_selectors_and_connection_arguments_are_public_parameters():
@@ -283,7 +302,6 @@ def test_lpm_tools_declare_their_source_system(tool_name):
     assert ("managed_system", "system_name_or_uuid") in pairs
 
 
-
 def test_provision_lpar_declares_its_nested_selectors():
     """#260: the VIOS identities one level below the signature are declared.
 
@@ -294,14 +312,11 @@ def test_provision_lpar_declares_its_nested_selectors():
     """
     security = TOOL_SECURITY["hmc_provision_lpar"]
     assert security.exhaustive_targets is False
-    assert [
-        (t.kind, t.path, t.required) for t in security.targets
-    ] == [
+    assert [(t.kind, t.path, t.required) for t in security.targets] == [
         ("managed_system", "system_name_or_uuid", True),
-        ("vios", "network.vios_partition_id", True),
+        ("vios", "adapters.vios_partition_id", True),
         ("vios", "storage.vios_uuid", True),
     ]
-
 
 
 def test_backup_vios_non_exhaustive_scope_keeps_required_selector_metadata():
@@ -351,7 +366,7 @@ EXPECTED_TARGET_ARGUMENTS = {
     "cluster_uuid": "cluster",
     "ssp_uuid": "shared_storage_pool",
     "console_uuid": "console",
-    "job_uuid": "job",
+    "job_id": "job",
     "template_uuid": "template",
     "draft_template_uuid": "template",
     "policy_name": "password_policy",
@@ -367,19 +382,18 @@ def test_the_argument_table_matches_its_independent_expectation():
 @pytest.mark.parametrize(
     "tool_name, expected",
     [
-        ("hmc_get_available_hmc_ptfs", {("console", "console_uuid")}),
+        ("hmc_submit_available_hmc_ptfs_query", {("console", "console_uuid")}),
         ("hmc_update_console_software", {("console", "console_uuid")}),
-        ("hmc_get_job", {("job", "job_uuid")}),
+        ("hmc_get_job", {("job", "job_id")}),
         ("hmc_get_partition_template", {("template", "template_uuid")}),
         ("hmc_get_shared_storage_pool", {("shared_storage_pool", "ssp_uuid")}),
-        ("hmc_delete_password_policy", {("password_policy", "policy_name")}),
         ("hmc_processed_metrics", {("metric_resource", "resource_name_or_uuid")}),
         ("hmc_create_logical_unit", {("cluster", "cluster_uuid")}),
         (
             "hmc_add_vscsi_adapter",
             {("lpar", "lpar_name_or_uuid"), ("vios", "vios_partition_id")},
         ),
-        ("hmc_delete_user", {("user", "name")}),
+        ("hmc_delete_user", {("user", "user_profile_uuid")}),
     ],
 )
 def test_selectors_are_built_for_every_table_kind(tool_name, expected):
@@ -431,6 +445,7 @@ DESTRUCTIVE_WITHOUT_PREFIX = frozenset(
         "hmc_update_console_software",
         "hmc_update_firmware",
         "hmc_vios_update",
+        "hmc_vios_upgrade",
     }
 )
 
@@ -462,6 +477,7 @@ def test_software_and_firmware_update_tools_are_destructive():
     for name in (
         "hmc_update_console_software",
         "hmc_vios_update",
+        "hmc_vios_upgrade",
         "hmc_update_firmware",
     ):
         assert TOOL_SECURITY[name].effect == "destructive", name
@@ -484,7 +500,13 @@ def test_arbitrary_command_is_absent_by_default_and_maximally_classified():
 
 def test_only_local_tools_open_no_hmc_connection():
     """G10: every tool that reaches an HMC declares how its connection is chosen."""
-    local_only = {"hmc_list_configured_hosts", "hmc_effective_permissions"}
+    local_only = {
+        "hmc_list_configured_hosts",
+        "hmc_effective_permissions",
+        "hmc_snapshot_validate",
+        "hmc_snapshot_inspect",
+        "hmc_snapshot_assess_affinity",
+    }
     for name, security in TOOL_SECURITY.items():
         if name in local_only:
             assert security.target_kind == "none", name
@@ -546,12 +568,19 @@ def test_legacy_classification_sets_are_gone():
             assert not hasattr(module, removed), f"{module.__name__}.{removed}"
 
 
-# A handler's connection routes through exactly these three helpers. Every one
-# of them resolves an HMCConfig from `common.build_config`, so a call that omits
+# A handler's connection routes through exactly these shared helpers. Every one
+# of them resolves an HMCConfig from `config.build_config`, so a call that omits
 # the handler's declared connection argument reaches the deployment default
 # whatever the caller — and the access policy — named.
 _CONNECTION_BUILDERS = frozenset(
-    {"build_config", "client_from_env", "_ssh_with_client"}
+    {
+        "build_config",
+        "client_from_env",
+        "run_limited_collection",
+        "ssh_with_client",
+        "with_config",
+        "with_client",
+    }
 )
 
 # `host` is deliberately singled out: `build_config` skips the whole profile
@@ -688,7 +717,7 @@ def _assert_builder_call(call: ast.Call, argument: str | None, where: str) -> No
     # `client_from_env(profile='some-other-profile')` routes somewhere the
     # authorization never decided about, and the keyword arm is the only one
     # available to the SSH family, whose `profile` is keyword-only on
-    # `_app._ssh_with_client`. The keyword's own name is not constrained: a tool
+    # `_app.ssh_with_client`. The keyword's own name is not constrained: a tool
     # declaring `connection_argument="connection"` writes `profile=connection`.
     supplied = [*call.args, *(keyword.value for keyword in call.keywords)]
     assert argument is not None and any(
@@ -798,10 +827,11 @@ def test_every_handler_routes_the_connection_argument_it_declares():
     the call does not make. That is a fail-open, and it is what
     ``hmc_set_lpar_boot_order`` and ``hmc_clear_lpar_boot_order`` did before #222.
 
-    The check is static and follows same-module helpers down the call chain,
-    which is how the metrics, vios, and composite tools reach their client. It
-    does not follow a helper imported from another module, a ``functools.partial``,
-    or a callable held in a variable; ADR 0038 records that residual.
+        The check is static and follows same-module helpers down the call chain,
+        while recognizing the shared connection builders imported from ``_app``.
+        It does not follow any other helper imported from another module, a
+        ``functools.partial``, or a callable held in a variable; ADR 0038 records
+        that residual.
 
     The two tools that declare *no* connection argument are checked in the same
     pass, from the other side: entering the walk with no selector, the first
@@ -812,7 +842,7 @@ def test_every_handler_routes_the_connection_argument_it_declares():
     root = Path(server_command.__file__).parent
     checked: set[str] = set()
 
-    for path in sorted(root.glob("server_*.py")):
+    for path in sorted(root.rglob("*.py")):
         functions = _module_functions(ast.parse(path.read_text(encoding="utf-8")))
         for name in sorted(functions.keys() & set(TOOL_SECURITY)):
             _assert_handler_routes(
@@ -1181,23 +1211,20 @@ _NOT_EXHAUSTIVE = frozenset(
     {
         # No selector at all, so a `targets` table has nothing to bind on.
         "hmc_capacity_report",
-        "hmc_configure_ldap",
-        "hmc_console_info",
+        "hmc_get_console_info",
         "hmc_effective_permissions",
         "hmc_find_placement",
         "hmc_fleet_health",
-        "hmc_get_ldap_config",
         "hmc_list_clusters",
         "hmc_list_configured_hosts",
         "hmc_list_partition_templates",
-        "hmc_list_password_policies",
-        "hmc_list_password_policy_status",
         "hmc_list_recent_jobs",
         "hmc_list_resources",
         "hmc_list_shared_storage_pools",
         "hmc_list_systems",
-        "hmc_list_users",
-        "hmc_remove_ldap_config",
+        "hmc_snapshot_validate",
+        "hmc_snapshot_inspect",
+        "hmc_snapshot_assess_affinity",
         "hmc_run_command",
         # Selectors, but they do not name every resource the call acts on.
         "hmc_backup_lpar_profiles",
@@ -1283,9 +1310,7 @@ def _selector_annotations() -> dict[str, object]:
                 if target.container is not None:
                     # A nested selector (#260) types its field through the
                     # container's own annotation, one level down.
-                    container = get_type_hints(hints[target.container])[
-                        target.argument
-                    ]
+                    container = get_type_hints(hints[target.container])[target.argument]
                 else:
                     container = hints.get(target.argument)
                 resolved[f"{name}.{target.path}"] = container
@@ -1394,7 +1419,7 @@ def test_the_declared_set_is_exactly_what_the_check_finds():
         "hmc_get_job": ["job_href"],
         # storage.vios_uuid is declared now (#260); the slot number remains an
         # identity no table can bound, so it stays in this set.
-        "hmc_provision_lpar": ["network.vios_partition_id"],
+        "hmc_provision_lpar": ["adapters.vios_partition_id"],
         "hmc_restore_lpar_profiles": ["file_path"],
         "hmc_run_command": ["cmd"],
         "hmc_wait_for_job": ["job_href"],
@@ -1417,7 +1442,7 @@ def test_every_handler_reads_the_target_selectors_it_declares():
     unread: dict[str, list[str]] = {}
     checked: set[str] = set()
 
-    for path in sorted(root.glob("server_*.py")):
+    for path in sorted(root.rglob("*.py")):
         functions = _module_functions(ast.parse(path.read_text(encoding="utf-8")))
         for name in sorted(functions.keys() & set(TOOL_SECURITY)):
             body = functions[name]
@@ -1550,7 +1575,8 @@ def hmc_probe(lpar_name_or_uuid: str, profile: str | None = None):
 _PAYLOAD_SOURCE_ARGUMENTS = frozenset(
     {
         "repository",
-        "nim_ip",
+        "platform_update",
+        "install_source",
         "nim_gateway",
         "nim_subnetmask",
         "lpar_ip",
@@ -1558,6 +1584,11 @@ _PAYLOAD_SOURCE_ARGUMENTS = frozenset(
         "iso_source",
     }
 )
+#
+# `nim_ip` left the set with #410: the InstallLPAR/InstallVIOS REST jobs it fed
+# do not exist (ADR 0069), and the installios CLI bridge (ADR 0070) has no
+# external NIM-server address — the HMC itself serves the image named by
+# `install_source`, which joined the set in its place.
 
 
 def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
@@ -1591,18 +1622,19 @@ def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
                 found[name] = (security.exhaustive_targets, hits)
 
     assert found == {
-        "hmc_install_lpar_os": (
+        "hmc_install_vios_by_lpar_selector": (
             True,
-            ["lpar_ip", "nim_gateway", "nim_ip", "nim_subnetmask"],
+            ["install_source", "lpar_ip", "nim_gateway", "nim_subnetmask"],
         ),
         "hmc_install_vios": (
             True,
-            ["nim_gateway", "nim_ip", "nim_subnetmask", "vios_ip"],
+            ["install_source", "nim_gateway", "nim_subnetmask", "vios_ip"],
         ),
         "hmc_update_console_software": (True, ["repository"]),
-        "hmc_update_firmware": (True, ["repository"]),
+        "hmc_update_firmware": (True, ["platform_update"]),
         "hmc_upload_iso": (True, ["iso_source"]),
         "hmc_vios_update": (True, ["repository"]),
+        "hmc_vios_upgrade": (True, ["repository"]),
     }
     # The two tables must stay disjoint, or the decision above would silently
     # contradict the one UNBOUNDED_ARGUMENTS encodes: a name cannot both be
@@ -1697,7 +1729,7 @@ def test_restore_vios_scope_and_backup_name_containment_are_independent(monkeypa
     escapes = ["../other/x.tar", "..", "-operation"]
 
     with patch(
-        "hmc_mcp.ssh.asyncssh.connect",
+        "hmc_mcp.ssh.transport.asyncssh.connect",
         side_effect=AssertionError("reached the SSH layer"),
     ):
         for escape in escapes:

@@ -2,9 +2,8 @@
 
 import pytest
 
-from hmc_mcp.operations_capacity import find_placement, system_capacity
-from hmc_mcp.operations_composite import _system_summary
-
+from hmc_mcp.operations.capacity import calculate_system_capacity, find_placement
+from hmc_mcp.operations.composite import _system_summary
 
 SYSTEM = {
     "UUID": "system-1",
@@ -27,7 +26,7 @@ MALFORMED_LPAR = {
 @pytest.mark.parametrize(
     "summarize",
     [
-        lambda: system_capacity(SYSTEM, [MALFORMED_LPAR]),
+        lambda: calculate_system_capacity(SYSTEM, [MALFORMED_LPAR]),
         lambda: _system_summary(SYSTEM, [MALFORMED_LPAR], []),
     ],
 )
@@ -37,6 +36,22 @@ def test_capacity_summaries_reject_malformed_processing_units(summarize):
         match=r"lpar-1.*DesiredProcessingUnits.*not-a-number",
     ):
         summarize()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("AssignableSystemMemory", "not-memory"),
+        ("ConfigurableSystemProcessorUnits", "not-processors"),
+        ("DesiredMemory", "not-memory"),
+    ],
+)
+def test_capacity_summaries_contextualize_malformed_numeric_fields(field, value):
+    system = {**SYSTEM, "Resource": {**SYSTEM["Resource"], field: value}}
+    lpars = [] if field != "DesiredMemory" else [{"UUID": "lpar-2", "Resource": {field: value}}]
+
+    with pytest.raises(ValueError, match=field):
+        calculate_system_capacity(system, lpars)
 
 
 class _CapacityClient:
@@ -67,7 +82,7 @@ class _CapacityClient:
 @pytest.mark.asyncio
 async def test_find_placement_orders_smallest_sufficient_capacity_first():
     result = await find_placement(
-        _CapacityClient(), desired_memory_mb=4096, desired_proc_units=1
+        _CapacityClient(), desired_memory_mib=4096, desired_proc_units=1
     )
 
-    assert [candidate["system_uuid"] for candidate in result] == ["tight", "roomy"]
+    assert [candidate.system_uuid for candidate in result] == ["tight", "roomy"]

@@ -13,26 +13,35 @@ command escape hatch.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import shlex
+from contextlib import asynccontextmanager
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.server import (
-    hmc_backup_vios,
-    hmc_backup_lpar_profiles,
-    hmc_list_memory_pools,
-    hmc_remove_memory_pool,
-    hmc_restore_vios,
+from hmc_mcp.operations.io_virtualization.validation import require_command_safe_text
+from hmc_mcp.operations.io_virtualization.vnic import (
+    VnicBackingSelector,
+    _validate_vnic_backing_selector,
+)
+from hmc_mcp.server_tools.lpar.configuration import (
     hmc_set_lpar_description,
 )
-from hmc_mcp.ssh_commands import list_io_slots
-from hmc_mcp.operations_ssh_network import VnicBackingSelector, _required, _validated
-from decimal import Decimal
-
-from conftest import mock_uuid_resolution
+from hmc_mcp.server_tools.lpar.profiles import (
+    hmc_backup_lpar_profiles,
+)
+from hmc_mcp.server_tools.system_resources import (
+    hmc_list_memory_pools,
+    hmc_remove_memory_pool,
+)
+from hmc_mcp.server_tools.vios import (
+    hmc_backup_vios,
+    hmc_restore_vios,
+)
+from hmc_mcp.ssh.network import list_io_slots
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"
@@ -76,6 +85,9 @@ def _arg_after(args: list[str], option: str) -> str:
 
 def _vios_client_factory():
     hmc = AsyncMock()
+    hmc.config = HMCConfig.from_mapping(
+        {"host": "hmc.test", "user": "hscroot", "password": "p"}
+    )
     hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
     hmc.find_vios_by_name.return_value = {"UUID": SYSTEM_UUID}
 
@@ -95,7 +107,7 @@ def _vios_client_factory():
 async def test_list_io_slots_quotes_hostile_system_name():
     """A hostile system name is shell-quoted in the lshwres command."""
     conn = _make_ssh_mock("")
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         await list_io_slots(HMCConfig(host="h", user="u", password="p"), HOSTILE)
 
     cmd = _captured_cmd(conn)
@@ -111,13 +123,15 @@ async def test_list_io_slots_quotes_hostile_system_name():
 def test_add_vnic_rejects_structural_selector_characters():
     """Typed vNIC selectors reject characters that alter HMC payload structure."""
     with pytest.raises(ValueError, match="alter HMC command structure"):
-        _validated(VnicBackingSelector(f"vios,{HOSTILE}", "2", "1", "0", Decimal("2")))
+        _validate_vnic_backing_selector(
+            VnicBackingSelector(f"vios,{HOSTILE}", "2", "1", "0", Decimal(2))
+        )
 
 
 def test_remove_vnic_rejects_structural_slot_characters():
     """Slot removal rejects characters that alter the HMC attribute payload."""
     with pytest.raises(ValueError, match="alter HMC command structure"):
-        _required(f"4,{HOSTILE}", "slot_num")
+        require_command_safe_text(f"4,{HOSTILE}", "slot_num")
 
 
 def test_set_lpar_description_quotes_hostile_description(monkeypatch, mock_hmc):
@@ -126,7 +140,7 @@ def test_set_lpar_description_quotes_hostile_description(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         hmc_set_lpar_description(
             SYSTEM_UUID, LPAR_UUID, HOSTILE, ownership_override=True
         )
@@ -144,7 +158,7 @@ def test_remove_memory_pool_quotes_hostile_pool_name(monkeypatch, mock_hmc):
     # finds it and proceeds to the remove command.
     conn = _make_ssh_mock("pool_name=x; id,size=4096,curr_lpar_names=\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         hmc_remove_memory_pool(SYSTEM_UUID, HOSTILE)
 
     cmd = _captured_cmd(conn)  # last run() call is the chhwres remove
@@ -159,7 +173,7 @@ def test_backup_lpar_profiles_quotes_hostile_file_path(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         hmc_backup_lpar_profiles(SYSTEM_UUID, "/tmp/bak;id")
 
     cmd = _captured_cmd(conn)
@@ -193,10 +207,10 @@ def test_vios_backup_tools_quote_hostile_backup_name(
     Quoting and containment are separate controls and this proves the first.
     """
     _hmc_env(monkeypatch)
-    monkeypatch.setattr("hmc_mcp.server_vios.client_from_env", _vios_client_factory())
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _vios_client_factory())
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         tool(*arguments, **keywords)
 
     cmd = _captured_cmd(conn)
@@ -224,9 +238,10 @@ def test_vios_backup_tools_keep_hostile_direct_system_name_in_one_argument(
 ):
     """A caller-controlled direct system name remains one exact ``-m`` word."""
     _hmc_env(monkeypatch)
+    monkeypatch.setattr("hmc_mcp._app.client_from_env", _vios_client_factory())
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         tool(*arguments, **keywords)
 
     assert _arg_after(shlex.split(_captured_cmd(conn)), "-m") == HOSTILE
@@ -243,7 +258,7 @@ def test_resolved_system_name_is_quoted_too(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, HOSTILE)  # hostile system name
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
         hmc_list_memory_pools(SYSTEM_UUID)
 
     cmd = _captured_cmd(conn)

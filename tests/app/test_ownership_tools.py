@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from hmc_mcp.server import hmc_create_lpar
+from hmc_mcp.server_tools.lpar.lifecycle import hmc_create_lpar
 
 BASE = "https://hmc.test"
 SYSTEM_UUID = "aaaa0000-0000-0000-0000-000000000001"
@@ -87,7 +87,7 @@ def test_create_lpar_ownership_stamped_true(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with patch(
-            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            "hmc_mcp.operations.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="[hmc-mcp owner:test-agent created:2026-08-13]"),
         ):
             result = hmc_create_lpar(
@@ -113,7 +113,7 @@ def test_create_lpar_ownership_stamped_false_on_stamp_failure(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with patch(
-            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            "hmc_mcp.operations.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value=None),
         ):
             result = hmc_create_lpar(
@@ -139,7 +139,7 @@ def test_create_lpar_result_shape_without_agent_id(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with patch(
-            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            "hmc_mcp.operations.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-08-13]"),
         ):
             result = hmc_create_lpar(
@@ -178,7 +178,7 @@ def test_create_lpar_valid_caller_token_stamped(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with patch(
-            "hmc_mcp.operations_lpar.stamp_lpar_ownership", new=capture_stamp
+            "hmc_mcp.operations.ownership.stamp_lpar_ownership", new=capture_stamp
         ):
             result = hmc_create_lpar(
                 system_name_or_uuid=SYSTEM_UUID, name="test-lpar",

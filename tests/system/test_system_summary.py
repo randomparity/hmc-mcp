@@ -1,7 +1,7 @@
 """Tests for the hmc_system_summary composite tool.
 
 Exercises the tool against a mocked HMC (respx) so the URL mapping and
-field-extraction logic in server_composite.py is verified without a live HMC.
+field-extraction logic in server_tools/composite.py is verified without a live HMC.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from hmc_mcp.server import hmc_system_summary
+from hmc_mcp.server_tools.composite import hmc_system_summary
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID_1 = "00000000-0000-0000-0000-000000000002"
@@ -137,8 +137,8 @@ def test_system_summary_by_uuid_returns_flat_dict(monkeypatch, mock_hmc):
     assert result["state"] == "operating"
     assert result["mtms"] == "9009-41A*12345AB"
     assert result["firmware_version"] == "FW950.10"
-    assert result["total_memory_mb"] == 131072
-    assert result["free_memory_mb"] == 131072 - 8192 - 4096
+    assert result["total_memory_mib"] == 131072
+    assert result["free_memory_mib"] == 131072 - 8192 - 4096
     assert result["total_proc_units"] == 16.0
     assert result["free_proc_units"] == pytest.approx(16.0 - 1.0)
     assert result["lpar_count"] == 2
@@ -173,7 +173,7 @@ def test_system_summary_no_lpars_no_vios(monkeypatch, mock_hmc):
     assert result["lpar_count"] == 0
     assert result["lpar_states"] == {}
     assert result["vios_count"] == 0
-    assert result["free_memory_mb"] == 65536
+    assert result["free_memory_mib"] == 65536
     assert result["free_proc_units"] == pytest.approx(8.0)
 
 
@@ -246,5 +246,5 @@ def test_system_summary_missing_optional_fields(monkeypatch, mock_hmc):
 
     assert result["mtms"] is None
     assert result["firmware_version"] is None
-    assert result["total_memory_mb"] == 0
+    assert result["total_memory_mib"] == 0
     assert result["total_proc_units"] == 0.0

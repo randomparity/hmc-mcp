@@ -17,13 +17,14 @@ specifically so a bare installation serves library consumers.
 
 Under exact pins the practical effect on a library consumer is hard: any
 environment already containing a different patch release of `asyncssh`,
-`defusedxml`, `httpx`, `pydantic`, or `pydantic-settings` cannot install
+`defusedxml`, `httpx`, `pydantic`, `pydantic-settings`, or `typing-extensions`
+cannot install
 hmc-mcp at all. `pydantic` is the sharpest edge — nearly every modern Python
 application already depends on it, and `pydantic==2.13.4` refuses `2.13.5`.
 
 There is no conflict today. A resolution probe on 2026-08-22 (CPython 3.11,
 darwin/arm64) resolved `fastapi + sqlalchemy + asyncpg + alembic` together with
-all five exact pins successfully. This decision is insurance against the first
+all six exact pins successfully. This decision is insurance against the first
 divergence, taken while its cost is one record instead of a downstream consumer
 blocked on an upstream release schedule.
 
@@ -43,6 +44,7 @@ dependencies = [
     "httpx>=0.28.1,<1",
     "pydantic>=2.13.4,<3",
     "pydantic-settings>=2.15.0,<3",
+    "typing-extensions>=4.16.0,<5",
 ]
 ```
 
@@ -63,6 +65,9 @@ dependencies = [
 - `pydantic-settings <3`: it tracks pydantic's major line; behaviour changes
   within 2.x arrive through documented release notes on the stable
   `BaseSettings` surface hmc-mcp uses.
+- `typing-extensions <5`: the project follows semantic versioning and reserves
+  its next major for incompatible changes; hmc-mcp imports `TypedDict` directly
+  for supported operation contracts.
 
 **Everything ADR 0001 described correctly stays exact.** The `app` optional
 extra, the `dev` dependency group, and the hatchling build requirement keep
@@ -85,7 +90,7 @@ and the locked versions must satisfy every declared range.
 ## Consequences
 
 - Consumers can co-install hmc-mcp with environments that carry different patch
-  releases of the five shared runtime dependencies.
+  releases of the six shared runtime dependencies.
 - Risk shifts from "cannot install" to "a resolver may select a combination
   nobody exercised"; the floor job bounds the bottom of that space, and the
   weekly Dependabot cadence plus the retained-wheel smoke jobs cover moving up.

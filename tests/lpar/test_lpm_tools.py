@@ -1,24 +1,26 @@
 """Tool-layer tests for the Live Partition Mobility MCP tools.
 
 The job XML builders and client methods are covered in test_lpm.py; these
-tests call the actual ``@mcp.tool`` functions in ``server_lpm`` against the
+tests call the actual ``@mcp.tool`` functions in ``server_tools.lpm`` against the
 respx ``mock_hmc`` router so the argument->URL and argument->XML mapping in
 the tool bodies is exercised — the layer the client tests skip.
 """
 
 from dataclasses import asdict
+from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
-from unittest.mock import ANY, AsyncMock, patch
+from conftest import JOB_ENTRY
 
-from hmc_mcp.client import HMCError
-from hmc_mcp.operations_lpm import (
+from hmc_mcp.errors import HMCError
+from hmc_mcp.operations.lpm import (
+    RemoteRestartRequest,
     abort_lpar_migration,
     recover_lpar_migration,
     remote_restart_lpar,
 )
-from hmc_mcp.server import (
+from hmc_mcp.server_tools.lpm import (
     hmc_migrate_abort_lpar,
     hmc_migrate_lpar,
     hmc_migrate_recover_lpar,
@@ -26,23 +28,45 @@ from hmc_mcp.server import (
     hmc_remote_restart_lpar,
 )
 
-from conftest import JOB_ENTRY
-
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 TARGET_SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
-JOB_OUTCOME_KEYS = {"job_id", "status", "timed_out", "error", "job"}
+JOB_OUTCOME_KEYS = {
+    "job_id",
+    "status",
+    "timed_out",
+    "error",
+    "job",
+    "found",
+    "job_href",
+}
+
+
+@pytest.fixture(autouse=True)
+def _authorize_lpar_mutations(monkeypatch):
+    async def authorize(hmc, system, lpar, **_kwargs):
+        from hmc_mcp.resource_identity import resolve_lpar_uuid
+
+        return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation", authorize
+    )
 LPM_RECOVERY_TOOL_CASES = [
     (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
     (hmc_migrate_recover_lpar, "MigrateRecover", (LPAR_UUID,)),
-    (hmc_remote_restart_lpar, "RemoteRestart", (LPAR_UUID, "vrml12-fsp")),
+    (
+        hmc_remote_restart_lpar,
+        "RemoteRestart",
+        (LPAR_UUID, "restart", "source-system", "vrml12-fsp"),
+    ),
 ]
 LPM_RECOVERY_OPERATION_CASES = [
-    (abort_lpar_migration, "lpar_migrate_abort", (LPAR_UUID,)),
-    (recover_lpar_migration, "lpar_migrate_recover", (LPAR_UUID,)),
+    (abort_lpar_migration, "lpar_migrate_abort", (None, LPAR_UUID)),
+    (recover_lpar_migration, "lpar_migrate_recover", (None, LPAR_UUID)),
     (
         remote_restart_lpar,
         "lpar_remote_restart",
-        (LPAR_UUID, "target-system"),
+        ("source-system", LPAR_UUID, RemoteRestartRequest("restart")),
     ),
 ]
 
@@ -83,7 +107,7 @@ def test_migrate_lpar_resolves_target_system_uuid(monkeypatch, mock_hmc):
     route = _job_route(mock_hmc, "Migrate")
     resolver = AsyncMock(return_value="vrml12-fsp")
 
-    with patch("hmc_mcp.operations_lpm.resolve_system_name", new=resolver):
+    with patch("hmc_mcp.operations.lpm.resolve_system_name", new=resolver):
         hmc_migrate_lpar(LPAR_UUID, TARGET_SYSTEM_UUID, validate_first=False)
 
     resolver.assert_awaited_once_with(ANY, TARGET_SYSTEM_UUID)
@@ -121,9 +145,11 @@ def test_remote_restart_lpar_submits_job(monkeypatch, mock_hmc):
     """hmc_remote_restart_lpar PUTs a RemoteRestart job with the target."""
     _hmc_env(monkeypatch)
     route = _job_route(mock_hmc, "RemoteRestart")
-    hmc_remote_restart_lpar(LPAR_UUID, "vrml12-fsp")
+    hmc_remote_restart_lpar(LPAR_UUID, "restart", "source-system", "vrml12-fsp")
     body = route.calls.last.request.content.decode()
     assert "RemoteRestart</OperationName>" in body
+    assert "restart" in body
+    assert "source-system" in body
     assert "vrml12-fsp" in body
 
 
@@ -137,7 +163,7 @@ def test_lpm_recovery_tools_wait_for_terminal_outcome(
     _hmc_env(monkeypatch)
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
     _job_route(mock_hmc, operation)
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
 
@@ -161,7 +187,7 @@ def test_lpm_recovery_tools_return_explicit_timeout(
     _hmc_env(monkeypatch)
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
     _job_route(mock_hmc, operation)
-    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
 
@@ -302,7 +328,7 @@ def test_migrate_lpar_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     """hmc_migrate_lpar(wait=True) submits the job then polls until COMPLETED."""
     _hmc_env(monkeypatch)
     submit_route = _job_route(mock_hmc, "Migrate")
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_migrate_lpar(
@@ -322,7 +348,7 @@ def test_migrate_lpar_wait_false_returns_submitted_job(monkeypatch, mock_hmc):
     """hmc_migrate_lpar(wait=False) returns the submitted job entry without polling."""
     _hmc_env(monkeypatch)
     submit_route = _job_route(mock_hmc, "Migrate")
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp", wait=False, validate_first=False)
@@ -334,7 +360,7 @@ def test_migrate_lpar_wait_false_returns_submitted_job(monkeypatch, mock_hmc):
 def test_migrate_validate_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     submit_route = _job_route(mock_hmc, "MigrateValidate")
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
 

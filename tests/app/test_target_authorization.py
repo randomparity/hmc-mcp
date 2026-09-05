@@ -17,14 +17,6 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp.access_policy import AccessPolicyError
-from hmc_mcp.config import config_dir
-from hmc_mcp.connection_scope import ConnectionScopeError
-from hmc_mcp.dispatch_scope import dispatch_authorizer
-from hmc_mcp.operations_provision import ProvisionNetwork, ProvisionStorage
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.target_scope import TargetScopeError
-
 # `lab_profile` is autouse in its own module, so importing it applies it here
 # too — no test in this module names it, and doing so would shadow the import.
 from test_connection_authorization import (  # noqa: F401 - imported for autouse
@@ -33,6 +25,14 @@ from test_connection_authorization import (  # noqa: F401 - imported for autouse
     _seal_every_outbound_path,
     lab_profile,
 )
+
+from hmc_mcp.authorization.access_policy import AccessPolicyError
+from hmc_mcp.authorization.connection_scope import ConnectionScopeError
+from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
+from hmc_mcp.authorization.target_scope import TargetScopeError
+from hmc_mcp.config import config_dir
+from hmc_mcp.operations.lpar.provision import ProvisionAdapters, ProvisionStorage
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
 # Two grants that are individually narrow and, combined, would authorize a
 # deletion neither of them describes. This is the fail-open ADR 0036 named and
@@ -144,6 +144,28 @@ def test_a_matching_table_permits():
 def test_any_selector_outside_the_table_denies(system, lpar):
     with pytest.raises(TargetScopeError):
         _authorize(LAB_NARROW, "hmc_delete_lpar", _delete(system=system, lpar=lpar))
+
+
+def test_add_vnic_requires_authorization_for_backing_vios():
+    """The backing VIOS is an independently mutable target of vNIC creation."""
+    grant = {
+        "tools": ["hmc_add_vnic"],
+        "connections": ["lab"],
+        "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
+    }
+    arguments = {
+        "system_name_or_uuid": "sys-1",
+        "lpar_name_or_uuid": "victim",
+        "vios_name": "vios-1",
+        "vios_lpar_id": "2",
+        "adapter_id": "1",
+        "physical_port_id": "0",
+        "capacity_percent": 20.0,
+        "port_vlan_id": 100,
+        "profile": "lab",
+    }
+    with pytest.raises(AccessPolicyError, match="requires a target constraint for kind 'vios'"):
+        _authorize([grant], "hmc_add_vnic", arguments)
 
 
 VIOS_BACKUP_ARGUMENTS = {
@@ -286,26 +308,32 @@ def test_an_omitted_optional_selector_denies_on_a_destructive_tool():
     )
 
 
-def test_a_table_grant_never_reaches_a_selector_less_destructive_tool():
-    """Reading (i) — the silent fail-open — refused on the real index.
-
-    The grant reads as "may destroy victim on sys-1 in the lab". Without this
-    rule it would also delete the lab console's entire LDAP configuration.
-    """
+def test_remote_access_update_is_bound_to_its_console_selector():
     grants = [
         {
-            "effects": ["destructive"],
+            "effects": ["mutate"],
             "connections": ["lab"],
-            "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
+            "targets": {"console": ["console-1"]},
         }
     ]
-    assert TOOL_SECURITY["hmc_remove_ldap_config"].targets == ()
-    with pytest.raises(TargetScopeError, match="all-targets"):
+    targets = TOOL_SECURITY["hmc_configure_remote_access"].targets
+    assert {(target.kind, target.argument) for target in targets} == {
+        ("console", "console_uuid")
+    }
+    with pytest.raises(TargetScopeError, match="target"):
         _authorize(
-            grants, "hmc_remove_ldap_config", {"resource": "ldap", "profile": "lab"}
+            grants,
+            "hmc_configure_remote_access",
+            {"console_uuid": "console-2", "values": {}, "profile": "lab"},
         )
-    # The same grant still authorizes the tool it does describe.
-    assert _authorize(grants, "hmc_delete_lpar", _delete()) is None
+    assert (
+        _authorize(
+            grants,
+            "hmc_configure_remote_access",
+            {"console_uuid": "console-1", "values": {}, "profile": "lab"},
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -337,7 +365,7 @@ def test_a_table_grant_still_never_reaches_provision_lpar():
     """#260 declared the nested selectors; the slot number still cannot bound.
 
     A well-formed call now extracts all three identities and denies under
-    target-unboundable anyway, because `network.vios_partition_id` is an
+    target-unboundable anyway, because `adapters.vios_partition_id` is an
     identity no table can write precisely. A call whose structured arguments
     are None is malformed rather than narrow: the second extraction rule reads
     it UNREADABLE, which denies under `all-targets` too.
@@ -352,7 +380,7 @@ def test_a_table_grant_still_never_reaches_provision_lpar():
     well_formed = {
         "system_name_or_uuid": "sys-1",
         "name": "new-lpar",
-        "network": ProvisionNetwork(port_vlan_id=1, vios_partition_id=3, vios_slot=2),
+        "adapters": ProvisionAdapters(port_vlan_id=1, vios_partition_id=3, vios_slot=2),
         "storage": ProvisionStorage(vios_uuid="vios-uuid-1", storage_name="rootvg"),
         "profile": "lab",
     }
@@ -374,7 +402,9 @@ def test_all_targets_reaches_everything_the_table_could_not():
     ]
     assert (
         _authorize(
-            grants, "hmc_remove_ldap_config", {"resource": "ldap", "profile": "lab"}
+            grants,
+            "hmc_configure_remote_access",
+            {"console_uuid": "anything", "values": {}, "profile": "lab"},
         )
         is None
     )
@@ -419,18 +449,6 @@ def test_all_targets_reaches_everything_the_table_could_not():
             ],
             id="omitted-optional-selector",
         ),
-        pytest.param(
-            "hmc_remove_ldap_config",
-            {"resource": "ldap"},
-            [
-                {
-                    "effects": ["destructive"],
-                    "connections": ["lab"],
-                    "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
-                }
-            ],
-            id="tool-a-table-cannot-bound",
-        ),
     ],
 )
 def test_a_target_denial_opens_no_hmc_connection(
@@ -467,6 +485,39 @@ def test_a_withheld_connection_still_raises_the_connection_error():
 def test_a_matching_connection_with_a_withheld_target_raises_the_target_error():
     with pytest.raises(TargetScopeError):
         _authorize(LAB_NARROW, "hmc_delete_lpar", _delete(system="sys-2"))
+
+
+@pytest.mark.parametrize(
+    "tool",
+    ["hmc_plan_lpar_memopt_scores", "hmc_plan_system_memopt_score"],
+)
+def test_affinity_scenario_lpars_are_not_authorization_targets(tool):
+    arguments = {
+        "system_name_or_uuid": "sys-1",
+        "prioritized": {"names": ["not-in-lpar-grant"]},
+        "excluded": {"ids": [99]},
+        "profile": "lab",
+    }
+    grants = [
+        {
+            "tools": [tool, "hmc_get_lpar_memopt_score"],
+            "connections": ["lab"],
+            "targets": {"managed_system": ["sys-1"], "lpar": ["other"]},
+        }
+    ]
+
+    assert _authorize(grants, tool, arguments) is None
+    with pytest.raises(TargetScopeError):
+        _authorize(
+            [
+                {
+                    **grants[0],
+                    "targets": {"managed_system": ["sys-2"], "lpar": ["other"]},
+                }
+            ],
+            tool,
+            arguments,
+        )
 
 
 def test_the_message_selection_cannot_change_the_decision():
@@ -579,7 +630,7 @@ def test_the_decision_modules_never_mention_dry_run():
     """
     from pathlib import Path
 
-    from hmc_mcp import connection_scope, dispatch_scope, target_scope
+    from hmc_mcp.authorization import connection_scope, dispatch_scope, target_scope
 
     for module in (dispatch_scope, target_scope, connection_scope):
         source = Path(module.__file__).read_text(encoding="utf-8")
@@ -599,10 +650,10 @@ def test_the_decision_modules_never_mention_dry_run():
 
 
 def test_a_second_argument_cannot_override_the_authorized_selector():
-    """`hmc_get_job` declares `job_uuid` and then lets `job_href` replace it.
+    """`hmc_get_job` declares `job_id` and then lets `job_href` replace it.
 
     `client.get_job` fetches `urlparse(job_href).path` and never reads
-    `job_uuid`, so a table grant would authorize one job identity while the
+    `job_id`, so a table grant would authorize one job identity while the
     server reads another — the exact escape `exhaustive_targets` exists to
     refuse, reached through an argument the *name* tables did not know about.
 
@@ -632,7 +683,7 @@ def test_a_second_argument_cannot_override_the_authorized_selector():
             _authorize(
                 effect_grant,
                 "hmc_get_job",
-                {"job_uuid": "job-1111", "job_href": href, "profile": "lab"},
+                {"job_id": "job-1111", "job_href": href, "profile": "lab"},
             )
 
     # `all-targets` still reaches it, so #225's legacy exposure is unaffected.
@@ -641,7 +692,7 @@ def test_a_second_argument_cannot_override_the_authorized_selector():
         _authorize(
             wide,
             "hmc_get_job",
-            {"job_uuid": "job-1111", "job_href": None, "profile": "lab"},
+            {"job_id": "job-1111", "job_href": None, "profile": "lab"},
         )
         is None
     )

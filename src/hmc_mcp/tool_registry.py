@@ -4,7 +4,7 @@ Every collected tool carries a :class:`ToolSecurity` record — effect class,
 operation identity, target kind, and the public arguments from which connection
 and target selectors are read. It is the single authoritative classification:
 the MCP ``ToolAnnotations`` shipped to clients are derived from ``effect``, and
-``server.TOOL_SECURITY`` indexes the records for the access-policy layers built
+``server_tools.catalog.TOOL_SECURITY`` indexes the records for the access-policy layers built
 on top of them. See docs/adr/0035-enforceable-tool-security-metadata.md.
 """
 
@@ -14,14 +14,14 @@ import functools
 import inspect
 import re
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import MISSING, dataclass, fields as dataclass_fields, is_dataclass, replace
+from dataclasses import MISSING, dataclass, is_dataclass, replace
+from dataclasses import fields as dataclass_fields
 from types import MappingProxyType
-from typing import Any, Literal, get_args, get_origin, get_type_hints
-
-from pydantic import BaseModel
+from typing import Any, Literal, TypeVar, get_args, get_origin, get_type_hints
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from pydantic import BaseModel
 
 Effect = Literal["read", "mutate", "destructive", "arbitrary-command"]
 
@@ -61,7 +61,7 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
     "cluster_uuid": "cluster",
     "ssp_uuid": "shared_storage_pool",
     "console_uuid": "console",
-    "job_uuid": "job",
+    "job_id": "job",
     "template_uuid": "template",
     "draft_template_uuid": "template",
     "policy_name": "password_policy",
@@ -80,7 +80,7 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
 #   across every system in a fleet, so an allowlist entry of "2" names a
 #   different VIOS on each of them; unlike a partition name it has no UUID form
 #   to fall back on, so there is no way to write it precisely.
-# - `job_href` is a caller-supplied URI whose *path* replaces the `job_uuid`
+# - `job_href` is a caller-supplied URI whose *path* replaces the `job_id`
 #   selector entirely (`client.get_job`), so the value authorized and the value
 #   fetched are different values.
 #
@@ -97,7 +97,7 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
 # explicit and is deliberately *not* a member: the selected VIOS backup catalog
 # contains the name, so it is reached through containment from a declared
 # selector. That holds only while the value cannot leave the catalog, which
-# `server_vios._validate_backup_name` is what enforces. ADR 0044 records the
+# `server_tools.vios._validate_backup_name` is what enforces. ADR 0044 records the
 # decision and the two questions it leaves open (#282, #283).
 #
 # This is not the complement of REQUIRED_TARGET_ARGUMENTS: `vios_partition_id`
@@ -168,7 +168,7 @@ class ToolSecurity:
     signature). See docs/adr/0039-dispatch-time-target-scope.md.
 
     Its default is the fail-closed value, so a record built by hand — as
-    ``server_command`` and ``server_permissions`` build theirs — is safe without
+    ``server_tools.command`` and ``server_tools.permissions`` build theirs — is safe without
     naming the field. Only :func:`tool_module`'s decorator, which has inspected a
     signature and found selectors, raises it.
     """
@@ -194,6 +194,13 @@ class ToolDefinition:
 # authoritative classification, and the call's bound arguments; it returns None
 # to permit and raises to deny. See ADR 0038.
 Authorize = Callable[[str, ToolSecurity, Mapping[str, Any]], None]
+ToolHandler = Callable[..., Any]
+ToolHandlerT = TypeVar("ToolHandlerT", bound=ToolHandler)
+HandlerDecorator = Callable[[ToolHandlerT], ToolHandlerT]
+ToolDecoratorFactory = Callable[..., HandlerDecorator]
+RegisterTools = Callable[..., None]
+ToolSecurityProvider = Callable[[], Mapping[str, ToolSecurity]]
+ToolModule = tuple[ToolDecoratorFactory, RegisterTools, ToolSecurityProvider]
 
 # Set on the wrapper `authorized` builds, and read by `is_authorized_wrapper`.
 # An attribute rather than a signature or code-object shape: `functools.wraps`
@@ -225,17 +232,9 @@ def authorized(
 ) -> Callable[..., Any]:
     """Return a wrapper that authorizes the call before running *handler*.
 
-    **Every** registered tool is wrapped, whatever it declares. Until #297 this
-    keyed on the connection argument and returned a tool declaring none
-    unwrapped, which was sound only while the wrapper carried the connection
-    dimension alone (ADR 0038). ADR 0039 put the target dimension on the same
-    wrapper without revisiting the key, so the two tools with
-    ``connection_argument = None`` were never target-checked and a ``targets``
-    table permitted them where ``target_scope.targets_permitted`` denies. The
-    wrapper — not the registration site — decides, so no site can be handed an
-    authorizer it forgets to apply. *authorize* is required since ADR 0041; the
-    arm that returned a bare handler because no policy was selected described a
-    composition that no longer exists.
+    Every registered tool is wrapped, and the wrapper enforces connection and
+    target scope before invoking the handler. The wrapper is always supplied an
+    authorizer; registration cannot accidentally bypass policy enforcement.
 
     Arguments are bound against the handler's own signature rather than read out
     of ``kwargs``, so a selector passed positionally or left to its default is
@@ -471,7 +470,7 @@ def build_tool_security(
     return MappingProxyType(index)
 
 
-def tool_module():
+def tool_module() -> ToolModule:
     """Return a module-local decorator, registration function, and classifications."""
     definitions: list[ToolDefinition] = []
 
@@ -483,8 +482,8 @@ def tool_module():
         extra_targets: Iterable[tuple[TargetKind, str]] = (),
         connection_argument: str | None = "profile",
         exhaustive_targets: bool = True,
-    ):
-        def collect(fn: Callable[..., Any]):
+    ) -> HandlerDecorator:
+        def collect(fn: ToolHandlerT) -> ToolHandlerT:
             name = getattr(fn, "__name__", "<handler>")
             security = ToolSecurity(
                 effect=effect,
@@ -494,7 +493,7 @@ def tool_module():
             )
             try:
                 targets = build_targets(fn, extra_targets)
-            except Exception as error:  # noqa: BLE001 - re-raised with the tool named
+            except Exception as error:
                 raise ValueError(
                     f"{name}: cannot inspect signature: {error!r}"
                 ) from error

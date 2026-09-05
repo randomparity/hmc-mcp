@@ -4,7 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.operations_ssh_network import (
+from hmc_mcp.config import HMCConfig
+from hmc_mcp.operations.io_virtualization.vnic import (
     VnicBackingSelector,
     VnicCapabilityError,
     VnicChangeResult,
@@ -12,7 +13,6 @@ from hmc_mcp.operations_ssh_network import (
     add_vnic,
     remove_vnic,
 )
-from hmc_mcp.config import HMCConfig
 
 
 def test_vnic_models_are_immutable_and_result_field_order_is_stable() -> None:
@@ -42,7 +42,6 @@ def _hmc() -> AsyncMock:
         host="h",
         user="u",
         password="p",
-        _env_file=None,  # ty: ignore[unknown-argument]
     )
     return hmc
 
@@ -93,15 +92,12 @@ def _backing(logical: str = "3", **changes: str) -> dict[str, str]:
 
 
 def _common(monkeypatch: pytest.MonkeyPatch) -> None:
-    module = "hmc_mcp.operations_ssh_network"
-    monkeypatch.setattr(f"{module}.resolve_system_uuid", AsyncMock(return_value="su"))
-    monkeypatch.setattr(f"{module}.resolve_lpar_uuid", AsyncMock(return_value="lu"))
+    module = "hmc_mcp.operations.io_virtualization.vnic"
     monkeypatch.setattr(
-        f"{module}.resolve_lpar_ownership_names",
+        f"{module}.resolve_and_authorize_lpar_names",
         AsyncMock(return_value=("system-a", "client-a")),
     )
-    monkeypatch.setattr(f"{module}.authorize_lpar_mutation", AsyncMock())
-    monkeypatch.setattr(f"{module}._require_admitted_environment", AsyncMock())
+    monkeypatch.setattr(f"{module}.require_admitted_environment", AsyncMock())
     monkeypatch.setattr(
         f"{module}.read_vios_identity",
         AsyncMock(
@@ -139,13 +135,13 @@ async def test_add_rejects_blank_selector_fields(field: str) -> None:
         "physical_port_id": "1",
     }
     values[field] = " "
-    selector = VnicBackingSelector(**values, capacity_percent=Decimal("2"))
+    selector = VnicBackingSelector(**values, capacity_percent=Decimal(2))
     with pytest.raises(ValueError, match="must not be blank"):
         await add_vnic(_hmc(), "system-a", "client-a", selector, 7)
 
 
 @pytest.mark.parametrize(
-    "capacity", [Decimal("0"), Decimal("101"), Decimal("NaN"), Decimal("1.001")]
+    "capacity", [Decimal(0), Decimal(101), Decimal("NaN"), Decimal("1.001")]
 )
 @pytest.mark.asyncio
 async def test_add_rejects_invalid_capacity(capacity: Decimal) -> None:
@@ -157,7 +153,7 @@ async def test_add_rejects_invalid_capacity(capacity: Decimal) -> None:
 @pytest.mark.parametrize("vlan", [-1, 4095])
 @pytest.mark.asyncio
 async def test_add_rejects_vlan_out_of_range(vlan: int) -> None:
-    selector = VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2"))
+    selector = VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2))
     with pytest.raises(ValueError, match="between 0 and 4094"):
         await add_vnic(_hmc(), "system-a", "client-a", selector, vlan)
 
@@ -167,12 +163,12 @@ async def test_add_rejects_vlan_out_of_range(vlan: int) -> None:
 async def test_add_rejects_non_integer_vlan_before_preflight(
     monkeypatch: pytest.MonkeyPatch, vlan: object
 ) -> None:
-    selector = VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2"))
+    selector = VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2))
     preflight = AsyncMock()
     mutation = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network._preflight_add", preflight)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic._preflight_add", preflight)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.add_vnic_backing", mutation
+        "hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing", mutation
     )
 
     with pytest.raises(ValueError, match="integer between 0 and 4094"):
@@ -207,7 +203,7 @@ async def test_add_rejects_each_delimiter_in_each_selector_field(
         "physical_port_id": "1",
     }
     values[field] += character
-    selector = VnicBackingSelector(**values, capacity_percent=Decimal("2"))
+    selector = VnicBackingSelector(**values, capacity_percent=Decimal(2))
     with pytest.raises(ValueError):
         await add_vnic(_hmc(), "system-a", "client-a", selector, 7)
 
@@ -233,9 +229,9 @@ async def test_add_preserves_shell_metacharacters_as_quoted_payload_data(
         "physical_port_id": "1",
     }
     values[field] = value
-    selector = VnicBackingSelector(**values, capacity_percent=Decimal("2"))
+    selector = VnicBackingSelector(**values, capacity_percent=Decimal(2))
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.read_vios_identity",
+        "hmc_mcp.operations.io_virtualization.vnic.read_vios_identity",
         AsyncMock(
             return_value={
                 "name": values["vios_name"],
@@ -245,7 +241,7 @@ async def test_add_preserves_shell_metacharacters_as_quoted_payload_data(
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_sriov_adapter_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_sriov_adapter_rows",
         AsyncMock(
             return_value=[
                 {
@@ -257,7 +253,7 @@ async def test_add_preserves_shell_metacharacters_as_quoted_payload_data(
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_sriov_physical_port_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_sriov_physical_port_rows",
         AsyncMock(
             return_value=[
                 {
@@ -269,14 +265,14 @@ async def test_add_preserves_shell_metacharacters_as_quoted_payload_data(
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows", AsyncMock(side_effect=[[], []])
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows", AsyncMock(side_effect=[[], []])
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[], []]),
     )
     mutate = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutate)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing", mutate)
 
     with pytest.raises(VnicPartialError):
         await add_vnic(_hmc(), "system-a", "client-a", selector, 7)
@@ -308,7 +304,7 @@ async def test_add_rejects_wrong_vios_identity_or_type(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.read_vios_identity",
+        "hmc_mcp.operations.io_virtualization.vnic.read_vios_identity",
         AsyncMock(return_value=identity),
     )
     with pytest.raises(VnicCapabilityError, match="name, ID, or partition type"):
@@ -316,7 +312,7 @@ async def test_add_rejects_wrong_vios_identity_or_type(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -350,7 +346,7 @@ async def test_add_rejects_adapter_or_port_mismatch(
             ]
         )
         monkeypatch.setattr(
-            "hmc_mcp.operations_ssh_network.list_sriov_adapter_rows",
+            "hmc_mcp.operations.io_virtualization.vnic.list_sriov_adapter_rows",
             AsyncMock(return_value=rows),
         )
     else:
@@ -366,7 +362,7 @@ async def test_add_rejects_adapter_or_port_mismatch(
             ]
         )
         monkeypatch.setattr(
-            "hmc_mcp.operations_ssh_network.list_sriov_physical_port_rows",
+            "hmc_mcp.operations.io_virtualization.vnic.list_sriov_physical_port_rows",
             AsyncMock(return_value=rows),
         )
     with pytest.raises(VnicCapabilityError):
@@ -374,7 +370,7 @@ async def test_add_rejects_adapter_or_port_mismatch(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -383,7 +379,7 @@ async def test_add_rejects_adapter_or_port_mismatch(
 async def test_add_rejects_exhausted_capacity(monkeypatch: pytest.MonkeyPatch) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_sriov_configured_logical_port_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_sriov_configured_logical_port_rows",
         AsyncMock(
             return_value=[
                 {
@@ -396,10 +392,10 @@ async def test_add_rejects_exhausted_capacity(monkeypatch: pytest.MonkeyPatch) -
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows", AsyncMock(return_value=[])
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows", AsyncMock(return_value=[])
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=[]),
     )
     with pytest.raises(ValueError, match="capacity exhausted"):
@@ -407,7 +403,7 @@ async def test_add_rejects_exhausted_capacity(monkeypatch: pytest.MonkeyPatch) -
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -416,20 +412,20 @@ async def test_add_rejects_exhausted_capacity(monkeypatch: pytest.MonkeyPatch) -
 async def test_add_verified_retry_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(return_value=[_vnic()]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=[_backing()]),
     )
     mutate = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutate)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing", mutate)
     result = await add_vnic(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
         7,
     )
     assert (result.changed, result.slot_num, result.mutation_dispatched) == (
@@ -446,7 +442,7 @@ async def test_add_verified_retry_resolves_before_new_allocation_capacity(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_sriov_configured_logical_port_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_sriov_configured_logical_port_rows",
         AsyncMock(
             return_value=[
                 {
@@ -459,21 +455,21 @@ async def test_add_verified_retry_resolves_before_new_allocation_capacity(
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(return_value=[_vnic(capacity="60", desired_capacity="60")]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=[_backing(capacity="60", desired_capacity="60")]),
     )
     mutate = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutate)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing", mutate)
 
     result = await add_vnic(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("60")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(60)),
         7,
     )
 
@@ -498,28 +494,28 @@ async def test_add_rejects_identical_duplicates_within_one_projection(
         "capacity": "2.0",
     }
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_sriov_configured_logical_port_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_sriov_configured_logical_port_rows",
         AsyncMock(
             return_value=[direct_row, direct_row] if projection == "direct" else []
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows", AsyncMock(return_value=[])
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows", AsyncMock(return_value=[])
     )
     backing_rows = [_backing(), _backing()] if projection == "backing" else []
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=backing_rows),
     )
     mutate = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutate)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing", mutate)
 
     with pytest.raises(ValueError, match=f"duplicate {projection}"):
         await add_vnic(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -532,7 +528,7 @@ async def test_add_deduplicates_consistent_direct_and_backing_observations(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_sriov_configured_logical_port_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_sriov_configured_logical_port_rows",
         AsyncMock(
             return_value=[
                 {
@@ -545,21 +541,21 @@ async def test_add_deduplicates_consistent_direct_and_backing_observations(
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows", AsyncMock(return_value=[])
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows", AsyncMock(return_value=[])
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=[_backing(capacity="50", desired_capacity="98.0")]),
     )
     mutate = AsyncMock(side_effect=RuntimeError("dispatched"))
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutate)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing", mutate)
 
     with pytest.raises(VnicPartialError):
         await add_vnic(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -572,22 +568,22 @@ async def test_add_successfully_correlates_new_slot(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(side_effect=[[], [_vnic()]]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[], [_backing()]]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.add_vnic_backing",
+        "hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing",
         AsyncMock(return_value="created"),
     )
     result = await add_vnic(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
         7,
     )
     assert (result.changed, result.slot_num, result.output) == (True, "2", "created")
@@ -600,21 +596,21 @@ async def test_add_ignores_unrelated_equal_selector_backing_for_target_identity(
     _common(monkeypatch)
     unrelated = _backing(logical="9")
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(side_effect=[[], [_vnic()]]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[unrelated], [unrelated, _backing()]]),
     )
     mutation = AsyncMock(return_value="created")
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutation)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing", mutation)
 
     result = await add_vnic(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
         7,
     )
 
@@ -630,21 +626,21 @@ async def test_add_before_state_after_dispatch_is_known_unchanged_partial(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(side_effect=[[], []]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[], []]),
     )
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", AsyncMock())
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing", AsyncMock())
 
     with pytest.raises(VnicPartialError) as caught:
         await add_vnic(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -684,22 +680,22 @@ async def test_add_reconciliation_decision_table(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(side_effect=[[], vnic_after]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[], backing_after]),
     )
     mutation = AsyncMock(return_value="created")
     if mutation_error is not None:
         mutation.side_effect = mutation_error
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutation)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing", mutation)
     call = add_vnic(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
         7,
     )
 
@@ -709,6 +705,12 @@ async def test_add_reconciliation_decision_table(
         with pytest.raises(VnicPartialError) as caught:
             await call
         result = caught.value.result
+        expected_cause = mutation_error
+        if expected_cause is None and isinstance(vnic_after, Exception):
+            expected_cause = vnic_after
+        if expected_cause is None and isinstance(backing_after, Exception):
+            expected_cause = backing_after
+        assert caught.value.__cause__ is expected_cause
 
     assert result.changed is expected_changed
     assert result.vnic_after_read_succeeded is not isinstance(vnic_after, Exception)
@@ -723,21 +725,21 @@ async def test_add_retry_ignores_unrelated_selector_matching_degraded_backing(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(return_value=[_vnic()]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=[_backing(), _backing(logical="4", is_active="0")]),
     )
     mutate = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutate)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing", mutate)
 
     result = await add_vnic(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
         7,
     )
 
@@ -752,17 +754,17 @@ async def test_add_final_ignores_unrelated_selector_matching_degraded_backing(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(side_effect=[[], [_vnic()]]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(
             side_effect=[[], [_backing(), _backing(logical="4", status="Degraded")]]
         ),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.add_vnic_backing",
+        "hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing",
         AsyncMock(return_value="created"),
     )
 
@@ -770,7 +772,7 @@ async def test_add_final_ignores_unrelated_selector_matching_degraded_backing(
         _hmc(),
         "system-a",
         "client-a",
-        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
         7,
     )
 
@@ -785,22 +787,22 @@ async def test_add_retry_refuses_degraded_correlated_target_backing(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(return_value=[_vnic()]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=[_backing(status="Degraded")]),
     )
     mutation = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutation)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing", mutation)
 
     with pytest.raises(VnicCapabilityError, match="ambiguous or degraded"):
         await add_vnic(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -813,15 +815,15 @@ async def test_add_rejects_two_new_matching_vnics_despite_one_operational_backin
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(side_effect=[[], [_vnic(), _vnic(slot="3", logical="4")]]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[], [_backing()]]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.add_vnic_backing",
+        "hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing",
         AsyncMock(return_value="created"),
     )
 
@@ -830,7 +832,7 @@ async def test_add_rejects_two_new_matching_vnics_despite_one_operational_backin
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -848,21 +850,21 @@ async def test_add_successful_reads_with_only_new_vnic_are_contradictory(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(side_effect=[[], [_vnic()]]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[], []]),
     )
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", AsyncMock())
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing", AsyncMock())
 
     with pytest.raises(VnicPartialError) as caught:
         await add_vnic(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
 
@@ -881,15 +883,15 @@ async def test_add_command_and_both_read_failures_are_retained_in_order(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(side_effect=[[], TimeoutError("vnic read")]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[], OSError("backing read")]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.add_vnic_backing",
+        "hmc_mcp.operations.io_virtualization.vnic.add_vnic_backing",
         AsyncMock(side_effect=RuntimeError("HMC rejected VLAN")),
     )
     with pytest.raises(VnicPartialError) as caught:
@@ -897,7 +899,7 @@ async def test_add_command_and_both_read_failures_are_retained_in_order(
             _hmc(),
             "system-a",
             "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
             7,
         )
     result = caught.value.result
@@ -914,10 +916,10 @@ async def test_add_command_and_both_read_failures_are_retained_in_order(
 async def test_remove_absent_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows", AsyncMock(return_value=[])
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows", AsyncMock(return_value=[])
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=[]),
     )
     result = await remove_vnic(_hmc(), "system-a", "client-a", "2")
@@ -930,15 +932,15 @@ async def test_remove_success_preserves_captured_selector(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(side_effect=[[_vnic()], []]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[_backing()], []]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.remove_vnic_slot",
+        "hmc_mcp.operations.io_virtualization.vnic.remove_vnic_slot",
         AsyncMock(return_value="removed"),
     )
     result = await remove_vnic(_hmc(), "system-a", "client-a", "2")
@@ -976,17 +978,17 @@ async def test_remove_reconciliation_decision_table(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(side_effect=[[_vnic()], vnic_after]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[_backing()], backing_after]),
     )
     mutation = AsyncMock(return_value="removed")
     if mutation_error is not None:
         mutation.side_effect = mutation_error
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.remove_vnic_slot", mutation)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.remove_vnic_slot", mutation)
     call = remove_vnic(_hmc(), "system-a", "client-a", "2")
 
     if case == "final-success":
@@ -1012,11 +1014,11 @@ async def test_remove_refuses_uncorrelated_or_degraded_backing(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(return_value=[_vnic()]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=rows),
     )
     with pytest.raises(VnicCapabilityError):
@@ -1037,14 +1039,14 @@ async def test_remove_requires_exactly_one_embedded_backing_before_mutation(
     else:
         row["backing_devices"] = backing_devices
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows", AsyncMock(return_value=[row])
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows", AsyncMock(return_value=[row])
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=[_backing()]),
     )
     mutate = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.remove_vnic_slot", mutate)
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.remove_vnic_slot", mutate)
 
     with pytest.raises(VnicCapabilityError, match="exactly one embedded backing"):
         await remove_vnic(_hmc(), "system-a", "client-a", "2")
@@ -1072,11 +1074,11 @@ async def test_remove_requires_full_backing_correlation(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(return_value=[_vnic(**vnic_changes)]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=[_backing(**backing_changes)]),
     )
 
@@ -1100,15 +1102,15 @@ async def test_remove_ignores_distinct_backing_reusing_adapter_and_logical_port(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(side_effect=[[_vnic()], []]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[_backing()], [_backing(**replacement)]]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.remove_vnic_slot",
+        "hmc_mcp.operations.io_virtualization.vnic.remove_vnic_slot",
         AsyncMock(return_value="removed"),
     )
 
@@ -1124,14 +1126,14 @@ async def test_remove_successful_reads_with_changed_slot_are_contradictory(
 ) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_rows",
         AsyncMock(side_effect=[[_vnic()], [_vnic(vlan="8")]]),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        "hmc_mcp.operations.io_virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[_backing()], [_backing()]]),
     )
-    monkeypatch.setattr("hmc_mcp.operations_ssh_network.remove_vnic_slot", AsyncMock())
+    monkeypatch.setattr("hmc_mcp.operations.io_virtualization.vnic.remove_vnic_slot", AsyncMock())
 
     with pytest.raises(VnicPartialError) as caught:
         await remove_vnic(_hmc(), "system-a", "client-a", "2")

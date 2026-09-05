@@ -39,8 +39,8 @@ Each requirement is numbered and testable. R-prefixed identifiers are cited by t
 security, handler, authorize)` returns `handler` unchanged when `authorize is None` or
 `security.connection_argument is None`, and otherwise a wrapper. Every callable passed to
 `mcp.tool(...)` by `tool_module()`'s `register_tools`, by
-`server_permissions.register_permissions_tool`, and by
-`server_command.configure_arbitrary_command_tool` is the return value of that helper.
+`server_tools.permissions.register_permissions_tool`, and by
+`server_tools.command.configure_arbitrary_command_tool` is the return value of that helper.
 
 **R2 — The authorizer is a callable, not a policy object.** The parameter type is
 `Authorize = Callable[[str, ToolSecurity, Mapping[str, Any]], None]`: tool name,
@@ -134,7 +134,7 @@ is what ADR 0037 shipped.
 **R15 — Applications stay independent.** Two `create_mcp` calls with different policies
 authorize independently; a call with no policy after a restrictive one is unaffected.
 
-**R16 — The module-level handler is unwrapped.** `server_lpars.hmc_create_lpar` and its
+**R16 — The module-level handler is unwrapped.** `server_tools.lpars.hmc_create_lpar` and its
 siblings are the same function objects as before this change, so the CLI and the ADR 0029
 Python API reach an unauthorized path by construction.
 
@@ -151,12 +151,12 @@ three keyword arguments.
 and `hmc_clear_lpar_boot_order` pass their `profile` argument to `client_from_env`, as
 every other connection-bearing handler already does. A static guardrail over the parsed
 source of the `server_*` modules asserts, for every handler whose `ToolSecurity` declares
-a connection argument, that every `build_config` / `client_from_env` / `_ssh_with_client`
+a connection argument, that every `build_config` / `client_from_env` / `ssh_with_client`
 call in its body receives that argument, and that none of them receives a `host` keyword —
 which would make `build_config` skip profile resolution exactly as `HMC_HOST` does.
 
 **R19 — Inspection reports connections as enforced.**
-`server_permissions.ENFORCED_DIMENSIONS == ("tools", "connections")` and
+`server_tools.permissions.ENFORCED_DIMENSIONS == ("tools", "connections")` and
 `DECLARED_ONLY_DIMENSIONS == ("targets",)`. The `ceiling_enforced` gate on both tuples is
 unchanged; #254 owns it.
 
@@ -311,7 +311,7 @@ list.
   denied SSH-passthrough call with `HMCClient.__init__`, `httpx.AsyncClient.__init__`, and
   every module-level rebinding of `build_config` / `client_from_env` / `run_hmc_cli` /
   `run_hmc_command` patched to raise — patching only the defining module proves nothing,
-  since `server_vios`, `server_command`, and `_app` each hold their own reference. A
+  since `server_tools.vios`, `server_tools.command`, and `_app` each hold their own reference. A
   companion test shows a permitted call trips those same wires.
 - R17 is asserted on the application `server._serve_application` returns, not one the test
   composes — that is the only path a deployment takes, and it is what pins the

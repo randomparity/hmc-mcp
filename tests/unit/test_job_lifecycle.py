@@ -2,52 +2,107 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
-
 import pytest
 from pydantic import TypeAdapter
 
-from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import (
-    RepositorySource,
     job_identifier,
     job_outcome,
     validate_wait_timing,
-    install_wait_timeout_seconds,
-    wait_for_submitted_job,
+    vios_stdout,
+)
+from hmc_mcp.operations.updates.models import (
+    PlatformUpdateParameter,
+    VIOSUpdateSource,
+    VIOSUpgradeSource,
 )
 
+_SUCCESSFUL_TERMINAL_STATUSES = {"COMPLETED", "COMPLETED_OK"}
+_ACTIONABLE_TERMINAL_STATUSES = {
+    "CANCELED_BEFORE_START",
+    "CANCELED_WHILE_RUNNING",
+    "COMPLETED_WITH_ERROR",
+    "COMPLETED_WITH_WARNINGS",
+    "EXCEPTION",
+    "FAILED",
+    "FAILED_BEFORE_COMPLETION",
+    "FAILED_BEFORE_COMPLETION_RETRY",
+    "FAILED_TO_START",
+}
 
-def test_install_wait_timeout_derives_hmc_budget_with_observation_margin():
-    assert install_wait_timeout_seconds(60, None, 5) == 3605
+
+def test_platform_update_builds_a_pydantic_schema() -> None:
+    schema = PlatformUpdateParameter.model_json_schema()
+
+    assert set(schema["properties"]) == {
+        "SystemFirmwareUpdate",
+        "VIOSUpdate",
+    }
 
 
-def test_install_wait_timeout_preserves_explicit_client_budget():
-    assert install_wait_timeout_seconds(60, 30, 5) == 30
+@pytest.mark.parametrize("source", [VIOSUpdateSource, VIOSUpgradeSource])
+def test_vios_source_builds_a_pydantic_type_adapter(source) -> None:
+    schema = TypeAdapter(source).json_schema()
+
+    variants = [
+        schema["$defs"][entry["$ref"].rsplit("/", 1)[1]] for entry in schema["anyOf"]
+    ]
+    assert all("ResourceType" in variant["properties"] for variant in variants)
+    assert all("ResourceType" in variant["required"] for variant in variants)
+
+
+def test_vios_source_properties_are_operation_specific() -> None:
+    update_schema = TypeAdapter(VIOSUpdateSource).json_schema()
+    upgrade_schema = TypeAdapter(VIOSUpgradeSource).json_schema()
+    update = [
+        update_schema["$defs"][entry["$ref"].rsplit("/", 1)[1]]["properties"]
+        for entry in update_schema["anyOf"]
+    ]
+    upgrade = [
+        upgrade_schema["$defs"][entry["$ref"].rsplit("/", 1)[1]]["properties"]
+        for entry in upgrade_schema["anyOf"]
+    ]
+
+    assert all(
+        "RestartVIOS" in properties and "Disks" not in properties
+        for properties in update
+    )
+    assert all(
+        "Disks" in properties and "RestartVIOS" not in properties
+        for properties in upgrade
+    )
 
 
 @pytest.mark.parametrize(
-    ("hmc_timeout_minutes", "wait_timeout_seconds", "poll_interval", "message"),
+    ("parameters", "expected"),
     [
-        (0, None, 5, "hmc_timeout_minutes"),
-        (-1, None, 5, "hmc_timeout_minutes"),
-        (60, -1, 5, "wait_timeout_seconds"),
-        (60, None, 0, "poll_interval"),
+        ({"ParameterName": "stdOut", "ParameterValue": " log "}, "log"),
+        (
+            [
+                None,
+                {"ParameterName": "stdout", "ParameterValue": "wrong case"},
+                {"ParameterName": "stdOut", "ParameterValue": 7},
+                {"ParameterName": "stdOut", "ParameterValue": "  first  "},
+                {"ParameterName": "stdOut", "ParameterValue": "second"},
+            ],
+            "first",
+        ),
+        ({"ParameterName": "stdOut", "ParameterValue": "   "}, None),
+        ("malformed", None),
     ],
 )
-def test_install_wait_timeout_rejects_invalid_timing(
-    hmc_timeout_minutes, wait_timeout_seconds, poll_interval, message
-):
-    with pytest.raises(ValueError, match=message):
-        install_wait_timeout_seconds(
-            hmc_timeout_minutes, wait_timeout_seconds, poll_interval
-        )
+def test_vios_stdout_extracts_first_nonempty_string(parameters, expected) -> None:
+    job = {"Resource": {"Results": {"JobParameter": parameters}}}
+
+    assert vios_stdout(job) == expected
 
 
-def test_repository_source_builds_a_pydantic_type_adapter() -> None:
-    schema = TypeAdapter(RepositorySource).json_schema()
-
-    assert set(schema["properties"]) == set(RepositorySource.__annotations__)
+@pytest.mark.parametrize(
+    "job",
+    [None, {}, {"Resource": "bad"}, {"Resource": {"Results": "bad"}}],
+)
+def test_vios_stdout_ignores_malformed_job_shapes(job) -> None:
+    assert vios_stdout(job) is None
 
 
 @pytest.mark.parametrize(
@@ -57,7 +112,8 @@ def test_repository_source_builds_a_pydantic_type_adapter() -> None:
         ({"Resource": {"JobID": "nested"}}, "nested"),
         ({"link": "https://hmc.test/rest/api/uom/jobs/from-link"}, "from-link"),
         ({"UUID": "  trimmed  "}, "trimmed"),
-        ({"UUID": 42}, None),
+        ({"UUID": 42, "Resource": {"JobID": "nested-id"}}, "nested-id"),
+        ({"UUID": "   ", "Resource": {"JobID": "nested-id"}}, "nested-id"),
         ({"Resource": {"JobID": ""}}, None),
         ({}, None),
     ],
@@ -146,6 +202,22 @@ def test_job_outcome_prefers_error_data_regardless_of_parameter_order(names) -> 
     assert job_outcome("job-id", job).error == "failure text"
 
 
+def test_job_outcome_surfaces_detailed_status_when_error_data_is_absent() -> None:
+    job = {
+        "Resource": {
+            "Status": "FAILED",
+            "Results": {
+                "JobParameter": {
+                    "ParameterName": "detailedStatus",
+                    "ParameterValue": "target system unavailable",
+                }
+            },
+        }
+    }
+
+    assert job_outcome("job-id", job).error == "target system unavailable"
+
+
 def test_job_outcome_tolerates_truthy_non_mapping_resource() -> None:
     outcome = job_outcome(" requested-id ", {"Resource": "unexpected"})
 
@@ -199,43 +271,3 @@ def test_validate_wait_timing_rejects_invalid_values(
 
 def test_validate_wait_timing_ignores_unused_values() -> None:
     validate_wait_timing(False, -1, -1)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("job", [{"UUID": "job-1"}, None])
-async def test_wait_for_submitted_job_returns_without_polling(job) -> None:
-    client = AsyncMock()
-
-    assert await wait_for_submitted_job(client, job, False, 30, 2) is job
-    client.wait_for_job.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_wait_for_submitted_job_forwards_identifier_link_and_timing() -> None:
-    client = AsyncMock()
-    client.wait_for_job.return_value = {"Status": "COMPLETED"}
-    job = {"Resource": {"JobID": "job-2"}, "link": "/jobs/job-2"}
-
-    result = await wait_for_submitted_job(client, job, True, 90, 3)
-
-    assert result == {"Status": "COMPLETED"}
-    client.wait_for_job.assert_awaited_once_with("job-2", 90, 3, job_href="/jobs/job-2")
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("job", [None, {"UUID": 42}, {}, {"link": "  "}])
-async def test_wait_for_submitted_job_rejects_unpollable_response(job) -> None:
-    client = AsyncMock()
-
-    with pytest.raises(HMCError, match="Cannot wait for the submitted HMC job"):
-        await wait_for_submitted_job(client, job, True, 30, 2)
-    client.wait_for_job.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_wait_for_submitted_job_propagates_poll_error() -> None:
-    client = AsyncMock()
-    client.wait_for_job.side_effect = TimeoutError("timed out")
-
-    with pytest.raises(TimeoutError, match="timed out"):
-        await wait_for_submitted_job(client, {"UUID": "job-3"}, True, 30, 2)

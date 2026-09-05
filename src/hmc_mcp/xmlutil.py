@@ -45,7 +45,7 @@ from defusedxml import ElementTree as DET
 
 ATOM_NS = "http://www.w3.org/2005/Atom"
 
-# web/mc namespace: Logon, HmcUser, HmcPasswordPolicy, HmcLdapServer docs.
+# web/mc namespace: Logon documents.
 WEB_NS = "http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
 
 # HMC bookkeeping attributes carried on nearly every uom element; they are
@@ -60,9 +60,7 @@ def localname(tag: str) -> str:
     return tag
 
 
-# ====================================================================== #
 # Outbound escaping (ADR 0042)
-# ====================================================================== #
 
 # The two metacharacters saxutils.escape does not handle by default. Escaping
 # all five means one escaped form is safe as character data and inside a
@@ -135,7 +133,7 @@ def _escape_argument(value: object) -> object:
 
     Lists, dicts, and dataclass instances are the composite shapes the builders
     accept — ``physical_volumes``, the job-parameter mapping, and
-    ``LparResources`` / ``PasswordPolicySettings`` — and each recurses, so
+    ``LparResources`` — and each recurses, so
     nesting is covered rather than assumed away.
 
     Any other shape is refused. Passing it through would be the one silent

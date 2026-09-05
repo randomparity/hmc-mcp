@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
@@ -17,7 +17,7 @@ mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,
 
 
 SCOPED_TOOLS = {
-    "hmc_console_info",
+    "hmc_get_console_info",
     "hmc_list_configured_hosts",
     "hmc_list_systems",
     "hmc_list_lpars",
@@ -42,7 +42,7 @@ SCOPED_TOOLS = {
     "hmc_create_vios",
     "hmc_delete_vios",
     "hmc_install_vios",
-    "hmc_install_lpar_os",
+    "hmc_install_vios_by_lpar_selector",
     "hmc_list_vios_backups",
     "hmc_backup_vios",
     "hmc_restore_vios",
@@ -84,7 +84,7 @@ def test_nested_lifecycle_parameters_have_rendered_descriptions():
     tools = _tools_by_name()
     nested = {
         "resources": tools["hmc_create_lpar"].parameters["properties"]["resources"],
-        "network": tools["hmc_provision_lpar"].parameters["properties"]["network"],
+        "adapters": tools["hmc_provision_lpar"].parameters["properties"]["adapters"],
         "storage": tools["hmc_provision_lpar"].parameters["properties"]["storage"],
     }
     missing = {

@@ -4,6 +4,8 @@
 
 Accepted (2026-08-14)
 
+> **Partially superseded by [0081](0081-classify-actionable-job-outcomes.md)** (2026-08-23)
+
 ## Context
 
 The server exposes migration validation and migration submission separately. Callers can

@@ -5,9 +5,9 @@ the small sync-run / SSH-passthrough helpers used by tool bodies. Tool
 capability classification lives on each tool's ``ToolSecurity`` record in
 ``tool_registry.py``; see docs/adr/0035-enforceable-tool-security-metadata.md.
 
-``server.py`` imports this module and every ``server_*`` domain module; the
-domain modules import ``mcp`` back from here (one-way dependency, no
-cycles). The client-visible instructions live here too, and ``server.py``
+``server.py`` imports this module and every ``server_tools/`` domain adapter;
+those adapters use the helpers defined here, while this module never imports
+them (one-way dependency, no cycles). The client-visible instructions live here too, and ``server.py``
 qualifies them against its access policy before composing
 (docs/adr/0048-ceiling-aware-server-instructions.md).
 """
@@ -17,15 +17,22 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
-from typing import Any, Literal, TypeVar, overload
+from dataclasses import asdict, is_dataclass
+from typing import Any, TypeVar, overload
 
 from fastmcp import FastMCP
 
-from .common import build_config
-from .config import HMCConfig
-from .ssh_selectors import resolve_ssh_names
+from .client.client_factory import client_from_env
+from .client.core import HMCClient
+from .config import HMCConfig, build_config
+from .ssh.selectors import resolve_ssh_names
 
 _T = TypeVar("_T")
+
+
+def serialize_tool_result(value: Any) -> Any:
+    """Convert domain dataclasses at the MCP boundary; leave mappings unchanged."""
+    return asdict(value) if is_dataclass(value) else value
 
 INSTRUCTIONS = (
     "Tools for querying and operating IBM Power systems via the HMC "
@@ -50,7 +57,7 @@ INSTRUCTIONS = (
     "- **hmc_fleet_health()** — exception-only estate view covering systems "
     "not operating, VIOS not running, inactive LPAR RMC, and recent failed "
     "jobs. Use for a bounded fleet health check instead of composing raw lists.\n"
-    "- **hmc_find_placement(desired_memory_mb, desired_proc_units)** — "
+    "- **hmc_find_placement(desired_memory_mib, desired_proc_units)** — "
     "returns systems that can host a new LPAR of the given size, sorted by "
     "free memory. Use before provisioning to choose a target system.\n"
     "- **hmc_list_recent_jobs(limit)** — most-recent HMC async jobs (power ops, "
@@ -84,13 +91,18 @@ INSTRUCTIONS = (
     "**Provision a new LPAR:** hmc_find_placement → hmc_provision_lpar with "
     "dry_run=True (validate) → hmc_provision_lpar with dry_run=False (execute) "
     "→ hmc_lpar_summary (confirm).\n\n"
-    "**Track an operation:** retain the job UUID and SELF link returned by the "
-    "submitting tool → hmc_get_job(job_uuid, job_href=self_link) for detail → "
-    "hmc_wait_for_job(job_uuid, job_href=self_link) to poll until done. Use "
+    "**Track an operation:** retain the job UUID or JobID and SELF link returned by the "
+    "submitting tool → hmc_get_job(job_id, job_href=self_link) for detail → "
+    "hmc_wait_for_job(job_id, job_href=self_link) to poll until done. Use "
     "hmc_list_recent_jobs only for HMC versions that support the global feed.\n\n"
     "**Migrate safely:** hmc_migrate_lpar validates to a successful terminal "
     "state before migration by default; set validate_first=False only to "
     "request direct submission explicitly.\n\n"
+    "**Diagnose a failed install:** hmc_capture_lpar_console returns a bounded,\n"
+    "write-sealed snapshot of the partition console (SMS menu, firmware prompt,\n"
+    "BOS installer error). It holds the partition's single vterm slot while it\n"
+    "runs and fails with a distinct contention error when an operator already\n"
+    "holds the console; it never sends input to the partition.\n\n"
     "## Lower-level tools\n\n"
     "Use the individual tools (hmc_list_systems, hmc_list_lpars, hmc_list_vios, "
     "hmc_list_adapters, etc.) when you need raw resource data, fields not "
@@ -179,24 +191,50 @@ def create_mcp(instructions: str = INSTRUCTIONS) -> FastMCP:
     return FastMCP(name="hmc-mcp", instructions=instructions)
 
 
-def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
+def run_sync(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     """Run a coroutine-returning closure from a sync tool function."""
     return asyncio.run(fn())
 
 
-def _run_limited_collection(
-    fn: Callable[[], Coroutine[Any, Any, list[_T]]],
+def with_client(
+    fn: Callable[[HMCClient], Awaitable[_T]], *, profile: str | None = None
+) -> _T:
+    """Run one REST operation with a profile-selected managed client."""
+
+    async def operation() -> _T:
+        async with client_from_env(profile) as hmc:
+            return await fn(hmc)
+
+    return run_sync(operation)
+
+
+def with_config(
+    fn: Callable[[HMCConfig], Awaitable[_T]], *, profile: str | None = None
+) -> _T:
+    """Run one SSH-only operation with profile-selected configuration."""
+    config = build_config(profile=profile)
+
+    async def operation() -> _T:
+        return await fn(config)
+
+    return run_sync(operation)
+
+
+def run_limited_collection(
+    fn: Callable[[HMCClient], Awaitable[list[_T]]],
     limit: int | None,
+    *,
+    profile: str | None = None,
 ) -> list[_T]:
     """Run a full collection request, then cap its agent-facing result."""
     if limit is not None and limit < 0:
         raise ValueError("limit must be greater than or equal to 0")
-    entries = _run(fn)
+    entries = with_client(fn, profile=profile)
     return entries if limit is None else entries[:limit]
 
 
 @overload
-def _ssh_with_client(
+def ssh_with_client(
     fn: Callable[[HMCConfig, str, str], Awaitable[_T]],
     *,
     system_name_or_uuid: str,
@@ -206,8 +244,8 @@ def _ssh_with_client(
 
 
 @overload
-def _ssh_with_client(
-    fn: Callable[[HMCConfig, str, Literal[None]], Awaitable[_T]],
+def ssh_with_client(
+    fn: Callable[[HMCConfig, str, None], Awaitable[_T]],
     *,
     system_name_or_uuid: str,
     lpar_name_or_uuid: None = None,
@@ -216,8 +254,8 @@ def _ssh_with_client(
 
 
 @overload
-def _ssh_with_client(
-    fn: Callable[[HMCConfig, Literal[None], str], Awaitable[_T]],
+def ssh_with_client(
+    fn: Callable[[HMCConfig, None, str], Awaitable[_T]],
     *,
     system_name_or_uuid: None = None,
     lpar_name_or_uuid: str,
@@ -226,8 +264,8 @@ def _ssh_with_client(
 
 
 @overload
-def _ssh_with_client(
-    fn: Callable[[HMCConfig, Literal[None], Literal[None]], Awaitable[_T]],
+def ssh_with_client(
+    fn: Callable[[HMCConfig, None, None], Awaitable[_T]],
     *,
     system_name_or_uuid: None = None,
     lpar_name_or_uuid: None = None,
@@ -235,7 +273,7 @@ def _ssh_with_client(
 ) -> _T: ...
 
 
-def _ssh_with_client(
+def ssh_with_client(
     fn: Callable[[HMCConfig, str | None, str | None], Awaitable[_T]],
     *,
     system_name_or_uuid: str | None = None,
@@ -244,7 +282,7 @@ def _ssh_with_client(
 ) -> _T:
     """Resolve name-or-uuid args to CLI names, then run an SSH tool body.
 
-    Collapses the pervasive ``async def _go`` + name resolution + ``_run``
+    Collapses the pervasive ``async def _go`` + name resolution + ``run_sync``
     scaffold in the SSH-passthrough tools, mirroring :func:`with_client` for
     the SSH seam. *system_name_or_uuid* and *lpar_name_or_uuid* may each be a
     CLI name (passed through untouched) or a UUID (resolved via REST, falling
@@ -268,4 +306,4 @@ def _ssh_with_client(
         )
         return await fn(config, system_name, lpar_name)
 
-    return _run(_go)
+    return run_sync(_go)

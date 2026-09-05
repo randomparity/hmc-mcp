@@ -12,16 +12,16 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from hmc_mcp.client import HMCError
 from hmc_mcp.documents import LparResources
-from hmc_mcp.operations_lpar import _system_name
-from hmc_mcp.ssh import HMCCLIError
-from hmc_mcp.server import (
+from hmc_mcp.errors import HMCError
+from hmc_mcp.operations.ownership import _resolve_system_name as _system_name
+from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_create_lpar,
     hmc_dlpar_mem,
     hmc_dlpar_proc,
     hmc_modify_lpar,
 )
+from hmc_mcp.ssh.transport import HMCCLIError
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
@@ -42,7 +42,7 @@ async def test_system_name_uses_fallback_only_for_expected_lookup_failures():
     hmc.get_managed_system.side_effect = HMCError("REST unavailable")
 
     with patch(
-        "hmc_mcp.operations_lpar._ssh_system_name",
+        "hmc_mcp.operations.ownership.resolve_system_cli_name",
         new=AsyncMock(side_effect=HMCCLIError("SSH unavailable")),
     ):
         assert await _system_name(hmc, SYSTEM_UUID, "fallback") == "fallback"
@@ -50,9 +50,9 @@ async def test_system_name_uses_fallback_only_for_expected_lookup_failures():
 
 EMPTY_FEED = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><feed xmlns="http://www.w3.org/2005/Atom"/>'
 
-LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+LPAR_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:{uuid}</id>
+  <id>urn:uuid:{LPAR_UUID}</id>
   <title>LogicalPartition:lpar1</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -61,11 +61,11 @@ LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </LogicalPartition>
   </content>
 </entry>
-""".format(uuid=LPAR_UUID)
+"""
 
-SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+SYSTEM_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:{uuid}</id>
+  <id>urn:uuid:{SYSTEM_UUID}</id>
   <title>ManagedSystem:sys1</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -73,13 +73,48 @@ SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </ManagedSystem>
   </content>
 </entry>
-""".format(uuid=SYSTEM_UUID)
+"""
 
 
 def _hmc_env(monkeypatch) -> None:
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
+
+
+def _mock_dlpar_authorization(router) -> None:
+    """The reads ADR 0092's guard and ADR 0094's containment check make."""
+    router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
+    router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
+    router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=_partition_feed(LPAR_ENTRY))
+    )
+
+
+def _partition_feed(*entries: str) -> str:
+    """Wrap rendered LPAR entries in the Atom feed envelope the client parses."""
+    inner = "".join(
+        entry.split("?>", 1)[1].strip().replace(
+            ' xmlns="http://www.w3.org/2005/Atom"', "", 1
+        )
+        for entry in entries
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<feed xmlns="http://www.w3.org/2005/Atom">' + inner + "</feed>"
+    )
+
+
+def _unowned_partition():
+    """Patch the SSH ownership read to report a partition with no ADR 0011 stamp."""
+    return patch(
+        "hmc_mcp.operations.ownership.get_lpar_description",
+        new=AsyncMock(return_value=""),
+    )
 
 
 # ---------------------------------------------------------------------- #
@@ -117,15 +152,15 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
     # Patch CLI helpers and the stamp (stamp makes SSH call that would fail here).
     with (
         patch(
-            "hmc_mcp.operations_lpar._ssh_system_name",
+            "hmc_mcp.operations.lpar.core.resolve_system_cli_name",
             new=AsyncMock(return_value="sys1"),
         ),
         patch(
-            "hmc_mcp.operations_lpar.create_lpar_via_cli",
+            "hmc_mcp.operations.lpar.core.create_lpar_via_cli",
             new=AsyncMock(return_value=""),
         ) as create_via_cli,
         patch(
-            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            "hmc_mcp.operations.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
     ):
@@ -158,7 +193,13 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
-    with pytest.raises(HMCError) as exc_info:
+    with (
+        patch(
+            "hmc_mcp.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
+            new=AsyncMock(return_value=LPAR_UUID),
+        ),
+        pytest.raises(HMCError) as exc_info,
+    ):
         hmc_modify_lpar(
             lpar_name_or_uuid=LPAR_UUID,
             resources=LparResources(desired_memory=8192),
@@ -180,19 +221,17 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
 def test_dlpar_proc_http_406_actionable(monkeypatch, mock_hmc):
     """hmc_dlpar_proc returns an actionable message on HTTP 406."""
     _hmc_env(monkeypatch)
-    # LPAR UUID resolution
-    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(200, text=LPAR_ENTRY)
-    )
+    _mock_dlpar_authorization(mock_hmc)
     # DLPAR POST returns 406
     mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
-    with pytest.raises(HMCError) as exc_info:
+    with _unowned_partition(), pytest.raises(HMCError) as exc_info:
         hmc_dlpar_proc(
             lpar_name_or_uuid=LPAR_UUID,
             resources=LparResources(desired_procs=0.5),
+            system_name_or_uuid=SYSTEM_UUID,
         )
 
     assert exc_info.value.status_code == 406
@@ -209,19 +248,17 @@ def test_dlpar_proc_http_406_actionable(monkeypatch, mock_hmc):
 def test_dlpar_mem_http_406_actionable(monkeypatch, mock_hmc):
     """hmc_dlpar_mem returns an actionable message on HTTP 406."""
     _hmc_env(monkeypatch)
-    # LPAR UUID resolution
-    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(200, text=LPAR_ENTRY)
-    )
+    _mock_dlpar_authorization(mock_hmc)
     # DLPAR POST returns 406
     mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
-    with pytest.raises(HMCError) as exc_info:
+    with _unowned_partition(), pytest.raises(HMCError) as exc_info:
         hmc_dlpar_mem(
             lpar_name_or_uuid=LPAR_UUID,
             resources=LparResources(desired_memory=8192),
+            system_name_or_uuid=SYSTEM_UUID,
         )
 
     assert exc_info.value.status_code == 406

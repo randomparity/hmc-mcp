@@ -3,10 +3,10 @@
 import pytest
 
 from hmc_mcp.documents import (
-    LparResources,
+    AUTHENTICATION_TYPES,
     PARTITION_TYPES,
     SHARING_MODES,
-    TASK_ROLES,
+    LparResources,
     build_dlpar_proc_document,
     build_hmc_user_document,
     build_lpar_document,
@@ -25,9 +25,7 @@ def test_minimal_create_document():
 def test_memory_config():
     xml = build_lpar_document(
         name="m",
-        resources=LparResources(
-            min_memory=256, desired_memory=512, max_memory=1024
-        ),
+        resources=LparResources(min_memory=256, desired_memory=512, max_memory=1024),
     )
     assert "<DesiredMemory" in xml and "512" in xml
     assert "<MaximumMemory" in xml and "1024" in xml
@@ -110,9 +108,7 @@ def test_invalid_sharing_mode_is_rejected_before_xml(dedicated, desired_procs):
         build_dlpar_proc_document,
     ],
 )
-def test_malformed_sharing_mode_type_raises_actionable_value_error(
-    malformed, builder
-):
+def test_malformed_sharing_mode_type_raises_actionable_value_error(malformed, builder):
     with pytest.raises(ValueError) as exc_info:
         builder(LparResources(desired_procs=1, sharing_mode=malformed))
 
@@ -160,21 +156,21 @@ def test_all_partition_types_accepted():
         build_lpar_document(name="ok", partition_type=pt)
 
 
-def test_all_task_roles_serialize_unchanged():
-    for taskrole in TASK_ROLES:
-        xml = build_hmc_user_document(username="operator", taskrole=taskrole)
-        assert f">{taskrole}</TaskRole>" in xml
+def test_all_authentication_types_serialize_unchanged():
+    for authentication_type in AUTHENTICATION_TYPES:
+        xml = build_hmc_user_document(
+            user_id="operator", authentication_type=authentication_type
+        )
+        assert f">{authentication_type}</AuthenticationType>" in xml
 
 
-def test_invalid_task_role_is_rejected():
-    with pytest.raises(ValueError, match="taskrole"):
-        build_hmc_user_document(username="operator", taskrole="administrator")
+def test_invalid_authentication_type_is_rejected():
+    with pytest.raises(ValueError, match="authentication_type"):
+        build_hmc_user_document(user_id="operator", authentication_type="radius")
 
 
 def test_modify_document_omits_name_when_none():
-    xml = build_lpar_document(
-        name=None, resources=LparResources(desired_memory=2048)
-    )
+    xml = build_lpar_document(name=None, resources=LparResources(desired_memory=2048))
     assert "PartitionName" not in xml
     assert "2048" in xml
 

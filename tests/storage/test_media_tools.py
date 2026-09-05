@@ -3,7 +3,7 @@
 import httpx
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
-VG_UUID = "vg-uuid-0001"
+VG_UUID = "22222222-2222-2222-2222-222222220001"
 
 
 def _hmc_env(monkeypatch) -> None:
@@ -34,12 +34,23 @@ def _feed(uuid: str, rtype: str, **fields: str) -> str:
 """
 
 
-VG_FEED_WITH_REPO = _feed(
-    VG_UUID,
-    "VolumeGroup",
-    VolumeGroupUUID=VG_UUID,
-    GroupName="VMLibrary",
-)
+VG_FEED_WITH_REPO = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:{VG_UUID}</id>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <VolumeGroupUUID>{VG_UUID}</VolumeGroupUUID>
+        <GroupName>VMLibrary</GroupName>
+        <VirtualMediaRepository schemaVersion="V1_0">
+          <RepositoryName>VMLibrary</RepositoryName>
+          <RepositorySize>40960</RepositorySize>
+        </VirtualMediaRepository>
+      </VolumeGroup>
+    </content>
+  </entry>
+</feed>
+"""
 
 
 def test_get_media_repository(monkeypatch, mock_hmc):
@@ -50,7 +61,7 @@ def test_get_media_repository(monkeypatch, mock_hmc):
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
     ).mock(return_value=httpx.Response(200, text=VG_FEED_WITH_REPO))
 
-    from hmc_mcp.server_storage import hmc_get_media_repository
+    from hmc_mcp.server_tools.storage import hmc_get_media_repository
 
     result = hmc_get_media_repository(VIOS_UUID, VG_UUID)
 
@@ -94,7 +105,7 @@ def test_list_optical_media(monkeypatch, mock_hmc):
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
     ).mock(return_value=httpx.Response(200, text=media_feed))
 
-    from hmc_mcp.server_storage import hmc_list_optical_media
+    from hmc_mcp.server_tools.storage import hmc_list_optical_media
 
     media_list = hmc_list_optical_media(VIOS_UUID, VG_UUID)
 
@@ -109,12 +120,12 @@ def test_get_media_repository_not_found(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
 
     route = mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/missing-uuid"
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/99999999-9999-9999-9999-999999999999"
     ).mock(return_value=httpx.Response(404, text=""))
 
-    from hmc_mcp.server_storage import hmc_get_media_repository
+    from hmc_mcp.server_tools.storage import hmc_get_media_repository
 
-    result = hmc_get_media_repository(VIOS_UUID, "missing-uuid")
+    result = hmc_get_media_repository(VIOS_UUID, "99999999-9999-9999-9999-999999999999")
 
     assert route.called
     assert result is None
@@ -128,7 +139,7 @@ def test_list_optical_media_empty(monkeypatch, mock_hmc):
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
     ).mock(return_value=httpx.Response(200, text=VG_FEED_WITH_REPO))
 
-    from hmc_mcp.server_storage import hmc_list_optical_media
+    from hmc_mcp.server_tools.storage import hmc_list_optical_media
 
     media_list = hmc_list_optical_media(VIOS_UUID, VG_UUID)
 

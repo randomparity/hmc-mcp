@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Guard: a committed config fixture must have a well-formed ``nicknames`` table.
 
 Every nickname target must be an existing profile key, no nickname key may

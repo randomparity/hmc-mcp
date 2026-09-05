@@ -5,6 +5,7 @@ import logging
 import os
 import select
 import sys
+import warnings
 from dataclasses import dataclass
 
 import fastmcp  # noqa: F401 — imported for its import-time logging configuration
@@ -12,10 +13,10 @@ import httpx
 import pytest
 import respx
 
-from hmc_mcp import audit
-from hmc_mcp.audit import AUDIT_LOGGER_NAME
+from hmc_mcp import config
+from hmc_mcp.audit import sink as audit_sink
+from hmc_mcp.audit.sink import AUDIT_LOGGER_NAME
 from hmc_mcp.config import HMCConfig
-
 
 #: The ``fastmcp`` logger and its handlers as importing ``fastmcp`` leaves them.
 #: Captured at collection time, before any test can serve, because ADR 0051 made
@@ -34,7 +35,8 @@ _PRISTINE_FASTMCP = (
 )
 
 _THIRD_PARTY_LOGGERS = tuple(
-    logging.getLogger(name) for name in ("uvicorn", "uvicorn.access", "mcp")
+    logging.getLogger(name)
+    for name in ("uvicorn", "uvicorn.access", "mcp", "py.warnings")
 )
 #: Pristine state of the loggers #330's install binds beyond ``fastmcp``: captured
 #: at collection like ``_PRISTINE_FASTMCP``, though for these it is simply "empty,
@@ -46,10 +48,99 @@ _PRISTINE_THIRD_PARTY = tuple(
 )
 
 
+#: The package logger #534's install binds. Unlike ``fastmcp`` its pristine state is
+#: reconstructible — nothing configures it at import — so the fixture resets it to
+#: empty rather than applying a snapshot. Only the handler list: the install leaves
+#: ``propagate`` and the level alone, so nothing else about it moves.
+_PACKAGE_LOGGER = logging.getLogger("hmc_mcp")
+_PRISTINE_SHOWWARNING = warnings.showwarning
+
+
 @pytest.fixture(autouse=True)
 def enable_tls_verification_for_tests(monkeypatch):
     """Keep mocked HMC connections secure unless a test opts out explicitly."""
+    wanted = {f"HMC_{field.upper()}".lower() for field in HMCConfig.model_fields}
+    wanted.add("hmc_profile")
+    for name in [n for n in os.environ if n.lower() in wanted]:
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+    monkeypatch.delenv("HMC_AUTHORIZE_POWER_OPERATIONS", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def default_power_ownership_guard_off(monkeypatch):
+    """Give every test the shipped default of the ADR 0092 §4 power guard.
+
+    `HMCConfig` reads `HMC_AUTHORIZE_POWER_OPERATIONS` from the environment
+    like every other field, so a developer who exports it turns the ownership
+    guard on inside every test that builds its config from the environment —
+    the tool and CLI layers. Those tests then send the guard's ownership name
+    lookups at routes respx never registered, and fail for a reason that has
+    nothing to do with what they assert.
+
+    Cleared here rather than in each module: the default is what nearly every
+    test means to exercise. A test that wants the guard on sets the variable
+    in its own body, which runs after this fixture, or builds the config with
+    `HMCConfig.from_mapping` and bypasses the environment entirely (ADR 0096).
+
+    Every casing, not just the canonical one: `HMCConfig` leaves
+    pydantic-settings' `case_sensitive` at its `False` default, so a developer or
+    CI runner exporting `hmc_authorize_power_operations` sets the field exactly
+    as the upper-case spelling does — and `server_tools.permissions` reads the casing
+    itself to decide the reported `source`. Clearing only the exact name leaves
+    both observable in the tests that pin them.
+    """
+    spellings = [n for n in os.environ if n.upper() == "HMC_AUTHORIZE_POWER_OPERATIONS"]
+    for name in spellings:
+        monkeypatch.delenv(name, raising=False)
+
+
+#: `HMC_*` variables the suite depends on being unset. Not all thirteen fields —
+#: only the names a test actually asserts the absence of, each demonstrated to red
+#: the suite when exported.
+_UNSET_FOR_TESTS = ("HMC_AGENT_ID", "HMC_SCHEMA_VERSION", "HMC_ISO_URL_ALLOWLIST")
+
+
+@pytest.fixture(autouse=True)
+def no_ambient_hmc_settings(monkeypatch):
+    """Give every test an unset value for each of those, in every casing.
+
+    The same hazard as the fixture above, and #543 widened it: `agent_id` reaches
+    the `X-Audit-Memento` header, the ADR 0011 ownership stamp, and — since the
+    authorization record's attribution stopped reading the variable exact-case —
+    the ADR 0040 audit stream as well. A developer or CI runner exporting
+    `hmc_agent_id`, which is the export #543 exists because operators make, turns
+    every one of those into a value the assertions do not expect, and the failure
+    message names a claimant rather than a casing. `hmc_schema_version` and
+    `hmc_iso_url_allowlist` reached the client's header tests and
+    `from_mapping`'s isolation test the same way.
+
+    A test that wants one of these sets it in its own body, which runs after this.
+    """
+    # Folded down, matching pydantic-settings: an upper-fold both misses spellings
+    # the loader reads and matches spellings it ignores.
+    wanted = {name.lower() for name in _UNSET_FOR_TESTS}
+    for name in [n for n in os.environ if n.lower() in wanted]:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def reset_audit_memento_override_dedup():
+    """Give every test a fresh ``config`` override-warning flag (#546).
+
+    The flag is process-global by design: a served process builds a fresh config
+    inside every tool body, while the diagnostic has information only once.
+
+    Cleared at setup as well as teardown, and autouse rather than opted into,
+    for the reason ``isolate_audit_logging`` gives just below: the tests that
+    merely *construct* an overriding config leak the state as readily as the ones
+    that assert on it, and any enumeration of them goes stale. Matches the
+    explicit ``server_permissions._reported_unresolved.clear()`` in
+    ``tests/app/test_power_guard_report.py``.
+    """
+    config._reported_memento_override = False
+    yield
+    config._reported_memento_override = False
 
 
 def _restore_fastmcp_logger() -> None:
@@ -72,7 +163,7 @@ def _restore_third_party_loggers() -> None:
 def isolate_audit_logging():
     """Give every test a pristine ``hmc_mcp.audit`` logger, and restore it after.
 
-    ``audit.install_audit_sink`` mutates process-global state: it sets
+    ``audit_sink.install_audit_sink`` mutates process-global state: it sets
     ``propagate = False`` unconditionally, attaches a handler, and sets a level.
     Several tests call it directly, and ``server._serve_application`` calls it too
     — which ``tests/app/test_capability_ceiling.py`` and
@@ -102,7 +193,14 @@ def isolate_audit_logging():
     loggers need their pristine state captured at import rather than reset to empty,
     so the snapshots live at module level and this fixture only applies them — at
     setup as well as teardown, for the reason above.
+
+    Since #534 the ``hmc_mcp`` logger is reset the same way, for the same reason:
+    ``server.install_package_stderr_sink`` attaches a handler to it, and a handler
+    left behind by a serving test would take a later test's ``hmc_mcp.*`` records
+    onto the sink and out of whatever that test meant to read them from.
     """
+    logging.captureWarnings(False)
+    warnings.showwarning = _PRISTINE_SHOWWARNING
     _restore_fastmcp_logger()
     _restore_third_party_loggers()
     logger = logging.getLogger(AUDIT_LOGGER_NAME)
@@ -110,16 +208,21 @@ def isolate_audit_logging():
     saved_level = logger.level
     saved_propagate = logger.propagate
     saved_root = list(logging.root.handlers)
+    saved_package = list(_PACKAGE_LOGGER.handlers)
     logger.handlers.clear()
     logger.setLevel(logging.NOTSET)
     logger.propagate = True
+    _PACKAGE_LOGGER.handlers[:] = []
     try:
         yield
     finally:
+        logging.captureWarnings(False)
+        warnings.showwarning = _PRISTINE_SHOWWARNING
         logger.handlers[:] = saved_handlers
         logger.setLevel(saved_level)
         logger.propagate = saved_propagate
         logging.root.handlers[:] = saved_root
+        _PACKAGE_LOGGER.handlers[:] = saved_package
         _restore_fastmcp_logger()
         _restore_third_party_loggers()
         # ADR 0043 made delivery asynchronous, so a record emitted here can still
@@ -132,11 +235,11 @@ def isolate_audit_logging():
         # `flush`/`drain`.
         stderr, sys.stderr = sys.stderr, io.StringIO()
         try:
-            audit._SINK.drain(audit._DRAIN_TIMEOUT)
+            audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT)
         finally:
             sys.stderr = stderr
-        with audit._SINK._state:
-            audit._SINK._dropped = 0
+        with audit_sink._sink()._state:
+            audit_sink._sink()._dropped = 0
 
 
 @dataclass
@@ -194,7 +297,7 @@ def full_stderr_pipe():
         yield FullPipe(stream=stream, read_fd=read_fd, capacity=capacity)
     finally:
         os.close(read_fd)
-        audit._SINK.drain(audit._DRAIN_TIMEOUT)
+        audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT)
         try:
             stream.close()
         except OSError:
@@ -268,9 +371,23 @@ def mock_uuid_resolution(
         )
     )
     if lpar_uuid is not None:
+        lpar_entry = LPAR_ENTRY.format(uuid=lpar_uuid, name=lpar_name)
         router.get(f"/rest/api/uom/LogicalPartition/{lpar_uuid}").mock(
+            return_value=httpx.Response(200, text=lpar_entry)
+        )
+        feed_entry = (
+            lpar_entry.split("?>", 1)[1]
+            .strip()
+            .replace(' xmlns="http://www.w3.org/2005/Atom"', "", 1)
+        )
+        router.get(f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition").mock(
             return_value=httpx.Response(
-                200, text=LPAR_ENTRY.format(uuid=lpar_uuid, name=lpar_name)
+                200,
+                text=(
+                    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                    '<feed xmlns="http://www.w3.org/2005/Atom">'
+                    f"{feed_entry}</feed>"
+                ),
             )
         )
 
@@ -282,7 +399,6 @@ def make_config(**kw) -> HMCConfig:
         "user": "hscroot",
         "password": "abc123",
         "verify_ssl": True,
-        "_env_file": None,  # suppress .env loading so live creds/schema don't bleed in
     }
     defaults.update(kw)
     return HMCConfig(**defaults)

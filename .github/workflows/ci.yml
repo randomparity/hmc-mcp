@@ -64,6 +64,16 @@ jobs:
           just-version: "1.58.0"
       - name: Set up development environment
         run: just setup
+      # Named individually as well as reached through `static` -> `verify`, so a
+      # stale docs/tools/ is reported as its own failed check rather than as one
+      # line inside the umbrella recipe. See ADR 0097.
+      - name: Check the generated tool reference
+        run: just tool-docs-check
+      # The generic half of the same pattern: every banner-carrying document is
+      # regenerated and diffed, and the arrangement that generates it is checked
+      # in both directions. See ADR 0098.
+      - name: Check every generated document
+        run: just doc-freshness
       - name: Run verification suite
         run: just verify
       - name: Retain validated wheel
@@ -116,7 +126,7 @@ jobs:
           from pathlib import Path
           import sys
 
-          from hmc_mcp.api import capacity_report
+          from hmc_mcp.api import CapacitySummary, fetch_capacity_report
 
           package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
           environment = Path(".library-wheel-venv").resolve()
@@ -125,6 +135,7 @@ jobs:
           assert find_spec("mcp") is None
           assert find_spec("rich") is None
           assert find_spec("typer") is None
+          assert (package_path.parent / "py.typed").is_file(), package_path
 
           class FakeHMC:
               async def list_managed_systems(self):
@@ -148,20 +159,50 @@ jobs:
                       },
                   }]
 
-          report = asyncio.run(capacity_report(FakeHMC()))
-          assert report == [{
-              "system_uuid": "system-1",
-              "system_name": "p10",
-              "total_memory_mb": 32768,
-              "assigned_memory_mb": 8192,
-              "free_memory_mb": 24576,
-              "total_proc_units": 8.0,
-              "assigned_proc_units": 2.0,
-              "free_proc_units": 6.0,
-              "total_lpars": 1,
-              "running_lpars": 1,
-          }]
+          report = asyncio.run(fetch_capacity_report(FakeHMC()))
+          assert report == [CapacitySummary(
+              system_uuid="system-1",
+              system_name="p10",
+              total_memory_mib=32768,
+              assigned_memory_mib=8192,
+              free_memory_mib=24576,
+              total_proc_units=8.0,
+              assigned_proc_units=2.0,
+              free_proc_units=6.0,
+              total_lpars=1,
+              running_lpars=1,
+          )]
           PY
+      - name: Prove the marker makes the installed facade readable to a checker
+        run: |
+          cat > consumer_probe.py <<'PY'
+          from hmc_mcp.api import LparCreation
+
+
+          def probe(request: LparCreation) -> object:
+              return request.field_that_does_not_exist
+          PY
+          # mypy is the checker that enforces PEP 561 as written: without a
+          # readable py.typed it refuses the import outright ([import-untyped])
+          # rather than reading the annotations anyway, which is what makes this
+          # a real gate. The repo's own ty does read them regardless, so it
+          # cannot tell a marked distribution from an unmarked one.
+          #
+          # Asserting "no diagnostics" would pass vacuously against an untyped
+          # package, so assert the diagnostic that only a resolved type
+          # produces, and reject the one that means the marker was not read.
+          uv run --no-project --with "mypy==2.3.1" mypy \
+            --python-executable .library-wheel-venv/bin/python \
+            --no-incremental consumer_probe.py > probe.txt 2>&1 || true
+          cat probe.txt
+          if grep -q 'import-untyped' probe.txt; then
+            printf 'installed distribution is missing a readable py.typed\n' >&2
+            exit 1
+          fi
+          if ! grep -q 'attr-defined' probe.txt; then
+            printf 'installed facade did not resolve as a typed package\n' >&2
+            exit 1
+          fi
 
   library-range-floors:
     needs: ci
@@ -228,7 +269,7 @@ jobs:
           from pathlib import Path
           import sys
 
-          from hmc_mcp.api import capacity_report
+          from hmc_mcp.api import CapacitySummary, fetch_capacity_report
 
           package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
           environment = Path(".floor-venv").resolve()
@@ -260,19 +301,19 @@ jobs:
                       },
                   }]
 
-          report = asyncio.run(capacity_report(FakeHMC()))
-          assert report == [{
-              "system_uuid": "system-1",
-              "system_name": "p10",
-              "total_memory_mb": 32768,
-              "assigned_memory_mb": 8192,
-              "free_memory_mb": 24576,
-              "total_proc_units": 8.0,
-              "assigned_proc_units": 2.0,
-              "free_proc_units": 6.0,
-              "total_lpars": 1,
-              "running_lpars": 1,
-          }]
+          report = asyncio.run(fetch_capacity_report(FakeHMC()))
+          assert report == [CapacitySummary(
+              system_uuid="system-1",
+              system_name="p10",
+              total_memory_mib=32768,
+              assigned_memory_mib=8192,
+              free_memory_mib=24576,
+              total_proc_units=8.0,
+              assigned_proc_units=2.0,
+              free_proc_units=6.0,
+              total_lpars=1,
+              running_lpars=1,
+          )]
           PY
 
   wheel-smoke:
@@ -342,19 +383,19 @@ jobs:
           uv pip install --python .wheel-venv/bin/python \
             --requirements .wheel-requirements.txt
           uv pip install --no-deps --python .wheel-venv/bin/python "${wheels[0]}"
-      - name: Exercise presentation-neutral core imports
+      - name: Exercise the supported library facade
         run: |
           .wheel-venv/bin/python - <<'PY'
           from importlib.util import find_spec
           from pathlib import Path
 
           import hmc_mcp
-          from hmc_mcp.client import HMCClient
+          from hmc_mcp.api import HMCClient
 
           package_path = Path(hmc_mcp.__file__).resolve()
           environment = Path(".wheel-venv").resolve()
           assert package_path.is_relative_to(environment), package_path
-          assert HMCClient.__module__ == "hmc_mcp.client"
+          assert HMCClient.__module__ == "hmc_mcp.client.core"
           for package in ("fastmcp", "mcp", "rich", "typer"):
               assert find_spec(package) is None, package
           PY
@@ -369,11 +410,12 @@ jobs:
           uv pip install --no-deps --python .wheel-venv/bin/python \
             "${wheels[0]}[app]"
           .wheel-venv/bin/hmc-mcp --help >/dev/null
-          .wheel-venv/bin/hmc-mcp lpars --help >/dev/null
-          .wheel-venv/bin/hmc-mcp storage --help >/dev/null
-          .wheel-venv/bin/hmc-mcp network --help >/dev/null
-          .wheel-venv/bin/hmc-mcp templates --help >/dev/null
-          .wheel-venv/bin/hmc-mcp metrics --help >/dev/null
+          # Renders every group's help page off the command tree the installed
+          # wheel builds, so a new group needs no edit here. The script is
+          # harness code, not package code: run this way sys.path[0] is
+          # scripts/, never the checkout's src/, so hmc_mcp still resolves
+          # inside .wheel-venv -- the same arrangement as smoke_mcp.py below.
+          .wheel-venv/bin/python scripts/smoke_cli_groups.py
           .wheel-venv/bin/python scripts/smoke_mcp.py
 
   # ppc64le-release-artifact-template: begin

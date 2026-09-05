@@ -4,6 +4,12 @@
 
 Accepted on 2026-08-20 after focused contract tests and `just verify` passed.
 
+> **0054 briefly identified two records** (issue #489). Until 2026-08-25 the
+> quiet-verification-output record was also numbered 0054; it is now
+> [ADR 0099](0099-structured-quiet-verification-output.md). A citation of
+> "ADR 0054" written before that date and concerned with verification output,
+> coverage presentation, or `just test` means 0099, not this record.
+
 ## Context
 
 Issue #212 needs stable system-scoped dedicated PCIe and SR-IOV inventory schemas. ADR 0053 admits

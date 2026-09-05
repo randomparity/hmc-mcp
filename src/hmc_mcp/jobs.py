@@ -2,27 +2,27 @@
 
 Jobs are submitted with Content-Type: application/vnd.ibm.powervm.web+xml;
 type=JobRequest via PUT and run asynchronously. Poll the submission's SELF link
-for portable status handling; ``/rest/api/uom/Job/{uuid}`` remains a legacy
+for portable status handling; ``/rest/api/uom/jobs/{job_id}`` remains the
 fallback for responses that omit that link.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, NotRequired, Protocol, get_args
+from typing import Any, Literal, Protocol, get_args
 from urllib.parse import urlparse
 
-from typing_extensions import TypedDict
-
-from pydantic import Field
-
 from .errors import HMCError
-from .xmlutil import WEB_NS, escapes_string_arguments
+from .jobs_requests import build_job_request
 
 LuType = Literal["THIN", "THICK"]
 DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
+RemoteRestartOperation = Literal["validate", "recover", "restart", "cleanup", "cancel"]
+REMOTE_RESTART_OPERATIONS = frozenset(get_args(RemoteRestartOperation))
 LU_TYPES = frozenset(get_args(LuType))
 DEVICE_TYPES = frozenset(get_args(DeviceType))
+DEFAULT_JOB_TIMEOUT_SECONDS = 300
+DEFAULT_JOB_POLL_INTERVAL = 5
 
 TERMINAL_JOB_STATUSES = frozenset(
     {
@@ -39,30 +39,45 @@ TERMINAL_JOB_STATUSES = frozenset(
         "FAILED_TO_START",
     }
 )
-FAILED_JOB_STATUSES = frozenset(
-    {
-        "COMPLETED_WITH_ERROR",
-        "EXCEPTION",
-        "FAILED",
-        "FAILED_BEFORE_COMPLETION",
-        "FAILED_BEFORE_COMPLETION_RETRY",
-        "FAILED_TO_START",
-    }
-)
-SUCCESSFUL_JOB_STATUSES = frozenset(
-    {"COMPLETED", "COMPLETED_OK", "COMPLETED_WITH_WARNINGS"}
-)
+SUCCESSFUL_JOB_STATUSES = frozenset({"COMPLETED", "COMPLETED_OK"})
+FAILED_JOB_STATUSES = TERMINAL_JOB_STATUSES - SUCCESSFUL_JOB_STATUSES
 
 
 @dataclass(frozen=True)
 class JobOutcome:
-    """Stable public result for waiting on an HMC job."""
+    """Stable public result for waiting on an HMC job.
+
+    ADR 0093 makes this field set a package-owned model contract under ADR 0029.
+    ``job`` is the exception: it is an opaque HMC resource mapping whose keys and
+    nesting are firmware-dependent and are not promised.
+
+    The polling reading of the fields holds for outcomes returned by
+    ``operations_jobs.get_job`` and ``operations_jobs.wait_for_job``: ``job_id``
+    and ``job_href`` are the two persistable strings identifying the job, so a
+    consumer can store them, restart, and poll again with a freshly constructed
+    client; ``found`` says whether the HMC produced that job, and is the field to
+    read first; and ``timed_out`` reports only that no terminal status was
+    observed, so a job the HMC no longer knows about reports ``found=False``
+    *and* ``timed_out=True``, while ``found=True`` with ``timed_out=True`` means
+    the job is still running.
+
+    A *submitting* operation that returns this type reports its own submission,
+    not a poll, and the fields read differently there. ``job_id`` may be a
+    synthetic label rather than a pollable handle (``power_lpar`` and
+    ``provision_lpar`` pass ``"PowerOn"``; the LPM and decommission paths fall
+    back to ``""``), ``found=False`` means "this submission returned no job
+    entry" rather than "the HMC reaped it", and a fire-and-forget submission can
+    pair ``found=False`` with ``timed_out=False``. Poll a handle only when it
+    came from a polling operation or from the HMC's own submission response.
+    """
 
     job_id: str
     status: str | None
     timed_out: bool
     error: str | None
     job: dict[str, Any] | None
+    found: bool
+    job_href: str | None
 
 
 class JobWaitClient(Protocol):
@@ -70,7 +85,7 @@ class JobWaitClient(Protocol):
 
     async def wait_for_job(
         self,
-        job_uuid: str,
+        job_id: str,
         timeout_seconds: int,
         poll_interval: int,
         *,
@@ -88,30 +103,13 @@ def validate_wait_timing(wait: bool, timeout_seconds: int, poll_interval: int) -
         raise ValueError("poll_interval must be greater than 0")
 
 
-def install_wait_timeout_seconds(
-    hmc_timeout_minutes: int,
-    wait_timeout_seconds: int | None,
-    poll_interval: int,
-) -> int:
-    """Validate install timing and return the client polling budget."""
-    if hmc_timeout_minutes <= 0:
-        raise ValueError("hmc_timeout_minutes must be greater than 0")
-    if wait_timeout_seconds is not None and wait_timeout_seconds < 0:
-        raise ValueError("wait_timeout_seconds must be greater than or equal to 0")
-    if poll_interval <= 0:
-        raise ValueError("poll_interval must be greater than 0")
-    if wait_timeout_seconds is not None:
-        return wait_timeout_seconds
-    return hmc_timeout_minutes * 60 + poll_interval
-
-
 def job_identifier(job: dict[str, Any]) -> str | None:
     """Return a polling identifier from a UUID, JobID, or SELF link."""
     resource = job.get("Resource")
     resource_id = resource.get("JobID") if isinstance(resource, dict) else None
-    identifier = job.get("UUID") or resource_id
-    if isinstance(identifier, str) and identifier.strip():
-        return identifier.strip()
+    for candidate in (job.get("UUID"), resource_id):
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
     link = job.get("link")
     if not isinstance(link, str) or not link.strip():
         return None
@@ -119,17 +117,25 @@ def job_identifier(job: dict[str, Any]) -> str | None:
     return path.rsplit("/", 1)[-1] if path else None
 
 
+def _job_href(job: dict[str, Any] | None) -> str | None:
+    """Return the SELF link a caller can persist to poll this job again."""
+    link = (job or {}).get("link")
+    return link.strip() if isinstance(link, str) and link.strip() else None
+
+
 def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
-    """Normalize the last polled entry into the public wait result."""
+    """Normalize the last polled entry into the public wait result.
+
+    A ``job`` of ``None`` means the HMC produced no entry for the identifier, so
+    the outcome reports ``found=False``.
+    """
     resource_value = (job or {}).get("Resource")
     resource = resource_value if isinstance(resource_value, dict) else {}
     status_value = resource.get("Status")
     status = status_value.strip() if isinstance(status_value, str) else None
-    error = (
-        _job_error(resource, status)
-        if isinstance(status, str) and status in FAILED_JOB_STATUSES
-        else None
-    )
+    error = None
+    if isinstance(status, str) and status in FAILED_JOB_STATUSES:
+        error = _job_error(resource, status) or f"Job ended with status {status}"
     return JobOutcome(
         job_id=(job_identifier(job) if job is not None else None)
         or requested_id.strip(),
@@ -137,47 +143,74 @@ def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
         timed_out=status not in TERMINAL_JOB_STATUSES,
         error=error,
         job=job,
+        found=job is not None,
+        job_href=_job_href(job),
     )
-
 
 def _job_error(resource: dict[str, Any], status: str) -> str | None:
     """Extract the HMC result or response-exception message from a job resource."""
+    exception_message = _exception_message(resource)
+    if status == "EXCEPTION" and exception_message:
+        return exception_message
+    result_message = _result_message(resource)
+    return result_message or exception_message
+
+
+def _exception_message(resource: dict[str, Any]) -> str | None:
     exception = resource.get("ResponseException")
-    exception_message = (
-        exception.get("Message") if isinstance(exception, dict) else None
-    )
-    if (
-        status == "EXCEPTION"
-        and isinstance(exception_message, str)
-        and exception_message.strip()
-    ):
-        return exception_message.strip()
+    message = exception.get("Message") if isinstance(exception, dict) else None
+    return message.strip() if isinstance(message, str) and message.strip() else None
 
+
+def _result_message(resource: dict[str, Any]) -> str | None:
     results = resource.get("Results")
-    if isinstance(results, dict):
-        parameters = results.get("JobParameter", [])
-        if isinstance(parameters, dict):
-            parameters = [parameters]
-        if isinstance(parameters, list):
-            messages: dict[str, str] = {}
-            for parameter in parameters:
-                if not isinstance(parameter, dict):
-                    continue
-                name = parameter.get("ParameterName")
-                value = parameter.get("ParameterValue")
-                if (
-                    name in {"result", "ErrorData"}
-                    and name not in messages
-                    and isinstance(value, str)
-                    and value.strip()
-                ):
-                    messages[name] = value.strip()
-            for name in ("ErrorData", "result"):
-                if name in messages:
-                    return messages[name]
+    if not isinstance(results, dict):
+        return None
+    parameters = results.get("JobParameter", [])
+    if isinstance(parameters, dict):
+        parameters = [parameters]
+    if not isinstance(parameters, list):
+        return None
+    messages: dict[str, str] = {}
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            continue
+        name = parameter.get("ParameterName")
+        value = parameter.get("ParameterValue")
+        if (
+            name in {"result", "detailedStatus", "ErrorData"}
+            and name not in messages
+            and isinstance(value, str)
+            and value.strip()
+        ):
+            messages[name] = value.strip()
+    return next(
+        (messages[name] for name in ("ErrorData", "detailedStatus", "result") if name in messages),
+        None,
+    )
 
-    if isinstance(exception_message, str) and exception_message.strip():
-        return exception_message.strip()
+
+def vios_stdout(job: dict[str, Any] | None) -> str | None:
+    """Return the first usable ``stdOut`` value from a VIOS job result."""
+    resource = (job or {}).get("Resource")
+    if not isinstance(resource, dict):
+        return None
+    results = resource.get("Results")
+    if not isinstance(results, dict):
+        return None
+    parameters = results.get("JobParameter", [])
+    if isinstance(parameters, dict):
+        parameters = [parameters]
+    if not isinstance(parameters, list):
+        return None
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            continue
+        value = parameter.get("ParameterValue")
+        if parameter.get("ParameterName") == "stdOut" and isinstance(value, str):
+            value = value.strip()
+            if value:
+                return value
     return None
 
 
@@ -203,7 +236,7 @@ async def wait_for_submitted_job(
             "UUID, JobID, or polling link"
         )
     return await client.wait_for_job(
-        identifier, timeout_seconds, poll_interval, job_href=job.get("link")
+        identifier, timeout_seconds, poll_interval, job_href=_job_href(job)
     )
 
 
@@ -221,59 +254,6 @@ def validate_logical_unit_types(
             f"Must be one of: {', '.join(sorted(DEVICE_TYPES))}"
         )
     return lu_type, device_type
-
-
-_JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<JobRequest xmlns="{ns}" xmlns:JobRequest="{ns}" schemaVersion="V1_0">
-  <Metadata>
-    <Atom/>
-  </Metadata>
-  <RequestedOperation kb="CUR" kxe="false" schemaVersion="V1_0">
-    <Metadata>
-      <Atom/>
-    </Metadata>
-    <OperationName kb="ROR" kxe="false">{operation}</OperationName>
-    <GroupName kb="ROR" kxe="false">{group}</GroupName>
-    <ProgressType kb="ROR" kxe="false">DISCRETE</ProgressType>
-  </RequestedOperation>
-  <JobParameters kb="CUR" kxe="false" schemaVersion="V1_0">
-    <Metadata>
-      <Atom/>
-    </Metadata>
-{parameters}
-  </JobParameters>
-</JobRequest>
-"""
-
-_PARAM_TEMPLATE = """    <JobParameter schemaVersion="V1_0">
-      <Metadata>
-        <Atom/>
-      </Metadata>
-      <ParameterName kb="ROR" kxe="false">{name}</ParameterName>
-      <ParameterValue kb="CUR" kxe="false">{value}</ParameterValue>
-    </JobParameter>"""
-
-
-@escapes_string_arguments
-def build_job_request(
-    operation: str,
-    group: str,
-    parameters: dict[str, str] | None = None,
-) -> str:
-    """Build the JobRequest XML for a do/* operation.
-
-    Every ``*_job`` builder in this module renders through here, so this one
-    decorator is the module's whole encoding boundary (ADR 0042).
-    """
-    params_xml = ""
-    if parameters:
-        params_xml = "\n".join(
-            _PARAM_TEMPLATE.format(name=name, value=value)
-            for name, value in parameters.items()
-        )
-    return _JOB_TEMPLATE.format(
-        ns=WEB_NS, operation=operation, group=group, parameters=params_xml
-    )
 
 
 def power_on_lpar_job() -> str:
@@ -354,9 +334,7 @@ def delete_logical_unit_job(lu_udid: str) -> str:
     )
 
 
-# ---------------------------------------------------------------------- #
 # Live Partition Mobility (LPM)
-# ---------------------------------------------------------------------- #
 
 
 def _lpm_params(target_system: str, extra: dict[str, str]) -> dict[str, str]:
@@ -434,24 +412,99 @@ def migrate_recover_lpar_job() -> str:
     return build_job_request("MigrateRecover", "LogicalPartition")
 
 
-def remote_restart_lpar_job(target_system: str) -> str:
-    """RemoteRestart job: restart a failed LPAR on another managed system."""
+def remote_restart_lpar_job(
+    operation: RemoteRestartOperation,
+    managed_system: str,
+    logical_partition_uuid: str,
+    *,
+    target_managed_system: str | None = None,
+    target_managed_system_uuid: str | None = None,
+    use_current_data: bool = False,
+    retain_devices: bool = False,
+) -> str:
+    """Build a RemoteRestart request using its dedicated parameter vocabulary."""
+    _validate_remote_restart(
+        operation,
+        target_managed_system,
+        target_managed_system_uuid,
+        use_current_data,
+        retain_devices,
+    )
     return build_job_request(
-        "RemoteRestart", "LogicalPartition", _lpm_params(target_system, {})
+        "RemoteRestart",
+        "LogicalPartition",
+        _remote_restart_params(
+            operation,
+            managed_system,
+            logical_partition_uuid,
+            target_managed_system,
+            target_managed_system_uuid,
+            use_current_data,
+            retain_devices,
+        ),
     )
 
 
-# ---------------------------------------------------------------------- #
+def _validate_remote_restart(
+    operation: RemoteRestartOperation,
+    target_managed_system: str | None,
+    target_managed_system_uuid: str | None,
+    use_current_data: bool,
+    retain_devices: bool,
+) -> None:
+    if operation not in REMOTE_RESTART_OPERATIONS:
+        allowed = ", ".join(sorted(REMOTE_RESTART_OPERATIONS))
+        raise ValueError(f"RemoteRestart operation must be one of: {allowed}")
+    if operation != "cleanup" and not (
+        target_managed_system or target_managed_system_uuid
+    ):
+        raise ValueError(
+            f"RemoteRestart {operation!r} requires a target managed system"
+        )
+    if target_managed_system and target_managed_system_uuid:
+        raise ValueError("Specify a target managed-system name or UUID, not both")
+    if use_current_data and operation != "restart":
+        raise ValueError("use_current_data is valid only for RemoteRestart 'restart'")
+    if retain_devices and operation != "cleanup":
+        raise ValueError("retain_devices is valid only for RemoteRestart 'cleanup'")
+
+
+def _remote_restart_params(
+    operation: RemoteRestartOperation,
+    managed_system: str,
+    logical_partition_uuid: str,
+    target_managed_system: str | None,
+    target_managed_system_uuid: str | None,
+    use_current_data: bool,
+    retain_devices: bool,
+) -> dict[str, str]:
+    params = {
+        "Operation": operation,
+        "managedSystem": managed_system,
+        "logicalPartitionUuid": logical_partition_uuid,
+    }
+    if target_managed_system:
+        params["targetManagedSystem"] = target_managed_system
+    if target_managed_system_uuid:
+        params["targetManagedSystemUUID"] = target_managed_system_uuid
+    if use_current_data:
+        params["usecurrdata"] = "true"
+    if retain_devices:
+        params["retaindev"] = "true"
+    return params
+
+
 # Template Library
-# ---------------------------------------------------------------------- #
 
 
-def deploy_partition_template_job(target_system_uuid: str, memento: str) -> str:
+def deploy_partition_template_job(
+    draft_template_uuid: str, target_system_uuid: str, memento: str
+) -> str:
     """PartitionTemplate Deploy job.
 
-    target_system_uuid is the managed system to create the partition on;
-    memento is the X-API session ID of the logged-in user.
-    The draft template UUID is encoded in the URL, not as a parameter.
+    draft_template_uuid is the transformed template replica to deploy;
+    target_system_uuid is the managed system to create the partition on; memento
+    is the X-API session ID of the logged-in user.
     """
     return build_job_request(
         "Deploy",
@@ -459,216 +512,6 @@ def deploy_partition_template_job(target_system_uuid: str, memento: str) -> str:
         {
             "K_X_API_SESSION_MEMENTO": memento,
             "TargetUuid": target_system_uuid,
-        },
-    )
-
-
-# ---------------------------------------------------------------------- #
-# Update / Upgrade (HMC, VIOS, firmware)
-# ---------------------------------------------------------------------- #
-
-
-RepositoryType = Literal["nfs", "sftp", "disk", "ibmfixcentral"]
-
-
-class RepositorySource(TypedDict, total=False):
-    """Software source for an update/upgrade job.
-
-    Recognised keys:
-        type        – repository type: nfs | sftp | disk | ibmfixcentral
-        host        – NFS/SFTP server hostname or IP
-        path        – NFS export path or SFTP remote path
-        user        – SFTP username
-        sftp_pw     – SFTP login credential
-        mount_loc   – local mount point for NFS
-        insecure    – 'true'/'false'; skip SSL/cert checks (IBM FixCentral)
-        ibm_id      – IBM FixCentral account ID
-        ibm_token   – IBM FixCentral account token
-    """
-
-    type: NotRequired[
-        Annotated[RepositoryType, Field(description="Repository transport type.")]
-    ]
-    host: Annotated[
-        str, Field(description="NFS or SFTP server hostname or IP address.")
-    ]
-    path: Annotated[str, Field(description="NFS export path or SFTP remote path.")]
-    user: Annotated[str, Field(description="SFTP login username.")]
-    sftp_pw: Annotated[str, Field(description="SFTP login password.")]
-    mount_loc: Annotated[
-        str, Field(description="HMC-local mount point for an NFS source.")
-    ]
-    insecure: Annotated[
-        str,
-        Field(description="IBM Fix Central certificate-check setting: true or false."),
-    ]
-    ibm_id: Annotated[str, Field(description="IBM Fix Central account identifier.")]
-    ibm_token: Annotated[str, Field(description="IBM Fix Central access token.")]
-
-
-_REPOSITORY_KEYS = frozenset(RepositorySource.__annotations__)
-
-# The accepted repository types, derived from the RepositoryType Literal so the
-# annotation and the runtime enforcement cannot drift.
-_REPOSITORY_TYPES = frozenset(get_args(RepositoryType))
-
-# Required keys per repository type; a missing one fails fast with a clear
-# message instead of producing a job the HMC rejects at runtime.
-_REQUIRED_KEYS: dict[RepositoryType, frozenset[str]] = {
-    "nfs": frozenset({"host", "path"}),
-    "sftp": frozenset({"host", "path"}),
-    "disk": frozenset(),
-    "ibmfixcentral": frozenset({"ibm_id", "ibm_token"}),
-}
-
-
-def _repository_params(repository: RepositorySource) -> dict[str, str]:
-    """Convert a repository dict to JobParameter key/value pairs.
-
-    Unknown keys are rejected, the repository type must be present, and
-    required keys are checked per repository type, so a typo like
-    ``{'type': 'nfs', 'hst': '...'}`` fails here with an actionable message
-    instead of producing a job the HMC rejects at runtime.
-    """
-    unknown = set(repository) - _REPOSITORY_KEYS
-    if unknown:
-        raise ValueError(
-            f"Unknown repository key(s): {', '.join(sorted(unknown))}. "
-            f"Recognised keys: {', '.join(sorted(_REPOSITORY_KEYS))}."
-        )
-    repo_type = repository.get("type")
-    expected = ", ".join(sorted(_REPOSITORY_TYPES))
-    if repo_type is None:
-        raise ValueError(
-            f"Repository dict is missing 'type'. Expected one of: {expected}."
-        )
-    required = _REQUIRED_KEYS.get(repo_type)
-    if required is None:
-        raise ValueError(
-            f"Unknown repository type {repo_type!r}. Expected one of: {expected}."
-        )
-    missing = required - set(repository)
-    if missing:
-        raise ValueError(
-            f"Repository type {repo_type!r} requires key(s): "
-            f"{', '.join(sorted(missing))}."
-        )
-    return {str(k): str(v) for k, v in repository.items() if v is not None}
-
-
-def update_hmc_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for an HMC software update (Install PTFs).
-
-    target: ManagementConsole/{uuid}/do/Update
-    """
-    return build_job_request(
-        "Update", "ManagementConsole", _repository_params(repository)
-    )
-
-
-def upgrade_hmc_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for an HMC software upgrade (full version upgrade).
-
-    target: ManagementConsole/{uuid}/do/Upgrade
-    """
-    return build_job_request(
-        "Upgrade", "ManagementConsole", _repository_params(repository)
-    )
-
-
-def update_vios_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for a VIOS update.
-
-    target: VirtualIOServer/{uuid}/do/Update
-    """
-    return build_job_request(
-        "Update", "VirtualIOServer", _repository_params(repository)
-    )
-
-
-def upgrade_vios_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for a VIOS upgrade.
-
-    target: VirtualIOServer/{uuid}/do/Upgrade
-    """
-    return build_job_request(
-        "Upgrade", "VirtualIOServer", _repository_params(repository)
-    )
-
-
-def update_firmware_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for a managed system firmware update.
-
-    target: ManagedSystem/{uuid}/do/UpdateFirmware
-    """
-    return build_job_request(
-        "UpdateFirmware", "ManagedSystem", _repository_params(repository)
-    )
-
-
-# ---------------------------------------------------------------------- #
-# VIOS install (NIM-based)
-# ---------------------------------------------------------------------- #
-
-
-def install_vios_job(
-    nim_ip: str,
-    nim_gateway: str,
-    nim_subnetmask: str,
-    vios_ip: str,
-    vlan_id: str,
-    hmc_timeout_minutes: int = 60,
-) -> str:
-    """InstallVIOS job: NIM-based VIOS installation.
-
-    nim_ip is the NIM server IP address; nim_gateway and nim_subnetmask define
-    the network for the VIOS during install; vios_ip is the IP the VIOS uses
-    during the NIM install; vlan_id is the VLAN tag for the install network
-    (pass "0" for untagged); hmc_timeout_minutes is the job timeout in minutes.
-    """
-    return build_job_request(
-        "InstallVIOS",
-        "VirtualIOServer",
-        {
-            "nim_IP": nim_ip,
-            "nim_gateway": nim_gateway,
-            "nim_subnetmask": nim_subnetmask,
-            "vios_IP": vios_ip,
-            "vlanid": vlan_id,
-            "timeout": str(hmc_timeout_minutes),
-        },
-    )
-
-
-# ---------------------------------------------------------------------- #
-# LPAR install (NIM-based)
-# ---------------------------------------------------------------------- #
-
-
-def install_lpar_job(
-    nim_ip: str,
-    nim_gateway: str,
-    nim_subnetmask: str,
-    lpar_ip: str,
-    vlan_id: str,
-    hmc_timeout_minutes: int = 60,
-) -> str:
-    """InstallLPAR job: NIM-based LPAR OS installation.
-
-    nim_ip is the NIM server IP address; nim_gateway and nim_subnetmask define
-    the network for the LPAR during install; lpar_ip is the IP the LPAR uses
-    during the NIM install; vlan_id is the VLAN tag for the install network
-    (pass "0" for untagged); hmc_timeout_minutes is the job timeout in minutes.
-    """
-    return build_job_request(
-        "InstallLPAR",
-        "LogicalPartition",
-        {
-            "nim_IP": nim_ip,
-            "nim_gateway": nim_gateway,
-            "nim_subnetmask": nim_subnetmask,
-            "lpar_IP": lpar_ip,
-            "vlanid": vlan_id,
-            "timeout": str(hmc_timeout_minutes),
+            "TemplateUuid": draft_template_uuid,
         },
     )

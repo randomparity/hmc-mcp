@@ -1,26 +1,25 @@
 """Tests for safe ISO and media-repository deletion operations."""
 
-import httpx
-import pytest
-
 from unittest.mock import AsyncMock
 
+import httpx
+import pytest
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations_storage import (
+from hmc_mcp.operations.storage import (
     delete_media_repository,
     delete_optical_media,
     delete_virtual_disk,
 )
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
-VG_UUID = "vg-uuid-002"
+VG_UUID = "22222222-2222-2222-2222-222222220002"
 MEDIA_NAME = "test-image.iso"
 
 VG_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-VIOS_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosStorageDetail"
+VIOS_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
 
 EMPTY_REPO_FEED = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -194,7 +193,7 @@ async def test_delete_optical_media_succeeds_when_unmounted(mock_hmc):
     """delete_optical_media succeeds when no optical mappings reference it.
 
     delete_optical_media:
-      1. GETs ViosStorageDetail path (list_optical_mappings) — returns no mappings.
+      1. GETs ViosSCSIMapping path (list_optical_mappings) — returns no mappings.
       2. GETs VG_PATH (hmc.delete_optical_media read step) — returns MEDIA_VG_FEED.
       3. POSTs VG_PATH with the media node removed.
     """

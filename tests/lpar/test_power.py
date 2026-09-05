@@ -2,10 +2,9 @@
 
 import httpx
 import pytest
-
 from conftest import JOB_ENTRY, make_config
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.jobs import (
     power_off_system_job,
     power_off_vios_job,

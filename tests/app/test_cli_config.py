@@ -208,6 +208,34 @@ def test_show_json_flag(tmp_path, monkeypatch):
     assert data["host"] == "hmc.example.com"
 
 
+def test_show_reports_the_power_ownership_guard(tmp_path, monkeypatch):
+    """A fail-open authorization control must have an observable value (#371).
+
+    A mistyped profile key or environment variable is dropped silently, and the
+    result is indistinguishable from a correct ``false``, so ``config show`` is
+    the only way an operator can confirm the guard is actually on.
+    """
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    monkeypatch.delenv("HMC_AUTHORIZE_POWER_OPERATIONS", raising=False)
+
+    with patch.object(sys, "platform", "linux"):
+        default = RUNNER.invoke(
+            cli.app, ["--profile", "prod", "config", "show", "--json"]
+        )
+    assert default.exit_code == 0, default.output
+    assert json.loads(default.output)["authorize_power_operations"] is False
+
+    monkeypatch.setenv("HMC_AUTHORIZE_POWER_OPERATIONS", "true")
+    with patch.object(sys, "platform", "linux"):
+        enabled = RUNNER.invoke(
+            cli.app, ["--profile", "prod", "config", "show", "--json"]
+        )
+    assert enabled.exit_code == 0, enabled.output
+    assert json.loads(enabled.output)["authorize_power_operations"] is True
+
+
 def test_show_unknown_profile_error(tmp_path, monkeypatch):
     """show exits 1 with a message containing the unknown profile name."""
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
@@ -468,7 +496,6 @@ def test_show_reads_config_document_exactly_once(tmp_path, monkeypatch):
     """
     from unittest.mock import MagicMock
 
-    import hmc_mcp.cli_config as cli_config_mod
     import hmc_mcp.config as config_mod
 
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
@@ -478,8 +505,7 @@ def test_show_reads_config_document_exactly_once(tmp_path, monkeypatch):
     counter = MagicMock(wraps=config_mod._read_config_document)
     with (
         patch.object(config_mod, "_read_config_document", counter),
-        patch.object(cli_config_mod, "_read_config_document", counter),
-        patch.object(sys, "platform", "linux"),
+            patch.object(sys, "platform", "linux"),
     ):
         result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show"])
 
@@ -500,7 +526,6 @@ def test_list_reads_config_document_exactly_once(tmp_path, monkeypatch):
     """
     from unittest.mock import MagicMock
 
-    import hmc_mcp.cli_config as cli_config_mod
     import hmc_mcp.config as config_mod
 
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
@@ -510,8 +535,7 @@ def test_list_reads_config_document_exactly_once(tmp_path, monkeypatch):
     counter = MagicMock(wraps=config_mod._read_config_document)
     with (
         patch.object(config_mod, "_read_config_document", counter),
-        patch.object(cli_config_mod, "_read_config_document", counter),
-        patch.object(sys, "platform", "linux"),
+            patch.object(sys, "platform", "linux"),
     ):
         result = RUNNER.invoke(cli.app, ["config", "list"])
 
@@ -534,8 +558,8 @@ def _generate(tmp_path, monkeypatch, *extra):
 
 def test_init_access_policy_writes_a_loadable_policy_at_0600(tmp_path, monkeypatch):
     """R11: the file a server has to read, created the way `config init` creates one."""
-    from hmc_mcp.access_policy import load_access_policy
-    from hmc_mcp.legacy_policy import LEGACY_POLICY_NAME
+    from hmc_mcp.authorization.access_policy import load_access_policy
+    from hmc_mcp.cli_commands.legacy_policy import LEGACY_POLICY_NAME
     from hmc_mcp.server import TOOL_SECURITY
 
     result = _generate(tmp_path, monkeypatch)
@@ -697,7 +721,7 @@ def test_a_write_failure_after_the_create_leaves_no_partial_file(tmp_path, monke
     over it, and does not compile, so `serve` refuses too. That is a deployment that can
     neither start nor recover without a manual delete.
     """
-    import hmc_mcp.cli_config as cli_config
+    import hmc_mcp.cli_commands.config as cli_config
 
     def _explode(*_args, **_kwargs):
         raise OSError(28, "No space left on device")
@@ -747,7 +771,8 @@ def test_diff_access_policy_is_green_when_the_deployed_policy_is_current(
     """#276: exit 0, and no diff hunks, when the deployed document matches this build."""
     deployed = _generate_and_deploy(tmp_path, monkeypatch)
 
-    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
 
     assert result.exit_code == 0, result.output
     assert not [
@@ -760,18 +785,18 @@ def test_diff_access_policy_is_green_when_the_deployed_policy_is_current(
 def test_diff_access_policy_shows_a_tool_a_later_release_added(tmp_path, monkeypatch):
     """#276 drift arm 1: TOOL_SECURITY grew after generation; the diff names the tool.
 
-    Patching `server.TOOL_SECURITY` works because the command imports it inside the
+    Patching `server_tools.catalog.TOOL_SECURITY` works because the command imports it inside the
     handler, at call time — the same attribute `init-access-policy` renders from.
     """
     from dataclasses import replace
 
-    import hmc_mcp.server as server_mod
+    from hmc_mcp.server_tools import catalog
 
     deployed = _generate_and_deploy(tmp_path, monkeypatch)
-    drifted = dict(server_mod.TOOL_SECURITY)
+    drifted = dict(catalog.TOOL_SECURITY)
     drifted["hmc_hypothetical_tool"] = replace(next(iter(drifted.values())))
 
-    with patch.object(server_mod, "TOOL_SECURITY", drifted):
+    with patch.object(catalog, "TOOL_SECURITY", drifted):
         result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
 
     assert result.exit_code == 1, result.output
@@ -794,7 +819,8 @@ def test_diff_access_policy_shows_a_profile_added_after_generation(
         encoding="utf-8",
     )
 
-    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
 
     assert result.exit_code == 1, result.output
     assert '"staging"' in result.output
@@ -836,7 +862,8 @@ def test_diff_access_policy_generation_failure_beats_the_deployed_file_check(
         '[profiles." prod"]\nhost = "a"\n', encoding="utf-8"
     )
 
-    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
 
     assert result.exit_code == 4
     assert "padded" in result.output
