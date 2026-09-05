@@ -58,7 +58,6 @@ def _lpar_summary(
     lpar: dict[str, Any],
     adapters: list[dict[str, Any]],
 ) -> LparSummary:
-    """Build a summary dict from raw LPAR entry + adapter list."""
     res = lpar.get("Resource") or {}
     return LparSummary(
         uuid=lpar.get("UUID"),
@@ -150,7 +149,6 @@ def _system_summary(
     lpars: list[dict[str, Any]],
     vios_list: list[dict[str, Any]],
 ) -> SystemSummary:
-    """Build a summary dict from raw system entry, LPAR list, and VIOS list."""
     res = system.get("Resource") or {}
 
     lpar_states: dict[str, int] = {}
