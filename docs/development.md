@@ -80,8 +80,7 @@ src/hmc_mcp/
   ssh/console.py             # bounded, non-interactive LPAR console capture (mkvterm)
   documents/     # domain XML request builders with shared primitives
   documents/common.py # shared HMC XML envelope helpers and document vocabulary
-  jobs.py        # job outcomes, lifecycle helpers, and named job builders
-  jobs_requests.py # shared JobRequest XML serialization boundary
+  jobs/          # job outcomes, lifecycle helpers, and JobRequest XML builders
   authorization/             # access policy and dispatch-time scope enforcement
   audit/         # audit records plus non-blocking diagnostic transport
   tool_registry.py           # local MCP tool collection, each tool carrying ToolSecurity

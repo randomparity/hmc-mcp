@@ -170,9 +170,9 @@ wildcard records the operation's actual scope.
 | `set_lpar_memory` | `operations/lpar/dlpar.py:165` | guarded (`:405`, via `_apply_dlpar_document`) | — |
 | `apply_lpar_pcie_assignments` | `operations/lpar/assignments.py:276` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
 | `add_network_adapter` | `operations/adapters.py:39` | guarded (`:52`) | #372 |
-| `add_vscsi_adapter` | `operations/adapters.py:69` | guarded (`:80`) | #372 |
-| `add_vfc_adapter` | `operations/adapters.py:92` | guarded (`:103`) | #372 |
-| `delete_adapter` | `operations/adapters.py:115` | guarded (`:130`) | #372 |
+| `add_vscsi_adapter` | `operations/adapters.py:77` | guarded (`:88`) | #372 |
+| `add_vfc_adapter` | `operations/adapters.py:100` | guarded (`:111`) | #372 |
+| `delete_adapter` | `operations/adapters.py:123` | guarded (`:138`) | #372 |
 | `map_storage` | `operations/storage.py:251` | guarded (`:266`) | #372 |
 | `attach_disk_to_lpar` | `operations/lpar/provision.py:332` | guarded before the storage workflow (`:351`) | #372 |
 | `mount_optical_media` | `operations/storage.py:848` | guarded (`:866`) | — |
