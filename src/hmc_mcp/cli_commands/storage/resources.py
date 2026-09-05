@@ -10,7 +10,6 @@ from rich.table import Table
 
 from hmc_mcp.client.core import HMCClient
 
-from ...config import load_profile
 from ...documents import StorageKind
 from ...operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
 from ...operations.storage.resources import (
@@ -410,14 +409,10 @@ def storage_list_mappings(
 ) -> None:
     """List VirtualSCSIMappings on a VIOS (optionally scoped to an LPAR)."""
 
-    async def _go():
-        config = load_profile()
-        async with HMCClient(config) as hmc:
-            return await list_storage_mappings(
-                hmc, vios, lpar, system_name_or_uuid=system
-            )
+    async def _go(hmc: HMCClient):
+        return await list_storage_mappings(hmc, vios, lpar, system_name_or_uuid=system)
 
-    mappings = run_cli_coroutine(_go)
+    mappings = with_client(_go)
     if as_json:
         print_json([asdict(mapping) for mapping in mappings])
     else:
@@ -461,18 +456,16 @@ def storage_detach_mapping(
             abort=True,
         )
 
-    async def _go() -> None:
-        config = load_profile()
-        async with HMCClient(config) as hmc:
-            await detach_storage_mapping(
-                hmc,
-                vios,
-                mapping_uuid,
-                system_name_or_uuid=system,
-                ownership_override=ownership_override,
-            )
+    async def _go(hmc: HMCClient) -> None:
+        await detach_storage_mapping(
+            hmc,
+            vios,
+            mapping_uuid,
+            system_name_or_uuid=system,
+            ownership_override=ownership_override,
+        )
 
-    run_cli_coroutine(_go)
+    with_client(_go)
     console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")
 
 
@@ -501,19 +494,17 @@ def storage_upload_iso(
     up broker resources on every outcome.
     """
 
-    async def _go() -> dict[str, Any]:
-        config = load_profile()
-        async with HMCClient(config) as hmc:
-            return await upload_iso(
-                hmc,
-                vios,
-                vg,
-                media_name,
-                iso_source,
-                system_name_or_uuid=system,
-            )
+    async def _go(hmc: HMCClient) -> dict[str, Any]:
+        return await upload_iso(
+            hmc,
+            vios,
+            vg,
+            media_name,
+            iso_source,
+            system_name_or_uuid=system,
+        )
 
-    result = run_cli_coroutine(_go)
+    result = with_client(_go)
 
     if as_json:
         print_json(result)

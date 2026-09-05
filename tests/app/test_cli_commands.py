@@ -30,6 +30,7 @@ from hmc_mcp.cli_commands.lpar import config as cli_lpars
 from hmc_mcp.cli_commands.lpar import migration as cli_lpar_migration
 from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
 from hmc_mcp.cli_commands.lpar import provision as cli_lpar_provision
+from hmc_mcp.cli_commands.storage import resources as cli_storage_resources
 from hmc_mcp.cli_commands.virtualization import pcie as cli_pcie
 from hmc_mcp.cli_commands.virtualization import vnic as cli_vnic
 from hmc_mcp.config import HMCConfig
@@ -1764,38 +1765,60 @@ def test_storage_attach_disk_json_incomplete_workflow_exits_1(fake_hmc):
 # --------------------------------------------------------------------------- #
 # storage: command bodies (#240)
 #
-# cli_storage's commands come in three shapes with different injection points:
-#   A  with_client(lambda hmc: op(...))          -> patch hmc_mcp.cli_commands.storage.resources.<op>
-#   B  _run(_go) building its own HMCClient, op   -> patch load_profile/HMCClient here
-#      imported inside the function                 and the op on operations_storage
-#   C  as B, but the op is imported at module top -> patch all three on cli_storage
-# Getting the shape wrong yields a test that passes without running the body.
+# Storage commands use runtime.with_client(), so patch their operation boundary.
 # --------------------------------------------------------------------------- #
 
 
-class _FakeClientContext:
-    """Async context manager standing in for HMCClient in cli_storage._go bodies."""
+@pytest.mark.parametrize(
+    ("command", "operation", "operation_result"),
+    [
+        (
+            ["storage", "list-mappings", VIOS_UUID],
+            "list_storage_mappings",
+            [StorageMapping("map-1", None, None, None)],
+        ),
+        (
+            ["storage", "detach-mapping", VIOS_UUID, "map-1", "--confirm"],
+            "detach_storage_mapping",
+            None,
+        ),
+        (
+            [
+                "storage",
+                "upload-iso",
+                VIOS_UUID,
+                VG_UUID,
+                "aix.iso",
+                "https://images.test/aix.iso",
+            ],
+            "upload_iso",
+            {"status": "uploaded", "media_name": "aix.iso"},
+        ),
+    ],
+)
+def test_storage_commands_use_root_connection_options(
+    command, operation, operation_result, monkeypatch
+):
+    built_options = []
 
-    def __init__(self) -> None:
-        self.entered = False
+    def fake_build_config(**options):
+        built_options.append(options)
+        return HMCConfig.from_mapping({})
 
-    async def __aenter__(self):
-        self.entered = True
-        return self
-
-    async def __aexit__(self, *exc_info) -> None:
-        return None
-
-
-@pytest.fixture
-def direct_client(monkeypatch):
-    """Neutralise load_profile()/HMCClient() for the commands that build their own client."""
-    client = _FakeClientContext()
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.load_profile", lambda: None)
+    monkeypatch.setattr(cli_runtime, "build_config", fake_build_config)
+    monkeypatch.setattr(cli_runtime, "HMCClient", lambda _config: FakeHMC())
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.HMCClient", lambda _config: client
+        cli_storage_resources, operation, AsyncMock(return_value=operation_result)
     )
-    return client
+
+    result = RUNNER.invoke(
+        cli.app, ["--profile", "operator", "--host", "root-hmc", *command]
+    )
+
+    assert result.exit_code == 0
+    assert len(built_options) == 1
+    assert built_options[0]["profile"] == "operator"
+    assert built_options[0]["host"] == "root-hmc"
 
 
 def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
@@ -2096,7 +2119,7 @@ def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
     ]
 
 
-def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
+def test_storage_list_mappings_renders_virtual_disk(fake_hmc, monkeypatch):
     async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
         system = system_name_or_uuid
         assert (system, vios, lpar) == (None, VIOS_UUID, None)
@@ -2112,10 +2135,9 @@ def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
     assert "map-1" in result.stdout
     assert "bootvol" in result.stdout
     assert "VirtualDisk" in result.stdout
-    assert direct_client.entered
 
 
-def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatch):
+def test_storage_list_mappings_renders_physical_volume(fake_hmc, monkeypatch):
     async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
         system = system_name_or_uuid
         assert (system, vios, lpar) == (None, VIOS_UUID, LPAR_UUID)
@@ -2134,7 +2156,7 @@ def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatc
     assert "PhysicalVolume" in result.stdout
 
 
-def test_storage_list_mappings_json(direct_client, monkeypatch):
+def test_storage_list_mappings_json(fake_hmc, monkeypatch):
     async def fake_mappings(_hmc, _vios, _lpar, *, system_name_or_uuid=None):
         return [StorageMapping("map-1", None, None, None)]
 
@@ -2150,7 +2172,7 @@ def test_storage_list_mappings_json(direct_client, monkeypatch):
     ]
 
 
-def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatch):
+def test_storage_detach_mapping_deletes_when_confirmed(fake_hmc, monkeypatch):
     seen = {}
 
     async def fake_detach(
@@ -2180,12 +2202,9 @@ def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatc
         "mapping_uuid": "map-1",
         "ownership_override": False,
     }
-    assert direct_client.entered
 
 
-def test_storage_detach_mapping_reports_one_failure_and_exits_1(
-    direct_client, monkeypatch
-):
+def test_storage_detach_mapping_reports_one_failure_and_exits_1(fake_hmc, monkeypatch):
     """A failing detach reports once, on stderr, and exits 1.
 
     The command used to wrap ``_run`` in ``except Exception``, which caught
@@ -2245,7 +2264,7 @@ def test_with_client_propagates_a_typer_exit_code_unchanged(monkeypatch):
     assert excinfo.value.exit_code == 2
 
 
-def test_storage_upload_iso_reports_uploaded_media(direct_client, monkeypatch):
+def test_storage_upload_iso_reports_uploaded_media(fake_hmc, monkeypatch):
     async def fake_upload(_hmc, vios, vg, media_name, iso_source, *, system_name_or_uuid):
         assert (vios, vg, media_name) == (VIOS_UUID, VG_UUID, "aix.iso")
         assert iso_source == "https://images.test/aix.iso"
@@ -2278,7 +2297,7 @@ def test_storage_upload_iso_reports_uploaded_media(direct_client, monkeypatch):
     assert "1,048,576 bytes" in result.stdout
 
 
-def test_storage_upload_iso_json(direct_client, monkeypatch):
+def test_storage_upload_iso_json(fake_hmc, monkeypatch):
     async def fake_upload(
         _hmc, _vios, _vg, _media_name, _iso_source, *, system_name_or_uuid
     ):
