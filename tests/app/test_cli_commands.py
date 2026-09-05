@@ -25,12 +25,12 @@ from typer.testing import CliRunner
 
 from hmc_mcp import cli
 from hmc_mcp.cli_commands import runtime as cli_runtime
-from hmc_mcp.cli_commands import vios_labels as cli_vios_labels
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
 from hmc_mcp.cli_commands.lpar import migration as cli_lpar_migration
 from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
 from hmc_mcp.cli_commands.lpar import provision as cli_lpar_provision
 from hmc_mcp.cli_commands.storage import resources as cli_storage_resources
+from hmc_mcp.cli_commands.vios import labels as cli_vios_labels
 from hmc_mcp.cli_commands.virtualization import pcie as cli_pcie
 from hmc_mcp.cli_commands.virtualization import vnic as cli_vnic
 from hmc_mcp.config import HMCConfig

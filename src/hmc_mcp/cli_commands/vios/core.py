@@ -5,11 +5,11 @@ from __future__ import annotations
 import typer
 from rich.table import Table
 
-from ..jobs import validate_wait_timing
-from ..operations.partition_state import PartitionState
-from ..operations.vios.core import list_vios, power_vios
-from .output import console, first_field, output, print_json
-from .runtime import client, run_cli_coroutine, with_client
+from ...jobs import validate_wait_timing
+from ...operations.partition_state import PartitionState
+from ...operations.vios.core import list_vios, power_vios
+from ..output import console, first_field, output, print_json
+from ..runtime import client, run_cli_coroutine, with_client
 
 
 def vios_list(

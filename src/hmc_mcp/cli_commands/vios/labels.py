@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 
 import typer
 
-from ..operations.vios.labels import (
+from ...operations.vios.labels import (
     create_vios_vfc_group_label,
     list_vios_fc_port_labels,
     list_vios_vfc_group_labels,
@@ -16,9 +16,9 @@ from ..operations.vios.labels import (
     set_vios_fc_port_label,
     update_vios_vfc_group_label,
 )
-from ..ssh.vios_labels import ViosGroupUpdateAction
-from .output import output, print_json
-from .runtime import run_cli_coroutine, ssh_config
+from ...ssh.vios_labels import ViosGroupUpdateAction
+from ..output import output, print_json
+from ..runtime import run_cli_coroutine, ssh_config
 
 
 def _confirm_on_stderr(prompt: str) -> bool:
