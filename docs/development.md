@@ -64,7 +64,7 @@ lifecycle all work; everything else uses the same path.
 ```
 src/hmc_mcp/
   __init__.py    # package version and the `hmc-mcp` console-script entry point
-  api.py         # supported reusable-library facade (ADR 0029)
+  api.py         # stable connection/configuration facade (ADR 0118)
   config.py      # pydantic-settings config (TOML profile + env vars + CLI flags)
   xmlutil.py     # defusedxml Atom-feed -> dict parsing
   errors.py      # HMCError (shared by client and its mixins)

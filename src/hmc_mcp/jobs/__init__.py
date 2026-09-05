@@ -45,11 +45,12 @@ FAILED_JOB_STATUSES = TERMINAL_JOB_STATUSES - SUCCESSFUL_JOB_STATUSES
 
 @dataclass(frozen=True)
 class JobOutcome:
-    """Stable public result for waiting on an HMC job.
+    """Result model for waiting on an HMC job.
 
-    ADR 0093 makes this field set a package-owned model contract under ADR 0029.
-    ``job`` is the exception: it is an opaque HMC resource mapping whose keys and
-    nesting are firmware-dependent and are not promised.
+    ADR 0093 defines this package-owned model contract. Per ADR 0118, it is
+    available from its explicit pre-release module path, not the stable facade.
+    ``job`` is the exception: it is an opaque HMC resource mapping whose keys
+    and nesting are firmware-dependent and are not promised.
 
     The polling reading of the fields holds for outcomes returned by
     ``operations_jobs.get_job`` and ``operations_jobs.wait_for_job``: ``job_id``

@@ -66,10 +66,11 @@ The access policy bounds **this MCP server**. It does not bound `hmc-mcp`
 commands run at a shell, and it does not bound a Python program importing the
 supported reusable API — both reach the HMC directly under the operator's own
 credentials, and
-[ADR 0029](adr/0029-supported-reusable-python-api-contract.md) places MCP
-tools, CLI commands, and the server composition modules outside that API's
-contract for the same reason. If you need a constraint that binds a human at a
-shell, use HMC-side user roles.
+[ADR 0118](adr/0118-core-library-facade.md) limits the stable facade to
+connection, configuration, and common error types; MCP tools, CLI commands,
+server composition modules, and operation modules remain explicit pre-release
+module paths outside that compatibility contract. If you need a constraint that
+binds a human at a shell, use HMC-side user roles.
 
 Every MCP tool is dispatch-wrapped.
 For a connectionless tool, the connection dimension is vacuous because the call
