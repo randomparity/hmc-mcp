@@ -537,6 +537,80 @@ async def test_lpar_property_mutation_refuses_non_vios_and_restores_baseline() -
 
 
 @pytest.mark.asyncio
+async def test_vmedia_mount_requires_iso_and_preserves_safe_delete_boundary() -> None:
+    missing = _ScriptedSriovState([])
+    await vmedia.vmedia_mount_unmount(object(), missing)
+    assert missing.calls == []
+    assert {entry["status"] for entry in missing.results} == {"SKIP"}
+
+    state = _ScriptedSriovState(
+        [
+            ("hmc_mount_optical_media", "PASS", {"ElementID": "mapping-uuid"}),
+            ("hmc_list_optical_mappings", "PASS", []),
+            ("hmc_delete_optical_media", "FAIL", "media is mapped"),
+            ("hmc_unmount_optical_media", "PASS", {}),
+            ("hmc_list_optical_mappings", "PASS", []),
+            ("hmc_delete_optical_media", "PASS", {}),
+            ("hmc_list_optical_media", "PASS", []),
+        ]
+    )
+    state.context.vios_uuid = "vios-uuid"
+    state.context.vg_uuid = "vg-uuid"
+    state.context.vmedia_iso_name = "boot.iso"
+
+    await vmedia.vmedia_mount_unmount(object(), state)
+
+    assert state.context.vmedia_mapping_uuid is None
+    assert state.context.vmedia_iso_name is None
+    assert state.calls[3] == (
+        "hmc_unmount_optical_media",
+        {"vios_name_or_uuid": "vios-uuid", "mapping_uuid": "mapping-uuid"},
+    )
+    assert any(
+        entry["tool"] == "hmc_delete_optical_media (blocked — expected)"
+        and entry["status"] == "PASS"
+        for entry in state.results
+    )
+
+
+@pytest.mark.asyncio
+async def test_vmedia_teardown_restores_boot_and_removes_artifacts_in_order() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_set_lpar_boot_order", "PASS", {}),
+            ("hmc_list_optical_mappings", "PASS", [{"UUID": "orphan-uuid"}]),
+            ("hmc_unmount_optical_media", "PASS", {}),
+            ("hmc_list_optical_media", "PASS", [{"MediaName": "orphan.iso"}]),
+            ("hmc_delete_optical_media", "PASS", {}),
+            ("hmc_delete_media_repository", "PASS", {}),
+            ("hmc_get_media_repository", "PASS", {}),
+            ("hmc_list_volume_groups", "PASS", []),
+        ]
+    )
+    state.context.vios_uuid = "vios-uuid"
+    state.context.vg_uuid = "vg-uuid"
+    state.context.lp3_uuid = "lp3-uuid"
+    state.context.vmedia_orig_boot_order = ["disk", "network"]
+    state.context.vmedia_repo_created = True
+
+    await vmedia.vmedia_teardown(object(), state)
+
+    assert state.context.vmedia_orig_boot_order == []
+    assert not state.context.vmedia_repo_created
+    assert [tool for tool, _ in state.calls] == [
+        "hmc_set_lpar_boot_order",
+        "hmc_list_optical_mappings",
+        "hmc_unmount_optical_media",
+        "hmc_list_optical_media",
+        "hmc_delete_optical_media",
+        "hmc_delete_media_repository",
+        "hmc_get_media_repository",
+        "hmc_list_volume_groups",
+    ]
+    assert state.calls[0][1]["devices"] == ["disk", "network"]
+
+
+@pytest.mark.asyncio
 async def test_sriov_orchestrator_runs_phases_in_order_and_cleans_up() -> None:
     """A successful round trip invokes every phase and always reaches cleanup."""
     calls: list[str] = []
