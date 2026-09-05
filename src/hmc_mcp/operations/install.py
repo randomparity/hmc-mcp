@@ -277,9 +277,9 @@ async def install_vios_by_lpar_selector(
     Args:
         hmc: Connected client; its configuration also carries the SSH
             credentials the CLI bridge submits with.
-        lpar_name_or_uuid: Powered-off partition name or UUID.
         system_name_or_uuid: Managed-system name or UUID hosting the
             partition; ``installios -s`` needs it explicitly.
+        lpar_name_or_uuid: Powered-off partition name or UUID.
         request: Grouped :class:`InstallRequest` containing the install-image
             source, install-time IPv4 network settings, partition profile,
             optional VLAN identifier, and optional client MAC address.
