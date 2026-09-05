@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any
 
-from ..._app import (
-    serialize_tool_result,
-    with_client,
-)
+from ..._app import with_client
 from ...operations.virtualization.pcie import (
     InventorySelector,
+    SriovLogicalPortChangeResult,
     SriovMode,
     assign_sriov_logical_port,
     set_sriov_adapter_mode,
@@ -69,7 +66,7 @@ def hmc_assign_sriov_logical_port(
     profile_name: str,
     ownership_override: bool = False,
     profile: str | None = None,
-) -> dict[str, Any]:
+) -> SriovLogicalPortChangeResult:
     """Assign an evidence-backed Ethernet SR-IOV logical port.
 
     Args:
@@ -85,16 +82,14 @@ def hmc_assign_sriov_logical_port(
     """
 
     async def _go(hmc):
-        return serialize_tool_result(
-            await assign_sriov_logical_port(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                InventorySelector(adapter_id, physical_port_id, logical_port_id),
-                Decimal(str(capacity_percent)),
-                profile_name=profile_name,
-                ownership_override=ownership_override,
-            )
+        return await assign_sriov_logical_port(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            InventorySelector(adapter_id, physical_port_id, logical_port_id),
+            Decimal(str(capacity_percent)),
+            profile_name=profile_name,
+            ownership_override=ownership_override,
         )
 
     return with_client(_go, profile=profile)
@@ -110,7 +105,7 @@ def hmc_unassign_sriov_logical_port(
     profile_name: str,
     ownership_override: bool = False,
     profile: str | None = None,
-) -> dict[str, Any]:
+) -> SriovLogicalPortChangeResult:
     """Unassign a profile logical port on a Not Activated LPAR.
 
     Args:
@@ -125,15 +120,13 @@ def hmc_unassign_sriov_logical_port(
     """
 
     async def _go(hmc):
-        return serialize_tool_result(
-            await unassign_sriov_logical_port(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                InventorySelector(adapter_id, physical_port_id, logical_port_id),
-                profile_name=profile_name,
-                ownership_override=ownership_override,
-            )
+        return await unassign_sriov_logical_port(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            InventorySelector(adapter_id, physical_port_id, logical_port_id),
+            profile_name=profile_name,
+            ownership_override=ownership_override,
         )
 
     return with_client(_go, profile=profile)

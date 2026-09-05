@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from ..._app import serialize_tool_result, with_client
-from ...operations.inventory.composite import fetch_lpar_summary, fetch_system_summary
+from ..._app import with_client
+from ...operations.inventory.composite import (
+    LparSummary,
+    SystemSummary,
+    fetch_lpar_summary,
+    fetch_system_summary,
+)
 from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
@@ -16,7 +19,7 @@ def hmc_lpar_summary(
     lpar_name_or_uuid: str,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
-) -> dict[str, Any]:
+) -> LparSummary:
     """Return state, resources, OS details, adapters, and description for one LPAR.
 
     Args:
@@ -27,7 +30,7 @@ def hmc_lpar_summary(
     """
 
     async def summary(hmc):
-        return serialize_tool_result(await fetch_lpar_summary(hmc, system_name_or_uuid, lpar_name_or_uuid))
+        return await fetch_lpar_summary(hmc, system_name_or_uuid, lpar_name_or_uuid)
 
     return with_client(summary, profile=profile)
 
@@ -36,7 +39,7 @@ def hmc_lpar_summary(
 def hmc_system_summary(
     system_name_or_uuid: str,
     profile: str | None = None,
-) -> dict[str, Any]:
+) -> SystemSummary:
     """Return state, capacity, partition counts, and VIOS count for one system.
 
     Args:
@@ -45,6 +48,6 @@ def hmc_system_summary(
     """
 
     async def summary(hmc):
-        return serialize_tool_result(await fetch_system_summary(hmc, system_name_or_uuid))
+        return await fetch_system_summary(hmc, system_name_or_uuid)
 
     return with_client(summary, profile=profile)
