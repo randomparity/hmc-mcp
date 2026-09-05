@@ -70,10 +70,10 @@ def test_operation_modules_import_before_their_server_tool_consumers():
     script = """
 import hmc_mcp.operations.lpar
 import hmc_mcp.operations.systems.core
-import hmc_mcp.operations.vios
+import hmc_mcp.operations.vios.core
 import hmc_mcp.server_tools.lpar.lifecycle
 import hmc_mcp.server_tools.systems.core
-import hmc_mcp.server_tools.vios
+import hmc_mcp.server_tools.vios.core
 """
     subprocess.run([sys.executable, "-c", script], check=True)
 

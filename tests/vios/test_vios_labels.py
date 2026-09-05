@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, call
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations import vios_labels as label_operations
-from hmc_mcp.server_tools import vios_labels as label_tools
+from hmc_mcp.operations.vios import labels as label_operations
+from hmc_mcp.server_tools.vios import labels as label_tools
 from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.ssh.vios_labels import (
     create_vios_vfc_group_label,

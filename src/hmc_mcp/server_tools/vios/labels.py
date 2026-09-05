@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from .._app import with_config
-from ..operations import vios_labels as operations
-from ..ssh.vios_labels import ViosGroupUpdateAction
-from ..tool_registry import tool_module
+from ..._app import with_config
+from ...operations.vios import labels as operations
+from ...ssh.vios_labels import ViosGroupUpdateAction
+from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

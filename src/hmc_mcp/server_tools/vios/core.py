@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import (
+from ..._app import (
     with_client,
 )
-from ..documents import VIOS_DEFAULT_RESOURCES, LparResources
-from ..operations.install import (
+from ...documents import VIOS_DEFAULT_RESOURCES, LparResources
+from ...operations.install import (
     InstallRequest,
     install_vios,
     install_vios_by_lpar_selector,
     validate_install_request,
 )
-from ..operations.vios import (
+from ...operations.vios.core import (
     BackupType,
     RestoreBackupType,
     backup_vios,
@@ -26,7 +26,7 @@ from ..operations.vios import (
     validate_vios_backup_request,
     validate_vios_restore_request,
 )
-from ..tool_registry import tool_module
+from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

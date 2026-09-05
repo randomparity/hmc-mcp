@@ -27,7 +27,7 @@ from hmc_mcp.server_tools.systems.core import (
     hmc_power_off_system,
     hmc_power_on_system,
 )
-from hmc_mcp.server_tools.vios import (
+from hmc_mcp.server_tools.vios.core import (
     hmc_power_off_vios,
     hmc_power_on_vios,
 )

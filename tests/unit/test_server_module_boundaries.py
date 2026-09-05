@@ -10,17 +10,13 @@ from hmc_mcp import server
 from hmc_mcp.cli_commands.virtualization import network as cli_network
 from hmc_mcp.cli_commands.virtualization import pcie as cli_pcie
 from hmc_mcp.cli_commands.virtualization import vnic as cli_vnic
-from hmc_mcp.server_tools import (
-    capacity,
-    command,
-    jobs,
-    system_resources,
-    vios,
-)
+from hmc_mcp.server_tools import command, jobs, system_resources
+from hmc_mcp.server_tools.inventory import capacity
 from hmc_mcp.server_tools.lpar import configuration, lifecycle
 from hmc_mcp.server_tools.storage import resources as storage
 from hmc_mcp.server_tools.systems import core as systems
 from hmc_mcp.server_tools.systems import health
+from hmc_mcp.server_tools.vios import core as vios
 from hmc_mcp.server_tools.virtualization import adapters, network, pcie, vnic
 
 
@@ -35,8 +31,8 @@ def test_domain_handlers_live_in_focused_modules() -> None:
         systems.hmc_modify_system: "hmc_mcp.server_tools.systems.core",
         systems.hmc_power_on_system: "hmc_mcp.server_tools.systems.core",
         systems.hmc_power_off_system: "hmc_mcp.server_tools.systems.core",
-        vios.hmc_power_on_vios: "hmc_mcp.server_tools.vios",
-        vios.hmc_power_off_vios: "hmc_mcp.server_tools.vios",
+        vios.hmc_power_on_vios: "hmc_mcp.server_tools.vios.core",
+        vios.hmc_power_off_vios: "hmc_mcp.server_tools.vios.core",
         lifecycle.hmc_power_on_lpar: "hmc_mcp.server_tools.lpar.lifecycle",
         lifecycle.hmc_power_off_lpar: "hmc_mcp.server_tools.lpar.lifecycle",
         configuration.hmc_get_lpar_description: (

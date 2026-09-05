@@ -60,7 +60,7 @@ synchronous function is a transformation, parser, or validator rather than an as
 operation and is excluded for that concrete contract-readiness reason. Imported transport types
 such as `Any` and built-in containers are not facade exports.
 
-The adapter-facing `operations.vios_labels` workflow and its SSH command type are intentionally
+The adapter-facing `operations.vios.core` workflow and its SSH command type are intentionally
 excluded from the reusable facade. They are shared by the MCP and CLI presentation layers but are
 not a supported Python consumer boundary.
 
@@ -267,12 +267,12 @@ names are internal everywhere and are never inventoried.
   `update_console_software`, `update_firmware`, `update_vios`, `upgrade_vios`.
 - `operations.users.core` — operations: `configure_remote_access`, `create_user`, `delete_user`,
   `modify_user`; types: `CreateUserRequest`, `ModifyUserPatch`; excluded synchronous: none.
-- `operations.vios` — operations: `backup_vios`, `create_vios`, `delete_vios`,
+- `operations.vios.core` — operations: `backup_vios`, `create_vios`, `delete_vios`,
   `get_vios_storage_detail`, `list_vios`, `list_vios_backups`, `power_vios`, `restore_vios`; types:
   `BackupType`, `RestoreBackupType`;
   excluded synchronous: `validate_vios_backup_name`, `validate_vios_backup_request`,
   `validate_vios_restore_request`.
-- `operations.vios_labels` — operations: none; types: none; excluded synchronous: none.
+- `operations.vios.core` — operations: none; types: none; excluded synchronous: none.
 - `snapshots.models` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
   `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,
   `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotInspection`, `SnapshotObservations`,

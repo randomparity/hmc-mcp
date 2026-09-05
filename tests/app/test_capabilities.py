@@ -31,7 +31,7 @@ from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_decommission_lpar,
     hmc_delete_lpar,
 )
-from hmc_mcp.server_tools.vios import hmc_delete_vios
+from hmc_mcp.server_tools.vios.core import hmc_delete_vios
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
 # every consumer builds its own. The legacy-equivalent policy registers exactly the
@@ -280,7 +280,7 @@ def test_closed_vocab_enum_matches_runtime_constant():
         STORAGE_KINDS,
     )
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
-    from hmc_mcp.operations.vios import _VALID_BACKUP_TYPES
+    from hmc_mcp.operations.vios.core import _VALID_BACKUP_TYPES
     from hmc_mcp.ssh.network import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
 
     by_name = _tools_by_name()

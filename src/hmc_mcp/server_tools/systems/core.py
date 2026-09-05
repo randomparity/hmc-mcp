@@ -29,7 +29,7 @@ from ...operations.systems.core import (
     modify_system,
     power_system,
 )
-from ...operations.vios import get_vios_storage_detail, list_vios
+from ...operations.vios.core import get_vios_storage_detail, list_vios
 from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()

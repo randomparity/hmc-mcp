@@ -37,7 +37,7 @@ from hmc_mcp.server_tools.system_resources import (
     hmc_list_memory_pools,
     hmc_remove_memory_pool,
 )
-from hmc_mcp.server_tools.vios import (
+from hmc_mcp.server_tools.vios.core import (
     hmc_backup_vios,
     hmc_restore_vios,
 )

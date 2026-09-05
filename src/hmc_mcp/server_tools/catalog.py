@@ -10,8 +10,6 @@ from hmc_mcp.server_tools import (
     snapshot,
     system_resources,
     updates,
-    vios,
-    vios_labels,
 )
 from hmc_mcp.server_tools.command import HMC_RUN_COMMAND_SECURITY
 from hmc_mcp.server_tools.inventory import capacity, composite
@@ -31,6 +29,8 @@ from hmc_mcp.server_tools.systems import core as systems
 from hmc_mcp.server_tools.systems import health
 from hmc_mcp.server_tools.templates import core as templates
 from hmc_mcp.server_tools.users import core as users
+from hmc_mcp.server_tools.vios import core as vios
+from hmc_mcp.server_tools.vios import labels as vios_labels
 from hmc_mcp.server_tools.virtualization import adapters, network, pcie, vnic
 from hmc_mcp.tool_registry import ToolSecurity, build_tool_security
 

@@ -27,7 +27,7 @@ from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_MODULES, TOOL_SECURITY, create_mcp
 from hmc_mcp.server_tools import command as server_command
 from hmc_mcp.server_tools import permissions as server_permissions
-from hmc_mcp.server_tools import vios as server_vios
+from hmc_mcp.server_tools.vios import core as server_vios
 from hmc_mcp.tool_registry import (
     EFFECTS,
     REQUIRED_TARGET_ARGUMENTS,

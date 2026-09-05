@@ -253,7 +253,7 @@ _INSTALL_KWARGS = {
 
 def test_install_vios_by_lpar_selector_tool_submits_detached_installios(monkeypatch, mock_hmc):
     """The tool resolves the target then runs the composed installios command."""
-    from hmc_mcp.server_tools.vios import hmc_install_vios_by_lpar_selector
+    from hmc_mcp.server_tools.vios.core import hmc_install_vios_by_lpar_selector
 
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
@@ -302,7 +302,7 @@ def test_install_vios_by_lpar_selector_tool_rejects_invalid_arguments_before_ssh
     monkeypatch, mock_hmc
 ):
     """Operations-layer validation rejects input before SSH submission."""
-    from hmc_mcp.server_tools.vios import hmc_install_vios_by_lpar_selector
+    from hmc_mcp.server_tools.vios.core import hmc_install_vios_by_lpar_selector
 
     _hmc_env(monkeypatch)
     with pytest.raises(ValueError, match="IPv4"):
@@ -318,7 +318,7 @@ def test_install_vios_by_lpar_selector_tool_rejects_invalid_arguments_before_ssh
 
 
 def test_install_vios_by_lpar_selector_unknown_name_fails_before_submission(monkeypatch, mock_hmc):
-    from hmc_mcp.server_tools.vios import hmc_install_vios_by_lpar_selector
+    from hmc_mcp.server_tools.vios.core import hmc_install_vios_by_lpar_selector
 
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(

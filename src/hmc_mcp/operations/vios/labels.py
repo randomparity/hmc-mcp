@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ..config import HMCConfig
-from ..ssh import vios_labels as ssh
-from ..ssh.selectors import resolve_system_name
-from ..ssh.transport import HMCCLIError
+from ...config import HMCConfig
+from ...ssh import vios_labels as ssh
+from ...ssh.selectors import resolve_system_name
+from ...ssh.transport import HMCCLIError
 
 
 async def _system_name(config: HMCConfig, system_name_or_uuid: str) -> str:

@@ -277,7 +277,7 @@ def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
 
 def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
     """hmc_restore_vios with profile routes SSH to the profile's HMC host."""
-    from hmc_mcp.server_tools.vios import hmc_restore_vios
+    from hmc_mcp.server_tools.vios.core import hmc_restore_vios
 
     client_factory = MagicMock(side_effect=_vios_client_factory())
     monkeypatch.setattr("hmc_mcp._app.client_from_env", client_factory)
