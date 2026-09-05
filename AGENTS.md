@@ -347,24 +347,9 @@ the recipe its `entry: just <recipe>` names, and each block must carry
 without its hook and a test in a file about CI shape goes red for a reason that
 looks unrelated.
 
-**Adding a name to `hmc_mcp.api.__all__` is a four-part duty**, and none of it is
-automatic:
-
-1. the export itself in `__all__`;
-2. the module inventory in
-   `docs/adr/0029-supported-reusable-python-api-contract.md`, between its
-   `<!-- ADR-0029-INVENTORY:BEGIN -->` and `<!-- ADR-0029-INVENTORY:END -->`
-   markers — `tests/unit/test_public_api.py` parses that block and compares
-   every clause against the facade's own imports;
-3. the contract tests, including the transitive type-export closure — an
-   exported model's fields, a `TypedDict`'s keys, and an exported error's or
-   `HMCClient`'s constructor parameters all pull further package-owned types into
-   the supported surface;
-4. a **coded** bullet under `[Unreleased]`'s `### Facade manifest` section in
-   `CHANGELOG.md`. `tests/unit/test_changelog.py` asserts the manifest against
-   `__all__`; a prose mention does not satisfy it. Per ADR 0029 any addition,
-   removal, or rename there requires a minor release during `0.x`.
-   `CONTRIBUTING.md` carries the full changelog rules.
+**`hmc_mcp.api` is the six-name stable facade in ADR 0118.** Keep its exact
+exports in `tests/unit/test_public_api.py`. Domain operations and models are
+pre-release module APIs, not facade exports; add no compatibility re-exports.
 
 **ADR conventions.** `just adr-numbering` (`scripts/check_adr_numbering.py`)
 enforces that each record's number is unique, that the filename matches

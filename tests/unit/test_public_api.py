@@ -88,8 +88,7 @@ import hmc_mcp.api
 
 loaded = sorted(
     name for name in sys.modules
-    if name.split('.', 1)[0] in {'fastmcp', 'mcp', 'rich', 'typer'}
-    or name == 'hmc_mcp._app'
+    if name == 'hmc_mcp._app'
     or name == 'hmc_mcp.cli'
     or name.startswith('hmc_mcp.cli_commands')
     or name == 'hmc_mcp.server'

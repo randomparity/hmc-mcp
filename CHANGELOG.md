@@ -2,28 +2,9 @@
 
 All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project
-pre-1.0, so versions follow ADR 0029 (`docs/adr/0029-supported-reusable-python-api-contract.md`):
-any change to the facade manifest — adding, removing, or renaming an export of
-`hmc_mcp.api`, or changing an exported enum member or literal alternative — requires a minor
-release during `0.x`.
-
-## Convention: the Facade manifest section is mandatory
-
-Every release entry below **must** contain a `### Facade manifest` section, even when nothing
-moved. An entry whose manifest section says "no change to `hmc_mcp.api.__all__`" converts silence
-into a positive statement for consumers deciding whether an upgrade can break them. Where the
-manifest changed, the section names every added, removed, and renamed export, and every changed
-exported enum member or literal alternative.
-
-A metadata test (`tests/unit/test_changelog.py`) enforces this contract: the version declared in
-`pyproject.toml` must have a matching entry, every release entry must carry a non-empty
-`### Facade manifest` section, and that section's *content* is checked — every export in
-`hmc_mcp.api.__all__` that the oldest entry's enumerated manifest does not already name must be
-named in the `[Unreleased]` manifest. The repository carries no git tags, so that enumeration,
-not a tag, is the boundary the delta is derived against. Removals and renames stay outside the
-mechanism: a removed export is absent from `__all__`, and with no per-release snapshot to diff
-against there is nothing to corroborate a `Removed:` or `Renamed:` line.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The six-name
+`hmc_mcp.api` facade is defined by ADR 0118; record changes to it under ordinary release
+categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ## [Unreleased]
 
