@@ -6,6 +6,7 @@ from typing import Any
 
 from ..._app import run_limited_collection, with_client
 from ...client.client_contracts import AdapterType
+from ...client.core import HMCClient
 from ...operations.virtualization.adapters import (
     add_network_adapter,
     add_vfc_adapter,
@@ -77,7 +78,7 @@ def hmc_add_network_adapter(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def operation(hmc):
+    async def operation(hmc: HMCClient):
         return (
             await add_network_adapter(
                 hmc,
@@ -127,7 +128,7 @@ def hmc_add_vscsi_adapter(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def operation(hmc):
+    async def operation(hmc: HMCClient):
         return (
             await add_vscsi_adapter(
                 hmc,
@@ -175,7 +176,7 @@ def hmc_add_vfc_adapter(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def operation(hmc):
+    async def operation(hmc: HMCClient):
         return (
             await add_vfc_adapter(
                 hmc,
@@ -214,7 +215,7 @@ def hmc_delete_adapter(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    async def operation(hmc):
+    async def operation(hmc: HMCClient):
         await delete_adapter(
             hmc,
             system_name_or_uuid,
