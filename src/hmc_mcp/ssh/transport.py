@@ -23,7 +23,7 @@ def _connect_kwargs(config: HMCConfig) -> dict[str, Any]:
     When authenticating with a password (no ``ssh_key_file`` set) we suppress
     all local key attempts and request password-only auth.  HMC appliances
     enforce a low ``MaxAuthTries`` limit; exhausting it with every agent key
-    before the password attempt triggers a lockout (HMC_ACCESS.md).
+    before the password attempt triggers a lockout (docs/HMC_HINTS.md).
     """
     config.validate_credentials(require_password=not config.ssh_key_file)
     connect_kwargs: dict[str, Any] = {

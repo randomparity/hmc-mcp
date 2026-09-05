@@ -34,8 +34,9 @@ def _no_policy_selected(detail: str) -> str:
         "server exposed, generate one and review it:\n"
         "    hmc-mcp config init-access-policy\n"
         f"then start the server with --access-policy legacy-equivalent{where}.\n"
-        "For a new deployment, prefer one of the narrower examples in the README "
-        "(read-only, or limited mutation) over the generated legacy-equivalent policy."
+        "For a new deployment, prefer the read-only example in the README or the "
+        "limited-mutation example in docs/mcp-server.md over the generated "
+        "legacy-equivalent policy."
     )
 
 

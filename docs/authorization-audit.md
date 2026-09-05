@@ -196,7 +196,7 @@ correlation identifier, so pairing them means matching those three fields inside
 time window — and an override that was never refused (`provision_lpar`'s activation
 leg, or any caller who passes `ownership_override` on the first attempt) will pair
 against an unrelated earlier denial if one is in the window. A refused `--dry-run`
-decommission preflight — the sequence `README.md` prescribes — emits the same record
+decommission preflight — the sequence the [CLI guide](cli.md) prescribes — emits the same record
 as a refused destructive one, because the inventory read authorizes ahead of the
 dry-run return. No field distinguishes either case; this is the same caveat the
 override record above carries for its own two sources.

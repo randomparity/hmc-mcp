@@ -29,6 +29,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Changed
 
+- Streamlined the README around installation, CLI, and MCP quick starts; moved
+  configuration, API contracts, operation details, and development reference into
+  topic guides under `docs/`.
+
 - SSH commands and consoles now verify host keys against the process user's
   `~/.ssh/known_hosts`; provision independently verified keys before upgrading.
   `ssh_verify_host_key=false` (or `HMC_SSH_VERIFY_HOST_KEY=false`) explicitly

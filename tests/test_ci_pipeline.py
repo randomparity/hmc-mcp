@@ -655,8 +655,8 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "pip install -e" not in body
 
 
-def test_readme_reusable_api_example_uses_exported_operation() -> None:
-    readme = (ROOT / "README.md").read_text()
+def test_library_guide_example_uses_exported_operation() -> None:
+    readme = (ROOT / "docs/python-api.md").read_text()
     assert "from hmc_mcp.api import HMCClient, HMCConfig, fetch_capacity_report" in readme
     assert "await fetch_capacity_report(hmc)" in readme
     assert " hmc_capacity_report" not in readme
@@ -838,24 +838,24 @@ def test_scheduled_job_checks_the_same_explicit_versions() -> None:
     assert "just verify" not in body
 
 
-README_STACK_HEADING = "## Stack"
-README_STACK_NEXT = "## Contributing, security, and license"
+DEVELOPMENT_STACK_HEADING = "## Stack"
+DEVELOPMENT_STACK_NEXT = "## Setup"
 PYTHON_FLOOR_CLAIMS = ("Python ≥3.11", "stable, non-EOL CPython release")
 
 
-def _readme_stack(readme: str) -> str:
-    """Return the body of README's '## Stack' section.
+def _development_stack(readme: str) -> str:
+    """Return the body of development guide's '## Stack' section.
 
     Heading *order* is asserted, not mere presence: without it a renamed or reordered
     heading makes the second split return the rest of the file and the slice stops
     being a section.
     """
-    for heading in (README_STACK_HEADING, README_STACK_NEXT):
-        assert heading in readme, f"README has no '{heading}' heading"
-    assert readme.index(README_STACK_HEADING) < readme.index(README_STACK_NEXT), (
-        f"README must keep '{README_STACK_HEADING}' before '{README_STACK_NEXT}'"
+    for heading in (DEVELOPMENT_STACK_HEADING, DEVELOPMENT_STACK_NEXT):
+        assert heading in readme, f"development guide has no '{heading}' heading"
+    assert readme.index(DEVELOPMENT_STACK_HEADING) < readme.index(DEVELOPMENT_STACK_NEXT), (
+        f"development guide must keep '{DEVELOPMENT_STACK_HEADING}' before '{DEVELOPMENT_STACK_NEXT}'"
     )
-    return readme.split(README_STACK_HEADING, 1)[1].split(README_STACK_NEXT, 1)[0]
+    return readme.split(DEVELOPMENT_STACK_HEADING, 1)[1].split(DEVELOPMENT_STACK_NEXT, 1)[0]
 
 
 def test_python_policy_metadata_is_aligned() -> None:
@@ -867,21 +867,21 @@ def test_python_policy_metadata_is_aligned() -> None:
     assert project["project"]["requires-python"] == ">=3.11"
     assert (ROOT / ".python-version").read_text().strip() == "3.11"
     assert lockfile["requires-python"] == ">=3.11"
-    stack = _readme_stack((ROOT / "README.md").read_text())
+    stack = _development_stack((ROOT / "docs/development.md").read_text())
     for claim in PYTHON_FLOOR_CLAIMS:
-        assert claim in stack, f"'{README_STACK_HEADING}' must state {claim!r}"
+        assert claim in stack, f"'{DEVELOPMENT_STACK_HEADING}' must state {claim!r}"
 
 
 def test_python_floor_relocated_out_of_the_stack_section_is_caught() -> None:
-    """The negative variant: the floor stays in the README but leaves '## Stack'."""
-    readme = (ROOT / "README.md").read_text()
-    stack = _readme_stack(readme)
+    """The negative variant: the floor stays in the development guide but leaves '## Stack'."""
+    readme = (ROOT / "docs/development.md").read_text()
+    stack = _development_stack(readme)
     relocated = readme.replace(stack, "\n\n", 1).replace(
-        "## Install\n", f"## Install\n{stack}", 1
+        "## Testing\n", f"## Testing\n{stack}", 1
     )
 
     assert all(claim in relocated for claim in PYTHON_FLOOR_CLAIMS)
-    moved = _readme_stack(relocated)
+    moved = _development_stack(relocated)
     assert [claim for claim in PYTHON_FLOOR_CLAIMS if claim in moved] == []
 
 
