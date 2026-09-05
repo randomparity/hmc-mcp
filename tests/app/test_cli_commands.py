@@ -3879,6 +3879,82 @@ def test_jobs_wait_not_found_exits_1_after_one_poll(fake_hmc):
     assert fake_hmc.calls == [("get_job_entry", ("ghost",), {"job_href": None})]
 
 
+@pytest.mark.parametrize(
+    ("command", "operation", "expected"),
+    [
+        (
+            ["lpars", "read-boot-order", "sys1", LPAR_UUID],
+            "read_lpar_boot_order",
+            {"system_name_or_uuid": "sys1", "lpar_name_or_uuid": LPAR_UUID},
+        ),
+        (
+            [
+                "lpars",
+                "set-boot-order",
+                "sys1",
+                LPAR_UUID,
+                "network, cd",
+                "--ownership-override",
+            ],
+            "set_lpar_boot_order",
+            {
+                "system_name_or_uuid": "sys1",
+                "lpar_name_or_uuid": LPAR_UUID,
+                "devices": ["network", "cd"],
+                "ownership_override": True,
+            },
+        ),
+        (
+            ["lpars", "clear-boot-order", "sys1", LPAR_UUID],
+            "clear_lpar_boot_order",
+            {
+                "system_name_or_uuid": "sys1",
+                "lpar_name_or_uuid": LPAR_UUID,
+                "ownership_override": False,
+            },
+        ),
+    ],
+)
+def test_boot_order_commands_delegate_to_operations(
+    fake_hmc, monkeypatch, command, operation, expected
+):
+    seen = {}
+
+    async def fake_operation(hmc, **kwargs):
+        assert hmc is fake_hmc
+        seen.update(kwargs)
+        return {"devices": ["network", "cd"]}
+
+    monkeypatch.setattr(
+        f"hmc_mcp.cli_commands.lpar.profiles.{operation}", fake_operation
+    )
+
+    result = RUNNER.invoke(cli.app, command)
+
+    assert result.exit_code == 0
+    assert seen == expected
+
+
+def test_set_boot_order_rejects_invalid_device_before_operation(monkeypatch):
+    called = False
+
+    async def fake_operation(*_args, **_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.lpar.profiles.set_lpar_boot_order", fake_operation
+    )
+
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "set-boot-order", "sys1", LPAR_UUID, "tape"]
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid boot device selector" in result.output
+    assert called is False
+
+
 # --------------------------------------------------------------------------- #
 # pcm metrics
 # --------------------------------------------------------------------------- #
