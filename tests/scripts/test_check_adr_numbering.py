@@ -103,6 +103,15 @@ def test_missing_slug_is_malformed(tmp_path, capsys) -> None:
     assert "0001.md" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("name", ["0001-double--hyphen.md", "0001-trailing-.md"])
+def test_empty_kebab_slug_segment_is_malformed(tmp_path, capsys, name) -> None:
+    """A kebab slug has a word on both sides of each hyphen."""
+    adr_dir = _records(tmp_path, name)
+
+    assert check_adr_numbering.main(["--adr-dir", str(adr_dir)]) == 1
+    assert name in capsys.readouterr().err
+
+
 def test_missing_directory_fails(tmp_path, capsys) -> None:
     """A moved or renamed record directory fails rather than passing vacuously."""
     assert check_adr_numbering.main(["--adr-dir", str(tmp_path / "nope")]) == 1
