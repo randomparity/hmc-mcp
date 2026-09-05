@@ -446,6 +446,97 @@ async def test_escape_hatch_uses_only_bounded_commands() -> None:
 
 
 @pytest.mark.asyncio
+async def test_provision_dry_run_requires_vios_and_uses_baseline_vlan() -> None:
+    missing = _ScriptedSriovState([])
+    await provisioning.validate_provisioning_dry_run(object(), missing)
+    assert missing.calls == []
+    assert missing.results[0]["status"] == "SKIP"
+
+    state = _ScriptedSriovState(
+        [("hmc_provision_lpar", "PASS", {"steps": [{"status": "dry_run"}]})]
+    )
+    state.context.vios_uuid = "vios-uuid"
+    state.context.lp3_baseline["pvid"] = 99
+    state.context.vios_partition_id = 4
+    state.context.lp3_baseline["vios_slot"] = 6
+    await provisioning.validate_provisioning_dry_run(object(), state)
+    assert state.calls == [
+        (
+            "hmc_provision_lpar",
+            {
+                "dry_run": True,
+                "system_name_or_uuid": state.context.system_name,
+                "name": state.context.dry_run_lpar_name,
+                "port_vlan_id": 99,
+                "vios_uuid": "vios-uuid",
+                "vios_partition_id": 4,
+                "vios_slot": 6,
+                "storage_name": state.context.dry_run_storage_name,
+                "desired_memory": state.context.dry_run_memory_mib,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_lpar_lifecycle_captures_jobs_and_clears_scratch_identity() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_system", "PASS", {"UUID": "system-uuid"}),
+            ("hmc_create_lpar", "PASS", {"lpar": {"UUID": "scratch-uuid"}}),
+            ("hmc_get_lpar", "PASS", {"UUID": "scratch-uuid"}),
+            ("hmc_modify_lpar", "PASS", {}),
+            ("hmc_lpar_summary", "PASS", {}),
+            ("hmc_power_on_lpar", "PASS", {"job_uuid": "boot-job"}),
+            ("hmc_power_off_lpar", "PASS", {}),
+            ("hmc_delete_lpar", "PASS", {}),
+            ("hmc_list_lpars", "PASS", {"entries": []}),
+        ]
+    )
+
+    await lpar.exercise_lpar_lifecycle(object(), state)
+
+    assert state.context.system_uuid == "system-uuid"
+    assert state.context.scratch_uuid is None
+    assert state.context.job_uuid_sample == "boot-job"
+    assert state.calls[1][1]["resources"] == {
+        "desired_memory": state.context.scratch_create_desired_memory_mib,
+        "max_memory": state.context.scratch_create_max_memory_mib,
+        "desired_vcpus": state.context.scratch_create_desired_vcpus,
+        "max_vcpus": state.context.scratch_create_max_vcpus,
+    }
+    assert [entry["subtask"] for entry in state.results] == [8] * 8
+
+
+@pytest.mark.asyncio
+async def test_lpar_property_mutation_refuses_non_vios_and_restores_baseline() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_set_lpar_description", "PASS", {}),
+            ("hmc_get_lpar_description", "PASS", {}),
+            ("hmc_set_lpar_description", "PASS", {}),
+            ("hmc_run_command", "PASS", "aixlinux\n"),
+            ("hmc_set_lpar_msp", "FAIL", "only valid for a VIOS"),
+            ("hmc_get_lpar_proc_compat", "PASS", {"desired": "default"}),
+            ("hmc_get_lpar_proc_compat", "PASS", {"desired": "default"}),
+            ("hmc_sync_lpar_profile", "PASS", {}),
+            ("hmc_backup_lpar_profiles", "PASS", {}),
+        ]
+    )
+    state.context.lp3_baseline["description"] = "original description"
+
+    await lpar.mutate_lpar_properties(object(), state)
+
+    assert "hmc_set_lpar_msp (toggle/verify/restore)" in [
+        entry["tool"] for entry in state.results if entry["status"] == "SKIP"
+    ]
+    assert "hmc_set_lpar_proc_compat" in [
+        entry["tool"] for entry in state.results if entry["status"] == "SKIP"
+    ]
+    assert state.calls[-1][1]["force"] is True
+
+
+@pytest.mark.asyncio
 async def test_sriov_orchestrator_runs_phases_in_order_and_cleans_up() -> None:
     """A successful round trip invokes every phase and always reaches cleanup."""
     calls: list[str] = []
