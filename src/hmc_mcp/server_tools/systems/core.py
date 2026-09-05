@@ -4,33 +4,33 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import (
+from ..._app import (
     run_limited_collection,
     with_client,
 )
-from ..config import (
+from ...config import (
     config_inventory,
 )
-from ..documents import (
+from ...documents import (
     MemoryMirroringMode,
     PowerOffPolicy,
     PowerOnLparStartPolicy,
 )
-from ..operations.lpar.core import (
+from ...operations.lpar.core import (
     get_lpar,
     get_lpar_state,
     list_lpars,
 )
-from ..operations.partition_state import PartitionState
-from ..operations.systems import (
+from ...operations.partition_state import PartitionState
+from ...operations.systems.core import (
     ManagedSystemPatch,
     get_system,
     list_systems,
     modify_system,
     power_system,
 )
-from ..operations.vios import get_vios_storage_detail, list_vios
-from ..tool_registry import tool_module
+from ...operations.vios import get_vios_storage_detail, list_vios
+from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

@@ -15,7 +15,7 @@ from hmc_mcp.server_tools.capacity import (
     hmc_capacity_report,
     hmc_find_placement,
 )
-from hmc_mcp.server_tools.systems import (
+from hmc_mcp.server_tools.systems.core import (
     hmc_get_console_info,
     hmc_get_lpar,
     hmc_get_lpar_state,

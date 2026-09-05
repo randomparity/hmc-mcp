@@ -39,7 +39,7 @@ from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_power_on_lpar,
     hmc_rename_lpar,
 )
-from hmc_mcp.server_tools.systems import hmc_get_lpar
+from hmc_mcp.server_tools.systems.core import hmc_get_lpar
 from hmc_mcp.server_tools.updates import (
     hmc_submit_available_hmc_ptfs_query,
     hmc_update_console_software,

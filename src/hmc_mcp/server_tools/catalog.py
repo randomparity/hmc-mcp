@@ -8,13 +8,11 @@ from hmc_mcp.server_tools import (
     capacity,
     composite,
     console,
-    health,
     jobs,
     lpm,
     metrics,
     snapshot,
     system_resources,
-    systems,
     templates,
     updates,
     users,
@@ -32,6 +30,8 @@ from hmc_mcp.server_tools.lpar import (
 )
 from hmc_mcp.server_tools.permissions import EFFECTIVE_PERMISSIONS_SECURITY
 from hmc_mcp.server_tools.storage import resources as storage
+from hmc_mcp.server_tools.systems import core as systems
+from hmc_mcp.server_tools.systems import health
 from hmc_mcp.server_tools.virtualization import adapters, network, pcie, vnic
 from hmc_mcp.tool_registry import ToolSecurity, build_tool_security
 

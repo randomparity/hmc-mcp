@@ -17,12 +17,12 @@ from conftest import JOB_ENTRY, SYSTEM_ENTRY
 
 from hmc_mcp.documents import LparResources
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.systems import power_system
+from hmc_mcp.operations.systems.core import power_system
 from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_dlpar_mem,
     hmc_dlpar_proc,
 )
-from hmc_mcp.server_tools.systems import (
+from hmc_mcp.server_tools.systems.core import (
     hmc_modify_system,
     hmc_power_off_system,
     hmc_power_on_system,

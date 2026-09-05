@@ -7,17 +7,17 @@ from dataclasses import asdict
 import typer
 from rich.table import Table
 
-from ..jobs import validate_wait_timing
-from ..operations.capacity import fetch_capacity_report, find_placement
-from ..operations.composite import fetch_system_summary
-from ..operations.health import fetch_fleet_health
-from ..operations.systems import (
+from ...jobs import validate_wait_timing
+from ...operations.capacity import fetch_capacity_report, find_placement
+from ...operations.composite import fetch_system_summary
+from ...operations.systems.core import (
     get_system,
     list_systems,
     power_system,
 )
-from .output import console, err_console, first_field, output, print_json
-from .runtime import with_client
+from ...operations.systems.health import fetch_fleet_health
+from ..output import console, err_console, first_field, output, print_json
+from ..runtime import with_client
 
 
 def systems_health(

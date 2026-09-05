@@ -21,7 +21,6 @@ from .cli_commands import (
     metrics,
     raw,
     snapshot,
-    systems,
     templates,
     vios,
     vios_labels,
@@ -87,6 +86,7 @@ from .cli_commands.runtime import (
 )
 from .cli_commands.storage import cluster
 from .cli_commands.storage import resources as storage
+from .cli_commands.systems import core as systems
 from .cli_commands.virtualization import adapters, network, pcie, vnic
 
 

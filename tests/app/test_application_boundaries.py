@@ -31,7 +31,7 @@ import asyncio
 from hmc_mcp._app import create_mcp
 before = create_mcp()
 import hmc_mcp.cli_commands.lpar.lifecycle
-import hmc_mcp.cli_commands.systems
+import hmc_mcp.cli_commands.systems.core
 after = create_mcp()
 counts = (len(asyncio.run(before.list_tools())), len(asyncio.run(after.list_tools())))
 raise SystemExit(0 if before is not after and counts == (0, 0) else 1)
@@ -69,10 +69,10 @@ def test_operation_modules_import_before_their_server_tool_consumers():
     """Keep operation modules independent of the application-facing tool layer."""
     script = """
 import hmc_mcp.operations.lpar
-import hmc_mcp.operations.systems
+import hmc_mcp.operations.systems.core
 import hmc_mcp.operations.vios
 import hmc_mcp.server_tools.lpar.lifecycle
-import hmc_mcp.server_tools.systems
+import hmc_mcp.server_tools.systems.core
 import hmc_mcp.server_tools.vios
 """
     subprocess.run([sys.executable, "-c", script], check=True)
@@ -193,7 +193,7 @@ def test_system_summary_cli_delegates_to_neutral_operation():
         return_value=_system_summary({"Resource": {"SystemName": "system1"}}, [], [])
     )
     with (
-        patch("hmc_mcp.cli_commands.systems.fetch_system_summary", summary),
+        patch("hmc_mcp.cli_commands.systems.core.fetch_system_summary", summary),
         patch(
                 "hmc_mcp.cli_commands.runtime.client", return_value=_ClientContext(client)
         ),
@@ -204,12 +204,12 @@ def test_system_summary_cli_delegates_to_neutral_operation():
 
 
 def test_fleet_health_cli_delegates_to_neutral_operation():
-    from hmc_mcp.operations.health import FleetHealthResult
+    from hmc_mcp.operations.systems.health import FleetHealthResult
 
     client = object()
     health = AsyncMock(return_value=FleetHealthResult((), (), (), (), ()))
     with (
-        patch("hmc_mcp.cli_commands.systems.fetch_fleet_health", health),
+        patch("hmc_mcp.cli_commands.systems.core.fetch_fleet_health", health),
         patch(
                 "hmc_mcp.cli_commands.runtime.client", return_value=_ClientContext(client)
         ),
@@ -221,13 +221,13 @@ def test_fleet_health_cli_delegates_to_neutral_operation():
 
 
 def test_fleet_health_cli_does_not_claim_healthy_when_telemetry_is_unavailable():
-    from hmc_mcp.operations.health import FleetHealthResult
+    from hmc_mcp.operations.systems.health import FleetHealthResult
 
     client = object()
     warning = "Recent job health is unavailable"
     health = AsyncMock(return_value=FleetHealthResult((), (), (), (), (warning,)))
     with (
-        patch("hmc_mcp.cli_commands.systems.fetch_fleet_health", health),
+        patch("hmc_mcp.cli_commands.systems.core.fetch_fleet_health", health),
         patch(
                 "hmc_mcp.cli_commands.runtime.client", return_value=_ClientContext(client)
         ),
@@ -243,8 +243,8 @@ def test_capacity_clis_delegate_to_neutral_operations():
     report = AsyncMock(return_value=[])
     placement = AsyncMock(return_value=[])
     with (
-        patch("hmc_mcp.cli_commands.systems.fetch_capacity_report", report),
-        patch("hmc_mcp.cli_commands.systems.find_placement", placement),
+        patch("hmc_mcp.cli_commands.systems.core.fetch_capacity_report", report),
+        patch("hmc_mcp.cli_commands.systems.core.find_placement", placement),
         patch(
                 "hmc_mcp.cli_commands.runtime.client", return_value=_ClientContext(client)
         ),
@@ -263,7 +263,7 @@ def test_capacity_cli_preserves_connection_overrides():
     client = object()
     report = AsyncMock(return_value=[])
     with (
-        patch("hmc_mcp.cli_commands.systems.fetch_capacity_report", report),
+        patch("hmc_mcp.cli_commands.systems.core.fetch_capacity_report", report),
         patch(
             "hmc_mcp.cli_commands.runtime.HMCClient",
             return_value=_ClientContext(client),

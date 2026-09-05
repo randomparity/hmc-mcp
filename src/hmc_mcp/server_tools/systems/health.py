@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import serialize_tool_result, with_client
-from ..operations.health import fetch_fleet_health
-from ..tool_registry import tool_module
+from ..._app import serialize_tool_result, with_client
+from ...operations.systems.health import fetch_fleet_health
+from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 
