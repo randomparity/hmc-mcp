@@ -1,4 +1,4 @@
-"""Presentation-neutral fleet health exception reporting."""
+"""Presentation-neutral fleet health issue reporting."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from .. import jobs as operations_jobs
 _SYSTEM_WORKERS = 8
 _MAX_SYSTEMS = 256
 _MAX_RESOURCES_PER_SYSTEM = 10_000
-_MAX_EXCEPTIONS = 10_000
+_MAX_ISSUES = 10_000
 _MAX_SCALAR_LENGTH = 500
 _MAX_JOB_PARAMETERS = 10_000
 _RECENT_JOB_LIMIT = 20
@@ -55,10 +55,10 @@ def _sorted_records(records: list[dict[str, Any]]) -> tuple[dict[str, Any], ...]
     return tuple(sorted(records, key=lambda record: (record["name"], record["uuid"])))
 
 
-def _check_exception_budget(*categories: Collection[object]) -> None:
-    if sum(map(len, categories)) > _MAX_EXCEPTIONS:
+def _check_issue_budget(*categories: Collection[object]) -> None:
+    if sum(map(len, categories)) > _MAX_ISSUES:
         raise ValueError(
-            f"Fleet health result exceeds the safe limit of {_MAX_EXCEPTIONS} exceptions"
+            f"Fleet health result exceeds the safe limit of {_MAX_ISSUES} issues"
         )
 
 
@@ -74,7 +74,7 @@ def _check_job_parameter_budget(resource: dict[str, Any]) -> None:
         )
 
 
-def _system_exception(system: dict[str, Any]) -> dict[str, Any] | None:
+def _system_issue(system: dict[str, Any]) -> dict[str, Any] | None:
     resource = _resource(system)
     state = _text(resource.get("State")).lower()
     if state == "operating":
@@ -86,7 +86,7 @@ def _system_exception(system: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _vios_exception(
+def _vios_issue(
     vios: dict[str, Any], system_uuid: str, system_name: str
 ) -> dict[str, Any] | None:
     resource = _resource(vios)
@@ -102,7 +102,7 @@ def _vios_exception(
     }
 
 
-def _lpar_exception(
+def _lpar_issue(
     lpar: dict[str, Any], system_uuid: str, system_name: str
 ) -> dict[str, Any] | None:
     resource = _resource(lpar)
@@ -195,7 +195,7 @@ async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
             "managed systems"
         )
     queue: asyncio.Queue[tuple[dict[str, Any], str, str]] = asyncio.Queue()
-    system_exceptions: list[dict[str, Any]] = []
+    system_issues: list[dict[str, Any]] = []
     for system in systems:
         uuid_value = system.get("UUID")
         if not isinstance(uuid_value, str) or not uuid_value.strip():
@@ -203,13 +203,13 @@ async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
         system_uuid = _text(uuid_value)
         system_name = _text(_resource(system).get("SystemName"))
         queue.put_nowait((system, system_uuid, system_name))
-        exception = _system_exception(system)
-        if exception is not None:
-            system_exceptions.append(exception)
-            _check_exception_budget(system_exceptions)
+        issue = _system_issue(system)
+        if issue is not None:
+            system_issues.append(issue)
+            _check_issue_budget(system_issues)
 
-    vios_exceptions: list[dict[str, Any]] = []
-    lpar_exceptions: list[dict[str, Any]] = []
+    vios_issues: list[dict[str, Any]] = []
+    lpar_issues: list[dict[str, Any]] = []
 
     async def inspect_systems() -> None:
         while not queue.empty():
@@ -219,20 +219,20 @@ async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
                 return
             try:
                 lpars, vioses = await _system_inventory(hmc, system_uuid)
-                lpar_exceptions.extend(
-                    exception
+                lpar_issues.extend(
+                    issue
                     for lpar in lpars
-                    if (exception := _lpar_exception(lpar, system_uuid, system_name))
+                    if (issue := _lpar_issue(lpar, system_uuid, system_name))
                     is not None
                 )
-                vios_exceptions.extend(
-                    exception
+                vios_issues.extend(
+                    issue
                     for vios in vioses
-                    if (exception := _vios_exception(vios, system_uuid, system_name))
+                    if (issue := _vios_issue(vios, system_uuid, system_name))
                     is not None
                 )
-                _check_exception_budget(
-                    system_exceptions, vios_exceptions, lpar_exceptions
+                _check_issue_budget(
+                    system_issues, vios_issues, lpar_issues
                 )
             finally:
                 queue.task_done()
@@ -249,13 +249,13 @@ async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
     failed_jobs, warnings = job_task.result()
-    _check_exception_budget(
-        system_exceptions, vios_exceptions, lpar_exceptions, failed_jobs
+    _check_issue_budget(
+        system_issues, vios_issues, lpar_issues, failed_jobs
     )
     return FleetHealthResult(
-        _sorted_records(system_exceptions),
-        _sorted_records(vios_exceptions),
-        _sorted_records(lpar_exceptions),
+        _sorted_records(system_issues),
+        _sorted_records(vios_issues),
+        _sorted_records(lpar_issues),
         failed_jobs,
         warnings,
     )

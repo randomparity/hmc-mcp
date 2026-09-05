@@ -58,7 +58,7 @@ async def test_healthy_estate_returns_empty_collections() -> None:
 
 
 @pytest.mark.asyncio
-async def test_degraded_estate_returns_curated_sorted_exceptions() -> None:
+async def test_degraded_estate_returns_curated_sorted_issues() -> None:
     client = _healthy_client()
     client.list_managed_systems.return_value = [
         _entry("sys-b", SystemName="system-b", State="standby"),
@@ -343,15 +343,15 @@ async def test_oversized_system_inventory_fails_closed(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_aggregate_exception_budget_fails_closed(monkeypatch) -> None:
-    monkeypatch.setattr(operations_health, "_MAX_EXCEPTIONS", 1)
+async def test_aggregate_issue_budget_fails_closed(monkeypatch) -> None:
+    monkeypatch.setattr(operations_health, "_MAX_ISSUES", 1)
     client = _healthy_client()
     client.list_managed_systems.return_value = [
         _entry("sys-1", SystemName="one", State="error"),
         _entry("sys-2", SystemName="two", State="standby"),
     ]
 
-    with pytest.raises(ValueError, match="safe limit of 1 exceptions"):
+    with pytest.raises(ValueError, match="safe limit of 1 issues"):
         await fleet_health(client)
 
     client.list_logical_partitions.assert_not_awaited()
@@ -359,8 +359,8 @@ async def test_aggregate_exception_budget_fails_closed(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_aggregate_exception_budget_includes_failed_jobs(monkeypatch) -> None:
-    monkeypatch.setattr(operations_health, "_MAX_EXCEPTIONS", 1)
+async def test_aggregate_issue_budget_includes_failed_jobs(monkeypatch) -> None:
+    monkeypatch.setattr(operations_health, "_MAX_ISSUES", 1)
     client = _healthy_client()
     client.list_logical_partitions.return_value = [
         _entry(
@@ -374,7 +374,7 @@ async def test_aggregate_exception_budget_includes_failed_jobs(monkeypatch) -> N
         _entry("job-1", JobName="failed", Status="FAILED")
     ]
 
-    with pytest.raises(ValueError, match="safe limit of 1 exceptions"):
+    with pytest.raises(ValueError, match="safe limit of 1 issues"):
         await fleet_health(client)
 
 
