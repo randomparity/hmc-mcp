@@ -224,6 +224,25 @@ def is_authorized_wrapper(handler: object) -> bool:
     return getattr(handler, _AUTHORIZED_MARKER, False) is True
 
 
+def _authorize_call(
+    signature: inspect.Signature,
+    name: str,
+    security: ToolSecurity,
+    authorize: Authorize,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> None:
+    bound = signature.bind(*args, **kwargs)
+    bound.apply_defaults()
+    authorize(name, security, bound.arguments)
+
+
+def _mark_authorized(wrapper: Callable[..., Any]) -> Callable[..., Any]:
+    """Mark a wrapper after ``functools.wraps`` copies handler attributes."""
+    setattr(wrapper, _AUTHORIZED_MARKER, True)
+    return wrapper
+
+
 def authorized(
     name: str,
     security: ToolSecurity,
@@ -251,32 +270,21 @@ def authorized(
     """
     signature = inspect.signature(handler)
 
-    def check(args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
-        bound = signature.bind(*args, **kwargs)
-        bound.apply_defaults()
-        authorize(name, security, bound.arguments)
-
-    def mark(wrapper: Callable[..., Any]) -> Callable[..., Any]:
-        # After `functools.wraps`, which updates the wrapper's `__dict__` from
-        # the handler's and would otherwise overwrite this.
-        setattr(wrapper, _AUTHORIZED_MARKER, True)
-        return wrapper
-
     if inspect.iscoroutinefunction(handler):
 
         @functools.wraps(handler)
         async def guarded(*args: Any, **kwargs: Any) -> Any:
-            check(args, kwargs)
+            _authorize_call(signature, name, security, authorize, args, kwargs)
             return await handler(*args, **kwargs)
 
-        return mark(guarded)
+        return _mark_authorized(guarded)
 
     @functools.wraps(handler)
     def guarded(*args: Any, **kwargs: Any) -> Any:
-        check(args, kwargs)
+        _authorize_call(signature, name, security, authorize, args, kwargs)
         return handler(*args, **kwargs)
 
-    return mark(guarded)
+    return _mark_authorized(guarded)
 
 
 def annotations_for(effect: Effect) -> ToolAnnotations:
@@ -470,11 +478,58 @@ def build_tool_security(
     return MappingProxyType(index)
 
 
-def tool_module() -> ToolModule:
-    """Return a module-local decorator, registration function, and classifications."""
-    definitions: list[ToolDefinition] = []
+class _ToolCollector:
+    """Collect one handler with its immutable security declaration."""
+
+    def __init__(
+        self,
+        definitions: list[ToolDefinition],
+        *,
+        effect: Effect,
+        operation: str,
+        target_kind: TargetKind,
+        extra_targets: Iterable[tuple[TargetKind, str]],
+        connection_argument: str | None,
+        exhaustive_targets: bool,
+    ) -> None:
+        self._definitions = definitions
+        self._effect = effect
+        self._operation = operation
+        self._target_kind = target_kind
+        self._extra_targets = extra_targets
+        self._connection_argument = connection_argument
+        self._exhaustive_targets = exhaustive_targets
+
+    def __call__(self, fn: ToolHandlerT) -> ToolHandlerT:
+        name = getattr(fn, "__name__", "<handler>")
+        security = ToolSecurity(
+            effect=self._effect,
+            operation=self._operation,
+            target_kind=self._target_kind,
+            connection_argument=self._connection_argument,
+        )
+        try:
+            targets = build_targets(fn, self._extra_targets)
+        except Exception as error:
+            raise ValueError(f"{name}: cannot inspect signature: {error!r}") from error
+        security = replace(
+            security,
+            targets=targets,
+            exhaustive_targets=self._exhaustive_targets and bool(targets),
+        )
+        validate_security(security, fn)
+        self._definitions.append(ToolDefinition(name, fn, security))
+        return fn
+
+
+class _ToolModuleBuilder:
+    """Own the definitions collected by one module-local registration tuple."""
+
+    def __init__(self) -> None:
+        self.definitions: list[ToolDefinition] = []
 
     def tool(
+        self,
         *,
         effect: Effect,
         operation: str,
@@ -483,35 +538,18 @@ def tool_module() -> ToolModule:
         connection_argument: str | None = "profile",
         exhaustive_targets: bool = True,
     ) -> HandlerDecorator:
-        def collect(fn: ToolHandlerT) -> ToolHandlerT:
-            name = getattr(fn, "__name__", "<handler>")
-            security = ToolSecurity(
-                effect=effect,
-                operation=operation,
-                target_kind=target_kind,
-                connection_argument=connection_argument,
-            )
-            try:
-                targets = build_targets(fn, extra_targets)
-            except Exception as error:
-                raise ValueError(
-                    f"{name}: cannot inspect signature: {error!r}"
-                ) from error
-            # A tool that declares no selector can never be exhaustive, whatever
-            # it claims: the conjunction is what makes the selector-less case a
-            # degenerate instance of the composite rule rather than a second one.
-            security = replace(
-                security,
-                targets=targets,
-                exhaustive_targets=exhaustive_targets and bool(targets),
-            )
-            validate_security(security, fn)
-            definitions.append(ToolDefinition(name, fn, security))
-            return fn
-
-        return collect
+        return _ToolCollector(
+            self.definitions,
+            effect=effect,
+            operation=operation,
+            target_kind=target_kind,
+            extra_targets=extra_targets,
+            connection_argument=connection_argument,
+            exhaustive_targets=exhaustive_targets,
+        )
 
     def register_tools(
+        self,
         mcp: FastMCP,
         *,
         permits: Callable[[str], bool],
@@ -527,7 +565,7 @@ def tool_module() -> ToolModule:
         callables rather than the policy object because ``access_policy``
         imports this module; see ADR 0037 and ADR 0038.
         """
-        for definition in definitions:
+        for definition in self.definitions:
             if not permits(definition.name):
                 continue
             mcp.tool(
@@ -540,9 +578,13 @@ def tool_module() -> ToolModule:
                 annotations=annotations_for(definition.security.effect),
             )
 
-    def tool_security() -> Mapping[str, ToolSecurity]:
+    def tool_security(self) -> Mapping[str, ToolSecurity]:
         return MappingProxyType(
-            {definition.name: definition.security for definition in definitions}
+            {definition.name: definition.security for definition in self.definitions}
         )
 
-    return tool, register_tools, tool_security
+
+def tool_module() -> ToolModule:
+    """Return a module-local decorator, registration function, and classifications."""
+    module = _ToolModuleBuilder()
+    return module.tool, module.register_tools, module.tool_security
