@@ -8,7 +8,7 @@ Accepted (2026-08-25)
 
 ADR 0011 established the advisory ownership protocol: a token
 (`[hmc-mcp owner:<agent_id> created:<date>]`) stamped into the partition
-description, and `authorize_lpar_mutation` (`src/hmc_mcp/operations/ownership.py:152`)
+description, and `authorize_lpar_mutation` (`src/hmc_mcp/operations/lpar/ownership.py:152`)
 to reject a mutation of a partition another agent owns. ADR 0011 named the tools
 that *stamp* and *read* the token. It never said which mutations must *check* it.
 
@@ -122,9 +122,9 @@ against that commit rather than maintained forward.
 | `delete_lpar` | `operations/lpar/core.py:396` | guarded (`:398`) | — |
 | `decommission_lpar` | `operations/lpar/decommission.py:629` | guarded (`:283`, `:654`, `:673`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
 | `rename_lpar` | `operations/lpar/core.py:501` | guarded (`:504`) | — |
-| `set_lpar_ownership_description` | `operations/ownership.py:663` | guarded (`:673`) | — |
+| `set_lpar_ownership_description` | `operations/lpar/ownership.py:663` | guarded (`:673`) | — |
 | `synchronize_lpar_profile` | `operations/lpar/configuration.py:36` | guarded (`:44`) | — |
-| `restore_system_lpar_profiles` | `operations/lpar/configuration.py:20` | guarded before SSH by `_authorize_system_lpar_profile_restore` (`operations/ownership.py:461`) | #449 |
+| `restore_system_lpar_profiles` | `operations/lpar/configuration.py:20` | guarded before SSH by `_authorize_system_lpar_profile_restore` (`operations/lpar/ownership.py:461`) | #449 |
 
 `rename_lpar` is Destructive rather than Reconfiguring because the partition name
 is the identity every consumer addresses, and the ownership token itself is keyed
@@ -177,11 +177,11 @@ wildcard records the operation's actual scope.
 | `attach_disk_to_lpar` | `operations/lpar/provision.py:332` | guarded before the storage workflow (`:351`) | #372 |
 | `mount_optical_media` | `operations/storage/resources.py:882` | guarded (`:903`) | — |
 | `unmount_optical_media` | `operations/storage/resources.py:919` | guarded (`:958`) | — |
-| `migrate_lpar` | `operations/lpm.py:357` | guarded after optional validation and before migration submission (`:386`) | #373 |
-| `migrate_lpar_with_affinity_preflight` | `operations/lpm.py:254` | guarded by delegation to `migrate_lpar` | #373 |
-| `abort_lpar_migration` | `operations/lpm.py:422` | guarded (`:422`) | #373 |
-| `recover_lpar_migration` | `operations/lpm.py:451` | guarded (`:451`) | #373 |
-| `remote_restart_lpar` | `operations/lpm.py:480` | guarded (`:484`) | #373 |
+| `migrate_lpar` | `operations/lpar/migration.py:357` | guarded after optional validation and before migration submission (`:386`) | #373 |
+| `migrate_lpar_with_affinity_preflight` | `operations/lpar/migration.py:254` | guarded by delegation to `migrate_lpar` | #373 |
+| `abort_lpar_migration` | `operations/lpar/migration.py:422` | guarded (`:422`) | #373 |
+| `recover_lpar_migration` | `operations/lpar/migration.py:451` | guarded (`:451`) | #373 |
+| `remote_restart_lpar` | `operations/lpar/migration.py:480` | guarded (`:484`) | #373 |
 
 `mount_optical_media` and `unmount_optical_media` became facade exports in #363,
 so they are Domain A callables (§5) as well as MCP tools — the guard is the only
@@ -251,7 +251,7 @@ LPAR-mutating exemption.
 | `deploy_partition_template` (`operations/templates.py:92`) | Creates the partition and stamps it per ADR 0014. |
 | `hmc_capture_lpar_console` (`server_tools/console.py:23`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_backup_lpar_profiles` (`server_tools/lpar/profiles.py:34`) | Reads every profile and writes an HMC-side backup file; it does not mutate a partition or profile. |
-| `hmc_migrate_validate_lpar` (`server_tools/lpm.py:147`) | Calls `validate_lpar_migration`, which submits an LPM validation job and changes nothing. The mutating migration operation has its own guard. |
+| `hmc_migrate_validate_lpar` (`server_tools/lpar/migration.py:147`) | Calls `validate_lpar_migration`, which submits an LPM validation job and changes nothing. The mutating migration operation has its own guard. |
 | `install_vios_by_lpar_selector` (`operations/install.py:228`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_vios_by_lpar_selector` tool body this operation was extracted from. The operation now reads the resolved `LogicalPartition` resource and rejects a non-VIOS type or any state other than `not activated` before composing or submitting the detached command. |
 | `install_vios` (`operations/install.py:311`) | Added by #366. Same reason and preflight: after resolving through the `VirtualIOServer` feed, both name and UUID selectors are checked through the resolved `LogicalPartition` resource for Virtual I/O Server type and `not activated` state before submission. |
 
@@ -333,13 +333,13 @@ coverage records the required-selector boundary.
 **The cost, stated.** Guarding `power_lpar` costs **one SSH login plus two REST
 GETs** on every call that does not carry `ownership_override=True`.
 
-The SSH login is the chain `authorize_lpar_mutation` (`operations/ownership.py:152`) →
+The SSH login is the chain `authorize_lpar_mutation` (`operations/lpar/ownership.py:152`) →
 `ssh_commands.get_lpar_description` (`ssh_commands.py:1577`) →
 `ssh.run_hmc_command` (`ssh.py:34`) → a fresh `asyncssh.connect` (`ssh.py:38`) per
 invocation. `run_hmc_command` opens and closes its connection inside the call; the
 only long-lived SSH connection in the package is the console path (`ssh.py:80`),
 which commands do not share. There is no pool and no reuse. (With
-`ownership_override=True` the guard returns at `operations/ownership.py:161` after
+`ownership_override=True` the guard returns at `operations/lpar/ownership.py:161` after
 auditing, before the read — so **`authorize_lpar_mutation` itself** pays nothing.
 A caller that resolves the ownership names first still pays the two REST GETs
 below, because the audit record for an approved override names the system and the
@@ -348,7 +348,7 @@ override path to be free end to end; ADR 0094's `_resolve_and_authorize_lpar`
 narrows it further — it skips the fleet walk on an override and pays one name read.)
 
 The two REST GETs come from `resolve_lpar_ownership_names`
-(`operations/ownership.py:169`), which the guard needs to turn UUIDs into the CLI names
+(`operations/lpar/ownership.py:169`), which the guard needs to turn UUIDs into the CLI names
 the SSH command takes. It calls `_system_name` (`:581`) → `hmc.get_managed_system`
 (`:591`) and `hmc.get_logical_partition` (`:582`) **unconditionally** — supplying
 `system_name_or_uuid` does not avoid either, as `rename_lpar` (`:917`) and
@@ -391,7 +391,7 @@ Two distinct mechanisms, deliberately not interchangeable:
 - **Per-call operator override.** Every guarded operation takes
   `ownership_override: bool = False`. When true the guard is bypassed for that one
   call and the bypass is audited by `_audit_lpar_ownership_override`
-  (`operations/ownership.py:75`). This is an operator-approved exception to a *single*
+  (`operations/lpar/ownership.py:75`). This is an operator-approved exception to a *single*
   mutation. It is not an exemption from this ADR, and an operation that accepts it
   is still classified and still guarded.
 - **Standing exemption.** A row in §3.4b with a recorded reason. This is the only
@@ -454,9 +454,9 @@ target metadata cannot distinguish an LPAR-profile restore from an ordinary
 managed-system mutation.
 
 **What counts as a guard.** Exactly three callables:
-`authorize_lpar_mutation` (`operations/ownership.py:152`) and
-`authorize_decommission_lpar_ownership_snapshot` (`operations/ownership.py:211`), plus
-the system-wide `_authorize_system_lpar_profile_restore` (`operations/ownership.py`).
+`authorize_lpar_mutation` (`operations/lpar/ownership.py:152`) and
+`authorize_decommission_lpar_ownership_snapshot` (`operations/lpar/ownership.py:211`), plus
+the system-wide `_authorize_system_lpar_profile_restore` (`operations/lpar/ownership.py`).
 Nothing else, and no new one without amending this list. The system-wide guard must
 reach `authorize_lpar_ownership_description` for every complete current-feed row;
 calling that parser on an arbitrary value does not independently count as a guard.

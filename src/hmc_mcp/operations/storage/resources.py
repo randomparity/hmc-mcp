@@ -15,7 +15,7 @@ from typing import Any, BinaryIO
 from urllib.parse import urlparse
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
+from hmc_mcp.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
 
 from ...client.client_contracts import httpx
 from ...config import ISO_URL_ALLOWLIST_HELP

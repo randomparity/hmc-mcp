@@ -7,7 +7,7 @@ from dataclasses import asdict
 import typer
 from rich.table import Table
 
-from hmc_mcp.operations.ownership import set_lpar_ownership_description
+from hmc_mcp.operations.lpar.ownership import set_lpar_ownership_description
 
 from ...operations.affinity.ssh import (
     get_lpar_memopt_score,

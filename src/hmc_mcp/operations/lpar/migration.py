@@ -8,10 +8,10 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
+from hmc_mcp.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
 
-from ..errors import HMCError
-from ..jobs import (
+from ...errors import HMCError
+from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
     DEFAULT_JOB_TIMEOUT_SECONDS,
     SUCCESSFUL_JOB_STATUSES,
@@ -22,7 +22,7 @@ from ..jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from ..resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name
+from ...resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_name
 
 LpmDestinationCheckBasis = Literal["calculated", "migration-check"]
 LpmCapability = Literal["available", "unavailable"]

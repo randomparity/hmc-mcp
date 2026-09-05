@@ -223,7 +223,7 @@ names are internal everywhere and are never inventoried.
 - `operations.lpar.provision` — exports: `AttachDiskResult`, `ProvisionAdapters`,
   `ProvisionRequest`, `ProvisionResult`, `ProvisionStorage`, `attach_disk_to_lpar`, `provision_lpar`.
 - `operations.lpar.workflows` — exports: `create_lpar`.
-- `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
+- `operations.lpar.migration` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
   `run_lpm_affinity_preflight`, `validate_lpar_migration`; types: `LpmAffinityMigrationResult`,
   `LpmAffinityPreflightOutcome`, `LpmAffinityPreflightRequest`, `LpmCapability`,
@@ -233,7 +233,7 @@ names are internal everywhere and are never inventoried.
 - `operations.network` — operations: `create_virtual_network`, `delete_virtual_network`,
   `list_network_bridges`, `list_virtual_networks`, `list_virtual_switches`; types:
   `VirtualNetworkResult`; excluded synchronous: none.
-- `operations.ownership` — operations: `authorize_decommission_lpar_ownership_snapshot`,
+- `operations.lpar.ownership` — operations: `authorize_decommission_lpar_ownership_snapshot`,
   `authorize_lpar_mutation`, `list_lpar_ownership`, `resolve_and_authorize_lpar_mutation`,
   `resolve_and_authorize_lpar_names`, `resolve_lpar_ownership_names`,
   `set_lpar_ownership_description`, `stamp_created_lpar_ownership`; types: none; excluded

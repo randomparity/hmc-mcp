@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from hmc_mcp.operations.ownership import list_lpar_ownership
+from hmc_mcp.operations.lpar.ownership import list_lpar_ownership
 
 from ..._app import with_client
 from ...operations.lpar.boot_order import (

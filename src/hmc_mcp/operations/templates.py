@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.ownership import stamp_created_lpar_ownership
+from hmc_mcp.operations.lpar.ownership import stamp_created_lpar_ownership
 
 from ..errors import HMCError
 from ..jobs import (

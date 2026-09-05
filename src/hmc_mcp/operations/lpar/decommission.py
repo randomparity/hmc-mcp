@@ -8,7 +8,7 @@ from typing import Any
 from typing_extensions import TypedDict
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.ownership import (
+from hmc_mcp.operations.lpar.ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     resolve_lpar_ownership_names,
 )

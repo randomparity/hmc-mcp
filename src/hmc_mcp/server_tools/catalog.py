@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from hmc_mcp.server_tools import (
     console,
     jobs,
-    lpm,
     metrics,
     snapshot,
     system_resources,
@@ -24,6 +23,7 @@ from hmc_mcp.server_tools.lpar import (
     lifecycle,
     lifecycle_boot,
     lifecycle_create,
+    migration,
     profiles,
     provision,
 )
@@ -49,7 +49,7 @@ TOOL_MODULES = (
     network,
     pcie,
     vnic,
-    lpm,
+    migration,
     templates,
     metrics,
     users,

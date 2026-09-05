@@ -6,14 +6,14 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.lpm import (
+from hmc_mcp.operations.lpar.migration import (
     LpmAffinityPreflightRequest,
     LpmMigrationRequest,
     evaluate_lpm_affinity_preflight,
     migrate_lpar_with_affinity_preflight,
     run_lpm_affinity_preflight,
 )
-from hmc_mcp.server_tools.lpm import hmc_migrate_lpar_with_affinity_preflight
+from hmc_mcp.server_tools.lpar.migration import hmc_migrate_lpar_with_affinity_preflight
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +24,7 @@ def _authorize_lpar_mutations(monkeypatch):
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation", authorize
+        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation", authorize
     )
 
 
@@ -242,7 +242,7 @@ async def test_passing_preflight_composes_before_canonical_validation(
         order.append("validation-and-migration")
         return type("Result", (), {"lpar_uuid": "uuid-1", "job": "job"})()
 
-    monkeypatch.setattr("hmc_mcp.operations.lpm.migrate_lpar", fake_migrate)
+    monkeypatch.setattr("hmc_mcp.operations.lpar.migration.migrate_lpar", fake_migrate)
     result = await migrate_lpar_with_affinity_preflight(
         hmc,
         None,

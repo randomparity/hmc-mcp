@@ -18,8 +18,7 @@ from hmc_mcp.operations.lpar.configuration import (
     configure_lpar_processor_compatibility,
     synchronize_lpar_profile,
 )
-from hmc_mcp.operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
-from hmc_mcp.operations.lpm import (
+from hmc_mcp.operations.lpar.migration import (
     LpmMigrationRequest,
     RemoteRestartRequest,
     abort_lpar_migration,
@@ -27,6 +26,7 @@ from hmc_mcp.operations.lpm import (
     recover_lpar_migration,
     remote_restart_lpar,
 )
+from hmc_mcp.operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
 from hmc_mcp.operations.storage.resources import (
     map_storage,
     mount_optical_media,
@@ -108,21 +108,21 @@ CASES: tuple[tuple[str, Operation], ...] = (
         ),
     ),
     (
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation",
         lambda hmc: migrate_lpar(
             hmc, None, LPAR, LpmMigrationRequest("target"), validate_first=False
         ),
     ),
     (
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation",
         lambda hmc: abort_lpar_migration(hmc, None, LPAR),
     ),
     (
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation",
         lambda hmc: recover_lpar_migration(hmc, None, LPAR),
     ),
     (
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation",
         lambda hmc: remote_restart_lpar(
             hmc, "source", LPAR, RemoteRestartRequest("cleanup")
         ),
@@ -201,7 +201,7 @@ async def test_real_guard_rejects_foreign_optical_owner_before_write(
     hmc = _real_guard_hmc()
 
     with patch(
-        "hmc_mcp.operations.ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar.ownership.get_lpar_description",
         new=AsyncMock(return_value=FOREIGN_OWNER),
     ), pytest.raises(PermissionError, match="ownership_override=true"):
             await operation(
@@ -226,7 +226,7 @@ async def test_optical_ownership_override_bypasses_read_and_writes(
     hmc = _real_guard_hmc()
 
     with patch(
-        "hmc_mcp.operations.ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar.ownership.get_lpar_description",
         new=AsyncMock(return_value=FOREIGN_OWNER),
     ) as read:
         await operation(
@@ -247,7 +247,7 @@ def test_mcp_resource_modify_rejects_foreign_owner_before_hmc_write() -> None:
     hmc = _real_guard_hmc()
     with (
         patch(
-            "hmc_mcp.operations.ownership.get_lpar_description",
+            "hmc_mcp.operations.lpar.ownership.get_lpar_description",
             new=AsyncMock(return_value=FOREIGN_OWNER),
         ),
         patch(
@@ -272,7 +272,7 @@ def test_cli_resource_modify_rejects_foreign_owner_before_hmc_write() -> None:
     context.__aenter__.return_value = hmc
     with (
         patch(
-            "hmc_mcp.operations.ownership.get_lpar_description",
+            "hmc_mcp.operations.lpar.ownership.get_lpar_description",
             new=AsyncMock(return_value=FOREIGN_OWNER),
         ),
         patch.object(cli_modify, "client", return_value=context),
@@ -305,7 +305,7 @@ def test_resource_modify_override_skips_ownership_read_and_writes() -> None:
     hmc = _real_guard_hmc()
     hmc.modify_logical_partition.return_value = {"Resource": {"PartitionName": LPAR_NAME}}
     with patch(
-        "hmc_mcp.operations.ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar.ownership.get_lpar_description",
         new=AsyncMock(return_value=FOREIGN_OWNER),
     ) as read, patch(
         "hmc_mcp.server_tools.lpar.lifecycle.with_client",
@@ -339,7 +339,7 @@ async def test_config_operations_reject_foreign_owner_before_ssh_write(
 
     with (
         patch(
-            "hmc_mcp.operations.ownership.get_lpar_description",
+            "hmc_mcp.operations.lpar.ownership.get_lpar_description",
             new=AsyncMock(return_value=FOREIGN_OWNER),
         ),
         patch(f"hmc_mcp.operations.lpar.configuration.{write_name}", new=write),
@@ -368,7 +368,7 @@ async def test_config_operations_override_skips_ownership_read(
 
     with (
         patch(
-            "hmc_mcp.operations.ownership.get_lpar_description",
+            "hmc_mcp.operations.lpar.ownership.get_lpar_description",
             new=AsyncMock(return_value=FOREIGN_OWNER),
         ) as read,
         patch(f"hmc_mcp.operations.lpar.configuration.{write_name}", new=write),

@@ -8,7 +8,7 @@ from typing import Generic, Literal, TypeVar
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_names
+from hmc_mcp.operations.lpar.ownership import resolve_and_authorize_lpar_names
 from hmc_mcp.operations.virtualization.validation import (
     require_command_safe_text,
     validate_capacity_percent,

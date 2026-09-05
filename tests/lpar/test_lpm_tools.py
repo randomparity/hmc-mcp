@@ -1,7 +1,7 @@
 """Tool-layer tests for the Live Partition Mobility MCP tools.
 
 The job XML builders and client methods are covered in test_lpm.py; these
-tests call the actual ``@mcp.tool`` functions in ``server_tools.lpm`` against the
+tests call the actual ``@mcp.tool`` functions in ``server_tools.lpar.migration`` against the
 respx ``mock_hmc`` router so the argument->URL and argument->XML mapping in
 the tool bodies is exercised — the layer the client tests skip.
 """
@@ -14,13 +14,13 @@ import pytest
 from conftest import JOB_ENTRY
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.lpm import (
+from hmc_mcp.operations.lpar.migration import (
     RemoteRestartRequest,
     abort_lpar_migration,
     recover_lpar_migration,
     remote_restart_lpar,
 )
-from hmc_mcp.server_tools.lpm import (
+from hmc_mcp.server_tools.lpar.migration import (
     hmc_migrate_abort_lpar,
     hmc_migrate_lpar,
     hmc_migrate_recover_lpar,
@@ -49,7 +49,7 @@ def _authorize_lpar_mutations(monkeypatch):
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation", authorize
+        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation", authorize
     )
 LPM_RECOVERY_TOOL_CASES = [
     (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
@@ -107,7 +107,7 @@ def test_migrate_lpar_resolves_target_system_uuid(monkeypatch, mock_hmc):
     route = _job_route(mock_hmc, "Migrate")
     resolver = AsyncMock(return_value="vrml12-fsp")
 
-    with patch("hmc_mcp.operations.lpm.resolve_system_name", new=resolver):
+    with patch("hmc_mcp.operations.lpar.migration.resolve_system_name", new=resolver):
         hmc_migrate_lpar(LPAR_UUID, TARGET_SYSTEM_UUID, validate_first=False)
 
     resolver.assert_awaited_once_with(ANY, TARGET_SYSTEM_UUID)

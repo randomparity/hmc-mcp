@@ -16,7 +16,7 @@ from hmc_mcp.operations.affinity import (
     validate_affinity_request,
 )
 from hmc_mcp.operations.lpar.errors import translate_lpar_write_error
-from hmc_mcp.operations.ownership import (
+from hmc_mcp.operations.lpar.ownership import (
     resolve_and_authorize_lpar_mutation,
     stamp_created_lpar_ownership,
 )

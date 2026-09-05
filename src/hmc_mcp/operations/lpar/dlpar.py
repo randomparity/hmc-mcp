@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
+from hmc_mcp.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
 
 from ...documents import (
     LparResources,

@@ -8,7 +8,7 @@ import pytest
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import JobOutcome
-from hmc_mcp.operations.lpm import LpmMigrationRequest, migrate_lpar
+from hmc_mcp.operations.lpar.migration import LpmMigrationRequest, migrate_lpar
 
 
 @pytest.fixture(autouse=True)
@@ -19,7 +19,7 @@ def _authorize_lpar_mutations(monkeypatch):
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation", authorize
+        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation", authorize
     )
 
 

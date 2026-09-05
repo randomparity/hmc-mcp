@@ -13,7 +13,7 @@ from ...jobs import (
     RemoteRestartOperation,
     validate_wait_timing,
 )
-from ...operations.lpm import (
+from ...operations.lpar.migration import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightRequest,
     LpmCapability,

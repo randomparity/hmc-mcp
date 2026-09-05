@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hmc_mcp.operations.ownership import set_lpar_ownership_description
+from hmc_mcp.operations.lpar.ownership import set_lpar_ownership_description
 
 from ..._app import (
     ssh_with_client,
