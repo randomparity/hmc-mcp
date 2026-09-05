@@ -20,4 +20,3 @@ def load_pcie_assignments(path: Path | None) -> LparPcieAssignments:
         return TypeAdapter(LparPcieAssignments).validate_python(payload)
     except (OSError, json.JSONDecodeError, ValidationError) as error:
         usage_error(f"Cannot load --pcie-assignments {path}: {error}")
-        raise AssertionError("usage_error must raise") from error

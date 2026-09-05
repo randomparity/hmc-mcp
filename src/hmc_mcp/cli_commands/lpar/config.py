@@ -70,7 +70,6 @@ def _memopt_selectors(
         return prioritized, excluded
     except ValueError as error:
         usage_error(str(error))
-        raise AssertionError("usage_error must raise") from error
 
 
 def lpars_memopt_score(
@@ -177,7 +176,6 @@ def _resource_group_selector(
         return MemoptResourceGroupSelector(all=True)
     except ValueError as error:
         usage_error(str(error))
-        raise AssertionError("usage_error must raise") from error
 
 
 def _run_resource_group_memopt(
