@@ -9,6 +9,7 @@ from decimal import Decimal
 
 import typer
 
+from ...client.core import HMCClient
 from ...operations.virtualization.vnic import (
     VnicBackingSelector,
     VnicPartialError,
@@ -86,7 +87,7 @@ def network_add_vnic(
     ):
         raise typer.Abort()
 
-    async def operation(hmc):
+    async def operation(hmc: HMCClient):
         try:
             return await add_vnic(
                 hmc,
@@ -125,7 +126,7 @@ def network_remove_vnic(
     ):
         raise typer.Abort()
 
-    async def operation(hmc):
+    async def operation(hmc: HMCClient):
         try:
             return await remove_vnic(
                 hmc,
