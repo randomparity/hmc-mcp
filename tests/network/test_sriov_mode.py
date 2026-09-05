@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from conftest import mock_uuid_resolution
 
-from hmc_mcp.server_tools.pcie import (
+from hmc_mcp.server_tools.virtualization.pcie import (
     hmc_set_sriov_adapter_mode,
 )
 

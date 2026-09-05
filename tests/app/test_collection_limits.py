@@ -15,20 +15,14 @@ from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.operations.lpar import core as lpar_core
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.server_tools import (
-    adapters as server_adapters,
-)
-from hmc_mcp.server_tools import (
     jobs as server_jobs,
-)
-from hmc_mcp.server_tools import (
-    network as server_network,
-)
-from hmc_mcp.server_tools import (
-    storage as server_storage,
 )
 from hmc_mcp.server_tools import (
     systems as server_systems,
 )
+from hmc_mcp.server_tools.storage import resources as server_storage
+from hmc_mcp.server_tools.virtualization import adapters as server_adapters
+from hmc_mcp.server_tools.virtualization import network as server_network
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
 # every consumer builds its own. The legacy-equivalent policy registers exactly the

@@ -234,7 +234,7 @@ def test_cli_logical_inventory_forwards_selectors_and_prints_json() -> None:
                 return_value=_ClientContext(object()),
             ),
         patch(
-            "hmc_mcp.cli_commands.pcie.list_sriov_logical_ports",
+            "hmc_mcp.cli_commands.virtualization.pcie.list_sriov_logical_ports",
             AsyncMock(return_value=result),
         ) as operation,
     ):
@@ -274,7 +274,7 @@ def test_cli_text_mode_reports_unavailable_capability() -> None:
                 return_value=_ClientContext(object()),
             ),
         patch(
-            "hmc_mcp.cli_commands.pcie.list_sriov_adapters",
+            "hmc_mcp.cli_commands.virtualization.pcie.list_sriov_adapters",
             AsyncMock(return_value=result),
         ),
     ):
@@ -300,7 +300,7 @@ def test_cli_text_mode_distinguishes_available_empty_and_records() -> None:
                 "hmc_mcp.cli_commands.runtime.client",
                 return_value=_ClientContext(object()),
             ),
-        patch("hmc_mcp.cli_commands.pcie.list_dedicated_slots", operation),
+        patch("hmc_mcp.cli_commands.virtualization.pcie.list_dedicated_slots", operation),
     ):
         empty_response = CliRunner().invoke(
             app, ["network", "list-dedicated-pcie-slots", "sys1"]

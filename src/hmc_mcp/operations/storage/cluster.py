@@ -6,7 +6,7 @@ from typing import Any
 
 from hmc_mcp.client.core import HMCClient
 
-from ..jobs import (
+from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
     DEFAULT_JOB_TIMEOUT_SECONDS,
     DeviceType,

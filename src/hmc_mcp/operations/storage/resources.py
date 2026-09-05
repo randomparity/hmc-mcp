@@ -17,11 +17,11 @@ from urllib.parse import urlparse
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
 
-from ..client.client_contracts import httpx
-from ..config import ISO_URL_ALLOWLIST_HELP
-from ..documents import StorageKind
-from ..errors import HMCError
-from ..resource_identity import resolve_lpar_uuid, resolve_vios_uuid
+from ...client.client_contracts import httpx
+from ...config import ISO_URL_ALLOWLIST_HELP
+from ...documents import StorageKind
+from ...errors import HMCError
+from ...resource_identity import resolve_lpar_uuid, resolve_vios_uuid
 
 logger = logging.getLogger(__name__)
 

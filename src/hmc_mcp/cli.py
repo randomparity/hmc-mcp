@@ -15,14 +15,12 @@ the complete tree.
 from __future__ import annotations
 
 from .cli_commands import (
-    cluster,
     config,
     jobs,
     memory_pools,
     metrics,
     raw,
     snapshot,
-    storage,
     systems,
     templates,
     vios,
@@ -87,6 +85,8 @@ from .cli_commands.output import (
 from .cli_commands.runtime import (
     GlobalOpts as GlobalOpts,  # noqa: PLC0414 - PEP 484 explicit re-export; see the module docstring
 )
+from .cli_commands.storage import cluster
+from .cli_commands.storage import resources as storage
 from .cli_commands.virtualization import adapters, network, pcie, vnic
 
 

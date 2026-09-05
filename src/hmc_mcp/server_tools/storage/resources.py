@@ -4,29 +4,29 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import (
+from ..._app import (
     run_limited_collection,
     serialize_tool_result,
     with_client,
 )
-from ..documents import StorageKind
-from ..jobs import (
+from ...documents import StorageKind
+from ...jobs import (
     DeviceType,
     LuType,
 )
-from ..operations.cluster import (
+from ...operations.lpar.provision import (
+    AttachDiskResult,
+    ProvisionStorage,
+    attach_disk_to_lpar,
+)
+from ...operations.storage.cluster import (
     create_logical_unit,
     delete_logical_unit,
     get_shared_storage_pool,
     list_clusters,
     list_shared_storage_pools,
 )
-from ..operations.lpar.provision import (
-    AttachDiskResult,
-    ProvisionStorage,
-    attach_disk_to_lpar,
-)
-from ..operations.storage import (
+from ...operations.storage.resources import (
     create_media_repository,
     create_optical_media,
     create_virtual_disk,
@@ -45,7 +45,7 @@ from ..operations.storage import (
     unmount_optical_media,
     upload_iso,
 )
-from ..tool_registry import tool_module
+from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

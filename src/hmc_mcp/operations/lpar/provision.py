@@ -32,7 +32,7 @@ from ..affinity.rest import (
     validate_affinity_request,
 )
 from ..affinity.ssh import set_minimum_affinity_policy
-from ..storage import create_virtual_disk
+from ..storage.resources import create_virtual_disk
 from .assignments import (
     LparPcieAssignments,
     apply_validated_lpar_pcie_assignments,

@@ -24,14 +24,14 @@ from typer.main import get_command
 from typer.testing import CliRunner
 
 from hmc_mcp import cli
-from hmc_mcp.cli_commands import pcie as cli_pcie
 from hmc_mcp.cli_commands import runtime as cli_runtime
 from hmc_mcp.cli_commands import vios_labels as cli_vios_labels
-from hmc_mcp.cli_commands import vnic as cli_vnic
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
 from hmc_mcp.cli_commands.lpar import migration as cli_lpar_migration
 from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
 from hmc_mcp.cli_commands.lpar import provision as cli_lpar_provision
+from hmc_mcp.cli_commands.virtualization import pcie as cli_pcie
+from hmc_mcp.cli_commands.virtualization import vnic as cli_vnic
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations import ownership as lpar_ownership
@@ -39,7 +39,11 @@ from hmc_mcp.operations.io_virtualization.vnic import VnicChangeResult, VnicPart
 from hmc_mcp.operations.lpar.assignments import LparPcieWorkflowResult
 from hmc_mcp.operations.lpar.provision import ProvisionResult
 from hmc_mcp.operations.lpar.workflow_contract import WorkflowStep
-from hmc_mcp.operations.storage import OpticalMedia, StorageMapping, VolumeGroup
+from hmc_mcp.operations.storage.resources import (
+    OpticalMedia,
+    StorageMapping,
+    VolumeGroup,
+)
 from hmc_mcp.ssh import affinity as ssh_affinity
 from hmc_mcp.ssh import commands as ssh_commands
 from hmc_mcp.ssh import lpar as ssh_lpar
@@ -1761,7 +1765,7 @@ def test_storage_attach_disk_json_incomplete_workflow_exits_1(fake_hmc):
 # storage: command bodies (#240)
 #
 # cli_storage's commands come in three shapes with different injection points:
-#   A  with_client(lambda hmc: op(...))          -> patch hmc_mcp.cli_commands.storage.<op>
+#   A  with_client(lambda hmc: op(...))          -> patch hmc_mcp.cli_commands.storage.resources.<op>
 #   B  _run(_go) building its own HMCClient, op   -> patch load_profile/HMCClient here
 #      imported inside the function                 and the op on operations_storage
 #   C  as B, but the op is imported at module top -> patch all three on cli_storage
@@ -1787,9 +1791,9 @@ class _FakeClientContext:
 def direct_client(monkeypatch):
     """Neutralise load_profile()/HMCClient() for the commands that build their own client."""
     client = _FakeClientContext()
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.load_profile", lambda: None)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.load_profile", lambda: None)
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.HMCClient", lambda _config: client
+        "hmc_mcp.cli_commands.storage.resources.HMCClient", lambda _config: client
     )
     return client
 
@@ -1801,7 +1805,7 @@ def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
         assert vios == VIOS_UUID
         return [VolumeGroup(VG_UUID, "rootvg", 102400, 5120)]
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_volume_groups", fake_list)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.list_volume_groups", fake_list)
 
     result = RUNNER.invoke(
         cli.app, ["storage", "list-vgs", VIOS_UUID, "--system", "system-a"]
@@ -1819,7 +1823,7 @@ def test_storage_delete_disk_deletes_when_confirmed(fake_hmc, monkeypatch):
         seen.update(vios=vios, vg=vg, name=name)
         return {"UUID": "disk-1"}
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.delete_virtual_disk", fake_delete)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.delete_virtual_disk", fake_delete)
 
     result = RUNNER.invoke(
         cli.app,
@@ -1846,7 +1850,7 @@ def test_storage_delete_disk_declined_confirmation_aborts(fake_hmc, monkeypatch)
     async def fake_delete(*args):
         called.append(args)
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.delete_virtual_disk", fake_delete)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.delete_virtual_disk", fake_delete)
 
     result = RUNNER.invoke(
         cli.app,
@@ -1865,7 +1869,7 @@ def test_storage_map_declined_confirmation_aborts(fake_hmc, monkeypatch):
     async def fake_map(*args):
         called.append(args)
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.map_storage", fake_map)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.map_storage", fake_map)
 
     result = RUNNER.invoke(
         cli.app,
@@ -1885,7 +1889,7 @@ def test_storage_create_media_repo_declined_confirmation_aborts(fake_hmc, monkey
         called.append(args)
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.create_media_repository", fake_create
+        "hmc_mcp.cli_commands.storage.resources.create_media_repository", fake_create
     )
 
     result = RUNNER.invoke(
@@ -1907,7 +1911,7 @@ def test_storage_create_media_creates_when_confirmed(fake_hmc, monkeypatch):
         return {"MediaName": "aix.iso"}
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.create_optical_media", fake_create
+        "hmc_mcp.cli_commands.storage.resources.create_optical_media", fake_create
     )
 
     result = RUNNER.invoke(
@@ -1942,7 +1946,7 @@ def test_storage_create_media_declined_confirmation_aborts(fake_hmc, monkeypatch
         called.append(args)
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.create_optical_media", fake_create
+        "hmc_mcp.cli_commands.storage.resources.create_optical_media", fake_create
     )
 
     result = RUNNER.invoke(
@@ -1972,7 +1976,7 @@ def test_storage_delete_media_deletes_when_confirmed(fake_hmc, monkeypatch):
         seen.update(vios=vios, vg=vg, media_name=media_name)
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.delete_optical_media", fake_delete
+        "hmc_mcp.cli_commands.storage.resources.delete_optical_media", fake_delete
     )
 
     result = RUNNER.invoke(
@@ -1992,7 +1996,7 @@ def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch
         called.append(args)
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.delete_optical_media", fake_delete
+        "hmc_mcp.cli_commands.storage.resources.delete_optical_media", fake_delete
     )
 
     result = RUNNER.invoke(
@@ -2011,7 +2015,7 @@ def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
         return {"Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "10240"}}
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.get_media_repository", fake_get)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.get_media_repository", fake_get)
 
     result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
 
@@ -2024,7 +2028,7 @@ def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
     async def fake_get(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return {}
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.get_media_repository", fake_get)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.get_media_repository", fake_get)
 
     result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
 
@@ -2036,7 +2040,7 @@ def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
     async def fake_get(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return {"Resource": {"RepositoryName": "VMLibrary"}}
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.get_media_repository", fake_get)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.get_media_repository", fake_get)
 
     result = RUNNER.invoke(
         cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID, "--json"]
@@ -2051,7 +2055,7 @@ def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
         return [OpticalMedia("aix.iso", 4096, "ISO")]
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_optical_media", fake_list)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.list_optical_media", fake_list)
 
     result = RUNNER.invoke(
         cli.app, ["storage", "list-optical-media", VIOS_UUID, VG_UUID]
@@ -2066,7 +2070,7 @@ def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
     async def fake_list(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return []
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_optical_media", fake_list)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.list_optical_media", fake_list)
 
     result = RUNNER.invoke(
         cli.app, ["storage", "list-optical-media", VIOS_UUID, VG_UUID]
@@ -2080,7 +2084,7 @@ def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
     async def fake_list(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return [OpticalMedia("aix.iso", None, None)]
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.list_optical_media", fake_list)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.list_optical_media", fake_list)
 
     result = RUNNER.invoke(
         cli.app, ["storage", "list-optical-media", VIOS_UUID, VG_UUID, "--json"]
@@ -2099,7 +2103,7 @@ def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
         return [StorageMapping("map-1", "lpar1", "VirtualDisk", "bootvol")]
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.list_storage_mappings", fake_mappings
+        "hmc_mcp.cli_commands.storage.resources.list_storage_mappings", fake_mappings
     )
 
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID])
@@ -2118,7 +2122,7 @@ def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatc
         return [StorageMapping("map-2", "lpar1", "PhysicalVolume", "hdisk9")]
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.list_storage_mappings", fake_mappings
+        "hmc_mcp.cli_commands.storage.resources.list_storage_mappings", fake_mappings
     )
 
     result = RUNNER.invoke(
@@ -2135,7 +2139,7 @@ def test_storage_list_mappings_json(direct_client, monkeypatch):
         return [StorageMapping("map-1", None, None, None)]
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.list_storage_mappings", fake_mappings
+        "hmc_mcp.cli_commands.storage.resources.list_storage_mappings", fake_mappings
     )
 
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID, "--json"])
@@ -2161,7 +2165,7 @@ def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatc
         )
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.detach_storage_mapping", fake_detach
+        "hmc_mcp.cli_commands.storage.resources.detach_storage_mapping", fake_detach
     )
 
     result = RUNNER.invoke(
@@ -2196,7 +2200,7 @@ def test_storage_detach_mapping_reports_one_failure_and_exits_1(
         raise HMCError("mapping is in use")
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.detach_storage_mapping", fake_detach
+        "hmc_mcp.cli_commands.storage.resources.detach_storage_mapping", fake_detach
     )
 
     result = RUNNER.invoke(
@@ -2254,7 +2258,7 @@ def test_storage_upload_iso_reports_uploaded_media(direct_client, monkeypatch):
             "media": {"MediaName": "aix.iso"},
         }
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.upload_iso", fake_upload)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.upload_iso", fake_upload)
 
     result = RUNNER.invoke(
         cli.app,
@@ -2281,7 +2285,7 @@ def test_storage_upload_iso_json(direct_client, monkeypatch):
         assert system_name_or_uuid is None
         return {"status": "uploaded", "media_name": "aix.iso"}
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.upload_iso", fake_upload)
+    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.upload_iso", fake_upload)
 
     result = RUNNER.invoke(
         cli.app,

@@ -13,7 +13,6 @@ from hmc_mcp.server_tools import (
     lpm,
     metrics,
     snapshot,
-    storage,
     system_resources,
     systems,
     templates,
@@ -32,6 +31,7 @@ from hmc_mcp.server_tools.lpar import (
     provision,
 )
 from hmc_mcp.server_tools.permissions import EFFECTIVE_PERMISSIONS_SECURITY
+from hmc_mcp.server_tools.storage import resources as storage
 from hmc_mcp.server_tools.virtualization import adapters, network, pcie, vnic
 from hmc_mcp.tool_registry import ToolSecurity, build_tool_security
 

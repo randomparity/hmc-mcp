@@ -10,10 +10,10 @@ from rich.table import Table
 
 from hmc_mcp.client.core import HMCClient
 
-from ..config import load_profile
-from ..documents import StorageKind
-from ..operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
-from ..operations.storage import (
+from ...config import load_profile
+from ...documents import StorageKind
+from ...operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
+from ...operations.storage.resources import (
     StorageMapResult,
     create_media_repository,
     create_optical_media,
@@ -30,8 +30,8 @@ from ..operations.storage import (
     map_storage,
     upload_iso,
 )
-from .output import console, output, print_json, usage_error
-from .runtime import client, run_cli_coroutine, with_client
+from ..output import console, output, print_json, usage_error
+from ..runtime import client, run_cli_coroutine, with_client
 
 
 def storage_list_vgs(

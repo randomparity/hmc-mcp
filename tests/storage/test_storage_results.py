@@ -7,7 +7,7 @@ import pytest
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.storage import (
+from hmc_mcp.operations.storage.resources import (
     list_optical_media,
     list_storage_mappings,
     list_volume_groups,
