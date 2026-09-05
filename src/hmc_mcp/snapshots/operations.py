@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, overload
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.affinity import (
+from hmc_mcp.operations.affinity.rest import (
     AffinityAssessmentInput,
     AffinityAssessmentResult,
     PolicyState,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from hmc_mcp._app import run_sync, serialize_tool_result, with_client
-from hmc_mcp.operations.affinity import PolicyState
+from hmc_mcp.operations.affinity.rest import PolicyState
 from hmc_mcp.snapshots.models import inspect_snapshot, parse_snapshot
 from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
 from hmc_mcp.tool_registry import tool_module

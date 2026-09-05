@@ -11,7 +11,7 @@ import typer
 
 from hmc_mcp.cli_commands.output import fail, print_json
 from hmc_mcp.cli_commands.runtime import client, run_cli_coroutine
-from hmc_mcp.operations.affinity import PolicyState
+from hmc_mcp.operations.affinity.rest import PolicyState
 from hmc_mcp.snapshots.models import (
     SnapshotValidationError,
     inspect_snapshot,

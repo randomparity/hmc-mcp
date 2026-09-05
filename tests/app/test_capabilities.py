@@ -22,7 +22,7 @@ from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.affinity import ProvisionAffinityAssessment
+from hmc_mcp.operations.affinity.rest import ProvisionAffinityAssessment
 from hmc_mcp.server import (
     TOOL_SECURITY,
     create_mcp,

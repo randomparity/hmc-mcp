@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from hmc_mcp import cli
 from hmc_mcp.cli_commands.snapshot import _publish
-from hmc_mcp.operations.affinity import (
+from hmc_mcp.operations.affinity.rest import (
     AffinityAssessmentInput,
     assess_affinity,
 )

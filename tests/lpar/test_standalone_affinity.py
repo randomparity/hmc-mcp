@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.affinity import (
+from hmc_mcp.operations.affinity.rest import (
     AffinityAssessmentResult,
     AffinityClassification,
     AffinityEvidence,

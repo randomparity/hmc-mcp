@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.affinity import (
+from hmc_mcp.operations.affinity.rest import (
     LparAffinityAssessmentOutcome,
     ProvisionAffinityAssessment,
     affinity_not_measured,
