@@ -93,7 +93,9 @@ async def _probe_capacity_and_resources(client: Client, state: RunState) -> None
     st, data = await state.call(client, "hmc_capacity_report")
     state.record(1, "hmc_capacity_report", st, data)
 
-    st, data = await state.call(client, "hmc_find_placement", desired_memory_mib=1024)
+    st, data = await state.call(
+        client, "hmc_find_placement", desired_memory_mib=context.placement_memory_mib
+    )
     state.record(1, "hmc_find_placement", st, data)
 
     st, data = await state.call(

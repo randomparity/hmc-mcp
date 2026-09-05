@@ -1,6 +1,6 @@
 """SR-IOV live validation scenarios for issue #217.
 
-Exercises reversible SR-IOV logical-port assignment on ltczz386 / ltczz386-lp3.
+Exercises reversible SR-IOV logical-port assignment on the configured system and LPAR.
 The LPAR must be Not Activated before this module runs.
 
 Admitted environment (ADR 0053 / operations/pcie.py):
@@ -8,7 +8,7 @@ Admitted environment (ADR 0053 / operations/pcie.py):
 
 Test structure (ST23–ST28):
   ST23 — Baseline: read adapter/physport/logport inventory; confirm lp3 profile is clean
-  ST24 — Assign logical port 27004003 (phys_port 0, 2% capacity) to lp3
+  ST24 — Assign the configured logical port to the configured LPAR
   ST25 — Verify effective + profile readback after assign
   ST26 — Unassign; verify logical port is unconfigured and profile is restored
   ST27 — Reassign on existing LPAR (same port, same capacity)
@@ -28,19 +28,6 @@ from fastmcp import Client
 
 if TYPE_CHECKING:
     from live_test_runner import RunState
-
-
-# ---------------------------------------------------------------------------
-# Constants — selected from the pre-test inventory of ltczz386
-# ---------------------------------------------------------------------------
-
-_ADAPTER_ID = "1"               # adapter_id=1, config_state=sriov, functional_state=1
-_PHYS_PORT_ID = "0"             # port 0, phys_port_loc U78D2.001.RCH0268-P1-C4-T1
-#                                 lp2 reduced to 95% (from 100%) to free 5% for this test;
-#                                 will be restored to 100% after the test completes.
-_LOGICAL_PORT_ID = "27004003"   # unconfigured, location U78D2.001.RCH0268-P1-C4-T1-S3
-_CAPACITY_PERCENT = 5.0         # 5% — the freed capacity on port 0
-_PROFILE_NAME = "default_profile"
 
 
 # ---------------------------------------------------------------------------
@@ -67,8 +54,8 @@ async def _read_sriov_state(client: Client, state: RunState) -> _SriovState:
         client,
         "hmc_list_sriov_logical_ports",
         system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
+        adapter_id=context.sriov_adapter_id,
+        logical_port_id=context.sriov_logical_port_id,
     )
     configured = False
     owner_lpar = None
@@ -78,7 +65,7 @@ async def _read_sriov_state(client: Client, state: RunState) -> _SriovState:
         for item in items:
             if (
                 isinstance(item, dict)
-                and item.get("logical_port_id") == _LOGICAL_PORT_ID
+                and item.get("logical_port_id") == context.sriov_logical_port_id
                 and item.get("availability") not in ("unconfigured", None, "")
                 and item.get("owner_lpar")
             ):
@@ -94,7 +81,7 @@ async def _read_sriov_state(client: Client, state: RunState) -> _SriovState:
         "hmc_run_command",
         cmd=(
             f"lssyscfg -r prof -m {context.system_name} "
-            f"--filter 'lpar_names={context.lp3_name},profile_names={_PROFILE_NAME}' "
+            f"--filter 'lpar_names={context.lp3_name},profile_names={context.sriov_profile_name}' "
             f"-F sriov_eth_logical_ports"
         ),
     )
@@ -117,12 +104,12 @@ def _sriov_state_summary(s: _SriovState) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _adapter_is_healthy(data: object) -> bool:
+def _adapter_is_healthy(data: object, adapter_id: int) -> bool:
     """Return whether the selected adapter is in healthy SR-IOV mode."""
     items = data.get("items") or [] if isinstance(data, dict) else []
     return any(
         isinstance(item, dict)
-        and item.get("adapter_id") == _ADAPTER_ID
+        and item.get("adapter_id") == adapter_id
         and item.get("mode") == "sriov"
         and item.get("availability") == "1"
         for item in items
@@ -148,12 +135,12 @@ def _available_capacity(data: object) -> float:
     return 100.0 - used
 
 
-def _logical_port_is_configured(data: object) -> bool:
+def _logical_port_is_configured(data: object, logical_port_id: int) -> bool:
     """Return whether the selected logical port has an effective assignment."""
     items = data.get("items") or [] if isinstance(data, dict) else []
     return any(
         isinstance(item, dict)
-        and item.get("logical_port_id") == _LOGICAL_PORT_ID
+        and item.get("logical_port_id") == logical_port_id
         and item.get("availability") not in ("unconfigured", None, "")
         for item in items
     )
@@ -166,21 +153,23 @@ async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
         client,
         "hmc_list_sriov_logical_ports",
         system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
+        adapter_id=context.sriov_adapter_id,
+        logical_port_id=context.sriov_logical_port_id,
     )
     state.record(28, "hmc_list_sriov_logical_ports (final)", st, data)
     if st == "PASS":
-        still_configured = _logical_port_is_configured(data)
+        still_configured = _logical_port_is_configured(
+            data, context.sriov_logical_port_id
+        )
         state.record(
             28,
             "sriov final inventory check",
             "FAIL" if still_configured else "PASS",
             (
-                f"MANUAL RECOVERY REQUIRED: logical port {_LOGICAL_PORT_ID} "
+                f"MANUAL RECOVERY REQUIRED: logical port {context.sriov_logical_port_id} "
                 "is still configured after cleanup"
                 if still_configured
-                else f"logical port {_LOGICAL_PORT_ID} is unconfigured — baseline restored"
+                else f"logical port {context.sriov_logical_port_id} is unconfigured — baseline restored"
             ),
         )
 
@@ -194,8 +183,8 @@ async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
             f"MANUAL RECOVERY REQUIRED: profile sriov_eth_logical_ports="
             f"{final_state.profile_ports!r} after cleanup — "
             f"run: chsyscfg -r prof -m {context.system_name} "
-            f"-i \"name={_PROFILE_NAME},lpar_name={context.lp3_name},"
-            f"sriov_eth_logical_ports=none\" to recover"
+            f'-i "name={context.sriov_profile_name},lpar_name={context.lp3_name},'
+            f'sriov_eth_logical_ports=none" to recover'
             if not profile_clean
             else "sriov_eth_logical_ports=none — lp3 profile restored to baseline"
         ),
@@ -212,7 +201,7 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         client,
         "hmc_list_sriov_adapters",
         system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
+        adapter_id=context.sriov_adapter_id,
     )
     state.record(23, "hmc_list_sriov_adapters (baseline)", st, data)
     if st != "PASS":
@@ -235,18 +224,18 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         return False
 
     # Confirm adapter is in SR-IOV mode and healthy
-    if not _adapter_is_healthy(data):
+    if not _adapter_is_healthy(data, context.sriov_adapter_id):
         state.skip(
             23,
             "hmc_list_sriov_adapters (health check)",
-            f"adapter {_ADAPTER_ID!r} is not in healthy sriov mode; SKIP SR-IOV arm",
+            f"adapter {context.sriov_adapter_id!r} is not in healthy sriov mode; SKIP SR-IOV arm",
         )
         return False
     state.record(
         23,
         "hmc_list_sriov_adapters (health check)",
         "PASS",
-        f"adapter {_ADAPTER_ID} in healthy sriov mode",
+        f"adapter {context.sriov_adapter_id} in healthy sriov mode",
     )
 
     # 2. Physical port inventory — also check that the port has remaining capacity
@@ -254,8 +243,8 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         client,
         "hmc_list_sriov_physical_ports",
         system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
-        physical_port_id=_PHYS_PORT_ID,
+        adapter_id=context.sriov_adapter_id,
+        physical_port_id=context.sriov_physical_port_id,
     )
     state.record(23, "hmc_list_sriov_physical_ports (baseline)", st, data)
     if st != "PASS":
@@ -267,28 +256,27 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         return False
 
     # Capacity check: hmc_list_sriov_logical_ports returns configured+unconfigured ports.
-    # We need at least _CAPACITY_PERCENT of remaining room on the physical port.
-    # Use the raw configured logport list to compute used capacity on _PHYS_PORT_ID.
+    # The configured capacity must be available on the configured physical port.
     st_lp, data_lp = await state.call(
         client,
         "hmc_list_sriov_logical_ports",
         system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
-        physical_port_id=_PHYS_PORT_ID,
+        adapter_id=context.sriov_adapter_id,
+        physical_port_id=context.sriov_physical_port_id,
     )
     available = _available_capacity(data_lp) if st_lp == "PASS" else 0.0
     state.record(
         23,
         "sriov capacity check (pre-test)",
-        "PASS" if available >= _CAPACITY_PERCENT else "SKIP",
-        f"phys_port {_PHYS_PORT_ID}: available={available}% needed={_CAPACITY_PERCENT}%",
+        "PASS" if available >= context.sriov_capacity_percent else "SKIP",
+        f"phys_port {context.sriov_physical_port_id}: available={available}% needed={context.sriov_capacity_percent}%",
     )
-    if available < _CAPACITY_PERCENT:
+    if available < context.sriov_capacity_percent:
         state.skip(
             23,
             "sriov assign arm",
-            f"phys_port {_PHYS_PORT_ID} has only {available}% capacity remaining "
-            f"(need {_CAPACITY_PERCENT}%); all unconfigured logical ports are T1-addressed "
+            f"phys_port {context.sriov_physical_port_id} has only {available}% capacity remaining "
+            f"(need {context.sriov_capacity_percent}%); all unconfigured logical ports are T1-addressed "
             "and hmc-mcp's location-code check blocks cross-port assignment — SKIP assign arm. "
             "NOTE: chhwres assigns T1 logical ports to phys_port 1 (T2) successfully "
             "at the firmware layer; the location-code check is an hmc-mcp admission gate, "
@@ -301,8 +289,8 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         client,
         "hmc_list_sriov_logical_ports",
         system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
+        adapter_id=context.sriov_adapter_id,
+        logical_port_id=context.sriov_logical_port_id,
     )
     state.record(23, "hmc_list_sriov_logical_ports (baseline)", st, data)
     if st != "PASS":
@@ -312,11 +300,11 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
             "logical port inventory failed: SKIP SR-IOV arm",
         )
         return False
-    if _logical_port_is_configured(data):
+    if _logical_port_is_configured(data, context.sriov_logical_port_id):
         state.skip(
             23,
             "sriov logical port precondition",
-            f"logical port {_LOGICAL_PORT_ID} is already configured (not a clean baseline); "
+            f"logical port {context.sriov_logical_port_id} is already configured (not a clean baseline); "
             "SKIP SR-IOV arm to avoid mutating a port this run does not own",
         )
         return False
@@ -324,7 +312,7 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         23,
         "sriov logical port precondition",
         "PASS",
-        f"logical port {_LOGICAL_PORT_ID} is unconfigured — clean baseline confirmed",
+        f"logical port {context.sriov_logical_port_id} is unconfigured — clean baseline confirmed",
     )
 
     # 4. lp3 profile SR-IOV field
@@ -340,17 +328,18 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
     #   (b) profile already contains exactly our test port (e.g. written manually
     #       ahead of this run so the unassign path can be exercised) — the assign
     #       operation will detect idempotence and the unassign will clear it.
-    profile_has_our_port = (
-        sriov_state.profile_ports not in (None, "none", "")
-        and f":{_LOGICAL_PORT_ID}:" in str(sriov_state.profile_ports)
-    )
+    profile_has_our_port = sriov_state.profile_ports not in (
+        None,
+        "none",
+        "",
+    ) and f":{context.sriov_logical_port_id}:" in str(sriov_state.profile_ports)
     profile_clean = sriov_state.profile_ports in (None, "none", "")
     if not profile_clean and not profile_has_our_port:
         state.skip(
             23,
             "lp3 profile precondition",
-            f"lp3 default_profile already has sriov_eth_logical_ports={sriov_state.profile_ports!r} "
-            f"(not our test port {_LOGICAL_PORT_ID}); "
+            f"lp3 {context.sriov_profile_name} already has sriov_eth_logical_ports={sriov_state.profile_ports!r} "
+            f"(not our test port {context.sriov_logical_port_id}); "
             "SKIP SR-IOV arm to avoid overwriting an existing assignment",
         )
         return False
@@ -359,7 +348,7 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         "lp3 profile precondition",
         "PASS",
         (
-            f"sriov_eth_logical_ports contains our test port {_LOGICAL_PORT_ID} — "
+            f"sriov_eth_logical_ports contains our test port {context.sriov_logical_port_id} — "
             "profile ready for assign (idempotent) + unassign round-trip"
             if profile_has_our_port
             else "sriov_eth_logical_ports=none — lp3 profile is clean"
@@ -382,11 +371,11 @@ async def assign_sriov_to_lp3(client: Client, state: RunState) -> bool:
         "hmc_assign_sriov_logical_port",
         system_name_or_uuid=context.system_name,
         lpar_name_or_uuid=context.lp3_name,
-        adapter_id=_ADAPTER_ID,
-        physical_port_id=_PHYS_PORT_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
-        capacity_percent=_CAPACITY_PERCENT,
-        profile_name=_PROFILE_NAME,
+        adapter_id=context.sriov_adapter_id,
+        physical_port_id=context.sriov_physical_port_id,
+        logical_port_id=context.sriov_logical_port_id,
+        capacity_percent=context.sriov_capacity_percent,
+        profile_name=context.sriov_profile_name,
         ownership_override=True,
     )
     state.record(24, "hmc_assign_sriov_logical_port", st, data)
@@ -420,12 +409,15 @@ async def verify_sriov_assigned(client: Client, state: RunState) -> bool:
     )
 
     # Verify capacity
-    cap_ok = abs((sriov_state.capacity_percent or 0.0) - _CAPACITY_PERCENT) < 0.01
+    cap_ok = (
+        abs((sriov_state.capacity_percent or 0.0) - context.sriov_capacity_percent)
+        < 0.01
+    )
     state.record(
         25,
         "sriov capacity check",
         "PASS" if cap_ok else "FAIL",
-        f"expected {_CAPACITY_PERCENT}%, got {sriov_state.capacity_percent}%",
+        f"expected {context.sriov_capacity_percent}%, got {sriov_state.capacity_percent}%",
     )
 
     # Profile readback — informational for the dynamic path on a Not Activated LPAR.
@@ -456,10 +448,10 @@ async def unassign_sriov_from_lp3(client: Client, state: RunState) -> bool:
         "hmc_unassign_sriov_logical_port",
         system_name_or_uuid=context.system_name,
         lpar_name_or_uuid=context.lp3_name,
-        adapter_id=_ADAPTER_ID,
-        physical_port_id=_PHYS_PORT_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
-        profile_name=_PROFILE_NAME,
+        adapter_id=context.sriov_adapter_id,
+        physical_port_id=context.sriov_physical_port_id,
+        logical_port_id=context.sriov_logical_port_id,
+        profile_name=context.sriov_profile_name,
         ownership_override=True,
     )
     state.record(26, "hmc_unassign_sriov_logical_port", st, data)
@@ -503,11 +495,11 @@ async def reassign_sriov_to_lp3(client: Client, state: RunState) -> bool:
         "hmc_assign_sriov_logical_port",
         system_name_or_uuid=context.system_name,
         lpar_name_or_uuid=context.lp3_name,
-        adapter_id=_ADAPTER_ID,
-        physical_port_id=_PHYS_PORT_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
-        capacity_percent=_CAPACITY_PERCENT,
-        profile_name=_PROFILE_NAME,
+        adapter_id=context.sriov_adapter_id,
+        physical_port_id=context.sriov_physical_port_id,
+        logical_port_id=context.sriov_logical_port_id,
+        capacity_percent=context.sriov_capacity_percent,
+        profile_name=context.sriov_profile_name,
         ownership_override=True,
     )
     state.record(27, "hmc_assign_sriov_logical_port (reassign)", st, data)
@@ -558,7 +550,7 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
             28,
             "sriov cleanup: owner mismatch",
             "FAIL",
-            f"MANUAL RECOVERY REQUIRED: logical port {_LOGICAL_PORT_ID} is assigned "
+            f"MANUAL RECOVERY REQUIRED: logical port {context.sriov_logical_port_id} is assigned "
             f"to {sriov_state.owner_lpar!r} — expected {context.lp3_name!r}. "
             "Do not unassign — another LPAR owns this port.",
         )
@@ -570,10 +562,10 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
             "hmc_unassign_sriov_logical_port",
             system_name_or_uuid=context.system_name,
             lpar_name_or_uuid=context.lp3_name,
-            adapter_id=_ADAPTER_ID,
-            physical_port_id=_PHYS_PORT_ID,
-            logical_port_id=_LOGICAL_PORT_ID,
-            profile_name=_PROFILE_NAME,
+            adapter_id=context.sriov_adapter_id,
+            physical_port_id=context.sriov_physical_port_id,
+            logical_port_id=context.sriov_logical_port_id,
+            profile_name=context.sriov_profile_name,
             ownership_override=True,
         )
         state.record(28, "hmc_unassign_sriov_logical_port (cleanup)", st, data)
@@ -583,10 +575,10 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
                 "sriov cleanup: unassign failed",
                 "FAIL",
                 f"MANUAL RECOVERY REQUIRED: profile unassign failed — "
-                f"logical port {_LOGICAL_PORT_ID} may still be in profile and effective layer. "
+                f"logical port {context.sriov_logical_port_id} may still be in profile and effective layer. "
                 f"Run: chhwres -r sriov --rsubtype logport -m {context.system_name} "
                 f"-o r -p {context.lp3_name} "
-                f"-a \"adapter_id={_ADAPTER_ID},logical_port_id={_LOGICAL_PORT_ID}\" "
+                f'-a "adapter_id={context.sriov_adapter_id},logical_port_id={context.sriov_logical_port_id}" '
                 f"to recover. Error: {str(data)[:400]}",
             )
             return
@@ -601,7 +593,7 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
                 f"chhwres -r sriov --rsubtype logport"
                 f" -m {context.system_name}"
                 f" -o r -p {context.lp3_name}"
-                f" -a \"adapter_id={_ADAPTER_ID},logical_port_id={_LOGICAL_PORT_ID}\""
+                f' -a "adapter_id={context.sriov_adapter_id},logical_port_id={context.sriov_logical_port_id}"'
             ),
         )
         state.record(28, "chhwres -o r (effective cleanup)", st2, data2)
@@ -611,10 +603,10 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
                 "sriov cleanup: effective removal failed",
                 "FAIL",
                 f"MANUAL RECOVERY REQUIRED: effective removal failed — "
-                f"logical port {_LOGICAL_PORT_ID} still assigned to {context.lp3_name!r}. "
+                f"logical port {context.sriov_logical_port_id} still assigned to {context.lp3_name!r}. "
                 f"Run manually: chhwres -r sriov --rsubtype logport -m {context.system_name} "
                 f"-o r -p {context.lp3_name} "
-                f"-a \"adapter_id={_ADAPTER_ID},logical_port_id={_LOGICAL_PORT_ID}\" "
+                f'-a "adapter_id={context.sriov_adapter_id},logical_port_id={context.sriov_logical_port_id}" '
                 f"Error: {str(data2)[:400]}",
             )
             return

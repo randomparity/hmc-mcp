@@ -1,4 +1,4 @@
-"""Live integration test runner for the ltczz386 test plan — Round 2.
+"""Live integration test runner for a configured HMC test plan — Round 2.
 
 Calls HMC MCP tools via the in-process FastMCP client against the real HMC
 configured in .env.  Results are printed to stdout as they complete and
@@ -26,7 +26,7 @@ import traceback
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from fastmcp import Client
 from live_test.connectivity import inventory_connectivity
@@ -173,11 +173,11 @@ def _ensure_schema_version() -> None:
 class LiveTestContext:
     """Identifiers and snapshots belonging to one live-test execution."""
 
-    system_name: str = "ltczz386"
-    lp3_name: str = "ltczz386-lp3"
-    scratch_name: str = "ltczz386-lp3-test"
-    nettest_name: str = "ltczz386-lp3-nettest"
-    test_user: str = "hmc-mcp-testuser"
+    system_name: str = "example-lt-609-system"
+    lp3_name: str = "example-lt-609-lpar"
+    scratch_name: str = "example-lt-609-scratch"
+    nettest_name: str = "example-lt-609-network"
+    test_user: str = "example-lt-609-user"
     system_uuid: str | None = None
     lp3_uuid: str | None = None
     scratch_uuid: str | None = None
@@ -191,15 +191,220 @@ class LiveTestContext:
     nettest_uuid: str | None = None
     job_uuid_sample: str | None = None
     vg_uuid: str | None = None
-    vdisk_name: str = "VG1-lp3"
+    vdisk_name: str = "example-lt-609-disk"
     vdisk_vg_name: str | None = None
     vdisk_size_mib: int | None = None
+    scratch_create_desired_memory_mib: int = 1536
+    scratch_create_max_memory_mib: int = 3072
+    scratch_create_desired_vcpus: int = 3
+    scratch_create_max_vcpus: int = 6
+    scratch_modify_desired_memory_mib: int = 2304
+    scratch_modify_max_memory_mib: int = 4608
+    dry_run_lpar_name: str = "example-lt-609-dry-run"
+    dry_run_storage_name: str = "example-lt-609-dry-disk"
+    vdisk_volume_group_name: str = "example-lt-609-vg"
+    dry_run_vios_slot: int = 17
+    dry_run_vios_partition_id: int = 307
+    dry_run_memory_mib: int = 1536
+    provision_min_memory_mib: int = 1536
+    provision_desired_memory_mib: int = 3072
+    provision_max_memory_mib: int = 6144
+    provision_desired_vcpus: int = 3
+    provision_max_vcpus: int = 6
+    protected_lpar_names: tuple[str, ...] = (
+        "example-lt-609-protected-a",
+        "example-lt-609-protected-b",
+    )
+    sriov_adapter_id: int = 17
+    sriov_physical_port_id: int = 9
+    sriov_logical_port_id: int = 917003
+    sriov_capacity_percent: float = 7.5
+    sriov_profile_name: str = "example-lt-609-profile"
+    iso_path: str = "/srv/example-lt-609/example-lt-609.iso"
+    iso_media_name: str = "example-lt-609.iso"
+    iso_http_media_name: str = "example-lt-609-http.iso"
+    iso_bind_host: str = "0.0.0.0"
+    iso_advertised_host: str = "iso.example.test"
+    iso_http_port: int = 18090
+    vmedia_repository_size_mib: int = 6144
+    vmedia_short_repository_size_mib: int = 1536
+    placement_memory_mib: int = 3072
+    vlan_range_start: int = 3100
+    vlan_range_end: int = 3199
     lp3_baseline: dict[str, Any] = field(default_factory=dict)
     # Virtual-media round (ST16–ST22)
     vmedia_repo_created: bool = False
     vmedia_iso_name: str | None = None
     vmedia_mapping_uuid: str | None = None
     vmedia_orig_boot_order: list[str] = field(default_factory=list)
+
+    @property
+    def iso_filename(self) -> str:
+        """Return the file name published by this run's ISO server."""
+        return Path(self.iso_path).name
+
+    @property
+    def iso_host(self) -> str:
+        """Return the host and port visible to the HMC."""
+        return f"{self.iso_advertised_host}:{self.iso_http_port}"
+
+    @property
+    def iso_url(self) -> str:
+        """Return the HMC-visible URL for the configured ISO."""
+        return f"http://{self.iso_host}/{self.iso_filename}"
+
+    _CONFIG_FIELDS: ClassVar[dict[str, str]] = {
+        "LIVE_TEST_SYSTEM_NAME": "system_name",
+        "LIVE_TEST_LPAR_NAME": "lp3_name",
+        "LIVE_TEST_SCRATCH_LPAR_NAME": "scratch_name",
+        "LIVE_TEST_NETWORK_TEST_LPAR_NAME": "nettest_name",
+        "LIVE_TEST_TEST_USER_NAME": "test_user",
+        "LIVE_TEST_VDISK_NAME": "vdisk_name",
+        "LIVE_TEST_SCRATCH_CREATE_DESIRED_MEMORY_MIB": "scratch_create_desired_memory_mib",
+        "LIVE_TEST_SCRATCH_CREATE_MAX_MEMORY_MIB": "scratch_create_max_memory_mib",
+        "LIVE_TEST_SCRATCH_CREATE_DESIRED_VCPUS": "scratch_create_desired_vcpus",
+        "LIVE_TEST_SCRATCH_CREATE_MAX_VCPUS": "scratch_create_max_vcpus",
+        "LIVE_TEST_SCRATCH_MODIFY_DESIRED_MEMORY_MIB": "scratch_modify_desired_memory_mib",
+        "LIVE_TEST_SCRATCH_MODIFY_MAX_MEMORY_MIB": "scratch_modify_max_memory_mib",
+        "LIVE_TEST_DRY_RUN_LPAR_NAME": "dry_run_lpar_name",
+        "LIVE_TEST_DRY_RUN_STORAGE_NAME": "dry_run_storage_name",
+        "LIVE_TEST_VDISK_VOLUME_GROUP_NAME": "vdisk_volume_group_name",
+        "LIVE_TEST_DRY_RUN_VIOS_SLOT": "dry_run_vios_slot",
+        "LIVE_TEST_DRY_RUN_VIOS_PARTITION_ID": "dry_run_vios_partition_id",
+        "LIVE_TEST_DRY_RUN_MEMORY_MIB": "dry_run_memory_mib",
+        "LIVE_TEST_PROVISION_MIN_MEMORY_MIB": "provision_min_memory_mib",
+        "LIVE_TEST_PROVISION_DESIRED_MEMORY_MIB": "provision_desired_memory_mib",
+        "LIVE_TEST_PROVISION_MAX_MEMORY_MIB": "provision_max_memory_mib",
+        "LIVE_TEST_PROVISION_DESIRED_VCPUS": "provision_desired_vcpus",
+        "LIVE_TEST_PROVISION_MAX_VCPUS": "provision_max_vcpus",
+        "LIVE_TEST_PROTECTED_LPAR_NAMES": "protected_lpar_names",
+        "LIVE_TEST_SRIOV_ADAPTER_ID": "sriov_adapter_id",
+        "LIVE_TEST_SRIOV_PHYSICAL_PORT_ID": "sriov_physical_port_id",
+        "LIVE_TEST_SRIOV_LOGICAL_PORT_ID": "sriov_logical_port_id",
+        "LIVE_TEST_SRIOV_CAPACITY_PERCENT": "sriov_capacity_percent",
+        "LIVE_TEST_SRIOV_PROFILE_NAME": "sriov_profile_name",
+        "LIVE_TEST_ISO_PATH": "iso_path",
+        "LIVE_TEST_ISO_MEDIA_NAME": "iso_media_name",
+        "LIVE_TEST_ISO_HTTP_MEDIA_NAME": "iso_http_media_name",
+        "LIVE_TEST_ISO_BIND_HOST": "iso_bind_host",
+        "LIVE_TEST_ISO_ADVERTISED_HOST": "iso_advertised_host",
+        "LIVE_TEST_ISO_HTTP_PORT": "iso_http_port",
+        "LIVE_TEST_VMEDIA_REPOSITORY_SIZE_MIB": "vmedia_repository_size_mib",
+        "LIVE_TEST_VMEDIA_SHORT_REPOSITORY_SIZE_MIB": "vmedia_short_repository_size_mib",
+        "LIVE_TEST_PLACEMENT_MEMORY_MIB": "placement_memory_mib",
+        "LIVE_TEST_VLAN_RANGE_START": "vlan_range_start",
+        "LIVE_TEST_VLAN_RANGE_END": "vlan_range_end",
+    }
+
+    @classmethod
+    def from_env_file(cls, path: Path | None = None) -> LiveTestContext:
+        """Load required live-test identifiers from one authoritative local file."""
+        path = path or _ENV_FILE
+        if not path.is_file():
+            raise ValueError(f"live-test configuration file not found: {path}")
+        values: dict[str, str] = {}
+        duplicates: list[str] = []
+        for line_number, raw in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), 1
+        ):
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key, value = key.strip(), value.strip().strip('"').strip("'")
+            if not key.startswith("LIVE_TEST_"):
+                continue
+            if key not in cls._CONFIG_FIELDS:
+                duplicates.append(f"unknown setting {key} (line {line_number})")
+                continue
+            if key in values:
+                duplicates.append(f"{key} (line {line_number})")
+            values[key] = value
+        errors = [key for key in cls._CONFIG_FIELDS if not values.get(key)] + duplicates
+        if errors:
+            raise ValueError("invalid live-test configuration: " + ", ".join(errors))
+        try:
+            parsed: dict[str, Any] = {
+                field: values[key] for key, field in cls._CONFIG_FIELDS.items()
+            }
+            for key in cls._CONFIG_FIELDS:
+                if key.endswith(
+                    (
+                        "_MIB",
+                        "_VCPUS",
+                        "_SLOT",
+                        "_PARTITION_ID",
+                        "_PORT",
+                        "_ID",
+                        "_START",
+                        "_END",
+                    )
+                ):
+                    parsed[cls._CONFIG_FIELDS[key]] = int(values[key])
+            parsed["sriov_capacity_percent"] = float(
+                values["LIVE_TEST_SRIOV_CAPACITY_PERCENT"]
+            )
+            parsed["protected_lpar_names"] = tuple(
+                name.strip()
+                for name in values["LIVE_TEST_PROTECTED_LPAR_NAMES"].split(",")
+                if name.strip()
+            )
+        except ValueError as exc:
+            raise ValueError(f"invalid live-test configuration: {exc}") from exc
+        numeric_fields = (
+            "scratch_create_desired_memory_mib",
+            "scratch_create_max_memory_mib",
+            "scratch_create_desired_vcpus",
+            "scratch_create_max_vcpus",
+            "scratch_modify_desired_memory_mib",
+            "scratch_modify_max_memory_mib",
+            "dry_run_vios_slot",
+            "dry_run_vios_partition_id",
+            "dry_run_memory_mib",
+            "provision_min_memory_mib",
+            "provision_desired_memory_mib",
+            "provision_max_memory_mib",
+            "provision_desired_vcpus",
+            "provision_max_vcpus",
+            "sriov_adapter_id",
+            "sriov_physical_port_id",
+            "sriov_logical_port_id",
+            "sriov_capacity_percent",
+            "iso_http_port",
+            "vmedia_repository_size_mib",
+            "vmedia_short_repository_size_mib",
+            "placement_memory_mib",
+            "vlan_range_start",
+            "vlan_range_end",
+        )
+        invalid = [name for name in numeric_fields if parsed[name] <= 0]
+        if not parsed["protected_lpar_names"]:
+            invalid.append("LIVE_TEST_PROTECTED_LPAR_NAMES")
+        if parsed["iso_http_port"] > 65535:
+            invalid.append("LIVE_TEST_ISO_HTTP_PORT")
+        if (
+            parsed["vlan_range_start"] > parsed["vlan_range_end"]
+            or parsed["vlan_range_end"] > 4094
+        ):
+            invalid.append("LIVE_TEST_VLAN_RANGE_START/LIVE_TEST_VLAN_RANGE_END")
+        if (
+            parsed["scratch_create_desired_memory_mib"]
+            > parsed["scratch_create_max_memory_mib"]
+            or parsed["scratch_create_desired_vcpus"]
+            > parsed["scratch_create_max_vcpus"]
+            or parsed["scratch_modify_desired_memory_mib"]
+            > parsed["scratch_modify_max_memory_mib"]
+            or not (
+                parsed["provision_min_memory_mib"]
+                <= parsed["provision_desired_memory_mib"]
+                <= parsed["provision_max_memory_mib"]
+            )
+            or parsed["provision_desired_vcpus"] > parsed["provision_max_vcpus"]
+        ):
+            invalid.append("inconsistent resource limits")
+        if invalid:
+            raise ValueError("invalid live-test configuration: " + ", ".join(invalid))
+        return cls(**parsed)
 
 
 @dataclass
@@ -274,7 +479,7 @@ class RunState:
 
 
 # ---------------------------------------------------------------------------
-# ST0 — Capture ltczz386-lp3 Baseline
+# ST0 — Capture baseline LPAR state
 # ---------------------------------------------------------------------------
 
 
@@ -356,6 +561,11 @@ def _parse_arguments(argv: list[str] | None = None) -> RunnerArguments:
 def _run_from_arguments(argv: list[str] | None = None) -> int:
     """Validate arguments, then bootstrap configuration and execute the live run."""
     arguments = _parse_arguments(argv)
+    try:
+        context = LiveTestContext.from_env_file()
+    except ValueError as exc:
+        print(f"❌ {exc}")
+        return 1
     _bootstrap_config()
     _ensure_schema_version()
     return asyncio.run(
@@ -363,6 +573,7 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
             subtask_filter=arguments.subtask,
             results_path=arguments.results_path,
             group=arguments.group,
+            context=context,
         )
     )
 
@@ -412,12 +623,17 @@ async def main(
     subtask_filter: int | None = None,
     results_path: str = "test-results-round2.json",
     group: str | None = None,
+    context: LiveTestContext | None = None,
 ) -> int:
-    state = RunState()
+    if context is None:
+        try:
+            context = LiveTestContext.from_env_file()
+        except ValueError as exc:
+            print(f"❌ {exc}")
+            return 1
+    state = RunState(context=context)
     context = state.context
-    print(
-        f"Starting live integration tests at {datetime.now(UTC).isoformat()}"
-    )
+    print(f"Starting live integration tests at {datetime.now(UTC).isoformat()}")
     schema_version = env_var_value("HMC_SCHEMA_VERSION") or "(not set)"
     print(f"HMC_SCHEMA_VERSION={schema_version}")
 

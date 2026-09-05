@@ -93,10 +93,10 @@ class _ScriptedClient:
 def test_sriov_baseline_helpers_require_healthy_adapter() -> None:
     """Baseline predicates reject wrong mode/availability and accept healthy data."""
     assert pcie._adapter_is_healthy(
-        {"items": [{"adapter_id": pcie._ADAPTER_ID, "mode": "sriov", "availability": "1"}]}
+        {"items": [{"adapter_id": 17, "mode": "sriov", "availability": "1"}]}, 17
     )
     assert not pcie._adapter_is_healthy(
-        {"items": [{"adapter_id": pcie._ADAPTER_ID, "mode": "ded", "availability": "1"}]}
+        {"items": [{"adapter_id": 17, "mode": "ded", "availability": "1"}]}, 17
     )
 
 
@@ -111,13 +111,10 @@ def test_sriov_baseline_helpers_compute_capacity_and_configuration() -> None:
     }
     with pytest.raises(ValueError, match="row 1.*capacity_percent"):
         pcie._available_capacity(data)
-    assert not pcie._logical_port_is_configured({"items": []})
+    assert not pcie._logical_port_is_configured({"items": []}, 917003)
     assert pcie._logical_port_is_configured(
-        {
-            "items": [
-                {"logical_port_id": pcie._LOGICAL_PORT_ID, "availability": "1"}
-            ]
-        }
+        {"items": [{"logical_port_id": 917003, "availability": "1"}]},
+        917003,
     )
 
 
@@ -135,12 +132,24 @@ async def test_sriov_orchestrator_runs_phases_in_order_and_cleans_up() -> None:
 
     monkeypatch = pytest.MonkeyPatch()
     try:
-        monkeypatch.setattr(pcie, "capture_sriov_baseline", AsyncMock(side_effect=phase("baseline")))
-        monkeypatch.setattr(pcie, "assign_sriov_to_lp3", AsyncMock(side_effect=phase("assign")))
-        monkeypatch.setattr(pcie, "verify_sriov_assigned", AsyncMock(side_effect=phase("verify")))
-        monkeypatch.setattr(pcie, "unassign_sriov_from_lp3", AsyncMock(side_effect=phase("unassign")))
-        monkeypatch.setattr(pcie, "reassign_sriov_to_lp3", AsyncMock(side_effect=phase("reassign")))
-        monkeypatch.setattr(pcie, "cleanup_sriov", AsyncMock(side_effect=phase("cleanup")))
+        monkeypatch.setattr(
+            pcie, "capture_sriov_baseline", AsyncMock(side_effect=phase("baseline"))
+        )
+        monkeypatch.setattr(
+            pcie, "assign_sriov_to_lp3", AsyncMock(side_effect=phase("assign"))
+        )
+        monkeypatch.setattr(
+            pcie, "verify_sriov_assigned", AsyncMock(side_effect=phase("verify"))
+        )
+        monkeypatch.setattr(
+            pcie, "unassign_sriov_from_lp3", AsyncMock(side_effect=phase("unassign"))
+        )
+        monkeypatch.setattr(
+            pcie, "reassign_sriov_to_lp3", AsyncMock(side_effect=phase("reassign"))
+        )
+        monkeypatch.setattr(
+            pcie, "cleanup_sriov", AsyncMock(side_effect=phase("cleanup"))
+        )
 
         class State:
             def skip(self, *_args) -> None:
@@ -213,8 +222,12 @@ async def test_sriov_orchestrator_skips_mutations_after_assign_failure() -> None
         monkeypatch.setattr(pcie, "assign_sriov_to_lp3", assign)
         monkeypatch.setattr(pcie, "verify_sriov_assigned", verify)
         monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
-        monkeypatch.setattr(pcie, "unassign_sriov_from_lp3", AsyncMock(side_effect=AssertionError))
-        monkeypatch.setattr(pcie, "reassign_sriov_to_lp3", AsyncMock(side_effect=AssertionError))
+        monkeypatch.setattr(
+            pcie, "unassign_sriov_from_lp3", AsyncMock(side_effect=AssertionError)
+        )
+        monkeypatch.setattr(
+            pcie, "reassign_sriov_to_lp3", AsyncMock(side_effect=AssertionError)
+        )
 
         class State:
             def skip(self, *_args) -> None:
@@ -307,14 +320,15 @@ def test_the_iso_allowlist_merge_reaches_the_field_and_is_idempotent(monkeypatch
     monkeypatch.setenv(name, "canonical.example.com")
     monkeypatch.setenv("hmc_iso_url_allowlist", "variant.example.com")
 
-    vmedia._allow_iso_host()
+    context = runner.LiveTestContext()
+    vmedia._allow_iso_host(context)
 
     merged = os.environ[name]
     assert [k for k in os.environ if k.lower() == name.lower()] == [name]
-    assert merged.split(",") == ["variant.example.com", vmedia._ISO_HOST]
+    assert merged.split(",") == ["variant.example.com", context.iso_host]
     assert HMCConfig(host="h", user="u", password="p").iso_url_allowlist == merged
 
-    vmedia._allow_iso_host()
+    vmedia._allow_iso_host(context)
     assert os.environ[name] == merged
 
 
@@ -332,9 +346,43 @@ def test_the_iso_allowlist_merge_keeps_a_variant_only_operator_entry(monkeypatch
     _clear(monkeypatch, name)
     monkeypatch.setenv("hmc_iso_url_allowlist", "operator.example.com")
 
-    vmedia._allow_iso_host()
+    context = runner.LiveTestContext()
+    vmedia._allow_iso_host(context)
 
-    assert os.environ[name].split(",") == ["operator.example.com", vmedia._ISO_HOST]
+    assert os.environ[name].split(",") == ["operator.example.com", context.iso_host]
+
+
+def test_live_context_reads_the_complete_example_and_ignores_exports(
+    monkeypatch, tmp_path
+) -> None:
+    """The checked-in example is a complete, authoritative live-test mapping."""
+    example = Path(__file__).parents[1] / ".env.example"
+    config_path = tmp_path / ".env"
+    config_path.write_text(example.read_text())
+    monkeypatch.setenv("LIVE_TEST_SYSTEM_NAME", "ambient-target")
+
+    context = runner.LiveTestContext.from_env_file(config_path)
+
+    assert context.system_name == "example-lt-609-system"
+    assert context.sriov_logical_port_id == 917003
+    assert context.iso_url == "http://iso.example.test:18090/example-lt-609.iso"
+    assert context.protected_lpar_names == (
+        "example-lt-609-protected-a",
+        "example-lt-609-protected-b",
+    )
+
+
+@pytest.mark.asyncio
+async def test_main_rejects_missing_live_test_file_before_creating_mcp(
+    monkeypatch, tmp_path
+) -> None:
+    """Programmatic invocation cannot bypass required local live-test settings."""
+    monkeypatch.setattr(runner, "_ENV_FILE", tmp_path / ".env")
+    monkeypatch.setattr(
+        runner, "create_mcp", lambda *_args, **_kwargs: pytest.fail("created MCP")
+    )
+
+    assert await runner.main(results_path=str(tmp_path / "results.json")) == 1
 
 
 def test_a_dotenv_entry_never_outranks_a_case_variant_export(monkeypatch, tmp_path):
@@ -664,19 +712,40 @@ async def test_lpar_inventory_calls_all_read_only_affinity_operations(monkeypatc
     assert affinity_calls == [
         (
             "hmc_get_lpar_memopt_score",
-            {"system_name_or_uuid": "ltczz386", "lpar_name_or_uuid": "ltczz386-lp3"},
+            {
+                "system_name_or_uuid": "example-lt-609-system",
+                "lpar_name_or_uuid": "example-lt-609-lpar",
+            },
         ),
-        ("hmc_list_lpar_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
-        ("hmc_get_system_memopt_score", {"system_name_or_uuid": "ltczz386"}),
-        ("hmc_plan_lpar_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
-        ("hmc_plan_system_memopt_score", {"system_name_or_uuid": "ltczz386"}),
-        ("hmc_list_resource_group_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
-        ("hmc_plan_resource_group_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
+        (
+            "hmc_list_lpar_memopt_scores",
+            {"system_name_or_uuid": "example-lt-609-system"},
+        ),
+        (
+            "hmc_get_system_memopt_score",
+            {"system_name_or_uuid": "example-lt-609-system"},
+        ),
+        (
+            "hmc_plan_lpar_memopt_scores",
+            {"system_name_or_uuid": "example-lt-609-system"},
+        ),
+        (
+            "hmc_plan_system_memopt_score",
+            {"system_name_or_uuid": "example-lt-609-system"},
+        ),
+        (
+            "hmc_list_resource_group_memopt_scores",
+            {"system_name_or_uuid": "example-lt-609-system"},
+        ),
+        (
+            "hmc_plan_resource_group_memopt_scores",
+            {"system_name_or_uuid": "example-lt-609-system"},
+        ),
         (
             "hmc_get_minimum_affinity_policy",
             {
-                "system_name_or_uuid": "ltczz386",
-                "lpar_name_or_uuid": "ltczz386-lp3",
+                "system_name_or_uuid": "example-lt-609-system",
+                "lpar_name_or_uuid": "example-lt-609-lpar",
             },
         ),
     ]
@@ -944,7 +1013,7 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     monkeypatch.setattr(vmedia.Path, "is_file", lambda _path: True)
     state = runner.RunState()
-    monkeypatch.setattr(state.iso_http_server, "start", lambda: None)
+    monkeypatch.setattr(state.iso_http_server, "start", lambda _context: None)
     _configure_vmedia_context(state, context)
 
     await workflow(None, state)
@@ -987,7 +1056,7 @@ async def test_vmedia_boot_failure_still_restores_boot_order_and_unmounts(monkey
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    monkeypatch.setattr(state.iso_http_server, "start", lambda: None)
+    monkeypatch.setattr(state.iso_http_server, "start", lambda _context: None)
     _configure_vmedia_context(
         state,
         {
@@ -1056,9 +1125,19 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
     first_path = tmp_path / "first.json"
     second_path = tmp_path / "second.json"
 
-    assert await runner.main(results_path=str(first_path)) == 0
+    assert (
+        await runner.main(
+            results_path=str(first_path), context=runner.LiveTestContext()
+        )
+        == 0
+    )
     seen_states[0].context.system_uuid = "mutated-after-run"
-    assert await runner.main(results_path=str(second_path)) == 0
+    assert (
+        await runner.main(
+            results_path=str(second_path), context=runner.LiveTestContext()
+        )
+        == 0
+    )
 
     assert seen_states[0] is not seen_states[1]
     assert initial_system_uuids == [None, None]
@@ -1083,7 +1162,12 @@ async def test_main_returns_failure_and_persists_results(monkeypatch, tmp_path):
     monkeypatch.setattr(runner, "SUBTASKS", {0: failing_subtask})
     results_path = tmp_path / "results.json"
 
-    assert await runner.main(results_path=str(results_path)) == 1
+    assert (
+        await runner.main(
+            results_path=str(results_path), context=runner.LiveTestContext()
+        )
+        == 1
+    )
     saved = json.loads(results_path.read_text())
     assert saved["results"][0]["status"] == "FAIL"
 
@@ -1093,7 +1177,9 @@ async def test_main_rejects_unknown_numeric_workflow(monkeypatch, tmp_path):
     _isolate_runner(monkeypatch)
     results_path = tmp_path / "unknown.json"
 
-    assert await runner.main(999, str(results_path)) == 1
+    assert (
+        await runner.main(999, str(results_path), context=runner.LiveTestContext()) == 1
+    )
 
     saved = json.loads(results_path.read_text())
     assert saved["results"][0]["tool"] == "runner"
@@ -1111,7 +1197,10 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
         responses = {
             "hmc_get_console_info": {"uuid": "console-uuid"},
             "hmc_list_systems": [
-                {"UUID": "system-uuid", "Resource": {"SystemName": "ltczz386"}}
+                {
+                    "UUID": "system-uuid",
+                    "Resource": {"SystemName": "example-lt-609-system"},
+                }
             ],
             "hmc_get_lpar": {"UUID": "lpar-uuid"},
             "hmc_list_vios": [{"UUID": "vios-uuid", "Resource": {"PartitionID": "7"}}],
@@ -1139,9 +1228,9 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
         "hmc_system_summary",
         "hmc_lpar_summary",
     ]
-    assert calls[2][1] == {"system_name_or_uuid": "ltczz386"}
-    assert calls[4][1] == {"lpar_name_or_uuid": "ltczz386-lp3"}
-    assert calls[7][1] == {"desired_memory_mib": 1024}
+    assert calls[2][1] == {"system_name_or_uuid": "example-lt-609-system"}
+    assert calls[4][1] == {"lpar_name_or_uuid": "example-lt-609-lpar"}
+    assert calls[7][1] == {"desired_memory_mib": 3072}
     assert calls[9][1] == {"resource_type": "LogicalPartition"}
     assert calls[10][1] == {"limit": 10}
     assert state.context.console_uuid == "console-uuid"
@@ -1305,7 +1394,7 @@ async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
         if tool == "hmc_list_virtual_switches":
             return "PASS", [{"Resource": {"SwitchID": "7"}}]
         if tool == "hmc_list_virtual_networks" and len(calls) < 7:
-            return "PASS", [{"Resource": {"NetworkVLANID": "3000"}}]
+            return "PASS", [{"Resource": {"NetworkVLANID": "3100"}}]
         return "PASS", {}
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
@@ -1318,8 +1407,8 @@ async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
         item for item in calls if item[0] == "hmc_create_virtual_network"
     )
     assert state.context.test_vswitch_id == 7
-    assert state.context.test_vlan_id == 3001
-    assert create_call[1]["vlan_id"] == 3001
+    assert state.context.test_vlan_id == 3101
+    assert create_call[1]["vlan_id"] == 3101
     assert create_call[1]["virtual_switch_id"] == 7
 
 
@@ -1401,10 +1490,10 @@ async def test_malformed_inventory_capacity_blocks_storage_mutation(monkeypatch)
                 {
                     "UUID": "vg-uuid",
                     "Resource": {
-                        "GroupName": "VG1",
+                        "GroupName": "example-lt-609-vg",
                         "VirtualDisks": {
                             "VirtualDisk": {
-                                "DiskName": "VG1-lp3",
+                                "DiskName": "example-lt-609-disk",
                                 "DiskCapacity": "not-a-capacity",
                             }
                         },

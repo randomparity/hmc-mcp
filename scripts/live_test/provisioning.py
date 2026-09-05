@@ -26,7 +26,7 @@ async def validate_provisioning_dry_run(client: Client, state: RunState) -> None
     vios_pid = context.vios_partition_id or context.lp3_baseline.get(
         "vios_partition_id"
     )
-    vios_slot = context.lp3_baseline.get("vios_slot") or 2
+    vios_slot = context.lp3_baseline.get("vios_slot") or context.dry_run_vios_slot
 
     if not vios_uuid or not pvid:
         reason = "no VIOS UUID" if not vios_uuid else "no PVID or test VLAN ID"
@@ -38,13 +38,13 @@ async def validate_provisioning_dry_run(client: Client, state: RunState) -> None
         "hmc_provision_lpar",
         dry_run=True,
         system_name_or_uuid=context.system_name,
-        name="ltczz386-lp3-dry",
+        name=context.dry_run_lpar_name,
         port_vlan_id=int(pvid),
         vios_uuid=vios_uuid,
-        vios_partition_id=int(vios_pid or 2),
+        vios_partition_id=int(vios_pid or context.dry_run_vios_partition_id),
         vios_slot=int(vios_slot),
-        storage_name="test-dry-disk",
-        desired_memory=512,
+        storage_name=context.dry_run_storage_name,
+        desired_memory=context.dry_run_memory_mib,
     )
     state.record(13, "hmc_provision_lpar (dry_run)", st, data)
     if st == "PASS" and isinstance(data, dict):
@@ -55,7 +55,7 @@ async def validate_provisioning_dry_run(client: Client, state: RunState) -> None
 
 
 # ---------------------------------------------------------------------------
-# ST14 — Storage Lifecycle + Full Live Provision of ltczz386-lp3
+# ST14 — Storage Lifecycle + Full Live Provision
 # ---------------------------------------------------------------------------
 
 
@@ -101,7 +101,7 @@ async def _recreate_test_disk(
     )
     state.record(14, "hmc_list_volume_groups (pre-create)", status, data)
 
-    vg_name = context.vdisk_vg_name or "VG1"
+    vg_name = context.vdisk_vg_name or context.vdisk_volume_group_name
     command = (
         f"viosvrcmd -m {context.system_name} -p {context.vios_uuid}"
         f' -c "rmvlog -vg {vg_name} -lv {context.vdisk_name}"'
@@ -109,7 +109,7 @@ async def _recreate_test_disk(
     status, data = await state.call(client, "hmc_run_command", cmd=command)
     state.record_expected_or_real(
         14,
-        "hmc_run_command rmvlog (delete old VG1-lp3)",
+        "hmc_run_command rmvlog (delete old test disk)",
         status,
         data,
         expected_fail_substrings=[
@@ -119,7 +119,7 @@ async def _recreate_test_disk(
             "0516-306",
             "0516-404",
         ],
-        skip_reason="VG1-lp3 LV not present on VIOS (already cleaned up or never existed)",
+        skip_reason="test disk is not present on VIOS (already cleaned up or never existed)",
     )
 
     status, data = await state.call(
@@ -132,12 +132,12 @@ async def _recreate_test_disk(
     )
     state.record_expected_or_real(
         14,
-        "hmc_create_virtual_disk (VG1-lp3)",
+        "hmc_create_virtual_disk (test disk)",
         status,
         data,
         expected_fail_substrings=["406", "not acceptable"],
         skip_reason="REST VolumeGroup POST not supported on this HMC firmware — "
-        "pre-existing VG1-lp3 LV must be recreated manually on the VIOS",
+        "pre-existing test disk must be recreated manually on the VIOS",
     )
 
     status, data = await state.call(
@@ -173,23 +173,29 @@ async def _provision_from_baseline(
         storage_kind="VirtualDisk",
         vg_uuid=vg_uuid,
         min_memory=int(
-            resource.get("MinimumMemory") or resource.get("minimum_memory") or 256
+            resource.get("MinimumMemory")
+            or resource.get("minimum_memory")
+            or context.provision_min_memory_mib
         ),
         desired_memory=int(
-            resource.get("DesiredMemory") or resource.get("desired_memory") or 1024
+            resource.get("DesiredMemory")
+            or resource.get("desired_memory")
+            or context.provision_desired_memory_mib
         ),
         max_memory=int(
-            resource.get("MaximumMemory") or resource.get("maximum_memory") or 2048
+            resource.get("MaximumMemory")
+            or resource.get("maximum_memory")
+            or context.provision_max_memory_mib
         ),
         desired_vcpus=int(
             resource.get("DesiredVirtualProcessors")
             or resource.get("desired_virtual_processors")
-            or 1
+            or context.provision_desired_vcpus
         ),
         max_vcpus=int(
             resource.get("MaximumVirtualProcessors")
             or resource.get("maximum_virtual_processors")
-            or 2
+            or context.provision_max_vcpus
         ),
         partition_type="AIX/Linux",
         power_on=True,
@@ -205,7 +211,7 @@ async def _provision_from_baseline(
 
 async def exercise_storage_provisioning(client: Client, state: RunState) -> None:
     context = state.context
-    print("\n=== ST14: Storage Lifecycle + Full Live Provision of ltczz386-lp3 ===")
+    print("\n=== ST14: Storage Lifecycle + Full Live Provision ===")
 
     baseline = context.lp3_baseline
     vios_uuid = context.vios_uuid
