@@ -10,7 +10,6 @@ from hmc_mcp.server_tools import (
     metrics,
     snapshot,
     system_resources,
-    templates,
     updates,
     users,
     vios,
@@ -31,6 +30,7 @@ from hmc_mcp.server_tools.permissions import EFFECTIVE_PERMISSIONS_SECURITY
 from hmc_mcp.server_tools.storage import resources as storage
 from hmc_mcp.server_tools.systems import core as systems
 from hmc_mcp.server_tools.systems import health
+from hmc_mcp.server_tools.templates import core as templates
 from hmc_mcp.server_tools.virtualization import adapters, network, pcie, vnic
 from hmc_mcp.tool_registry import ToolSecurity, build_tool_security
 

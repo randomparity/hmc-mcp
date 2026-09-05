@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import (
+from ..._app import (
     with_client,
 )
-from ..operations.templates import (
+from ...operations.templates.core import (
     deploy_partition_template,
     get_partition_template,
     list_partition_templates,
 )
-from ..tool_registry import tool_module
+from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 

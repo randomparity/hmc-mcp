@@ -254,7 +254,7 @@ names are internal everywhere and are never inventoried.
   `StorageMapping`, `VolumeGroup`; excluded synchronous: none.
 - `operations.systems` — operations: `get_system`, `list_systems`, `modify_system`,
   `power_system`; types: `ManagedSystemPatch`; excluded synchronous: none.
-- `operations.templates` — operations: `deploy_partition_template`, `get_partition_template`,
+- `operations.templates.core` — operations: `deploy_partition_template`, `get_partition_template`,
   `list_partition_templates`; types: none; excluded synchronous: none.
 - `operations.updates` — operations: none; types: none; excluded synchronous: none.
 - `operations.updates.models` — exports: `ConsoleUpdateMediaType`, `ConsoleUpdateSource`,

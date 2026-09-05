@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations import templates as operations_templates
-from hmc_mcp.operations.templates import (
+from hmc_mcp.operations.templates import core as operations_templates
+from hmc_mcp.operations.templates.core import (
     _new_lpar_from_snapshots,
     deploy_partition_template,
 )

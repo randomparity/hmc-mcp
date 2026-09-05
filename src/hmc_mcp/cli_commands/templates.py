@@ -6,7 +6,7 @@ import typer
 from rich.table import Table
 
 from ..jobs import validate_wait_timing
-from ..operations.templates import (
+from ..operations.templates.core import (
     deploy_partition_template,
     get_partition_template,
     list_partition_templates,
