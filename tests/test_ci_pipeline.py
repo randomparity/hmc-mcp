@@ -104,8 +104,8 @@ PPC64LE_BASE = (
     "sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea"
 )
 UV_PPC64LE_SHA256 = (
-    "bff188fcf2d867c5595f8db6061a39"  # pragma: allowlist secret
-    "e54752ab213eaefc14287f37e85afe9ead"  # pragma: allowlist secret
+    "2e6beb653888d2d2721b46d3d8aa"  # pragma: allowlist secret
+    "328a2339a6cc20d4df98bbf206e728a92174"  # pragma: allowlist secret
 )
 
 
@@ -422,7 +422,7 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     for action, (sha, version) in ACTION_PINS.items():
         assert f"uses: {action}@{sha}  # {version}" in workflow
     assert "persist-credentials: false" in workflow
-    assert 'version: "0.12.3"' in workflow
+    assert workflow.count('version: "0.12.10"') == 5
     assert 'just-version: "1.58.0"' in workflow
     for command in (
         "just setup",
@@ -761,6 +761,7 @@ def test_github_ci_retains_an_inactive_bounded_ppc64le_job() -> None:
     assert "/var/run/docker.sock" not in body
 
     assert dockerfile.startswith(f"FROM {PPC64LE_BASE}\n")
+    assert "uv_version=0.12.10" in dockerfile
     assert "uv-powerpc64le-unknown-linux-gnu.tar.gz" in dockerfile
     assert UV_PPC64LE_SHA256 in dockerfile
     assert "ubuntu_snapshot=20260813T000000Z" in dockerfile
