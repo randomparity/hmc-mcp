@@ -158,8 +158,6 @@ async def _provision_from_baseline(
 ) -> None:
     """Build and submit the live provision request from captured baseline resources."""
     context = state.context
-    baseline_lpar = context.lp3_baseline.get("lpars") or {}
-    resource = get_resource(baseline_lpar) if isinstance(baseline_lpar, dict) else {}
     status, data = await state.call(
         client,
         "hmc_provision_lpar",
@@ -172,31 +170,7 @@ async def _provision_from_baseline(
         storage_name=context.vdisk_name,
         storage_kind="VirtualDisk",
         vg_uuid=vg_uuid,
-        min_memory=int(
-            resource.get("MinimumMemory")
-            or resource.get("minimum_memory")
-            or context.provision_min_memory_mib
-        ),
-        desired_memory=int(
-            resource.get("DesiredMemory")
-            or resource.get("desired_memory")
-            or context.provision_desired_memory_mib
-        ),
-        max_memory=int(
-            resource.get("MaximumMemory")
-            or resource.get("maximum_memory")
-            or context.provision_max_memory_mib
-        ),
-        desired_vcpus=int(
-            resource.get("DesiredVirtualProcessors")
-            or resource.get("desired_virtual_processors")
-            or context.provision_desired_vcpus
-        ),
-        max_vcpus=int(
-            resource.get("MaximumVirtualProcessors")
-            or resource.get("maximum_virtual_processors")
-            or context.provision_max_vcpus
-        ),
+        **_baseline_provision_resources(state),
         partition_type="AIX/Linux",
         power_on=True,
         dry_run=False,
@@ -207,6 +181,49 @@ async def _provision_from_baseline(
             step_status = step.get("status", "unknown")
             icon = "✅" if step_status == "ok" else "❌"
             print(f"    {icon} provision step [{step.get('step', '?')}]: {step_status}")
+
+
+def _baseline_provision_resources(state: RunState) -> dict[str, int]:
+    """Translate the captured REST resource keys into provision request fields."""
+    context = state.context
+    baseline_lpar = context.lp3_baseline.get("lpars") or {}
+    resource = get_resource(baseline_lpar) if isinstance(baseline_lpar, dict) else {}
+    values = (
+        (
+            "min_memory",
+            "MinimumMemory",
+            "minimum_memory",
+            context.provision_min_memory_mib,
+        ),
+        (
+            "desired_memory",
+            "DesiredMemory",
+            "desired_memory",
+            context.provision_desired_memory_mib,
+        ),
+        (
+            "max_memory",
+            "MaximumMemory",
+            "maximum_memory",
+            context.provision_max_memory_mib,
+        ),
+        (
+            "desired_vcpus",
+            "DesiredVirtualProcessors",
+            "desired_virtual_processors",
+            context.provision_desired_vcpus,
+        ),
+        (
+            "max_vcpus",
+            "MaximumVirtualProcessors",
+            "maximum_virtual_processors",
+            context.provision_max_vcpus,
+        ),
+    )
+    return {
+        name: int(resource.get(upper) or resource.get(lower) or default)
+        for name, upper, lower, default in values
+    }
 
 
 async def exercise_storage_provisioning(client: Client, state: RunState) -> None:
