@@ -6,7 +6,7 @@ changes to a ``do/*`` payload do not require editing lifecycle code.
 
 from __future__ import annotations
 
-from .xmlutil import WEB_NS, escapes_string_arguments
+from ..xmlutil import WEB_NS, escapes_string_arguments
 
 _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <JobRequest xmlns="{ns}" xmlns:JobRequest="{ns}" schemaVersion="V1_0">

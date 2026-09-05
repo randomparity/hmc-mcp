@@ -32,7 +32,8 @@ from typing import Any, Literal, get_args, get_origin, get_type_hints
 import pytest
 from defusedxml import ElementTree as DET
 
-from hmc_mcp import documents, jobs, jobs_requests
+from hmc_mcp import documents, jobs
+from hmc_mcp.jobs import requests as jobs_requests
 from hmc_mcp.operations.updates import models as update_jobs
 from hmc_mcp.xmlutil import escape_xml, escapes_string_arguments, localname
 

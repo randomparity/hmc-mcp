@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol, get_args
 from urllib.parse import urlparse
 
-from .errors import HMCError
-from .jobs_requests import build_job_request
+from ..errors import HMCError
+from .requests import build_job_request
 
 LuType = Literal["THIN", "THICK"]
 DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
