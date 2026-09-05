@@ -34,7 +34,7 @@ from hmc_mcp.cli_commands.virtualization import pcie as cli_pcie
 from hmc_mcp.cli_commands.virtualization import vnic as cli_vnic
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations import ownership as lpar_ownership
+from hmc_mcp.operations.lpar import ownership as lpar_ownership
 from hmc_mcp.operations.lpar.assignments import LparPcieWorkflowResult
 from hmc_mcp.operations.lpar.provision import ProvisionResult
 from hmc_mcp.operations.lpar.workflow_contract import WorkflowStep
