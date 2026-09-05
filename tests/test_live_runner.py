@@ -1561,6 +1561,78 @@ async def test_malformed_inventory_capacity_blocks_storage_mutation(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_storage_provisioning_runs_the_complete_successful_orchestration(monkeypatch):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_get_lpar":
+            return "PASS", {"uuid": "recreated-lp3"}
+        if tool == "hmc_provision_lpar":
+            return "PASS", {"steps": [{"step": "create", "status": "ok"}]}
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.context.vios_uuid = "vios-uuid"
+    state.context.vg_uuid = "vg-uuid"
+    state.context.vios_partition_id = 7
+    state.context.vdisk_size_mib = 2048
+    state.context.lp3_baseline = {
+        "pvid": 3101,
+        "vios_slot": 11,
+        "lpars": {
+            "Resource": {
+                "MinimumMemory": "1024",
+                "DesiredMemory": "2048",
+                "MaximumMemory": "4096",
+                "DesiredVirtualProcessors": "2",
+                "MaximumVirtualProcessors": "4",
+            }
+        },
+    }
+
+    await runner.exercise_storage_provisioning(None, state)
+
+    assert [tool for tool, _ in calls] == [
+        "hmc_get_lpar",
+        "hmc_power_off_lpar",
+        "hmc_delete_lpar",
+        "hmc_list_lpars",
+        "hmc_list_volume_groups",
+        "hmc_run_command",
+        "hmc_create_virtual_disk",
+        "hmc_list_volume_groups",
+        "hmc_provision_lpar",
+        "hmc_get_lpar",
+        "hmc_lpar_summary",
+    ]
+    provision = calls[8][1]
+    assert provision == {
+        "system_name_or_uuid": state.context.system_name,
+        "name": state.context.lp3_name,
+        "port_vlan_id": 3101,
+        "vios_uuid": "vios-uuid",
+        "vios_partition_id": 7,
+        "vios_slot": 11,
+        "storage_name": state.context.vdisk_name,
+        "storage_kind": "VirtualDisk",
+        "vg_uuid": "vg-uuid",
+        "min_memory": 1024,
+        "desired_memory": 2048,
+        "max_memory": 4096,
+        "desired_vcpus": 2,
+        "max_vcpus": 4,
+        "partition_type": "AIX/Linux",
+        "power_on": True,
+        "dry_run": False,
+    }
+    assert calls[9][1] == {"lpar_name_or_uuid": state.context.lp3_name}
+    assert calls[10][1] == {"lpar_name_or_uuid": state.context.lp3_name}
+    assert state.context.lp3_uuid == "recreated-lp3"
+
+
+@pytest.mark.asyncio
 async def test_lpar_lifecycle_sequences_create_power_and_cleanup(monkeypatch):
     calls = []
 
