@@ -176,7 +176,7 @@ async def test_operation_returns_without_polling_for_completion(operation):
         )
 
     assert len(ssh.commands) == 1
-    hmc.get_job.assert_not_awaited()
+    hmc.get_job_entry.assert_not_awaited()
     hmc.submit_job.assert_not_awaited()
 
 

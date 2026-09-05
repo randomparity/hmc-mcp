@@ -218,7 +218,7 @@ async def test_lpm_recovery_operations_return_stable_submission_outcome(
     assert result.job.status is None
     assert result.job.timed_out is False
     assert result.job.error is None
-    hmc.wait_for_job.assert_not_awaited()
+    hmc.wait_for_job_entry.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -233,14 +233,14 @@ async def test_lpm_recovery_operations_wait_for_terminal_outcome(
     completed = {"Resource": {"JobID": "job-1", "Status": "COMPLETED"}}
     hmc = AsyncMock()
     setattr(hmc, submit_method, AsyncMock(return_value=submitted))
-    hmc.wait_for_job.return_value = completed
+    hmc.wait_for_job_entry.return_value = completed
 
     result = await operation(hmc, *args, wait=True, timeout_seconds=60, poll_interval=2)
 
     assert set(asdict(result.job)) == JOB_OUTCOME_KEYS
     assert result.job.status == "COMPLETED"
     assert result.job.timed_out is False
-    hmc.wait_for_job.assert_awaited_once_with("job-1", 60, 2, job_href="/jobs/job-1")
+    hmc.wait_for_job_entry.assert_awaited_once_with("job-1", 60, 2, job_href="/jobs/job-1")
 
 
 @pytest.mark.asyncio
@@ -266,7 +266,7 @@ async def test_lpm_recovery_operations_surface_terminal_failure(
     }
     hmc = AsyncMock()
     setattr(hmc, submit_method, AsyncMock(return_value=submitted))
-    hmc.wait_for_job.return_value = failed
+    hmc.wait_for_job_entry.return_value = failed
 
     result = await operation(hmc, *args, wait=True)
 

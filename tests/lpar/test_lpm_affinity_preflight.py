@@ -264,7 +264,7 @@ async def test_warning_proceeds_to_canonical_validation() -> None:
         {"UUID": "system-1", "Resource": {"SystemName": "target-1"}}
     ]
     hmc.lpar_migrate_validate.return_value = {"UUID": "validate-1"}
-    hmc.wait_for_job.return_value = {
+    hmc.wait_for_job_entry.return_value = {
         "Resource": {"JobID": "validate-1", "Status": "COMPLETED"}
     }
     hmc.lpar_migrate.return_value = {"UUID": "migrate-1"}
@@ -290,7 +290,7 @@ async def test_canonical_validation_timeout_never_submits_migration() -> None:
         {"UUID": "system-1", "Resource": {"SystemName": "target-1"}}
     ]
     hmc.lpar_migrate_validate.return_value = {"UUID": "validate-1"}
-    hmc.wait_for_job.return_value = {
+    hmc.wait_for_job_entry.return_value = {
         "Resource": {"JobID": "validate-1", "Status": "RUNNING"}
     }
 

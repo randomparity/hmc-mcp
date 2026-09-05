@@ -41,7 +41,7 @@ class ClusterMixin:
     ) -> dict[str, Any] | None:
         """Submit a CreateLogicalUnit job against a Cluster/SSP.
 
-        Returns the Job resource (poll get_job for status; the job result
+        Returns the Job resource (poll get_job_entry for status; the job result
         contains the new LU's UDID in LUCreated).
         """
 

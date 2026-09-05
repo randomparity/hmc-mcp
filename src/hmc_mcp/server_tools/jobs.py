@@ -14,7 +14,7 @@ tool, register_tools, tool_security = tool_module()
 
 
 # Not exhaustive: `job_href` is a caller-supplied URI whose path replaces the
-# `job_id` selector outright — `client.get_job` fetches `urlparse(job_href).path`
+# `job_id` selector outright — `client.get_job_entry` fetches `urlparse(job_href).path`
 # and never looks at `job_id`. A `targets` table would therefore authorize one
 # job identity while the server reads another, so ADR 0039 grants this tool only
 # under `targets = "all-targets"`. ADR 0036 already noted that a job identifier
@@ -98,7 +98,7 @@ def hmc_list_recent_jobs(
 
 
 # Not exhaustive: `job_href` is a caller-supplied URI whose path replaces the
-# `job_id` selector outright — `client.get_job` fetches `urlparse(job_href).path`
+# `job_id` selector outright — `client.get_job_entry` fetches `urlparse(job_href).path`
 # and never looks at `job_id`. A `targets` table would therefore authorize one
 # job identity while the server reads another, so ADR 0039 grants this tool only
 # under `targets = "all-targets"`. ADR 0036 already noted that a job identifier

@@ -343,7 +343,7 @@ class FakeHMC:
         self._record("find_system_by_name", name)
         return self.system if name == "sys1" else None
 
-    async def wait_for_job(
+    async def wait_for_job_entry(
         self,
         job_id,
         timeout_seconds=300,
@@ -352,7 +352,7 @@ class FakeHMC:
         job_href=None,
     ):
         self._record(
-            "wait_for_job",
+            "wait_for_job_entry",
             job_id,
             timeout_seconds,
             poll_interval,
@@ -444,8 +444,8 @@ class FakeHMC:
         return self.job
 
     # -- jobs ------------------------------------------------------------ #
-    async def get_job(self, job_id, *, job_href=None):
-        self._record("get_job", job_id, job_href=job_href)
+    async def get_job_entry(self, job_id, *, job_href=None):
+        self._record("get_job_entry", job_id, job_href=job_href)
         return self.job if job_id == JOB_UUID else None
 
     # -- pcm metrics ----------------------------------------------------- #
@@ -916,7 +916,7 @@ def test_power_commands_forward_submission_link_when_waiting(fake_hmc, command):
 
     assert result.exit_code == 0
     assert fake_hmc.calls[-1] == (
-        "wait_for_job",
+        "wait_for_job_entry",
         (JOB_UUID, 90, 3),
         {"job_href": f"/jobs/{JOB_UUID}"},
     )
@@ -2734,7 +2734,7 @@ def test_migrate_cli_defaults_to_validation_first(fake_hmc):
     assert result.exit_code == 0, result.output
     names = [name for name, _args, _kwargs in fake_hmc.calls]
     assert names.index("lpar_migrate_validate") < names.index("lpar_migrate")
-    assert "wait_for_job" in names
+    assert "wait_for_job_entry" in names
 
 
 def test_migrate_cli_can_bypass_validation(fake_hmc):
@@ -2895,7 +2895,7 @@ def test_lpm_recovery_commands_forward_wait_timing(fake_hmc, args):
 
     assert result.exit_code == 0, result.output
     assert (
-        "wait_for_job",
+        "wait_for_job_entry",
         (JOB_UUID, 60, 2),
         {"job_href": f"/jobs/{JOB_UUID}"},
     ) in fake_hmc.calls
@@ -3792,7 +3792,7 @@ def test_templates_deploy_waits_through_shared_workflow(fake_hmc):
         ("list_logical_partitions", (SYSTEM_UUID,), {}),
         ("deploy_partition_template", (TEMPLATE_UUID, SYSTEM_UUID), {}),
         (
-            "wait_for_job",
+            "wait_for_job_entry",
             (JOB_UUID, 60, 1),
             {"job_href": f"/jobs/{JOB_UUID}"},
         ),
@@ -3822,7 +3822,7 @@ def test_jobs_show(fake_hmc):
 
     assert result.exit_code == 0
     assert "PowerOn" in result.stdout
-    assert fake_hmc.calls == [("get_job", (JOB_UUID,), {"job_href": None})]
+    assert fake_hmc.calls == [("get_job_entry", (JOB_UUID,), {"job_href": None})]
 
 
 def test_jobs_show_not_found_exits_1(fake_hmc):
@@ -3830,7 +3830,7 @@ def test_jobs_show_not_found_exits_1(fake_hmc):
 
     assert result.exit_code == 1
     assert "not found" in result.stderr
-    assert fake_hmc.calls == [("get_job", ("ghost",), {"job_href": None})]
+    assert fake_hmc.calls == [("get_job_entry", ("ghost",), {"job_href": None})]
 
 
 def test_jobs_show_forwards_self_link(fake_hmc):
@@ -3838,7 +3838,7 @@ def test_jobs_show_forwards_self_link(fake_hmc):
     result = RUNNER.invoke(cli.app, ["jobs", "show", JOB_UUID, "--job-href", href])
 
     assert result.exit_code == 0
-    assert fake_hmc.calls == [("get_job", (JOB_UUID,), {"job_href": href})]
+    assert fake_hmc.calls == [("get_job_entry", (JOB_UUID,), {"job_href": href})]
 
 
 def test_jobs_list_rejects_negative_limit_before_client_call(fake_hmc):
@@ -3855,7 +3855,7 @@ def test_jobs_wait(fake_hmc):
 
     assert result.exit_code == 0
     assert "COMPLETED" in result.stdout
-    assert fake_hmc.calls == [("get_job", (JOB_UUID,), {"job_href": None})]
+    assert fake_hmc.calls == [("get_job_entry", (JOB_UUID,), {"job_href": None})]
 
 
 def test_jobs_wait_not_found_exits_1_after_one_poll(fake_hmc):
@@ -3863,7 +3863,7 @@ def test_jobs_wait_not_found_exits_1_after_one_poll(fake_hmc):
 
     assert result.exit_code == 1
     assert "not found" in result.stderr
-    assert fake_hmc.calls == [("get_job", ("ghost",), {"job_href": None})]
+    assert fake_hmc.calls == [("get_job_entry", ("ghost",), {"job_href": None})]
 
 
 # --------------------------------------------------------------------------- #

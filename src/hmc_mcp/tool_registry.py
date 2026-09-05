@@ -81,7 +81,7 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
 #   different VIOS on each of them; unlike a partition name it has no UUID form
 #   to fall back on, so there is no way to write it precisely.
 # - `job_href` is a caller-supplied URI whose *path* replaces the `job_id`
-#   selector entirely (`client.get_job`), so the value authorized and the value
+#   selector entirely (`client.get_job_entry`), so the value authorized and the value
 #   fetched are different values.
 #
 # Membership is decided by whether a `targets` table can bound the identity, and

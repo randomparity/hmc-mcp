@@ -85,7 +85,7 @@ _JOB_PATH = re.compile(r"^(?:/[^/]+)*/(?:Job|jobs)/[^/]+$")
 def _reject_non_job_path(path: str) -> None:
     """Refuse a ``job_href`` that does not address a job.
 
-    ``get_job`` fetches the caller's ``job_href`` directly, so the path — not the
+    ``get_job_entry`` fetches the caller's ``job_href`` directly, so the path — not the
     ``job_id`` argument — decides which resource is read. Without this, an
     unrelated web-resource href could be fetched through a tool classified
     ``read``/``job``.
@@ -789,7 +789,7 @@ class HMCClient(
             ) from exc
         return _normalize_platform_update_response(payload)
 
-    async def get_job(
+    async def get_job_entry(
         self,
         job_id: str,
         *,
@@ -816,7 +816,7 @@ class HMCClient(
         entries = _parse_feed(xml, path)
         return entries[0] if entries else None
 
-    async def wait_for_job(
+    async def wait_for_job_entry(
         self,
         job_id: str,
         timeout_seconds: int = 300,
@@ -830,7 +830,7 @@ class HMCClient(
         completion, failure, warning, and cancellation values.
         Returns the last-seen job entry (terminal or not, after timeout).
 
-        When *job_href* is provided it is forwarded to ``get_job`` so polling
+        When *job_href* is provided it is forwarded to ``get_job_entry`` so polling
         uses the per-operation SELF link instead of the global UOM path.
         """
         import asyncio
@@ -842,7 +842,7 @@ class HMCClient(
 
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_seconds
-        entry = await self.get_job(job_id, job_href=job_href)
+        entry = await self.get_job_entry(job_id, job_href=job_href)
         while True:
             resource = (entry or {}).get("Resource")
             status = resource.get("Status", "") if isinstance(resource, dict) else ""
@@ -854,7 +854,7 @@ class HMCClient(
             await asyncio.sleep(min(poll_interval, remaining))
             if loop.time() >= deadline:
                 return entry
-            entry = await self.get_job(job_id, job_href=job_href)
+            entry = await self.get_job_entry(job_id, job_href=job_href)
 
     async def delete_job(
         self,

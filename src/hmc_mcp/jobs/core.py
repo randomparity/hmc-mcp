@@ -43,7 +43,7 @@ class JobOutcome:
 
 
 class JobWaitClient(Protocol):
-    async def wait_for_job(
+    async def wait_for_job_entry(
         self,
         job_id: str,
         timeout_seconds: int,
@@ -177,6 +177,6 @@ async def wait_for_submitted_job(
         raise HMCError(
             "Cannot wait for the submitted HMC job: the response contained no usable UUID, JobID, or polling link"
         )
-    return await client.wait_for_job(
+    return await client.wait_for_job_entry(
         identifier, timeout_seconds, poll_interval, job_href=_job_href(job)
     )

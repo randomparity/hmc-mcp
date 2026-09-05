@@ -34,33 +34,33 @@ async def test_wait_for_submitted_job_returns_without_polling(job) -> None:
     client = AsyncMock()
 
     assert await wait_for_submitted_job(client, job, False, 30, 2) is job
-    client.wait_for_job.assert_not_awaited()
+    client.wait_for_job_entry.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_wait_for_submitted_job_forwards_identifier_link_and_timing() -> None:
     client = AsyncMock()
-    client.wait_for_job.return_value = {"Status": "COMPLETED"}
+    client.wait_for_job_entry.return_value = {"Status": "COMPLETED"}
     job = {"Resource": {"JobID": "job-2"}, "link": "/jobs/job-2"}
 
     result = await wait_for_submitted_job(client, job, True, 90, 3)
 
     assert result == {"Status": "COMPLETED"}
-    client.wait_for_job.assert_awaited_once_with("job-2", 90, 3, job_href="/jobs/job-2")
+    client.wait_for_job_entry.assert_awaited_once_with("job-2", 90, 3, job_href="/jobs/job-2")
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("link", [42, "  "])
 async def test_wait_for_submitted_job_ignores_malformed_link(link) -> None:
     client = AsyncMock()
-    client.wait_for_job.return_value = {"Status": "COMPLETED"}
+    client.wait_for_job_entry.return_value = {"Status": "COMPLETED"}
 
     result = await wait_for_submitted_job(
         client, {"UUID": "job-2", "link": link}, True, 90, 3
     )
 
     assert result == {"Status": "COMPLETED"}
-    client.wait_for_job.assert_awaited_once_with("job-2", 90, 3, job_href=None)
+    client.wait_for_job_entry.assert_awaited_once_with("job-2", 90, 3, job_href=None)
 
 
 @pytest.mark.asyncio
@@ -70,13 +70,13 @@ async def test_wait_for_submitted_job_rejects_unpollable_response(job) -> None:
 
     with pytest.raises(HMCError, match="Cannot wait for the submitted HMC job"):
         await wait_for_submitted_job(client, job, True, 30, 2)
-    client.wait_for_job.assert_not_awaited()
+    client.wait_for_job_entry.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_wait_for_submitted_job_propagates_poll_error() -> None:
     client = AsyncMock()
-    client.wait_for_job.side_effect = TimeoutError("timed out")
+    client.wait_for_job_entry.side_effect = TimeoutError("timed out")
 
     with pytest.raises(TimeoutError, match="timed out"):
         await wait_for_submitted_job(client, {"UUID": "job-3"}, True, 30, 2)
