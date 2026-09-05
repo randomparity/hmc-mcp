@@ -129,8 +129,14 @@ class MemoptResourceGroupSelector:
                 raise ValueError("resource-group ids must be non-negative integers")
             if len(set(self.ids)) != len(self.ids):
                 raise ValueError("resource-group ids must not contain duplicates")
-        if len(_resource_group_selector_option(self).encode("utf-8")) > 4096:
-            raise ValueError("resource-group selector option exceeds 4096 UTF-8 bytes")
+        if (
+            len(_resource_group_selector_option(self).encode("utf-8"))
+            > _MEMOPT_SELECTOR_SAFETY_CEILING_BYTES
+        ):
+            raise ValueError(
+                "resource-group selector option exceeds "
+                f"{_MEMOPT_SELECTOR_SAFETY_CEILING_BYTES} UTF-8 bytes"
+            )
 
 
 @dataclass(frozen=True)
