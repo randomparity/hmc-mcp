@@ -90,7 +90,7 @@ _DENIED = (
 )
 
 
-def _value(raw: Any) -> str | _Unresolved:
+def _normalize_selector_value(raw: Any) -> str | _Unresolved:
     """Normalize supported selectors, rejecting booleans and unknown values."""
     if isinstance(raw, str):
         # Including "": a well-formed string that no table can hold, because
@@ -143,7 +143,7 @@ def selected_targets(
 def _read(target: TargetSelector, arguments: Mapping[str, Any]) -> str | _Unresolved:
     """One declared selector, by the rule its shape demands."""
     if target.container is None:
-        return _value(arguments[target.argument])
+        return _normalize_selector_value(arguments[target.argument])
     container = arguments[target.container]
     if container is None:
         return UNREADABLE
@@ -151,7 +151,7 @@ def _read(target: TargetSelector, arguments: Mapping[str, Any]) -> str | _Unreso
         raw = getattr(container, target.argument)
     except AttributeError:
         return UNREADABLE
-    return _value(raw)
+    return _normalize_selector_value(raw)
 
 
 def targets_permitted(
