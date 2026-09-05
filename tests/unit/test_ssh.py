@@ -2,15 +2,120 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
 import pytest
 from conftest import make_config
 
-from hmc_mcp.config import HMCConfig
+from hmc_mcp.config import HMCConfig, load_profile
 from hmc_mcp.errors import HMCError
 from hmc_mcp.ssh.transport import HMCCLIError, open_hmc_connection, run_hmc_command
+
+
+def test_ssh_verification_configuration(tmp_path, monkeypatch):
+    assert "ssh_verify_host_key" in HMCConfig.model_fields
+    assert HMCConfig.from_mapping({}).ssh_verify_host_key is True
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[profiles.test]\nssh_verify_host_key = false\n')
+    assert load_profile("test", config_path).ssh_verify_host_key is False
+    monkeypatch.setenv("HMC_SSH_VERIFY_HOST_KEY", "true")
+    assert load_profile("test", config_path).ssh_verify_host_key is True
+    monkeypatch.setenv("HMC_SSH_VERIFY_HOST_KEY", "false")
+    assert HMCConfig().ssh_verify_host_key is False
+    assert HMCConfig.from_mapping({}).ssh_verify_host_key is True
+    monkeypatch.setenv("HMC_SSH_VERIFY_HOST_KEY", "invalid")
+    with pytest.raises(ValueError, match="ssh_verify_host_key"):
+        HMCConfig()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", [run_hmc_command, open_hmc_connection])
+@pytest.mark.parametrize("verify", [True, False])
+@pytest.mark.parametrize("key_file", [None, "/test-key"])
+async def test_ssh_host_key_policy_reaches_each_connection(operation, verify, key_file, caplog):
+    config = make_config(ssh_verify_host_key=verify, ssh_key_file=key_file)
+    connection = _make_ssh_mock()
+    connect = MagicMock(return_value=connection) if operation is run_hmc_command else AsyncMock()
+    with patch("hmc_mcp.ssh.transport.asyncssh.connect", connect):
+        if operation is run_hmc_command:
+            await operation(config, "lshmc -V")
+        else:
+            await operation(config)
+    expected = str(Path.home() / ".ssh" / "known_hosts") if verify else None
+    assert connect.call_args.kwargs["known_hosts"] == expected
+    assert ("SSH host-key verification disabled" in caplog.text) is (not verify)
+    if not verify:
+        assert config.host in caplog.text
+        assert config.password not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", [run_hmc_command, open_hmc_connection])
+@pytest.mark.parametrize("trust", ["trusted", "changed", "unknown", "missing", "insecure"])
+async def test_ssh_host_key_handshake_precedes_password(operation, trust, tmp_path, monkeypatch):
+    """Use a real local SSH peer; rejected keys must never receive credentials."""
+    passwords = []
+
+    class Server(asyncssh.SSHServer):
+        def begin_auth(self, username):
+            return True
+
+        def password_auth_supported(self):
+            return True
+
+        def validate_password(self, username, password):
+            passwords.append(password)
+            return True
+
+    def process_handler(process):
+        process.stdout.write("verified\n")
+        process.exit(0)
+
+    host_key = asyncssh.generate_private_key("ssh-ed25519")
+    async with asyncssh.create_server(
+        Server, "127.0.0.1", 0, server_host_keys=[host_key],
+        process_factory=process_handler,
+    ) as listener:
+        port = listener.get_port()
+        trust_file = tmp_path / ".ssh" / "known_hosts"
+        trust_file.parent.mkdir()
+        if trust != "missing":
+            recorded_key = (
+                asyncssh.generate_private_key("ssh-ed25519") if trust == "changed" else host_key
+            )
+            entry = f"[127.0.0.1]:{port} " + recorded_key.export_public_key().decode()
+            trust_file.write_text("" if trust == "unknown" else entry)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+        # Pin an ephemeral port and isolate ambient SSH config, keeping the actual handshake.
+        connect = asyncssh.connect
+        monkeypatch.setattr(
+            asyncssh, "connect", lambda **kwargs: connect(port=port, config=None, **kwargs)
+        )
+        config = HMCConfig.from_mapping({
+            "host": "127.0.0.1", "user": "test",
+            "password": "test-password",  # pragma: allowlist secret - loopback fixture
+            "ssh_verify_host_key": trust != "insecure", "ssh_timeout": 5,
+        })
+
+        async def invoke():
+            if operation is run_hmc_command:
+                assert await operation(config, "lshmc -V") == "verified\n"
+            else:
+                connection = await operation(config)
+                connection.close()
+                await connection.wait_closed()
+
+        if trust in {"trusted", "insecure"}:
+            await invoke()
+            assert passwords == ["test-password"]
+        else:
+            with pytest.raises(HMCCLIError) as exc:
+                await invoke()
+            expected_error = OSError if trust == "missing" else asyncssh.HostKeyNotVerifiable
+            assert isinstance(exc.value.__cause__, expected_error)
+            assert passwords == []
 
 # ---------------------------------------------------------------------------
 # Helpers to build a minimal asyncssh mock

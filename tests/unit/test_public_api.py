@@ -2076,7 +2076,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     # Python 3.14 changed Pydantic's synthesized Optional rendering; the freeze
     # now normalizes it to the declared ``T | None`` form on every supported version.
     # The PTF query operation was renamed to reflect that it submits a remote job.
-    expected_digest = "7cbf8dc91849c860f8bcb63cbff58e1ef3efa561e3570131648cbe92e6b11696"  # pragma: allowlist secret
+    # ADR 0116 adds HMCConfig.ssh_verify_host_key with a verified default.
+    expected_digest = "9aba0a6c6192c488cf942723a9247acb0d67209b9da9bb541b10647b6656e5af"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

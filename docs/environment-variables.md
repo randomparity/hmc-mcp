@@ -16,6 +16,7 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | `HMC_PASSWORD` | string | _(required)_ | HMC password |
 | `HMC_PROFILE` | string | _(none)_ | Named profile to load from `~/.config/hmc-mcp/config.toml` (or platform equivalent); a value that is not a profile key is resolved through the top-level `nicknames` table. Selects the connection when no explicit `--host`/`HMC_HOST` is set |
 | `HMC_SSH_KEY_FILE` | path | _(none)_ | Path to an SSH private key file; when set, SSH commands use key-based auth instead of password auth |
+| `HMC_SSH_VERIFY_HOST_KEY` | bool | `true` | Verify SSH host keys against the process user's `~/.ssh/known_hosts`. Set `false` only for an explicit bypass; every connection warns. Profile key: `ssh_verify_host_key`. See [SSH trust setup](../HMC_ACCESS.md#ssh-host-key-trust) |
 | `HMC_VERIFY_SSL` | bool | `false` | Verify the HMC TLS certificate. HMCs ship self-signed certs; set to `true` only after installing the HMC CA locally |
 | `HMC_TIMEOUT` | float | `60.0` | HTTP request timeout in seconds |
 | `HMC_SSH_TIMEOUT` | float | `300.0` | SSH command timeout in seconds. SSH-backed HMC CLI operations (e.g. `bkprofdata`/`rstprofdata`) are significantly slower than REST calls |

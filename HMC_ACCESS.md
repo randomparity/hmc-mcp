@@ -15,6 +15,7 @@ port = 443          # HTTPS REST — NOT the SSH port
 user = "hscroot"
 password = "..."
 verify_ssl = false
+ssh_verify_host_key = true
 schema_version = "V1_0"
 ```
 
@@ -38,14 +39,44 @@ workstation with several keys loaded, this exhausts the HMC's
 Fix: disable public-key auth and force password-only in the connect call.
 
 ```python
+from pathlib import Path
+
 asyncssh.connect(
     host=host, port=22,
     username=user, password=password,
-    known_hosts=None,       # HMC has no entry in known_hosts
+    known_hosts=str(Path.home() / ".ssh" / "known_hosts"),
     preferred_auth="password",
     client_keys=[],         # suppress all key attempts
 )
 ```
+
+Host-key verification is independent of password-only authentication: both
+protections apply together.
+
+## SSH host-key trust
+
+Production SSH commands and consoles now verify against the process user's
+`~/.ssh/known_hosts` by default. Provision this file before upgrading or running
+the probe: obtain the HMC's host key and confirm its fingerprint through a trusted
+administrator or console, then install the verified entry for the configured host.
+Do not treat an unauthenticated `ssh-keyscan` result alone as proof of identity.
+Unknown or changed keys, and missing or unreadable trust files, fail without an
+insecure retry. SSH config `UserKnownHostsFile` overrides do not select this file.
+
+For a deliberate production bypass, set `ssh_verify_host_key = false` in the
+profile or `HMC_SSH_VERIFY_HOST_KEY=false` in the environment. Each connection
+logs a warning naming the destination; the peer may then impersonate the HMC
+and intercept credentials. This SSH choice does not change `verify_ssl`.
+
+The standalone probe always starts with verification enabled, even when a profile
+disables it for production. Its explicit per-run bypass is:
+
+```sh
+uv run --no-sync python scripts/probe_labelvios.py --insecure
+```
+
+This warns on stderr for each destination before connecting and applies to every
+profile the probe visits in that run. Omit the flag to verify keys.
 
 ## Account lockout after MaxAuthTries
 
@@ -81,7 +112,7 @@ same `MaxAuthTries` problem:
 
 ```sh
 sshpass -p 'PASSWORD' ssh \
-  -o StrictHostKeyChecking=no \
+  -o StrictHostKeyChecking=yes \
   -o PubkeyAuthentication=no \
   -o IdentitiesOnly=yes \
   -p 22 hscroot@HOST 'lshmc -V'

@@ -153,6 +153,9 @@ class HMCConfig(BaseSettings):
     user: str = Field(default="", description="HMC user name")
     password: str = Field(default="", description="HMC password")
     ssh_key_file: str | None = Field(default=None, description="Path to SSH private key file (HMC_SSH_KEY_FILE)")
+    ssh_verify_host_key: bool = Field(
+        default=True, description="Verify SSH host keys against ~/.ssh/known_hosts"
+    )
     verify_ssl: bool = Field(default=False, description="Verify the HMC TLS certificate")
     timeout: float = Field(default=60.0, description="HTTP timeout in seconds")
     ssh_timeout: float = Field(

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from pathlib import Path
 from typing import Any
 
 import asyncssh
@@ -27,8 +29,14 @@ def _connect_kwargs(config: HMCConfig) -> dict[str, Any]:
     connect_kwargs: dict[str, Any] = {
         "host": config.host,
         "username": config.user,
-        "known_hosts": None,
+        "known_hosts": (
+            str(Path.home() / ".ssh" / "known_hosts") if config.ssh_verify_host_key else None
+        ),
     }
+    if not config.ssh_verify_host_key:
+        logging.getLogger(__name__).warning(
+            "SSH host-key verification disabled for %s (ssh_verify_host_key=false)", config.host
+        )
     if config.ssh_key_file:
         connect_kwargs["client_keys"] = [config.ssh_key_file]
         connect_kwargs["password"] = None
