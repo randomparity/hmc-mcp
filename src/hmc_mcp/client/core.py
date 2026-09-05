@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import warnings
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import Mapping
 from threading import Lock
 from typing import Any, Literal, Self, get_args
 from urllib.parse import quote, unquote, urlparse
@@ -19,8 +19,6 @@ from urllib.parse import quote, unquote, urlparse
 from ..audit import records as audit
 from ..config import HMCConfig, env_var_value
 from ..documents import (
-    build_brokered_file_document,
-    build_linked_optical_media_document,
     build_logon_request_document,
 )
 from ..errors import HMCError, HMCTransportError
@@ -539,133 +537,6 @@ class HMCClient(
         )
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
-
-    # Brokered file upload helpers (/rest/api/web/File/)
-    #
-    # HMC uses a two-step brokered file protocol to import ISOs:
-    #   1. PUT /rest/api/web/File/ — register the file entry; returns FileUUID
-    #   2. PUT /rest/api/web/File/contents/{file_uuid} — stream the raw bytes
-    #   The HMC then automatically imports the ISO into the VMLibrary.
-    #   3. DELETE /rest/api/web/File/{file_uuid} — release the broker slot
-    #
-    # Reference: project-pim/cli/utils/iso_util.py (create_iso_path pattern)
-
-    async def _broker_file_create(
-        self, vios_uuid: str, vg_uuid: str, filename: str
-    ) -> str:
-        """Create a brokered file handle and return its URI."""
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        create_xml = build_brokered_file_document(filename=filename)
-        resp = await self._request_with_uuid_path_arguments(
-            "POST",
-            path,
-            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
-            content=create_xml,
-            headers={"Content-Type": MEDIA_UOM, "Accept": MEDIA_UOM},
-        )
-        if resp.status_code not in (200, 201):
-            raise HMCError(
-                f"Brokered file create failed for {filename}",
-                resp.status_code,
-                resp.text,
-            )
-        location = resp.headers.get("Location")
-        if not location:
-            raise HMCError(
-                "Brokered file create missing Location header",
-                resp.status_code,
-                resp.text,
-            )
-        return location
-
-    async def _broker_file_upload(
-        self,
-        broker_uri: str,
-        content: AsyncIterator[bytes],
-        content_length: int,
-    ) -> str:
-        """Stream content to a brokered file and return its media UUID.
-
-        The method never buffers the body: an ISO that passes the caller's size
-        bound may be tens of gigabytes, and this process is shared by every caller
-        of every tool (ADR 0052, #308).
-
-        ``content`` must be an **async** iterator, and ``content_length`` the
-        exact total it will yield. Both are constraints of the transport, not
-        style, verified against httpx 0.28.1:
-
-        - A file object or a sync generator becomes an ``IteratorByteStream``,
-          which is a ``SyncByteStream``; ``AsyncClient._send_single_request``
-          raises ``RuntimeError`` on one. Only an async iterator reaches the wire.
-        - ``encode_content`` would set ``Transfer-Encoding: chunked`` for an
-          iterator body, but ``Request._prepare`` skips that when an explicit
-          ``Content-Length`` is already present — which is why the HMC, whose
-          brokered upload requires ``Content-Length`` (ADR 0031), still gets one.
-
-        The stream is consumed exactly once and cannot be replayed. Nothing in
-        this path retries: ``_request`` sends once and only translates transport
-        errors, ``AsyncClient`` is constructed without ``follow_redirects`` (so a
-        3xx is returned, not re-sent), and the default transport does not retry a
-        sent request. Re-sending the same ``Request`` raises ``StreamConsumed``;
-        a *new* request around the exhausted iterator would send an empty body,
-        which h11 then refuses against the unchanged ``Content-Length``. So a
-        replay fails loudly rather than uploading a truncated ISO under a
-        SHA-256 describing the whole file — but it still fails. If a retry,
-        redirect-following, or a shared client is ever added above this method,
-        the body must become re-creatable (a factory per attempt) in the same
-        change.
-        """
-        resp = await self._request(
-            "PUT",
-            broker_uri,
-            content=content,
-            headers={
-                "Content-Type": "application/octet-stream",
-                "Content-Length": str(content_length),
-                "Accept": MEDIA_UOM,
-            },
-        )
-        if resp.status_code not in (200, 201, 202):
-            raise HMCError(
-                f"Brokered file upload failed to {broker_uri}",
-                resp.status_code,
-                resp.text,
-            )
-        return resp.text if resp.text else ""
-
-    async def _broker_iso_import(
-        self,
-        vios_uuid: str,
-        vg_uuid: str,
-        media_name: str,
-        broker_uri: str,
-    ) -> str:
-        """Import a brokered ISO and return its VirtualOpticalMedia UUID."""
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        import_xml = build_linked_optical_media_document(
-            media_name=media_name, broker_uri=broker_uri
-        )
-        resp = await self._post(
-            path,
-            import_xml,
-            resource_type="VolumeGroup",
-            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
-        )
-        return resp if resp else ""
-
-    async def _broker_file_cleanup(self, broker_uri: str) -> None:
-        """Delete a brokered file to release its resources."""
-        resp = await self._request(
-            "DELETE",
-            broker_uri,
-            headers={"Accept": MEDIA_UOM},
-        )
-        if resp.status_code not in (200, 202, 204, 404):
-            raise HMCError(
-                f"Brokered file cleanup failed for {broker_uri}",
-                resp.status_code,
-                resp.text,
-            )
 
     # Web endpoint helpers (/rest/api/web/)
     #
