@@ -7,15 +7,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.io_virtualization.pcie import (
-    InventoryResult,
-    InventorySelector,
-    PcieAssignmentUnavailableError,
-    SriovAdapter,
-    SriovLogicalPortCapabilityError,
-    list_sriov_physical_ports,
-)
-from hmc_mcp.operations.io_virtualization.vnic import VnicBackingSelector
 from hmc_mcp.operations.lpar.assignments import (
     DedicatedPcieAssignment,
     LparPcieAssignments,
@@ -26,6 +17,15 @@ from hmc_mcp.operations.lpar.assignments import (
     apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
+from hmc_mcp.operations.virtualization.pcie import (
+    InventoryResult,
+    InventorySelector,
+    PcieAssignmentUnavailableError,
+    SriovAdapter,
+    SriovLogicalPortCapabilityError,
+    list_sriov_physical_ports,
+)
+from hmc_mcp.operations.virtualization.vnic import VnicBackingSelector
 
 
 def _sriov(logical: str = "27004001") -> SriovLogicalPortAssignment:
@@ -72,9 +72,9 @@ async def test_prevalidation_uses_normalized_physical_port_availability(
         "sriov_logical_port", "available", "sys", InventorySelector("1", "1"), [], None
     )
     with (
-        patch("hmc_mcp.operations.io_virtualization.pcie._system_name", AsyncMock(return_value="sys")),
-        patch("hmc_mcp.operations.io_virtualization.pcie.require_admitted_environment", AsyncMock()),
-        patch("hmc_mcp.operations.io_virtualization.pcie.list_sriov_physical_port_rows", rows),
+        patch("hmc_mcp.operations.virtualization.pcie._system_name", AsyncMock(return_value="sys")),
+        patch("hmc_mcp.operations.virtualization.pcie.require_admitted_environment", AsyncMock()),
+        patch("hmc_mcp.operations.virtualization.pcie.list_sriov_physical_port_rows", rows),
         patch("hmc_mcp.operations.lpar.assignments.list_sriov_adapters", AsyncMock(return_value=adapter)),
         patch("hmc_mcp.operations.lpar.assignments.list_sriov_logical_ports", AsyncMock(return_value=logical)),
         patch("hmc_mcp.operations.lpar.assignments._existing_capacity", AsyncMock(return_value=Decimal())),

@@ -64,7 +64,7 @@ The adapter-facing `operations.vios_labels` workflow and its SSH command type ar
 excluded from the reusable facade. They are shared by the MCP and CLI presentation layers but are
 not a supported Python consumer boundary.
 
-`operations.io_virtualization.pcie.require_admitted_environment` is the one asynchronous exception. It is a shared
+`operations.virtualization.pcie.require_admitted_environment` is the one asynchronous exception. It is a shared
 admission-policy guard called by complete PCIe and SSH-network operations, not a domain operation a
 consumer can use independently: it accepts an already-resolved CLI system name and returns no
 domain result. It therefore remains outside the facade while retaining a public module name so
@@ -191,15 +191,15 @@ names are internal everywhere and are never inventoried.
     record; §6's recording obligation for them is discharged there, not here. It does not reach
     `InstallHandle`: §6 places a new facade export in one of §5's three sets, and §5 enumerates
     Domain A over exported *functions*, which a type is not.
-- `operations.io_virtualization` — operations: none; types: none; excluded synchronous: none.
-- `operations.io_virtualization.pcie` — exports: `CapabilityState`, `DedicatedSlot`, `InventoryResult`,
+- `operations.virtualization` — operations: none; types: none; excluded synchronous: none.
+- `operations.virtualization.pcie` — exports: `CapabilityState`, `DedicatedSlot`, `InventoryResult`,
   `InventorySelector`, `PcieAssignmentUnavailableError`, `ResourceKind`, `SriovAdapter`,
   `SriovLogicalPort`, `SriovLogicalPortCapabilityError`, `SriovLogicalPortChangeResult`,
   `SriovLogicalPortPartialError`, `SriovLogicalPortSnapshot`, `SriovPhysicalPort`,
   `assign_dedicated_pcie_slot`, `assign_sriov_logical_port`, `list_dedicated_slots`,
   `list_sriov_adapters`, `list_sriov_logical_ports`, `list_sriov_physical_ports`,
   `set_sriov_adapter_mode`, `unassign_dedicated_pcie_slot`, `unassign_sriov_logical_port`.
-- `operations.io_virtualization.vnic` — exports: `VnicBackingSelector`, `VnicBackingSnapshot`,
+- `operations.virtualization.vnic` — exports: `VnicBackingSelector`, `VnicBackingSnapshot`,
   `VnicCapabilityError`, `VnicChangeResult`, `VnicPartialError`, `VnicSnapshot`,
   `add_vnic`, `list_fc_ports`, `list_sea_adapters`, `list_vnics`, `remove_vnic`.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:

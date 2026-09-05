@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from hmc_mcp.cli import app
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.io_virtualization.pcie import (
+from hmc_mcp.operations.virtualization.pcie import (
     DedicatedSlot,
     InventoryResult,
     InventorySelector,
@@ -142,7 +142,7 @@ def test_inventory_contract_is_owned_by_its_domain_module() -> None:
         "list_sriov_physical_ports",
     ):
         assert name in vars(
-            __import__("hmc_mcp.operations.io_virtualization.pcie", fromlist=[name])
+            __import__("hmc_mcp.operations.virtualization.pcie", fromlist=[name])
         )
 
 

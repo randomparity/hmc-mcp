@@ -159,12 +159,12 @@ wildcard records the operation's actual scope.
 |---|---|---|---|
 | `set_lpar_boot_order` | `operations/lpar/boot_order.py:47` | guarded (`:66`) | — |
 | `clear_lpar_boot_order` | `operations/lpar/boot_order.py:89` | guarded (`:99`) | — |
-| `assign_dedicated_pcie_slot` | `operations/io_virtualization/pcie.py:185` | guarded (`:223`, via `_authorize_pcie_profile_request`) | — |
-| `unassign_dedicated_pcie_slot` | `operations/io_virtualization/pcie.py:205` | guarded (`:223`) | — |
-| `assign_sriov_logical_port` | `operations/io_virtualization/pcie.py:502` | guarded (`:427`, via `_resolve_lpar`) | — |
-| `unassign_sriov_logical_port` | `operations/io_virtualization/pcie.py:605` | guarded (`:612`) | — |
-| `add_vnic` | `operations/io_virtualization/vnic.py:599` | guarded (via `_preflight_add:370` → `resolve_and_authorize_lpar_names:377`) | — |
-| `remove_vnic` | `operations/io_virtualization/vnic.py:682` | guarded (`:695`) | — |
+| `assign_dedicated_pcie_slot` | `operations/virtualization/pcie.py:185` | guarded (`:223`, via `_authorize_pcie_profile_request`) | — |
+| `unassign_dedicated_pcie_slot` | `operations/virtualization/pcie.py:205` | guarded (`:223`) | — |
+| `assign_sriov_logical_port` | `operations/virtualization/pcie.py:502` | guarded (`:427`, via `_resolve_lpar`) | — |
+| `unassign_sriov_logical_port` | `operations/virtualization/pcie.py:605` | guarded (`:612`) | — |
+| `add_vnic` | `operations/virtualization/vnic.py:599` | guarded (via `_preflight_add:370` → `resolve_and_authorize_lpar_names:377`) | — |
+| `remove_vnic` | `operations/virtualization/vnic.py:682` | guarded (`:695`) | — |
 | `set_minimum_affinity_policy` | `operations/affinity/ssh.py:203` | guarded (`:213`) | — |
 | `set_lpar_processors` | `operations/lpar/dlpar.py:129` | guarded (`:405`, via `_apply_dlpar_document:397` → `_resolve_and_authorize_lpar:328`) | — |
 | `set_lpar_memory` | `operations/lpar/dlpar.py:165` | guarded (`:405`, via `_apply_dlpar_document`) | — |
@@ -196,7 +196,7 @@ separately exempt — the function is classified here, once, as Reconfiguring.
 
 `assign_dedicated_pcie_slot` / `unassign_dedicated_pcie_slot` are guarded but
 currently inert: `_authorize_pcie_profile_request` raises
-`PcieAssignmentUnavailableError` unconditionally at `operations/io_virtualization/pcie.py:244`, right
+`PcieAssignmentUnavailableError` unconditionally at `operations/virtualization/pcie.py:244`, right
 after the guard, so neither can mutate anything at this commit. They count as
 correctly-shaped coverage, not as protection of a live mutation.
 
@@ -352,7 +352,7 @@ The two REST GETs come from `resolve_lpar_ownership_names`
 the SSH command takes. It calls `_system_name` (`:581`) → `hmc.get_managed_system`
 (`:591`) and `hmc.get_logical_partition` (`:582`) **unconditionally** — supplying
 `system_name_or_uuid` does not avoid either, as `rename_lpar` (`:917`) and
-`_authorize_pcie_profile_request` (`operations/io_virtualization/pcie.py:218`) already demonstrate.
+`_authorize_pcie_profile_request` (`operations/virtualization/pcie.py:218`) already demonstrate.
 
 The two REST reads are the same order of work `power_lpar` already does
 (`resolve_lpar_uuid` at `:904`, and a `get_quick_property` state check on power-on).

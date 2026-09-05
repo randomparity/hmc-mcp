@@ -9,7 +9,7 @@ from ..._app import (
     serialize_tool_result,
     with_client,
 )
-from ...operations.io_virtualization.pcie import (
+from ...operations.virtualization.pcie import (
     InventorySelector,
     SriovMode,
     assign_sriov_logical_port,

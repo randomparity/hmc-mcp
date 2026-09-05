@@ -35,7 +35,6 @@ from hmc_mcp.cli_commands.virtualization import vnic as cli_vnic
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations import ownership as lpar_ownership
-from hmc_mcp.operations.io_virtualization.vnic import VnicChangeResult, VnicPartialError
 from hmc_mcp.operations.lpar.assignments import LparPcieWorkflowResult
 from hmc_mcp.operations.lpar.provision import ProvisionResult
 from hmc_mcp.operations.lpar.workflow_contract import WorkflowStep
@@ -44,6 +43,7 @@ from hmc_mcp.operations.storage.resources import (
     StorageMapping,
     VolumeGroup,
 )
+from hmc_mcp.operations.virtualization.vnic import VnicChangeResult, VnicPartialError
 from hmc_mcp.ssh import affinity as ssh_affinity
 from hmc_mcp.ssh import commands as ssh_commands
 from hmc_mcp.ssh import lpar as ssh_lpar
