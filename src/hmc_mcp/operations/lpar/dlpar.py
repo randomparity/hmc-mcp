@@ -64,6 +64,8 @@ async def modify_lpar(
         except HMCError as exc:
             translated = translate_lpar_write_error(exc)
             if new_name is None:
+                if translated is exc:
+                    raise
                 raise translated from exc
             steps.append(WorkflowStep("resources", "error", str(translated)))
             steps.extend(
@@ -123,7 +125,10 @@ async def _apply_dlpar_document(
     try:
         return await hmc.modify_logical_partition(lpar_uuid, document)
     except HMCError as exc:
-        raise translate_lpar_write_error(exc) from exc
+        translated = translate_lpar_write_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
 
 
 async def set_lpar_processors(

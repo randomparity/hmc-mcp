@@ -27,7 +27,10 @@ async def create_lpar(
     try:
         created = await create_and_stamp_lpar(hmc, system_name_or_uuid, creation)
     except HMCError as exc:
-        raise translate_lpar_write_error(exc) from exc
+        translated = translate_lpar_write_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
     steps = [WorkflowStep("create", "ok", created.lpar)]
     if created.lpar is None:
         return LparPcieWorkflowResult(

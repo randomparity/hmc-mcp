@@ -56,7 +56,10 @@ async def create_virtual_network(
             system_uuid, name, vlan_id, virtual_switch_id, tagged=tagged
         )
     except HMCError as exc:
-        raise translate_virtual_network_create_error(exc) from exc
+        translated = translate_virtual_network_create_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
     return VirtualNetworkResult(system_uuid, resource)
 
 

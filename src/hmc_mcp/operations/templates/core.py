@@ -76,7 +76,10 @@ async def list_partition_templates(hmc: HMCClient) -> list[dict[str, Any]]:
     try:
         return await hmc.list_partition_templates()
     except HMCError as exc:
-        raise translate_template_error(exc) from exc
+        translated = translate_template_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
 
 
 async def get_partition_template(
@@ -86,7 +89,10 @@ async def get_partition_template(
     try:
         return await hmc.get_partition_template(template_uuid)
     except HMCError as exc:
-        raise translate_template_error(exc) from exc
+        translated = translate_template_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
 
 
 async def deploy_partition_template(
@@ -117,7 +123,10 @@ async def deploy_partition_template(
             draft_template_uuid, target_system_uuid
         )
     except HMCError as exc:
-        raise translate_template_error(exc) from exc
+        translated = translate_template_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
     selected_job = await wait_for_submitted_job(
         hmc, submitted_job, wait, timeout_seconds, poll_interval
     )

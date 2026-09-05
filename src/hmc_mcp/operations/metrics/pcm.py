@@ -119,7 +119,10 @@ async def get_pcm_preferences(
     try:
         return await hmc.get_pcm_preferences(category, target.resource_uuid)
     except HMCError as exc:
-        raise translate_pcm_error(exc) from exc
+        translated = translate_pcm_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
 
 
 async def set_pcm_preferences(
@@ -140,7 +143,10 @@ async def set_pcm_preferences(
     try:
         return await hmc.set_pcm_preferences(category, target.resource_uuid, **flags)
     except HMCError as exc:
-        raise translate_pcm_error(exc) from exc
+        translated = translate_pcm_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
 
 
 async def fetch_metric_links(
@@ -179,7 +185,10 @@ async def fetch_metric_links(
             system_uuid=target.system_uuid,
         )
     except HMCError as exc:
-        raise translate_pcm_error(exc) from exc
+        translated = translate_pcm_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
 
 
 async def fetch_metric_data(
@@ -215,4 +224,7 @@ async def fetch_metric_data(
     except HMCError as exc:
         if exc.status_code == 404:
             return {}
-        raise translate_pcm_error(exc) from exc
+        translated = translate_pcm_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
