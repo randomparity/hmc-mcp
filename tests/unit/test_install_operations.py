@@ -18,7 +18,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from conftest import make_config
 
-from hmc_mcp import api
 from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.install import (
@@ -451,10 +450,8 @@ async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
 
 
 @pytest.mark.parametrize("name", ["install_vios_by_lpar_selector", "install_vios"])
-def test_operations_are_exported_from_the_facade(name):
-    """ADR 0029: every selected operation is part of the supported manifest."""
-    assert name in api.__all__
-    assert getattr(api, name) is globals()[name]
+def test_operations_are_owned_by_the_install_module(name):
+    assert globals()[name].__module__ == "hmc_mcp.operations.install"
 
 
 def test_detach_handle_is_the_declared_return_type():
@@ -466,8 +463,6 @@ def test_detach_handle_is_the_declared_return_type():
     both: the digest text now carries ``InstallHandle``, and the key set below
     is the same object the runtime assertion above compares the payload against.
     """
-    assert "InstallHandle" in api.__all__
-    assert api.InstallHandle is InstallHandle
     assert get_type_hints(InstallHandle) == {
         "system": str,
         "partition": str,

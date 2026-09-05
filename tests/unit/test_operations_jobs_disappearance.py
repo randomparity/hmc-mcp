@@ -10,9 +10,9 @@ import httpx
 import pytest
 from conftest import make_config
 
-from hmc_mcp.api import get_job, wait_for_job
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
+from hmc_mcp.operations.jobs import get_job, wait_for_job
 
 _JOB_ID = "job-uuid-999"
 _GLOBAL_PATH = f"/rest/api/uom/jobs/{_JOB_ID}"

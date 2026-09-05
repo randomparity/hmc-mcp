@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
-from hmc_mcp import api
 from hmc_mcp.cli import app
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations.io_virtualization.pcie import (
@@ -129,7 +128,7 @@ def test_models_preserve_hierarchy_percentage_units_and_explicit_unknowns() -> N
     assert asdict(logical)["physical_port_id"] == "p2"
 
 
-def test_supported_api_exports_inventory_contract_directly() -> None:
+def test_inventory_contract_is_owned_by_its_domain_module() -> None:
     for name in (
         "DedicatedSlot",
         "InventoryResult",
@@ -142,9 +141,8 @@ def test_supported_api_exports_inventory_contract_directly() -> None:
         "list_sriov_logical_ports",
         "list_sriov_physical_ports",
     ):
-        assert name in api.__all__
-        assert getattr(api, name) is getattr(
-            __import__("hmc_mcp.operations.io_virtualization.pcie", fromlist=[name]), name
+        assert name in vars(
+            __import__("hmc_mcp.operations.io_virtualization.pcie", fromlist=[name])
         )
 
 

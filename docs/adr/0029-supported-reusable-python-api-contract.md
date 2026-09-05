@@ -4,6 +4,8 @@
 
 Accepted (2026-08-15)
 
+> **Superseded by [0118](0118-core-library-facade.md) (2026-09-05)**
+
 ## Context
 
 Reusable asynchronous workflows already live in presentation-neutral `operations_*.py` modules,

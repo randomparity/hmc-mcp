@@ -490,6 +490,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: `hmc_mcp.api` now exports only `HMCClient`, `HMCConfig`,
+  `ConfigError`, `HMCError`, `HMCTransportError`, and
+  `TLSVerificationDisabledWarning`; every operation and operation-specific
+  model previously exported by the facade is removed (ADR 0118).
 - Added: named LPM affinity literal types (`LpmCapability`, `LpmDestinationCheckBasis`,
   `LpmPreflightStatus`, and `LpmResponse`) for typed reusable callers.
 - Added: `RemoteRestartRequest` groups remote-restart-specific controls while common

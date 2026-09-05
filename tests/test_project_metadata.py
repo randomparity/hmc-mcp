@@ -138,25 +138,13 @@ def test_governance_links_relocated_out_of_their_section_are_caught() -> None:
 
 def test_library_guide_documents_the_typed_facade_and_its_covered_surface() -> None:
     guide = (ROOT / "docs/python-api.md").read_text()
-    library = " ".join(_section(guide, "## Reusable Python API").split())
+    library = " ".join(_section(guide, "## Stable connection API").split())
 
     assert "PEP 561" in library
     assert "py.typed" in library
-    # Pins the note's covered-surface wording so an edit cannot quietly narrow
-    # or widen what the marker is documented to cover.
-    for covered in (
-        "call signature",
-        "package-owned model",
-        "exception type",
-        "enum and literal alias",
-    ):
-        assert covered in library
-    # The fake-client remedy has to be a mechanism that actually type-checks.
-    assert "typing.cast(HMCClient, fake)" in library
-    # The limit is pinned next to the claim: 36 exported operations return raw
-    # HMC mappings, so a bare "everything is typed" note would oversell it.
-    assert "`dict[str, Any]`" in library
-    assert "payload contents stay opaque" in library
+    assert "exactly six stable names" in library
+    assert "Domain operations" in guide
+    assert "not compatibility promises" in guide
 
 
 def test_vios_backup_hmc_floor_is_published_without_narrowing_general_support() -> None:
