@@ -88,7 +88,9 @@ def load_profiles() -> list[Profile]:
     return profiles
 
 
-async def run(conn: asyncssh.SSHClientConnection, cmd: str) -> tuple[int, str, str]:
+async def run_ssh_command(
+    conn: asyncssh.SSHClientConnection, cmd: str
+) -> tuple[int, str, str]:
     """Run *cmd*; return (exit_status, stdout, stderr).  Never raises."""
     try:
         result = await conn.run(cmd, check=False)
@@ -130,7 +132,7 @@ async def probe_profile(profile: Profile, *, insecure: bool = False) -> ProbeRes
     }
     try:
         async with asyncssh.connect(**connect_kwargs(profile, insecure=insecure)) as conn:
-            rc, stdout, stderr = await run(conn, "lshmc -V")
+            rc, stdout, stderr = await run_ssh_command(conn, "lshmc -V")
             result["queries"]["lshmc -V"] = {
                 "cmd": "lshmc -V",
                 "exit_status": rc,
@@ -138,7 +140,7 @@ async def probe_profile(profile: Profile, *, insecure: bool = False) -> ProbeRes
                 "stderr": stderr.strip(),
             }
 
-            rc, stdout, stderr = await run(
+            rc, stdout, stderr = await run_ssh_command(
                 conn, "lssyscfg -r sys -F name,type_model,serial_num,state"
             )
             result["queries"]["lssyscfg -r sys"] = {
@@ -181,7 +183,7 @@ async def probe_profile(profile: Profile, *, insecure: bool = False) -> ProbeRes
                         f"lslabelvios -r group --filter resources=vfc -m {m}",
                     ),
                 ]:
-                    rc2, out2, err2 = await run(conn, cmd)
+                    rc2, out2, err2 = await run_ssh_command(conn, cmd)
                     sys_queries[label] = {
                         "cmd": cmd,
                         "exit_status": rc2,
