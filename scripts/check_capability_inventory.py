@@ -16,7 +16,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INVENTORY = ROOT / "docs" / "capabilities"
-HEX_256 = re.compile(r"[0-9a-f]{64}")
+HEX_256 = re.compile(r"(?:[0-9a-f]{8}-){7}[0-9a-f]{8}")
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]*")
 TABLE_SEPARATOR = re.compile(r"^\|(?:\s*:?-+:?\s*\|)+$")
 CAPTURE = re.compile(r"^(?:captured|Captured):\s*(\S.*)$", re.MULTILINE)
@@ -82,6 +82,11 @@ def extract_capture_time(text: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
+def format_sha256(value: bytes) -> str:
+    digest = hashlib.sha256(value).hexdigest()
+    return "-".join(digest[index : index + 8] for index in range(0, 64, 8))
+
+
 def _unit(topic_id: str, kind: str, line: int, text: str) -> dict[str, object]:
     normalized = " ".join(text.split())
     return {
@@ -89,7 +94,7 @@ def _unit(topic_id: str, kind: str, line: int, text: str) -> dict[str, object]:
         "topic": topic_id,
         "kind": kind,
         "line": line,
-        "sha256": hashlib.sha256(normalized.encode()).hexdigest(),
+        "sha256": format_sha256(normalized.encode()),
         "text": _safe_summary(kind, normalized),
     }
 
@@ -262,6 +267,20 @@ def _validate_topics(
             errors.append(f"topic {identity}: invalid sha256")
 
 
+def _validate_corpora(
+    corpora: Mapping[str, dict[str, object]], errors: list[str]
+) -> None:
+    for identity, corpus in corpora.items():
+        if not str(corpus.get("source_url", "")).startswith("https://"):
+            errors.append(f"corpus {identity}: HTTPS source_url is required")
+        if not HEX_256.fullmatch(str(corpus.get("archive_sha256", ""))):
+            errors.append(f"corpus {identity}: invalid archive_sha256")
+        for field in ("captured_pages", "navigation_pages"):
+            value = corpus.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                errors.append(f"corpus {identity}: {field} must be a non-negative integer")
+
+
 def _validate_rows(
     rows: Mapping[str, dict[str, object]],
     units: Mapping[str, dict[str, object]],
@@ -400,6 +419,7 @@ def validate_inventory(
     topics = _index(topic_records, "topics", errors)
     units = _index(unit_records, "source_units", errors)
     rows = _index(row_records, "rows", errors)
+    _validate_corpora(corpora, errors)
     _validate_topics(corpora, topics, errors)
     for identity, unit in units.items():
         if unit.get("topic") not in topics:
@@ -425,15 +445,26 @@ def verify_corpora(root: Path, sources: Mapping[str, Path]) -> list[str]:
         document = load_json(root / "corpora.json")
     except InventoryError as error:
         return [str(error)]
-    topics = _objects(document.get("topics", []) if isinstance(document.get("topics"), list) else [], "topics", [])
+    local_errors: list[str] = []
+    corpus_records = _objects(
+        document.get("corpora", []) if isinstance(document.get("corpora"), list) else [],
+        "corpora",
+        local_errors,
+    )
+    corpus_ids = {str(record.get("id")) for record in corpus_records}
+    topics = _objects(document.get("topics", []) if isinstance(document.get("topics"), list) else [], "topics", local_errors)
     units = _objects(
         document.get("source_units", []) if isinstance(document.get("source_units"), list) else [],
         "source_units",
-        [],
+        local_errors,
     )
     expected_paths: dict[str, set[str]] = {name: set() for name in sources}
     expected_units: dict[str, list[dict[str, object]]] = {}
-    errors: list[str] = []
+    errors = local_errors
+    for corpus in sorted(corpus_ids - sources.keys()):
+        errors.append(f"{corpus}: source root was not supplied")
+    for corpus in sorted(sources.keys() - corpus_ids):
+        errors.append(f"{corpus}: unexpected source corpus")
     for topic in topics:
         corpus = str(topic.get("corpus"))
         if corpus not in sources:
@@ -444,7 +475,7 @@ def verify_corpora(root: Path, sources: Mapping[str, Path]) -> list[str]:
         if not path.is_file() or path.is_symlink():
             errors.append(f"{corpus}/{relative}: missing or non-regular source file")
             continue
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        digest = format_sha256(path.read_bytes())
         if digest != topic.get("sha256"):
             errors.append(f"{corpus}/{relative}: hash mismatch")
         try:

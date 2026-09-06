@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import json
 import sys
@@ -24,6 +23,10 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
+def _digest(character: str) -> str:
+    return "-".join([character * 8] * 8)
+
+
 def _minimal_inventory(root: Path) -> None:
     root.mkdir(exist_ok=True)
     _write_json(
@@ -34,7 +37,7 @@ def _minimal_inventory(root: Path) -> None:
                 {
                     "id": "commands-p10",
                     "source_url": "https://example.test/commands",
-                    "archive_sha256": "a" * 64,
+                    "archive_sha256": _digest("a"),
                     "captured_pages": 1,
                     "navigation_pages": 0,
                 }
@@ -46,7 +49,7 @@ def _minimal_inventory(root: Path) -> None:
                     "path": "alpha.md",
                     "source_url": "https://example.test/alpha",
                     "captured": "2026-08-23T00:00:00Z",
-                    "sha256": "b" * 64,
+                    "sha256": _digest("b"),
                     "classification": "operation",
                     "reason": "command reference",
                 }
@@ -57,7 +60,7 @@ def _minimal_inventory(root: Path) -> None:
                     "topic": "commands-p10:alpha",
                     "kind": "command-option",
                     "line": 10,
-                    "sha256": "c" * 64,
+                    "sha256": _digest("c"),
                     "text": "--name | resource name",
                     "accounting": {"kind": "row", "id": "cli:alpha"},
                 }
@@ -165,7 +168,7 @@ def test_verify_corpora_detects_changed_and_extra_files(tmp_path: Path) -> None:
     source.mkdir()
     page = source / "alpha.md"
     page.write_text("---\nsource: https://example.test/alpha\ncaptured: now\n---\n", encoding="utf-8")
-    digest = hashlib.sha256(page.read_bytes()).hexdigest()
+    digest = inventory.format_sha256(page.read_bytes())
     _write_json(
         data / "corpora.json",
         {
