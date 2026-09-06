@@ -82,7 +82,8 @@ def test_adverse_estimate_obeys_explicit_response(
 
 
 @pytest.mark.parametrize(
-    "missing", ["source_current_score", "destination_estimated_score"]
+    "missing",
+    ["source_current_score", "destination_estimated_score", "configured_minimum"],
 )
 @pytest.mark.parametrize(
     ("response", "status", "proceed"),

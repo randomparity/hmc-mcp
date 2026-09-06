@@ -194,22 +194,17 @@ def evaluate_lpm_affinity_preflight(
         reason = f"Affinity preflight input is malformed: {', '.join(malformed)}."
         return _response_policy_outcome(request, reason, "unavailable")
 
-    unavailable = request.capability == "unavailable" or any(
-        value is None
-        for value in (
-            request.source_current_score,
-            request.destination_estimated_score,
-            request.configured_minimum,
-        )
-    )
-    if unavailable:
+    destination_score = request.destination_estimated_score
+    configured_minimum = request.configured_minimum
+    if (
+        request.capability == "unavailable"
+        or request.source_current_score is None
+        or destination_score is None
+        or configured_minimum is None
+    ):
         reason = "Affinity preflight evidence or platform capability is unavailable."
         return _response_policy_outcome(request, reason, "unavailable")
 
-    destination_score = request.destination_estimated_score
-    configured_minimum = request.configured_minimum
-    if destination_score is None or configured_minimum is None:
-        raise ValueError("Affinity preflight requires destination and minimum scores")
     if destination_score < configured_minimum:
         reason = (
             f"Destination estimate {destination_score} is below "
