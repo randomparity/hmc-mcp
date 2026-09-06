@@ -130,19 +130,37 @@ async def create_lpar_via_cli(
     Returns the raw ``mksyscfg`` stdout (typically empty on success).
     Raises :class:`HMCCLIError` on non-zero exit.
     """
-    _pt = partition_type.lower()
-    if "ios" in _pt or "vios" in _pt:
-        lpar_env = "vioserver"
-    elif "os400" in _pt or "ibmi" in _pt or _pt == "i":
-        lpar_env = "os400"
-    else:
-        lpar_env = "aixlinux"
-
     config_pairs: list[tuple[str, object]] = [
         ("name", name),
-        ("lpar_env", lpar_env),
+        ("lpar_env", _lpar_environment(partition_type)),
         ("profile_name", profile_name),
     ]
+    config_pairs.extend(_lpar_resource_pairs(resources, max_virtual_slots))
+
+    # Two guards at two layers, neither substituting for the other:
+    # build_attribute_record keeps the record's own ',' and '=' delimiters
+    # meaningful to the HMC's parser, which splits the record itself; shlex.quote
+    # keeps the whole record one word for the remote shell, which runs first and
+    # strips the quotes before the HMC ever sees the text.
+    config_str = build_attribute_record(config_pairs)
+    cmd = f"mksyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(config_str)}"
+    return await run_hmc_command(config, cmd)
+
+
+def _lpar_environment(partition_type: str) -> str:
+    """Return the HMC environment identifier for a requested partition type."""
+    normalized = partition_type.lower()
+    if "ios" in normalized or "vios" in normalized:
+        return "vioserver"
+    if "os400" in normalized or "ibmi" in normalized or normalized == "i":
+        return "os400"
+    return "aixlinux"
+
+
+def _lpar_resource_pairs(
+    resources: LparResources, max_virtual_slots: int | None
+) -> list[tuple[str, object]]:
+    """Build the complete HMC resource record or its all-resources variant."""
 
     # Determine whether any explicit resource values were provided.
     # If none are given, use all_resources=1 (simplest and most compatible).
@@ -161,46 +179,45 @@ async def create_lpar_via_cli(
         )
     )
 
-    if explicit_resources:
-        # mksyscfg requires min/desired/max for all three resource axes when
-        # any explicit value is given; fall back to safe defaults for omitted
-        # fields so the command does not fail with a missing-attribute error.
-        _min_mem = resources.min_memory or 256
-        _des_mem = resources.desired_memory or 4096
-        _max_mem = resources.max_memory or max(_des_mem, 8192)
-        _min_pu = resources.min_procs or 0.1
-        _des_pu = resources.desired_procs or 0.1
-        _max_pu = resources.max_procs or max(_des_pu, 2.0)
-        _min_vp = resources.min_vcpus or 1
-        _des_vp = resources.desired_vcpus or 1
-        _max_vp = resources.max_vcpus or max(_des_vp, 2)
+    if not explicit_resources:
+        return [("all_resources", 1)]
 
-        config_pairs += [
-            ("min_mem", _min_mem),
-            ("desired_mem", _des_mem),
-            ("max_mem", _max_mem),
-            ("proc_mode", "shared"),
-            ("sharing_mode", "uncap"),
-            ("min_proc_units", _min_pu),
-            ("desired_proc_units", _des_pu),
-            ("max_proc_units", _max_pu),
-            ("min_procs", _min_vp),
-            ("desired_procs", _des_vp),
-            ("max_procs", _max_vp),
-        ]
-        if max_virtual_slots is not None:
-            config_pairs.append(("max_virtual_slots", max_virtual_slots))
-    else:
-        config_pairs.append(("all_resources", 1))
+    return _explicit_lpar_resource_pairs(resources, max_virtual_slots)
 
-    # Two guards at two layers, neither substituting for the other:
-    # build_attribute_record keeps the record's own ',' and '=' delimiters
-    # meaningful to the HMC's parser, which splits the record itself; shlex.quote
-    # keeps the whole record one word for the remote shell, which runs first and
-    # strips the quotes before the HMC ever sees the text.
-    config_str = build_attribute_record(config_pairs)
-    cmd = f"mksyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(config_str)}"
-    return await run_hmc_command(config, cmd)
+
+def _explicit_lpar_resource_pairs(
+    resources: LparResources, max_virtual_slots: int | None
+) -> list[tuple[str, object]]:
+    """Build a complete explicit HMC resource record with legacy defaults."""
+    # mksyscfg requires min/desired/max for all three resource axes when
+    # any explicit value is given; fall back to safe defaults for omitted
+    # fields so the command does not fail with a missing-attribute error.
+    _min_mem = resources.min_memory or 256
+    _des_mem = resources.desired_memory or 4096
+    _max_mem = resources.max_memory or max(_des_mem, 8192)
+    _min_pu = resources.min_procs or 0.1
+    _des_pu = resources.desired_procs or 0.1
+    _max_pu = resources.max_procs or max(_des_pu, 2.0)
+    _min_vp = resources.min_vcpus or 1
+    _des_vp = resources.desired_vcpus or 1
+    _max_vp = resources.max_vcpus or max(_des_vp, 2)
+
+    pairs: list[tuple[str, object]] = [
+        ("min_mem", _min_mem),
+        ("desired_mem", _des_mem),
+        ("max_mem", _max_mem),
+        ("proc_mode", "shared"),
+        ("sharing_mode", "uncap"),
+        ("min_proc_units", _min_pu),
+        ("desired_proc_units", _des_pu),
+        ("max_proc_units", _max_pu),
+        ("min_procs", _min_vp),
+        ("desired_procs", _des_vp),
+        ("max_procs", _max_vp),
+    ]
+    if max_virtual_slots is not None:
+        pairs.append(("max_virtual_slots", max_virtual_slots))
+    return pairs
 
 
 # UUID -> CLI-name lookup (SSH fallback for the REST-based resolvers)
