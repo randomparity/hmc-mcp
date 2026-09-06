@@ -13,7 +13,7 @@ import re
 import warnings
 from collections.abc import Mapping
 from threading import Lock
-from typing import Any, Literal, Self, TypedDict, cast, get_args
+from typing import Any, Literal, NotRequired, Self, TypedDict, cast, get_args
 from urllib.parse import quote, unquote, urlparse
 
 import httpx
@@ -62,19 +62,19 @@ class PlatformUpdateJobResults(TypedDict):
     JobParameter: list[PlatformUpdateJobParameter]
 
 
-class PlatformUpdateJobResource(TypedDict, total=False):
+class PlatformUpdateJobResource(TypedDict):
     """Known, validated fields of a normalized platform-update job."""
 
     Status: str
-    Results: PlatformUpdateJobResults
+    Results: NotRequired[PlatformUpdateJobResults]
 
 
-class PlatformUpdateJobEntry(TypedDict, total=False):
+class PlatformUpdateJobEntry(TypedDict):
     """Normalized platform-update job returned by :meth:`submit_platform_update`."""
 
     UUID: str
     Resource: PlatformUpdateJobResource
-    link: str
+    link: NotRequired[str]
 
 
 def _reject_dot_segments(method: str, path: str) -> None:
