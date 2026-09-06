@@ -207,7 +207,12 @@ async def _add_network(
     hmc: HMCClient, lpar_uuid: str, port_vlan_id: int
 ) -> dict[str, Any] | None:
     return await hmc.add_network_adapter(
-        lpar_uuid, port_vlan_id, None, None, False, None
+        lpar_uuid,
+        port_vlan_id,
+        slot_number=None,
+        virtual_switch_id=None,
+        tagged=False,
+        mac_address=None,
     )
 
 

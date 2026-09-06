@@ -27,7 +27,12 @@ async def test_logical_unit_operations_delegate_submission_and_waiting(monkeypat
     assert created == {"UUID": "create-job"}
     assert deleted == {"UUID": "delete-job"}
     hmc.create_logical_unit.assert_awaited_once_with(
-        "cluster-1", "data", 20, "THIN", "VirtualIO_Disk", "source"
+        "cluster-1",
+        "data",
+        20,
+        lu_type="THIN",
+        device_type="VirtualIO_Disk",
+        cloned_from="source",
     )
     hmc.delete_logical_unit.assert_awaited_once_with("cluster-1", "lu-1")
     assert waited.await_count == 2

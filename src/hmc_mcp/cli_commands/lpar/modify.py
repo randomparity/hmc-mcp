@@ -11,7 +11,7 @@ from ...documents import LparResources
 from ...operations.lpar.assignments import LparPcieAssignments
 from ...operations.lpar.dlpar import modify_lpar
 from ..output import console, partition_not_found, print_json, usage_error
-from ..runtime import client, run_cli_coroutine
+from ..runtime import with_client
 from .assignment_input import load_pcie_assignments
 
 
@@ -87,19 +87,17 @@ def lpars_modify(
     if not yes and not typer.confirm(f"Apply changes to '{name_or_uuid}'?"):
         raise typer.Abort()
 
-    async def _go():
-        async with client() as hmc:
-            return await modify_lpar(
-                hmc,
-                system,
-                name_or_uuid,
-                resources,
-                assignments,
-                new_name=new_name,
-                ownership_override=ownership_override,
-            )
-
-    result = run_cli_coroutine(_go)
+    result = with_client(
+        lambda hmc: modify_lpar(
+            hmc,
+            system,
+            name_or_uuid,
+            resources,
+            assignments,
+            new_name=new_name,
+            ownership_override=ownership_override,
+        )
+    )
 
     if not result.workflow_completed:
         print_json(asdict(result))

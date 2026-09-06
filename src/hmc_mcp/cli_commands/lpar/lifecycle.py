@@ -7,7 +7,7 @@ import typer
 from ...jobs import validate_wait_timing
 from ...operations.lpar.core import delete_lpar, power_lpar
 from ..output import console, err_console, print_json
-from ..runtime import client, run_cli_coroutine
+from ..runtime import with_client
 
 
 def lpars_power_on(
@@ -105,22 +105,20 @@ def _power_lpar(
             err_console.print("Aborted.")
             raise typer.Abort()
 
-    async def _go():
-        async with client() as hmc:
-            return await power_lpar(
-                hmc,
-                system,
-                name_or_uuid,
-                power_on=on,
-                immediate=immediate,
-                force=force,
-                wait=wait,
-                timeout_seconds=timeout,
-                poll_interval=interval,
-                ownership_override=ownership_override,
-            )
-
-    result = run_cli_coroutine(_go)
+    result = with_client(
+        lambda hmc: power_lpar(
+            hmc,
+            system,
+            name_or_uuid,
+            power_on=on,
+            immediate=immediate,
+            force=force,
+            wait=wait,
+            timeout_seconds=timeout,
+            poll_interval=interval,
+            ownership_override=ownership_override,
+        )
+    )
     uuid, job = result.lpar_uuid, result.job
     if job and job.get("already_running"):
         console.print(f"[yellow]{job['message']}[/yellow]")
@@ -143,21 +141,19 @@ def lpars_delete(
     ),
 ) -> None:
     """Delete (destroy) an LPAR. It must be powered off first."""
+    if not yes and not typer.confirm(
+        f"Permanently DELETE partition '{name_or_uuid}'? This cannot be undone."
+    ):
+        raise typer.Abort()
 
-    async def _go():
-        async with client() as hmc:
-            if not yes and not typer.confirm(
-                f"Permanently DELETE partition '{name_or_uuid}'? This cannot be undone."
-            ):
-                raise typer.Abort()
-            return await delete_lpar(
-                hmc,
-                system,
-                name_or_uuid,
-                ownership_override=ownership_override,
-            )
-
-    uuid = run_cli_coroutine(_go)
+    uuid = with_client(
+        lambda hmc: delete_lpar(
+            hmc,
+            system,
+            name_or_uuid,
+            ownership_override=ownership_override,
+        )
+    )
     console.print(f"[green]Deleted LPAR {uuid}[/green]")
 
 

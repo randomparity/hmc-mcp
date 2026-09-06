@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from unittest.mock import AsyncMock
 
 import httpx
@@ -327,6 +328,18 @@ async def test_lpm_mixin_submits_each_operation_to_lpar_endpoint():
         "target-system" in call.args[1]
         for call in client.submit_job.await_args_list[:2]
     )
+
+
+def test_lpm_optional_controls_are_keyword_only():
+    for method in (LpmMixin.lpar_migrate, LpmMixin.lpar_migrate_validate):
+        parameters = inspect.signature(method).parameters
+        for name in (
+            "target_profile_name",
+            "destination_lpar_id",
+            "shared_proc_pool_id",
+            "wait_time",
+        ):
+            assert parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
 
 
 @pytest.mark.asyncio

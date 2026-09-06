@@ -35,6 +35,7 @@ class ClusterMixin:
         cluster_uuid: str,
         lu_name: str,
         lu_size_gib: int,
+        *,
         lu_type: LuType = "THIN",
         device_type: DeviceType = "VirtualIO_Disk",
         cloned_from: str | None = None,

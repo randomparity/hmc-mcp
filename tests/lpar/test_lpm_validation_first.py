@@ -71,11 +71,15 @@ async def test_default_waits_for_validation_then_submits_migration(status: str) 
     assert result.job.status == "RUNNING"
     assert events == ["validate", "wait", "migrate"]
     assert (
-        call.lpar_migrate_validate("lpar-1", "target", None, wait_time=None)
+        call.lpar_migrate_validate(
+            "lpar-1", "target", target_profile_name=None, wait_time=None
+        )
         in client.method_calls
     )
     assert (
-        call.lpar_migrate("lpar-1", "target", None, wait_time=None)
+        call.lpar_migrate(
+            "lpar-1", "target", target_profile_name=None, wait_time=None
+        )
         in client.method_calls
     )
     client.wait_for_job_entry.assert_awaited_once()

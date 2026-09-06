@@ -9,7 +9,7 @@ from rich.table import Table
 
 from ...operations.lpar.decommission import DecommissionResult, decommission_lpar
 from ..output import console, print_json
-from ..runtime import client, run_cli_coroutine
+from ..runtime import with_client
 
 
 def lpars_decommission(
@@ -45,20 +45,18 @@ def lpars_decommission(
             abort=True,
         )
 
-    async def _go():
-        async with client() as hmc:
-            return await decommission_lpar(
-                hmc,
-                system,
-                name_or_uuid,
-                dry_run=dry_run,
-                ownership_override=ownership_override,
-                immediate=immediate,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
-
-    result = run_cli_coroutine(_go)
+    result = with_client(
+        lambda hmc: decommission_lpar(
+            hmc,
+            system,
+            name_or_uuid,
+            dry_run=dry_run,
+            ownership_override=ownership_override,
+            immediate=immediate,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        )
+    )
 
     _render_decommission_result(result, name_or_uuid, as_json)
 

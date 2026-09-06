@@ -36,7 +36,7 @@ from ...ssh.profiles import (
     set_lpar_proc_compat,
 )
 from ..output import console, print_json, usage_error
-from ..runtime import client, run_cli_coroutine, ssh_config, with_client
+from ..runtime import run_cli_coroutine, ssh_config, with_client
 
 
 def _with_ssh_affinity(operation, *args):
@@ -332,17 +332,15 @@ def lpars_set_description(
     ):
         raise typer.Abort()
 
-    async def _go():
-        async with client() as hmc:
-            return await set_lpar_ownership_description(
-                hmc,
-                system_name,
-                lpar_name,
-                description,
-                ownership_override=ownership_override,
-            )
-
-    result = run_cli_coroutine(_go)
+    result = with_client(
+        lambda hmc: set_lpar_ownership_description(
+            hmc,
+            system_name,
+            lpar_name,
+            description,
+            ownership_override=ownership_override,
+        )
+    )
 
     console.print(f"[green]Description updated for '{lpar_name}'[/green]")
     if result.strip():

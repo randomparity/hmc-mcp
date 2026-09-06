@@ -66,6 +66,7 @@ class AdaptersMixin:
         self: AdaptersClient,
         lpar_uuid: str,
         port_vlan_id: int,
+        *,
         slot_number: int | None = None,
         virtual_switch_id: int | None = None,
         tagged: bool = False,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -44,34 +45,42 @@ async def test_list_and_delete_adapter_delegate_to_child_resources():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("method", "arguments", "adapter_type", "xml_fragment"),
+    ("method", "arguments", "controls", "adapter_type", "xml_fragment"),
     [
         (
             AdaptersMixin.add_vscsi_adapter,
             ("lpar-1", 2, 12, 4),
+            {},
             "VirtualSCSIClientAdapter",
             "VirtualSCSIClientAdapter",
         ),
         (
             AdaptersMixin.add_vfc_adapter,
             ("lpar-1", 2, 12, 4),
+            {},
             "VirtualFibreChannelClientAdapter",
             "VirtualFibreChannelClientAdapter",
         ),
         (
             AdaptersMixin.add_network_adapter,
-            ("lpar-1", 200, 4, 0, True, "02:00:00:00:00:01"),
+            ("lpar-1", 200),
+            {
+                "slot_number": 4,
+                "virtual_switch_id": 0,
+                "tagged": True,
+                "mac_address": "02:00:00:00:00:01",
+            },
             "ClientNetworkAdapter",
             "ClientNetworkAdapter",
         ),
     ],
 )
 async def test_add_adapter_builds_document_and_creates_child(
-    method, arguments, adapter_type, xml_fragment
+    method, arguments, controls, adapter_type, xml_fragment
 ):
     client = SimpleNamespace(create_child=AsyncMock(return_value={"UUID": "adapter-1"}))
 
-    result = await method(client, *arguments)
+    result = await method(client, *arguments, **controls)
 
     assert result == {"UUID": "adapter-1"}
     resource, lpar_uuid, actual_adapter_type, xml = client.create_child.await_args.args
@@ -81,6 +90,13 @@ async def test_add_adapter_builds_document_and_creates_child(
         adapter_type,
     )
     assert xml_fragment in xml
+
+
+def test_network_adapter_optional_controls_are_keyword_only():
+    parameters = inspect.signature(AdaptersMixin.add_network_adapter).parameters
+
+    for name in ("slot_number", "virtual_switch_id", "tagged", "mac_address"):
+        assert parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
 
 
 @pytest.mark.asyncio

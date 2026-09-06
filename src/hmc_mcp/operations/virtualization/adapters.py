@@ -66,10 +66,10 @@ async def add_network_adapter(
     resource = await hmc.add_network_adapter(
         lpar_uuid,
         port_vlan_id,
-        slot_number,
-        virtual_switch_id,
-        tagged,
-        mac_address,
+        slot_number=slot_number,
+        virtual_switch_id=virtual_switch_id,
+        tagged=tagged,
+        mac_address=mac_address,
     )
     return AdapterResult(lpar_uuid, resource)
 

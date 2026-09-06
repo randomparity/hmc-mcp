@@ -30,7 +30,7 @@ from ...operations.storage.resources import (
     upload_iso,
 )
 from ..output import console, output, print_json, usage_error
-from ..runtime import client, run_cli_coroutine, with_client
+from ..runtime import with_client
 
 
 def storage_list_vgs(
@@ -226,20 +226,18 @@ def storage_map(
     ):
         raise typer.Abort()
 
-    async def _go():
-        async with client() as hmc:
-            return await map_storage(
-                hmc,
-                vios,
-                lpar,
-                system_name_or_uuid=system,
-                kind=kind,
-                storage_name=disk,
-                target=target,
-                ownership_override=ownership_override,
-            )
-
-    result: StorageMapResult = run_cli_coroutine(_go)
+    result: StorageMapResult = with_client(
+        lambda hmc: map_storage(
+            hmc,
+            vios,
+            lpar,
+            system_name_or_uuid=system,
+            kind=kind,
+            storage_name=disk,
+            target=target,
+            ownership_override=ownership_override,
+        )
+    )
 
     console.print(f"[green]Mapped '{disk}'[/green] to {result.lpar_uuid}")
     print_json(asdict(result))

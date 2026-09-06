@@ -9,7 +9,7 @@ from ...jobs import validate_wait_timing
 from ...operations.partition_state import PartitionState
 from ...operations.vios.core import list_vios, power_vios
 from ..output import console, first_field, output, print_json
-from ..runtime import client, run_cli_coroutine, with_client
+from ..runtime import with_client
 
 
 def vios_list(
@@ -57,19 +57,17 @@ def vios_power_on(
     if not yes and not typer.confirm(f"Really PowerOn VIOS {name_or_uuid}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with client() as hmc:
-            return await power_vios(
-                hmc,
-                name_or_uuid,
-                system_name_or_uuid=None,
-                power_on=True,
-                wait=wait,
-                timeout_seconds=timeout,
-                poll_interval=interval,
-            )
-
-    job = run_cli_coroutine(_go)
+    job = with_client(
+        lambda hmc: power_vios(
+            hmc,
+            name_or_uuid,
+            system_name_or_uuid=None,
+            power_on=True,
+            wait=wait,
+            timeout_seconds=timeout,
+            poll_interval=interval,
+        )
+    )
 
     console.print(f"[green]Submitted PowerOn for {name_or_uuid}[/green]")
     print_json(job)
@@ -93,20 +91,18 @@ def vios_power_off(
     if not yes and not typer.confirm(f"Really {op} VIOS {name_or_uuid}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with client() as hmc:
-            return await power_vios(
-                hmc,
-                name_or_uuid,
-                system_name_or_uuid=None,
-                power_on=False,
-                immediate=immediate,
-                wait=wait,
-                timeout_seconds=timeout,
-                poll_interval=interval,
-            )
-
-    job = run_cli_coroutine(_go)
+    job = with_client(
+        lambda hmc: power_vios(
+            hmc,
+            name_or_uuid,
+            system_name_or_uuid=None,
+            power_on=False,
+            immediate=immediate,
+            wait=wait,
+            timeout_seconds=timeout,
+            poll_interval=interval,
+        )
+    )
 
     console.print(f"[green]Submitted {op} for {name_or_uuid}[/green]")
     print_json(job)

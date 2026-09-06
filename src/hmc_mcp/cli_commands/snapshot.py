@@ -10,7 +10,7 @@ from pathlib import Path
 import typer
 
 from hmc_mcp.cli_commands.output import fail, print_json
-from hmc_mcp.cli_commands.runtime import client, run_cli_coroutine
+from hmc_mcp.cli_commands.runtime import run_cli_coroutine, with_client
 from hmc_mcp.operations.affinity.rest import PolicyState
 from hmc_mcp.snapshots.models import (
     SnapshotValidationError,
@@ -47,17 +47,15 @@ def snapshot_capture(
 ) -> None:
     """Capture one portable LPAR snapshot without modifying the HMC."""
 
-    async def _go():
-        async with client() as hmc:
-            return await capture_lpar_snapshot(
+    try:
+        snapshot = with_client(
+            lambda hmc: capture_lpar_snapshot(
                 hmc,
                 system_name_or_uuid,
                 lpar_name_or_uuid,
                 profile_name,
             )
-
-    try:
-        snapshot = run_cli_coroutine(_go)
+        )
         _publish(output, serialize_snapshot(snapshot))
     except (SnapshotValidationError, OSError) as exc:
         fail(exc)

@@ -34,7 +34,12 @@ async def create_logical_unit(
     validate_logical_unit_types(lu_type, device_type)
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     job = await hmc.create_logical_unit(
-        cluster_uuid, lu_name, lu_size_gib, lu_type, device_type, cloned_from
+        cluster_uuid,
+        lu_name,
+        lu_size_gib,
+        lu_type=lu_type,
+        device_type=device_type,
+        cloned_from=cloned_from,
     )
     return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
 

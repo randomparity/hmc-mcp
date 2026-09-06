@@ -12,8 +12,11 @@ create-vg/create-disk) had zero direct coverage.
 
 from __future__ import annotations
 
+import ast
 import asyncio
+import inspect
 import json
+import textwrap
 from typing import Self
 from unittest.mock import AsyncMock
 
@@ -25,13 +28,18 @@ from typer.testing import CliRunner
 
 from hmc_mcp import cli
 from hmc_mcp.cli_commands import app as cli_command_app
+from hmc_mcp.cli_commands import metrics as cli_metrics
 from hmc_mcp.cli_commands import runtime as cli_runtime
+from hmc_mcp.cli_commands import snapshot as cli_snapshot
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
+from hmc_mcp.cli_commands.lpar import decommission as cli_lpar_decommission
+from hmc_mcp.cli_commands.lpar import lifecycle as cli_lpar_lifecycle
 from hmc_mcp.cli_commands.lpar import migration as cli_lpar_migration
 from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
 from hmc_mcp.cli_commands.lpar import provision as cli_lpar_provision
 from hmc_mcp.cli_commands.storage import cluster as cli_storage_cluster
 from hmc_mcp.cli_commands.storage import resources as cli_storage_resources
+from hmc_mcp.cli_commands.vios import core as cli_vios_core
 from hmc_mcp.cli_commands.vios import labels as cli_vios_labels
 from hmc_mcp.cli_commands.virtualization import pcie as cli_pcie
 from hmc_mcp.cli_commands.virtualization import vnic as cli_vnic
@@ -81,6 +89,33 @@ SSP_UUID = "88888888-8888-4888-8888-888888888888"
 TEMPLATE_UUID = "99999999-9999-4999-8999-999999999999"
 
 RUNNER = CliRunner()
+
+
+@pytest.mark.parametrize(
+    "command",
+    (
+        cli_lpars.lpars_set_description,
+        cli_lpar_decommission.lpars_decommission,
+        cli_lpar_modify.lpars_modify,
+        cli_lpar_provision.lpars_provision,
+        cli_metrics.metrics_show,
+        cli_snapshot.snapshot_capture,
+        cli_storage_resources.storage_map,
+        cli_vios_core.vios_power_on,
+        cli_vios_core.vios_power_off,
+        cli_lpar_lifecycle._power_lpar,
+        cli_lpar_lifecycle.lpars_delete,
+    ),
+)
+def test_rest_command_delegates_do_not_open_a_local_client(command) -> None:
+    tree = ast.parse(textwrap.dedent(inspect.getsource(command)))
+    calls = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+
+    assert not {"client", "run_cli_coroutine"} & calls
 
 
 @pytest.fixture(autouse=True)
@@ -234,15 +269,27 @@ class FakeHMC:
     async def delete_logical_partition(self, lpar_uuid):
         self._record("delete_logical_partition", lpar_uuid)
 
-    async def lpar_migrate(self, lpar_uuid, target, profile=None, *, wait_time=None):
-        self._record("lpar_migrate", lpar_uuid, target, profile, wait_time=wait_time)
+    async def lpar_migrate(
+        self, lpar_uuid, target, *, target_profile_name=None, wait_time=None
+    ):
+        self._record(
+            "lpar_migrate",
+            lpar_uuid,
+            target,
+            target_profile_name,
+            wait_time=wait_time,
+        )
         return self.job
 
     async def lpar_migrate_validate(
-        self, lpar_uuid, target, profile=None, *, wait_time=None
+        self, lpar_uuid, target, *, target_profile_name=None, wait_time=None
     ):
         self._record(
-            "lpar_migrate_validate", lpar_uuid, target, profile, wait_time=wait_time
+            "lpar_migrate_validate",
+            lpar_uuid,
+            target,
+            target_profile_name,
+            wait_time=wait_time,
         )
         return self.job
 
@@ -270,8 +317,25 @@ class FakeHMC:
         self._record("list_adapters", lpar_uuid, adapter_type)
         return [{"UUID": "adapter-1", "Resource": {"PortVLANID": "100"}}]
 
-    async def add_network_adapter(self, lpar_uuid, vlan, slot, vswitch, tagged, mac):
-        self._record("add_network_adapter", lpar_uuid, vlan, slot, vswitch, tagged, mac)
+    async def add_network_adapter(
+        self,
+        lpar_uuid,
+        vlan,
+        *,
+        slot_number=None,
+        virtual_switch_id=None,
+        tagged=False,
+        mac_address=None,
+    ):
+        self._record(
+            "add_network_adapter",
+            lpar_uuid,
+            vlan,
+            slot_number,
+            virtual_switch_id,
+            tagged,
+            mac_address,
+        )
         return {"UUID": "adapter-1"}
 
     async def add_vscsi_adapter(
@@ -413,6 +477,7 @@ class FakeHMC:
         cluster_uuid,
         lu_name,
         lu_size_gib,
+        *,
         lu_type="THIN",
         device_type="VirtualIO_Disk",
         cloned_from=None,
@@ -578,7 +643,11 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
                 "4",
                 "--yes",
             ],
-            ("add_network_adapter", (LPAR_UUID, 100, 4, None, False, None), {}),
+            (
+                "add_network_adapter",
+                (LPAR_UUID, 100, 4, None, False, None),
+                {},
+            ),
             "Added network adapter",
         ),
         (
@@ -2729,15 +2798,19 @@ def test_affinity_cli_propagates_hmc_errors(monkeypatch):
                 "60",
                 "--yes",
             ],
-            (
-                "lpar_migrate",
-                (LPAR_UUID, "sys1", "target-profile"),
-                {"wait_time": 60},
+                (
+                    "lpar_migrate",
+                    (LPAR_UUID, "sys1", "target-profile"),
+                    {"wait_time": 60},
             ),
         ),
         (
             ["lpars", "migrate-validate", LPAR_NAME, "--target", "sys1", "--yes"],
-            ("lpar_migrate_validate", (LPAR_UUID, "sys1", None), {"wait_time": None}),
+            (
+                "lpar_migrate_validate",
+                (LPAR_UUID, "sys1", None),
+                {"wait_time": None},
+            ),
         ),
         (
             ["lpars", "migrate-abort", LPAR_NAME, "--yes"],

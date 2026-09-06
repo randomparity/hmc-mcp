@@ -309,7 +309,10 @@ async def _submit_migration_job(
 ) -> dict[str, Any] | None:
     submit = hmc.lpar_migrate_validate if validate else hmc.lpar_migrate
     return await submit(
-        lpar_uuid, target_system, target_profile_name, wait_time=wait_time
+        lpar_uuid,
+        target_system,
+        target_profile_name=target_profile_name,
+        wait_time=wait_time,
     )
 
 
