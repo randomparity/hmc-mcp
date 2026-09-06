@@ -15,8 +15,15 @@ from hmc_mcp.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
 from hmc_mcp.client.client_storage import StorageMixin
 from hmc_mcp.client.client_systems import SystemsMixin
 from hmc_mcp.client.client_templates import TemplatesMixin
+from hmc_mcp.client.client_updates import UpdatesMixin
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
+
+
+def test_platform_update_is_owned_by_updates_mixin() -> None:
+    assert "submit_platform_update" in UpdatesMixin.__dict__
+    assert issubclass(HMCClient, UpdatesMixin)
 
 
 async def _yield_empty(_uuid: str) -> list[dict]:
@@ -434,9 +441,7 @@ async def test_storage_mixin_uses_active_base_in_optical_mapping():
     await client.create_optical_mapping("vios-1", "install.iso", "lpar-1")
 
     body = client._post.await_args.args[1]
-    assert (
-        "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-1" in body
-    )
+    assert "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-1" in body
 
 
 @pytest.mark.asyncio

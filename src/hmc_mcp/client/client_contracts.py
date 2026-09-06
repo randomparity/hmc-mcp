@@ -130,6 +130,19 @@ class PcmClient(Protocol):
     async def get_metrics_feed(self, path: str) -> list[dict[str, str]]: ...
 
 
+class UpdatesClient(Protocol):
+    """Host operations required by :class:`client_updates.UpdatesMixin`."""
+
+    async def _request_with_uuid_path_arguments(
+        self,
+        method: str,
+        path: str,
+        *,
+        uuid_path_arguments: Mapping[str, str],
+        **kwargs: Any,
+    ) -> Any: ...
+
+
 class StorageClient(Protocol):
     """Host state and operations required by :class:`client_storage.StorageMixin`."""
 

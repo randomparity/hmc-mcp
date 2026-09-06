@@ -5,7 +5,8 @@ import pytest
 from conftest import JOB_ENTRY, make_config
 from pydantic import ValidationError
 
-from hmc_mcp.client.core import HMCClient, _normalize_platform_update_response
+from hmc_mcp.client.client_updates import _normalize_platform_update_response
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import build_job_request, job_outcome
 from hmc_mcp.operations.updates.models import (
