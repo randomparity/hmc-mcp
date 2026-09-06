@@ -144,6 +144,17 @@ def _preflight_outcome(
     )
 
 
+def _response_policy_outcome(
+    request: LpmAffinityPreflightRequest,
+    reason: str,
+    nonblocking_status: LpmPreflightStatus,
+) -> LpmAffinityPreflightOutcome:
+    """Apply the caller's warn-or-fail policy to unavailable preflight evidence."""
+    if request.response == "fail":
+        return _preflight_outcome(request, "failed", reason, False)
+    return _preflight_outcome(request, nonblocking_status, reason, True)
+
+
 def evaluate_lpm_affinity_preflight(
     request: LpmAffinityPreflightRequest,
 ) -> LpmAffinityPreflightOutcome:
@@ -181,9 +192,7 @@ def evaluate_lpm_affinity_preflight(
 
     if malformed:
         reason = f"Affinity preflight input is malformed: {', '.join(malformed)}."
-        if request.response == "fail":
-            return _preflight_outcome(request, "failed", reason, False)
-        return _preflight_outcome(request, "unavailable", reason, True)
+        return _response_policy_outcome(request, reason, "unavailable")
 
     unavailable = request.capability == "unavailable" or any(
         value is None
@@ -195,9 +204,7 @@ def evaluate_lpm_affinity_preflight(
     )
     if unavailable:
         reason = "Affinity preflight evidence or platform capability is unavailable."
-        if request.response == "fail":
-            return _preflight_outcome(request, "failed", reason, False)
-        return _preflight_outcome(request, "unavailable", reason, True)
+        return _response_policy_outcome(request, reason, "unavailable")
 
     destination_score = request.destination_estimated_score
     configured_minimum = request.configured_minimum
@@ -208,9 +215,7 @@ def evaluate_lpm_affinity_preflight(
             f"Destination estimate {destination_score} is below "
             f"configured minimum {configured_minimum}."
         )
-        if request.response == "fail":
-            return _preflight_outcome(request, "failed", reason, False)
-        return _preflight_outcome(request, "warned", reason, True)
+        return _response_policy_outcome(request, reason, "warned")
     return _preflight_outcome(
         request,
         "passed",
@@ -238,17 +243,12 @@ async def run_lpm_affinity_preflight(
     ):
         raise ValueError("preflight_timeout_seconds must be non-negative")
 
-    async def _evaluate() -> LpmAffinityPreflightOutcome:
-        """Run synchronous validation off the event loop's control path."""
-        return await asyncio.to_thread(evaluate_lpm_affinity_preflight, request)
-
     try:
-        return await asyncio.wait_for(_evaluate(), timeout=timeout)
+        evaluation = asyncio.to_thread(evaluate_lpm_affinity_preflight, request)
+        return await asyncio.wait_for(evaluation, timeout=timeout)
     except TimeoutError:
         reason = f"Affinity preflight timed out after {timeout} seconds."
-        if request.response == "fail":
-            return _preflight_outcome(request, "failed", reason, False)
-        return _preflight_outcome(request, "unavailable", reason, True)
+        return _response_policy_outcome(request, reason, "unavailable")
 
 
 async def migrate_lpar_with_affinity_preflight(
