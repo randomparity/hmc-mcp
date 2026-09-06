@@ -10,8 +10,9 @@ both explicitly, and result documents persist and restore them separately.
 Tech stack: Python 3.11+, stdlib dataclasses and JSON, pytest, ruff, ty.
 
 Expected implementation size: 1,500–1,800 changed lines (L) — corrected from the
-initial 260–420 estimate after the required migration of roughly 260 references caused
-paired diff lines and call-site reflow, in addition to the state and persistence changes.
+initial 260–420 estimate after the in-flight implementation measured 1,694 changed
+lines, including 1,298 ownership-access diff lines across roughly 645 affected source
+and test lines, plus the state and persistence changes.
 
 ## Global Constraints
 
