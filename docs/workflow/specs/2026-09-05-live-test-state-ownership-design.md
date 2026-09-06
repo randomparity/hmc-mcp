@@ -25,18 +25,28 @@ than retaining the ambiguous name `context`.
 
 ## Persistence and restoration
 
-The result document stores `config` and `artifacts` as separate top-level members.
+The result document stores `config`, `hmc`, and `artifacts` as separate top-level
+members. `hmc` contains only the non-secret connection identity: `host`, `port`, `user`,
+and `verify_ssl`. `main` resolves the current `HMCConfig` after bootstrap, uses it to
+write that member, and passes it to restoration for comparison.
+
 Restoration accepts only the new shape. Before changing live state, it validates that:
 
 - `config` and `artifacts` are JSON objects;
-- saved config exactly equals `dataclasses.asdict(state.config)`;
+- saved config decodes through the same field schema as `LiveTestConfig.from_env_file`
+  and equals the current config after canonicalization (notably converting the JSON
+  `protected_lpar_names` array back to a tuple);
 - saved non-secret HMC identity (`host`, `port`, `user`, and `verify_ssl`) equals the
   current connection identity; and
-- every artifacts key is a declared `LiveTestArtifacts` field and its value can be
-  assigned without partial restoration.
+- every artifacts key is declared and has its exact JSON type: nullable identifiers and
+  names are strings or null; numeric identifiers and sizes are integers but not booleans;
+  flags are booleans; `lp3_baseline` is an object; and `vmedia_orig_boot_order` is an
+  array of strings.
 
-A malformed, stale, or mismatched document reports a restoration failure before scenario
-dispatch and leaves `state.artifacts` unchanged. Existing mixed `context` result files are
+A bounded decoder copies mappings and lists into a fresh `LiveTestArtifacts` candidate.
+Only a completely valid and matching document replaces `state.artifacts`. A malformed,
+stale, or mismatched document reports a restoration failure before scenario dispatch and
+leaves the original artifacts object unchanged. Existing mixed `context` result files are
 unsupported, as ADR 0124 specifies.
 
 ## Error handling
@@ -57,9 +67,10 @@ do not change.
 - A focused test proves assigning to a `LiveTestConfig` field raises
   `dataclasses.FrozenInstanceError`.
 - Existing environment-file tests prove parsing, validation, and derived ISO values.
-- Focused restoration tests prove the separated document restores artifacts, rejects
-  config or HMC identity mismatches, rejects legacy/malformed documents, and applies no
-  partial mutation on failure.
+- Focused restoration tests perform a real JSON write/read round trip (including
+  `protected_lpar_names`), restore artifacts, reject each config or HMC identity
+  mismatch, reject legacy, unknown-key, and wrong-type documents (including bool in an
+  integer field), and prove failure applies no partial mutation.
 - The live-runner suite proves all scenario call arguments and cleanup behavior remain
   intact after explicit member migration.
 - `just verify` and `uv run --no-sync prek run --all-files` prove repository guardrails.
@@ -72,4 +83,3 @@ do not change.
 - Preserve every `LIVE_TEST_*` key and validation rule.
 - Preserve scenario ordering, cleanup guarantees, redaction, and live operation behavior.
 - Follow [ADR 0124](../../adr/0124-live-test-plan-state-ownership.md).
-

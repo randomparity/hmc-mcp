@@ -38,8 +38,14 @@ Interfaces:
   virtual-media flag, and restored runtime value.
 - Define `RunState.config: LiveTestConfig` and
   `RunState.artifacts: LiveTestArtifacts` using default factories.
-- Persist top-level `config` and `artifacts` objects and restore artifacts only after
-  config and HMC target identity validation succeeds.
+- Persist top-level `config`, `hmc`, and `artifacts` objects. `hmc` contains `host`,
+  `port`, `user`, and `verify_ssl` from the post-bootstrap `HMCConfig`; restoration
+  receives that current config and installs artifacts only after all comparisons and
+  decoding succeed.
+- Decode saved config through its declared schema so JSON arrays such as
+  `protected_lpar_names` become their in-memory tuple form before equality comparison.
+- Decode artifacts with explicit nullable-string, integer-not-boolean, boolean, mapping,
+  and list-of-string field categories into a fresh candidate.
 
 Verification:
 
@@ -48,22 +54,26 @@ Verification:
   `uv run --no-sync pytest tests/test_live_runner.py -q` and expect it to pass after
   implementation.
 - Mode: focused-test — atomic artifact restoration and compatibility checks; replace the
-  context restoration cases with separated-document success, mismatch, malformed,
-  legacy-shape, and no-partial-update cases; the same focused command must pass.
+  context restoration cases with a real JSON round-trip success containing
+  `protected_lpar_names`, per-field HMC identity mismatch, config mismatch, unknown-key,
+  wrong-type (including bool-as-int), legacy-shape, and no-partial-update cases; the same
+  focused command must pass.
 
 Steps:
 
 1. Add the focused tests importing `FrozenInstanceError`, construct
    `LiveTestConfig`, attempt `config.system_name = "changed"`, and assert the exception;
-   write separated JSON fixtures and assert only artifact fields restore.
+   write separated JSON fixtures through `json.dumps`/`json.loads`, pass a current
+   `HMCConfig.from_mapping(...)`, and assert only artifact fields restore.
 2. Run `uv run --no-sync pytest tests/test_live_runner.py -q`; expect failures naming
    missing `LiveTestConfig`, `LiveTestArtifacts`, or separated document members.
 3. Move configured fields, `_CONFIG_FIELDS`, parsing, validation, and ISO properties into
    frozen `LiveTestConfig`; move mutable fields into `LiveTestArtifacts`; replace
    `RunState.context` with explicit members.
-4. Update result serialization to write `asdict(state.config)` and
-   `asdict(state.artifacts)`. Validate a candidate artifacts object completely before
-   assigning it to `state.artifacts`; reject the old `context` shape.
+4. Update result serialization to write `asdict(state.config)`, the four-field non-secret
+   HMC identity, and `asdict(state.artifacts)`. Add explicit config and artifact decoders;
+   reject missing or extra members, unknown keys, wrong JSON types, config/identity
+   mismatches, and the old `context` shape before assigning the fresh candidate.
 5. Run `uv run --no-sync pytest tests/test_live_runner.py -q`; expect all tests green.
 6. Commit with `refactor: separate live-test state ownership`.
 
