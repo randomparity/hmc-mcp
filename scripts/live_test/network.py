@@ -22,19 +22,32 @@ async def mutate_virtual_networking(client: Client, state: RunState) -> None:
     print("\n=== ST9: Virtual Networking Mutations ===")
 
     if context.test_vlan_id is None:
-        for name in [
-            "hmc_create_virtual_network",
-            "hmc_create_lpar (nettest)",
-            "hmc_add_network_adapter",
-            "hmc_list_adapters (post-add)",
-            "hmc_delete_adapter",
-            "hmc_delete_virtual_network",
-            "hmc_delete_lpar (nettest)",
-        ]:
-            state.skip(9, name, "no unused VLAN ID found in ST2")
+        _skip_network_mutation(state, "no unused VLAN ID found in ST2")
         return
 
     vswitch_id = context.test_vswitch_id if context.test_vswitch_id is not None else 0
+    await _create_network_and_nettest_lpar(client, state, vswitch_id)
+    await _attach_network_adapter(client, state, vswitch_id)
+    await _cleanup_network_mutation(client, state)
+
+
+def _skip_network_mutation(state: RunState, reason: str) -> None:
+    for name in (
+        "hmc_create_virtual_network",
+        "hmc_create_lpar (nettest)",
+        "hmc_add_network_adapter",
+        "hmc_list_adapters (post-add)",
+        "hmc_delete_adapter",
+        "hmc_delete_virtual_network",
+        "hmc_delete_lpar (nettest)",
+    ):
+        state.skip(9, name, reason)
+
+
+async def _create_network_and_nettest_lpar(
+    client: Client, state: RunState, vswitch_id: int
+) -> None:
+    context = state.context
 
     st, data = await state.call(
         client,
@@ -84,6 +97,11 @@ async def mutate_virtual_networking(client: Client, state: RunState) -> None:
     if st == "PASS" and isinstance(data, dict):
         context.nettest_uuid = data.get("uuid") or data.get("UUID")
 
+
+async def _attach_network_adapter(
+    client: Client, state: RunState, vswitch_id: int
+) -> None:
+    context = state.context
     if context.test_network_uuid:
         st, data = await state.call(
             client,
@@ -117,6 +135,9 @@ async def mutate_virtual_networking(client: Client, state: RunState) -> None:
             "virtual network not created (REST 406)",
         )
 
+
+async def _cleanup_network_mutation(client: Client, state: RunState) -> None:
+    context = state.context
     if context.test_adapter_uuid:
         st, data = await state.call(
             client,

@@ -86,17 +86,7 @@ async def _capture_adapter_topology(client: Client, state: RunState) -> None:
     state.record(0, "hmc_list_adapters CNA (baseline)", st, data)
     if st == "PASS":
         context.lp3_baseline["cna_adapters"] = data
-        for e in entries(data):
-            resource = get_resource(e)
-            pvid = resource.get("PortVLANID") or resource.get("port_vlan_id")
-            if pvid:
-                context.lp3_baseline["pvid"] = int(pvid)
-                context.lp3_baseline["vswitch_id"] = int(
-                    resource.get("VirtualSwitchID")
-                    or resource.get("virtual_switch_id")
-                    or 0
-                )
-                break
+        _capture_cna_identifiers(data, context.lp3_baseline)
 
     # 7. vSCSI adapters — capture VIOS partition ID and VIOS server slot for ST14
     st, data = await state.call(
@@ -108,31 +98,46 @@ async def _capture_adapter_topology(client: Client, state: RunState) -> None:
     state.record(0, "hmc_list_adapters vSCSI (baseline)", st, data)
     if st == "PASS":
         context.lp3_baseline["vscsi_adapters"] = data
-        for e in entries(data):
-            resource = get_resource(e)
-            # The HMC REST API uses RemoteLogicalPartitionID/RemoteSlotNumber
-            # on the client adapter to describe the VIOS side.  The nested
-            # ServerAdapter block holds the VIOS's VirtualSlotNumber.
-            vios_pid = (
-                resource.get("RemoteLogicalPartitionID")
-                or resource.get("remote_logical_partition_id")
-                or resource.get("ServerPartitionID")
-                or resource.get("server_partition_id")
+        _capture_vscsi_identifiers(data, context.lp3_baseline)
+
+
+def _capture_cna_identifiers(data: object, baseline: dict[str, object]) -> None:
+    """Store the first CNA's PVID and virtual-switch identity, when present."""
+    for entry in entries(data):
+        resource = get_resource(entry)
+        pvid = resource.get("PortVLANID") or resource.get("port_vlan_id")
+        if pvid:
+            baseline["pvid"] = int(pvid)
+            baseline["vswitch_id"] = int(
+                resource.get("VirtualSwitchID") or resource.get("virtual_switch_id") or 0
             )
-            server_adapter = resource.get("ServerAdapter") or {}
-            vios_slot = (
-                server_adapter.get("VirtualSlotNumber")
-                or server_adapter.get("virtual_slot_number")
-                or resource.get("RemoteSlotNumber")
-                or resource.get("remote_slot_number")
-                or resource.get("ServerAdapterID")
-                or resource.get("server_adapter_id")
-            )
-            if vios_pid is not None:
-                context.lp3_baseline["vios_partition_id"] = int(vios_pid)
-            if vios_slot is not None:
-                context.lp3_baseline["vios_slot"] = int(vios_slot)
-            break
+            return
+
+
+def _capture_vscsi_identifiers(data: object, baseline: dict[str, object]) -> None:
+    """Store the first vSCSI adapter's VIOS partition and server-slot identity."""
+    for entry in entries(data):
+        resource = get_resource(entry)
+        vios_pid = (
+            resource.get("RemoteLogicalPartitionID")
+            or resource.get("remote_logical_partition_id")
+            or resource.get("ServerPartitionID")
+            or resource.get("server_partition_id")
+        )
+        server_adapter = resource.get("ServerAdapter") or {}
+        vios_slot = (
+            server_adapter.get("VirtualSlotNumber")
+            or server_adapter.get("virtual_slot_number")
+            or resource.get("RemoteSlotNumber")
+            or resource.get("remote_slot_number")
+            or resource.get("ServerAdapterID")
+            or resource.get("server_adapter_id")
+        )
+        if vios_pid is not None:
+            baseline["vios_partition_id"] = int(vios_pid)
+        if vios_slot is not None:
+            baseline["vios_slot"] = int(vios_slot)
+        return
 
 
 async def _capture_vios_identity(client: Client, state: RunState) -> None:

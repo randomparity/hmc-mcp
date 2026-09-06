@@ -7,7 +7,7 @@ import pytest
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.ssh.commands import build_filter
-from hmc_mcp.ssh.network import (
+from hmc_mcp.ssh.sriov import (
     assign_sriov_logical_port_dynamic,
     list_sriov_adapter_rows,
     list_sriov_physical_port_rows,
@@ -137,7 +137,7 @@ async def test_physical_port_selects_the_sole_populated_level(
     monkeypatch, case
 ):
     run = AsyncMock(side_effect=[case["roce"]["stdout"], case["ethc"]["stdout"]])
-    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+    monkeypatch.setattr("hmc_mcp.ssh.sriov.run_hmc_command", run)
 
     assert await list_sriov_physical_port_rows(
         _config(), "sys", case["adapter_id"]
@@ -165,7 +165,7 @@ async def test_physical_port_rejects_invalid_adapter_ids_without_ssh(
     monkeypatch, adapter_id
 ):
     run = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+    monkeypatch.setattr("hmc_mcp.ssh.sriov.run_hmc_command", run)
 
     with pytest.raises(ValueError, match="adapter_id"):
         await list_sriov_physical_port_rows(_config(), "sys", adapter_id)
@@ -177,7 +177,7 @@ async def test_physical_port_rejects_invalid_adapter_ids_without_ssh(
 async def test_physical_port_propagates_first_command_error_without_second_read(monkeypatch):
     error = HMCCLIError("RoCE read refused")
     run = AsyncMock(side_effect=error)
-    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+    monkeypatch.setattr("hmc_mcp.ssh.sriov.run_hmc_command", run)
 
     with pytest.raises(HMCCLIError, match="RoCE read refused") as caught:
         await list_sriov_physical_port_rows(_config(), "sys", "1")
@@ -191,7 +191,7 @@ async def test_physical_port_propagates_first_command_error_without_second_read(
 async def test_physical_port_propagates_second_command_error_before_parsing(monkeypatch):
     error = HMCCLIError("ethc read refused")
     run = AsyncMock(side_effect=["wrong,header\n1,2\n", error])
-    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+    monkeypatch.setattr("hmc_mcp.ssh.sriov.run_hmc_command", run)
 
     with pytest.raises(HMCCLIError, match="ethc read refused") as caught:
         await list_sriov_physical_port_rows(_config(), "sys", "1")
@@ -215,7 +215,7 @@ async def test_physical_port_rejects_ambiguous_or_mismatched_rows(monkeypatch):
             _physical_port_output(port_type="ethc"),
         ]
     )
-    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+    monkeypatch.setattr("hmc_mcp.ssh.sriov.run_hmc_command", run)
 
     with pytest.raises(HMCCLIError, match="both roce and ethc"):
         await list_sriov_physical_port_rows(_config(), "sys", "1")
@@ -223,7 +223,7 @@ async def test_physical_port_rejects_ambiguous_or_mismatched_rows(monkeypatch):
     run = AsyncMock(
         side_effect=[_physical_port_output(adapter_id="2"), "No results were found."]
     )
-    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+    monkeypatch.setattr("hmc_mcp.ssh.sriov.run_hmc_command", run)
     with pytest.raises(HMCCLIError, match="adapter_id"):
         await list_sriov_physical_port_rows(_config(), "sys", "1")
 
@@ -233,7 +233,7 @@ async def test_physical_port_returns_empty_when_both_levels_are_empty(monkeypatc
     run = AsyncMock(
         side_effect=["No results were found.", "No results were found."]
     )
-    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+    monkeypatch.setattr("hmc_mcp.ssh.sriov.run_hmc_command", run)
 
     assert await list_sriov_physical_port_rows(_config(), "sys", "1") == []
     assert run.await_count == 2
@@ -252,7 +252,7 @@ async def test_physical_port_reads_both_levels_before_rejecting_malformed_output
     monkeypatch, roce_output, ethc_output
 ):
     run = AsyncMock(side_effect=[roce_output, ethc_output])
-    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+    monkeypatch.setattr("hmc_mcp.ssh.sriov.run_hmc_command", run)
 
     with pytest.raises(HMCCLIError, match="expected"):
         await list_sriov_physical_port_rows(_config(), "sys", "1")
@@ -271,7 +271,7 @@ async def test_exact_sriov_read_and_mutation_commands(monkeypatch):
             "",
         ]
     )
-    monkeypatch.setattr("hmc_mcp.ssh.network.run_hmc_command", run)
+    monkeypatch.setattr("hmc_mcp.ssh.sriov.run_hmc_command", run)
     assert (await list_sriov_adapter_rows(_config(), "sys"))[0][
         "config_state"
     ] == "sriov"

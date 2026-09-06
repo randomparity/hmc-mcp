@@ -206,6 +206,24 @@ def test_writing_removes_a_page_the_generator_no_longer_emits(tmp_path) -> None:
     assert (tmp_path / "alpha.md").exists()
 
 
+def test_writing_replaces_existing_page_atomically(tmp_path, monkeypatch) -> None:
+    """A failed replacement leaves the prior generated page intact."""
+    path = tmp_path / "alpha.md"
+    original = f"{gen_tool_reference.BANNER}\nold\n"
+    path.write_text(original, encoding="utf-8")
+
+    def fail_replace(_temporary, _path):
+        raise OSError("replacement failed")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="replacement failed"):
+        gen_tool_reference._write_page(path, f"{gen_tool_reference.BANNER}\nnew\n")
+
+    assert path.read_text(encoding="utf-8") == original
+    assert not list(tmp_path.glob(".alpha.md.*.tmp"))
+
+
 def test_check_caps_the_full_diffs_but_still_names_every_stale_page(tmp_path) -> None:
     cap = gen_tool_reference._MAX_DIFFS
     pages = {

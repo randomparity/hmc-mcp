@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
+from hmc_mcp.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
 
 from ...documents import (
     BOOT_DEVICE_SELECTORS,
@@ -74,7 +74,10 @@ async def set_lpar_boot_order(
     try:
         updated = await hmc.modify_logical_partition(lpar_uuid, xml)
     except HMCError as exc:
-        raise translate_lpar_write_error(exc) from exc
+        translated = translate_lpar_write_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
 
     _logger.info(
         "Set boot order for LPAR %s (%s) to: %s",
@@ -105,7 +108,10 @@ async def clear_lpar_boot_order(
     try:
         updated = await hmc.modify_logical_partition(lpar_uuid, xml)
     except HMCError as exc:
-        raise translate_lpar_write_error(exc) from exc
+        translated = translate_lpar_write_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
 
     _logger.info(
         "Cleared boot order for LPAR %s (%s) (restored defaults)",

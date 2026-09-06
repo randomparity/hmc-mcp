@@ -8,11 +8,11 @@ from conftest import make_config
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.documents import build_virtual_network_document
-from hmc_mcp.operations.network import (
+from hmc_mcp.operations.virtualization.network import (
     VirtualNetworkResult,
     create_virtual_network,
 )
-from hmc_mcp.server_tools.network import (
+from hmc_mcp.server_tools.virtualization.network import (
     hmc_create_virtual_network,
     hmc_delete_virtual_network,
     hmc_list_network_bridges,
@@ -91,7 +91,7 @@ def _hmc_env(monkeypatch):
 def _call_tool_with_resolved_system(monkeypatch, tool, *args, **kwargs):
     _hmc_env(monkeypatch)
     resolver = AsyncMock(return_value="sys-uuid")
-    with patch("hmc_mcp.operations.network.resolve_system_uuid", new=resolver):
+    with patch("hmc_mcp.operations.virtualization.network.resolve_system_uuid", new=resolver):
         result = tool("system-name", *args, **kwargs)
     resolver.assert_awaited_once_with(ANY, "system-name")
     return result
@@ -105,7 +105,7 @@ async def test_create_virtual_network_operation_returns_parent_and_resource(
     hmc = AsyncMock()
     hmc.create_virtual_network.return_value = resource
     resolver = AsyncMock(return_value="sys-uuid")
-    monkeypatch.setattr("hmc_mcp.operations.network.resolve_system_uuid", resolver)
+    monkeypatch.setattr("hmc_mcp.operations.virtualization.network.resolve_system_uuid", resolver)
 
     result = await create_virtual_network(hmc, "system-name", "prod", 100, 3)
 

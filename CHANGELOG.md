@@ -2,28 +2,9 @@
 
 All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project
-pre-1.0, so versions follow ADR 0029 (`docs/adr/0029-supported-reusable-python-api-contract.md`):
-any change to the facade manifest — adding, removing, or renaming an export of
-`hmc_mcp.api`, or changing an exported enum member or literal alternative — requires a minor
-release during `0.x`.
-
-## Convention: the Facade manifest section is mandatory
-
-Every release entry below **must** contain a `### Facade manifest` section, even when nothing
-moved. An entry whose manifest section says "no change to `hmc_mcp.api.__all__`" converts silence
-into a positive statement for consumers deciding whether an upgrade can break them. Where the
-manifest changed, the section names every added, removed, and renamed export, and every changed
-exported enum member or literal alternative.
-
-A metadata test (`tests/unit/test_changelog.py`) enforces this contract: the version declared in
-`pyproject.toml` must have a matching entry, every release entry must carry a non-empty
-`### Facade manifest` section, and that section's *content* is checked — every export in
-`hmc_mcp.api.__all__` that the oldest entry's enumerated manifest does not already name must be
-named in the `[Unreleased]` manifest. The repository carries no git tags, so that enumeration,
-not a tag, is the boundary the delta is derived against. Removals and renames stay outside the
-mechanism: a removed export is absent from `__all__`, and with no per-release snapshot to diff
-against there is nothing to corroborate a `Removed:` or `Renamed:` line.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The six-name
+`hmc_mcp.api` facade is defined by ADR 0118; record changes to it under ordinary release
+categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ## [Unreleased]
 
@@ -81,6 +62,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `None` when they intentionally request fleet-wide LPAR-name resolution.
 - Exported VIOS storage operations now require `vios_name_or_uuid` first and
   accept the optional `system_name_or_uuid` selector as a keyword-only argument.
+- The supported VIOS storage-detail operation and MCP tool are now
+  `get_vios_storage_detail` and `hmc_get_vios_storage_detail`; the ambiguous
+  `get_vios` and `hmc_get_vios` names were removed.
+- Storage inventory operations now return bounded `VolumeGroup`, `OpticalMedia`,
+  and `StorageMapping` values instead of raw HMC response mappings (ADR 0117).
 
 ### Added
 
@@ -106,6 +92,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 - `StorageMapResult` records the authorized LPAR UUID beside the resource returned by
   `map_storage`, so library and CLI callers no longer resolve the partition independently
   before the guarded storage operation (ADR 0104).
+- `VolumeGroup`, `OpticalMedia`, and `StorageMapping` provide stable storage
+  inventory values for reusable Python callers (ADR 0117).
 - Opt-in ADR 0011 ownership guard on LPAR power operations (#371, ADR 0092 §4): the new
   `authorize_power_operations` setting (`HMC_AUTHORIZE_POWER_OPERATIONS`, TOML profile key
   `authorize_power_operations`) defaults to `false`, leaving the `power_lpar` call path
@@ -483,6 +471,10 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: `hmc_mcp.api` now exports only `HMCClient`, `HMCConfig`,
+  `ConfigError`, `HMCError`, `HMCTransportError`, and
+  `TLSVerificationDisabledWarning`; every operation and operation-specific
+  model previously exported by the facade is removed (ADR 0118).
 - Added: named LPM affinity literal types (`LpmCapability`, `LpmDestinationCheckBasis`,
   `LpmPreflightStatus`, and `LpmResponse`) for typed reusable callers.
 - Added: `RemoteRestartRequest` groups remote-restart-specific controls while common
@@ -517,8 +509,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   matching the CLI and MCP tool boundary.
 - Changed: `list_systems` accepts any exact HMC state string; removed the
   misleading finite `ManagedSystemState` facade type and tool-schema enum.
-- Changed: `get_vios` now accepts the required VIOS selector first and makes its
-  optional managed-system scope keyword-only.
+- Renamed: `get_vios` is now `get_vios_storage_detail`.
 - Added: `DecommissionBlastRadius` and `DecommissionAdapterRecord` type the
   stable inventory returned through `DecommissionResult.blast_radius`.
 - Added: `list_clusters`, `list_shared_storage_pools`, and
@@ -530,12 +521,12 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `clear_lpar_boot_order` now accept a system-scoped LPAR name or UUID.
 - Changed: SSH affinity result types and workflows now live in
   `operations.affinity.ssh`; network inventory and vNIC mutation now live in
-  `operations.vnic`.
-- Changed: `get_vios`, `delete_vios`, `update_vios`, and `upgrade_vios` now place the
+  `operations.virtualization.vnic`.
+- Changed: `delete_vios`, `update_vios`, and `upgrade_vios` now place the
   optional managed-system selector before the VIOS selector, matching sibling VIOS
   operations and allowing update and upgrade names to be disambiguated.
 
-- Added: `get_vios`, `list_vios`, and the latter's `PartitionState` selector
+- Added: `get_vios_storage_detail`, `list_vios`, and the latter's `PartitionState` selector
   type as the shared VIOS inventory boundary used by both presentation layers.
 - Changed: `power_system` and `power_vios` now name their action flag
   `power_on`, matching `power_lpar`.
@@ -546,9 +537,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 - Changed: SSH-backed network and affinity operations now consistently name their
   selectors `system_name_or_uuid` and `lpar_name_or_uuid`.
 - Added: `resolve_and_authorize_lpar_mutation` and `resolve_and_authorize_lpar_names` after
-  ownership authorization moved to the cross-cutting `operations.ownership` module.
+  ownership authorization moved to the cross-cutting `operations.lpar.ownership` module.
 - Added: `StorageMapResult`; `map_storage` now returns this concrete result instead of the
   mapped resource alone.
+- Added: `VolumeGroup`, `OpticalMedia`, and `StorageMapping` replace raw HMC storage
+  inventory mappings at the supported operation boundary (ADR 0117).
 - Added: `upgrade_vios`, splitting VIOS upgrades from `update_vios`; `update_vios` now accepts
   only `VIOSUpdateSource` and has no `kind` mode selector.
 - Removed: `add_vios_adapter`; use the explicit `add_vscsi_adapter` or `add_vfc_adapter`

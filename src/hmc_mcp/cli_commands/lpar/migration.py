@@ -13,7 +13,7 @@ from ...jobs import (
     RemoteRestartOperation,
     validate_wait_timing,
 )
-from ...operations.lpm import (
+from ...operations.lpar.migration import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightRequest,
     LpmCapability,
@@ -29,23 +29,18 @@ from ...operations.lpm import (
     validate_lpar_migration,
 )
 from ..output import console, print_json
-from ..runtime import client, run
+from ..runtime import with_client
 
 
 def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) -> None:
     """Confirm and present the result of a shared LPM operation."""
 
-    async def _go():
-        async with client() as hmc:
-            if not yes:
-                dest = f" to '{target}'" if target else ""
-                if not typer.confirm(
-                    f"Really {action} partition '{name_or_uuid}'{dest}?"
-                ):
-                    raise typer.Abort()
-            return await fn(hmc)
+    if not yes:
+        dest = f" to '{target}'" if target else ""
+        if not typer.confirm(f"Really {action} partition '{name_or_uuid}'{dest}?"):
+            raise typer.Abort()
 
-    result = run(_go)
+    result = with_client(fn)
     if isinstance(result, LpmAffinityMigrationResult):
         status = "Submitted" if result.job is not None else "Stopped"
         console.print(f"[green]{status} {action}[/green]")
@@ -99,13 +94,9 @@ def lpars_migrate_affinity(
     target: str = typer.Option(..., "--target", help="Target managed system name"),
     source_score: int | None = typer.Option(None, "--source-score"),
     destination_estimate: int | None = typer.Option(None, "--destination-estimate"),
-    check_basis: LpmDestinationCheckBasis = typer.Option(
-        "calculated", "--check-basis"
-    ),
+    check_basis: LpmDestinationCheckBasis = typer.Option("calculated", "--check-basis"),
     configured_minimum: int | None = typer.Option(None, "--configured-minimum"),
-    capability: LpmCapability = typer.Option(
-        "available", "--capability"
-    ),
+    capability: LpmCapability = typer.Option("available", "--capability"),
     response: LpmResponse = typer.Option("warn", "--response"),
     preflight_timeout: float = typer.Option(
         5.0, "--preflight-timeout", help="Affinity preflight timeout seconds"

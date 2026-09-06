@@ -39,7 +39,7 @@ from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_power_on_lpar,
     hmc_rename_lpar,
 )
-from hmc_mcp.server_tools.systems import hmc_get_lpar
+from hmc_mcp.server_tools.systems.core import hmc_get_lpar
 from hmc_mcp.server_tools.updates import (
     hmc_submit_available_hmc_ptfs_query,
     hmc_update_console_software,
@@ -311,7 +311,7 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     # stamp_lpar_ownership calls set_lpar_description over SSH;
     # patch stamp to avoid needing a live SSH server in this XML-building test.
     with patch(
-        "hmc_mcp.operations.ownership.stamp_lpar_ownership",
+        "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
         new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-01-01]"),
     ):
         result = hmc_create_lpar(
@@ -356,11 +356,11 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(201, text=LPAR_FEED.format(name="ded")))
     with (
         patch(
-            "hmc_mcp.operations.ownership.stamp_lpar_ownership",
+            "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
         patch(
-            "hmc_mcp.operations.ownership._resolve_system_name",
+            "hmc_mcp.operations.lpar.ownership._resolve_system_name",
             new=AsyncMock(return_value="sys1"),
         ),
     ):

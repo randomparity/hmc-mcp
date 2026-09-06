@@ -46,8 +46,9 @@ async def test_release_propagates_cancellation_from_completed_child() -> None:
     async def cancelled_release(*args) -> bool:
         raise asyncio.CancelledError
 
-    with patch("hmc_mcp.ssh.console._release_and_verify", cancelled_release), pytest.raises(
-        asyncio.CancelledError
+    with (
+        patch("hmc_mcp.ssh.console._release_and_verify", cancelled_release),
+        pytest.raises(asyncio.CancelledError),
     ):
         await _release_uncancellable(make_config(), "sys1", "lp1")
 
@@ -100,6 +101,7 @@ class FakeConnection:
         self._processes = list(processes)
         self.create_process_calls: list[dict] = []
         self.closed = False
+        self.close_calls = 0
 
     async def create_process(self, command: str, **kwargs):
         self.create_process_calls.append({"command": command, **kwargs})
@@ -109,6 +111,7 @@ class FakeConnection:
 
     def close(self) -> None:
         self.closed = True
+        self.close_calls += 1
 
 
 class FailingProcessConnection(FakeConnection):
@@ -162,7 +165,10 @@ async def _run_capture(connection: FakeConnection, **overrides) -> ConsoleCaptur
 async def test_console_process_creation_translates_transport_errors() -> None:
     connection = FailingProcessConnection([])
     with (
-        patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock(return_value=connection)),
+        patch(
+            "hmc_mcp.ssh.console.open_hmc_connection",
+            AsyncMock(return_value=connection),
+        ),
         pytest.raises(HMCCLIError, match="Unable to create the HMC console process"),
     ):
         await _open_capture_stream(make_config(), "mkvterm", _SealedStdin())
@@ -174,11 +180,35 @@ async def test_console_acquisition_read_translates_transport_errors() -> None:
     connection = FakeConnection([])
     connection.create_process = AsyncMock(return_value=FailingReadProcess())
     with (
-        patch("hmc_mcp.ssh.console.open_hmc_connection", AsyncMock(return_value=connection)),
+        patch(
+            "hmc_mcp.ssh.console.open_hmc_connection",
+            AsyncMock(return_value=connection),
+        ),
         pytest.raises(HMCCLIError, match="acquisition read failed"),
     ):
         await _acquire_capture_stream(make_config(), "mkvterm", _SealedStdin())
     assert connection.closed
+
+
+@pytest.mark.asyncio
+async def test_successful_capture_closes_its_connection_once() -> None:
+    connection = FakeConnection([FakeProcess(BANNER, b"console output")])
+    release_probe_connection = FakeConnection([FakeProcess(BANNER)])
+
+    with (
+        patch(
+            "hmc_mcp.ssh.console.open_hmc_connection",
+            AsyncMock(side_effect=[connection, release_probe_connection]),
+        ),
+        patch(
+            "hmc_mcp.ssh.console.run_hmc_command",
+            AsyncMock(return_value="Close command sent"),
+        ),
+        patch("hmc_mcp.ssh.console._RELEASE_PROBE_SECONDS", 0.2),
+    ):
+        await capture_lpar_console(_client(), "sys1", "lp1", **_capture_kwargs())
+
+    assert connection.close_calls == 1
 
 
 def test_truncate_backtracks_split_string_terminator() -> None:
@@ -243,7 +273,10 @@ async def test_nan_time_bounds_are_rejected_before_any_ssh(field):
 async def test_contention_sentinel_raises_distinct_error_and_never_releases():
     connection = FakeConnection([FakeProcess(CONTENTION)])
     with (
-        patch( "hmc_mcp.ssh.console.open_hmc_connection", AsyncMock(return_value=connection), ),
+        patch(
+            "hmc_mcp.ssh.console.open_hmc_connection",
+            AsyncMock(return_value=connection),
+        ),
         patch("hmc_mcp.ssh.console.run_hmc_command", AsyncMock()) as release_mock,
         pytest.raises(ConsoleHeldError) as excinfo,
     ):
@@ -267,7 +300,10 @@ async def test_contention_is_detected_when_it_arrives_midstream():
     # depend on it being the first chunk.
     connection = FakeConnection([FakeProcess(BANNER, CONTENTION)])
     with (
-        patch( "hmc_mcp.ssh.console.open_hmc_connection", AsyncMock(return_value=connection), ),
+        patch(
+            "hmc_mcp.ssh.console.open_hmc_connection",
+            AsyncMock(return_value=connection),
+        ),
         patch("hmc_mcp.ssh.console.run_hmc_command", AsyncMock()),
         pytest.raises(ConsoleHeldError),
     ):

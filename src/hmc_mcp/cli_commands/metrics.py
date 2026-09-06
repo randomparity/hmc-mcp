@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from ..operations.pcm import (
+from ..operations.metrics.pcm import (
     PcmCategory,
     fetch_metric_data,
     fetch_metric_links,
@@ -15,7 +15,7 @@ from ..operations.pcm import (
     validate_pcm_preferences_category,
 )
 from .output import console, print_json, usage_error
-from .runtime import client, run, with_client
+from .runtime import with_client
 
 
 def metrics_prefs(
@@ -95,22 +95,20 @@ def metrics_show(
     """Get PCM metrics (processed by default; --aggregated for rollups)."""
     validate_pcm_metric_target(category, system_name_or_uuid)
 
-    async def _go():
-        async with client() as hmc:
-            kind = "aggregated" if aggregated else "processed"
-            operation = fetch_metric_data if fetch else fetch_metric_links
-            return await operation(
-                hmc,
-                category,
-                resource_name_or_uuid,
-                kind=kind,
-                start_ts=start,
-                end_ts=end,
-                no_of_samples=samples,
-                system_name_or_uuid=system_name_or_uuid,
-            )
-
-    result = run(_go)
+    kind = "aggregated" if aggregated else "processed"
+    operation = fetch_metric_data if fetch else fetch_metric_links
+    result = with_client(
+        lambda hmc: operation(
+            hmc,
+            category,
+            resource_name_or_uuid,
+            kind=kind,
+            start_ts=start,
+            end_ts=end,
+            no_of_samples=samples,
+            system_name_or_uuid=system_name_or_uuid,
+        )
+    )
 
     print_json(result)
 

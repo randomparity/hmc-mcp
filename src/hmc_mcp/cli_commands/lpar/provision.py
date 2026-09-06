@@ -23,7 +23,7 @@ from ...operations.lpar.provision import (
     provision_lpar,
 )
 from ..output import console, print_json, usage_error
-from ..runtime import client, run
+from ..runtime import with_client
 from .assignment_input import load_pcie_assignments
 
 
@@ -100,24 +100,31 @@ def lpars_provision(
             abort=True,
         )
 
-    async def _go():
-        async with client() as hmc:
-            return await provision_lpar(
-                hmc,
-                system_name_or_uuid=system,
-                request=ProvisionRequest(
-                    name=name,
-                    adapters=ProvisionAdapters(port_vlan_id, vios_partition_id, vios_slot),
-                    storage=ProvisionStorage(vios_uuid, storage_name, cast(StorageKind, storage_kind), vg_uuid),
-                    resources=LparResources(min_memory=min_memory, desired_memory=memory, max_memory=max_memory, desired_vcpus=vcpus, max_vcpus=max_vcpus),
-                    partition_type=partition_type,
-                    power_on=power_on,
-                    dry_run=dry_run,
-                    assignments=assignments,
-                ),
-            )
-
-    result = run(_go)
+    request = ProvisionRequest(
+        name=name,
+        adapters=ProvisionAdapters(port_vlan_id, vios_partition_id, vios_slot),
+        storage=ProvisionStorage(
+            vios_uuid, storage_name, cast(StorageKind, storage_kind), vg_uuid
+        ),
+        resources=LparResources(
+            min_memory=min_memory,
+            desired_memory=memory,
+            max_memory=max_memory,
+            desired_vcpus=vcpus,
+            max_vcpus=max_vcpus,
+        ),
+        partition_type=partition_type,
+        power_on=power_on,
+        dry_run=dry_run,
+        assignments=assignments,
+    )
+    result = with_client(
+        lambda hmc: provision_lpar(
+            hmc,
+            system_name_or_uuid=system,
+            request=request,
+        )
+    )
 
     _render_provision_result(result, name, dry_run, as_json)
 

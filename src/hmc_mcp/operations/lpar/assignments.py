@@ -8,8 +8,9 @@ from typing import Any
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.io_virtualization.pcie import (
+from hmc_mcp.operations.virtualization.pcie import (
     PCIE_ASSIGNMENT_UNAVAILABLE_REASON,
+    InventorySelector,
     PcieAssignmentUnavailableError,
     SriovLogicalPortCapabilityError,
     SriovLogicalPortPartialError,
@@ -19,18 +20,18 @@ from hmc_mcp.operations.io_virtualization.pcie import (
     list_sriov_logical_ports,
     list_sriov_physical_ports,
 )
-from hmc_mcp.operations.io_virtualization.validation import (
+from hmc_mcp.operations.virtualization.validation import (
     require_command_safe_text,
     validate_capacity_percent,
 )
-from hmc_mcp.operations.io_virtualization.vnic import (
+from hmc_mcp.operations.virtualization.vnic import (
     VnicBackingSelector,
     VnicCapabilityError,
     VnicPartialError,
     add_vnic,
 )
-from hmc_mcp.ssh.network import (
-    list_sriov_configured_logical_port_rows,
+from hmc_mcp.ssh.sriov import list_sriov_configured_logical_port_rows
+from hmc_mcp.ssh.vnic import (
     list_vnic_backing_rows,
     read_vios_identity,
 )
@@ -332,9 +333,9 @@ async def apply_validated_lpar_pcie_assignments(
                 hmc,
                 system,
                 lpar,
-                item.adapter_id,
-                item.physical_port_id,
-                item.logical_port_id,
+                InventorySelector(
+                    item.adapter_id, item.physical_port_id, item.logical_port_id
+                ),
                 item.capacity_percent,
                 profile_name=item.profile_name,
                 ownership_override=ownership_override,

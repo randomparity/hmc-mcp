@@ -151,7 +151,7 @@ def test_a_uuid_only_path_argument_is_refused_before_transport():
 
     client._http.request = _forbidden  # type: ignore[method-assign]
 
-    with pytest.raises(HMCError, match=r"^vg_uuid must be a UUID$") as error:
+    with pytest.raises(ValueError, match=r"^vg_uuid must be a UUID$") as error:
         asyncio.run(
             client._request_with_uuid_path_arguments(
                 "GET",
@@ -196,7 +196,6 @@ _UUID_PATH_BUILDERS = {
         "delete_child": ("parent_uuid", "child_uuid"),
         "_broker_file_create": ("vios_uuid", "vg_uuid"),
         "_broker_iso_import": ("vios_uuid", "vg_uuid"),
-        "submit_platform_update": ("system_uuid",),
     },
     "StorageMixin": {
         "list_volume_groups": ("vios_uuid",),
@@ -214,6 +213,7 @@ _UUID_PATH_BUILDERS = {
         "list_optical_mappings": ("vios_uuid",),
         "create_optical_mapping": ("vios_uuid",),
     },
+    "UpdatesMixin": {"submit_platform_update": ("system_uuid",)},
 }
 
 
@@ -229,8 +229,13 @@ def test_uuid_only_path_builder_inventory_uses_explicit_metadata(
     owner, method, arguments
 ):
     from hmc_mcp.client.client_storage import StorageMixin
+    from hmc_mcp.client.client_updates import UpdatesMixin
 
-    owner_type = HMCClient if owner == "HMCClient" else StorageMixin
+    owner_type = {
+        "HMCClient": HMCClient,
+        "StorageMixin": StorageMixin,
+        "UpdatesMixin": UpdatesMixin,
+    }[owner]
     source = inspect.getsource(getattr(owner_type, method))
     for argument in arguments:
         assert f'"{argument}": {argument}' in source
@@ -246,7 +251,7 @@ def test_platform_update_rejects_a_non_uuid_system_before_transport():
 
     client._http.request = _forbidden  # type: ignore[method-assign]
 
-    with pytest.raises(HMCError, match=r"^system_uuid must be a UUID$"):
+    with pytest.raises(ValueError, match=r"^system_uuid must be a UUID$"):
         asyncio.run(client.submit_platform_update("not-a-uuid", {}))
 
     assert sent == []
@@ -341,9 +346,15 @@ def test_no_unsafe_sub_resource_identifier_reaches_transport(method, args):
     """
     client = _client()
     call = getattr(client, method)
-    with pytest.raises(HMCError, match=r"refused|must be a UUID"):
-        asyncio.run(call(*[a.replace("{X}", TRAVERSAL) if isinstance(a, str) else a
-                           for a in args]))
+    with pytest.raises((HMCError, ValueError), match=r"refused|must be a UUID"):
+        asyncio.run(
+            call(
+                *[
+                    a.replace("{X}", TRAVERSAL) if isinstance(a, str) else a
+                    for a in args
+                ]
+            )
+        )
 
 
 def test_the_guard_is_reached_by_every_transport_helper():
@@ -365,8 +376,12 @@ def test_the_guard_is_reached_by_every_transport_helper():
         if expression != "self._http" or node.func.attr in {"aclose"}:
             continue
         owner = next(
-            (parent.name for parent in ast.walk(tree) if isinstance(parent, ast.AsyncFunctionDef)
-             and any(child is node for child in ast.walk(parent))),
+            (
+                parent.name
+                for parent in ast.walk(tree)
+                if isinstance(parent, ast.AsyncFunctionDef)
+                and any(child is node for child in ast.walk(parent))
+            ),
             None,
         )
         if owner != "_request":

@@ -12,7 +12,7 @@ import importlib.util
 import subprocess
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -292,3 +292,35 @@ def test_main_reports_success_count(
     output = capsys.readouterr()
     assert output.err == ""
     assert output.out == "OK: all 2 HMC_* env vars are documented.\n"
+
+
+def test_env_var_names_derives_names_from_settings_fields(
+    guard_module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = SimpleNamespace(
+        model_config={"env_prefix": "HMC_"},
+        model_fields={
+            "host": SimpleNamespace(alias=None, validation_alias=None, env=None),
+            "ssh_timeout": SimpleNamespace(
+                alias=None, validation_alias=None, env=None
+            ),
+        },
+    )
+    monkeypatch.setattr(guard_module, "HMCConfig", settings)
+
+    assert guard_module._env_var_names() == ["HMC_HOST", "HMC_SSH_TIMEOUT"]
+
+
+@pytest.mark.parametrize("override", ["alias", "validation_alias", "env"])
+def test_env_var_names_rejects_field_name_overrides(
+    guard_module: ModuleType, monkeypatch: pytest.MonkeyPatch, override: str
+) -> None:
+    field = SimpleNamespace(alias=None, validation_alias=None, env=None)
+    setattr(field, override, "CUSTOM_HOST")
+    settings = SimpleNamespace(
+        model_config={"env_prefix": "HMC_"}, model_fields={"host": field}
+    )
+    monkeypatch.setattr(guard_module, "HMCConfig", settings)
+
+    with pytest.raises(RuntimeError, match="HMCConfig.host has an alias/env override"):
+        guard_module._env_var_names()

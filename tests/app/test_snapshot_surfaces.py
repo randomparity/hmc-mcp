@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from hmc_mcp import cli
 from hmc_mcp.cli_commands.snapshot import _publish
-from hmc_mcp.operations.affinity import (
+from hmc_mcp.operations.affinity.rest import (
     AffinityAssessmentInput,
     assess_affinity,
 )
@@ -187,7 +187,7 @@ def test_cli_capture_existing_destination_is_concise(
     destination = tmp_path / "snapshot.json"
     destination.write_text("original", encoding="utf-8")
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.snapshot.run",
+        "hmc_mcp.cli_commands.snapshot.run_cli_coroutine",
         lambda operation: SimpleNamespace(format="hmc-mcp.lpar-snapshot", version=1),
     )
     monkeypatch.setattr("hmc_mcp.cli_commands.snapshot.serialize_snapshot", lambda value: "{}")

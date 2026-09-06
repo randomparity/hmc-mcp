@@ -222,6 +222,42 @@ def test_interruption_replays_captured_output_without_traceback(
     assert temporary_file.closed
 
 
+def test_timeout_terminates_pytest_and_returns_timeout_status(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    temporary_file = TrackingTemporaryFile()
+
+    class TimedOutProcess:
+        returncode = 143
+        wait_count = 0
+
+        def wait(self, timeout: int | None = None) -> int:
+            self.wait_count += 1
+            if self.wait_count == 1:
+                temporary_file.write(b"pytest stalled\n")
+                raise subprocess.TimeoutExpired(["pytest"], timeout)
+            return self.returncode
+
+        def terminate(self) -> None:
+            return None
+
+        def kill(self) -> None:
+            return None
+
+    process = TimedOutProcess()
+    monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
+    monkeypatch.setattr(run_tests.subprocess, "Popen", lambda _command, **_kwargs: process)
+
+    assert run_tests.main() == 124
+
+    error_output = capsys.readouterr().err
+    assert "pytest stalled" in error_output
+    assert "timed out" in error_output
+    assert process.wait_count == 2
+    assert temporary_file.closed
+
+
 def test_main_accepts_no_arguments() -> None:
     assert list(inspect.signature(run_tests.main).parameters) == []
 

@@ -9,10 +9,9 @@ from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
-from hmc_mcp import api
 from hmc_mcp.cli import app
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.io_virtualization.pcie import (
+from hmc_mcp.operations.virtualization.pcie import (
     DedicatedSlot,
     InventoryResult,
     InventorySelector,
@@ -20,7 +19,7 @@ from hmc_mcp.operations.io_virtualization.pcie import (
     SriovLogicalPort,
     SriovPhysicalPort,
 )
-from hmc_mcp.server_tools.system_resources import (
+from hmc_mcp.server_tools.virtualization.pcie import (
     hmc_list_dedicated_pcie_slots,
     hmc_list_sriov_adapters,
     hmc_list_sriov_logical_ports,
@@ -129,7 +128,7 @@ def test_models_preserve_hierarchy_percentage_units_and_explicit_unknowns() -> N
     assert asdict(logical)["physical_port_id"] == "p2"
 
 
-def test_supported_api_exports_inventory_contract_directly() -> None:
+def test_inventory_contract_is_owned_by_its_domain_module() -> None:
     for name in (
         "DedicatedSlot",
         "InventoryResult",
@@ -142,9 +141,8 @@ def test_supported_api_exports_inventory_contract_directly() -> None:
         "list_sriov_logical_ports",
         "list_sriov_physical_ports",
     ):
-        assert name in api.__all__
-        assert getattr(api, name) is getattr(
-            __import__("hmc_mcp.operations.io_virtualization.pcie", fromlist=[name]), name
+        assert name in vars(
+            __import__("hmc_mcp.operations.virtualization.pcie", fromlist=[name])
         )
 
 
@@ -180,7 +178,7 @@ def test_mcp_logical_tool_forwards_every_selector(monkeypatch) -> None:
             return_value=_ClientContext(object()),
         ),
         patch(
-            "hmc_mcp.server_tools.system_resources.list_sriov_logical_ports",
+            "hmc_mcp.server_tools.virtualization.pcie.list_sriov_logical_ports",
             AsyncMock(return_value=result),
         ) as operation,
     ):
@@ -209,12 +207,12 @@ def test_other_mcp_inventory_tools_return_serialized_results(monkeypatch) -> Non
             resource_kind, "available", "sys1", InventorySelector(), [], None
         )
         with (
-                patch(
-                    "hmc_mcp._app.client_from_env",
-                    return_value=_ClientContext(object()),
+            patch(
+                "hmc_mcp._app.client_from_env",
+                return_value=_ClientContext(object()),
             ),
             patch(
-                f"hmc_mcp.server_tools.system_resources.{operation_name}",
+                f"hmc_mcp.server_tools.virtualization.pcie.{operation_name}",
                 AsyncMock(return_value=result),
             ),
         ):
@@ -231,12 +229,12 @@ def test_cli_logical_inventory_forwards_selectors_and_prints_json() -> None:
         "ADR 0053 admits selectors but no SR-IOV read projection",
     )
     with (
-            patch(
-                "hmc_mcp.cli_commands.runtime.client",
-                return_value=_ClientContext(object()),
-            ),
         patch(
-            "hmc_mcp.cli_commands.pcie.list_sriov_logical_ports",
+            "hmc_mcp.cli_commands.runtime.client",
+            return_value=_ClientContext(object()),
+        ),
+        patch(
+            "hmc_mcp.cli_commands.virtualization.pcie.list_sriov_logical_ports",
             AsyncMock(return_value=result),
         ) as operation,
     ):
@@ -271,12 +269,12 @@ def test_cli_text_mode_reports_unavailable_capability() -> None:
         "ADR 0053 admits selectors but no SR-IOV read projection",
     )
     with (
-            patch(
-                "hmc_mcp.cli_commands.runtime.client",
-                return_value=_ClientContext(object()),
-            ),
         patch(
-            "hmc_mcp.cli_commands.pcie.list_sriov_adapters",
+            "hmc_mcp.cli_commands.runtime.client",
+            return_value=_ClientContext(object()),
+        ),
+        patch(
+            "hmc_mcp.cli_commands.virtualization.pcie.list_sriov_adapters",
             AsyncMock(return_value=result),
         ),
     ):
@@ -298,11 +296,13 @@ def test_cli_text_mode_distinguishes_available_empty_and_records() -> None:
     )
     operation = AsyncMock(side_effect=[empty, populated])
     with (
-            patch(
-                "hmc_mcp.cli_commands.runtime.client",
-                return_value=_ClientContext(object()),
-            ),
-        patch("hmc_mcp.cli_commands.pcie.list_dedicated_slots", operation),
+        patch(
+            "hmc_mcp.cli_commands.runtime.client",
+            return_value=_ClientContext(object()),
+        ),
+        patch(
+            "hmc_mcp.cli_commands.virtualization.pcie.list_dedicated_slots", operation
+        ),
     ):
         empty_response = CliRunner().invoke(
             app, ["network", "list-dedicated-pcie-slots", "sys1"]

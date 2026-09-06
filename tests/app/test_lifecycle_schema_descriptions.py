@@ -24,7 +24,7 @@ SCOPED_TOOLS = {
     "hmc_get_lpar",
     "hmc_get_lpar_state",
     "hmc_list_vios",
-    "hmc_get_vios",
+    "hmc_get_vios_storage_detail",
     "hmc_list_resources",
     "hmc_get_system",
     "hmc_modify_system",

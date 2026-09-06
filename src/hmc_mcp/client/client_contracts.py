@@ -3,31 +3,36 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from importlib import import_module
-from types import ModuleType
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Literal, Protocol, get_args
 
 # Element is a type contract only; client implementations parse inbound XML
 # through defusedxml.
 from xml.etree.ElementTree import Element  # nosec B405
 
+import httpx
+
 from ..config import HMCConfig
 
-if TYPE_CHECKING:
-    import httpx
-else:
+AuthenticationFilter = Literal["local", "ldap", "kerberos", "all"]
+AUTHENTICATION_TYPES = {"local": "Local", "ldap": "LDAP", "kerberos": "Kerberos"}
+VALID_AUTHENTICATION_FILTERS = frozenset(get_args(AuthenticationFilter))
 
-    class _LazyHttpx:
-        """Load HTTPX when runtime annotation or transport access needs it."""
+AdapterType = Literal[
+    "ClientNetworkAdapter",
+    "VirtualSCSIClientAdapter",
+    "VirtualFibreChannelClientAdapter",
+    "VirtualNICDedicated",
+]
+ADAPTER_TYPES = frozenset(get_args(AdapterType))
 
-        _module: ModuleType | None = None
 
-        def __getattr__(self, name: str) -> Any:
-            if self._module is None:
-                self._module = import_module("httpx")
-            return getattr(self._module, name)
-
-    httpx = _LazyHttpx()
+def validate_adapter_type(adapter_type: AdapterType) -> AdapterType:
+    if adapter_type not in ADAPTER_TYPES:
+        raise ValueError(
+            f"Invalid adapter_type {adapter_type!r}. "
+            f"Must be one of: {', '.join(sorted(ADAPTER_TYPES))}"
+        )
+    return adapter_type
 
 
 class LparsClient(Protocol):
@@ -123,6 +128,19 @@ class PcmClient(Protocol):
     ) -> list[dict[str, str]]: ...
 
     async def get_metrics_feed(self, path: str) -> list[dict[str, str]]: ...
+
+
+class UpdatesClient(Protocol):
+    """Host operations required by :class:`client_updates.UpdatesMixin`."""
+
+    async def _request_with_uuid_path_arguments(
+        self,
+        method: str,
+        path: str,
+        *,
+        uuid_path_arguments: Mapping[str, str],
+        **kwargs: Any,
+    ) -> Any: ...
 
 
 class StorageClient(Protocol):

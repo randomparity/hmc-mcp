@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, call
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations import vios_labels as label_operations
-from hmc_mcp.server_tools import vios_labels as label_tools
+from hmc_mcp.operations.vios import labels as label_operations
+from hmc_mcp.server_tools.vios import labels as label_tools
 from hmc_mcp.ssh.transport import HMCCLIError
 from hmc_mcp.ssh.vios_labels import (
     create_vios_vfc_group_label,
@@ -260,7 +260,7 @@ async def test_header_names_are_preserved_byte_for_byte(monkeypatch):
 async def test_invalid_input_does_not_dispatch(monkeypatch, call):
     run = AsyncMock()
     monkeypatch.setattr("hmc_mcp.ssh.vios_labels.run_hmc_command", run)
-    with pytest.raises(HMCCLIError):
+    with pytest.raises((ValueError, HMCCLIError)):
         await call()
     run.assert_not_awaited()
 
@@ -279,7 +279,7 @@ async def test_invalid_input_does_not_dispatch(monkeypatch, call):
 async def test_group_member_payload_is_bounded(monkeypatch, members, message: str):
     run = AsyncMock()
     monkeypatch.setattr("hmc_mcp.ssh.vios_labels.run_hmc_command", run)
-    with pytest.raises(HMCCLIError, match=message):
+    with pytest.raises(ValueError, match=message):
         await create_vios_vfc_group_label(
             CONFIG, "system-a", "label", vios_names=members
         )

@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from hmc_mcp.server_tools.systems import hmc_list_configured_hosts
+from hmc_mcp.server_tools.systems.core import hmc_list_configured_hosts
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -408,7 +408,7 @@ def test_reads_config_document_exactly_once(tmp_path):
 
     Patches the shared choke point `_read_config_document` in both the module
     that owns it (`hmc_mcp.config`, where `list_nicknames` resolves the name as
-    a module global at call time) and `hmc_mcp.server_tools.systems`'s own imported
+    a module global at call time) and `hmc_mcp.server_tools.systems.core`'s own imported
     name (its direct call site), so every read reaches the same counter
     regardless of which call site makes it.
     """

@@ -10,22 +10,14 @@ import pytest
 from typer.testing import CliRunner
 
 from hmc_mcp import cli
-from hmc_mcp.cli_commands.lpar import modify as cli_modify
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.documents import LparResources
-from hmc_mcp.operations.adapters import (
-    add_network_adapter,
-    add_vfc_adapter,
-    add_vscsi_adapter,
-    delete_adapter,
-)
 from hmc_mcp.operations.lpar.configuration import (
     configure_lpar_msp,
     configure_lpar_processor_compatibility,
     synchronize_lpar_profile,
 )
-from hmc_mcp.operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
-from hmc_mcp.operations.lpm import (
+from hmc_mcp.operations.lpar.migration import (
     LpmMigrationRequest,
     RemoteRestartRequest,
     abort_lpar_migration,
@@ -33,10 +25,17 @@ from hmc_mcp.operations.lpm import (
     recover_lpar_migration,
     remote_restart_lpar,
 )
-from hmc_mcp.operations.storage import (
+from hmc_mcp.operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
+from hmc_mcp.operations.storage.resources import (
     map_storage,
     mount_optical_media,
     unmount_optical_media,
+)
+from hmc_mcp.operations.virtualization.adapters import (
+    add_network_adapter,
+    add_vfc_adapter,
+    add_vscsi_adapter,
+    delete_adapter,
 )
 from hmc_mcp.server_tools.lpar import configuration as server_configuration
 from hmc_mcp.server_tools.lpar import lifecycle as server_lifecycle
@@ -55,25 +54,25 @@ Operation = Callable[[AsyncMock], Awaitable[object]]
 
 CASES: tuple[tuple[str, Operation], ...] = (
     (
-        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation",
         lambda hmc: add_network_adapter(hmc, None, LPAR, 100),
     ),
     (
-        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation",
         lambda hmc: add_vscsi_adapter(hmc, None, LPAR, 2, 10),
     ),
     (
-        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation",
         lambda hmc: add_vfc_adapter(hmc, None, LPAR, 2, 10),
     ),
     (
-        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation",
         lambda hmc: delete_adapter(
             hmc, None, LPAR, "ClientNetworkAdapter", "adapter"
         ),
     ),
     (
-        "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.storage.resources.resolve_and_authorize_lpar_mutation",
         lambda hmc: map_storage(
             hmc,
             VIOS,
@@ -84,13 +83,13 @@ CASES: tuple[tuple[str, Operation], ...] = (
         ),
     ),
     (
-        "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.storage.resources.resolve_and_authorize_lpar_mutation",
         lambda hmc: mount_optical_media(
                 hmc, VIOS, LPAR, media_name="aix.iso"
         ),
     ),
     (
-        "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.storage.resources.resolve_and_authorize_lpar_mutation",
         lambda hmc: unmount_optical_media(
                 hmc, VIOS, LPAR, media_name="aix.iso"
         ),
@@ -108,21 +107,21 @@ CASES: tuple[tuple[str, Operation], ...] = (
         ),
     ),
     (
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation",
         lambda hmc: migrate_lpar(
             hmc, None, LPAR, LpmMigrationRequest("target"), validate_first=False
         ),
     ),
     (
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation",
         lambda hmc: abort_lpar_migration(hmc, None, LPAR),
     ),
     (
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation",
         lambda hmc: recover_lpar_migration(hmc, None, LPAR),
     ),
     (
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation",
+        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation",
         lambda hmc: remote_restart_lpar(
             hmc, "source", LPAR, RemoteRestartRequest("cleanup")
         ),
@@ -201,7 +200,7 @@ async def test_real_guard_rejects_foreign_optical_owner_before_write(
     hmc = _real_guard_hmc()
 
     with patch(
-        "hmc_mcp.operations.ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar.ownership.get_lpar_description",
         new=AsyncMock(return_value=FOREIGN_OWNER),
     ), pytest.raises(PermissionError, match="ownership_override=true"):
             await operation(
@@ -226,7 +225,7 @@ async def test_optical_ownership_override_bypasses_read_and_writes(
     hmc = _real_guard_hmc()
 
     with patch(
-        "hmc_mcp.operations.ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar.ownership.get_lpar_description",
         new=AsyncMock(return_value=FOREIGN_OWNER),
     ) as read:
         await operation(
@@ -247,7 +246,7 @@ def test_mcp_resource_modify_rejects_foreign_owner_before_hmc_write() -> None:
     hmc = _real_guard_hmc()
     with (
         patch(
-            "hmc_mcp.operations.ownership.get_lpar_description",
+            "hmc_mcp.operations.lpar.ownership.get_lpar_description",
             new=AsyncMock(return_value=FOREIGN_OWNER),
         ),
         patch(
@@ -272,11 +271,14 @@ def test_cli_resource_modify_rejects_foreign_owner_before_hmc_write() -> None:
     context.__aenter__.return_value = hmc
     with (
         patch(
-            "hmc_mcp.operations.ownership.get_lpar_description",
+            "hmc_mcp.operations.lpar.ownership.get_lpar_description",
             new=AsyncMock(return_value=FOREIGN_OWNER),
         ),
-        patch.object(cli_modify, "client", return_value=context),
-        patch.object(cli_modify, "run", side_effect=lambda fn: asyncio.run(fn())),
+        patch("hmc_mcp.cli_commands.runtime.client", return_value=context),
+        patch(
+            "hmc_mcp.cli_commands.runtime.run_cli_coroutine",
+            side_effect=lambda fn: asyncio.run(fn()),
+        ),
     ):
         result = CliRunner().invoke(
             cli.app,
@@ -303,7 +305,7 @@ def test_resource_modify_override_skips_ownership_read_and_writes() -> None:
     hmc = _real_guard_hmc()
     hmc.modify_logical_partition.return_value = {"Resource": {"PartitionName": LPAR_NAME}}
     with patch(
-        "hmc_mcp.operations.ownership.get_lpar_description",
+        "hmc_mcp.operations.lpar.ownership.get_lpar_description",
         new=AsyncMock(return_value=FOREIGN_OWNER),
     ) as read, patch(
         "hmc_mcp.server_tools.lpar.lifecycle.with_client",
@@ -337,7 +339,7 @@ async def test_config_operations_reject_foreign_owner_before_ssh_write(
 
     with (
         patch(
-            "hmc_mcp.operations.ownership.get_lpar_description",
+            "hmc_mcp.operations.lpar.ownership.get_lpar_description",
             new=AsyncMock(return_value=FOREIGN_OWNER),
         ),
         patch(f"hmc_mcp.operations.lpar.configuration.{write_name}", new=write),
@@ -366,7 +368,7 @@ async def test_config_operations_override_skips_ownership_read(
 
     with (
         patch(
-            "hmc_mcp.operations.ownership.get_lpar_description",
+            "hmc_mcp.operations.lpar.ownership.get_lpar_description",
             new=AsyncMock(return_value=FOREIGN_OWNER),
         ) as read,
         patch(f"hmc_mcp.operations.lpar.configuration.{write_name}", new=write),
@@ -428,7 +430,7 @@ async def test_delete_adapter_returns_deleted_adapter_uuid(
 ) -> None:
     guard = AsyncMock(return_value=LPAR)
     monkeypatch.setattr(
-        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar_mutation", guard
+        "hmc_mcp.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation", guard
     )
     hmc = AsyncMock()
 

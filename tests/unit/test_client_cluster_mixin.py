@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from unittest.mock import AsyncMock
 
 import pytest
@@ -39,9 +40,9 @@ async def test_create_logical_unit_submits_cluster_job_document():
         "cluster-1",
         "data",
         50,
-        "THICK",
-        "VirtualIO_Disk",
-        "source-udid",
+        lu_type="THICK",
+        device_type="VirtualIO_Disk",
+        cloned_from="source-udid",
     )
 
     assert result == {"UUID": "job"}
@@ -55,6 +56,13 @@ async def test_create_logical_unit_submits_cluster_job_document():
     ):
         assert f">{name}</ParameterName>" in document
         assert f">{value}</ParameterValue>" in document
+
+
+def test_logical_unit_optional_controls_are_keyword_only():
+    parameters = inspect.signature(ClusterMixin.create_logical_unit).parameters
+
+    for name in ("lu_type", "device_type", "cloned_from"):
+        assert parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
 
 
 @pytest.mark.asyncio

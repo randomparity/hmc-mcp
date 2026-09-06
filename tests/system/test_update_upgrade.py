@@ -5,6 +5,7 @@ import pytest
 from conftest import JOB_ENTRY, make_config
 from pydantic import ValidationError
 
+from hmc_mcp.client.client_updates import _normalize_platform_update_response
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import build_job_request, job_outcome
@@ -508,6 +509,34 @@ async def test_submit_platform_update_normalizes_documented_response(mock_hmc):
     assert job_outcome("platform-job", job).error == "firmware failed"
 
 
+@pytest.mark.parametrize(
+    ("status", "result", "expected_error"),
+    [
+        (
+            "COMPLETED_WITH_ERROR",
+            [{"ParameterName": "result", "ParameterValue": "failed"}],
+            "failed",
+        ),
+        ("COMPLETED", None, None),
+    ],
+)
+def test_platform_update_normalizes_native_singular_result(
+    status, result, expected_error
+):
+    response = {"Status": status}
+    if result is not None:
+        response["Result"] = result
+
+    normalized = _normalize_platform_update_response(
+        {"id": "job", "content": {"JobResponse": response}}
+    )
+
+    expected = {"Results": {"JobParameter": result}} if result is not None else {}
+    assert normalized["Resource"] == {"Status": status, **expected}
+    assert "Result" not in normalized["Resource"]
+    assert job_outcome("job", normalized).error == expected_error
+
+
 @pytest.mark.asyncio
 async def test_submit_platform_update_rejects_non_uuid_path_input(mock_hmc):
     route = mock_hmc.put(
@@ -516,7 +545,7 @@ async def test_submit_platform_update_rejects_non_uuid_path_input(mock_hmc):
     ).mock(return_value=httpx.Response(204))
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="system_uuid must be a UUID"):
+        with pytest.raises(ValueError, match="system_uuid must be a UUID"):
             await hmc.submit_platform_update(
                 "allowed/do/ShutdownHMC?ignored=", {"JobRequest": {}}
             )
@@ -538,6 +567,27 @@ async def test_submit_platform_update_sanitizes_non_success(mock_hmc):
     assert raised.value.status_code == 400
     assert echoed_value not in str(raised.value)
     assert raised.value.body is None
+
+
+@pytest.mark.asyncio
+async def test_submit_platform_update_reports_path_for_invalid_json(mock_hmc):
+    """Malformed success bodies identify the endpoint without exposing their contents."""
+    private_sentinel = "private-update-payload"
+    path = f"/rest/api/uom/ManagedSystem/{SYS_UUID}/do/PlatformUpdate"
+    mock_hmc.put(path).mock(
+        return_value=httpx.Response(202, content=f"{{{private_sentinel}".encode())
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.submit_platform_update(SYS_UUID, {"JobRequest": {}})
+
+    assert str(raised.value) == (
+        f"PUT {path}: Malformed PlatformUpdate response: body is not valid JSON"
+    )
+    assert private_sentinel not in str(raised.value)
+    assert raised.value.body is None
+    assert isinstance(raised.value.__cause__, ValueError)
 
 
 @pytest.mark.asyncio

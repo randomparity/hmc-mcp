@@ -1,6 +1,6 @@
 """Docstring contracts for tools returning a submission ``JobOutcome``."""
 
-from hmc_mcp.server_tools.lpm import (
+from hmc_mcp.server_tools.lpar.migration import (
     hmc_migrate_abort_lpar,
     hmc_migrate_lpar,
     hmc_migrate_recover_lpar,

@@ -18,7 +18,7 @@ def test_cross_module_cli_seams_use_public_internal_names() -> None:
     runtime_names = {
         "client",
         "current_options",
-        "run",
+        "run_cli_coroutine",
         "ssh_config",
         "with_client",
     }

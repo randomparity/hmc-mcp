@@ -11,16 +11,16 @@ from __future__ import annotations
 
 import re
 import warnings
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import Mapping
 from threading import Lock
 from typing import Any, Literal, Self, get_args
 from urllib.parse import quote, unquote, urlparse
 
+import httpx
+
 from ..audit import records as audit
 from ..config import HMCConfig, env_var_value
 from ..documents import (
-    build_brokered_file_document,
-    build_linked_optical_media_document,
     build_logon_request_document,
 )
 from ..errors import HMCError, HMCTransportError
@@ -28,7 +28,6 @@ from ..jobs import TERMINAL_JOB_STATUSES
 from ..resource_identity import is_uuid
 from .client_adapters import AdaptersMixin
 from .client_cluster import ClusterMixin
-from .client_contracts import httpx
 from .client_lpars import LparsMixin
 from .client_lpm import LpmMixin
 from .client_network import NetworkMixin
@@ -37,11 +36,11 @@ from .client_pcm import PcmMixin
 from .client_storage import StorageMixin
 from .client_systems import SystemsMixin
 from .client_templates import TemplatesMixin
+from .client_updates import UpdatesMixin
 from .client_users import UsersMixin
 
 # Media-type fragments used by the HMC API.
 MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
-MEDIA_WEB_JSON = "application/vnd.ibm.powervm.web+json"
 MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
 
 # The two RFC 3986 dot-segments. Held as a frozenset and compared per path
@@ -86,7 +85,7 @@ _JOB_PATH = re.compile(r"^(?:/[^/]+)*/(?:Job|jobs)/[^/]+$")
 def _reject_non_job_path(path: str) -> None:
     """Refuse a ``job_href`` that does not address a job.
 
-    ``get_job`` fetches the caller's ``job_href`` directly, so the path — not the
+    ``get_job_entry`` fetches the caller's ``job_href`` directly, so the path — not the
     ``job_id`` argument — decides which resource is read. Without this, an
     unrelated web-resource href could be fetched through a tool classified
     ``read``/``job``.
@@ -163,58 +162,8 @@ def _verify_ssl_source(config: HMCConfig) -> VerifySSLSource:
     return "environment:HMC_VERIFY_SSL"
 
 
-def _platform_response_error(field: str) -> HMCError:
-    """Build a payload-safe malformed PlatformUpdate response error."""
-    return HMCError(f"Malformed PlatformUpdate response: invalid {field}")
-
-
-def _normalize_platform_update_response(payload: Any) -> dict[str, Any]:
-    """Normalize IBM's JSON PlatformUpdate job into the shared job shape."""
-    if not isinstance(payload, dict):
-        raise _platform_response_error("root")
-    job_id = payload.get("id")
-    if not isinstance(job_id, str) or not job_id.strip():
-        raise _platform_response_error("id")
-    content = payload.get("content")
-    if not isinstance(content, dict):
-        raise _platform_response_error("content")
-    response = content.get("JobResponse")
-    if not isinstance(response, dict):
-        raise _platform_response_error("JobResponse")
-    status = response.get("Status")
-    if not isinstance(status, str) or not status.strip():
-        raise _platform_response_error("Status")
-    self_link = payload.get("selfLink")
-    if self_link is not None and (
-        not isinstance(self_link, str) or not self_link.strip()
-    ):
-        raise _platform_response_error("selfLink")
-
-    resource = dict(response)
-    if "Result" in resource:
-        results = resource.pop("Result")
-        if not isinstance(results, list):
-            raise _platform_response_error("Result")
-        normalized_results: list[dict[str, str]] = []
-        for entry in results:
-            if not isinstance(entry, dict):
-                raise _platform_response_error("Result entry")
-            name = entry.get("ParameterName")
-            value = entry.get("ParameterValue")
-            if not isinstance(name, str) or not name.strip():
-                raise _platform_response_error("Result ParameterName")
-            if not isinstance(value, str):
-                raise _platform_response_error("Result ParameterValue")
-            normalized_results.append({"ParameterName": name, "ParameterValue": value})
-        resource["Results"] = {"JobParameter": normalized_results}
-
-    normalized: dict[str, Any] = {"UUID": job_id.strip(), "Resource": resource}
-    if isinstance(self_link, str):
-        normalized["link"] = self_link.strip()
-    return normalized
-
-
 class HMCClient(
+    UpdatesMixin,
     UsersMixin,
     SystemsMixin,
     LparsMixin,
@@ -445,7 +394,7 @@ class HMCClient(
         """Validate UUID-only path arguments before entering the transport."""
         for argument, value in uuid_path_arguments.items():
             if not is_uuid(value):
-                raise HMCError(f"{argument} must be a UUID")
+                raise ValueError(f"{argument} must be a UUID")
         return await self._request(method, path, **kwargs)
 
     def _uom_headers(
@@ -540,133 +489,6 @@ class HMCClient(
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
 
-    # Brokered file upload helpers (/rest/api/web/File/)
-    #
-    # HMC uses a two-step brokered file protocol to import ISOs:
-    #   1. PUT /rest/api/web/File/ — register the file entry; returns FileUUID
-    #   2. PUT /rest/api/web/File/contents/{file_uuid} — stream the raw bytes
-    #   The HMC then automatically imports the ISO into the VMLibrary.
-    #   3. DELETE /rest/api/web/File/{file_uuid} — release the broker slot
-    #
-    # Reference: project-pim/cli/utils/iso_util.py (create_iso_path pattern)
-
-    async def _broker_file_create(
-        self, vios_uuid: str, vg_uuid: str, filename: str
-    ) -> str:
-        """Create a brokered file handle and return its URI."""
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        create_xml = build_brokered_file_document(filename=filename)
-        resp = await self._request_with_uuid_path_arguments(
-            "POST",
-            path,
-            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
-            content=create_xml,
-            headers={"Content-Type": MEDIA_UOM, "Accept": MEDIA_UOM},
-        )
-        if resp.status_code not in (200, 201):
-            raise HMCError(
-                f"Brokered file create failed for {filename}",
-                resp.status_code,
-                resp.text,
-            )
-        location = resp.headers.get("Location")
-        if not location:
-            raise HMCError(
-                "Brokered file create missing Location header",
-                resp.status_code,
-                resp.text,
-            )
-        return location
-
-    async def _broker_file_upload(
-        self,
-        broker_uri: str,
-        content: AsyncIterator[bytes],
-        content_length: int,
-    ) -> str:
-        """Stream content to a brokered file and return its media UUID.
-
-        The method never buffers the body: an ISO that passes the caller's size
-        bound may be tens of gigabytes, and this process is shared by every caller
-        of every tool (ADR 0052, #308).
-
-        ``content`` must be an **async** iterator, and ``content_length`` the
-        exact total it will yield. Both are constraints of the transport, not
-        style, verified against httpx 0.28.1:
-
-        - A file object or a sync generator becomes an ``IteratorByteStream``,
-          which is a ``SyncByteStream``; ``AsyncClient._send_single_request``
-          raises ``RuntimeError`` on one. Only an async iterator reaches the wire.
-        - ``encode_content`` would set ``Transfer-Encoding: chunked`` for an
-          iterator body, but ``Request._prepare`` skips that when an explicit
-          ``Content-Length`` is already present — which is why the HMC, whose
-          brokered upload requires ``Content-Length`` (ADR 0031), still gets one.
-
-        The stream is consumed exactly once and cannot be replayed. Nothing in
-        this path retries: ``_request`` sends once and only translates transport
-        errors, ``AsyncClient`` is constructed without ``follow_redirects`` (so a
-        3xx is returned, not re-sent), and the default transport does not retry a
-        sent request. Re-sending the same ``Request`` raises ``StreamConsumed``;
-        a *new* request around the exhausted iterator would send an empty body,
-        which h11 then refuses against the unchanged ``Content-Length``. So a
-        replay fails loudly rather than uploading a truncated ISO under a
-        SHA-256 describing the whole file — but it still fails. If a retry,
-        redirect-following, or a shared client is ever added above this method,
-        the body must become re-creatable (a factory per attempt) in the same
-        change.
-        """
-        resp = await self._request(
-            "PUT",
-            broker_uri,
-            content=content,
-            headers={
-                "Content-Type": "application/octet-stream",
-                "Content-Length": str(content_length),
-                "Accept": MEDIA_UOM,
-            },
-        )
-        if resp.status_code not in (200, 201, 202):
-            raise HMCError(
-                f"Brokered file upload failed to {broker_uri}",
-                resp.status_code,
-                resp.text,
-            )
-        return resp.text if resp.text else ""
-
-    async def _broker_iso_import(
-        self,
-        vios_uuid: str,
-        vg_uuid: str,
-        media_name: str,
-        broker_uri: str,
-    ) -> str:
-        """Import a brokered ISO and return its VirtualOpticalMedia UUID."""
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        import_xml = build_linked_optical_media_document(
-            media_name=media_name, broker_uri=broker_uri
-        )
-        resp = await self._post(
-            path,
-            import_xml,
-            resource_type="VolumeGroup",
-            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
-        )
-        return resp if resp else ""
-
-    async def _broker_file_cleanup(self, broker_uri: str) -> None:
-        """Delete a brokered file to release its resources."""
-        resp = await self._request(
-            "DELETE",
-            broker_uri,
-            headers={"Accept": MEDIA_UOM},
-        )
-        if resp.status_code not in (200, 202, 204, 404):
-            raise HMCError(
-                f"Brokered file cleanup failed for {broker_uri}",
-                resp.status_code,
-                resp.text,
-            )
-
     # Web endpoint helpers (/rest/api/web/)
     #
     # The HMC exposes non-UOM resources under /rest/api/web/ with the MEDIA_WEB
@@ -759,9 +581,7 @@ class HMCClient(
         path = f"/rest/api/uom/{resource_type}/{uuid}"
         if group:
             path += f"?group={group}"
-        xml = await self._get(
-            path, resource_type, uuid_path_arguments={"uuid": uuid}
-        )
+        xml = await self._get(path, resource_type, uuid_path_arguments={"uuid": uuid})
         if not xml:
             return None
         entries = _parse_feed(xml, path)
@@ -889,35 +709,7 @@ class HMCClient(
         entries = _parse_feed(resp.text, job_path) if resp.text else []
         return entries[0] if entries else None
 
-    async def submit_platform_update(
-        self, system_uuid: str, job_request: Mapping[str, Any]
-    ) -> dict[str, Any] | None:
-        """PUT one native JSON PlatformUpdate request and normalize its job."""
-        system_path_id = quote(system_uuid, safe="")
-        path = f"/rest/api/uom/ManagedSystem/{system_path_id}/do/PlatformUpdate"
-        resp = await self._request_with_uuid_path_arguments(
-            "PUT",
-            path,
-            uuid_path_arguments={"system_uuid": system_uuid},
-            json=job_request,
-            headers={
-                "Content-Type": f"{MEDIA_WEB_JSON}; type=JobRequest",
-                "Accept": "application/json",
-            },
-        )
-        if resp.status_code not in (200, 201, 202, 204):
-            raise HMCError(f"PUT {path} failed", resp.status_code)
-        if not resp.content or not resp.text.strip():
-            return None
-        try:
-            payload = resp.json()
-        except ValueError as exc:
-            raise HMCError(
-                "Malformed PlatformUpdate response: body is not valid JSON"
-            ) from exc
-        return _normalize_platform_update_response(payload)
-
-    async def get_job(
+    async def get_job_entry(
         self,
         job_id: str,
         *,
@@ -944,7 +736,7 @@ class HMCClient(
         entries = _parse_feed(xml, path)
         return entries[0] if entries else None
 
-    async def wait_for_job(
+    async def wait_for_job_entry(
         self,
         job_id: str,
         timeout_seconds: int = 300,
@@ -958,7 +750,7 @@ class HMCClient(
         completion, failure, warning, and cancellation values.
         Returns the last-seen job entry (terminal or not, after timeout).
 
-        When *job_href* is provided it is forwarded to ``get_job`` so polling
+        When *job_href* is provided it is forwarded to ``get_job_entry`` so polling
         uses the per-operation SELF link instead of the global UOM path.
         """
         import asyncio
@@ -970,7 +762,7 @@ class HMCClient(
 
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_seconds
-        entry = await self.get_job(job_id, job_href=job_href)
+        entry = await self.get_job_entry(job_id, job_href=job_href)
         while True:
             resource = (entry or {}).get("Resource")
             status = resource.get("Status", "") if isinstance(resource, dict) else ""
@@ -982,7 +774,7 @@ class HMCClient(
             await asyncio.sleep(min(poll_interval, remaining))
             if loop.time() >= deadline:
                 return entry
-            entry = await self.get_job(job_id, job_href=job_href)
+            entry = await self.get_job_entry(job_id, job_href=job_href)
 
     async def delete_job(
         self,

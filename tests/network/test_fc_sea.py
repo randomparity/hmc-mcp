@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from conftest import mock_uuid_resolution
 
-from hmc_mcp.server_tools.vnic import (
+from hmc_mcp.server_tools.virtualization.vnic import (
     hmc_list_fc_ports,
     hmc_list_sea_adapters,
 )

@@ -4,6 +4,7 @@ import httpx
 import pytest
 from conftest import make_config
 
+from hmc_mcp.client import client_storage
 from hmc_mcp.client.core import HMCClient
 
 VG_ENTRY_WITH_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -193,6 +194,46 @@ async def test_list_optical_media_empty(mock_hmc):
 
     assert route.called
     assert media_list == []
+
+
+@pytest.mark.asyncio
+async def test_list_optical_media_discards_malformed_response_elements(
+    mock_hmc, monkeypatch
+):
+    """Only mapping-shaped media entries cross the client boundary."""
+    route = mock_hmc.get(
+        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222220001"
+    ).mock(return_value=httpx.Response(200, text="<feed/>"))
+    monkeypatch.setattr(
+        client_storage,
+        "_parse_feed",
+        lambda _xml, _path: [
+            {"Resource": "not-a-mapping"},
+            {"Resource": {"MediaRepositories": []}},
+            {
+                "Resource": {
+                    "VirtualMediaRepository": {
+                        "OpticalMedia": {
+                            "VirtualOpticalMedia": [
+                                {"MediaName": "kept.iso"},
+                                "discarded",
+                                None,
+                            ]
+                        }
+                    }
+                }
+            },
+        ],
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        media_list = await hmc.list_optical_media(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222220001",
+        )
+
+    assert route.called
+    assert media_list == [{"MediaName": "kept.iso"}]
 
 
 @pytest.mark.asyncio

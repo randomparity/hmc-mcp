@@ -7,7 +7,7 @@ from typing import cast
 import pytest
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.storage import list_volume_groups
+from hmc_mcp.operations.storage.resources import list_volume_groups
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 VIOS_UUID = "00000000-0000-0000-0000-000000000002"

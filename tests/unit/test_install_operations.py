@@ -1,6 +1,6 @@
 """Contract tests for the presentation-neutral ``installios`` operations.
 
-ADR 0013 assigns the orchestration to ``operations.install``; ADR 0070 fixes the
+ADR 0013 assigns the orchestration to ``operations.vios.install``; ADR 0070 fixes the
 mechanism as a detached HMC CLI submission, so the operations return the bridge's
 detach handle rather than an HMC job identifier (there is no job on this path).
 """
@@ -18,10 +18,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from conftest import make_config
 
-from hmc_mcp import api
 from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.install import (
+from hmc_mcp.operations.vios.install import (
     InstallHandle,
     InstallRequest,
     install_vios,
@@ -177,7 +176,7 @@ async def test_operation_returns_without_polling_for_completion(operation):
         )
 
     assert len(ssh.commands) == 1
-    hmc.get_job.assert_not_awaited()
+    hmc.get_job_entry.assert_not_awaited()
     hmc.submit_job.assert_not_awaited()
 
 
@@ -316,7 +315,7 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     That is what ``server._serve_application`` does and all it does for this
     package's own namespace, so this is the served MCP deployment's real state.
     Before ADR 0102 the submission's only trace was an ``INFO`` record on the
-    unconfigured ``hmc_mcp.operations.install`` logger, whose effective level is
+    unconfigured ``hmc_mcp.operations.vios.install`` logger, whose effective level is
     the root's ``WARNING`` — dropped before formatting, and below
     ``logging.lastResort``'s threshold too.
     """
@@ -451,10 +450,8 @@ async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
 
 
 @pytest.mark.parametrize("name", ["install_vios_by_lpar_selector", "install_vios"])
-def test_operations_are_exported_from_the_facade(name):
-    """ADR 0029: every selected operation is part of the supported manifest."""
-    assert name in api.__all__
-    assert getattr(api, name) is globals()[name]
+def test_operations_are_owned_by_the_install_module(name):
+    assert globals()[name].__module__ == "hmc_mcp.operations.vios.install"
 
 
 def test_detach_handle_is_the_declared_return_type():
@@ -466,8 +463,6 @@ def test_detach_handle_is_the_declared_return_type():
     both: the digest text now carries ``InstallHandle``, and the key set below
     is the same object the runtime assertion above compares the payload against.
     """
-    assert "InstallHandle" in api.__all__
-    assert api.InstallHandle is InstallHandle
     assert get_type_hints(InstallHandle) == {
         "system": str,
         "partition": str,

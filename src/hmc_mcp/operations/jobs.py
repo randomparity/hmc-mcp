@@ -84,7 +84,7 @@ def _require_job_id(job_id: str) -> str:
 def _clean_job_href(job_href: str | None) -> str | None:
     """Reject parser-deleted controls and treat a blank link as absent.
 
-    ``HMCClient.get_job`` already falls back to the global jobs path for a blank
+    ``HMCClient.get_job_entry`` already falls back to the global jobs path for a blank
     href, so echoing one back as if it were a usable link would be a lie.
 
     ``urlsplit`` deletes TAB, CR, and LF before path validation. Reject them here
@@ -129,7 +129,7 @@ async def _confirm_missing(
     is the answer a consumer acts on destructively.
     """
     try:
-        job = await hmc.get_job(identifier, job_href=None)
+        job = await hmc.get_job_entry(identifier, job_href=None)
     except HMCError as exc:
         if not _says_the_path_has_no_job(exc):
             raise
@@ -170,7 +170,7 @@ async def _read_job(
     reported = False
     stale_link = False
     try:
-        job = await hmc.get_job(identifier, job_href=link)
+        job = await hmc.get_job_entry(identifier, job_href=link)
     except HMCError as exc:
         if exc.status_code != _JOB_MISSING_STATUS:
             raise

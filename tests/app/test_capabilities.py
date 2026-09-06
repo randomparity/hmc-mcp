@@ -22,7 +22,7 @@ from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.affinity import ProvisionAffinityAssessment
+from hmc_mcp.operations.affinity.rest import ProvisionAffinityAssessment
 from hmc_mcp.server import (
     TOOL_SECURITY,
     create_mcp,
@@ -31,7 +31,7 @@ from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_decommission_lpar,
     hmc_delete_lpar,
 )
-from hmc_mcp.server_tools.vios import hmc_delete_vios
+from hmc_mcp.server_tools.vios.core import hmc_delete_vios
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
 # every consumer builds its own. The legacy-equivalent policy registers exactly the
@@ -271,8 +271,10 @@ def test_closed_vocab_enum_matches_runtime_constant():
     adding a value must be a single edit. This pins the rendered schema to the
     constant so either side changing alone is caught.
     """
-    from hmc_mcp.client.client_adapters import ADAPTER_TYPES
-    from hmc_mcp.client.client_users import _VALID_AUTHENTICATION_FILTERS
+    from hmc_mcp.client.client_contracts import (
+        ADAPTER_TYPES,
+        VALID_AUTHENTICATION_FILTERS,
+    )
     from hmc_mcp.documents import (
         AUTHENTICATION_TYPES,
         PARTITION_TYPES,
@@ -280,8 +282,9 @@ def test_closed_vocab_enum_matches_runtime_constant():
         STORAGE_KINDS,
     )
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
-    from hmc_mcp.operations.vios import _VALID_BACKUP_TYPES
-    from hmc_mcp.ssh.network import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
+    from hmc_mcp.operations.vios.core import _VALID_BACKUP_TYPES
+    from hmc_mcp.ssh.io_inventory import _VALID_PCI_CLASSES
+    from hmc_mcp.ssh.sriov import _VALID_SRIOV_MODES
 
     by_name = _tools_by_name()
 
@@ -310,7 +313,7 @@ def test_closed_vocab_enum_matches_runtime_constant():
         ("hmc_map_storage_to_lpar", "storage_kind"): STORAGE_KINDS,
         ("hmc_create_logical_unit", "lu_type"): LU_TYPES,
         ("hmc_create_logical_unit", "device_type"): DEVICE_TYPES,
-        ("hmc_list_users", "authentication_type"): _VALID_AUTHENTICATION_FILTERS,
+        ("hmc_list_users", "authentication_type"): VALID_AUTHENTICATION_FILTERS,
         ("hmc_set_sriov_adapter_mode", "mode"): _VALID_SRIOV_MODES,
         ("hmc_list_io_slots", "pci_class"): _VALID_PCI_CLASSES,
     }
@@ -359,8 +362,8 @@ def test_vios_backup_and_restore_schemas_pin_the_supported_contracts():
 
 def test_parameter_normalization_contract_is_schema_pinned():
     from hmc_mcp.operations.lpar.core import PROCESSOR_COMPATIBILITY_MODES
+    from hmc_mcp.operations.metrics.pcm import PCM_CATEGORIES
     from hmc_mcp.operations.partition_state import PARTITION_STATES
-    from hmc_mcp.operations.pcm import PCM_CATEGORIES
 
     by_name = _tools_by_name()
     replacements = {
@@ -1007,11 +1010,11 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations.ownership.stamp_lpar_ownership",
+            "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
         patch(
-            "hmc_mcp.operations.ownership._resolve_system_name",
+            "hmc_mcp.operations.lpar.ownership._resolve_system_name",
             new=AsyncMock(return_value="sys1"),
         ),
     ):

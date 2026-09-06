@@ -63,31 +63,30 @@ lifecycle all work; everything else uses the same path.
 
 ```
 src/hmc_mcp/
-  __init__.py    # package version and the `hmc-mcp` console-script entry point
-  api.py         # supported reusable-library facade (ADR 0029)
-  config.py      # pydantic-settings config (TOML profile + env vars + CLI flags)
-  xmlutil.py     # defusedxml Atom-feed -> dict parsing
-  errors.py      # HMCError (shared by client and its mixins)
-  client/        # HMCClient, domain mixins, response parsing, and PCM payload builders
-  resource_identity.py      # managed-system, partition, and VIOS name/UUID resolution
-  operations/    # shared workflows; ownership.py owns protocol and name resolution
-    lpar/         # LPAR lifecycle, configuration, and DLPAR operations
-  server_tools/  # MCP tool adapters grouped by resource family
-  cli_commands/  # Typer command groups, CLI policy generation, and shared application state
-  snapshots/     # portable LPAR snapshot models, affinity assessment, and operations
-  ssh/            # asyncssh transport plus HMC CLI operations by resource family
-    ssh/*.py       # transport, shared parsing, and resource-specific commands
-  ssh/console.py             # bounded, non-interactive LPAR console capture (mkvterm)
-  documents/     # domain XML request builders with shared primitives
-  documents/common.py # shared HMC XML envelope helpers and document vocabulary
-  jobs.py        # job outcomes, lifecycle helpers, and named job builders
-  jobs_requests.py # shared JobRequest XML serialization boundary
-  authorization/             # access policy and dispatch-time scope enforcement
-  audit/         # audit records plus non-blocking diagnostic transport
-  tool_registry.py           # local MCP tool collection, each tool carrying ToolSecurity
-  _app.py        # FastMCP factory, sync-run and SSH execution helpers
-  server.py      # MCP composition, startup validation, logging, and serving bootstrap
-  cli.py         # thin aggregator importing every cli_commands/ registration module
+  *.py              # package-level modules and composition roots
+  api.py             # supported connection/configuration facade (ADR 0118)
+  config.py          # TOML profiles, environment values, and CLI configuration
+  errors.py          # shared HMC error hierarchy
+  resource_identity.py # managed-system, LPAR, and VIOS selector resolution
+  audit/             # audit records and non-blocking diagnostic transport
+  authorization/     # access policy plus dispatch-time scope enforcement
+  client/            # HMCClient transport, response parsing, and domain mixins
+  documents/         # domain XML request builders and common envelopes
+  jobs/*.py          # job outcome normalization, polling, and request builders
+  operations/        # presentation-neutral workflows and authorization policy
+    affinity/, inventory/, lpar/, metrics/, storage/
+    systems/, templates/, updates/, users/, vios/, virtualization/
+                    # domain workflows; see each package for its resource scope
+  server_tools/      # MCP adapters: inventory, lpar, metrics, storage, systems,
+                     # templates, users, vios, and virtualization
+  cli_commands/      # Typer adapters: config, jobs, lpar, metrics, storage, systems,
+                     # vios, and virtualization
+  snapshots/         # portable LPAR snapshots and affinity assessment
+  ssh/*.py           # asyncssh transport and resource-specific HMC CLI commands
+  tool_registry.py   # local MCP tool collection and ToolSecurity metadata
+  _app.py            # FastMCP factory and shared execution helpers
+  server.py          # MCP composition, startup validation, and serving bootstrap
+  cli.py             # CLI registration aggregator
 tests/           # pytest + respx, no real HMC needed
 scripts/         # repository guardrails, generators, test runners, smoke checks,
                  # and live-test harnesses

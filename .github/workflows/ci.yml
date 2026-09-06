@@ -126,7 +126,7 @@ jobs:
           from pathlib import Path
           import sys
 
-          from hmc_mcp.api import CapacitySummary, fetch_capacity_report
+          from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report
 
           package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
           environment = Path(".library-wheel-venv").resolve()
@@ -176,11 +176,11 @@ jobs:
       - name: Prove the marker makes the installed facade readable to a checker
         run: |
           cat > consumer_probe.py <<'PY'
-          from hmc_mcp.api import LparCreation
+          from hmc_mcp.api import HMCConfig
 
 
-          def probe(request: LparCreation) -> object:
-              return request.field_that_does_not_exist
+          def probe(config: HMCConfig) -> object:
+              return config.field_that_does_not_exist
           PY
           # mypy is the checker that enforces PEP 561 as written: without a
           # readable py.typed it refuses the import outright ([import-untyped])
@@ -269,7 +269,7 @@ jobs:
           from pathlib import Path
           import sys
 
-          from hmc_mcp.api import CapacitySummary, fetch_capacity_report
+          from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report
 
           package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
           environment = Path(".floor-venv").resolve()

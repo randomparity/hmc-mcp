@@ -9,6 +9,7 @@ from typing import BinaryIO
 
 CHUNK_SIZE = 64 * 1024
 INTERRUPT_GRACE_SECONDS = 3
+TEST_TIMEOUT_SECONDS = 20 * 60
 _PYTEST_ENVIRONMENT_OVERRIDES = {"PYTEST_ADDOPTS", "COVERAGE_RCFILE", "COVERAGE_FILE"}
 
 
@@ -49,17 +50,28 @@ def main() -> int:
             stderr=subprocess.STDOUT,
         )
         interrupted = False
+        timed_out = False
         try:
-            process.wait()
+            process.wait(timeout=TEST_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _settle_interrupted(process)
         except KeyboardInterrupt:
             interrupted = True
             _settle_interrupted(process)
 
-        if process.returncode == 0 and not interrupted:
+        if process.returncode == 0 and not interrupted and not timed_out:
             print("test: passed; configured coverage gate passed")
             return 0
         _replay(output)
-        return 130 if interrupted else _exit_status(process.returncode)
+        if interrupted:
+            return 130
+        if timed_out:
+            print(
+                f"test: timed out after {TEST_TIMEOUT_SECONDS}s", file=sys.stderr
+            )
+            return 124
+        return _exit_status(process.returncode)
 
 
 if __name__ == "__main__":

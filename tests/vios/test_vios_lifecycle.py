@@ -140,7 +140,7 @@ def _mock_resolution(mock_hmc) -> None:
 
 def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
     """The public VIOS target is resolved before the install submission."""
-    from hmc_mcp.server_tools.vios import hmc_install_vios
+    from hmc_mcp.server_tools.vios.core import hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -174,7 +174,7 @@ def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
 
 def test_install_vios_tool_rejects_invalid_arguments_before_any_io(monkeypatch):
     """Validator failures raise before an SSH session is opened."""
-    from hmc_mcp.server_tools.vios import hmc_install_vios
+    from hmc_mcp.server_tools.vios.core import hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -192,7 +192,7 @@ def test_install_vios_tool_rejects_invalid_arguments_before_any_io(monkeypatch):
 
 
 def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc):
-    from hmc_mcp.server_tools.vios import hmc_install_vios
+    from hmc_mcp.server_tools.vios.core import hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -208,7 +208,7 @@ def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc
         raise AssertionError("run_installios must not be called")
 
     with (
-        patch("hmc_mcp.operations.install.run_installios", new=fail),
+        patch("hmc_mcp.operations.vios.install.run_installios", new=fail),
         pytest.raises(ValueError, match="No VIOS named"),
     ):
         hmc_install_vios("nosuchvios", "sys1", **_INSTALL_KWARGS)
@@ -216,7 +216,7 @@ def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc
 
 def test_install_vios_ssh_failure_surfaces_as_cli_error(monkeypatch, mock_hmc):
     """A failed installios submission raises HMCError out of the tool."""
-    from hmc_mcp.server_tools.vios import hmc_install_vios
+    from hmc_mcp.server_tools.vios.core import hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")

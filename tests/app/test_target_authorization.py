@@ -652,7 +652,7 @@ def test_the_decision_modules_never_mention_dry_run():
 def test_a_second_argument_cannot_override_the_authorized_selector():
     """`hmc_get_job` declares `job_id` and then lets `job_href` replace it.
 
-    `client.get_job` fetches `urlparse(job_href).path` and never reads
+    `client.get_job_entry` fetches `urlparse(job_href).path` and never reads
     `job_id`, so a table grant would authorize one job identity while the
     server reads another — the exact escape `exhaustive_targets` exists to
     refuse, reached through an argument the *name* tables did not know about.

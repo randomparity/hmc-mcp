@@ -85,7 +85,7 @@ goes.
 **The rendering is marked, not merely formatted.** A `logging.Formatter` alone would have made
 this change a *forgery* vector, and that was verified rather than reasoned about. A rendered
 exception carries whatever the exception's `str()` carries; under ADR 0042's threat model
-HMC-returned text is not trusted, and it reaches this boundary — `operations.lpm` interpolates a
+HMC-returned text is not trusted, and it reaches this boundary — `operations.lpar.migration` interpolates a
 `validation.error` into a message that ends up as a tool error. Through the `RichHandler` being
 replaced, such text was indented into the message column and hard-wrapped, so **column 0 was
 unreachable**; through a plain formatter, a newline followed by `{"time": …, "event":

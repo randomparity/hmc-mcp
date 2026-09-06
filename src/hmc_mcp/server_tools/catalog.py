@@ -5,37 +5,33 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from hmc_mcp.server_tools import (
-    adapters,
-    capacity,
-    composite,
     console,
-    health,
     jobs,
-    lpm,
-    metrics,
-    network,
-    pcie,
     snapshot,
-    storage,
-    system_resources,
-    systems,
-    templates,
     updates,
-    users,
-    vios,
-    vios_labels,
-    vnic,
 )
 from hmc_mcp.server_tools.command import HMC_RUN_COMMAND_SECURITY
+from hmc_mcp.server_tools.inventory import capacity, composite
 from hmc_mcp.server_tools.lpar import (
     configuration,
     lifecycle,
     lifecycle_boot,
     lifecycle_create,
+    migration,
     profiles,
     provision,
 )
+from hmc_mcp.server_tools.metrics import pcm as metrics
 from hmc_mcp.server_tools.permissions import EFFECTIVE_PERMISSIONS_SECURITY
+from hmc_mcp.server_tools.storage import resources as storage
+from hmc_mcp.server_tools.systems import core as systems
+from hmc_mcp.server_tools.systems import health
+from hmc_mcp.server_tools.systems import resources as system_resources
+from hmc_mcp.server_tools.templates import core as templates
+from hmc_mcp.server_tools.users import core as users
+from hmc_mcp.server_tools.vios import core as vios
+from hmc_mcp.server_tools.vios import labels as vios_labels
+from hmc_mcp.server_tools.virtualization import adapters, network, pcie, vnic
 from hmc_mcp.tool_registry import ToolSecurity, build_tool_security
 
 TOOL_MODULES = (
@@ -53,7 +49,7 @@ TOOL_MODULES = (
     network,
     pcie,
     vnic,
-    lpm,
+    migration,
     templates,
     metrics,
     users,

@@ -25,6 +25,7 @@ import dataclasses
 import inspect
 import pathlib
 import re
+import sys
 import types
 import typing
 from typing import Any, Literal, get_args, get_origin, get_type_hints
@@ -32,7 +33,8 @@ from typing import Any, Literal, get_args, get_origin, get_type_hints
 import pytest
 from defusedxml import ElementTree as DET
 
-from hmc_mcp import documents, jobs, jobs_requests
+from hmc_mcp import documents, jobs
+from hmc_mcp.jobs import requests as jobs_requests
 from hmc_mcp.operations.updates import models as update_jobs
 from hmc_mcp.xmlutil import escape_xml, escapes_string_arguments, localname
 
@@ -341,9 +343,10 @@ def test_every_documents_builder_escapes_its_arguments():
 
 
 def _renders_through_job_request(func: Any, seen: frozenset[str]) -> bool:
-    """Whether *func* reaches jobs.build_job_request, directly or via a helper."""
+    """Whether *func* reaches the canonical renderer, directly or via a helper."""
+    module = sys.modules[func.__module__]
     for name in func.__code__.co_names:
-        target = getattr(jobs, name, None)
+        target = getattr(module, name, None)
         if target is jobs.build_job_request:
             return True
         if (

@@ -19,7 +19,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import difflib
+import os
 import sys
+import tempfile
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from operator import attrgetter
@@ -347,7 +349,22 @@ def write_pages(pages: Mapping[str, str], output: Path) -> None:
         path.unlink()
         print(f"removed page no longer generated: {path}")
     for name, text in sorted(pages.items()):
-        (output / name).write_text(text, encoding="utf-8")
+        _write_page(output / name, text)
+
+
+def _write_page(path: Path, text: str) -> None:
+    """Atomically replace one generated page without exposing a partial file."""
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", text=True
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(text)
+        temporary.replace(path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def check_pages(pages: Mapping[str, str], output: Path) -> list[str]:

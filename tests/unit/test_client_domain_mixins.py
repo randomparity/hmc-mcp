@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from unittest.mock import AsyncMock
 
 import httpx
@@ -15,8 +16,15 @@ from hmc_mcp.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
 from hmc_mcp.client.client_storage import StorageMixin
 from hmc_mcp.client.client_systems import SystemsMixin
 from hmc_mcp.client.client_templates import TemplatesMixin
+from hmc_mcp.client.client_updates import UpdatesMixin
+from hmc_mcp.client.core import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
+
+
+def test_platform_update_is_owned_by_updates_mixin() -> None:
+    assert "submit_platform_update" in UpdatesMixin.__dict__
+    assert issubclass(HMCClient, UpdatesMixin)
 
 
 async def _yield_empty(_uuid: str) -> list[dict]:
@@ -322,6 +330,18 @@ async def test_lpm_mixin_submits_each_operation_to_lpar_endpoint():
     )
 
 
+def test_lpm_optional_controls_are_keyword_only():
+    for method in (LpmMixin.lpar_migrate, LpmMixin.lpar_migrate_validate):
+        parameters = inspect.signature(method).parameters
+        for name in (
+            "target_profile_name",
+            "destination_lpar_id",
+            "shared_proc_pool_id",
+            "wait_time",
+        ):
+            assert parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+
+
 @pytest.mark.asyncio
 async def test_network_mixin_routes_empty_feeds_and_delete():
     client = NetworkHarness()
@@ -434,9 +454,7 @@ async def test_storage_mixin_uses_active_base_in_optical_mapping():
     await client.create_optical_mapping("vios-1", "install.iso", "lpar-1")
 
     body = client._post.await_args.args[1]
-    assert (
-        "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-1" in body
-    )
+    assert "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-1" in body
 
 
 @pytest.mark.asyncio

@@ -87,7 +87,9 @@ def _vios_client_factory():
 async def test_run_hmc_cli_uses_supplied_config():
     """run_hmc_cli(cmd, config=...) passes the supplied config to run_hmc_command."""
     conn = _make_ssh_mock("output")
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
+    with patch(
+        "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+    ) as mock_connect:
         await run_hmc_cli("lshmc -v", DEV_CONFIG)
 
     call_kwargs = mock_connect.call_args.kwargs
@@ -101,7 +103,9 @@ async def test_run_hmc_cli_no_config_uses_hmcconfig(monkeypatch):
     """run_hmc_cli(cmd) with no config falls back to HMCConfig() from env."""
     _set_env(monkeypatch, PROD_HOST, PROD_USER, PROD_PASSWORD)
     conn = _make_ssh_mock("output")
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
+    with patch(
+        "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+    ) as mock_connect:
         await run_hmc_cli("lshmc -v")
 
     call_kwargs = mock_connect.call_args.kwargs
@@ -121,7 +125,9 @@ def test_ssh_with_client_profile_reaches_ssh(monkeypatch, mock_hmc):
     # Stub config-only resolution for the selected profile.
     with patch("hmc_mcp._app.build_config", return_value=DEV_CONFIG) as mock_config:
         conn = _make_ssh_mock("")
-        with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
+        with patch(
+            "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+        ) as mock_connect:
             from hmc_mcp._app import ssh_with_client
             from hmc_mcp.ssh.memory import list_memory_pools
 
@@ -142,7 +148,9 @@ def test_ssh_with_client_profile_none_uses_env(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
     conn = _make_ssh_mock("")
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
+    with patch(
+        "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+    ) as mock_connect:
         from hmc_mcp._app import ssh_with_client
         from hmc_mcp.ssh.memory import list_memory_pools
 
@@ -247,7 +255,9 @@ async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
         mock_client_type.return_value = mock_client
 
         conn = _make_ssh_mock(fallback_output)
-        with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
+        with patch(
+            "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+        ) as mock_connect:
             result = await resolve_system_name(DEV_CONFIG, SYSTEM_UUID)
 
     # SSH fallback used the config we supplied (DEV_CONFIG)
@@ -268,7 +278,9 @@ def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
         "hmc_mcp.server_tools.command.build_config", return_value=DEV_CONFIG
     ) as mock_config:
         conn = _make_ssh_mock("output")
-        with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
+        with patch(
+            "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+        ) as mock_connect:
             hmc_run_command("lshmc -v", profile="dev")
 
     mock_config.assert_called_once_with(profile="dev")
@@ -277,12 +289,14 @@ def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
 
 def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
     """hmc_restore_vios with profile routes SSH to the profile's HMC host."""
-    from hmc_mcp.server_tools.vios import hmc_restore_vios
+    from hmc_mcp.server_tools.vios.core import hmc_restore_vios
 
     client_factory = MagicMock(side_effect=_vios_client_factory())
     monkeypatch.setattr("hmc_mcp._app.client_from_env", client_factory)
     conn = _make_ssh_mock("")
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
+    with patch(
+        "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+    ) as mock_connect:
         hmc_restore_vios(
             SYSTEM_NAME,
             SYSTEM_UUID,
@@ -297,7 +311,7 @@ def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
 
 def test_hmc_list_memory_pools_profile_reaches_ssh(monkeypatch, mock_hmc):
     """hmc_list_memory_pools with profile threads profile through ssh_with_client."""
-    from hmc_mcp.server_tools.system_resources import (
+    from hmc_mcp.server_tools.systems.resources import (
         hmc_list_memory_pools,
     )
 
@@ -305,7 +319,9 @@ def test_hmc_list_memory_pools_profile_reaches_ssh(monkeypatch, mock_hmc):
 
     with patch("hmc_mcp._app.build_config", return_value=DEV_CONFIG) as mock_config:
         conn = _make_ssh_mock("")
-        with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn) as mock_connect:
+        with patch(
+            "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+        ) as mock_connect:
             hmc_list_memory_pools(SYSTEM_NAME, profile="dev")
 
     mock_config.assert_called_once_with(profile="dev")
@@ -326,7 +342,9 @@ def test_different_profiles_produce_independent_configs():
     with patch("hmc_mcp._app.build_config") as mock_config:
         # First call: profile="dev" → DEV_CONFIG
         mock_config.return_value = DEV_CONFIG
-        with patch("hmc_mcp.ssh.transport.asyncssh.connect", side_effect=capture_connect):
+        with patch(
+            "hmc_mcp.ssh.transport.asyncssh.connect", side_effect=capture_connect
+        ):
             try:
                 from hmc_mcp._app import ssh_with_client
                 from hmc_mcp.ssh.memory import list_memory_pools
@@ -343,7 +361,9 @@ def test_different_profiles_produce_independent_configs():
 
         # Second call: profile="prod" → PROD_CONFIG
         mock_config.return_value = PROD_CONFIG
-        with patch("hmc_mcp.ssh.transport.asyncssh.connect", side_effect=capture_connect):
+        with patch(
+            "hmc_mcp.ssh.transport.asyncssh.connect", side_effect=capture_connect
+        ):
             try:
                 ssh_with_client(
                     lambda config, system_name, _: list_memory_pools(

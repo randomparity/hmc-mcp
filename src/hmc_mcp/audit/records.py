@@ -134,7 +134,7 @@ def resolved_connection(value: str | None) -> str:
     return value
 
 
-def _value(raw: Any) -> str | None:
+def _bounded_audit_text(raw: Any) -> str | None:
     """One caller-supplied value, truncated, or ``None`` if there is none to render.
 
     A non-``str`` renders ``None`` rather than its ``repr()``, for the reason
@@ -157,10 +157,10 @@ def _connection(token: Any, resolved: str | None) -> dict[str, Any]:
         state = "unreadable"
     # Rendered only in the "present" state, so "the selector is the caller's own
     # string, or null otherwise" is true of the field rather than of two of its
-    # three states: `_value("")` is `""`, not None, and an empty token is absent.
+    # three states: `_bounded_audit_text("")` is `""`, not None, and an empty token is absent.
     return {
         "state": state,
-        "selector": _value(token) if state == "present" else None,
+        "selector": _bounded_audit_text(token) if state == "present" else None,
         "resolved": resolved,
     }
 
@@ -190,7 +190,7 @@ def _attribution(claim: Any, source: str) -> dict[str, Any]:
     ``False`` because neither is authenticated, and it is what lets an operator
     filter without knowing this ADR exists.
     """
-    return {"claim": _value(claim), "source": source, "verified": False}
+    return {"claim": _bounded_audit_text(claim), "source": source, "verified": False}
 
 
 def record_authorization(
@@ -231,7 +231,7 @@ def record_authorization(
                     "kind": target.kind,
                     "argument": target.argument,
                     "state": target.state,
-                    "value": _value(target.value),
+                    "value": _bounded_audit_text(target.value),
                 }
                 for target in targets
             ],
@@ -249,7 +249,7 @@ def record_ownership_override(
     """Emit an approved ADR 0011 LPAR ownership override.
 
     Ownership events use their own fields rather than access-policy fields; all
-    caller-supplied values are bounded by :func:`_value`.
+    caller-supplied values are bounded by :func:`_bounded_audit_text`.
     """
 
     def build() -> dict[str, Any]:
@@ -257,9 +257,9 @@ def record_ownership_override(
         return {
             "time": datetime.now(UTC).isoformat(),
             "event": event,
-            "system": _value(system),
-            "lpar": _value(lpar),
-            "host": _value(host),
+            "system": _bounded_audit_text(system),
+            "lpar": _bounded_audit_text(lpar),
+            "host": _bounded_audit_text(host),
             "attribution": _attribution(agent_id, "config:agent_id"),
         }
 
@@ -288,10 +288,10 @@ def record_ownership_denied(
             "event": event,
             "operation": operation,
             "denial": denial,
-            "system": _value(system),
-            "lpar": _value(lpar),
-            "owner": _value(owner),
-            "host": _value(host),
+            "system": _bounded_audit_text(system),
+            "lpar": _bounded_audit_text(lpar),
+            "owner": _bounded_audit_text(owner),
+            "host": _bounded_audit_text(host),
             "attribution": _attribution(agent_id, "config:agent_id"),
         }
 
@@ -312,10 +312,10 @@ def record_install_attempted(
         return {
             "time": datetime.now(UTC).isoformat(),
             "event": event,
-            "system": _value(system),
-            "partition": _value(partition),
-            "log_path": _value(log_path),
-            "host": _value(host),
+            "system": _bounded_audit_text(system),
+            "partition": _bounded_audit_text(partition),
+            "log_path": _bounded_audit_text(log_path),
+            "host": _bounded_audit_text(host),
             "attribution": _attribution(agent_id, "config:agent_id"),
         }
 
@@ -338,11 +338,11 @@ def record_install_submitted(
         return {
             "time": datetime.now(UTC).isoformat(),
             "event": event,
-            "system": _value(system),
-            "partition": _value(partition),
+            "system": _bounded_audit_text(system),
+            "partition": _bounded_audit_text(partition),
             "pid": pid,
-            "log_path": _value(log_path),
-            "host": _value(host),
+            "log_path": _bounded_audit_text(log_path),
+            "host": _bounded_audit_text(host),
             "attribution": _attribution(agent_id, "config:agent_id"),
         }
 
@@ -357,8 +357,8 @@ def record_tls_verification_disabled(*, host: str, source: str) -> None:
         return {
             "time": datetime.now(UTC).isoformat(),
             "event": event,
-            "host": _value(host),
-            "source": _value(source),
+            "host": _bounded_audit_text(host),
+            "source": _bounded_audit_text(source),
         }
 
     emit(_DENY_LEVEL, build)
@@ -378,10 +378,10 @@ def record_power_ownership_guard(
         return {
             "time": datetime.now(UTC).isoformat(),
             "event": event,
-            "connection": _value(connection),
+            "connection": _bounded_audit_text(connection),
             "authorize_power_operations": authorize_power_operations,
-            "source": _value(source),
-            "detail": _value(detail),
+            "source": _bounded_audit_text(source),
+            "detail": _bounded_audit_text(detail),
         }
 
     emit(_DENY_LEVEL, build)

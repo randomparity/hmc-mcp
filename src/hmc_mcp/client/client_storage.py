@@ -11,6 +11,7 @@ import re as _re
 # ElementTree is retained for element construction, traversal, typing, and
 # serialization only. Every inbound HMC response is parsed with defusedxml.
 import xml.etree.ElementTree as ET  # nosec B405
+from collections.abc import AsyncIterator
 from typing import Any
 from urllib.parse import urlparse
 
@@ -18,6 +19,8 @@ from defusedxml import ElementTree as DET
 
 from ..documents import (
     StorageKind,
+    build_brokered_file_document,
+    build_linked_optical_media_document,
     build_virtual_disk_delete_document,
     build_virtual_disk_document,
     build_virtual_optical_mapping_document,
@@ -31,6 +34,7 @@ from .client_parse import _parse_feed
 # HMC UOM namespace — used in read-modify-write VolumeGroup operations.
 _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 _ATOM_NS = "http://www.w3.org/2005/Atom"
+_MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
 
 
 def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
@@ -80,7 +84,140 @@ def _extract_system_uuid_from_vios(vios_elem: ET.Element) -> str:
     return match.group(1)
 
 
+def _extract_optical_media(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return media entries from documented and legacy repository shapes."""
+    optical_media: list[dict[str, Any]] = []
+    for entry in entries:
+        resource = entry.get("Resource")
+        if not isinstance(resource, dict):
+            continue
+        repositories = resource.get("MediaRepositories") or resource
+        if not isinstance(repositories, dict):
+            continue
+        repository = repositories.get("VirtualMediaRepository")
+        if not isinstance(repository, dict):
+            continue
+        media_container = repository.get("OpticalMedia") or repository
+        if not isinstance(media_container, dict):
+            continue
+        media = media_container.get("VirtualOpticalMedia", [])
+        if isinstance(media, list):
+            optical_media.extend(item for item in media if isinstance(item, dict))
+        elif isinstance(media, dict):
+            optical_media.append(media)
+    return optical_media
+
+
+def _filter_optical_mappings(
+    mappings: list[dict[str, Any]], lpar_uuid: str | None
+) -> list[dict[str, Any]]:
+    """Keep optical-backed mappings, optionally scoped to one client LPAR."""
+    optical = [
+        mapping
+        for mapping in mappings
+        if isinstance(mapping.get("Storage"), dict)
+        and "VirtualOpticalMedia" in mapping["Storage"]
+    ]
+    if lpar_uuid is None:
+        return optical
+    expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
+    return [
+        mapping
+        for mapping in optical
+        if _mapping_targets_lpar(mapping, expected_link)
+    ]
+
+
+def _mapping_targets_lpar(mapping: dict[str, Any], expected_link: str) -> bool:
+    partition = mapping.get("AssociatedLogicalPartition")
+    href = partition.get("href") if isinstance(partition, dict) else None
+    return isinstance(href, str) and urlparse(href).path == expected_link
+
+
 class StorageMixin:
+    async def _broker_file_create(
+        self: StorageClient, vios_uuid: str, vg_uuid: str, filename: str
+    ) -> str:
+        """Create the storage broker handle used to import an ISO."""
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        response = await self._request_with_uuid_path_arguments(
+            "POST",
+            path,
+            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+            content=build_brokered_file_document(filename=filename),
+            headers={"Content-Type": _MEDIA_UOM, "Accept": _MEDIA_UOM},
+        )
+        if response.status_code not in (200, 201):
+            raise HMCError(
+                f"Brokered file create failed for {filename}",
+                response.status_code,
+                response.text,
+            )
+        location = response.headers.get("Location")
+        if not location:
+            raise HMCError(
+                "Brokered file create missing Location header",
+                response.status_code,
+                response.text,
+            )
+        return location
+
+    async def _broker_file_upload(
+        self: StorageClient,
+        broker_uri: str,
+        content: AsyncIterator[bytes],
+        content_length: int,
+    ) -> str:
+        """Stream bounded ISO content into a storage broker handle."""
+        response = await self._request(
+            "PUT",
+            broker_uri,
+            content=content,
+            headers={
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(content_length),
+                "Accept": _MEDIA_UOM,
+            },
+        )
+        if response.status_code not in (200, 201, 202):
+            raise HMCError(
+                f"Brokered file upload failed to {broker_uri}",
+                response.status_code,
+                response.text,
+            )
+        return response.text or ""
+
+    async def _broker_iso_import(
+        self: StorageClient,
+        vios_uuid: str,
+        vg_uuid: str,
+        media_name: str,
+        broker_uri: str,
+    ) -> str:
+        """Import a brokered ISO into a VIOS media repository."""
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        response = await self._post(
+            path,
+            build_linked_optical_media_document(
+                media_name=media_name, broker_uri=broker_uri
+            ),
+            resource_type="VolumeGroup",
+            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+        )
+        return response or ""
+
+    async def _broker_file_cleanup(self: StorageClient, broker_uri: str) -> None:
+        """Release a storage broker handle after an ISO upload."""
+        response = await self._request(
+            "DELETE", broker_uri, headers={"Accept": _MEDIA_UOM}
+        )
+        if response.status_code not in (200, 202, 204, 404):
+            raise HMCError(
+                f"Brokered file cleanup failed for {broker_uri}",
+                response.status_code,
+                response.text,
+            )
+
     # Virtual storage (children of VirtualIOServer)
     def get_lpar_link(self: StorageClient, lpar_uuid: str) -> str:
         """Atom SELF href for an LPAR (used when building mappings)."""
@@ -244,10 +381,7 @@ class StorageMixin:
             return []
 
         detail = entries[0]
-        mappings = (
-            detail.get("Resource", {})
-            .get("VirtualSCSIMappings", {})
-        )
+        mappings = detail.get("Resource", {}).get("VirtualSCSIMappings", {})
         if not isinstance(mappings, dict):
             return []
         mappings = mappings.get("VirtualSCSIMapping", [])
@@ -257,8 +391,10 @@ class StorageMixin:
         if lpar_uuid:
             expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
             mappings = [
-                m for m in mappings
-                if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("href") == expected_link
+                m
+                for m in mappings
+                if isinstance(m, dict)
+                and m.get("AssociatedLogicalPartition", {}).get("href") == expected_link
             ]
 
         return mappings if isinstance(mappings, list) else [mappings]
@@ -268,7 +404,7 @@ class StorageMixin:
     ) -> None:
         """Detach one mapping through its parent VirtualIOServer document."""
         if not mapping_uuid:
-            raise HMCError("Storage mapping UUID must not be empty")
+            raise ValueError("Storage mapping UUID must not be empty")
         ET.register_namespace("", _UOM_NS)
         ET.register_namespace("atom", _ATOM_NS)
 
@@ -424,9 +560,9 @@ class StorageMixin:
 
     def _find_vmlib(self, vg_elem: ET.Element) -> ET.Element | None:
         """Return the VirtualMediaRepository (VMLibrary) element, or None."""
-        return vg_elem.find(
-            f".//{{{_UOM_NS}}}VirtualMediaRepository"
-        ) or vg_elem.find(".//VirtualMediaRepository")
+        return vg_elem.find(f".//{{{_UOM_NS}}}VirtualMediaRepository") or vg_elem.find(
+            ".//VirtualMediaRepository"
+        )
 
     def _build_mr_element(self, size_mib: int) -> ET.Element:
         """Build a MediaRepositories element with a VMLibrary inside.
@@ -510,12 +646,12 @@ class StorageMixin:
 
         existing = self._find_vmlib(vg_elem)
         if existing is not None:
-            name = existing.findtext(f"{{{_UOM_NS}}}RepositoryName") or existing.findtext(
-                "RepositoryName"
-            )
-            size = existing.findtext(f"{{{_UOM_NS}}}RepositorySize") or existing.findtext(
-                "RepositorySize"
-            )
+            name = existing.findtext(
+                f"{{{_UOM_NS}}}RepositoryName"
+            ) or existing.findtext("RepositoryName")
+            size = existing.findtext(
+                f"{{{_UOM_NS}}}RepositorySize"
+            ) or existing.findtext("RepositorySize")
             if size == str(size_mib):
                 return {
                     "Resource": {
@@ -578,9 +714,7 @@ class StorageMixin:
                 ),
                 None,
             )
-            opt_media = ET.Element(
-                opt_media_tag, attrib={"schemaVersion": "V1_0"}
-            )
+            opt_media = ET.Element(opt_media_tag, attrib={"schemaVersion": "V1_0"})
             if repo_name_idx is not None:
                 vmlib.insert(repo_name_idx, opt_media)
             else:
@@ -717,26 +851,8 @@ class StorageMixin:
         if not entries:
             return []
 
-        # The HMC V10R3 structure is:
-        #   Resource.MediaRepositories.VirtualMediaRepository.OpticalMedia.VirtualOpticalMedia
-        # Older firmware may use a bare path without the wrappers.
-        optical_media: list[dict[str, Any]] = []
-        for entry in entries:
-            resource = entry.get("Resource", {})
-            mr_container = resource.get("MediaRepositories") or resource
-            repo = mr_container.get("VirtualMediaRepository", {})
-            if not isinstance(repo, dict):
-                repo = {}
-            opt_media_container = repo.get("OpticalMedia", repo)
-            if not isinstance(opt_media_container, dict):
-                opt_media_container = repo
-            media_list = opt_media_container.get("VirtualOpticalMedia", [])
-            if isinstance(media_list, list):
-                optical_media.extend(media_list)
-            elif isinstance(media_list, dict):
-                optical_media.append(media_list)
+        return _extract_optical_media(entries)
 
-        return optical_media
     # Virtual Optical Mapping (VirtualSCSIMapping for VirtualOpticalMedia)
     async def list_optical_mappings(
         self: StorageClient, vios_uuid: str, lpar_uuid: str | None = None
@@ -760,40 +876,23 @@ class StorageMixin:
             return []
 
         detail = entries[0]
-        mappings = (
-            detail.get("Resource", {})
-            .get("VirtualSCSIMappings", {})
-        )
+        mappings = detail.get("Resource", {}).get("VirtualSCSIMappings", {})
         if not isinstance(mappings, dict):
             return []
         mappings = mappings.get("VirtualSCSIMapping", [])
         if not isinstance(mappings, list):
             mappings = [mappings] if mappings else []
 
-        optical_mappings = []
-        for m in mappings:
-            if not isinstance(m, dict):
-                continue
-
-            storage = m.get("Storage", {})
-            if "VirtualOpticalMedia" in storage:
-                optical_mappings.append(m)
-
-        if lpar_uuid:
-            expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
-            filtered_mappings = []
-            for mapping in optical_mappings:
-                partition = mapping.get("AssociatedLogicalPartition")
-                href = partition.get("href") if isinstance(partition, dict) else None
-                if isinstance(href, str) and urlparse(href).path == expected_link:
-                    filtered_mappings.append(mapping)
-            optical_mappings = filtered_mappings
-
-        return optical_mappings
+        return _filter_optical_mappings(
+            [mapping for mapping in mappings if isinstance(mapping, dict)], lpar_uuid
+        )
 
     async def create_optical_mapping(
-        self: StorageClient, vios_uuid: str, media_name: str, lpar_uuid: str,
-        target_device: str | None = None
+        self: StorageClient,
+        vios_uuid: str,
+        media_name: str,
+        lpar_uuid: str,
+        target_device: str | None = None,
     ) -> dict[str, Any] | None:
         """Create an optical-media mapping and return its response entry, if any."""
         lpar_link = self.get_lpar_link(lpar_uuid)

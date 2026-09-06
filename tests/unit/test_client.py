@@ -1511,7 +1511,7 @@ async def test_get_job_uses_href_when_provided(mock_hmc):
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_job("job-uuid-999", job_href=_JOB_HREF)
+        result = await hmc.get_job_entry("job-uuid-999", job_href=_JOB_HREF)
     assert href_route.called
     assert not global_route.called
     assert result is not None
@@ -1525,7 +1525,7 @@ async def test_get_job_falls_back_to_global_path_when_no_href(mock_hmc):
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_job("job-uuid-999")
+        result = await hmc.get_job_entry("job-uuid-999")
     assert route.called
     assert result is not None
 
@@ -1540,7 +1540,7 @@ async def test_get_job_global_path_propagates_http_error(mock_hmc):
         with pytest.raises(
             HMCError, match="GET /rest/api/uom/jobs/job-uuid-999 failed"
         ):
-            await hmc.get_job("job-uuid-999")
+            await hmc.get_job_entry("job-uuid-999")
 
 
 @pytest.mark.asyncio
@@ -1588,7 +1588,7 @@ async def test_wait_for_job_uses_href_when_provided(mock_hmc):
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.wait_for_job(
+        result = await hmc.wait_for_job_entry(
             "job-uuid-999", timeout_seconds=5, poll_interval=1, job_href=_JOB_HREF
         )
     assert href_route.called
@@ -1615,8 +1615,8 @@ async def test_wait_for_job_caps_sleep_and_does_not_poll_after_deadline(
     monkeypatch.setattr(asyncio, "sleep", sleep)
 
     async with HMCClient(make_config()) as hmc:
-        hmc.get_job = get_job
-        result = await hmc.wait_for_job(
+        hmc.get_job_entry = get_job
+        result = await hmc.wait_for_job_entry(
             "job-1", timeout_seconds=2, poll_interval=5, job_href="/jobs/job-1"
         )
 
@@ -1632,8 +1632,8 @@ async def test_wait_for_job_timeout_zero_still_polls_once(monkeypatch, mock_hmc)
     monkeypatch.setattr(asyncio, "sleep", sleep)
 
     async with HMCClient(make_config()) as hmc:
-        hmc.get_job = get_job
-        await hmc.wait_for_job("job-1", timeout_seconds=0)
+        hmc.get_job_entry = get_job
+        await hmc.wait_for_job_entry("job-1", timeout_seconds=0)
 
     get_job.assert_awaited_once_with("job-1", job_href=None)
     sleep.assert_not_awaited()
@@ -1659,8 +1659,8 @@ async def test_wait_for_job_stops_at_documented_terminal_status(
     monkeypatch.setattr(asyncio, "sleep", sleep)
 
     async with HMCClient(make_config(verify_ssl=True)) as hmc:
-        hmc.get_job = get_job
-        result = await hmc.wait_for_job("job-1", timeout_seconds=30)
+        hmc.get_job_entry = get_job
+        result = await hmc.wait_for_job_entry("job-1", timeout_seconds=30)
 
     assert result == {"Resource": {"Status": status}}
     get_job.assert_awaited_once_with("job-1", job_href=None)
@@ -1674,8 +1674,8 @@ async def test_wait_for_job_tolerates_empty_resource(monkeypatch, mock_hmc):
     monkeypatch.setattr(asyncio, "sleep", sleep)
 
     async with HMCClient(make_config(verify_ssl=True)) as hmc:
-        hmc.get_job = get_job
-        result = await hmc.wait_for_job("job-1", timeout_seconds=0)
+        hmc.get_job_entry = get_job
+        result = await hmc.wait_for_job_entry("job-1", timeout_seconds=0)
 
     assert result == {"Resource": ""}
     get_job.assert_awaited_once_with("job-1", job_href=None)
@@ -1695,14 +1695,14 @@ async def test_wait_for_job_rejects_invalid_timing_values(
     mock_hmc, timeout_seconds, poll_interval, message
 ):
     async with HMCClient(make_config()) as hmc:
-        hmc.get_job = AsyncMock()
+        hmc.get_job_entry = AsyncMock()
         with pytest.raises(ValueError, match=message):
-            await hmc.wait_for_job(
+            await hmc.wait_for_job_entry(
                 "job-1",
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
             )
-        hmc.get_job.assert_not_awaited()
+        hmc.get_job_entry.assert_not_awaited()
 
 
 # web+xml JobResponse shape uses COMPLETED_OK / COMPLETED_WITH_ERROR
@@ -1730,7 +1730,7 @@ async def test_get_job_with_href_uses_web_xml_accept(mock_hmc):
         return_value=httpx.Response(200, text=JOB_RESPONSE_COMPLETED_OK)
     )
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_job("job-uuid-999", job_href=_JOB_WEB_HREF)
+        result = await hmc.get_job_entry("job-uuid-999", job_href=_JOB_WEB_HREF)
     assert route.called
     sent_accept = route.calls.last.request.headers.get("accept", "")
     assert "powervm.web+xml" in sent_accept, (
@@ -1747,7 +1747,7 @@ async def test_wait_for_job_recognises_completed_ok(mock_hmc):
         return_value=httpx.Response(200, text=JOB_RESPONSE_COMPLETED_OK)
     )
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.wait_for_job(
+        result = await hmc.wait_for_job_entry(
             "1778083847656", timeout_seconds=5, poll_interval=1, job_href=_JOB_WEB_HREF
         )
     assert result is not None

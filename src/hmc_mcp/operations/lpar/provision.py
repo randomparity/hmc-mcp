@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.ownership import resolve_and_authorize_lpar_mutation
+from hmc_mcp.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
 
 from ...documents import LparResources, PartitionType, StorageKind
 from ...errors import HMCError
@@ -32,7 +32,7 @@ from ..affinity.rest import (
     validate_affinity_request,
 )
 from ..affinity.ssh import set_minimum_affinity_policy
-from ..storage import create_virtual_disk
+from ..storage.resources import create_virtual_disk
 from .assignments import (
     LparPcieAssignments,
     apply_validated_lpar_pcie_assignments,
@@ -207,7 +207,12 @@ async def _add_network(
     hmc: HMCClient, lpar_uuid: str, port_vlan_id: int
 ) -> dict[str, Any] | None:
     return await hmc.add_network_adapter(
-        lpar_uuid, port_vlan_id, None, None, False, None
+        lpar_uuid,
+        port_vlan_id,
+        slot_number=None,
+        virtual_switch_id=None,
+        tagged=False,
+        mac_address=None,
     )
 
 

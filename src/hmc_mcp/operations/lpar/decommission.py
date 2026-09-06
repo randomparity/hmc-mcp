@@ -8,12 +8,12 @@ from typing import Any
 from typing_extensions import TypedDict
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.ownership import (
+from hmc_mcp.operations.lpar.ownership import (
     authorize_decommission_lpar_ownership_snapshot,
     resolve_lpar_ownership_names,
 )
 
-from ...client.client_adapters import AdapterType
+from ...client.client_contracts import AdapterType
 from ...errors import HMCError
 from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
@@ -559,7 +559,7 @@ async def _detach_state_error(
     )
 
 
-def _result(
+def _build_decommission_result(
     inventory: _Inventory,
     *,
     resource_deleted: bool,
@@ -589,7 +589,7 @@ def _dry_run_steps(inventory: _Inventory) -> tuple[WorkflowStep, ...]:
 def _incomplete_result(
     inventory: _Inventory, steps: list[WorkflowStep]
 ) -> DecommissionResult:
-    return _result(
+    return _build_decommission_result(
         inventory,
         resource_deleted=False,
         workflow_completed=False,
@@ -647,7 +647,7 @@ async def decommission_lpar(
     )
 
     if dry_run:
-        return _result(
+        return _build_decommission_result(
             inventory,
             resource_deleted=False,
             workflow_completed=True,
@@ -699,7 +699,7 @@ async def decommission_lpar(
     if delete_step.status != "ok":
         return _incomplete_result(inventory, steps)
 
-    return _result(
+    return _build_decommission_result(
         inventory,
         resource_deleted=True,
         workflow_completed=True,

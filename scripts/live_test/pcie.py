@@ -21,6 +21,7 @@ cleanup (does not attempt additional mutations on an unknown state).
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -191,12 +192,9 @@ async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
     )
 
 
-async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
-    """Record the pre-test SR-IOV inventory.  Returns False if prerequisites fail."""
+async def _check_sriov_adapter_health(client: Client, state: RunState) -> bool:
+    """Require an available, healthy SR-IOV adapter before any mutation arm."""
     context = state.context
-    print("\n=== ST23: SR-IOV Baseline (issue #217) ===")
-
-    # 1. Adapter inventory
     st, data = await state.call(
         client,
         "hmc_list_sriov_adapters",
@@ -237,8 +235,12 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         "PASS",
         f"adapter {context.sriov_adapter_id} in healthy sriov mode",
     )
+    return True
 
-    # 2. Physical port inventory — also check that the port has remaining capacity
+
+async def _check_sriov_physical_port_capacity(client: Client, state: RunState) -> bool:
+    """Require the selected physical port and sufficient available capacity."""
+    context = state.context
     st, data = await state.call(
         client,
         "hmc_list_sriov_physical_ports",
@@ -284,7 +286,12 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         )
         return False
 
-    # 3. Logical port inventory (confirm test port is unconfigured)
+    return True
+
+
+async def _check_sriov_logical_port_clean(client: Client, state: RunState) -> bool:
+    """Require the selected logical port to be unconfigured before mutation."""
+    context = state.context
     st, data = await state.call(
         client,
         "hmc_list_sriov_logical_ports",
@@ -314,8 +321,12 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         "PASS",
         f"logical port {context.sriov_logical_port_id} is unconfigured — clean baseline confirmed",
     )
+    return True
 
-    # 4. lp3 profile SR-IOV field
+
+async def _check_sriov_profile_clean(client: Client, state: RunState) -> bool:
+    """Require the profile to be empty or already scoped to this test port."""
+    context = state.context
     sriov_state = await _read_sriov_state(client, state)
     state.record(
         23,
@@ -354,6 +365,20 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
             else "sriov_eth_logical_ports=none — lp3 profile is clean"
         ),
     )
+    return True
+
+
+async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
+    """Record ordered SR-IOV prerequisites and stop at the first failed stage."""
+    print("\n=== ST23: SR-IOV Baseline (issue #217) ===")
+    for check in (
+        _check_sriov_adapter_health,
+        _check_sriov_physical_port_capacity,
+        _check_sriov_logical_port_clean,
+        _check_sriov_profile_clean,
+    ):
+        if not await check(client, state):
+            return False
     return True
 
 
@@ -632,32 +657,39 @@ async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
         await cleanup_sriov(client, state)
         return
 
-    # Phase 2: Assign
-    assign_ok = await assign_sriov_to_lp3(client, state)
+    try:
+        # Phase 2: Assign
+        assign_ok = await assign_sriov_to_lp3(client, state)
 
-    # Phase 3: Verify assign (always run, even if assign failed — documents state)
-    verify_ok = await verify_sriov_assigned(client, state)
+        # Phase 3: Verify assign (always run, even if assign failed — documents state)
+        verify_ok = await verify_sriov_assigned(client, state)
 
-    # Phase 4: Unassign (only if assign succeeded and verification passed)
-    if assign_ok and verify_ok:
-        unassign_ok = await unassign_sriov_from_lp3(client, state)
-    else:
-        state.skip(
-            26,
-            "hmc_unassign_sriov_logical_port",
-            f"skipping unassign: assign_ok={assign_ok} verify_ok={verify_ok}",
-        )
-        unassign_ok = False
+        # Phase 4: Unassign (only if assign succeeded and verification passed)
+        if assign_ok and verify_ok:
+            unassign_ok = await unassign_sriov_from_lp3(client, state)
+        else:
+            state.skip(
+                26,
+                "hmc_unassign_sriov_logical_port",
+                f"skipping unassign: assign_ok={assign_ok} verify_ok={verify_ok}",
+            )
+            unassign_ok = False
 
-    # Phase 5: Reassign (only if unassign succeeded — proves round-trip)
-    if unassign_ok:
-        await reassign_sriov_to_lp3(client, state)
-    else:
-        state.skip(
-            27,
-            "hmc_assign_sriov_logical_port (reassign)",
-            f"skipping reassign: unassign_ok={unassign_ok}",
-        )
-
-    # Phase 6: Cleanup — always runs regardless of test outcome
-    await cleanup_sriov(client, state)
+        # Phase 5: Reassign (only if unassign succeeded — proves round-trip)
+        if unassign_ok:
+            await reassign_sriov_to_lp3(client, state)
+        else:
+            state.skip(
+                27,
+                "hmc_assign_sriov_logical_port (reassign)",
+                f"skipping reassign: unassign_ok={unassign_ok}",
+            )
+    finally:
+        active_error = sys.exception()
+        try:
+            # Phase 6: Cleanup — always runs after a successful baseline.
+            await cleanup_sriov(client, state)
+        except BaseException as cleanup_error:
+            if active_error is None:
+                raise
+            active_error.add_note(f"SR-IOV cleanup failed: {cleanup_error}")

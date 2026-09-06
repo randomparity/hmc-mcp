@@ -624,7 +624,10 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "name: release-wheel-amd64-py3.13" in body
     assert "uv pip install --python .library-wheel-venv/bin/python" in body
     assert '            "${wheels[0]}"' in body
-    assert "from hmc_mcp.api import CapacitySummary, fetch_capacity_report" in body
+    assert (
+        "from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report"
+        in body
+    )
     assert "import hmc_mcp.api" not in body
     for package in ("fastmcp", "mcp", "rich", "typer"):
         assert f'assert find_spec("{package}") is None' in body
@@ -655,9 +658,10 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "pip install -e" not in body
 
 
-def test_library_guide_example_uses_exported_operation() -> None:
+def test_library_guide_separates_core_and_domain_imports() -> None:
     readme = (ROOT / "docs/python-api.md").read_text()
-    assert "from hmc_mcp.api import HMCClient, HMCConfig, fetch_capacity_report" in readme
+    assert "from hmc_mcp.api import HMCClient, HMCConfig" in readme
+    assert "from hmc_mcp.operations.inventory.capacity import fetch_capacity_report" in readme
     assert "await fetch_capacity_report(hmc)" in readme
     assert " hmc_capacity_report" not in readme
 
@@ -677,7 +681,10 @@ def test_github_ci_exercises_each_declared_range_floor() -> None:
     assert '            "${wheels[0]}"' in body
     assert "uv venv" in body
     # The exercised surface is the bare installed API, not the app extra.
-    assert "from hmc_mcp.api import CapacitySummary, fetch_capacity_report" in body
+    assert (
+        "from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report"
+        in body
+    )
     assert "CapacitySummary(" in body
     for field in ("total_memory_mib", "assigned_memory_mib", "free_memory_mib"):
         assert f"{field}=" in body

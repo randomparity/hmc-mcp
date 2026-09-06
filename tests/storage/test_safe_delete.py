@@ -8,7 +8,7 @@ from conftest import make_config
 
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.storage import (
+from hmc_mcp.operations.storage.resources import (
     delete_media_repository,
     delete_optical_media,
     delete_virtual_disk,

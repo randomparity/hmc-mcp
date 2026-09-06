@@ -138,7 +138,7 @@ def _client() -> AsyncMock:
     hmc.list_adapters.side_effect = list_adapters
     hmc.list_vios.return_value = [{"UUID": VIOS_UUID, "Resource": {"PartitionName": "vios1"}}]
     hmc.get_vios_storage_detail.return_value = _storage_detail()
-    hmc.wait_for_job.return_value = {
+    hmc.wait_for_job_entry.return_value = {
         "UUID": "job-uuid",
         "Resource": {"JobID": "job-uuid", "Status": "COMPLETED_OK"},
     }
@@ -382,7 +382,7 @@ async def test_decommission_continues_when_vios_storage_detail_is_unavailable(
         "UUID": "job-uuid",
         "link": "/rest/api/uom/jobs/job-uuid",
     }
-    hmc.wait_for_job.side_effect = lambda *args, **kwargs: calls.append("wait_for_job") or {
+    hmc.wait_for_job_entry.side_effect = lambda *args, **kwargs: calls.append("wait_for_job_entry") or {
         "UUID": "job-uuid",
         "Resource": {"JobID": "job-uuid", "Status": "COMPLETED_OK"},
     }
@@ -412,7 +412,7 @@ async def test_decommission_continues_when_vios_storage_detail_is_unavailable(
         "authorize:system-a:aix-prod:False",
         "authorize:system-a:aix-prod:False",
         "submit_job",
-        "wait_for_job",
+        "wait_for_job_entry",
         "delete_adapter:ClientNetworkAdapter:adapter-1",
         f"delete_lpar:{LPAR_UUID}",
     ]
@@ -494,7 +494,7 @@ async def test_decommission_dry_run_inventories_without_mutating(monkeypatch: py
         "authorize:system-a:aix-prod:False",
     ]
     hmc.submit_job.assert_not_awaited()
-    hmc.wait_for_job.assert_not_awaited()
+    hmc.wait_for_job_entry.assert_not_awaited()
     hmc.delete_adapter.assert_not_awaited()
     hmc.delete_logical_partition.assert_not_awaited()
     hmc.delete_storage_mapping.assert_not_awaited()
@@ -567,7 +567,7 @@ async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
             "[hmc-mcp owner:bob created:2026-08-14]",
         )
     )
-    monkeypatch.setattr("hmc_mcp.operations.ownership.get_lpar_description", descriptions)
+    monkeypatch.setattr("hmc_mcp.operations.lpar.ownership.get_lpar_description", descriptions)
 
     result = await decommission_lpar(
         hmc, "system-a", "aix-prod", ownership_override=True
@@ -601,7 +601,7 @@ async def test_decommission_revalidates_changed_owner_before_mutation(
             "[hmc-mcp owner:bob created:2026-08-15]",
         )
     )
-    monkeypatch.setattr("hmc_mcp.operations.ownership.get_lpar_description", descriptions)
+    monkeypatch.setattr("hmc_mcp.operations.lpar.ownership.get_lpar_description", descriptions)
 
     with pytest.raises(PermissionError, match="owned by 'bob'"):
         await decommission_lpar(hmc, "system-a", "aix-prod")
@@ -623,7 +623,7 @@ async def test_decommission_runs_power_off_adapter_delete_and_lpar_delete_in_ord
         "UUID": "job-uuid",
         "link": "/rest/api/uom/jobs/job-uuid",
     }
-    hmc.wait_for_job.side_effect = lambda *args, **kwargs: calls.append("wait_for_job") or {
+    hmc.wait_for_job_entry.side_effect = lambda *args, **kwargs: calls.append("wait_for_job_entry") or {
         "UUID": "job-uuid",
         "Resource": {"JobID": "job-uuid", "Status": "COMPLETED_OK"},
     }
@@ -682,7 +682,7 @@ async def test_decommission_runs_power_off_adapter_delete_and_lpar_delete_in_ord
         "authorize:system-a:aix-prod:False",
         "authorize:system-a:aix-prod:False",
         "submit_job",
-        "wait_for_job",
+        "wait_for_job_entry",
         "get_state",
         "delete_adapter:ClientNetworkAdapter:cna-1",
         "delete_adapter:ClientNetworkAdapter:cna-2",
@@ -727,7 +727,7 @@ async def test_decommission_marks_already_off_lpar_without_power_job(monkeypatch
         "power_off", "ok", {"already_off": True, "state": "not activated"}
     )
     hmc.submit_job.assert_not_awaited()
-    hmc.wait_for_job.assert_not_awaited()
+    hmc.wait_for_job_entry.assert_not_awaited()
     assert calls == [
         "resolve_system_uuid:system-a",
         f"resolve_names:{SYSTEM_UUID}:system-a:{LPAR_UUID}",
@@ -800,7 +800,7 @@ async def test_decommission_stops_when_lpar_restarts_after_power_off_job(
     )
     assert result.steps[2] == WorkflowStep("delete_lpar", "skipped")
     hmc.submit_job.assert_awaited_once()
-    hmc.wait_for_job.assert_awaited_once()
+    hmc.wait_for_job_entry.assert_awaited_once()
     hmc.get_quick_property.assert_awaited_once_with(
         "LogicalPartition", LPAR_UUID, "PartitionState"
     )
@@ -852,7 +852,7 @@ async def test_decommission_reports_power_off_failure_and_skips_later_steps(
     calls: list[str] = []
     hmc = _client()
     _patch_common(monkeypatch, calls)
-    hmc.wait_for_job.return_value = job
+    hmc.wait_for_job_entry.return_value = job
 
     result = await decommission_lpar(hmc, "system-a", "aix-prod")
 

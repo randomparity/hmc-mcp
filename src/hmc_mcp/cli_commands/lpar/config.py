@@ -7,7 +7,7 @@ from dataclasses import asdict
 import typer
 from rich.table import Table
 
-from hmc_mcp.operations.ownership import set_lpar_ownership_description
+from hmc_mcp.operations.lpar.ownership import set_lpar_ownership_description
 
 from ...operations.affinity.ssh import (
     get_lpar_memopt_score,
@@ -36,12 +36,12 @@ from ...ssh.profiles import (
     set_lpar_proc_compat,
 )
 from ..output import console, print_json, usage_error
-from ..runtime import client, run, ssh_config, with_client
+from ..runtime import run_cli_coroutine, ssh_config, with_client
 
 
 def _with_ssh_affinity(operation, *args):
     """Run an affinity operation directly against SSH configuration."""
-    return run(lambda: operation(ssh_config(), *args))
+    return run_cli_coroutine(lambda: operation(ssh_config(), *args))
 
 
 def _memopt_selectors(
@@ -70,7 +70,6 @@ def _memopt_selectors(
         return prioritized, excluded
     except ValueError as error:
         usage_error(str(error))
-        raise AssertionError("usage_error must raise") from error
 
 
 def lpars_memopt_score(
@@ -177,7 +176,6 @@ def _resource_group_selector(
         return MemoptResourceGroupSelector(all=True)
     except ValueError as error:
         usage_error(str(error))
-        raise AssertionError("usage_error must raise") from error
 
 
 def _run_resource_group_memopt(
@@ -308,7 +306,7 @@ def lpars_get_description(
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
     """Get the description field of an LPAR (HMC CLI via SSH)."""
-    result = run(lambda: get_lpar_description(ssh_config(), system_name, lpar_name))
+    result = run_cli_coroutine(lambda: get_lpar_description(ssh_config(), system_name, lpar_name))
 
     console.print(result.strip() or "(no description set)")
 
@@ -334,17 +332,15 @@ def lpars_set_description(
     ):
         raise typer.Abort()
 
-    async def _go():
-        async with client() as hmc:
-            return await set_lpar_ownership_description(
-                hmc,
-                system_name,
-                lpar_name,
-                description,
-                ownership_override=ownership_override,
-            )
-
-    result = run(_go)
+    result = with_client(
+        lambda hmc: set_lpar_ownership_description(
+            hmc,
+            system_name,
+            lpar_name,
+            description,
+            ownership_override=ownership_override,
+        )
+    )
 
     console.print(f"[green]Description updated for '{lpar_name}'[/green]")
     if result.strip():
@@ -356,7 +352,7 @@ def lpars_get_msp(
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
     """Get the MSP (Migratable Service Partition) flag of an LPAR (HMC CLI via SSH)."""
-    enabled = run(lambda: get_lpar_msp(ssh_config(), system_name, lpar_name))
+    enabled = run_cli_coroutine(lambda: get_lpar_msp(ssh_config(), system_name, lpar_name))
 
     console.print("enabled" if enabled else "disabled")
 
@@ -372,7 +368,7 @@ def lpars_set_msp(
         f"Set MSP={'1' if enabled else '0'} on '{lpar_name}' (system {system_name})?"
     ):
         raise typer.Abort()
-    result = run(lambda: set_lpar_msp(ssh_config(), system_name, lpar_name, enabled))
+    result = run_cli_coroutine(lambda: set_lpar_msp(ssh_config(), system_name, lpar_name, enabled))
 
     console.print(f"[green]MSP updated for '{lpar_name}'[/green]")
     if result.strip():
@@ -383,7 +379,7 @@ def lpars_get_proc_compat_modes(
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
     """Get processor compatibility modes supported by a managed system (HMC CLI via SSH)."""
-    modes = run(lambda: get_proc_compat_modes(ssh_config(), system_name))
+    modes = run_cli_coroutine(lambda: get_proc_compat_modes(ssh_config(), system_name))
 
     console.print(",".join(modes) or "(no modes returned)")
 
@@ -394,7 +390,7 @@ def lpars_get_proc_compat(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get the current and pending processor compatibility modes for an LPAR (HMC CLI via SSH)."""
-    info = run(lambda: get_lpar_proc_compat(ssh_config(), system_name, lpar_name))
+    info = run_cli_coroutine(lambda: get_lpar_proc_compat(ssh_config(), system_name, lpar_name))
 
     desired = info["desired"]
     curr = info["curr"]
@@ -423,7 +419,7 @@ def lpars_set_proc_compat(
         f"Set processor compatibility mode to '{mode}' on LPAR '{lpar_name}' (system {system_name})?"
     ):
         raise typer.Abort()
-    result = run(
+    result = run_cli_coroutine(
         lambda: set_lpar_proc_compat(ssh_config(), system_name, lpar_name, mode)
     )
 

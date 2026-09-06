@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from ..xmlutil import escapes_string_arguments
-from .common import ATOM_NS, STORAGE_KINDS, UOM_NS, StorageKind, document_envelope
+from typing import Literal, get_args
+
+from ..xmlutil import ATOM_NS, escapes_string_arguments
+from .common import UOM_NS, document_envelope
+
+StorageKind = Literal["PhysicalVolume", "VirtualDisk"]
+STORAGE_KINDS = frozenset(get_args(StorageKind))
 
 
 @escapes_string_arguments

@@ -10,9 +10,10 @@ Usage:
 If SUBTASK_NUMBER is omitted, all sub-tasks (ST0–ST15) are run in order.
 If a specific number is given (0-15), only that sub-task runs.
 
-Pre-run requirement: HMC_SCHEMA_VERSION=V1_0 must be set in .env.
-The script warns and patches .env automatically if it is missing, then exits
-so the updated environment is loaded on restart.
+Pre-run requirement: HMC_SCHEMA_VERSION=V1_0 must be available from the
+environment or an existing local .env file. The preflight never creates or
+patches .env: when the value is absent, it exits with manual configuration
+instructions.
 """
 
 from __future__ import annotations
@@ -21,7 +22,8 @@ import argparse
 import asyncio
 import json
 import os
-import sys
+import re
+import tempfile
 import traceback
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -70,6 +72,36 @@ from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 
 _ENV_FILE = Path(".env")
 
+_SECRET_VALUE_RE = re.compile(
+    r"(?i)\b(?P<name>password|passwd|token|secret|api[_-]?key)"
+    r"(?P<separator>\s*(?:=|:)\s*)(?P<quote>['\"]?)(?P<value>[^\s,;'\"&]+)"
+    r"(?P=quote)"
+)
+_URL_USERINFO_RE = re.compile(r"(?i)\b(?P<scheme>[a-z][a-z0-9+.-]*://)[^/\s@]+@")
+_HOSTNAME_RE = re.compile(
+    r"(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b"
+)
+_ABSOLUTE_PATH_RE = re.compile(r"(?<![:\w])/(?:[^\s/]+/)*[^\s,;:'\")]+")
+
+
+def _redact_failure_text(value: str) -> str:
+    """Replace sensitive values in runner failure diagnostics."""
+    value = _SECRET_VALUE_RE.sub(
+        r"\g<name>\g<separator><REDACTED-SECRET>", value
+    )
+    value = _URL_USERINFO_RE.sub(r"\g<scheme><REDACTED-URL-USERINFO>@", value)
+    value = _HOSTNAME_RE.sub("<REDACTED-HOST>", value)
+    return _ABSOLUTE_PATH_RE.sub("<REDACTED-PATH>", value)
+
+
+def _redact_failure_data(data: Any) -> Any:
+    """Preserve failure result shapes while redacting their string leaves."""
+    if isinstance(data, dict):
+        return {key: _redact_failure_data(value) for key, value in data.items()}
+    if isinstance(data, list):
+        return [_redact_failure_data(value) for value in data]
+    return _redact_failure_text(str(data))
+
 #: The `HMC_*` names whose reader folds their casing: `HMCConfig`'s own fields,
 #: and only those. `HMC_PROFILE` and a profile's `password_env` target carry the
 #: prefix but are looked up in `os.environ` directly (see the "Variable names are
@@ -111,7 +143,7 @@ def _load_dotenv() -> None:
             os.environ[key] = val
 
 
-def _bootstrap_config() -> None:
+def _bootstrap_config() -> bool:
     """Populate HMC_* env vars from config.toml profile, then .env fallback.
 
     Priority (highest first):
@@ -121,7 +153,7 @@ def _bootstrap_config() -> None:
 
     Exits with a clear message when no usable credentials are found.
     """
-    from hmc_mcp.config import ConfigError, load_profile, resolve_config_path
+    from hmc_mcp.config import ConfigError, load_profile
 
     # Try the TOML config first.
     try:
@@ -138,9 +170,8 @@ def _bootstrap_config() -> None:
         for key, val in mapping.items():
             if val and not _already_set(key):
                 os.environ[key] = val
-        config_path = resolve_config_path()
-        print(f"  Credentials loaded from {config_path} (profile: {cfg.host})")
-        return
+        print("  Credentials loaded from configured profile")
+        return True
     except ConfigError as exc:
         print(f"  ⚠️  config.toml: {exc} — falling back to .env")
 
@@ -154,19 +185,20 @@ def _bootstrap_config() -> None:
     if not env_var_value("HMC_PASSWORD"):
         print("❌  No HMC credentials found.")
         print("   Configure ~/.config/hmc-mcp/config.toml or a local .env file.")
-        sys.exit(1)
+        return False
+    return True
 
 
-def _ensure_schema_version() -> None:
+def _ensure_schema_version() -> bool:
     """Warn when HMC_SCHEMA_VERSION is absent; the operator must set it explicitly."""
     _load_dotenv()
     if env_var_value("HMC_SCHEMA_VERSION"):
-        return
+        return True
     print("⚠️  HMC_SCHEMA_VERSION is not set in .env or the environment.")
     print("   Add 'HMC_SCHEMA_VERSION=V1_0' to your .env file and re-run.")
     print("   Note: this variable only affects GET requests; it does NOT fix")
     print("   HTTP 406 on write paths (LPAR create, adapter PUT, etc.).")
-    sys.exit(1)
+    return False
 
 
 @dataclass
@@ -441,20 +473,25 @@ class RunState:
         self, subtask: int, tool: str, status: str, data: Any, note: str = ""
     ) -> None:
         """Append and print one result entry."""
+        safe_data = _redact_failure_data(data) if status == "FAIL" else data
         entry = {
             "subtask": subtask,
             "tool": tool,
             "status": status,
             "timestamp": datetime.now(UTC).isoformat(),
             "note": note,
-            "data": data if isinstance(data, (dict, list)) else str(data)[:2000],
+            "data": (
+                safe_data
+                if isinstance(safe_data, (dict, list))
+                else str(safe_data)[:2000]
+            ),
         }
         self.results.append(entry)
         icon = "✅" if status == "PASS" else ("⚠️" if status == "SKIP" else "❌")
         note_str = f" — {note}" if note else ""
         print(f"  {icon} ST{subtask} {tool}{note_str}")
         if status == "FAIL":
-            print(f"     ERROR: {str(data)[:300]}")
+            print(f"     ERROR: {str(safe_data)[:300]}")
 
     def skip(self, subtask: int, tool: str, reason: str) -> None:
         """Record a skipped operation."""
@@ -566,8 +603,8 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"❌ {exc}")
         return 1
-    _bootstrap_config()
-    _ensure_schema_version()
+    if not _bootstrap_config() or not _ensure_schema_version():
+        return 1
     return asyncio.run(
         main(
             subtask_filter=arguments.subtask,
@@ -619,6 +656,21 @@ def _restore_ctx_from_results(
     )
 
 
+def _write_results(path: Path, document: str) -> None:
+    """Atomically replace the persisted live-test report."""
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", text=True
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(document)
+        temporary.replace(path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 async def main(
     subtask_filter: int | None = None,
     results_path: str = "test-results-round2.json",
@@ -629,7 +681,7 @@ async def main(
         try:
             context = LiveTestContext.from_env_file()
         except ValueError as exc:
-            print(f"❌ {exc}")
+            print(f"❌ {_redact_failure_text(str(exc))}")
             return 1
     state = RunState(context=context)
     context = state.context
@@ -680,12 +732,11 @@ async def main(
     finally:
         state.iso_http_server.close()
 
-    Path(results_path).write_text(
+    _write_results(
+        Path(results_path),
         json.dumps(
-            {"context": asdict(context), "results": state.results},
-            indent=2,
-            default=str,
-        )
+            {"context": asdict(context), "results": state.results}, indent=2, default=str
+        ),
     )
 
     total = len(state.results)
@@ -701,7 +752,7 @@ async def main(
         for r in state.results:
             if r["status"] == "FAIL":
                 print(f"  ST{r['subtask']} {r['tool']}")
-                print(f"    {str(r['data'])[:200]}")
+                print(f"    {str(_redact_failure_data(r['data']))[:200]}")
     return 1 if failed else 0
 
 

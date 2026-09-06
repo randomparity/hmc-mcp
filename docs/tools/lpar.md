@@ -22,7 +22,7 @@
 | `hmc_install_vios_by_lpar_selector` | `destructive` | `lpar.install_os` | `lpar` | Install an OS image onto a partition via the HMC ``installios`` CLI. |
 | `hmc_list_lpar_memopt_scores` | `read` | `lpar.list_memopt_scores` | `managed_system` | List current memory-optimization affinity scores for a system's LPARs. |
 | `hmc_list_lpar_ownership` | `read` | `lpar.list_ownership` | `managed_system` | Read parsed ownership for every LPAR on a system in one REST call. |
-| `hmc_list_lpars` | `read` | `lpar.list` | `managed_system` | List LPARs, optionally filtered by system or state. |
+| `hmc_list_lpars` | `read` | `lpar.list` | `managed_system` | List LPARs, optionally filtered by system and state. |
 | `hmc_lpar_summary` | `read` | `lpar.summary` | `lpar` | Return state, resources, OS details, adapters, and description for one LPAR. |
 | `hmc_migrate_abort_lpar` | `destructive` | `lpar.migrate_abort` | `lpar` | Abort an in-progress LPM migration of an LPAR. |
 | `hmc_migrate_lpar` | `mutate` | `lpar.migrate` | `lpar` | Live-migrate (LPM) an LPAR to another managed system. |

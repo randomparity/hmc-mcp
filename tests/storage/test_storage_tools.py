@@ -16,15 +16,8 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY
 
-from hmc_mcp.client.client_adapters import ADAPTER_TYPES
-from hmc_mcp.server_tools.adapters import (
-    hmc_add_network_adapter,
-    hmc_add_vfc_adapter,
-    hmc_add_vscsi_adapter,
-    hmc_delete_adapter,
-    hmc_list_adapters,
-)
-from hmc_mcp.server_tools.storage import (
+from hmc_mcp.client.client_contracts import ADAPTER_TYPES
+from hmc_mcp.server_tools.storage.resources import (
     hmc_create_logical_unit,
     hmc_create_media_repository,
     hmc_create_optical_media,
@@ -39,6 +32,13 @@ from hmc_mcp.server_tools.storage import (
     hmc_list_volume_groups,
     hmc_map_storage_to_lpar,
 )
+from hmc_mcp.server_tools.virtualization.adapters import (
+    hmc_add_network_adapter,
+    hmc_add_vfc_adapter,
+    hmc_add_vscsi_adapter,
+    hmc_delete_adapter,
+    hmc_list_adapters,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -47,10 +47,10 @@ def _authorize_lpar_mutations(monkeypatch):
         return lpar
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar_mutation", authorize
+        "hmc_mcp.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation", authorize
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation", authorize
+        "hmc_mcp.operations.storage.resources.resolve_and_authorize_lpar_mutation", authorize
     )
 
 
@@ -178,7 +178,7 @@ def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
 
     guard = AsyncMock(return_value=LPAR_UUID)
     with patch(
-        "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation", new=guard
+        "hmc_mcp.operations.storage.resources.resolve_and_authorize_lpar_mutation", new=guard
     ):
         assert hmc_detach_storage_mapping(VIOS_UUID, "map-1") == "map-1"
 
@@ -290,8 +290,12 @@ def test_list_volume_groups(monkeypatch, mock_hmc):
         )
     )
     result = hmc_list_volume_groups(VIOS_UUID)
-    assert result[0]["UUID"] == VG_UUID
-    assert result[0]["Resource"]["GroupName"] == "vg_rootvg"
+    assert result[0] == {
+        "uuid": VG_UUID,
+        "name": "vg_rootvg",
+        "capacity_mib": None,
+        "free_space_mib": None,
+    }
 
 
 def test_create_volume_group_builds_xml(monkeypatch, mock_hmc):

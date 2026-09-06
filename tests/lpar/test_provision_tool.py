@@ -18,7 +18,7 @@ from conftest import JOB_ENTRY, assert_no_mutating_requests
 
 from hmc_mcp.documents import LparResources
 from hmc_mcp.jobs import JobOutcome
-from hmc_mcp.operations.affinity import (
+from hmc_mcp.operations.affinity.rest import (
     AffinityAssessmentResult,
     AffinityEvidence,
     PostActivationAffinityAssessment,
@@ -46,7 +46,7 @@ def _patch_stamp_ownership():
     only) and must not attempt real SSH connections to hmc.test.
     """
     with patch(
-        "hmc_mcp.operations.ownership.stamp_lpar_ownership",
+        "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
         new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-08-13]"),
     ):
         yield

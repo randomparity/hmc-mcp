@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, get_args
+from typing import Any
 from urllib.parse import quote
 
 from ..documents import merge_remote_access_document
 from ..errors import HMCError
-from .client_contracts import UsersClient
+from .client_contracts import (
+    AUTHENTICATION_TYPES,
+    VALID_AUTHENTICATION_FILTERS,
+    AuthenticationFilter,
+    UsersClient,
+)
 from .client_parse import _parse_feed
 
 REMOTE_ACCESS_MEDIA = "application/vnd.ibm.powervm.web+xml; type=ManagementConsole"
-
-AuthenticationFilter = Literal["local", "ldap", "kerberos", "all"]
-_AUTHENTICATION_TYPES = {"local": "Local", "ldap": "LDAP", "kerberos": "Kerberos"}
-_VALID_AUTHENTICATION_FILTERS = frozenset(get_args(AuthenticationFilter))
-
 
 class UsersMixin:
     """Operations below a documented UOM ``ManagementConsole`` resource."""
@@ -40,16 +40,16 @@ class UsersMixin:
         authentication_type: AuthenticationFilter = "all",
     ) -> list[dict[str, Any]]:
         """List documented ``UserProfile`` children of a management console."""
-        if authentication_type not in _VALID_AUTHENTICATION_FILTERS:
+        if authentication_type not in VALID_AUTHENTICATION_FILTERS:
             raise ValueError(
                 f"Invalid authentication_type {authentication_type!r}. Must be one of: "
-                f"{', '.join(sorted(_VALID_AUTHENTICATION_FILTERS))}"
+                f"{', '.join(sorted(VALID_AUTHENTICATION_FILTERS))}"
             )
         path = self._child_path(console_uuid, "UserProfile")
         entries = self._entries(await self._get(path, "UserProfile"), path)
         if authentication_type == "all":
             return entries
-        expected = _AUTHENTICATION_TYPES[authentication_type]
+        expected = AUTHENTICATION_TYPES[authentication_type]
         return [
             entry
             for entry in entries
@@ -123,7 +123,7 @@ class UsersMixin:
         path = f"/rest/api/uom/ManagementConsole/{console_path_id}?group=RemoteAccess"
         current_xml = await self._get_remote_access_xml(path)
         if not current_xml.strip():
-            raise ValueError("RemoteAccess GET returned no ManagementConsole document")
+            raise HMCError(f"GET {path} returned no ManagementConsole document", 200)
         remote_access_xml = merge_remote_access_document(
             current_xml, values, clear_fields
         )

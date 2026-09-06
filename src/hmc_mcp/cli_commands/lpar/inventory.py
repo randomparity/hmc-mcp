@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict
+from typing import Any
 
 import typer
 from rich.table import Table
 
-from ...operations.composite import fetch_lpar_summary
+from ...operations.inventory.composite import fetch_lpar_summary
 from ...operations.lpar.core import (
     get_lpar,
     get_lpar_state,
@@ -32,28 +34,34 @@ def lpars_summary(
     if as_json:
         print_json(summary)
         return
+    _render_lpar_summary(summary, name_or_uuid)
 
+
+def _render_lpar_summary(summary: Mapping[str, Any], name_or_uuid: str) -> None:
+    """Render a fetched LPAR summary as a terminal table."""
     table = Table(title=f"LPAR Summary: {summary.get('name') or name_or_uuid}")
     table.add_column("Property", style="cyan")
     table.add_column("Value", style="green")
+    for property_name, value in _summary_rows(summary):
+        table.add_row(property_name, value)
+    console.print(table)
 
-    def value_or_missing(key: str) -> str:
-        value = summary.get(key)
-        return "-" if value is None else str(value)
 
-    rows = [
+def _summary_rows(summary: Mapping[str, Any]) -> list[tuple[str, str]]:
+    """Return the stable display rows for an LPAR summary."""
+    return [
         ("UUID", summary.get("uuid") or "-"),
         ("Name", summary.get("name") or "-"),
         ("State", summary.get("state") or "-"),
         ("RMC State", summary.get("rmc_state") or "-"),
         ("Type", summary.get("partition_type") or "-"),
-        ("Partition ID", value_or_missing("partition_id")),
-        ("Current Memory (MiB)", value_or_missing("current_memory_mib")),
-        ("Desired Memory (MiB)", value_or_missing("desired_memory_mib")),
-        ("Current Proc Units", value_or_missing("current_proc_units")),
-        ("Desired Proc Units", value_or_missing("desired_proc_units")),
-        ("Desired vCPUs", value_or_missing("desired_vcpus")),
-        ("Dedicated Procs", value_or_missing("dedicated_procs")),
+        ("Partition ID", _value_or_missing(summary, "partition_id")),
+        ("Current Memory (MiB)", _value_or_missing(summary, "current_memory_mib")),
+        ("Desired Memory (MiB)", _value_or_missing(summary, "desired_memory_mib")),
+        ("Current Proc Units", _value_or_missing(summary, "current_proc_units")),
+        ("Desired Proc Units", _value_or_missing(summary, "desired_proc_units")),
+        ("Desired vCPUs", _value_or_missing(summary, "desired_vcpus")),
+        ("Dedicated Procs", _value_or_missing(summary, "dedicated_procs")),
         ("OS Version", summary.get("os_version") or "-"),
         ("OS Type", summary.get("os_type") or "-"),
         (
@@ -62,9 +70,12 @@ def lpars_summary(
         ),
         ("Description", summary.get("description") or "-"),
     ]
-    for prop, val in rows:
-        table.add_row(prop, val)
-    console.print(table)
+
+
+def _value_or_missing(summary: Mapping[str, Any], key: str) -> str:
+    """Render an optional summary field without treating zero as missing."""
+    value = summary.get(key)
+    return "-" if value is None else str(value)
 
 
 def lpars_list(

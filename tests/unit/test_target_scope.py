@@ -20,7 +20,7 @@ from hmc_mcp.authorization.target_scope import (
     ABSENT,
     UNREADABLE,
     TargetScopeError,
-    _value,
+    _normalize_selector_value,
     audit_state,
     denial_reason,
     selected_targets,
@@ -500,18 +500,18 @@ def test_a_value_allowed_for_one_kind_is_not_allowed_for_another():
 _LPAR = ("lpar", "lpar_name_or_uuid", True)
 
 
-def test_audit_state_maps_each_arm_of_value():
-    """Spec 6a. The seam between `_value`'s result and the record's `state`.
+def test_audit_state_maps_each_arm_of_normalized_selector_value():
+    """Spec 6a. The seam between normalized selector values and record state.
 
-    `_value`'s own arms are covered above; what this pins is the *mapping*, which
+    The helper's own arms are covered above; what this pins is the *mapping*, which
     would otherwise be an inline conditional in `dispatch_scope`, one module away
     from the singletons it interprets.
     """
-    assert audit_state(_value("db-01")) == "present"
-    assert audit_state(_value(3)) == "present"
-    assert audit_state(_value(None)) == "absent"
-    assert audit_state(_value(True)) == "unreadable"
-    assert audit_state(_value(object())) == "unreadable"
+    assert audit_state(_normalize_selector_value("db-01")) == "present"
+    assert audit_state(_normalize_selector_value(3)) == "present"
+    assert audit_state(_normalize_selector_value(None)) == "absent"
+    assert audit_state(_normalize_selector_value(True)) == "unreadable"
+    assert audit_state(_normalize_selector_value(object())) == "unreadable"
 
 
 def test_each_denial_template_has_exactly_one_reason_code():

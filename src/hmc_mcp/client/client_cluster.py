@@ -35,13 +35,14 @@ class ClusterMixin:
         cluster_uuid: str,
         lu_name: str,
         lu_size_gib: int,
+        *,
         lu_type: LuType = "THIN",
         device_type: DeviceType = "VirtualIO_Disk",
         cloned_from: str | None = None,
     ) -> dict[str, Any] | None:
         """Submit a CreateLogicalUnit job against a Cluster/SSP.
 
-        Returns the Job resource (poll get_job for status; the job result
+        Returns the Job resource (poll get_job_entry for status; the job result
         contains the new LU's UDID in LUCreated).
         """
 

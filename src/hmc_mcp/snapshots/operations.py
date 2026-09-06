@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, overload
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.affinity import (
+from hmc_mcp.operations.affinity.rest import (
     AffinityAssessmentInput,
     AffinityAssessmentResult,
     PolicyState,
@@ -69,25 +69,33 @@ def _captured_lpar_score(snapshot: LparSnapshot) -> int | None:
     current = scores.data.get("current")
     if not isinstance(current, dict):
         return None
-    rows = current.get("lpar")
-    if isinstance(rows, dict):
-        rows = [rows]
-    if not isinstance(rows, list):
-        return None
-    identity = snapshot.source.lpar
-    matches: list[dict[str, Any]] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        has_name = "lpar_name" in row
-        has_id = "lpar_id" in row
-        name_matches = not has_name or row.get("lpar_name") == identity.name
-        id_matches = not has_id or str(row.get("lpar_id")) == str(identity.partition_id)
-        if name_matches and id_matches and (has_name or has_id):
-            matches.append(row)
+    matches = _matching_lpar_score_rows(current.get("lpar"), snapshot.source.lpar)
     if len(matches) != 1:
         return None
-    raw = matches[0].get("curr_lpar_score")
+    return _canonical_lpar_score(matches[0].get("curr_lpar_score"))
+
+
+def _matching_lpar_score_rows(value: object, identity: LparIdentity) -> list[dict[str, Any]]:
+    """Return score rows that identify the captured partition."""
+    rows = [value] if isinstance(value, dict) else value
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if _is_lpar_score_match(row, identity)]
+
+
+def _is_lpar_score_match(row: object, identity: LparIdentity) -> bool:
+    """Return whether a score row names or identifies the captured partition."""
+    if not isinstance(row, dict):
+        return False
+    has_name = "lpar_name" in row
+    has_id = "lpar_id" in row
+    name_matches = not has_name or row.get("lpar_name") == identity.name
+    id_matches = not has_id or str(row.get("lpar_id")) == str(identity.partition_id)
+    return name_matches and id_matches and (has_name or has_id)
+
+
+def _canonical_lpar_score(raw: object) -> int | None:
+    """Parse an integer score only from the snapshot's canonical scalar form."""
     if isinstance(raw, bool) or not isinstance(raw, (int, str)):
         return None
     if isinstance(raw, str) and re.fullmatch(r"(?:0|[1-9][0-9]{0,2})", raw) is None:
@@ -202,14 +210,18 @@ def _resource(entry: dict[str, Any] | None, label: str) -> dict[str, Any]:
 
 
 @overload
-def _text(value: Any, label: str, *, optional: Literal[False] = False) -> str: ...
+def _nonblank_text(
+    value: Any, label: str, *, optional: Literal[False] = False
+) -> str: ...
 
 
 @overload
-def _text(value: Any, label: str, *, optional: Literal[True]) -> str | None: ...
+def _nonblank_text(
+    value: Any, label: str, *, optional: Literal[True]
+) -> str | None: ...
 
 
-def _text(value: Any, label: str, *, optional: bool = False) -> str | None:
+def _nonblank_text(value: Any, label: str, *, optional: bool = False) -> str | None:
     if value is None and optional:
         return None
     if not isinstance(value, str) or not value.strip():
@@ -267,8 +279,8 @@ def _placement(resource: dict[str, Any]) -> dict[str, object]:
     units = resource.get("CurrentProcessingUnits") if mode == "shared" else None
     dedicated = resource.get("DedicatedProcessors") if mode == "dedicated" else None
     return {
-        "state": _text(resource.get("PartitionState"), "LPAR state"),
-        "rmc_state": _text(
+        "state": _nonblank_text(resource.get("PartitionState"), "LPAR state"),
+        "rmc_state": _nonblank_text(
             resource.get("ResourceMonitoringControlState"), "RMC state", optional=True
         ),
         "processor_mode": mode,
@@ -315,31 +327,41 @@ def _identity_parts(
     """Parse remote identity fields and enforce the portable snapshot contract."""
     mtms = system_resource.get("MachineTypeModelSerialNumber")
     if isinstance(mtms, dict):
-        machine_type = _text(mtms.get("MachineType"), "system machine type")
-        model = _text(mtms.get("Model"), "system model")
-        serial = _text(mtms.get("SerialNumber"), "system serial")
+        machine_type = _nonblank_text(mtms.get("MachineType"), "system machine type")
+        model = _nonblank_text(mtms.get("Model"), "system model")
+        serial = _nonblank_text(mtms.get("SerialNumber"), "system serial")
         machine_type_model = f"{machine_type}-{model}"
     else:
-        mtms_text = _text(mtms, "system MTMS")
+        mtms_text = _nonblank_text(mtms, "system MTMS")
         if "*" not in mtms_text:
-            raise ValueError("Snapshot capture requires system MTMS in type-model*serial form")
+            raise ValueError(
+                "Snapshot capture requires system MTMS in type-model*serial form"
+            )
         machine_type_model, serial = mtms_text.split("*", 1)
     return (
         HMCIdentity(
-            uuid=_text(console.get("UUID") if console else None, "HMC UUID"),
-            name=_text(console_resource.get("HostName"), "HMC name", optional=True),
-            version=_text(console_resource.get("Version"), "HMC version", optional=True),
+            uuid=_nonblank_text(console.get("UUID") if console else None, "HMC UUID"),
+            name=_nonblank_text(
+                console_resource.get("HostName"), "HMC name", optional=True
+            ),
+            version=_nonblank_text(
+                console_resource.get("Version"), "HMC version", optional=True
+            ),
         ),
         SystemIdentity(
-            uuid=_text(system.get("UUID") if system else None, "system UUID"),
-            name=_text(system_resource.get("SystemName"), "system name", optional=True),
+            uuid=_nonblank_text(system.get("UUID") if system else None, "system UUID"),
+            name=_nonblank_text(
+                system_resource.get("SystemName"), "system name", optional=True
+            ),
             machine_type_model=machine_type_model,
             serial=serial,
         ),
         LparIdentity(
-            uuid=_text(lpar.get("UUID") if lpar else None, "LPAR UUID"),
-            name=_text(lpar_resource.get("PartitionName"), "LPAR name"),
-            partition_id=_positive_int(lpar_resource.get("PartitionID"), "partition ID"),
+            uuid=_nonblank_text(lpar.get("UUID") if lpar else None, "LPAR UUID"),
+            name=_nonblank_text(lpar_resource.get("PartitionName"), "LPAR name"),
+            partition_id=_positive_int(
+                lpar_resource.get("PartitionID"), "partition ID"
+            ),
         ),
     )
 
@@ -362,7 +384,7 @@ async def capture_lpar_snapshot(
     console_resource = _resource(console, "HMC")
     system_resource = _resource(system, "managed-system")
     lpar_resource = _resource(lpar, "LPAR")
-    lpar_name = _text(lpar_resource.get("PartitionName"), "LPAR name")
+    lpar_name = _nonblank_text(lpar_resource.get("PartitionName"), "LPAR name")
     native_data = await read_lpar_profile_record(
         hmc.config, system_name, lpar_name, profile_name
     )
@@ -420,8 +442,14 @@ async def capture_lpar_snapshot(
             scores=ObservationEnvelope(
                 media_type=SCORES_MEDIA_TYPE,
                 data={
-                    "current": {"lpar": affinity.current_lpar, "system": affinity.current_system},
-                    "predicted": {"lpars": affinity.predicted_lpars, "system": affinity.predicted_system},
+                    "current": {
+                        "lpar": affinity.current_lpar,
+                        "system": affinity.current_system,
+                    },
+                    "predicted": {
+                        "lpars": affinity.predicted_lpars,
+                        "system": affinity.predicted_system,
+                    },
                     "resource_groups": {
                         "current": asdict(affinity.current_groups),
                         "predicted": asdict(affinity.predicted_groups),

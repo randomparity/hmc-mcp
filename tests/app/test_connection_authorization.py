@@ -131,7 +131,7 @@ def _registered(application) -> dict:
 
 # Every name a handler could reach an HMC through, patched at *every* module
 # that rebound it at import. Patching only `hmc_mcp.config.build_config` proves
-# nothing: `server_tools.vios`, `server_command`, and `_app` each hold their own
+# nothing: `server_tools.vios.core`, `server_command`, and `_app` each hold their own
 # reference, so a call through one of those would sail past an unpatched source
 # module and the test would still be green.
 _OUTBOUND_NAMES = ("build_config", "client_from_env", "run_hmc_cli", "run_hmc_command")

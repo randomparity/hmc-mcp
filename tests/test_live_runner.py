@@ -90,6 +90,41 @@ class _ScriptedClient:
         return self.result
 
 
+class _ScriptedSriovState(runner.RunState):
+    """Run SR-IOV phases against an ordered in-memory tool transcript."""
+
+    def __init__(self, responses: list[tuple[str, str, object]]):
+        super().__init__()
+        self._responses = iter(responses)
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def call(self, _client, tool, **kwargs):
+        self.calls.append((tool, kwargs))
+        expected_tool, status, data = next(self._responses)
+        assert tool == expected_tool
+        return status, data
+
+
+def _logical_port_state(
+    state: _ScriptedSriovState, *, owner: str | None = None, capacity: float = 7.5
+) -> dict[str, object]:
+    items: list[dict[str, object]] = []
+    if owner is not None:
+        items.append(
+            {
+                "logical_port_id": state.context.sriov_logical_port_id,
+                "availability": "1",
+                "owner_lpar": owner,
+                "capacity_percent": capacity,
+            }
+        )
+    return {"items": items}
+
+
+def _profile_state(value: str = "none") -> tuple[str, str, object]:
+    return ("hmc_run_command", "PASS", value)
+
+
 def test_sriov_baseline_helpers_require_healthy_adapter() -> None:
     """Baseline predicates reject wrong mode/availability and accept healthy data."""
     assert pcie._adapter_is_healthy(
@@ -116,6 +151,463 @@ def test_sriov_baseline_helpers_compute_capacity_and_configuration() -> None:
         {"items": [{"logical_port_id": 917003, "availability": "1"}]},
         917003,
     )
+
+
+@pytest.mark.asyncio
+async def test_sriov_phases_assign_verify_unassign_and_reassign() -> None:
+    state = _ScriptedSriovState([])
+    owned = _logical_port_state(state, owner=state.context.lp3_name)
+    state._responses = iter(
+        [
+            ("hmc_assign_sriov_logical_port", "PASS", {"changed": True}),
+            ("hmc_list_sriov_logical_ports", "PASS", owned),
+            _profile_state(),
+            ("hmc_unassign_sriov_logical_port", "PASS", {"changed": True}),
+            ("hmc_list_sriov_logical_ports", "PASS", owned),
+            _profile_state(),
+            ("hmc_assign_sriov_logical_port", "PASS", {"changed": True}),
+            ("hmc_list_sriov_logical_ports", "PASS", owned),
+            _profile_state(),
+        ]
+    )
+
+    assert await pcie.assign_sriov_to_lp3(object(), state)
+    assert await pcie.verify_sriov_assigned(object(), state)
+    assert await pcie.unassign_sriov_from_lp3(object(), state)
+    assert await pcie.reassign_sriov_to_lp3(object(), state)
+
+    assign_tool, assign_args = state.calls[0]
+    assert assign_tool == "hmc_assign_sriov_logical_port"
+    assert assign_args == {
+        "system_name_or_uuid": state.context.system_name,
+        "lpar_name_or_uuid": state.context.lp3_name,
+        "adapter_id": state.context.sriov_adapter_id,
+        "physical_port_id": state.context.sriov_physical_port_id,
+        "logical_port_id": state.context.sriov_logical_port_id,
+        "capacity_percent": state.context.sriov_capacity_percent,
+        "profile_name": state.context.sriov_profile_name,
+        "ownership_override": True,
+    }
+    assert state.calls[3][0] == "hmc_unassign_sriov_logical_port"
+    assert state.calls[3][1]["ownership_override"] is True
+    assert [entry["status"] for entry in state.results if entry["subtask"] == 26] == [
+        "PASS",
+        "PASS",
+        "PASS",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sriov_verify_records_wrong_owner_without_mutation() -> None:
+    state = _ScriptedSriovState([])
+    state._responses = iter(
+        [
+            (
+                "hmc_list_sriov_logical_ports",
+                "PASS",
+                _logical_port_state(state, owner="another-lpar"),
+            ),
+            _profile_state(),
+        ]
+    )
+
+    assert not await pcie.verify_sriov_assigned(object(), state)
+
+    assert [tool for tool, _ in state.calls] == [
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+    ]
+    assert any(
+        entry["tool"] == "sriov owner check" and entry["status"] == "FAIL"
+        for entry in state.results
+    )
+
+
+@pytest.mark.asyncio
+async def test_sriov_cleanup_refuses_unowned_or_unconfigured_ports() -> None:
+    unconfigured = _ScriptedSriovState([])
+    unconfigured._responses = iter(
+        [
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(unconfigured)),
+            _profile_state(),
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(unconfigured)),
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(unconfigured)),
+            _profile_state(),
+        ]
+    )
+    await pcie.cleanup_sriov(object(), unconfigured)
+    assert "hmc_unassign_sriov_logical_port" not in [
+        tool for tool, _ in unconfigured.calls
+    ]
+
+    foreign = _ScriptedSriovState([])
+    foreign._responses = iter(
+        [
+            (
+                "hmc_list_sriov_logical_ports",
+                "PASS",
+                _logical_port_state(foreign, owner="another-lpar"),
+            ),
+            _profile_state(),
+        ]
+    )
+    await pcie.cleanup_sriov(object(), foreign)
+    assert [tool for tool, _ in foreign.calls] == [
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+    ]
+    assert any(
+        entry["tool"] == "sriov cleanup: owner mismatch"
+        and "MANUAL RECOVERY REQUIRED" in str(entry["data"])
+        for entry in foreign.results
+    )
+
+
+@pytest.mark.asyncio
+async def test_sriov_cleanup_removes_owned_port_and_verifies_baseline() -> None:
+    state = _ScriptedSriovState([])
+    state._responses = iter(
+        [
+            (
+                "hmc_list_sriov_logical_ports",
+                "PASS",
+                _logical_port_state(state, owner=state.context.lp3_name),
+            ),
+            _profile_state("configured-port"),
+            ("hmc_unassign_sriov_logical_port", "PASS", {"changed": True}),
+            ("hmc_run_command", "PASS", "removed"),
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(state)),
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(state)),
+            _profile_state(),
+        ]
+    )
+
+    await pcie.cleanup_sriov(object(), state)
+
+    assert [tool for tool, _ in state.calls] == [
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+        "hmc_unassign_sriov_logical_port",
+        "hmc_run_command",
+        "hmc_list_sriov_logical_ports",
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+    ]
+    cleanup_command = state.calls[3][1]["cmd"]
+    assert "chhwres -r sriov --rsubtype logport" in cleanup_command
+    assert " -o r -p " in cleanup_command
+    assert all(entry["status"] == "PASS" for entry in state.results)
+
+
+@pytest.mark.asyncio
+async def test_profile_inventory_records_all_selector_scoped_probes() -> None:
+    tools = [
+        "hmc_get_lpar_description",
+        "hmc_get_lpar_msp",
+        "hmc_get_proc_compat_modes",
+        "hmc_get_lpar_proc_compat",
+        "hmc_list_vnics",
+        "hmc_get_lpar_memopt_score",
+        "hmc_list_lpar_memopt_scores",
+        "hmc_get_system_memopt_score",
+        "hmc_plan_lpar_memopt_scores",
+        "hmc_plan_system_memopt_score",
+        "hmc_list_resource_group_memopt_scores",
+        "hmc_plan_resource_group_memopt_scores",
+        "hmc_get_minimum_affinity_policy",
+    ]
+    state = _ScriptedSriovState([(tool, "PASS", {}) for tool in tools])
+
+    await profiles.inventory_lpar_profiles(object(), state)
+
+    assert [tool for tool, _ in state.calls] == tools
+    assert all(entry["subtask"] == 4 for entry in state.results)
+    for tool, kwargs in state.calls:
+        if tool in {
+            "hmc_get_proc_compat_modes",
+            "hmc_list_lpar_memopt_scores",
+            "hmc_get_system_memopt_score",
+            "hmc_plan_lpar_memopt_scores",
+            "hmc_plan_system_memopt_score",
+            "hmc_list_resource_group_memopt_scores",
+            "hmc_plan_resource_group_memopt_scores",
+        }:
+            assert kwargs == {"system_name_or_uuid": state.context.system_name}
+        else:
+            assert kwargs["system_name_or_uuid"] == state.context.system_name
+            if tool != "hmc_get_proc_compat_modes":
+                assert kwargs.get("lpar_name_or_uuid") == state.context.lp3_name
+
+
+@pytest.mark.asyncio
+async def test_connectivity_inventory_discovers_context_and_records_probes() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_console_info", "PASS", {"UUID": "console-uuid"}),
+            ("hmc_list_systems", "PASS", {"entries": []}),
+            ("hmc_get_system", "PASS", {"UUID": "system-uuid"}),
+            ("hmc_list_lpars", "PASS", {"entries": "malformed"}),
+            ("hmc_get_lpar", "PASS", {"UUID": "lp3-uuid"}),
+            (
+                "hmc_list_vios",
+                "PASS",
+                {"entries": [{"UUID": "vios-uuid", "Resource": {"PartitionID": "3"}}]},
+            ),
+            ("hmc_capacity_report", "PASS", {}),
+            ("hmc_find_placement", "PASS", {}),
+            ("hmc_get_system", "PASS", {}),
+            ("hmc_list_resources", "PASS", {}),
+            ("hmc_list_recent_jobs", "PASS", {"entries": [{"UUID": "job-uuid"}]}),
+            ("hmc_system_summary", "PASS", {}),
+            ("hmc_lpar_summary", "PASS", {}),
+        ]
+    )
+
+    await connectivity.inventory_connectivity(object(), state)
+
+    assert (state.context.console_uuid, state.context.system_uuid) == (
+        "console-uuid",
+        "system-uuid",
+    )
+    assert (
+        state.context.lp3_uuid,
+        state.context.vios_uuid,
+        state.context.vios_partition_id,
+    ) == (
+        "lp3-uuid",
+        "vios-uuid",
+        3,
+    )
+    assert state.context.job_uuid_sample == "job-uuid"
+    assert state.calls[7] == (
+        "hmc_find_placement",
+        {"desired_memory_mib": state.context.placement_memory_mib},
+    )
+    assert all(entry["subtask"] == 1 for entry in state.results)
+
+
+@pytest.mark.asyncio
+async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_pcm_preferences", "PASS", {"long_term_monitor": True}),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", {"long_term_monitor": False}),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_job", "PASS", {}),
+            ("hmc_wait_for_job", "PASS", {}),
+            ("hmc_list_recent_jobs", "PASS", {"entries": []}),
+            ("hmc_get_pcm_preferences", "FAIL", "PCM unavailable"),
+            ("hmc_processed_metric_links", "FAIL", "PCM unavailable"),
+            ("hmc_aggregated_metric_links", "FAIL", "PCM unavailable"),
+            ("hmc_list_partition_templates", "FAIL", "template unavailable"),
+        ]
+    )
+    state.context.job_uuid_sample = "job-uuid"
+
+    await metrics.inspect_metrics_jobs(object(), state)
+    await metrics.inspect_metrics_templates(object(), state)
+
+    assert state.calls[1][1]["long_term_monitor"] is False
+    assert state.calls[3][1]["long_term_monitor"] is True
+    assert state.calls[5][1] == {
+        "job_uuid": "job-uuid",
+        "timeout_seconds": 10,
+        "poll_interval": 2,
+    }
+    assert state.context.lp3_baseline.get("pcm_prefs") is None
+    assert [entry["status"] for entry in state.results if entry["subtask"] == 5] == [
+        "SKIP",
+        "SKIP",
+        "SKIP",
+        "SKIP",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_escape_hatch_uses_only_bounded_commands() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_run_command", "PASS", "version"),
+            ("hmc_run_command", "PASS", "systems"),
+        ]
+    )
+
+    await escape_hatch.exercise_cli_escape_hatch(object(), state)
+
+    assert state.calls == [
+        ("hmc_run_command", {"cmd": "lshmc -V"}),
+        ("hmc_run_command", {"cmd": "lssyscfg -r sys"}),
+    ]
+    assert [(entry["subtask"], entry["status"]) for entry in state.results] == [
+        (7, "PASS"),
+        (7, "PASS"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_provision_dry_run_requires_vios_and_uses_baseline_vlan() -> None:
+    missing = _ScriptedSriovState([])
+    await provisioning.validate_provisioning_dry_run(object(), missing)
+    assert missing.calls == []
+    assert missing.results[0]["status"] == "SKIP"
+
+    state = _ScriptedSriovState(
+        [("hmc_provision_lpar", "PASS", {"steps": [{"status": "dry_run"}]})]
+    )
+    state.context.vios_uuid = "vios-uuid"
+    state.context.lp3_baseline["pvid"] = 99
+    state.context.vios_partition_id = 4
+    state.context.lp3_baseline["vios_slot"] = 6
+    await provisioning.validate_provisioning_dry_run(object(), state)
+    assert state.calls == [
+        (
+            "hmc_provision_lpar",
+            {
+                "dry_run": True,
+                "system_name_or_uuid": state.context.system_name,
+                "name": state.context.dry_run_lpar_name,
+                "port_vlan_id": 99,
+                "vios_uuid": "vios-uuid",
+                "vios_partition_id": 4,
+                "vios_slot": 6,
+                "storage_name": state.context.dry_run_storage_name,
+                "desired_memory": state.context.dry_run_memory_mib,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_lpar_lifecycle_captures_jobs_and_clears_scratch_identity() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_system", "PASS", {"UUID": "system-uuid"}),
+            ("hmc_create_lpar", "PASS", {"lpar": {"UUID": "scratch-uuid"}}),
+            ("hmc_get_lpar", "PASS", {"UUID": "scratch-uuid"}),
+            ("hmc_modify_lpar", "PASS", {}),
+            ("hmc_lpar_summary", "PASS", {}),
+            ("hmc_power_on_lpar", "PASS", {"job_uuid": "boot-job"}),
+            ("hmc_power_off_lpar", "PASS", {}),
+            ("hmc_delete_lpar", "PASS", {}),
+            ("hmc_list_lpars", "PASS", {"entries": []}),
+        ]
+    )
+
+    await lpar.exercise_lpar_lifecycle(object(), state)
+
+    assert state.context.system_uuid == "system-uuid"
+    assert state.context.scratch_uuid is None
+    assert state.context.job_uuid_sample == "boot-job"
+    assert state.calls[1][1]["resources"] == {
+        "desired_memory": state.context.scratch_create_desired_memory_mib,
+        "max_memory": state.context.scratch_create_max_memory_mib,
+        "desired_vcpus": state.context.scratch_create_desired_vcpus,
+        "max_vcpus": state.context.scratch_create_max_vcpus,
+    }
+    assert [entry["subtask"] for entry in state.results] == [8] * 8
+
+
+@pytest.mark.asyncio
+async def test_lpar_property_mutation_refuses_non_vios_and_restores_baseline() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_set_lpar_description", "PASS", {}),
+            ("hmc_get_lpar_description", "PASS", {}),
+            ("hmc_set_lpar_description", "PASS", {}),
+            ("hmc_run_command", "PASS", "aixlinux\n"),
+            ("hmc_set_lpar_msp", "FAIL", "only valid for a VIOS"),
+            ("hmc_get_lpar_proc_compat", "PASS", {"desired": "default"}),
+            ("hmc_get_lpar_proc_compat", "PASS", {"desired": "default"}),
+            ("hmc_sync_lpar_profile", "PASS", {}),
+            ("hmc_backup_lpar_profiles", "PASS", {}),
+        ]
+    )
+    state.context.lp3_baseline["description"] = "original description"
+
+    await lpar.mutate_lpar_properties(object(), state)
+
+    assert "hmc_set_lpar_msp (toggle/verify/restore)" in [
+        entry["tool"] for entry in state.results if entry["status"] == "SKIP"
+    ]
+    assert "hmc_set_lpar_proc_compat" in [
+        entry["tool"] for entry in state.results if entry["status"] == "SKIP"
+    ]
+    assert state.calls[-1][1]["force"] is True
+
+
+@pytest.mark.asyncio
+async def test_vmedia_mount_requires_iso_and_preserves_safe_delete_boundary() -> None:
+    missing = _ScriptedSriovState([])
+    await vmedia.vmedia_mount_unmount(object(), missing)
+    assert missing.calls == []
+    assert {entry["status"] for entry in missing.results} == {"SKIP"}
+
+    state = _ScriptedSriovState(
+        [
+            ("hmc_mount_optical_media", "PASS", {"ElementID": "mapping-uuid"}),
+            ("hmc_list_optical_mappings", "PASS", []),
+            ("hmc_delete_optical_media", "FAIL", "media is mapped"),
+            ("hmc_unmount_optical_media", "PASS", {}),
+            ("hmc_list_optical_mappings", "PASS", []),
+            ("hmc_delete_optical_media", "PASS", {}),
+            ("hmc_list_optical_media", "PASS", []),
+        ]
+    )
+    state.context.vios_uuid = "vios-uuid"
+    state.context.vg_uuid = "vg-uuid"
+    state.context.vmedia_iso_name = "boot.iso"
+
+    await vmedia.vmedia_mount_unmount(object(), state)
+
+    assert state.context.vmedia_mapping_uuid is None
+    assert state.context.vmedia_iso_name is None
+    assert state.calls[3] == (
+        "hmc_unmount_optical_media",
+        {"vios_name_or_uuid": "vios-uuid", "mapping_uuid": "mapping-uuid"},
+    )
+    assert any(
+        entry["tool"] == "hmc_delete_optical_media (blocked — expected)"
+        and entry["status"] == "PASS"
+        for entry in state.results
+    )
+
+
+@pytest.mark.asyncio
+async def test_vmedia_teardown_restores_boot_and_removes_artifacts_in_order() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_set_lpar_boot_order", "PASS", {}),
+            ("hmc_list_optical_mappings", "PASS", [{"UUID": "orphan-uuid"}]),
+            ("hmc_unmount_optical_media", "PASS", {}),
+            ("hmc_list_optical_media", "PASS", [{"MediaName": "orphan.iso"}]),
+            ("hmc_delete_optical_media", "PASS", {}),
+            ("hmc_delete_media_repository", "PASS", {}),
+            ("hmc_get_media_repository", "PASS", {}),
+            ("hmc_list_volume_groups", "PASS", []),
+        ]
+    )
+    state.context.vios_uuid = "vios-uuid"
+    state.context.vg_uuid = "vg-uuid"
+    state.context.lp3_uuid = "lp3-uuid"
+    state.context.vmedia_orig_boot_order = ["disk", "network"]
+    state.context.vmedia_repo_created = True
+
+    await vmedia.vmedia_teardown(object(), state)
+
+    assert state.context.vmedia_orig_boot_order == []
+    assert not state.context.vmedia_repo_created
+    assert [tool for tool, _ in state.calls] == [
+        "hmc_set_lpar_boot_order",
+        "hmc_list_optical_mappings",
+        "hmc_unmount_optical_media",
+        "hmc_list_optical_media",
+        "hmc_delete_optical_media",
+        "hmc_delete_media_repository",
+        "hmc_get_media_repository",
+        "hmc_list_volume_groups",
+    ]
+    assert state.calls[0][1]["devices"] == ["disk", "network"]
 
 
 @pytest.mark.asyncio
@@ -240,6 +732,87 @@ async def test_sriov_orchestrator_skips_mutations_after_assign_failure() -> None
     assert calls == ["baseline", "assign", "verify", "skip", "skip", "cleanup"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failing_phase", "expected_calls"),
+    [
+        ("assign", ["baseline", "assign", "cleanup"]),
+        ("verify", ["baseline", "assign", "verify", "cleanup"]),
+        ("unassign", ["baseline", "assign", "verify", "unassign", "cleanup"]),
+        (
+            "reassign",
+            ["baseline", "assign", "verify", "unassign", "reassign", "cleanup"],
+        ),
+    ],
+)
+async def test_sriov_orchestrator_cleans_up_after_post_baseline_error(
+    monkeypatch, failing_phase: str, expected_calls: list[str]
+) -> None:
+    """Every mutation failure leaves cleanup as the final, single operation."""
+    calls: list[str] = []
+
+    def phase(name: str):
+        async def run(*_args) -> bool:
+            calls.append(name)
+            if name == failing_phase:
+                raise RuntimeError(f"{name} failed")
+            return True
+
+        return run
+
+    monkeypatch.setattr(pcie, "capture_sriov_baseline", phase("baseline"))
+    monkeypatch.setattr(pcie, "assign_sriov_to_lp3", phase("assign"))
+    monkeypatch.setattr(pcie, "verify_sriov_assigned", phase("verify"))
+    monkeypatch.setattr(pcie, "unassign_sriov_from_lp3", phase("unassign"))
+    monkeypatch.setattr(pcie, "reassign_sriov_to_lp3", phase("reassign"))
+    monkeypatch.setattr(pcie, "cleanup_sriov", phase("cleanup"))
+
+    with pytest.raises(RuntimeError, match=f"{failing_phase} failed"):
+        await pcie.exercise_sriov_assignment(object(), object())
+
+    assert calls == expected_calls
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_propagates_cleanup_error(monkeypatch) -> None:
+    """Cleanup remains observable when it is the only failure."""
+    cleanup = AsyncMock(side_effect=RuntimeError("cleanup failed"))
+
+    monkeypatch.setattr(pcie, "capture_sriov_baseline", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "assign_sriov_to_lp3", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "verify_sriov_assigned", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "unassign_sriov_from_lp3", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "reassign_sriov_to_lp3", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
+
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        await pcie.exercise_sriov_assignment(object(), object())
+
+    assert cleanup.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_preserves_mutation_error_when_cleanup_fails(
+    monkeypatch,
+) -> None:
+    """A cleanup failure adds recovery context without replacing the mutation error."""
+    cleanup = AsyncMock(side_effect=RuntimeError("cleanup failed"))
+
+    monkeypatch.setattr(pcie, "capture_sriov_baseline", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        pcie,
+        "assign_sriov_to_lp3",
+        AsyncMock(side_effect=RuntimeError("assign failed")),
+    )
+    monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
+
+    with pytest.raises(RuntimeError, match="assign failed") as exc_info:
+        await pcie.exercise_sriov_assignment(object(), object())
+
+    assert cleanup.await_count == 1
+    assert exc_info.value.__notes__ == ["SR-IOV cleanup failed: cleanup failed"]
+
+
 def _isolate_runner(monkeypatch) -> None:
     monkeypatch.setattr(runner, "Client", _FakeClient)
 
@@ -286,10 +859,21 @@ def test_schema_preflight_is_explicit_and_actionable(monkeypatch, capsys):
     _clear(monkeypatch, "HMC_SCHEMA_VERSION")
     monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
 
-    with pytest.raises(SystemExit) as exc_info:
-        runner._ensure_schema_version()
+    assert runner._ensure_schema_version() is False
+    assert "Add 'HMC_SCHEMA_VERSION=V1_0'" in capsys.readouterr().out
 
-    assert exc_info.value.code == 1
+
+def test_schema_preflight_does_not_patch_dotenv(monkeypatch, capsys, tmp_path):
+    _clear(monkeypatch, "HMC_SCHEMA_VERSION")
+    _isolated_environ(monkeypatch)
+    dotenv = tmp_path / ".env"
+    original = "HMC_HOST=example.test\n"
+    dotenv.write_text(original)
+    monkeypatch.setattr(runner, "_ENV_FILE", dotenv)
+
+    assert runner._ensure_schema_version() is False
+
+    assert dotenv.read_text() == original
     assert "Add 'HMC_SCHEMA_VERSION=V1_0'" in capsys.readouterr().out
 
 
@@ -374,7 +958,7 @@ def test_live_context_reads_the_complete_example_and_ignores_exports(
 
 @pytest.mark.asyncio
 async def test_main_rejects_missing_live_test_file_before_creating_mcp(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, capsys
 ) -> None:
     """Programmatic invocation cannot bypass required local live-test settings."""
     monkeypatch.setattr(runner, "_ENV_FILE", tmp_path / ".env")
@@ -383,6 +967,9 @@ async def test_main_rejects_missing_live_test_file_before_creating_mcp(
     )
 
     assert await runner.main(results_path=str(tmp_path / "results.json")) == 1
+    output = capsys.readouterr().out
+    assert str(tmp_path / ".env") not in output
+    assert "live-test configuration file not found" in output
 
 
 def test_a_dotenv_entry_never_outranks_a_case_variant_export(monkeypatch, tmp_path):
@@ -502,14 +1089,35 @@ async def test_call_normalizes_fastmcp_result_shapes(result, expected):
 
 
 @pytest.mark.asyncio
-async def test_call_returns_traceable_failure():
-    status, data = await runner.RunState().call(
-        _ScriptedClient(error=RuntimeError("transport failed")), "tool"
+async def test_call_failure_is_redacted_when_recorded(capsys):
+    suffix = "-secret"
+    url_credential = "url" + suffix
+    credential = "runner" + suffix
+    sensitive = (
+        f"transport failed password={credential} "
+        f"https://operator:{url_credential}@hmc.lab.example.test/api "
+        "/home/operator/live-test.toml"
+    )
+    state = runner.RunState()
+    status, data = await state.call(
+        _ScriptedClient(error=RuntimeError(sensitive)), "tool"
     )
 
     assert status == "FAIL"
-    assert "RuntimeError: transport failed" in data
-    assert "Traceback" in data
+    state.record(0, "tool", status, data)
+
+    output = capsys.readouterr().out
+    recorded = str(state.results[0]["data"])
+    for value in (
+        credential,
+        f"operator:{url_credential}",
+        "hmc.lab.example.test",
+        "/home/operator/live-test.toml",
+    ):
+        assert value not in output
+        assert value not in recorded
+    assert "RuntimeError: transport failed" in recorded
+    assert "Traceback" in recorded
 
 
 @pytest.mark.asyncio
@@ -543,14 +1151,22 @@ def test_expected_hmc_limitation_is_classified_as_skip():
     assert state.results[0]["note"] == "feature unavailable"
 
 
-def test_result_helpers_preserve_resource_shapes():
-    entries = [{"Resource": {"UUID": "nested"}}]
+def test_result_helpers_filter_malformed_entries_and_resource_shapes():
+    raw_entries = [
+        {"Resource": {"UUID": "nested"}},
+        "not-a-mapping",
+        {"UUID": "flat"},
+    ]
 
-    assert results.entries(entries) is entries
-    assert results.entries({"entries": entries}) is entries
+    assert results.entries(raw_entries) == [raw_entries[0], raw_entries[2]]
+    assert results.entries({"entries": raw_entries}) == [raw_entries[0], raw_entries[2]]
+    assert results.entries({"entries": {"UUID": "not-a-list"}}) == []
     assert results.entries("invalid") == []
-    assert results.resource(entries[0]) == {"UUID": "nested"}
+    assert results.resource(raw_entries[0]) == {"UUID": "nested"}
     assert results.resource({"UUID": "flat"}) == {"UUID": "flat"}
+    assert results.resource({"Resource": "not-a-mapping"}) == {
+        "Resource": "not-a-mapping"
+    }
 
 
 def test_restore_context_restores_identifiers_and_baseline(tmp_path):
@@ -1153,11 +1769,21 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_main_returns_failure_and_persists_results(monkeypatch, tmp_path):
+async def test_main_redacts_direct_failure_before_persisting(
+    monkeypatch, tmp_path, capsys
+):
     _isolate_runner(monkeypatch)
+    suffix = "-secret"
+    url_credential = "url" + suffix
+    credential = "runner" + suffix
+    sensitive = (
+        f"direct failure password={credential} "
+        f"https://operator:{url_credential}@hmc.lab.example.test/api "
+        "/home/operator/live-test.toml"
+    )
 
     async def failing_subtask(_client, state):
-        state.record(0, "fake", "FAIL", "expected failure")
+        state.record(0, "fake", "FAIL", {"detail": sensitive})
 
     monkeypatch.setattr(runner, "SUBTASKS", {0: failing_subtask})
     results_path = tmp_path / "results.json"
@@ -1170,6 +1796,17 @@ async def test_main_returns_failure_and_persists_results(monkeypatch, tmp_path):
     )
     saved = json.loads(results_path.read_text())
     assert saved["results"][0]["status"] == "FAIL"
+    assert isinstance(saved["results"][0]["data"], dict)
+    output = capsys.readouterr().out
+    persisted = json.dumps(saved)
+    for value in (
+        credential,
+        f"operator:{url_credential}",
+        "hmc.lab.example.test",
+        "/home/operator/live-test.toml",
+    ):
+        assert value not in output
+        assert value not in persisted
 
 
 @pytest.mark.asyncio
@@ -1184,6 +1821,24 @@ async def test_main_rejects_unknown_numeric_workflow(monkeypatch, tmp_path):
     saved = json.loads(results_path.read_text())
     assert saved["results"][0]["tool"] == "runner"
     assert saved["results"][0]["data"] == "Unknown sub-task 999"
+
+
+def test_result_write_preserves_existing_report_when_replacement_fails(
+    monkeypatch, tmp_path
+) -> None:
+    path = tmp_path / "results.json"
+    path.write_text('{"old": true}', encoding="utf-8")
+
+    def fail_replace(_temporary, _path):
+        raise OSError("replacement failed")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="replacement failed"):
+        runner._write_results(path, '{"new": true}')
+
+    assert path.read_text(encoding="utf-8") == '{"old": true}'
+    assert not list(tmp_path.glob(".results.json.*.tmp"))
 
 
 @pytest.mark.asyncio
@@ -1517,6 +2172,80 @@ async def test_malformed_inventory_capacity_blocks_storage_mutation(monkeypatch)
     assert failure["status"] == "FAIL"
     assert state.context.vdisk_size_mib is None
     assert not any(tool == "hmc_create_virtual_disk" for tool, _ in calls)
+
+
+@pytest.mark.asyncio
+async def test_storage_provisioning_runs_the_complete_successful_orchestration(
+    monkeypatch,
+):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_get_lpar":
+            return "PASS", {"uuid": "recreated-lp3"}
+        if tool == "hmc_provision_lpar":
+            return "PASS", {"steps": [{"step": "create", "status": "ok"}]}
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.context.vios_uuid = "vios-uuid"
+    state.context.vg_uuid = "vg-uuid"
+    state.context.vios_partition_id = 7
+    state.context.vdisk_size_mib = 2048
+    state.context.lp3_baseline = {
+        "pvid": 3101,
+        "vios_slot": 11,
+        "lpars": {
+            "Resource": {
+                "MinimumMemory": "1024",
+                "DesiredMemory": "2048",
+                "MaximumMemory": "4096",
+                "DesiredVirtualProcessors": "2",
+                "MaximumVirtualProcessors": "4",
+            }
+        },
+    }
+
+    await runner.exercise_storage_provisioning(None, state)
+
+    assert [tool for tool, _ in calls] == [
+        "hmc_get_lpar",
+        "hmc_power_off_lpar",
+        "hmc_delete_lpar",
+        "hmc_list_lpars",
+        "hmc_list_volume_groups",
+        "hmc_run_command",
+        "hmc_create_virtual_disk",
+        "hmc_list_volume_groups",
+        "hmc_provision_lpar",
+        "hmc_get_lpar",
+        "hmc_lpar_summary",
+    ]
+    provision = calls[8][1]
+    assert provision == {
+        "system_name_or_uuid": state.context.system_name,
+        "name": state.context.lp3_name,
+        "port_vlan_id": 3101,
+        "vios_uuid": "vios-uuid",
+        "vios_partition_id": 7,
+        "vios_slot": 11,
+        "storage_name": state.context.vdisk_name,
+        "storage_kind": "VirtualDisk",
+        "vg_uuid": "vg-uuid",
+        "min_memory": 1024,
+        "desired_memory": 2048,
+        "max_memory": 4096,
+        "desired_vcpus": 2,
+        "max_vcpus": 4,
+        "partition_type": "AIX/Linux",
+        "power_on": True,
+        "dry_run": False,
+    }
+    assert calls[9][1] == {"lpar_name_or_uuid": state.context.lp3_name}
+    assert calls[10][1] == {"lpar_name_or_uuid": state.context.lp3_name}
+    assert state.context.lp3_uuid == "recreated-lp3"
 
 
 @pytest.mark.asyncio

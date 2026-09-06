@@ -22,15 +22,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.ssh import io_inventory, sriov, vnic
 from hmc_mcp.ssh import memory as ssh_memory
-from hmc_mcp.ssh import network as ssh_network
 from hmc_mcp.ssh import profiles as ssh_profiles
 from hmc_mcp.ssh.commands import (
     build_attribute_record,
     build_filter,
 )
-from hmc_mcp.ssh.lpar import create_lpar_via_cli, validate_lpar_description
-from hmc_mcp.ssh.network import list_fc_ports
+from hmc_mcp.ssh.description_validation import validate_lpar_description
+from hmc_mcp.ssh.io_inventory import list_fc_ports
+from hmc_mcp.ssh.lpar import create_lpar_via_cli
 from hmc_mcp.ssh.profiles import (
     assign_profile_io_slot,
     set_lpar_description,
@@ -299,7 +300,7 @@ HOSTILE_FILTER = "x,injected=1"
 )
 def test_filter_site_refuses_a_hostile_name(fn_name, extra_args):
     """A delimiter-carrying name is refused before any command is built."""
-    modules = (ssh_network, ssh_profiles)
+    modules = (sriov, io_inventory, vnic, ssh_profiles)
     fn = next(
         getattr(module, fn_name) for module in modules if hasattr(module, fn_name)
     )
@@ -315,7 +316,7 @@ def test_list_fc_ports_renders_the_whole_expression_quoted():
         sent.append(command)
         return ""
 
-    with patch("hmc_mcp.ssh.network.run_hmc_command", side_effect=fake_run):
+    with patch("hmc_mcp.ssh.io_inventory.run_hmc_command", side_effect=fake_run):
         asyncio.run(list_fc_ports(_config(), "system-a", "my name"))
     assert "--filter 'lpar_names=my name'" in sent[0]
 
@@ -359,6 +360,15 @@ def test_validate_lpar_description_rejects_record_delimiters(bad, wording):
 def test_validate_lpar_description_still_accepts_an_ownership_token():
     """ADR 0011's ownership token has no record delimiter and stays valid."""
     validate_lpar_description("[hmc-mcp owner:agent-a created:2026-08-19]")
+
+
+@pytest.mark.parametrize(
+    "description", ["owner\x01alice", "owner\x7falice", "owner-alicé"]
+)
+def test_validate_lpar_description_rejects_non_printable_or_non_ascii_text(description):
+    """Descriptions sent to the HMC must be printable ASCII."""
+    with pytest.raises(ValueError, match="printable ASCII"):
+        validate_lpar_description(description)
 
 
 # ---------------------------------------------------------------------- #

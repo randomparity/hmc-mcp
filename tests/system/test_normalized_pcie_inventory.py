@@ -8,14 +8,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.io_virtualization.pcie import (
+from hmc_mcp.operations.virtualization.pcie import (
     SriovLogicalPortCapabilityError,
     list_dedicated_slots,
     list_sriov_adapters,
     list_sriov_logical_ports,
     list_sriov_physical_ports,
 )
-from hmc_mcp.ssh.network import list_dedicated_pcie_slot_rows
+from hmc_mcp.ssh.io_inventory import list_dedicated_pcie_slot_rows
 from hmc_mcp.ssh.transport import HMCCLIError
 
 
@@ -36,7 +36,7 @@ def _hmc() -> SimpleNamespace:
 async def test_dedicated_slot_reader_uses_the_admitted_projection() -> None:
     output = "drc_index,description,lpar_name\n21010003,PCIe slot,lpar1\n"
     with patch(
-        "hmc_mcp.ssh.network.run_hmc_command", AsyncMock(return_value=output)
+        "hmc_mcp.ssh.io_inventory.run_hmc_command", AsyncMock(return_value=output)
     ) as run:
         rows = await list_dedicated_pcie_slot_rows(_config(), "sys one")
 
@@ -53,7 +53,7 @@ async def test_dedicated_slot_reader_uses_the_admitted_projection() -> None:
 @pytest.mark.asyncio
 async def test_dedicated_slot_reader_accepts_header_only_output() -> None:
     with patch(
-        "hmc_mcp.ssh.network.run_hmc_command",
+        "hmc_mcp.ssh.io_inventory.run_hmc_command",
         AsyncMock(return_value="drc_index,description,lpar_name\n"),
     ):
         assert await list_dedicated_pcie_slot_rows(_config(), "sys1") == []
@@ -69,7 +69,7 @@ async def test_dedicated_slot_reader_accepts_header_only_output() -> None:
 )
 async def test_dedicated_slot_reader_rejects_schema_drift(output: str) -> None:
     with (
-        patch("hmc_mcp.ssh.network.run_hmc_command", AsyncMock(return_value=output)),
+        patch("hmc_mcp.ssh.io_inventory.run_hmc_command", AsyncMock(return_value=output)),
         pytest.raises(ValueError, match="header|columns"),
     ):
         await list_dedicated_pcie_slot_rows(_config(), "sys1")
@@ -83,11 +83,11 @@ async def test_dedicated_inventory_normalizes_identity_owner_and_unknowns() -> N
     ]
     with (
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.resolve_ssh_names",
+            "hmc_mcp.operations.virtualization.pcie.resolve_ssh_names",
             AsyncMock(return_value=("sys1", None)),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_dedicated_pcie_slot_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_dedicated_pcie_slot_rows",
             AsyncMock(return_value=rows),
         ),
     ):
@@ -109,11 +109,11 @@ async def test_dedicated_inventory_rejects_blank_identity() -> None:
     rows = [{"drc_index": "", "description": "slot", "lpar_name": ""}]
     with (
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.resolve_ssh_names",
+            "hmc_mcp.operations.virtualization.pcie.resolve_ssh_names",
             AsyncMock(return_value=("sys1", None)),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_dedicated_pcie_slot_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_dedicated_pcie_slot_rows",
             AsyncMock(return_value=rows),
         ),pytest.raises(ValueError, match="drc_index")
     ):
@@ -127,11 +127,11 @@ async def test_dedicated_inventory_rejects_whitespace_identity_and_normalizes_op
     rows = [{"drc_index": "   ", "description": " ", "lpar_name": "\t"}]
     with (
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.resolve_ssh_names",
+            "hmc_mcp.operations.virtualization.pcie.resolve_ssh_names",
             AsyncMock(return_value=("sys1", None)),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_dedicated_pcie_slot_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_dedicated_pcie_slot_rows",
             AsyncMock(return_value=rows),
         ),pytest.raises(ValueError, match="drc_index")
     ):
@@ -143,11 +143,11 @@ async def test_dedicated_inventory_normalizes_whitespace_optional_fields() -> No
     rows = [{"drc_index": "21010004", "description": " ", "lpar_name": "\t"}]
     with (
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.resolve_ssh_names",
+            "hmc_mcp.operations.virtualization.pcie.resolve_ssh_names",
             AsyncMock(return_value=("sys1", None)),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_dedicated_pcie_slot_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_dedicated_pcie_slot_rows",
             AsyncMock(return_value=rows),
         ),
     ):
@@ -190,25 +190,25 @@ async def test_sriov_inventories_use_admitted_read_projections() -> None:
         }
     ]
     with (
-        patch("hmc_mcp.operations.io_virtualization.pcie.resolve_ssh_names", resolver),
+        patch("hmc_mcp.operations.virtualization.pcie.resolve_ssh_names", resolver),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.read_sriov_environment",
+            "hmc_mcp.operations.virtualization.pcie.read_sriov_environment",
             AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_sriov_adapter_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_sriov_adapter_rows",
             AsyncMock(return_value=adapter_rows),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_sriov_physical_port_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_sriov_physical_port_rows",
             AsyncMock(return_value=physical_rows),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_sriov_configured_logical_port_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_sriov_configured_logical_port_rows",
             AsyncMock(return_value=logical_rows),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_sriov_unconfigured_logical_port_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_sriov_unconfigured_logical_port_rows",
             AsyncMock(
                 return_value=[
                     {
@@ -258,15 +258,15 @@ async def test_sriov_physical_inventory_normalizes_port_state() -> None:
     ]
     with (
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.resolve_ssh_names",
+            "hmc_mcp.operations.virtualization.pcie.resolve_ssh_names",
             AsyncMock(return_value=("sys1", None)),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.read_sriov_environment",
+            "hmc_mcp.operations.virtualization.pcie.read_sriov_environment",
             AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_sriov_physical_port_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_sriov_physical_port_rows",
             AsyncMock(return_value=rows),
         ),
     ):
@@ -288,15 +288,15 @@ async def test_sriov_physical_inventory_rejects_malformed_port_state(state: str)
     ]
     with (
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.resolve_ssh_names",
+            "hmc_mcp.operations.virtualization.pcie.resolve_ssh_names",
             AsyncMock(return_value=("sys1", None)),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.read_sriov_environment",
+            "hmc_mcp.operations.virtualization.pcie.read_sriov_environment",
             AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_sriov_physical_port_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_sriov_physical_port_rows",
             AsyncMock(return_value=rows),
         ),
         pytest.raises(HMCCLIError, match="physical-port state"),
@@ -322,15 +322,15 @@ async def test_sriov_physical_inventory_validates_unselected_port_state() -> Non
     ]
     with (
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.resolve_ssh_names",
+            "hmc_mcp.operations.virtualization.pcie.resolve_ssh_names",
             AsyncMock(return_value=("sys1", None)),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.read_sriov_environment",
+            "hmc_mcp.operations.virtualization.pcie.read_sriov_environment",
             AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_sriov_physical_port_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_sriov_physical_port_rows",
             AsyncMock(return_value=rows),
         ),
         pytest.raises(HMCCLIError, match="physical-port state"),
@@ -342,15 +342,15 @@ async def test_sriov_physical_inventory_validates_unselected_port_state() -> Non
 async def test_sriov_physical_inventory_rejects_both_empty_supported_levels() -> None:
     with (
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.resolve_ssh_names",
+            "hmc_mcp.operations.virtualization.pcie.resolve_ssh_names",
             AsyncMock(return_value=("sys1", None)),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.read_sriov_environment",
+            "hmc_mcp.operations.virtualization.pcie.read_sriov_environment",
             AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_sriov_physical_port_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_sriov_physical_port_rows",
             AsyncMock(return_value=[]),
         ),
         pytest.raises(SriovLogicalPortCapabilityError),
@@ -363,14 +363,14 @@ async def test_sriov_physical_inventory_checks_environment_before_port_read() ->
     physical_rows = AsyncMock()
     with (
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.resolve_ssh_names",
+            "hmc_mcp.operations.virtualization.pcie.resolve_ssh_names",
             AsyncMock(return_value=("sys1", None)),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.read_sriov_environment",
+            "hmc_mcp.operations.virtualization.pcie.read_sriov_environment",
             AsyncMock(return_value=("V9R1", "8375-42A")),
         ),
-        patch("hmc_mcp.operations.io_virtualization.pcie.list_sriov_physical_port_rows", physical_rows),
+        patch("hmc_mcp.operations.virtualization.pcie.list_sriov_physical_port_rows", physical_rows),
     ):
         result = await list_sriov_physical_ports(_hmc(), "system-uuid", "a1")
 
@@ -382,19 +382,19 @@ async def test_sriov_physical_inventory_checks_environment_before_port_read() ->
 async def test_unconfigured_logical_port_requires_unique_physical_parent() -> None:
     with (
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.resolve_ssh_names",
+            "hmc_mcp.operations.virtualization.pcie.resolve_ssh_names",
             AsyncMock(return_value=("sys1", None)),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.read_sriov_environment",
+            "hmc_mcp.operations.virtualization.pcie.read_sriov_environment",
             AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_sriov_configured_logical_port_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_sriov_configured_logical_port_rows",
             AsyncMock(return_value=[]),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_sriov_unconfigured_logical_port_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_sriov_unconfigured_logical_port_rows",
             AsyncMock(
                 return_value=[
                     {
@@ -406,7 +406,7 @@ async def test_unconfigured_logical_port_requires_unique_physical_parent() -> No
             ),
         ),
         patch(
-            "hmc_mcp.operations.io_virtualization.pcie.list_sriov_physical_port_rows",
+            "hmc_mcp.operations.virtualization.pcie.list_sriov_physical_port_rows",
             AsyncMock(return_value=[]),
         ),
         pytest.raises(RuntimeError, match="ambiguous physical-port parent"),

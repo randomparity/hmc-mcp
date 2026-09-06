@@ -332,7 +332,7 @@ async def test_delete_storage_mapping_propagates_parent_post_failure(mock_hmc):
 async def test_delete_storage_mapping_rejects_empty_selector(mock_hmc):
     fetched = mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=VIOS_PARENT))
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="must not be empty"):
+        with pytest.raises(ValueError, match="must not be empty"):
             await hmc.delete_storage_mapping(VIOS_UUID, "")
     assert not fetched.called
 

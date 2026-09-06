@@ -197,4 +197,7 @@ async def update_firmware(
     job = await hmc.submit_platform_update(
         system_uuid, platform_update_job(platform_update)
     )
-    return await _wait_for_platform_update(hmc, job, wait, timeout_seconds, poll_interval)
+    raw_job = dict(job) if job is not None else None
+    return await _wait_for_platform_update(
+        hmc, raw_job, wait, timeout_seconds, poll_interval
+    )

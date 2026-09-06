@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from fastmcp import FastMCP
+from fastmcp import Client, FastMCP
 
 from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.authorization.access_policy import (
@@ -17,11 +17,13 @@ from hmc_mcp.authorization.access_policy import (
     compile_access_policy,
 )
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.operations.inventory.capacity import CapacitySummary
 from hmc_mcp.server import (
     PERMISSIONS_TOOL_NAME,
     TOOL_SECURITY,
     create_mcp,
 )
+from hmc_mcp.server_tools.inventory import capacity
 
 
 def _legacy(*, include_arbitrary_command: bool = False):
@@ -47,9 +49,46 @@ def _names(application) -> set[str]:
     return {tool.name for tool in asyncio.run(application.list_tools())}
 
 
+def _call(application, tool: str, arguments: dict):
+    async def _go():
+        async with Client(application) as client:
+            result = await client.call_tool(tool, arguments)
+            return result.structured_content
+
+    return asyncio.run(_go())
+
+
 READ_ONLY_GRANT = [
     {"effects": ["read"], "connections": ["<default>"], "targets": "all-targets"}
 ]
+
+
+def test_fastmcp_serializes_capacity_dataclasses_without_adapter_conversion(monkeypatch):
+    summary = CapacitySummary(
+        system_uuid="system-id",
+        system_name="system",
+        total_memory_mib=1024,
+        assigned_memory_mib=512,
+        free_memory_mib=512,
+        total_proc_units=2.0,
+        assigned_proc_units=1.0,
+        free_proc_units=1.0,
+        total_lpars=1,
+        running_lpars=1,
+    )
+    monkeypatch.setattr(
+        capacity, "with_client", lambda _operation, *, profile=None: [summary]
+    )
+    application = FastMCP("capacity-serialization")
+    capacity.register_tools(
+        application,
+        permits=lambda _name: True,
+        authorize=lambda *_args: None,
+    )
+
+    result = _call(application, "hmc_capacity_report", {})
+
+    assert result == {"result": [summary.__dict__]}
 
 
 def test_a_read_only_policy_registers_only_read_tools():

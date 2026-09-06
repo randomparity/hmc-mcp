@@ -5,36 +5,38 @@ from __future__ import annotations
 from ..errors import HMCError
 
 
-def translate_pcm_error(exc: HMCError) -> None:
+def translate_pcm_error(exc: HMCError) -> HMCError:
     if exc.status_code == 406:
-        raise HMCError(
+        return HMCError(
             "PCM is not licensed or not enabled on this HMC. "
             "Enable PCM in the HMC settings or use an HMC that has the PCM feature licensed.",
             exc.status_code,
             body=exc.body,
-        ) from exc
+        )
     if exc.status_code == 403:
-        raise HMCError(
+        return HMCError(
             "The connecting user does not have PCM authority on this HMC. "
             "Grant the user PCM authority in HMC user management and retry.",
             exc.status_code,
             body=exc.body,
-        ) from exc
+        )
+    return exc
 
 
-def translate_template_error(exc: HMCError) -> None:
+def translate_template_error(exc: HMCError) -> HMCError:
     if exc.status_code == 406:
-        raise HMCError(
+        return HMCError(
             "Partition templates are not licensed or not supported on this HMC. "
             "Enable the partition template feature in HMC settings or use an HMC with the feature licensed.",
             exc.status_code,
             body=exc.body,
-        ) from exc
+        )
+    return exc
 
 
-def translate_virtual_network_create_error(exc: HMCError) -> None:
+def translate_virtual_network_create_error(exc: HMCError) -> HMCError:
     if exc.status_code == 406:
-        raise HMCError(
+        return HMCError(
             "The HMC rejected the virtual network create request (Not Acceptable). "
             "Likely causes: (1) Accept or Content-Type header mismatch — "
             "the HMC may require a more specific media type; "
@@ -42,4 +44,5 @@ def translate_virtual_network_create_error(exc: HMCError) -> None:
             "HMC_SCHEMA_VERSION=V1_0 in the environment and retrying.",
             exc.status_code,
             body=exc.body,
-        ) from exc
+        )
+    return exc

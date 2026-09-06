@@ -6,8 +6,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from hmc_mcp.operations.lpar import core as lpar_operations
 from hmc_mcp.operations.lpar.core import list_lpars
-from hmc_mcp.operations.systems import get_system, list_systems
+from hmc_mcp.operations.systems.core import get_system, list_systems
 
 
 @pytest.mark.asyncio
@@ -37,10 +38,18 @@ async def test_get_system_routes_names_and_uuids_to_the_correct_client_method() 
 
 
 @pytest.mark.asyncio
-async def test_lpar_inventory_rejects_conflicting_selectors() -> None:
+async def test_lpar_inventory_composes_system_and_state_filters(monkeypatch) -> None:
     hmc = AsyncMock()
+    hmc.list_logical_partitions.return_value = [
+        {"UUID": "one", "Resource": {"PartitionState": "running"}},
+        {"UUID": "two", "Resource": {"PartitionState": "not activated"}},
+    ]
+    resolve_system = AsyncMock(return_value="system-uuid")
+    monkeypatch.setattr(lpar_operations, "resolve_system_uuid", resolve_system)
 
-    with pytest.raises(ValueError, match="at most one"):
-        await list_lpars(hmc, "system-1", "running")
+    result = await list_lpars(hmc, "system-1", "running")
 
+    resolve_system.assert_awaited_once_with(hmc, "system-1")
+    hmc.list_logical_partitions.assert_awaited_once_with("system-uuid")
     hmc.search_uom.assert_not_awaited()
+    assert result == [{"UUID": "one", "Resource": {"PartitionState": "running"}}]

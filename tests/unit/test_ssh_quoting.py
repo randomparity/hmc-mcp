@@ -22,8 +22,8 @@ import pytest
 from conftest import mock_uuid_resolution
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.io_virtualization.validation import require_command_safe_text
-from hmc_mcp.operations.io_virtualization.vnic import (
+from hmc_mcp.operations.virtualization.validation import require_command_safe_text
+from hmc_mcp.operations.virtualization.vnic import (
     VnicBackingSelector,
     _validate_vnic_backing_selector,
 )
@@ -33,15 +33,15 @@ from hmc_mcp.server_tools.lpar.configuration import (
 from hmc_mcp.server_tools.lpar.profiles import (
     hmc_backup_lpar_profiles,
 )
-from hmc_mcp.server_tools.system_resources import (
+from hmc_mcp.server_tools.systems.resources import (
     hmc_list_memory_pools,
     hmc_remove_memory_pool,
 )
-from hmc_mcp.server_tools.vios import (
+from hmc_mcp.server_tools.vios.core import (
     hmc_backup_vios,
     hmc_restore_vios,
 )
-from hmc_mcp.ssh.network import list_io_slots
+from hmc_mcp.ssh.io_inventory import list_io_slots
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"

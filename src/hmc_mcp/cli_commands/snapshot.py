@@ -6,13 +6,12 @@ import os
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
-from typing import NoReturn
 
 import typer
 
-from hmc_mcp.cli_commands.output import print_json
-from hmc_mcp.cli_commands.runtime import client, run
-from hmc_mcp.operations.affinity import PolicyState
+from hmc_mcp.cli_commands.output import fail, print_json
+from hmc_mcp.cli_commands.runtime import run_cli_coroutine, with_client
+from hmc_mcp.operations.affinity.rest import PolicyState
 from hmc_mcp.snapshots.models import (
     SnapshotValidationError,
     inspect_snapshot,
@@ -21,11 +20,6 @@ from hmc_mcp.snapshots.models import (
     serialize_snapshot,
 )
 from hmc_mcp.snapshots.operations import assess_snapshot_affinity, capture_lpar_snapshot
-
-
-def fail(error: Exception) -> NoReturn:
-    typer.echo(f"Error: {error}", err=True)
-    raise typer.Exit(1) from error
 
 
 def _publish(path: Path, text: str) -> None:
@@ -53,17 +47,15 @@ def snapshot_capture(
 ) -> None:
     """Capture one portable LPAR snapshot without modifying the HMC."""
 
-    async def _go():
-        async with client() as hmc:
-            return await capture_lpar_snapshot(
+    try:
+        snapshot = with_client(
+            lambda hmc: capture_lpar_snapshot(
                 hmc,
                 system_name_or_uuid,
                 lpar_name_or_uuid,
                 profile_name,
             )
-
-    try:
-        snapshot = run(_go)
+        )
         _publish(output, serialize_snapshot(snapshot))
     except (SnapshotValidationError, OSError) as exc:
         fail(exc)
@@ -100,7 +92,7 @@ def snapshot_assess_affinity(
 ) -> None:
     """Assess captured and explicit current affinity evidence without mutation."""
     try:
-        result = run(
+        result = run_cli_coroutine(
             lambda: assess_snapshot_affinity(
                 read_snapshot_text(path),
                 current_score=current_score,
