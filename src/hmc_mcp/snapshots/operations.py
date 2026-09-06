@@ -69,25 +69,33 @@ def _captured_lpar_score(snapshot: LparSnapshot) -> int | None:
     current = scores.data.get("current")
     if not isinstance(current, dict):
         return None
-    rows = current.get("lpar")
-    if isinstance(rows, dict):
-        rows = [rows]
-    if not isinstance(rows, list):
-        return None
-    identity = snapshot.source.lpar
-    matches: list[dict[str, Any]] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        has_name = "lpar_name" in row
-        has_id = "lpar_id" in row
-        name_matches = not has_name or row.get("lpar_name") == identity.name
-        id_matches = not has_id or str(row.get("lpar_id")) == str(identity.partition_id)
-        if name_matches and id_matches and (has_name or has_id):
-            matches.append(row)
+    matches = _matching_lpar_score_rows(current.get("lpar"), snapshot.source.lpar)
     if len(matches) != 1:
         return None
-    raw = matches[0].get("curr_lpar_score")
+    return _canonical_lpar_score(matches[0].get("curr_lpar_score"))
+
+
+def _matching_lpar_score_rows(value: object, identity: LparIdentity) -> list[dict[str, Any]]:
+    """Return score rows that identify the captured partition."""
+    rows = [value] if isinstance(value, dict) else value
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if _is_lpar_score_match(row, identity)]
+
+
+def _is_lpar_score_match(row: object, identity: LparIdentity) -> bool:
+    """Return whether a score row names or identifies the captured partition."""
+    if not isinstance(row, dict):
+        return False
+    has_name = "lpar_name" in row
+    has_id = "lpar_id" in row
+    name_matches = not has_name or row.get("lpar_name") == identity.name
+    id_matches = not has_id or str(row.get("lpar_id")) == str(identity.partition_id)
+    return name_matches and id_matches and (has_name or has_id)
+
+
+def _canonical_lpar_score(raw: object) -> int | None:
+    """Parse an integer score only from the snapshot's canonical scalar form."""
     if isinstance(raw, bool) or not isinstance(raw, (int, str)):
         return None
     if isinstance(raw, str) and re.fullmatch(r"(?:0|[1-9][0-9]{0,2})", raw) is None:
