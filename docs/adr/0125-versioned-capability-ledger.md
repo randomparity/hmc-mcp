@@ -21,7 +21,8 @@ Store three versioned UTF-8 JSON artifacts under `docs/capabilities/`:
 
 - `corpora.json` records the four snapshots and every captured or navigation
   topic with its source URL, capture time or explicit unknown, SHA-256, and
-  operation/schema/overview/navigation classification.
+  operation/schema/overview/navigation classification. It also records every
+  derived command synopsis/option and REST resource/method/field source unit.
 - `rows.json` records normalized capabilities at operation, mode, and parameter
   granularity. Each row cites its source topics and carries exactly one honest
   disposition: supported, coverage child, proposed exclusion, or unknown.
@@ -30,10 +31,12 @@ Store three versioned UTF-8 JSON artifacts under `docs/capabilities/`:
   surfaces and existing tests.
 
 Use a standard-library validator as the single structural reader. Its default
-mode validates the checked-in records and their exact registry join offline. An
-explicit source-root option additionally verifies the retained corpus files by
-path and hash. Unknown and proposed-exclusion rows are structurally valid but
-prevent a complete-coverage result.
+mode validates the checked-in records, exact source-unit accounting, and a
+structured registry join including tool names, handler signatures, registered
+MCP surfaces, and referenced implementation/test paths. An explicit four-source
+option additionally regenerates source units and verifies the retained corpus
+files by path and hash. Unknown and proposed-exclusion rows are structurally
+valid but prevent a complete-coverage result.
 
 The ledger records document presence separately from explicit HMC capability
 requirements. A topic absent from one snapshot never proves firmware does not

@@ -10,8 +10,9 @@ outside Git and are supplied only to the explicit provenance verification arm.
 
 Tech stack: Python 3.11 standard library, JSON, pytest, just, and prek.
 
-Expected implementation size: 1200–2200 changed lines (L) — four generated inventory
-artifacts plus a focused validator and tests over 826 captured source pages.
+Expected implementation size: 9000–15000 changed lines (L) — measured candidates include
+832 topic records, 2544 command synopsis lines, 4696 command option rows, 5125 REST table
+rows, and 1300 REST fenced blocks before normalized capability rows, validator, and tests.
 
 ## Global Constraints
 
@@ -49,21 +50,25 @@ This task establishes the reader before producing the full dataset.
 Interfaces:
 
 - `load_json(path: Path) -> dict[str, object]` rejects malformed or duplicate-key JSON.
-- `validate_inventory(root: Path, registry_operations: Collection[str]) -> Report`
+- `discover_registry() -> tuple[RegistryTool, ...]` returns tool name, operation ID,
+  unwrapped handler module/name/signature, and registered MCP surface.
+- `validate_inventory(root: Path, registry: Collection[RegistryTool]) -> Report`
   returns counts, unknown IDs, and errors without reading external corpora.
-- `verify_corpora(root: Path, source_root: Path) -> list[str]` validates regular files,
-  exact relative paths, and SHA-256 values without following symlinks.
+- `verify_corpora(root: Path, sources: Mapping[str, Path]) -> list[str]` validates four
+  named regular-file trees, exact relative paths, SHA-256 values, and regenerated source
+  units without following symlinks.
 - `Report.complete` is false when any error, unknown, or proposed exclusion remains.
 - Task 2 supplies the three JSON files; Task 3 wires the command into repository gates.
 
 Verification:
 
 - Mode: focused-test. Schema and reference integrity are observed by tests for duplicate
-  keys/IDs, dangling topic/row references, malformed dispositions, missing fields, and
-  an unaccounted registry operation. Before implementation these imports fail. Green:
+  keys/IDs, dangling topic/source-unit/row references, malformed dispositions, missing
+  fields, and an unaccounted registry operation. Before implementation these imports fail. Green:
   `uv run --no-sync pytest -q tests/scripts/test_check_capability_inventory.py --no-cov`.
 - Mode: focused-test. Corpus integrity is observed by missing, extra, changed, symlink,
-  and traversal fixtures. Before implementation the verification entry point is absent.
+  traversal, and omitted regenerated-unit fixtures. Before implementation the verification
+  entry point is absent.
   Green: the same focused command.
 - Mode: focused-test. Completeness state is observed by fixtures containing unknown and
   proposed-exclusion rows. Before implementation no report exists. Green: the same command.
@@ -73,11 +78,14 @@ Steps:
 1. Add focused tests with minimal JSON fixtures and confirm import/contract failures.
 2. Add immutable report records, strict JSON loading, and cross-record validation.
 3. Add confined source-root traversal and byte hashing, rejecting non-regular paths.
-4. Add a CLI whose zero exit means structurally valid and whose summary separately states
+4. Add structured registry discovery and validate handler signatures, claimed surfaces,
+   source-parameter mappings, and repository-relative implementation/test paths.
+5. Add a CLI whose zero exit means structurally valid and whose summary separately states
    whether semantic coverage is complete. Corpus mismatch and structural errors exit nonzero.
-5. Run the focused command; expect all tests to pass. Introduce one missing topic and one
-   registry operation fault in turn, observe failures, restore, and rerun green.
-6. Commit as `feat: validate capability inventory`.
+6. Run the focused command; expect all tests to pass. Introduce one missing source unit,
+   registry operation, handler parameter, and test path fault in turn, observe failures,
+   restore, and rerun green.
+7. Commit as `feat: validate capability inventory`.
 
 Acceptance: invalid records fail with an artifact, record ID, and correction; valid unknowns
 remain visible without being treated as structural corruption.
@@ -89,19 +97,25 @@ This task creates the reference denominator independently of current implementat
 Interfaces:
 
 - The three JSON roots use `format_version: 1` and arrays named `corpora`, `topics`,
-  `rows`, and `operations` as specified in ADR 0125.
+  `source_units`, `rows`, and `operations` as specified in ADR 0125.
 - Stable topic IDs combine corpus ID and source slug. Stable capability IDs describe
   semantic operation and mode; they never depend on the current tool name.
-- `source_refs` cite topic IDs plus heading/field evidence; `parameters` name distinct
-  inputs and constraints; `releases` records snapshot presence and explicit requirements.
+- `source_refs` cite source-unit IDs; `parameters` name distinct inputs and constraints;
+  `releases` records snapshot presence and explicit requirements. Each source unit maps
+  exactly once to a row or explicit non-operation classification.
 - Disposition records use one of `supported`, `coverage-child`, `proposed-exclusion`,
   or `unknown`; coverage children name existing issues from #620's decomposition.
 
 Verification:
 
-- Mode: focused-test. Complete source-topic accounting is observed by running the validator
-  with the four retained corpus directories; omission or content drift fails. Green:
-  `uv run --no-sync python scripts/check_capability_inventory.py --source-root docs/refs`.
+- Mode: focused-test. Complete source-topic and source-unit accounting is observed by running
+  the validator with four explicit retained corpus directories; omission or content drift
+  fails. Green: `uv run --no-sync python scripts/check_capability_inventory.py --source
+  commands-p10=/home/dave/src/hmc-mcp/docs/refs/hmc-commands-p10 --source
+  commands-p11=/home/dave/src/hmc-mcp/docs/refs/hmc-commands-p11 --source
+  rest-p10=/home/dave/src/hmc-mcp/docs/refs/hmc-rest-api-p10 --source
+  rest-p11=/home/dave/src/hmc-mcp/docs/refs/hmc-rest-api-p11` (the durable command records
+  only logical source IDs; the local absolute paths remain private workflow evidence).
 - Mode: focused-test. Every current operation ID is reconciled by importing the server's
   `TOOL_SECURITY` keys in the test and passing their `operation` values to the validator.
   Removing one join must fail; restore it and rerun the focused suite.
@@ -112,8 +126,10 @@ Verification:
 
 Steps:
 
-1. Generate the corpus manifest deterministically from YAML front matter and file bytes,
-   including navigation documents and explicit unknown capture times.
+1. Generate the corpus and source-unit manifest deterministically from YAML front matter,
+   file bytes, command synopsis/option structures, REST resource/method/property/field
+   structures, job names, and version/capability statements, including navigation documents
+   and explicit unknown capture times.
 2. Extract candidate CLI synopsis modes/options and REST resource/method/job rows, then
    manually review headings, nested attribute tables, version notes, and overview/schema
    classifications. Candidate extraction is temporary and is not committed as authority.
@@ -122,15 +138,19 @@ Steps:
 4. Map supported scopes to installable handler/CLI/MCP surfaces and existing tests. Map
    uncovered scopes to the concrete #620 child that owns them; proposed exclusions remain
    explicit and unknown questions remain visible.
-5. Reconcile all distinct current `ToolSecurity.operation` values, explaining composites
-   whose operation combines several reference rows or is repository-specific.
+5. Reconcile all distinct current `ToolSecurity.operation` values and discovered tool
+   names/handlers/MCP surfaces. For every supported source parameter, record a real handler
+   parameter, explicit constant/default, or cited translation path; explain composites whose
+   operation combines several reference rows or is repository-specific. Record CLI exposure
+   only where its registration is discovered and validated.
 6. Run both focused commands and inspect the completeness summary and every unknown or
    proposed-exclusion row. Expect structural validity; do not claim complete coverage while
    either list is nonempty.
 7. Commit as `docs: inventory HMC reference capabilities`.
 
-Acceptance: all 826 captured pages and six navigation/overview files are accounted for;
-every row has mode/parameter detail and a disposition; every registry operation joins.
+Acceptance: all 826 captured pages and six navigation/overview files and every derived
+source unit are accounted for; every row has mode/parameter detail and a disposition;
+every registry operation joins with valid implementation evidence.
 
 ## Task 3: Make inventory drift a repository guardrail
 

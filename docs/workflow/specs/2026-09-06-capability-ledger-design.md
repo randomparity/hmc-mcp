@@ -1,6 +1,6 @@
 # CLI/REST capability inventory design
 
-Status: proposed; representation awaits maintainer approval before implementation.
+Status: approved by the maintainer in the active quest conversation on 2026-09-06.
 Authority: issue #621, parent #620 requirements 1–5, and frozen scope annotation
 `q621-b3084fca` at https://github.com/randomparity/hmc-mcp/issues/621#issuecomment-5558655309.
 
@@ -41,9 +41,13 @@ Use UTF-8 JSON artifacts under `docs/capabilities/`, with an explicit integer fo
 version. Keep records separate by responsibility, with no database or new dependency:
 
 - `corpora.json`: four corpus identities, source roots, original archive SHA-256 values,
-  and the complete topic manifest. A topic contains its corpus-relative path, source URL,
-  capture timestamp or explicit unknown, file SHA-256, and classification
-  (`operation`, `schema`, `overview`, or `navigation`) with a reason.
+  and the complete topic and source-unit manifest. A topic contains its corpus-relative
+  path, source URL, capture timestamp or explicit unknown, file SHA-256, and classification
+  (`operation`, `schema`, `overview`, or `navigation`) with a reason. Its source units
+  enumerate every structured semantic candidate in source order: command synopsis lines,
+  option/attribute table rows, REST resource blocks, method rows, property/field rows, job
+  names, and version/capability statements. Each unit carries a stable ID, kind, source
+  line, and normalized text hash.
 - `rows.json`: stable capability IDs and their semantic units. Each row contains an
   operation, explicit mode/selectors, parameter names and constraints, cited topic IDs
   and source locations, documented release/capability prerequisites or explicit unknown,
@@ -73,15 +77,29 @@ hashing and path handling; reuse existing registry discovery for operation IDs.
 
 The default offline validation checks version/shape, duplicate IDs and JSON keys,
 references, dispositions, prerequisite unknowns, complete topic accounting, and exact
-registry operation reconciliation. An added or removed registered operation fails with
-an actionable record ID until reconciled. Unknown rows are allowed in the honest ledger
-but listed in the report; they cannot produce a complete-coverage verdict.
+source-unit accounting. Every source unit must map to exactly one capability row or an
+explicit non-operation classification. An added or removed registered operation fails with
+an actionable record ID until reconciled. Unknown rows are allowed in the honest ledger but
+listed in the report; they cannot produce a complete-coverage verdict. The checked-in unit
+manifest is regenerated from the same retained corpus bytes during explicit source
+verification, so deleting a real mode or parameter unit from both the manifest and rows fails.
 
-An explicit corpus-verification invocation accepts the retained corpus directory and
-checks all and only the manifest's source files and their byte hashes. It rejects path
-traversal and non-regular source files, reports missing/extra/changed files, and never
-downloads, executes or rewrites a source. Ordinary CI needs only the checked-in artifacts;
-this quest must also run the corpus arm against all four actual supplied corpora.
+An explicit corpus-verification invocation accepts four named corpus directories and checks
+all and only each manifest subroot's source files, byte hashes, and derived source units. It
+rejects path traversal and non-regular source files, reports missing/extra/changed files,
+and never downloads, executes or rewrites a source. Unrelated siblings outside those four
+subroots are outside the check. Ordinary CI needs only the checked-in artifacts; this quest
+must also run the corpus arm against the four actual supplied directories from the source
+checkout because ignored corpora are not copied into a Git worktree.
+
+For implementation joins, the validator discovers a structured view of every registered
+tool: tool name, operation ID, unwrapped handler module/name/signature, and registered MCP
+surface. It validates every claimed module and test path as a regular repository file.
+Each `supported` mapping accounts for every source parameter as a real handler parameter,
+an explicit constant/default, or a cited translation in an existing implementation path.
+The validator mechanically checks real handler parameters and paths; explicit constants and
+translations remain reviewable assertions. CLI exposure is recorded only when a concrete CLI
+registration can be discovered and validated; otherwise the ledger makes no CLI claim.
 
 Add a `capability-inventory` recipe to `static` and the corresponding prek hook. The
 validator prints separate structural-validity and implementation-completeness results.
@@ -95,11 +113,13 @@ just command headings and REST method tables.
 
 ## Verification
 
-Focused tests exercise missing/extra topics, duplicate IDs/keys, dangling references,
-missing registry operations, malformed supported/disposition records, unsafe paths and
-hash mismatches. Fault injection must show the tests reject omitted topics and registry
-operations. A corpus fixture with multiple modes and nested parameters proves that
-topic-level accounting alone cannot substitute for the authored capability rows.
+Focused tests exercise missing/extra topics and source units, duplicate IDs/keys, dangling
+references, missing registry operations, nonexistent handlers/tests/surfaces, handler
+signature mismatches, malformed supported/disposition records, unsafe paths and hash
+mismatches. Fault injection must show the tests reject omitted real-shape modes/parameters,
+topics, registry operations, and supported-surface evidence. A corpus fixture with multiple
+modes and nested parameters proves that topic-level accounting alone cannot substitute for
+the source-unit and capability rows.
 
 Run the real validator against the committed inventory and current registry, then verify
 all four retained corpora. Run `just verify` and `uv run --no-sync prek run --all-files`
