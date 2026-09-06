@@ -49,15 +49,17 @@ Verification:
 
 - Contract: one emitted result document keeps config and artifacts in distinct objects. Mode: focused-test. Add an async runner test; it fails while `context` is emitted and passes with `uv run --no-sync pytest tests/test_live_runner.py -q`.
 - Contract: restoration modifies only declared artifacts and rejects legacy or malformed documents without mutation. Mode: focused-test. Add restoration cases; they fail before the new reader and pass with the same command.
+- Contract: a selected run aborts before scenario dispatch when saved config differs or artifact decoding is malformed, leaving its existing artifacts unchanged. Mode: focused-test. Add mismatch and partial-decode cases; they fail before the guard and pass with the same command.
 
 Steps:
 
 1. Replace scenario reads with `state.config` and mutations with `state.artifacts`; keep local aliases only when they name the explicit owner.
 2. Serialize `asdict(state.config)` and `asdict(state.artifacts)` under their envelope keys.
-3. Replace `_restore_ctx_from_results` with a declared-artifact-field reader; reject missing or non-object `artifacts`, including legacy `context` envelopes.
-4. Add focused tests for emitted shape, artifact restoration, config non-mutation, and legacy rejection; run the focused suite.
+3. Replace `_restore_ctx_from_results` with a declared-artifact-field reader; require saved config to equal `asdict(state.config)`, decode all artifact fields into a temporary value, and replace `state.artifacts` only on complete success. Reject missing or non-object members, including legacy `context` envelopes.
+4. Make restoration failure return a pre-scenario failure for a selected run; do not dispatch a scenario with blank or partially restored state.
+5. Add focused tests for emitted shape, artifact restoration, config non-mutation, legacy rejection, config mismatch, atomic malformed decode, and no scenario dispatch; run the focused suite.
 
-Acceptance: restoration contains no config special cases and cannot mutate `state.config`.
+Acceptance: restoration contains no config special cases, cannot mutate `state.config`, cannot partially mutate artifacts, and cannot dispatch a selected scenario after identity or decode failure.
 
 ## Final verification
 

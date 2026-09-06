@@ -22,7 +22,10 @@ without an alias or legacy-file compatibility reader.
 
 Scenario code states whether each value is configured or discovered. Result
 restoration has a bounded mutable target and cannot alter configuration. Prior
-mixed result files are intentionally unsupported and must be regenerated.
+mixed result files are intentionally unsupported and must be regenerated. A
+selected invocation restores artifacts only from a result document whose saved
+config exactly equals its current config; malformed or mismatched documents
+fail before scenario dispatch and cannot partially alter artifacts.
 
 ## Considered & rejected
 

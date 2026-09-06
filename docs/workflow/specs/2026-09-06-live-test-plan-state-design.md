@@ -16,20 +16,24 @@ as `config` and `artifacts`. Scenario code reads configuration through
 ## Persisted contract
 
 The runner writes exactly `{"config": ..., "artifacts": ..., "results": ...}`.
-`_restore_artifacts_from_results()` accepts only an object with an `artifacts`
-object, restores only declared artifact fields, and reports malformed input
-without changing the new state. A selected-subtask invocation still restores
-from its prior results file. Old `{"context": ...}` documents are rejected as
-unsupported pre-release output rather than silently mixing configuration into
-mutable state.
+`_restore_artifacts_from_results()` accepts only objects whose saved `config`
+equals `asdict(state.config)` and whose `artifacts` object decodes completely
+into declared artifact fields. It constructs a temporary artifact value and
+replaces `state.artifacts` only after that validation succeeds. Missing,
+legacy, malformed, or configuration-mismatched documents abort a selected run
+before scenario dispatch. A selected-subtask invocation still restores from its
+prior results file when that identity matches. Old `{"context": ...}` documents
+are rejected as unsupported pre-release output rather than silently mixing
+configuration into mutable state.
 
 ## Failure handling and verification
 
 Configuration parsing remains before MCP creation. A frozen config rejects
 assignment, and restoration never writes into it. Tests prove configuration
-immutability, artifact-only restoration, rejection of legacy/malformed files,
-and the emitted envelope. Existing scenario tests are updated to exercise the
-new explicit ownership paths.
+immutability, artifact-only atomic restoration, rejection of legacy,
+malformed, and configuration-mismatched files before dispatch, and the emitted
+envelope. Existing scenario tests are updated to exercise the new explicit
+ownership paths.
 
 ## Non-goals
 
