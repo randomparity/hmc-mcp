@@ -53,8 +53,10 @@ Every evidence observation uses a uniform object with these fields:
 
 - `id`: a stable catalog-wide ID;
 - `channel`: `contract-review`, `automated`, or `live`;
-- `scope`: an object whose parsed canonical scope identity equals an entry in the
-  operation's `implemented_scope` list; JSON member order and whitespace are irrelevant;
+- `scope`: a canonical scope object; for current observations its parsed identity equals
+  an entry in the operation's `implemented_scope` list, while stale observations retain
+  the previously implemented identity even after removal or narrowing; JSON member order
+  and whitespace are irrelevant;
 - `scenario`: an object with a stable non-empty `id` and public-safe non-empty
   `description`;
 - `result`: `not-run`, `skipped`, `failed`, or `passed`;
@@ -105,7 +107,9 @@ and live environment. Environment identity is the tuple of
 order, independent of JSON member order. Revisions are evidence identity fields but do
 not create a second current slot: a new revision must stale the old observation.
 Historical observations for that key must be stale. Different scenarios and live
-environments remain separate keys and may carry mixed current results.
+environments remain separate keys and may carry mixed current results. A stale
+observation's structurally valid historical scope need not remain in the operation's
+current implemented or missing lists; its currency and invalidator make it non-promoting.
 
 The validator computes the implementation fingerprint from the relative path and bytes of
 every tracked regular file under `src/` and `scripts/`, plus `pyproject.toml` and

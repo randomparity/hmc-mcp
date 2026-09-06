@@ -66,8 +66,9 @@ joined to that operation and observation. `skipped` records an attempted check t
 was not completed, `failed` records an attempted check that did not pass, and `passed`
 records a check with asserted postconditions. `current` evidence has no invalidator
 and covers the current implementation fingerprint. `stale` evidence is retained
-history with an invalidating fingerprint and reason; a changed runtime source,
-script, or dependency manifest requires re-evaluation.
+history with an invalidating fingerprint and reason, including when its formerly
+implemented scope has since been removed or narrowed; a changed runtime source, script,
+or dependency manifest requires re-evaluation.
 
 Format 1 admits no trusted promotion: every observation has `unverified` provenance.
 Mocks, skips, opt-in, issue closure, transport-only success, and evidence from another

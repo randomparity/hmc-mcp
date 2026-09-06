@@ -540,6 +540,41 @@ def test_maturity_preserves_stale_pass_before_current_regression(
     assert not _maturity_report(tmp_path, registered_inventory, [record]).errors
 
 
+def test_stale_evidence_survives_removed_implementation_scope(
+    tmp_path: Path, registered_inventory: tuple[inventory.RegistryTool, ...]
+) -> None:
+    record = _operation(state="absent")
+    stale = _evidence(tmp_path, currency="stale", environment=_environment())
+    stale["implementation_fingerprint"] = "c" * 64
+    stale["invalidated_by"] = {
+        "implementation_fingerprint": inventory.implementation_fingerprint(tmp_path),
+        "reason": "implementation scope removed",
+    }
+    record["evidence"] = [stale]
+
+    assert not _maturity_report(tmp_path, registered_inventory, [record]).errors
+
+
+def test_stale_evidence_survives_parameter_scope_narrowing(
+    tmp_path: Path, registered_inventory: tuple[inventory.RegistryTool, ...]
+) -> None:
+    old_scope = _scope(parameters=[{"name": "kind", "constraint": "all"}])
+    new_scope = _scope(parameters=[{"name": "kind", "constraint": "managed"}])
+    record = _operation()
+    record["implementation"]["implemented_scope"] = [new_scope]
+    stale = _evidence(
+        tmp_path, currency="stale", scope=old_scope, environment=_environment()
+    )
+    stale["implementation_fingerprint"] = "c" * 64
+    stale["invalidated_by"] = {
+        "implementation_fingerprint": inventory.implementation_fingerprint(tmp_path),
+        "reason": "implementation scope narrowed",
+    }
+    record["evidence"] = [stale]
+
+    assert not _maturity_report(tmp_path, registered_inventory, [record]).errors
+
+
 def test_maturity_keys_live_currency_by_environment(
     tmp_path: Path, registered_inventory: tuple[inventory.RegistryTool, ...]
 ) -> None:

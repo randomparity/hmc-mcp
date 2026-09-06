@@ -139,9 +139,11 @@ structural-validity line. No runtime interface is added.
   green command.
 - Contract: current/stale uniqueness and environment-scoped mixed evidence.
   Mode: focused-test. Add `test_maturity_preserves_stale_pass_before_current_regression`
-  and `test_maturity_keys_live_currency_by_environment`; the red observation is that two
-  current observations with the same scope are accepted and different environments cannot
-  be distinguished. Use the same focused green command.
+  plus removal/narrowing history cases, and
+  `test_maturity_keys_live_currency_by_environment`; the red observation is that two
+  current observations with the same scope are accepted, different environments cannot
+  be distinguished, or stale evidence is rejected after its former implementation scope
+  is removed or narrowed. Use the same focused green command.
 - Contract: structural identity is independent of JSON object member order.
   Mode: focused-test. Add `test_maturity_identity_normalizes_scope_and_environment`; the
   red observation is that reordered members create separate current slots. Use the same
@@ -180,10 +182,11 @@ structural-validity line. No runtime interface is added.
 8. Add stale/regression and environment-key tests, run them red, then enforce catalog-wide
    evidence-ID uniqueness, current observations with `invalidated_by == null`, stale
    observations with an invalidator carrying the new implementation fingerprint and a
-   reason, and one current observation per canonical tuple
+   reason, retention of structurally valid stale scope after current implementation removal
+   or narrowing, and one current observation per canonical tuple
    `(channel, scope-identity, scenario-id, environment-field-tuple)`. Construct identities
    from parsed field tuples rather than serialized JSON, and use the same scope identity
-   for evidence membership in `implemented_scope`. Re-run green.
+   for current evidence membership in `implemented_scope`. Re-run green.
 9. Create `maturity.json` with `system.list` as implemented and `sriov.set_mode` as partial.
    Start both evidence lists empty unless a specific existing artifact establishes every
    required observation field; absence of qualifying evidence remains unknown rather than

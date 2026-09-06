@@ -27,7 +27,10 @@ Each record carries an independent implementation state (`absent`, `partial`, or
 scope object is used by evidence: a variant ID plus sorted parameter bindings or
 predicates. `partial` requires both lists, `implemented` requires only implemented
 scope, and `absent` requires only missing scope. Evidence cannot claim a scope absent
-from the implemented list, and the implemented and missing sets are disjoint.
+from the implemented list while it is current, and the implemented and missing sets are
+disjoint. Stale observations retain their previously implemented canonical scope even if
+that scope was removed or narrowed; they are non-promoting history rather than claims
+about current implementation.
 
 Evidence is a list of observations. Every observation names a stable ID, one channel
 (`contract-review`, `automated`, or `live`), an implemented scope object, a stable
@@ -58,7 +61,8 @@ old observation `stale` with the new implementation fingerprint and a reason, th
 new current observation. The fingerprint is available before commit, unlike that commit's
 future Git SHA, so the source and staleness edit can pass the guard in one commit. A current
 failure is a regression for only its exact scope, scenario, and environment; historical
-passes remain stale history.
+passes remain stale history even when their former implementation scope is no longer in
+the current implemented list.
 
 A live `not-run` gap names the intended scenario, prerequisites, and a durable catalog
 obligation whose identity joins back to that exact operation and observation. An optional

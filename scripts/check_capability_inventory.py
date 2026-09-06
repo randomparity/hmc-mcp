@@ -617,7 +617,9 @@ def _validate_observation(
         errors.append(f"{label}: invalid channel, result, or currency")
         return
     scope = _scope_identity(observation["scope"], label, errors)
-    if scope not in scopes:
+    if scope is None:
+        return
+    if currency == "current" and scope not in scopes:
         errors.append(f"{label}: scope is not implemented")
         return
     scenario = observation["scenario"]
