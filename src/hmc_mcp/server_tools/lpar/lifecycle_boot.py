@@ -34,12 +34,11 @@ def hmc_read_lpar_boot_order(
     """
 
     async def read_boot_order(hmc) -> dict[str, Any]:
-        result = await read_lpar_boot_order(
+        return await read_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name_or_uuid,
             lpar_name_or_uuid=lpar_name_or_uuid,
         )
-        return result
 
     return with_client(read_boot_order, profile=profile)
 
@@ -64,14 +63,13 @@ def hmc_set_lpar_boot_order(
     """
 
     async def set_boot_order(hmc) -> dict[str, Any] | None:
-        result = await set_lpar_boot_order(
+        return await set_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name_or_uuid,
             lpar_name_or_uuid=lpar_name_or_uuid,
             devices=devices,
             ownership_override=ownership_override,
         )
-        return result
 
     return with_client(set_boot_order, profile=profile)
 
@@ -94,13 +92,12 @@ def hmc_clear_lpar_boot_order(
     """
 
     async def clear_boot_order(hmc) -> dict[str, Any] | None:
-        result = await clear_lpar_boot_order(
+        return await clear_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name_or_uuid,
             lpar_name_or_uuid=lpar_name_or_uuid,
             ownership_override=ownership_override,
         )
-        return result
 
     return with_client(clear_boot_order, profile=profile)
 
@@ -131,4 +128,3 @@ def hmc_list_lpar_ownership(
         lambda hmc: list_lpar_ownership(hmc, system_name_or_uuid),
         profile=profile,
     )
-

@@ -852,8 +852,7 @@ async def upload_iso(
                         f"{iso_path}"
                     )
                     raise
-                else:
-                    logger.exception("temporary ISO cleanup failed for %s", iso_path)
+                logger.exception("temporary ISO cleanup failed for %s", iso_path)
 
 
 async def list_optical_mappings(
