@@ -38,46 +38,70 @@ Each operation record contains:
 - `implementation`: `state`, `implemented_scope`, and `missing_scope`; and
 - `evidence`: a list of uniquely identified observations.
 
-Scope entries are concise non-empty strings describing operation variants or parameter
-subsets. `absent` requires an empty implemented list and a non-empty missing list;
+Scope entries are exact objects with a non-empty stable `variant` ID and sorted unique
+`parameters` entries. Each parameter entry has a non-empty `name` and a public-safe
+non-empty `constraint` containing the applicable value or predicate; names alone are not
+enough. `absent` requires an empty implemented list and a non-empty missing list;
 `partial` requires both lists; `implemented` requires a non-empty implemented list and an
-empty missing list. The lists may not contain duplicates.
+empty missing list. The lists may not contain duplicate canonical JSON objects.
 
 Every evidence observation uses a uniform object with these fields:
 
 - `id`: a stable catalog-wide ID;
 - `channel`: `contract-review`, `automated`, or `live`;
-- `variant`: a non-empty operation-variant description;
-- `parameters`: sorted unique applicable parameter names, possibly empty;
+- `scope`: one canonical object byte-for-byte equal to an entry in the operation's
+  `implemented_scope` list;
+- `scenario`: an object with a stable non-empty `id` and public-safe non-empty
+  `description`;
 - `result`: `not-run`, `skipped`, `failed`, or `passed`;
 - `currency`: `current` or `stale`;
-- `observed_at`: an RFC 3339 UTC timestamp, or `null` only for `not-run`;
-- `implementation_revision`: a full lowercase Git SHA, or `null` only for `not-run`;
+- `observed_at`: an RFC 3339 UTC timestamp, or `null` for `not-run`;
+- `implementation_revision`: a full lowercase Git SHA, or `null` for `not-run`;
 - `deployed_revision`: a full lowercase Git SHA for live attempted observations,
   otherwise `null`;
-- `scenario`: a non-empty public-safe description, or `null` only for `not-run`;
-- `environment`: `null` outside the live channel; live attempts require an object with
+- `environment`: `null` outside the live channel; live observations require an object with
   non-empty `hmc_release`, `hmc_build`, `hardware_family`, `firmware`, `licensing`, and
   `topology` strings;
 - `assertions`: unique non-empty postcondition descriptions;
 - `cleanup`: `not-run`, `not-required`, `failed`, or `passed`;
-- `source`: a non-empty repository path or public evidence URL, or `null` for `not-run`;
+- `provenance`: `{"kind": "unverified", "reference": <non-empty string>}` for attempted
+  evidence and `null` for `not-run`; format 1 accepts no trusted producer kind;
+- `promotion`: `{"eligible": false, "reason": <non-empty string>}`; `eligible: true` is
+  rejected until a later format and validator add a trusted producer contract;
 - `reason`: a non-empty explanation for `not-run`, `skipped`, or `failed`, otherwise
   `null`;
+- `prerequisites`: sorted unique non-empty strings; required for a live `not-run` gap and
+  otherwise possibly empty;
+- `obligation`: an object with `kind` (`catalog` or `issue`) and non-empty `reference` for
+  a live `not-run` gap, otherwise `null`;
+- `implementation_fingerprint`: a full lowercase SHA-256 over the validator's normalized
+  implementation surface, or `null` for non-promoting format-1 observations;
 - `invalidated_by`: `null` for current observations; stale observations require an
   object with a full lowercase `revision` and non-empty `reason`.
 
 Attempted observations (`skipped`, `failed`, `passed`) require a timestamp,
-implementation revision, scenario, and source. A pass requires at least one asserted
+implementation revision, scenario, and provenance. A pass requires at least one asserted
 postcondition. A live pass also requires cleanup `passed` or `not-required`; transport
 success or job submission alone therefore cannot satisfy the shape. `not-run` carries no
-timestamp, revision, scenario, environment, assertions, or source and requires cleanup
-`not-run` plus a reason. `skipped` and `failed` require a reason and cannot promote.
+timestamp, revision, assertions, or provenance and requires cleanup `not-run` plus a
+reason. A live `not-run` additionally requires a scenario, prerequisites, environment,
+and durable obligation; other channels may use a planned scenario with empty prerequisites
+and no obligation. `skipped` and `failed` require a reason and cannot promote.
 
-At most one observation may be current for a channel plus exact variant, parameter list,
-and live environment. Historical observations for that key must be stale. This makes a
-new failure an explicit regression without erasing the prior pass. Different live
-environments remain separate keys and may carry mixed current results.
+At most one observation may be current for a channel plus canonical scope, scenario ID,
+and live environment. Revisions are evidence identity fields but do not create a second
+current slot: a new revision must stale the old observation. Historical observations for
+that key must be stale. Different scenarios and live environments remain separate keys
+and may carry mixed current results.
+
+The validator computes the implementation fingerprint from the relative path and bytes of
+every tracked regular file under `src/` and `scripts/`, plus `pyproject.toml` and
+`uv.lock`, excluding generated caches and the maturity catalog. Sorting paths bytewise and
+hashing length-prefixed path/content pairs makes the value deterministic. A future trusted
+promotion must match this live fingerprint; the format-1 catalog rejects
+`promotion.eligible=true`, so mocked tests, issue URLs, opt-ins, and narrative claims
+cannot masquerade as promotable live evidence before issue #623 installs a trusted
+artifact validator.
 
 The initial catalog contains representative records for `system.list` and
 `sriov.set_mode`. They ground implemented and partial scope respectively. Their evidence
@@ -87,11 +111,14 @@ passing records by inference.
 
 ## Promotion and admission
 
-Promotion is derived per channel and exact scope. Only `currency=current` plus
-`result=passed` promotes. Contract review does not promote automated or live evidence;
-automated evidence, including mocks, does not promote live evidence. Live evidence is
-valid only for its exact recorded environment and scenario. An opt-in flag, an issue
-state, or an operation being implemented has no evidence effect.
+Promotion is derived per channel and exact canonical scope, scenario ID, implementation
+revision, deployed revision where applicable, and live environment. It additionally
+requires `currency=current`, `result=passed`, a matching implementation fingerprint, and
+trusted provenance accepted by the validator. Format 1 has no trusted provenance kind and
+therefore produces no promotion; its observations are non-promoting history and gaps.
+Contract review cannot promote automated or live evidence; automated evidence, including
+mocks, cannot promote live evidence. An opt-in flag, issue state, or implementation state
+has no evidence effect.
 
 The admission policy value `existing-runtime-guards` means the catalog is informational.
 An implemented-but-unverified operation remains admitted only when the existing runtime
@@ -104,9 +131,11 @@ runtime behavior; any restriction or widening requires its own reviewed decision
 Extend `scripts/check_capability_inventory.py` rather than adding a second parser or
 dependency. The existing `capability-inventory` recipe remains the single gate. It loads
 `maturity.json` with the same duplicate-key and UTF-8 checks, validates exact keys and
-conditional fields, joins operation IDs to `operations.json`, rejects duplicate evidence
-IDs and contradictory current observations, and reports a deterministic maturity-record
-count beside the existing structural result.
+conditional fields, joins operation IDs to `operations.json`, rejects evidence outside
+implemented scope, duplicate evidence IDs, contradictory current observations, live gaps
+without obligations, or any format-1 promotion claim, computes the conservative
+implementation fingerprint, and reports a deterministic maturity-record count beside the
+existing structural result.
 
 Every error names the maturity operation or evidence ID and the violated rule. Malformed
 maturity data makes the existing command nonzero. Missing maturity rows remain valid
@@ -118,10 +147,13 @@ implementation coverage rather than F2 evidence.
 Focused tests cover an unknown operation (no maturity row), the three implementation
 states, all four evidence results, mixed current live evidence across environments,
 stale history plus a current regression, duplicate current scope, unknown operation IDs,
-and false live promotion shapes. Controlled faults must show that a mocked automated pass
-does not become live, a skip cannot satisfy pass fields, missing asserted postconditions
-reject a live pass, failed cleanup rejects a live pass, and a different environment does
-not replace another environment's current observation.
+and false live promotion shapes. Controlled faults must show that parameter names with
+different bindings remain distinct, scenarios share no current slot, evidence cannot cite
+missing implementation scope, a mocked test/issue/opt-in/transport-only record cannot set
+promotion eligible, missing asserted postconditions reject a live pass, failed cleanup
+rejects a live pass, a changed implementation fingerprint cannot promote, and a different
+environment does not replace another environment's current observation. A live not-run
+fixture must retain its scenario, prerequisites, and catalog obligation.
 
 Run the focused validator tests, `just capability-inventory`, `just adr-numbering`, then
 the full `just verify` and `uv run --no-sync prek run --all-files`. CI supplies the final

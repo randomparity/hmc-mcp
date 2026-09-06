@@ -10,7 +10,7 @@ and partial states while all unrecorded operations remain explicitly unknown to 
 
 Tech stack: Python 3.11 standard library, UTF-8 JSON, pytest, Ruff, ty, just, and prek.
 
-Expected implementation size: 300–480 changed lines (M) — derived from one catalog,
+Expected implementation size: 360–560 changed lines (M) — derived from one catalog,
 conditional validation in the existing script, focused fixtures/tests, and README updates.
 
 ## Global Constraints
@@ -28,9 +28,11 @@ conditional validation in the existing script, focused fixtures/tests, and READM
 
 - Issue and scope token: `#622`, `q622-a9e980a4`.
 - Repository: `randomparity/hmc-mcp`.
-- Current phase: design complete; build follows the scope audit.
+- Current phase: design review confirming pass; build follows the scope audit.
 - Routed review depth: iterating.
-- Open findings: none before design review.
+- Open findings: design review iteration 1 found four contract gaps; all four are
+  accepted-fixed in the design set: canonical scope/revision identity, trusted promotion
+  provenance, checkable implementation invalidation, and live-gap obligations.
 - Review deferrals: none before design review.
 - Guardrail observations: `just adr-numbering` and `just doc-freshness` passed after
   the ADR/spec commit; commit hooks passed every configured static hook.
@@ -64,6 +66,8 @@ Adds `MATURITY_STATES = {"absent", "partial", "implemented"}`,
 Adds
 `_validate_maturity(records: Sequence[dict[str, object]], operation_ids: Collection[str], errors: list[str]) -> None`.
 Later code relies on it to reject invalid records without returning a second report type.
+Adds `implementation_fingerprint(repo_root: Path) -> str`, hashing tracked runtime
+source, scripts, and dependency manifests by sorted path and length-prefixed bytes.
 Extends `Report` with `maturity_operation_count: int`; `main()` prints that value on the
 structural-validity line. No runtime interface is added.
 
@@ -83,6 +87,17 @@ structural-validity line. No runtime interface is added.
   Mode: focused-test. Add `test_maturity_accepts_all_evidence_results` and
   `test_live_pass_requires_scoped_postconditions_and_cleanup`; the red observation is that
   `not-run`, skip, failure, and false live-pass shapes are not checked. Use the same focused
+  green command.
+- Contract: live gaps retain their planned scenario and owned obligation.
+  Mode: focused-test. Add `test_live_not_run_requires_prerequisites_and_obligation`; the
+  red observation is that an unavailable scenario can omit all three. Use the same focused
+  green command.
+- Contract: no format-1 authored claim is promotion eligible and implementation changes
+  are mechanically detectable.
+  Mode: focused-test. Add `test_format_one_rejects_promotion_eligible` and
+  `test_implementation_fingerprint_changes_with_shared_source`; the red observation is
+  that a mocked path, issue URL, opt-in marker, or transport-only assertion can claim live
+  promotion and source changes leave no checkable invalidation signal. Use the same focused
   green command.
 - Contract: current/stale uniqueness and environment-scoped mixed evidence.
   Mode: focused-test. Add `test_maturity_preserves_stale_pass_before_current_regression`
@@ -109,19 +124,26 @@ structural-validity line. No runtime interface is added.
    replacing terminal `Z` with `+00:00` and require UTC; use a full-SHA regex. A live pass
    must have environment, assertions, and successful or unnecessary cleanup. Non-live
    evidence must have `environment` and `deployed_revision` set to `null`. Re-run green.
-6. Add stale/regression and environment-key tests, run them red, then enforce catalog-wide
+6. Add live-gap tests, run them red, then require a live `not-run` observation to retain
+   scenario identity, prerequisites, environment, and a catalog/issue obligation while
+   remaining explicitly non-promoting.
+7. Add promotion/fingerprint tests, run them red, then implement the deterministic
+   normalized implementation fingerprint and reject `promotion.eligible=true` for format
+   1. This leaves issue #623 a named extension point without trusting an arbitrary path or
+   URL. Re-run green.
+8. Add stale/regression and environment-key tests, run them red, then enforce catalog-wide
    evidence-ID uniqueness, current observations with `invalidated_by == null`, stale
    observations with a valid invalidator, and one current observation per canonical tuple
-   `(channel, variant, tuple(parameters), serialized-environment)`. Re-run green.
-7. Create `maturity.json` with `system.list` as implemented and `sriov.set_mode` as partial.
+   `(channel, scope, scenario-id, serialized-environment)`. Re-run green.
+9. Create `maturity.json` with `system.list` as implemented and `sriov.set_mode` as partial.
    Give each evidence channel an honest current `not-run` observation because existing test
    links and narrative live records omit fields this contract requires. Run
    `just capability-inventory`; expect exit 0 and a structural line naming two maturity
    operations without changing the capability-coverage result.
-8. Re-read the code for ≤100-line functions and complexity ≤8. Split validation by
+10. Re-read the code for ≤100-line functions and complexity ≤8. Split validation by
    implementation, observation shape, and current-key checks if needed. Run `just lint` and
    `just typecheck`; expect both commands to exit 0 with no warnings.
-9. Confirm the tests bite: temporarily make a live `passed` observation with empty
+11. Confirm the tests bite: temporarily make a live `passed` observation with empty
    assertions in a fixture and require the focused test to fail, then restore the valid
    fixture and require it to pass. Commit as
    `feat: validate operation maturity evidence`.
@@ -130,8 +152,9 @@ structural-validity line. No runtime interface is added.
 
 - The existing gate rejects malformed or contradictory maturity data and unknown joins.
 - Sparse absence remains valid unknown state and does not change F1 completeness.
-- No result other than a current, scoped pass can satisfy promotion prerequisites.
+- Format 1 rejects every promotion claim until a trusted producer validator exists.
 - Different live environments can carry different current results.
+- Runtime/source/dependency changes alter the implementation fingerprint conservatively.
 
 Rollback is a normal Git revert; no external or runtime state changes.
 
@@ -158,8 +181,9 @@ unknown, and admission explanations matching the validator.
 1. Update `docs/capabilities/README.md` to name `maturity.json`, explain absent rows as
    unknown, list the independent evidence channels and current/stale rule, and state that
    `existing-runtime-guards` neither grants nor revokes admission.
-2. State that mocks, skips, opt-in, issue closure, transport-only success, and another live
-   environment do not promote live evidence. Point maintainers to
+2. State that format 1 admits no trusted promotion, and that mocks, skips, opt-in, issue
+   closure, transport-only success, and another live environment do not promote live
+   evidence. Explain live-gap prerequisites and obligations, then point maintainers to
    `just capability-inventory` for validation.
 3. Run `just capability-inventory`, `just doc-freshness`, and `just adr-numbering`; expect
    all three to exit 0. Re-read the diff and scan authored public files for hostnames, IP

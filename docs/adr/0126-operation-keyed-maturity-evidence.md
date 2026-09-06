@@ -23,28 +23,42 @@ operation IDs in `operations.json`. An operation absent from the catalog has unk
 maturity; absence is not an error and grants nothing.
 
 Each record carries an independent implementation state (`absent`, `partial`, or
-`implemented`) and explicit implemented and missing scope descriptions. `partial`
-requires both lists, `implemented` requires only implemented scope, and `absent`
-requires only missing scope.
+`implemented`) and explicit implemented and missing scope objects. The same canonical
+scope object is used by evidence: a variant ID plus sorted parameter bindings or
+predicates. `partial` requires both lists, `implemented` requires only implemented
+scope, and `absent` requires only missing scope. Evidence cannot claim a scope absent
+from the implemented list.
 
 Evidence is a list of observations. Every observation names a stable ID, one channel
-(`contract-review`, `automated`, or `live`), exact operation variant and applicable
-parameters, one result (`not-run`, `skipped`, `failed`, or `passed`), whether it is
-`current` or `stale`, and a public-safe source or reason. Live observations additionally
-name the HMC release/build, hardware family, firmware, licensing, topology, scenario,
-implementation revision, and deployed revision. A live pass also requires asserted
-postconditions and cleanup of `passed` or `not-required`.
+(`contract-review`, `automated`, or `live`), an implemented scope object, a stable
+scenario ID, one result (`not-run`, `skipped`, `failed`, or `passed`), whether it is
+`current` or `stale`, the implementation fingerprint it covers, and a public-safe
+source or reason. Live observations additionally name the HMC release/build, hardware
+family, firmware, licensing, topology, implementation revision, and deployed revision.
+A live pass also requires asserted postconditions and cleanup of `passed` or
+`not-required`.
 
 Promotion is a query over observations, not a stored overall grade. Only a current
-`passed` observation promotes its own channel, operation variant, parameter scope, and,
-for live evidence, exact environment and scenario. Mocked success can promote only the
-automated channel. A skip, opt-in, issue closure, transport success without asserted
-postconditions, or evidence from a different environment cannot promote live evidence.
+`passed` observation whose exact scope is implemented, whose scenario, implementation
+and deployed revisions match the query, whose implementation fingerprint is still
+current, and whose provenance was accepted by a trusted channel validator can promote.
+Live promotion is additionally confined to its exact environment. Format 1 defines only
+`unverified` provenance and therefore admits no promoting observation; issue #623 owns
+adding the first trusted live-artifact validator. Mocked success, a skip, opt-in, issue
+closure, transport success without asserted postconditions, or evidence from a different
+environment remains non-promoting history.
 
-When an operation or shared dependency changes, affected passing observations become
-`stale` with an invalidating revision and reason. Re-evaluation adds a new current
-observation. A current failure is a regression for only its exact scope; historical
-passes remain stale history rather than being deleted or treated as current.
+The implementation fingerprint covers all tracked runtime source, scripts, and dependency
+manifests except the maturity catalog itself. This conservative repository-wide boundary
+makes a code, runner, or dependency change mechanically invalidate every promoting
+observation rather than silently missing a shared dependency. Re-evaluation marks the
+old observation `stale` with an invalidating revision and reason, then adds a new current
+observation. A current failure is a regression for only its exact scope, scenario, and
+environment; historical passes remain stale history.
+
+A live `not-run` gap names the intended scenario, prerequisites, and a durable obligation
+reference. The obligation may point to the catalog record itself until issue creation is
+authorized; it never counts as evidence or promotion.
 
 The catalog records no runtime eligibility. Implemented but unverified operations retain
 their existing admission under the current runtime authorization, ownership, validation,
@@ -61,9 +75,9 @@ Consumers can distinguish implementation progress from each evidence channel wit
 inventing a global score. Sparse records let F2 establish the contract using
 representative operations while later verification work adds evidence incrementally.
 The explicit environment makes live claims narrower and more verbose; that is the cost
-of preventing cross-hardware promotion. Current/stale replacement is authored rather
-than inferred from Git history, so review and validation must reject contradictory
-current observations.
+of preventing cross-hardware promotion. Repository-wide invalidation is intentionally
+conservative: unrelated runtime changes may require re-evaluation, but no authored
+dependency omission can leave old promoting evidence current.
 
 Public evidence must use stable anonymous tokens for identifiers and omit secrets,
 addresses, and internal locations. The validator proves shape and consistency, not the
@@ -80,9 +94,11 @@ truth of an observation or the continued correctness of runtime behavior.
 - **Require a maturity row for every registered operation immediately.** judgment: 156
   placeholder rows add maintenance without evidence; sparse absence already represents
   unknown and lets verification children add only grounded records.
-- **Derive currency from the current Git revision.** judgment: a shared dependency can
-  invalidate only some operation scopes, so repository-wide revision inequality would
-  stale unrelated evidence and still miss external environment changes.
+- **Use the current commit as the fingerprint.** judgment: a commit includes the catalog
+  update itself, making a same-change evidence record self-referential. A normalized hash
+  of the implementation surface remains conservative without that cycle.
+- **Author a per-operation dependency list.** judgment: omission would silently preserve
+  exactly the stale shared-dependency evidence this contract must invalidate.
 - **Store a promoted aggregate.** judgment: a cached grade can disagree with its scoped
   observations; deriving promotion preserves the dimensions that explain the claim.
 - **Do nothing.** verified: issue #622 and parent #620 requirements 6–11 require a
