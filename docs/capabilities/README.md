@@ -44,3 +44,39 @@ snapshots remain outside Git; their URLs, capture timestamps and hashes remain h
 states for this inventory. They are separate from the maturity and live-evidence
 contract owned by #622 and from runtime eligibility. A proposed exclusion is not an
 approved exclusion, and either it or an unknown blocks a complete-coverage claim.
+
+## Maturity and evidence catalog
+
+`maturity.json` is a sparse, format-versioned catalog keyed by the stable operation
+IDs in `operations.json`. An operation without a maturity row is unknown; an empty
+`evidence` list is also unknown, not an inferred `not-run` result. Implementation
+state and scope are recorded independently from evidence observations.
+
+Evidence is independent across three channels:
+
+- `contract-review` records review of the operation contract.
+- `automated` records an automated check.
+- `live` records a check in its named HMC release/build, hardware family, firmware,
+  licensing, and topology.
+
+Every observation has a result (`not-run`, `skipped`, `failed`, or `passed`) and
+currency (`current` or `stale`). `not-run` is an explicit unattempted observation;
+for a live gap it names the intended scenario, prerequisites, and a catalog obligation
+joined to that operation and observation. `skipped` records an attempted check that
+was not completed, `failed` records an attempted check that did not pass, and `passed`
+records a check with asserted postconditions. `current` evidence has no invalidator
+and covers the current implementation fingerprint. `stale` evidence is retained
+history with an invalidating fingerprint and reason; a changed runtime source,
+script, or dependency manifest requires re-evaluation.
+
+Format 1 admits no trusted promotion: every observation has `unverified` provenance.
+Mocks, skips, opt-in, issue closure, transport-only success, and evidence from another
+live environment do not promote live evidence because trusted provenance is absent;
+free-text assertions alone do not establish trusted postconditions. A live-gap
+obligation is work tracking, never evidence or promotion; an issue number is only an
+optional pointer and does not own the obligation.
+
+The catalog records no runtime eligibility. `existing-runtime-guards` neither grants
+nor revokes admission: authorization, ownership, validation, capability, and safety
+guards continue to control runtime behavior. Validate the catalog and its joins with
+`just capability-inventory`.
