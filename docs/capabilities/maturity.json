@@ -19,17 +19,27 @@
         "state": "partial",
         "implemented_scope": [
           {
-            "variant": "adapter-mode",
+            "variant": "current-mode-confirmation",
             "parameters": [
-              {"name": "mode", "constraint": "supported transition"}
+              {
+                "name": "adapter_id",
+                "constraint": "matches exactly one adapter in an ADR 0056 admitted environment"
+              },
+              {
+                "name": "mode",
+                "constraint": "equals the adapter's current config_state; returns unchanged"
+              }
             ]
           }
         ],
         "missing_scope": [
           {
-            "variant": "live-confirmation",
+            "variant": "adapter-mode-transition",
             "parameters": [
-              {"name": "mode", "constraint": "hardware-dependent transition"}
+              {
+                "name": "mode",
+                "constraint": "differs from current config_state; changing adapter mode is unavailable"
+              }
             ]
           }
         ]

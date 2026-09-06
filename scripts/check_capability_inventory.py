@@ -459,6 +459,14 @@ def _nonempty(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _one_of(value: object, choices: set[str]) -> bool:
+    return isinstance(value, str) and value in choices
+
+
+def _matches(pattern: re.Pattern[str], value: object) -> bool:
+    return isinstance(value, str) and pattern.fullmatch(value) is not None
+
+
 def _scope_identity(
     value: object, label: str, errors: list[str]
 ) -> tuple[object, ...] | None:
@@ -499,7 +507,7 @@ def _validate_implementation(
     implemented = implementation["implemented_scope"]
     missing = implementation["missing_scope"]
     if (
-        state not in MATURITY_STATES
+        not _one_of(state, MATURITY_STATES)
         or not isinstance(implemented, list)
         or not isinstance(missing, list)
     ):
@@ -593,35 +601,40 @@ def _validate_observation(
     )
     if not _nonempty(identity) or identity in evidence_ids:
         errors.append(f"{label}: id must be catalog-wide unique")
-    if isinstance(identity, str):
-        evidence_ids.add(identity)
+        return
+    assert isinstance(identity, str)
+    evidence_ids.add(identity)
     channel, result, currency = (
         observation["channel"],
         observation["result"],
         observation["currency"],
     )
     if (
-        channel not in EVIDENCE_CHANNELS
-        or result not in EVIDENCE_RESULTS
-        or currency not in EVIDENCE_CURRENCY
+        not _one_of(channel, EVIDENCE_CHANNELS)
+        or not _one_of(result, EVIDENCE_RESULTS)
+        or not _one_of(currency, EVIDENCE_CURRENCY)
     ):
         errors.append(f"{label}: invalid channel, result, or currency")
         return
     scope = _scope_identity(observation["scope"], label, errors)
     if scope not in scopes:
         errors.append(f"{label}: scope is not implemented")
+        return
     scenario = observation["scenario"]
     if scenario is not None and (
         not _exact_keys(scenario, {"id", "description"}, label, errors)
         or not all(_nonempty(value) for value in scenario.values())
     ):
         errors.append(f"{label}: invalid scenario")
+        return
     environment = observation["environment"]
     environment_id = (
         _environment_identity(environment, label, errors) if channel == "live" else None
     )
     if (channel == "live") != (environment is not None):
         errors.append(f"{label}: environment is required only for live evidence")
+    if channel == "live" and environment_id is None:
+        return
     _validate_result(
         observation, operation, channel, result, scenario, identity, label, errors
     )
@@ -639,15 +652,8 @@ def _validate_observation(
     )
 
 
-def _validate_result(
-    observation: dict[str, object],
-    operation: str,
-    channel: object,
-    result: object,
-    scenario: object,
-    identity: object,
-    label: str,
-    errors: list[str],
+def _validate_evidence_lists(
+    observation: dict[str, object], label: str, errors: list[str]
 ) -> None:
     assertions = observation["assertions"]
     prerequisites = observation["prerequisites"]
@@ -663,13 +669,34 @@ def _validate_result(
         errors.append(f"{label}: prerequisites must be non-empty strings")
     elif prerequisites != sorted(set(prerequisites)):
         errors.append(f"{label}: prerequisites must be sorted and unique")
-    if observation["cleanup"] not in {"not-run", "not-required", "failed", "passed"}:
+
+
+def _validate_result(
+    observation: dict[str, object],
+    operation: str,
+    channel: object,
+    result: object,
+    scenario: object,
+    identity: object,
+    label: str,
+    errors: list[str],
+) -> None:
+    _validate_evidence_lists(observation, label, errors)
+    if not _one_of(
+        observation["cleanup"], {"not-run", "not-required", "failed", "passed"}
+    ):
         errors.append(f"{label}: invalid cleanup")
     promotion = observation["promotion"]
     if not _exact_keys(promotion, {"eligible", "reason"}, label, errors) or (
         promotion.get("eligible") is not False
     ):
         errors.append(f"{label}: format 1 promotion must be ineligible")
+    elif not _nonempty(promotion.get("reason")):
+        errors.append(f"{label}: promotion reason is required")
+    if (channel, result) != ("live", "not-run") and observation[
+        "obligation"
+    ] is not None:
+        errors.append(f"{label}: obligation is only valid for live not-run")
     if result == "not-run":
         _validate_not_run(
             observation, operation, channel, scenario, identity, label, errors
@@ -686,9 +713,11 @@ def _validate_attempted(
     errors: list[str],
 ) -> None:
     _validate_timestamp(observation["observed_at"], label, errors)
-    if not SHA_1.fullmatch(str(observation["implementation_revision"])):
+    if observation["scenario"] is None:
+        errors.append(f"{label}: attempted evidence requires scenario")
+    if not _matches(SHA_1, observation["implementation_revision"]):
         errors.append(f"{label}: implementation_revision must be a full SHA")
-    if channel == "live" and not SHA_1.fullmatch(str(observation["deployed_revision"])):
+    if channel == "live" and not _matches(SHA_1, observation["deployed_revision"]):
         errors.append(f"{label}: live evidence requires deployed_revision")
     if channel != "live" and observation["deployed_revision"] is not None:
         errors.append(f"{label}: non-live evidence has no deployed_revision")
@@ -698,12 +727,22 @@ def _validate_attempted(
         or not _nonempty(provenance.get("reference"))
     ):
         errors.append(f"{label}: invalid provenance")
+    _validate_attempt_outcome(observation, channel, result, label, errors)
+
+
+def _validate_attempt_outcome(
+    observation: dict[str, object],
+    channel: object,
+    result: object,
+    label: str,
+    errors: list[str],
+) -> None:
     if result == "passed" and not observation["assertions"]:
         errors.append(f"{label}: passed evidence requires assertions")
     if (
         channel == "live"
         and result == "passed"
-        and observation["cleanup"] not in {"passed", "not-required"}
+        and not _one_of(observation["cleanup"], {"passed", "not-required"})
     ):
         errors.append(f"{label}: live pass requires successful cleanup")
     if result in {"skipped", "failed"} and not _nonempty(observation["reason"]):
@@ -755,8 +794,6 @@ def _validate_not_run(
         errors.append(
             f"{label}: live not-run requires scenario, prerequisites, and catalog obligation"
         )
-    if channel != "live" and obligation is not None:
-        errors.append(f"{label}: non-live evidence has no obligation")
 
 
 def _validate_currency(
@@ -771,8 +808,8 @@ def _validate_currency(
     label: str,
     errors: list[str],
 ) -> None:
-    if observation["result"] != "not-run" and not SHA_256.fullmatch(
-        str(observation["implementation_fingerprint"])
+    if observation["result"] != "not-run" and not _matches(
+        SHA_256, observation["implementation_fingerprint"]
     ):
         errors.append(f"{label}: implementation_fingerprint must be a full SHA-256")
     if currency == "current":
@@ -789,8 +826,8 @@ def _validate_currency(
         invalidator, {"implementation_fingerprint", "reason"}, label, errors
     ):
         return
-    if not SHA_256.fullmatch(
-        str(invalidator.get("implementation_fingerprint"))
+    if not _matches(
+        SHA_256, invalidator.get("implementation_fingerprint")
     ) or not _nonempty(invalidator.get("reason")):
         errors.append(f"{label}: stale evidence requires an invalidator")
 
@@ -810,7 +847,10 @@ def _validate_maturity(
             record, {"operation", "implementation", "evidence"}, label, errors
         ):
             continue
-        if not _nonempty(operation) or operation in seen:
+        if not _nonempty(operation):
+            errors.append(f"{label}: operation must be a non-empty string")
+            continue
+        if operation in seen:
             errors.append(f"{label}: duplicate operation")
         elif operation not in operation_ids:
             errors.append(f"{label}: unknown operation")
