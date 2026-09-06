@@ -4348,3 +4348,23 @@ def test_memory_pools_remove_declined_confirm_aborts(monkeypatch):
 
     assert result.exit_code == 1
     assert "Aborted" in result.stderr
+
+
+def test_lpm_decline_does_not_enter_client_lifecycle(monkeypatch):
+    called = False
+
+    def forbidden_client(_operation):
+        nonlocal called
+        called = True
+        raise AssertionError("declined migration must not create a client")
+
+    monkeypatch.setattr(cli_lpar_migration, "with_client", forbidden_client)
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "migrate", LPAR_NAME, "--target", "sys1"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    assert called is False
