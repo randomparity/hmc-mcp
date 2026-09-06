@@ -43,7 +43,11 @@ Scope entries are exact objects with a non-empty stable `variant` ID and sorted 
 non-empty `constraint` containing the applicable value or predicate; names alone are not
 enough. `absent` requires an empty implemented list and a non-empty missing list;
 `partial` requires both lists; `implemented` requires a non-empty implemented list and an
-empty missing list. The lists may not contain duplicate canonical JSON objects.
+empty missing list. Parameter names are unique within a scope and entries are sorted
+bytewise by `(name, constraint)`. Scope identity is the parsed tuple
+`(variant, tuple((name, constraint), ...))`, independent of JSON member order and
+whitespace. The implemented and missing identity sets are each duplicate-free and must be
+disjoint.
 
 Every evidence observation uses a uniform object with these fields:
 
@@ -72,33 +76,42 @@ Every evidence observation uses a uniform object with these fields:
   `null`;
 - `prerequisites`: sorted unique non-empty strings; required for a live `not-run` gap and
   otherwise possibly empty;
-- `obligation`: an object with `kind` (`catalog` or `issue`) and non-empty `reference` for
-  a live `not-run` gap, otherwise `null`;
+- `obligation`: an object with `catalog` equal to
+  `<operation>#<observation-id>` and optional positive integer `issue` for a live
+  `not-run` gap, otherwise `null`; the catalog identity is the durable owner and the issue
+  is only a pointer;
 - `implementation_fingerprint`: a full lowercase SHA-256 over the validator's normalized
-  implementation surface, or `null` for non-promoting format-1 observations;
+  implementation surface for every current attempted observation; `null` for `not-run`;
+  stale attempted history retains the fingerprint observed at its run;
 - `invalidated_by`: `null` for current observations; stale observations require an
   object with a full lowercase `revision` and non-empty `reason`.
 
 Attempted observations (`skipped`, `failed`, `passed`) require a timestamp,
 implementation revision, scenario, and provenance. A pass requires at least one asserted
 postcondition. A live pass also requires cleanup `passed` or `not-required`; transport
-success or job submission alone therefore cannot satisfy the shape. `not-run` carries no
+success or job submission can satisfy the free-text shape but cannot promote in format 1
+because no trusted provenance kind exists. Issue #623 must bind trusted scenario IDs to
+validator-recognized outcome assertions before adding such a kind. `not-run` carries no
 timestamp, revision, assertions, or provenance and requires cleanup `not-run` plus a
 reason. A live `not-run` additionally requires a scenario, prerequisites, environment,
 and durable obligation; other channels may use a planned scenario with empty prerequisites
 and no obligation. `skipped` and `failed` require a reason and cannot promote.
 
 At most one observation may be current for a channel plus canonical scope, scenario ID,
-and live environment. Revisions are evidence identity fields but do not create a second
-current slot: a new revision must stale the old observation. Historical observations for
-that key must be stale. Different scenarios and live environments remain separate keys
-and may carry mixed current results.
+and live environment. Environment identity is the tuple of
+`(hmc_release, hmc_build, hardware_family, firmware, licensing, topology)` in that fixed
+order, independent of JSON member order. Revisions are evidence identity fields but do
+not create a second current slot: a new revision must stale the old observation.
+Historical observations for that key must be stale. Different scenarios and live
+environments remain separate keys and may carry mixed current results.
 
 The validator computes the implementation fingerprint from the relative path and bytes of
 every tracked regular file under `src/` and `scripts/`, plus `pyproject.toml` and
 `uv.lock`, excluding generated caches and the maturity catalog. Sorting paths bytewise and
 hashing length-prefixed path/content pairs makes the value deterministic. A future trusted
-promotion must match this live fingerprint; the format-1 catalog rejects
+promotion must match this live fingerprint. Every current attempted observation must
+already match it, so any tracked implementation-surface change makes the catalog invalid
+until the observation is marked stale or re-run. The format-1 catalog rejects
 `promotion.eligible=true`, so mocked tests, issue URLs, opt-ins, and narrative claims
 cannot masquerade as promotable live evidence before issue #623 installs a trusted
 artifact validator.
@@ -133,7 +146,8 @@ dependency. The existing `capability-inventory` recipe remains the single gate. 
 `maturity.json` with the same duplicate-key and UTF-8 checks, validates exact keys and
 conditional fields, joins operation IDs to `operations.json`, rejects evidence outside
 implemented scope, duplicate evidence IDs, contradictory current observations, live gaps
-without obligations, or any format-1 promotion claim, computes the conservative
+without self-resolving catalog obligations, current attempted evidence with a stale
+fingerprint, or any format-1 promotion claim, computes the conservative
 implementation fingerprint, and reports a deterministic maturity-record count beside the
 existing structural result.
 
@@ -149,11 +163,13 @@ states, all four evidence results, mixed current live evidence across environmen
 stale history plus a current regression, duplicate current scope, unknown operation IDs,
 and false live promotion shapes. Controlled faults must show that parameter names with
 different bindings remain distinct, scenarios share no current slot, evidence cannot cite
-missing implementation scope, a mocked test/issue/opt-in/transport-only record cannot set
+missing implementation scope, implemented and missing scopes cannot overlap, reordered
+JSON objects retain one identity, a mocked test/issue/opt-in/transport-only record cannot set
 promotion eligible, missing asserted postconditions reject a live pass, failed cleanup
-rejects a live pass, a changed implementation fingerprint cannot promote, and a different
-environment does not replace another environment's current observation. A live not-run
-fixture must retain its scenario, prerequisites, and catalog obligation.
+rejects a live pass, a changed implementation fingerprint invalidates current attempted
+evidence, and a different environment does not replace another environment's current
+observation. A live not-run fixture must retain its scenario, prerequisites, and an exact
+`<operation>#<observation-id>` catalog obligation; dangling references are rejected.
 
 Run the focused validator tests, `just capability-inventory`, `just adr-numbering`, then
 the full `just verify` and `uv run --no-sync prek run --all-files`. CI supplies the final

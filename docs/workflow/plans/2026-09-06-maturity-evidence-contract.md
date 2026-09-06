@@ -32,7 +32,9 @@ conditional validation in the existing script, focused fixtures/tests, and READM
 - Routed review depth: iterating.
 - Open findings: design review iteration 1 found four contract gaps; all four are
   accepted-fixed in the design set: canonical scope/revision identity, trusted promotion
-  provenance, checkable implementation invalidation, and live-gap obligations.
+  provenance, checkable implementation invalidation, and live-gap obligations. The
+  operator authorized one additional pass after iteration 2; its four blockers and one
+  note are accepted-fixed by the current design edit.
 - Review deferrals: none before design review.
 - Guardrail observations: `just adr-numbering` and `just doc-freshness` passed after
   the ADR/spec commit; commit hooks passed every configured static hook.
@@ -54,8 +56,17 @@ This task makes the representation executable and proves the negative promotion 
 
 ### Interfaces
 
-Consumes the existing function
-`validate_inventory(root: Path, registry: Collection[RegistryTool], *, repo_root: Path = ROOT) -> Report`
+Consumes the existing function:
+
+```python
+validate_inventory(
+    root: Path,
+    registry: Collection[RegistryTool],
+    *,
+    repo_root: Path = ROOT,
+) -> Report
+```
+
 and the `operations.json` records whose `operation` field is the stable join key.
 
 Adds `MATURITY_STATES = {"absent", "partial", "implemented"}`,
@@ -63,8 +74,16 @@ Adds `MATURITY_STATES = {"absent", "partial", "implemented"}`,
 `EVIDENCE_RESULTS = {"not-run", "skipped", "failed", "passed"}`, and
 `EVIDENCE_CURRENCY = {"current", "stale"}`.
 
-Adds
-`_validate_maturity(records: Sequence[dict[str, object]], operation_ids: Collection[str], errors: list[str]) -> None`.
+Adds:
+
+```python
+_validate_maturity(
+    records: Sequence[dict[str, object]],
+    operation_ids: Collection[str],
+    errors: list[str],
+) -> None
+```
+
 Later code relies on it to reject invalid records without returning a second report type.
 Adds `implementation_fingerprint(repo_root: Path) -> str`, hashing tracked runtime
 source, scripts, and dependency manifests by sorted path and length-prefixed bytes.
@@ -81,8 +100,9 @@ structural-validity line. No runtime interface is added.
   `uv run --no-sync pytest tests/scripts/test_check_capability_inventory.py -q`.
 - Contract: implementation-state scope invariants.
   Mode: focused-test. Add a parametrized `test_maturity_enforces_implementation_scope`
-  covering absent, partial, and implemented plus each invalid empty/non-empty pairing; the
-  red observation is that malformed pairings pass. Use the same focused green command.
+  covering absent, partial, and implemented plus each invalid empty/non-empty pairing and
+  overlapping implemented/missing scope; the red observation is that malformed pairings
+  pass. Use the same focused green command.
 - Contract: all evidence states and channel-specific required fields.
   Mode: focused-test. Add `test_maturity_accepts_all_evidence_results` and
   `test_live_pass_requires_scoped_postconditions_and_cleanup`; the red observation is that
@@ -104,6 +124,10 @@ structural-validity line. No runtime interface is added.
   and `test_maturity_keys_live_currency_by_environment`; the red observation is that two
   current observations with the same scope are accepted and different environments cannot
   be distinguished. Use the same focused green command.
+- Contract: structural identity is independent of JSON object member order.
+  Mode: focused-test. Add `test_maturity_identity_normalizes_scope_and_environment`; the
+  red observation is that reordered members create separate current slots. Use the same
+  focused green command.
 
 ### Steps
 
@@ -117,24 +141,27 @@ structural-validity line. No runtime interface is added.
    `operations.json`, and call `_validate_maturity()`. Add the report count and update every
    early `Report(...)` construction. Re-run the focused command; the join tests pass.
 4. Add implementation-state tests, run them red, then validate exact record and nested
-   implementation keys, string lists, list uniqueness, and state/list combinations. Errors
-   name `maturity operation <id>`. Re-run the focused command green.
+   implementation keys, normalized scope objects, set disjointness, and state/list
+   combinations. Errors name `maturity operation <id>`. Re-run the focused command green.
 5. Add result/channel tests, run them red, then validate exact observation keys and the
    conditional null/non-null rules from the spec. Use `datetime.fromisoformat()` after
    replacing terminal `Z` with `+00:00` and require UTC; use a full-SHA regex. A live pass
    must have environment, assertions, and successful or unnecessary cleanup. Non-live
    evidence must have `environment` and `deployed_revision` set to `null`. Re-run green.
 6. Add live-gap tests, run them red, then require a live `not-run` observation to retain
-   scenario identity, prerequisites, environment, and a catalog/issue obligation while
-   remaining explicitly non-promoting.
+   scenario identity, prerequisites, environment, and a catalog obligation exactly equal
+   to `<operation>#<observation-id>` while remaining explicitly non-promoting. Accept an
+   optional positive issue number only as a pointer; do not claim offline open-state proof.
 7. Add promotion/fingerprint tests, run them red, then implement the deterministic
    normalized implementation fingerprint and reject `promotion.eligible=true` for format
    1. This leaves issue #623 a named extension point without trusting an arbitrary path or
-   URL. Re-run green.
+   URL. Require the stored fingerprint on every current attempted observation to match the
+   computed value. Re-run green.
 8. Add stale/regression and environment-key tests, run them red, then enforce catalog-wide
    evidence-ID uniqueness, current observations with `invalidated_by == null`, stale
    observations with a valid invalidator, and one current observation per canonical tuple
-   `(channel, scope, scenario-id, serialized-environment)`. Re-run green.
+   `(channel, scope-identity, scenario-id, environment-field-tuple)`. Construct identities
+   from parsed field tuples rather than serialized JSON. Re-run green.
 9. Create `maturity.json` with `system.list` as implemented and `sriov.set_mode` as partial.
    Give each evidence channel an honest current `not-run` observation because existing test
    links and narrative live records omit fields this contract requires. Run
@@ -155,6 +182,7 @@ structural-validity line. No runtime interface is added.
 - Format 1 rejects every promotion claim until a trusted producer validator exists.
 - Different live environments can carry different current results.
 - Runtime/source/dependency changes alter the implementation fingerprint conservatively.
+- Live gaps always retain a locally resolvable catalog owner; issue pointers are optional.
 
 Rollback is a normal Git revert; no external or runtime state changes.
 
@@ -183,7 +211,8 @@ unknown, and admission explanations matching the validator.
    `existing-runtime-guards` neither grants nor revokes admission.
 2. State that format 1 admits no trusted promotion, and that mocks, skips, opt-in, issue
    closure, transport-only success, and another live environment do not promote live
-   evidence. Explain live-gap prerequisites and obligations, then point maintainers to
+   evidence because trusted provenance is absent, not because free-text assertions prove
+   postconditions. Explain live-gap prerequisites and obligations, then point maintainers to
    `just capability-inventory` for validation.
 3. Run `just capability-inventory`, `just doc-freshness`, and `just adr-numbering`; expect
    all three to exit 0. Re-read the diff and scan authored public files for hostnames, IP

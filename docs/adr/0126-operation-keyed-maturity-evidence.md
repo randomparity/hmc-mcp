@@ -27,13 +27,15 @@ Each record carries an independent implementation state (`absent`, `partial`, or
 scope object is used by evidence: a variant ID plus sorted parameter bindings or
 predicates. `partial` requires both lists, `implemented` requires only implemented
 scope, and `absent` requires only missing scope. Evidence cannot claim a scope absent
-from the implemented list.
+from the implemented list, and the implemented and missing sets are disjoint.
 
 Evidence is a list of observations. Every observation names a stable ID, one channel
 (`contract-review`, `automated`, or `live`), an implemented scope object, a stable
 scenario ID, one result (`not-run`, `skipped`, `failed`, or `passed`), whether it is
-`current` or `stale`, the implementation fingerprint it covers, and a public-safe
-source or reason. Live observations additionally name the HMC release/build, hardware
+`current` or `stale`, the implementation fingerprint it covers, and public-safe
+provenance or a reason. A parsed scope is identified by its variant and ordered
+name/constraint pairs; a live environment is identified by its fixed named fields.
+Live observations additionally name the HMC release/build, hardware
 family, firmware, licensing, topology, implementation revision, and deployed revision.
 A live pass also requires asserted postconditions and cleanup of `passed` or
 `not-required`.
@@ -56,9 +58,10 @@ old observation `stale` with an invalidating revision and reason, then adds a ne
 observation. A current failure is a regression for only its exact scope, scenario, and
 environment; historical passes remain stale history.
 
-A live `not-run` gap names the intended scenario, prerequisites, and a durable obligation
-reference. The obligation may point to the catalog record itself until issue creation is
-authorized; it never counts as evidence or promotion.
+A live `not-run` gap names the intended scenario, prerequisites, and a durable catalog
+obligation whose identity joins back to that exact operation and observation. An optional
+repository issue number is a pointer, not the obligation's owner; the offline validator
+does not claim that it remains open. The obligation never counts as evidence or promotion.
 
 The catalog records no runtime eligibility. Implemented but unverified operations retain
 their existing admission under the current runtime authorization, ownership, validation,
