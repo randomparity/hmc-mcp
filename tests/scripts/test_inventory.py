@@ -15,24 +15,26 @@ from live_test import inventory, network, storage  # noqa: E402
 
 
 class ScenarioState:
-    """Small state seam that records inventory calls and context mutations."""
+    """Small state seam that records inventory calls and artifact mutations."""
 
     def __init__(self, responses: dict[str, Any]) -> None:
         self.responses = responses
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.results: list[tuple[int, str, str, Any]] = []
-        self.context = SimpleNamespace(
+        self.config = SimpleNamespace(
             system_name="system one",
             lp3_name="lp three",
+            vlan_range_start=3000,
+            vlan_range_end=3099,
+            vdisk_name="disk-one",
+        )
+        self.artifacts = SimpleNamespace(
             lp3_uuid=None,
             lp3_baseline={},
             vios_uuid=None,
             vios_partition_id=None,
             test_vswitch_id=None,
             test_vlan_id=None,
-            vlan_range_start=3000,
-            vlan_range_end=3099,
-            vdisk_name="disk-one",
             vdisk_size_mib=None,
             vg_uuid=None,
             vdisk_vg_name=None,
@@ -81,14 +83,14 @@ async def test_baseline_capture_preserves_identity_and_adapter_topology() -> Non
 
     await inventory.capture_lpar_baseline(None, state)
 
-    assert state.context.lp3_uuid == "lpar-uuid"
-    assert state.context.vios_uuid == "vios-uuid"
-    assert state.context.vios_partition_id == 2
-    assert state.context.lp3_baseline["description"] == "baseline"
-    assert state.context.lp3_baseline["pvid"] == 42
-    assert state.context.lp3_baseline["vswitch_id"] == 7
-    assert state.context.lp3_baseline["vios_partition_id"] == 2
-    assert state.context.lp3_baseline["vios_slot"] == 11
+    assert state.artifacts.lp3_uuid == "lpar-uuid"
+    assert state.artifacts.vios_uuid == "vios-uuid"
+    assert state.artifacts.vios_partition_id == 2
+    assert state.artifacts.lp3_baseline["description"] == "baseline"
+    assert state.artifacts.lp3_baseline["pvid"] == 42
+    assert state.artifacts.lp3_baseline["vswitch_id"] == 7
+    assert state.artifacts.lp3_baseline["vios_partition_id"] == 2
+    assert state.artifacts.lp3_baseline["vios_slot"] == 11
     command = next(
         kwargs["cmd"] for tool, kwargs in state.calls if tool == "hmc_run_command"
     )
@@ -110,8 +112,8 @@ async def test_network_inventory_selects_unused_vlan_and_switch() -> None:
 
     await network.inventory_network(None, state)
 
-    assert state.context.test_vswitch_id == 9
-    assert state.context.test_vlan_id == 3001
+    assert state.artifacts.test_vswitch_id == 9
+    assert state.artifacts.test_vlan_id == 3001
     assert [tool for tool, _ in state.calls] == [
         "hmc_list_virtual_switches",
         "hmc_list_virtual_networks",
@@ -142,13 +144,13 @@ async def test_storage_inventory_finds_disk_capacity_and_owning_group() -> None:
             ]
         }
     )
-    state.context.vios_uuid = "vios-uuid"
+    state.artifacts.vios_uuid = "vios-uuid"
 
     await storage.inventory_storage(None, state)
 
-    assert state.context.vg_uuid == "vg-uuid"
-    assert state.context.vdisk_vg_name == "rootvg"
-    assert state.context.vdisk_size_mib == 8192
+    assert state.artifacts.vg_uuid == "vg-uuid"
+    assert state.artifacts.vdisk_vg_name == "rootvg"
+    assert state.artifacts.vdisk_size_mib == 8192
     assert [tool for tool, _ in state.calls] == [
         "hmc_list_volume_groups",
         "hmc_list_clusters",

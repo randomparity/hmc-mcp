@@ -1,0 +1,89 @@
+# Live-test state ownership design
+
+## Scope and authority
+
+Issue #700 requires the live-test harness to separate validated operator configuration
+from invocation-owned mutable discoveries. ADR 0124 is the accepted decision governing
+that boundary. This change preserves live-test scenario behavior while replacing the
+pre-release `LiveTestContext` surface.
+
+## Architecture
+
+`LiveTestConfig` is a frozen dataclass containing every value parsed from the
+`LIVE_TEST_*` environment file. Its existing parsing, validation, and derived ISO
+properties remain unchanged. It never contains discovered identifiers or mutable
+collections.
+
+`LiveTestArtifacts` is a mutable dataclass containing identifiers, snapshots, virtual
+media state, and other values produced during one invocation. Each `RunState` owns one
+config and one artifacts instance through explicit `config` and `artifacts` members.
+There is no `context` compatibility alias.
+
+Scenario modules read operator choices through `state.config` and read or mutate run
+discoveries through `state.artifacts`. Local variable names follow that ownership rather
+than retaining the ambiguous name `context`.
+
+## Persistence and restoration
+
+The result document stores `config`, `hmc`, `artifacts`, and the existing `results`
+scenario-outcome rows as separate top-level members. `hmc` contains only the non-secret
+connection identity: `host`, `port`, `user`, and `verify_ssl`. `main` resolves the current
+`HMCConfig` after bootstrap, uses it to write that member, and passes it to restoration
+for comparison. Restoration validates only `config`, `hmc`, and `artifacts`; it does not
+interpret prior result rows.
+
+Restoration accepts only the new shape. Before changing live state, it validates that:
+
+- `config` and `artifacts` are JSON objects;
+- saved config decodes through the same field schema as `LiveTestConfig.from_env_file`
+  and equals the current config after canonicalization (notably converting the JSON
+  `protected_lpar_names` array back to a tuple);
+- saved non-secret HMC identity (`host`, `port`, `user`, and `verify_ssl`) equals the
+  current connection identity; and
+- every artifacts key is declared and has its exact JSON type: nullable identifiers and
+  names are strings or null; numeric identifiers and sizes are integers but not booleans;
+  flags are booleans; `lp3_baseline` is an object; and `vmedia_orig_boot_order` is an
+  array of strings.
+
+A bounded decoder copies mappings and lists into a fresh `LiveTestArtifacts` candidate.
+Only a completely valid and matching document replaces `state.artifacts`. A malformed,
+stale, or mismatched document reports a restoration failure before scenario dispatch and
+leaves the original artifacts object unchanged. Existing mixed `context` result files are
+unsupported, as ADR 0124 specifies.
+
+## Error handling
+
+Configuration parsing retains its existing actionable `ValueError` messages. Expected
+result-file problems remain reported as restore failures; unexpected programming defects
+continue to propagate. Validation is performed into a fresh `LiveTestArtifacts` instance,
+which is installed only after the full document passes.
+
+## Compatibility
+
+This is an internal, pre-release live-test harness surface. Callers and tests migrate in
+one change. Production MCP APIs, HMC operations, environment-file keys, and scenario order
+do not change.
+
+## Verification
+
+- A focused test proves assigning to a `LiveTestConfig` field raises
+  `dataclasses.FrozenInstanceError`.
+- Existing environment-file tests prove parsing, validation, and derived ISO values.
+- Focused restoration tests perform a real JSON write/read round trip (including
+  `protected_lpar_names`), restore artifacts, reject each config or HMC identity
+  mismatch, reject legacy, unknown-key, and wrong-type documents (including bool in an
+  integer field), and prove failure applies no partial mutation.
+- A focused serialization assertion proves accumulated PASS/FAIL/SKIP result rows remain
+  present under the top-level `results` member.
+- The live-runner suite proves all scenario call arguments and cleanup behavior remain
+  intact after explicit member migration.
+- `just verify` and `uv run --no-sync prek run --all-files` prove repository guardrails.
+
+## Global constraints
+
+- Python versions: 3.11, 3.12, 3.13, and 3.14.
+- Architectures: amd64 and arm64; the current x86_64 host covers amd64 locally.
+- Add no dependency and change no production package contract.
+- Preserve every `LIVE_TEST_*` key and validation rule.
+- Preserve scenario ordering, cleanup guarantees, redaction, and live operation behavior.
+- Follow [ADR 0124](../../adr/0124-live-test-plan-state-ownership.md).

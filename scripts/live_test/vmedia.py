@@ -17,15 +17,16 @@ from .results import entries
 from .results import resource as get_resource
 
 if TYPE_CHECKING:
-    from live_test_runner import LiveTestContext, RunState
+    from live_test_runner import LiveTestConfig, RunState
 
 
 async def _discover_vmedia_prerequisites(client: Client, state: RunState) -> bool:
     """Resolve the VIOS and test-partition identities required by ST16."""
-    context = state.context
-    if not context.vios_uuid:
+    config = state.config
+    artifacts = state.artifacts
+    if not artifacts.vios_uuid:
         st, data = await state.call(
-            client, "hmc_list_vios", system_name_or_uuid=context.system_name
+            client, "hmc_list_vios", system_name_or_uuid=config.system_name
         )
         state.record(16, "hmc_list_vios", st, data)
         if st == "PASS":
@@ -34,24 +35,24 @@ async def _discover_vmedia_prerequisites(client: Client, state: RunState) -> boo
                 uuid = e.get("UUID") or e.get("uuid")
                 pid = resource.get("PartitionID") or resource.get("partition_id")
                 if uuid:
-                    context.vios_uuid = uuid
-                    context.vios_partition_id = int(pid) if pid is not None else None
+                    artifacts.vios_uuid = uuid
+                    artifacts.vios_partition_id = int(pid) if pid is not None else None
                     break
     else:
-        print(f"  ℹ  vios_uuid already set: {context.vios_uuid}")
+        print(f"  ℹ  vios_uuid already set: {artifacts.vios_uuid}")
 
     # lp3 UUID (needed by ST20 boot-order tools which require UUID not name)
-    if not context.lp3_uuid:
+    if not artifacts.lp3_uuid:
         st, data = await state.call(
-            client, "hmc_get_lpar", lpar_name_or_uuid=context.lp3_name
+            client, "hmc_get_lpar", lpar_name_or_uuid=config.lp3_name
         )
         state.record(16, "hmc_get_lpar (lp3 uuid)", st, data)
         if st == "PASS" and isinstance(data, dict):
-            context.lp3_uuid = data.get("uuid") or data.get("UUID")
+            artifacts.lp3_uuid = data.get("uuid") or data.get("UUID")
     else:
-        print(f"  ℹ  lp3_uuid already set: {context.lp3_uuid}")
+        print(f"  ℹ  lp3_uuid already set: {artifacts.lp3_uuid}")
 
-    if not context.vios_uuid:
+    if not artifacts.vios_uuid:
         for name in [
             "hmc_list_volume_groups",
             "hmc_create_media_repository",
@@ -67,21 +68,21 @@ async def _select_vmedia_volume_group(
     client: Client, state: RunState, repo_size_mib: int
 ) -> bool:
     """Select a VIOS volume group with enough space for the repository."""
-    context = state.context
+    artifacts = state.artifacts
 
     # Step 2 — VG discovery + free-space check
     st, data = await state.call(
-        client, "hmc_list_volume_groups", vios_name_or_uuid=context.vios_uuid
+        client, "hmc_list_volume_groups", vios_name_or_uuid=artifacts.vios_uuid
     )
     state.record(16, "hmc_list_volume_groups", st, data)
     if st == "PASS":
         for vg in entries(data):
             resource = get_resource(vg)
             uuid = vg.get("UUID") or vg.get("uuid")
-            if not context.vg_uuid and uuid:
-                context.vg_uuid = uuid
+            if not artifacts.vg_uuid and uuid:
+                artifacts.vg_uuid = uuid
             # Always read free space from the selected VG
-            if uuid == context.vg_uuid or not context.vg_uuid:
+            if uuid == artifacts.vg_uuid or not artifacts.vg_uuid:
                 free_raw = (
                     resource.get("FreeSpace")
                     or resource.get("FreeSpaceInMBytes")
@@ -92,7 +93,7 @@ async def _select_vmedia_volume_group(
                     free_mib = int(float(free_raw)) if free_raw is not None else None
                 except (TypeError, ValueError):
                     free_mib = None
-                print(f"  VG UUID: {context.vg_uuid}  free space: {free_mib} MiB")
+                print(f"  VG UUID: {artifacts.vg_uuid}  free space: {free_mib} MiB")
                 if free_mib is not None and free_mib < repo_size_mib:
                     for name in [
                         "hmc_create_media_repository",
@@ -106,7 +107,7 @@ async def _select_vmedia_volume_group(
                     return False
                 break
 
-    if not context.vg_uuid:
+    if not artifacts.vg_uuid:
         for name in ["hmc_create_media_repository", "hmc_get_media_repository"]:
             state.skip(16, name, "no VG UUID resolved")
         return False
@@ -118,14 +119,14 @@ async def _create_and_confirm_vmedia_repository(
     client: Client, state: RunState, repo_size_mib: int
 ) -> None:
     """Create the ST16 repository and confirm that the HMC reports it."""
-    context = state.context
+    artifacts = state.artifacts
 
     # Step 4 — Create repository
     st, data = await state.call(
         client,
         "hmc_create_media_repository",
-        vios_name_or_uuid=context.vios_uuid,
-        vg_uuid=context.vg_uuid,
+        vios_name_or_uuid=artifacts.vios_uuid,
+        vg_uuid=artifacts.vg_uuid,
         size_mib=repo_size_mib,
     )
     state.record(16, "hmc_create_media_repository", st, data)
@@ -137,18 +138,18 @@ async def _create_and_confirm_vmedia_repository(
     st, data = await state.call(
         client,
         "hmc_get_media_repository",
-        vios_name_or_uuid=context.vios_uuid,
-        vg_uuid=context.vg_uuid,
+        vios_name_or_uuid=artifacts.vios_uuid,
+        vg_uuid=artifacts.vg_uuid,
     )
     state.record(16, "hmc_get_media_repository", st, data)
     if st == "PASS" and data:
-        context.vmedia_repo_created = True
+        artifacts.vmedia_repo_created = True
         print("  ✅ Repository created — vmedia_repo_created=True")
 
 
 async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> None:
     print("\n=== ST16: VG Free-Space Check + Repository Create ===")
-    repo_size_mib = state.context.vmedia_repository_size_mib
+    repo_size_mib = state.config.vmedia_repository_size_mib
 
     if not await _discover_vmedia_prerequisites(client, state):
         return
@@ -163,10 +164,11 @@ async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> N
 
 
 async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
-    context = state.context
+    config = state.config
+    artifacts = state.artifacts
     print("\n=== ST17: Short Repository Lifecycle (no ISO) ===")
 
-    if not context.vmedia_repo_created:
+    if not artifacts.vmedia_repo_created:
         for name in [
             "hmc_delete_media_repository (main)",
             "hmc_create_media_repository (small)",
@@ -179,8 +181,8 @@ async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
             state.skip(17, name, "vmedia_repo_created=False (ST16 failed)")
         return
 
-    vios = context.vios_uuid
-    vg = context.vg_uuid
+    vios = artifacts.vios_uuid
+    vg = artifacts.vg_uuid
 
     # Step 2 — Delete the ST16 main repository
     st, data = await state.call(
@@ -197,7 +199,7 @@ async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
         "hmc_create_media_repository",
         vios_name_or_uuid=vios,
         vg_uuid=vg,
-        size_mib=context.vmedia_short_repository_size_mib,
+        size_mib=config.vmedia_short_repository_size_mib,
     )
     state.record(17, "hmc_create_media_repository (small)", st, data)
 
@@ -243,13 +245,13 @@ async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
         "hmc_create_media_repository",
         vios_name_or_uuid=vios,
         vg_uuid=vg,
-        size_mib=context.vmedia_repository_size_mib,
+        size_mib=config.vmedia_repository_size_mib,
     )
     state.record(17, "hmc_create_media_repository (restore main)", st, data)
     if st == "PASS":
-        context.vmedia_repo_created = True
+        artifacts.vmedia_repo_created = True
     else:
-        context.vmedia_repo_created = False
+        artifacts.vmedia_repo_created = False
         print("  ⚠  Failed to restore main repository — ST18–ST22 may be skipped")
 
 
@@ -264,17 +266,17 @@ class IsoHttpServer:
     def __init__(self) -> None:
         self._server: http.server.HTTPServer | None = None
 
-    def start(self, context: LiveTestContext) -> None:
+    def start(self, config: LiveTestConfig) -> None:
         """Start serving the configured ISO directory once for this invocation."""
-        _allow_iso_host(context)
+        _allow_iso_host(config)
         if self._server is not None:
             return
         handler = functools.partial(
             http.server.SimpleHTTPRequestHandler,
-            directory=str(Path(context.iso_path).parent),
+            directory=str(Path(config.iso_path).parent),
         )
         self._server = http.server.HTTPServer(
-            (context.iso_bind_host, context.iso_http_port), handler
+            (config.iso_bind_host, config.iso_http_port), handler
         )
         threading.Thread(target=self._server.serve_forever, daemon=True).start()
 
@@ -287,7 +289,7 @@ class IsoHttpServer:
         self._server = None
 
 
-def _allow_iso_host(context: LiveTestContext) -> None:
+def _allow_iso_host(config: LiveTestConfig) -> None:
     """Put this runner's own ISO server on ``HMC_ISO_URL_ALLOWLIST``.
 
     ADR 0050 made ``hmc_upload_iso`` refuse every URL whose host an operator has
@@ -303,9 +305,9 @@ def _allow_iso_host(context: LiveTestContext) -> None:
     name = "HMC_ISO_URL_ALLOWLIST"
     configured = env_var_value(name) or ""
     entries = [entry.strip() for entry in configured.split(",") if entry.strip()]
-    if context.iso_host in entries:
+    if config.iso_host in entries:
         return
-    entries.append(context.iso_host)
+    entries.append(config.iso_host)
     # The merged value has to be the one that reaches the field, so every other
     # casing goes first. Assigning to a key that already exists updates it in
     # place rather than moving it, so a variant inserted after the canonical name
@@ -322,64 +324,64 @@ def _allow_iso_host(context: LiveTestContext) -> None:
 
 def _prepare_iso_upload(state: RunState, skip_names: list[str]) -> bool:
     """Validate ST18 prerequisites and start its invocation-owned HTTP server."""
-    context = state.context
-    if not context.vmedia_repo_created:
+    config = state.config
+    artifacts = state.artifacts
+    if not artifacts.vmedia_repo_created:
         for name in skip_names:
             state.skip(18, name, "vmedia_repo_created=False (ST16/ST17 failed)")
         return False
 
-    if not Path(context.iso_path).is_file():
+    if not Path(config.iso_path).is_file():
         state.record(
             18,
             "iso_file_check",
             "FAIL",
-            f"ISO not found: {context.iso_path}",
+            f"ISO not found: {config.iso_path}",
         )
         for name in skip_names:
-            state.skip(18, name, f"ISO file missing: {context.iso_path}")
+            state.skip(18, name, f"ISO file missing: {config.iso_path}")
         return False
 
-    state.record(18, "iso_file_check", "PASS", f"ISO found: {context.iso_path}")
+    state.record(18, "iso_file_check", "PASS", f"ISO found: {config.iso_path}")
 
     try:
-        state.iso_http_server.start(context)
+        state.iso_http_server.start(config)
     except OSError as exc:
         state.record(
             18,
             "iso_http_server",
             "FAIL",
             str(exc),
-            f"HTTP server could not bind to port {context.iso_http_port}",
+            f"HTTP server could not bind to port {config.iso_http_port}",
         )
         for name in skip_names:
-            state.skip(18, name, f"no HTTP server on port {context.iso_http_port}")
+            state.skip(18, name, f"no HTTP server on port {config.iso_http_port}")
         return False
 
-    state.record(18, "iso_http_server", "PASS", f"serving {context.iso_url}")
+    state.record(18, "iso_http_server", "PASS", f"serving {config.iso_url}")
     return True
 
 
 async def _upload_and_discover_iso(client: Client, state: RunState) -> None:
     """Upload the ST18 ISO and capture the media name returned by the HMC."""
-    context = state.context
-    print(
-        f"  ⏳ Uploading ISO via HTTP ({context.iso_url}) — may take several minutes…"
-    )
+    config = state.config
+    artifacts = state.artifacts
+    print(f"  ⏳ Uploading ISO via HTTP ({config.iso_url}) — may take several minutes…")
     st, data = await state.call(
         client,
         "hmc_upload_iso",
-        vios_name_or_uuid=context.vios_uuid,
-        vg_uuid=context.vg_uuid,
-        media_name=context.iso_media_name,
-        iso_source=context.iso_url,
+        vios_name_or_uuid=artifacts.vios_uuid,
+        vg_uuid=artifacts.vg_uuid,
+        media_name=config.iso_media_name,
+        iso_source=config.iso_url,
     )
     state.record(18, "hmc_upload_iso (http)", st, data)
 
     st, data = await state.call(
         client,
         "hmc_list_optical_media",
-        vios_name_or_uuid=context.vios_uuid,
-        vg_uuid=context.vg_uuid,
+        vios_name_or_uuid=artifacts.vios_uuid,
+        vg_uuid=artifacts.vg_uuid,
     )
     state.record(18, "hmc_list_optical_media (post-upload)", st, data)
     if st != "PASS":
@@ -387,23 +389,24 @@ async def _upload_and_discover_iso(client: Client, state: RunState) -> None:
     for entry in entries(data) if isinstance(data, list) else []:
         name = get_resource(entry).get("MediaName") or entry.get("MediaName")
         if name:
-            context.vmedia_iso_name = name
+            artifacts.vmedia_iso_name = name
             break
-    if not context.vmedia_iso_name and isinstance(data, list) and data:
-        context.vmedia_iso_name = data[0].get("MediaName") or context.iso_media_name
+    if not artifacts.vmedia_iso_name and isinstance(data, list) and data:
+        artifacts.vmedia_iso_name = data[0].get("MediaName") or config.iso_media_name
 
 
 async def _verify_iso_deduplication(client: Client, state: RunState) -> None:
     """Re-upload the ST18 content and verify the broker deduplicates it."""
-    context = state.context
-    print(f"  ⏳ Uploading ISO via HTTP ({context.iso_url}) again — expect dedup hit…")
+    config = state.config
+    artifacts = state.artifacts
+    print(f"  ⏳ Uploading ISO via HTTP ({config.iso_url}) again — expect dedup hit…")
     st_http, data_http = await state.call(
         client,
         "hmc_upload_iso",
-        vios_name_or_uuid=context.vios_uuid,
-        vg_uuid=context.vg_uuid,
-        media_name=context.iso_http_media_name,
-        iso_source=context.iso_url,
+        vios_name_or_uuid=artifacts.vios_uuid,
+        vg_uuid=artifacts.vg_uuid,
+        media_name=config.iso_http_media_name,
+        iso_source=config.iso_url,
     )
     http_status = data_http.get("status") if isinstance(data_http, dict) else ""
     if st_http == "PASS" and http_status == "existing":
@@ -426,31 +429,32 @@ async def _verify_iso_deduplication(client: Client, state: RunState) -> None:
     st, data = await state.call(
         client,
         "hmc_list_optical_media",
-        vios_name_or_uuid=context.vios_uuid,
-        vg_uuid=context.vg_uuid,
+        vios_name_or_uuid=artifacts.vios_uuid,
+        vg_uuid=artifacts.vg_uuid,
     )
     state.record(18, "hmc_list_optical_media (post-http)", st, data)
 
 
 async def _reset_iso_for_mount_scenario(client: Client, state: RunState) -> None:
     """Delete the ST18 media, confirm absence, then re-upload it for ST19."""
-    context = state.context
+    config = state.config
+    artifacts = state.artifacts
     st, data = await state.call(
         client,
         "hmc_delete_optical_media",
-        vios_name_or_uuid=context.vios_uuid,
-        vg_uuid=context.vg_uuid,
-        media_name=context.iso_media_name,
+        vios_name_or_uuid=artifacts.vios_uuid,
+        vg_uuid=artifacts.vg_uuid,
+        media_name=config.iso_media_name,
     )
     state.record(18, "hmc_delete_optical_media", st, data)
     if st == "PASS":
-        context.vmedia_iso_name = None
+        artifacts.vmedia_iso_name = None
 
     st, data = await state.call(
         client,
         "hmc_list_optical_media",
-        vios_name_or_uuid=context.vios_uuid,
-        vg_uuid=context.vg_uuid,
+        vios_name_or_uuid=artifacts.vios_uuid,
+        vg_uuid=artifacts.vg_uuid,
     )
     state.record(18, "hmc_list_optical_media (confirm empty)", st, data)
 
@@ -458,15 +462,15 @@ async def _reset_iso_for_mount_scenario(client: Client, state: RunState) -> None
     st, data = await state.call(
         client,
         "hmc_upload_iso",
-        vios_name_or_uuid=context.vios_uuid,
-        vg_uuid=context.vg_uuid,
-        media_name=context.iso_media_name,
-        iso_source=context.iso_url,
+        vios_name_or_uuid=artifacts.vios_uuid,
+        vg_uuid=artifacts.vg_uuid,
+        media_name=config.iso_media_name,
+        iso_source=config.iso_url,
     )
     state.record(18, "hmc_upload_iso (re-upload for ST19)", st, data)
     if st == "PASS" and isinstance(data, dict):
-        context.vmedia_iso_name = data.get("media_name") or context.iso_media_name
-    print(f"  vmedia_iso_name: {context.vmedia_iso_name}")
+        artifacts.vmedia_iso_name = data.get("media_name") or config.iso_media_name
+    print(f"  vmedia_iso_name: {artifacts.vmedia_iso_name}")
 
 
 async def vmedia_upload_iso(client: Client, state: RunState) -> None:
@@ -496,37 +500,38 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
 
 async def _mount_vmedia_and_confirm(client: Client, state: RunState) -> None:
     """Mount the ST19 ISO and verify that its mapping is visible."""
-    context = state.context
-    vios = context.vios_uuid
+    config = state.config
+    artifacts = state.artifacts
+    vios = artifacts.vios_uuid
     st, data = await state.call(
         client,
         "hmc_mount_optical_media",
         vios_name_or_uuid=vios,
-        media_name=context.vmedia_iso_name,
-        lpar_name_or_uuid=context.lp3_name,
+        media_name=artifacts.vmedia_iso_name,
+        lpar_name_or_uuid=config.lp3_name,
     )
     state.record(19, "hmc_mount_optical_media", st, data)
     if st == "PASS" and isinstance(data, dict):
-        context.vmedia_mapping_uuid = (
+        artifacts.vmedia_mapping_uuid = (
             data.get("ElementID")
             or data.get("UUID")
             or data.get("uuid")
             or data.get("mapping_uuid")
         )
         # Dig into Resource wrapper if present
-        if not context.vmedia_mapping_uuid:
+        if not artifacts.vmedia_mapping_uuid:
             resource = data.get("Resource") or {}
-            context.vmedia_mapping_uuid = resource.get("ElementID") or resource.get(
+            artifacts.vmedia_mapping_uuid = resource.get("ElementID") or resource.get(
                 "UUID"
             )
-    print(f"  mapping_uuid: {context.vmedia_mapping_uuid}")
+    print(f"  mapping_uuid: {artifacts.vmedia_mapping_uuid}")
 
     # Step 3 — Confirm mapping visible in list
     st, data = await state.call(
         client,
         "hmc_list_optical_mappings",
         vios_name_or_uuid=vios,
-        lpar_name_or_uuid=context.lp3_name,
+        lpar_name_or_uuid=config.lp3_name,
     )
     state.record(19, "hmc_list_optical_mappings (confirm mounted)", st, data)
 
@@ -535,13 +540,13 @@ async def _verify_mounted_media_delete_is_blocked(
     client: Client, state: RunState
 ) -> None:
     """Exercise and record the safe-delete guard while the ISO is mounted."""
-    context = state.context
+    artifacts = state.artifacts
     st_del, data_del = await state.call(
         client,
         "hmc_delete_optical_media",
-        vios_name_or_uuid=context.vios_uuid,
-        vg_uuid=context.vg_uuid,
-        media_name=context.vmedia_iso_name,
+        vios_name_or_uuid=artifacts.vios_uuid,
+        vg_uuid=artifacts.vg_uuid,
+        media_name=artifacts.vmedia_iso_name,
     )
     rejection_text = str(data_del).lower()
     if st_del == "FAIL" and any(
@@ -566,19 +571,20 @@ async def _verify_mounted_media_delete_is_blocked(
 
 async def _unmount_and_delete_vmedia(client: Client, state: RunState) -> None:
     """Unmount the ST19 ISO, delete it, and confirm the repository is empty."""
-    context = state.context
-    vios = context.vios_uuid
-    vg = context.vg_uuid
-    if context.vmedia_mapping_uuid:
+    config = state.config
+    artifacts = state.artifacts
+    vios = artifacts.vios_uuid
+    vg = artifacts.vg_uuid
+    if artifacts.vmedia_mapping_uuid:
         st, data = await state.call(
             client,
             "hmc_unmount_optical_media",
             vios_name_or_uuid=vios,
-            mapping_uuid=context.vmedia_mapping_uuid,
+            mapping_uuid=artifacts.vmedia_mapping_uuid,
         )
         state.record(19, "hmc_unmount_optical_media", st, data)
         if st == "PASS":
-            context.vmedia_mapping_uuid = None
+            artifacts.vmedia_mapping_uuid = None
     else:
         state.skip(19, "hmc_unmount_optical_media", "no mapping UUID captured")
 
@@ -587,7 +593,7 @@ async def _unmount_and_delete_vmedia(client: Client, state: RunState) -> None:
         client,
         "hmc_list_optical_mappings",
         vios_name_or_uuid=vios,
-        lpar_name_or_uuid=context.lp3_name,
+        lpar_name_or_uuid=config.lp3_name,
     )
     state.record(19, "hmc_list_optical_mappings (confirm unmounted)", st, data)
 
@@ -597,11 +603,11 @@ async def _unmount_and_delete_vmedia(client: Client, state: RunState) -> None:
         "hmc_delete_optical_media",
         vios_name_or_uuid=vios,
         vg_uuid=vg,
-        media_name=context.vmedia_iso_name,
+        media_name=artifacts.vmedia_iso_name,
     )
     state.record(19, "hmc_delete_optical_media (post-unmount)", st, data)
     if st == "PASS":
-        context.vmedia_iso_name = None
+        artifacts.vmedia_iso_name = None
 
     # Step 8 — Confirm empty
     st, data = await state.call(
@@ -614,7 +620,7 @@ async def _unmount_and_delete_vmedia(client: Client, state: RunState) -> None:
 
 
 async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
-    context = state.context
+    artifacts = state.artifacts
     print("\n=== ST19: Mount / Unmount + Safe-Delete Validation ===")
     skip_names = [
         "hmc_mount_optical_media",
@@ -625,7 +631,7 @@ async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
         "hmc_delete_optical_media (post-unmount)",
         "hmc_list_optical_media (confirm empty)",
     ]
-    if not context.vmedia_iso_name:
+    if not artifacts.vmedia_iso_name:
         for name in skip_names:
             state.skip(19, name, "vmedia_iso_name not set (ST18 failed)")
         return
@@ -648,14 +654,15 @@ async def _prepare_boot_media(
     remaining_steps: list[str],
 ) -> bool:
     """Upload and mount the boot ISO after placing the test LPAR offline."""
-    context = state.context
+    config = state.config
+    artifacts = state.artifacts
     print("  ⏳ Re-uploading ISO for boot test (may take several minutes)…")
     try:
-        state.iso_http_server.start(context)
+        state.iso_http_server.start(config)
     except OSError as exc:
         for name in remaining_steps:
             state.skip(
-                20, name, f"no HTTP server on port {context.iso_http_port}: {exc}"
+                20, name, f"no HTTP server on port {config.iso_http_port}: {exc}"
             )
         return False
 
@@ -664,8 +671,8 @@ async def _prepare_boot_media(
         "hmc_upload_iso",
         vios_name_or_uuid=vios_uuid,
         vg_uuid=vg_uuid,
-        media_name=context.iso_media_name,
-        iso_source=context.iso_url,
+        media_name=config.iso_media_name,
+        iso_source=config.iso_url,
     )
     state.record(20, "hmc_upload_iso (re-upload for boot test)", status, data)
     if status != "PASS":
@@ -673,12 +680,12 @@ async def _prepare_boot_media(
             state.skip(20, name, "ISO re-upload failed")
         return False
     if isinstance(data, dict):
-        context.vmedia_iso_name = data.get("media_name") or context.iso_media_name
+        artifacts.vmedia_iso_name = data.get("media_name") or config.iso_media_name
 
     status, data = await state.call(
         client,
         "hmc_power_off_lpar",
-        lpar_name_or_uuid=context.lp3_name,
+        lpar_name_or_uuid=config.lp3_name,
         immediate=True,
         wait=True,
     )
@@ -700,8 +707,8 @@ async def _prepare_boot_media(
         client,
         "hmc_mount_optical_media",
         vios_name_or_uuid=vios_uuid,
-        media_name=context.vmedia_iso_name,
-        lpar_name_or_uuid=context.lp3_name,
+        media_name=artifacts.vmedia_iso_name,
+        lpar_name_or_uuid=config.lp3_name,
     )
     state.record(20, "hmc_mount_optical_media (boot test)", status, data)
     if status != "PASS":
@@ -710,7 +717,7 @@ async def _prepare_boot_media(
         return False
     if isinstance(data, dict):
         resource = data.get("Resource") or {}
-        context.vmedia_mapping_uuid = (
+        artifacts.vmedia_mapping_uuid = (
             data.get("ElementID")
             or data.get("UUID")
             or data.get("uuid")
@@ -725,24 +732,25 @@ async def _configure_boot_order(
     client: Client, state: RunState, lpar_uuid: str
 ) -> None:
     """Capture the current boot order and replace it with the boot-test order."""
-    context = state.context
+    config = state.config
+    artifacts = state.artifacts
     status, data = await state.call(
         client,
         "hmc_read_lpar_boot_order",
-        system_name_or_uuid=context.system_name,
+        system_name_or_uuid=config.system_name,
         lpar_uuid=lpar_uuid,
     )
     state.record(20, "hmc_read_lpar_boot_order (baseline)", status, data)
     if status == "PASS" and isinstance(data, dict):
         pending = data.get("pending_boot_string") or ""
-        context.vmedia_orig_boot_order = [
+        artifacts.vmedia_orig_boot_order = [
             device.strip() for device in pending.split(",") if device.strip()
         ]
 
     status, data = await state.call(
         client,
         "hmc_set_lpar_boot_order",
-        system_name_or_uuid=context.system_name,
+        system_name_or_uuid=config.system_name,
         lpar_uuid=lpar_uuid,
         devices=["cd", "network", "disk"],
     )
@@ -751,18 +759,18 @@ async def _configure_boot_order(
 
 async def _run_boot_probe(client: Client, state: RunState) -> None:
     """Boot the test partition, report its state, and power it off again."""
-    context = state.context
+    config = state.config
     status, data = await state.call(
         client,
         "hmc_power_on_lpar",
-        lpar_name_or_uuid=context.lp3_name,
+        lpar_name_or_uuid=config.lp3_name,
         wait=True,
         timeout=120,
     )
     state.record(20, "hmc_power_on_lpar", status, data)
 
     status, data = await state.call(
-        client, "hmc_lpar_summary", lpar_name_or_uuid=context.lp3_name
+        client, "hmc_lpar_summary", lpar_name_or_uuid=config.lp3_name
     )
     state.record(20, "hmc_lpar_summary (verify running)", status, data)
     if status == "PASS" and isinstance(data, dict):
@@ -773,7 +781,7 @@ async def _run_boot_probe(client: Client, state: RunState) -> None:
     status, data = await state.call(
         client,
         "hmc_power_off_lpar",
-        lpar_name_or_uuid=context.lp3_name,
+        lpar_name_or_uuid=config.lp3_name,
         immediate=True,
         wait=True,
     )
@@ -784,17 +792,18 @@ async def _restore_boot_configuration(
     client: Client, state: RunState, vios_uuid: str, lpar_uuid: str
 ) -> None:
     """Unmount the test ISO, restore boot order, and verify the restored state."""
-    context = state.context
-    if context.vmedia_mapping_uuid:
+    config = state.config
+    artifacts = state.artifacts
+    if artifacts.vmedia_mapping_uuid:
         status, data = await state.call(
             client,
             "hmc_unmount_optical_media",
             vios_name_or_uuid=vios_uuid,
-            mapping_uuid=context.vmedia_mapping_uuid,
+            mapping_uuid=artifacts.vmedia_mapping_uuid,
         )
         state.record(20, "hmc_unmount_optical_media (boot test cleanup)", status, data)
         if status == "PASS":
-            context.vmedia_mapping_uuid = None
+            artifacts.vmedia_mapping_uuid = None
     else:
         state.skip(
             20,
@@ -802,36 +811,37 @@ async def _restore_boot_configuration(
             "no mapping UUID to unmount",
         )
 
-    if context.vmedia_orig_boot_order:
+    if artifacts.vmedia_orig_boot_order:
         status, data = await state.call(
             client,
             "hmc_set_lpar_boot_order",
-            system_name_or_uuid=context.system_name,
+            system_name_or_uuid=config.system_name,
             lpar_uuid=lpar_uuid,
-            devices=context.vmedia_orig_boot_order,
+            devices=artifacts.vmedia_orig_boot_order,
         )
     else:
         status, data = await state.call(
             client,
             "hmc_clear_lpar_boot_order",
-            system_name_or_uuid=context.system_name,
+            system_name_or_uuid=config.system_name,
             lpar_uuid=lpar_uuid,
         )
     state.record(20, "hmc_set_lpar_boot_order (restore)", status, data)
     if status == "PASS":
-        context.vmedia_orig_boot_order = []
+        artifacts.vmedia_orig_boot_order = []
 
     status, data = await state.call(
         client,
         "hmc_read_lpar_boot_order",
-        system_name_or_uuid=context.system_name,
+        system_name_or_uuid=config.system_name,
         lpar_uuid=lpar_uuid,
     )
     state.record(20, "hmc_read_lpar_boot_order (verify restore)", status, data)
 
 
 async def vmedia_boot_verification(client: Client, state: RunState) -> None:
-    context = state.context
+    config = state.config
+    artifacts = state.artifacts
     print(
         "\n=== ST20: Boot Verification: Power Off → CD Boot → Power On → Verify → Restore ==="
     )
@@ -850,18 +860,18 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
         "hmc_read_lpar_boot_order (verify restore)",
     ]
 
-    if not context.vmedia_repo_created:
+    if not artifacts.vmedia_repo_created:
         for name in _skip_names:
             state.skip(20, name, "vmedia_repo_created=False (ST16 failed)")
         return
 
     # Safety belt — never touch protected LPARs, even under ``python -O``.
-    if context.lp3_name in context.protected_lpar_names:
-        raise ValueError(f"ST20 refuses to mutate protected LPAR {context.lp3_name!r}")
+    if config.lp3_name in config.protected_lpar_names:
+        raise ValueError(f"ST20 refuses to mutate protected LPAR {config.lp3_name!r}")
 
-    vios = context.vios_uuid
-    vg = context.vg_uuid
-    lp3_uuid = context.lp3_uuid
+    vios = artifacts.vios_uuid
+    vg = artifacts.vg_uuid
+    lp3_uuid = artifacts.lp3_uuid
 
     if not lp3_uuid:
         for name in _skip_names:
@@ -881,10 +891,11 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
 
 
 async def vmedia_mapping_crossvalidation(client: Client, state: RunState) -> None:
-    context = state.context
+    config = state.config
+    artifacts = state.artifacts
     print("\n=== ST21: List Storage Mappings Cross-Validation ===")
 
-    if not context.vios_uuid:
+    if not artifacts.vios_uuid:
         for name in [
             "hmc_list_storage_mappings (all)",
             "hmc_list_optical_mappings (all)",
@@ -894,7 +905,7 @@ async def vmedia_mapping_crossvalidation(client: Client, state: RunState) -> Non
             state.skip(21, name, "no VIOS UUID in context")
         return
 
-    vios = context.vios_uuid
+    vios = artifacts.vios_uuid
 
     st, data = await state.call(
         client,
@@ -914,7 +925,7 @@ async def vmedia_mapping_crossvalidation(client: Client, state: RunState) -> Non
         client,
         "hmc_list_storage_mappings",
         vios_name_or_uuid=vios,
-        lpar_name_or_uuid=context.lp3_name,
+        lpar_name_or_uuid=config.lp3_name,
     )
     state.record(21, "hmc_list_storage_mappings (lp3)", st, data)
 
@@ -922,7 +933,7 @@ async def vmedia_mapping_crossvalidation(client: Client, state: RunState) -> Non
         client,
         "hmc_list_optical_mappings",
         vios_name_or_uuid=vios,
-        lpar_name_or_uuid=context.lp3_name,
+        lpar_name_or_uuid=config.lp3_name,
     )
     state.record(21, "hmc_list_optical_mappings (lp3)", st, data)
 
@@ -934,19 +945,20 @@ async def vmedia_mapping_crossvalidation(client: Client, state: RunState) -> Non
 
 async def _restore_teardown_boot_order(client: Client, state: RunState) -> None:
     """Restore a saved boot order when ST20 did not finish its own cleanup."""
-    context = state.context
-    if context.vmedia_orig_boot_order and context.lp3_uuid:
+    config = state.config
+    artifacts = state.artifacts
+    if artifacts.vmedia_orig_boot_order and artifacts.lp3_uuid:
         st, data = await state.call(
             client,
             "hmc_set_lpar_boot_order",
-            system_name_or_uuid=context.system_name,
-            lpar_uuid=context.lp3_uuid,
-            devices=context.vmedia_orig_boot_order,
+            system_name_or_uuid=config.system_name,
+            lpar_uuid=artifacts.lp3_uuid,
+            devices=artifacts.vmedia_orig_boot_order,
         )
         state.record(22, "hmc_set_lpar_boot_order (boot order restore guard)", st, data)
         if st == "PASS":
-            context.vmedia_orig_boot_order = []
-    elif not context.vmedia_orig_boot_order:
+            artifacts.vmedia_orig_boot_order = []
+    elif not artifacts.vmedia_orig_boot_order:
         state.skip(
             22,
             "hmc_set_lpar_boot_order (boot order restore guard)",
@@ -1046,7 +1058,7 @@ async def _remove_repository_and_audit(
             skip_reason="repository already gone (expected on re-run)",
         )
         if st == "PASS":
-            state.context.vmedia_repo_created = False
+            state.artifacts.vmedia_repo_created = False
         st, data = await state.call(
             client,
             "hmc_get_media_repository",
@@ -1068,11 +1080,11 @@ async def _remove_repository_and_audit(
 
 async def vmedia_teardown(client: Client, state: RunState) -> None:
     """Restore boot state and remove every vMedia artifact in phase order."""
-    context = state.context
+    artifacts = state.artifacts
     print("\n=== ST22: Teardown: Unmount Orphans → Delete ISO → Delete Repository ===")
 
     await _restore_teardown_boot_order(client, state)
-    if not context.vios_uuid:
+    if not artifacts.vios_uuid:
         for name in [
             "hmc_list_optical_mappings (orphan cleanup)",
             "hmc_list_optical_media (media cleanup)",
@@ -1083,8 +1095,8 @@ async def vmedia_teardown(client: Client, state: RunState) -> None:
             state.skip(22, name, "no VIOS UUID in context")
         return
 
-    await _remove_orphan_mappings(client, state, context.vios_uuid)
-    await _remove_optical_media(client, state, context.vios_uuid, context.vg_uuid)
+    await _remove_orphan_mappings(client, state, artifacts.vios_uuid)
+    await _remove_optical_media(client, state, artifacts.vios_uuid, artifacts.vg_uuid)
     await _remove_repository_and_audit(
-        client, state, context.vios_uuid, context.vg_uuid
+        client, state, artifacts.vios_uuid, artifacts.vg_uuid
     )

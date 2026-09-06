@@ -25,7 +25,7 @@ import os
 import re
 import tempfile
 import traceback
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
@@ -86,9 +86,7 @@ _ABSOLUTE_PATH_RE = re.compile(r"(?<![:\w])/(?:[^\s/]+/)*[^\s,;:'\")]+")
 
 def _redact_failure_text(value: str) -> str:
     """Replace sensitive values in runner failure diagnostics."""
-    value = _SECRET_VALUE_RE.sub(
-        r"\g<name>\g<separator><REDACTED-SECRET>", value
-    )
+    value = _SECRET_VALUE_RE.sub(r"\g<name>\g<separator><REDACTED-SECRET>", value)
     value = _URL_USERINFO_RE.sub(r"\g<scheme><REDACTED-URL-USERINFO>@", value)
     value = _HOSTNAME_RE.sub("<REDACTED-HOST>", value)
     return _ABSOLUTE_PATH_RE.sub("<REDACTED-PATH>", value)
@@ -101,6 +99,7 @@ def _redact_failure_data(data: Any) -> Any:
     if isinstance(data, list):
         return [_redact_failure_data(value) for value in data]
     return _redact_failure_text(str(data))
+
 
 #: The `HMC_*` names whose reader folds their casing: `HMCConfig`'s own fields,
 #: and only those. `HMC_PROFILE` and a profile's `password_env` target carry the
@@ -201,31 +200,16 @@ def _ensure_schema_version() -> bool:
     return False
 
 
-@dataclass
-class LiveTestContext:
-    """Identifiers and snapshots belonging to one live-test execution."""
+@dataclass(frozen=True)
+class LiveTestConfig:
+    """Validated operator configuration for live-test executions."""
 
     system_name: str = "example-lt-609-system"
     lp3_name: str = "example-lt-609-lpar"
     scratch_name: str = "example-lt-609-scratch"
     nettest_name: str = "example-lt-609-network"
     test_user: str = "example-lt-609-user"
-    system_uuid: str | None = None
-    lp3_uuid: str | None = None
-    scratch_uuid: str | None = None
-    vios_uuid: str | None = None
-    vios_partition_id: int | None = None
-    console_uuid: str | None = None
-    test_vlan_id: int | None = None
-    test_vswitch_id: int | None = None
-    test_network_uuid: str | None = None
-    test_adapter_uuid: str | None = None
-    nettest_uuid: str | None = None
-    job_uuid_sample: str | None = None
-    vg_uuid: str | None = None
     vdisk_name: str = "example-lt-609-disk"
-    vdisk_vg_name: str | None = None
-    vdisk_size_mib: int | None = None
     scratch_create_desired_memory_mib: int = 1536
     scratch_create_max_memory_mib: int = 3072
     scratch_create_desired_vcpus: int = 3
@@ -263,12 +247,6 @@ class LiveTestContext:
     placement_memory_mib: int = 3072
     vlan_range_start: int = 3100
     vlan_range_end: int = 3199
-    lp3_baseline: dict[str, Any] = field(default_factory=dict)
-    # Virtual-media round (ST16–ST22)
-    vmedia_repo_created: bool = False
-    vmedia_iso_name: str | None = None
-    vmedia_mapping_uuid: str | None = None
-    vmedia_orig_boot_order: list[str] = field(default_factory=list)
 
     @property
     def iso_filename(self) -> str:
@@ -329,7 +307,7 @@ class LiveTestContext:
     }
 
     @classmethod
-    def from_env_file(cls, path: Path | None = None) -> LiveTestContext:
+    def from_env_file(cls, path: Path | None = None) -> LiveTestConfig:
         """Load required live-test identifiers from one authoritative local file."""
         path = path or _ENV_FILE
         if not path.is_file():
@@ -440,10 +418,37 @@ class LiveTestContext:
 
 
 @dataclass
+class LiveTestArtifacts:
+    """Mutable discoveries and recovery state owned by one live-test invocation."""
+
+    system_uuid: str | None = None
+    lp3_uuid: str | None = None
+    scratch_uuid: str | None = None
+    vios_uuid: str | None = None
+    vios_partition_id: int | None = None
+    console_uuid: str | None = None
+    test_vlan_id: int | None = None
+    test_vswitch_id: int | None = None
+    test_network_uuid: str | None = None
+    test_adapter_uuid: str | None = None
+    nettest_uuid: str | None = None
+    job_uuid_sample: str | None = None
+    vg_uuid: str | None = None
+    vdisk_vg_name: str | None = None
+    vdisk_size_mib: int | None = None
+    lp3_baseline: dict[str, Any] = field(default_factory=dict)
+    vmedia_repo_created: bool = False
+    vmedia_iso_name: str | None = None
+    vmedia_mapping_uuid: str | None = None
+    vmedia_orig_boot_order: list[str] = field(default_factory=list)
+
+
+@dataclass
 class RunState:
     """Mutable output owned by a single invocation of the live runner."""
 
-    context: LiveTestContext = field(default_factory=LiveTestContext)
+    config: LiveTestConfig = field(default_factory=LiveTestConfig)
+    artifacts: LiveTestArtifacts = field(default_factory=LiveTestArtifacts)
     results: list[dict[str, Any]] = field(default_factory=list)
     iso_http_server: IsoHttpServer = field(default_factory=IsoHttpServer)
 
@@ -599,7 +604,7 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
     """Validate arguments, then bootstrap configuration and execute the live run."""
     arguments = _parse_arguments(argv)
     try:
-        context = LiveTestContext.from_env_file()
+        config = LiveTestConfig.from_env_file()
     except ValueError as exc:
         print(f"❌ {exc}")
         return 1
@@ -610,49 +615,146 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
             subtask_filter=arguments.subtask,
             results_path=arguments.results_path,
             group=arguments.group,
-            context=context,
+            config=config,
         )
     )
 
 
-def _restore_ctx_from_results(
+_ARTIFACT_NULLABLE_STRINGS = frozenset(
+    {
+        "system_uuid",
+        "lp3_uuid",
+        "scratch_uuid",
+        "vios_uuid",
+        "console_uuid",
+        "test_network_uuid",
+        "test_adapter_uuid",
+        "nettest_uuid",
+        "job_uuid_sample",
+        "vg_uuid",
+        "vdisk_vg_name",
+        "vmedia_iso_name",
+        "vmedia_mapping_uuid",
+    }
+)
+_ARTIFACT_NULLABLE_INTS = frozenset(
+    {"vios_partition_id", "test_vlan_id", "test_vswitch_id", "vdisk_size_mib"}
+)
+
+
+def _decode_saved_config(value: Any) -> LiveTestConfig:
+    """Decode the canonical JSON form of a live-test configuration."""
+    if not isinstance(value, dict):
+        raise TypeError("results config must be a JSON object")
+    expected = asdict(LiveTestConfig())
+    if set(value) != set(expected):
+        raise ValueError("results config fields do not match LiveTestConfig")
+    parsed = dict(value)
+    protected = parsed["protected_lpar_names"]
+    if not isinstance(protected, list) or not all(
+        isinstance(name, str) for name in protected
+    ):
+        raise TypeError(
+            "results config protected_lpar_names must be an array of strings"
+        )
+    parsed["protected_lpar_names"] = tuple(protected)
+    for name, expected_value in expected.items():
+        if name != "protected_lpar_names" and type(parsed[name]) is not type(
+            expected_value
+        ):
+            raise TypeError(f"results config {name} has the wrong JSON type")
+    return LiveTestConfig(**parsed)
+
+
+def _decode_artifacts(value: Any) -> LiveTestArtifacts:
+    """Decode a complete artifact object without mutating live run state."""
+    if not isinstance(value, dict):
+        raise TypeError("results artifacts must be a JSON object")
+    expected_fields = {item.name for item in fields(LiveTestArtifacts)}
+    if set(value) != expected_fields:
+        raise ValueError("results artifact fields do not match LiveTestArtifacts")
+    parsed = dict(value)
+    for name in _ARTIFACT_NULLABLE_STRINGS:
+        if parsed[name] is not None and not isinstance(parsed[name], str):
+            raise TypeError(f"results artifact {name} must be a string or null")
+    for name in _ARTIFACT_NULLABLE_INTS:
+        if parsed[name] is not None and type(parsed[name]) is not int:
+            raise TypeError(f"results artifact {name} must be an integer or null")
+    if type(parsed["vmedia_repo_created"]) is not bool:
+        raise TypeError("results artifact vmedia_repo_created must be a boolean")
+    baseline = parsed["lp3_baseline"]
+    if not isinstance(baseline, dict) or not all(
+        isinstance(key, str) for key in baseline
+    ):
+        raise TypeError("results artifact lp3_baseline must be an object")
+    boot_order = parsed["vmedia_orig_boot_order"]
+    if not isinstance(boot_order, list) or not all(
+        isinstance(entry, str) for entry in boot_order
+    ):
+        raise TypeError(
+            "results artifact vmedia_orig_boot_order must be an array of strings"
+        )
+    parsed["lp3_baseline"] = dict(baseline)
+    parsed["vmedia_orig_boot_order"] = list(boot_order)
+    return LiveTestArtifacts(**parsed)
+
+
+def _hmc_identity(config: HMCConfig) -> dict[str, str | int | bool]:
+    """Return the non-secret HMC identity bound to a persisted artifact set."""
+    return {
+        "host": config.host,
+        "port": config.port,
+        "user": config.user,
+        "verify_ssl": config.verify_ssl,
+    }
+
+
+def _restore_artifacts_from_results(
     state: RunState,
+    hmc_config: HMCConfig,
     results_path: str = "test-results-round2.json",
 ) -> None:
-    """Pre-seed context from the previous results file when running a single sub-task.
-
-    This allows sub-tasks run in isolation (e.g. `python runner.py 3`) to use
-    context captured by earlier sub-tasks (VIOS UUID, system UUID, etc.).
-    """
-    p = Path(results_path)
+    """Pre-seed artifacts from a compatible previous live-test report."""
+    path = Path(results_path)
     try:
-        if not p.exists():
+        if not path.exists():
             return
-        saved = json.loads(p.read_text())
+        saved = json.loads(path.read_text())
         if not isinstance(saved, dict):
             raise TypeError("results document must be a JSON object")
-        saved_ctx = saved.get("context")
-        if saved_ctx is None:
-            saved_ctx = {}
-        elif not isinstance(saved_ctx, dict):
-            raise TypeError("results context must be a JSON object")
-    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, KeyError) as exc:
-        print(f"  ⚠️  Could not restore context from {results_path}: {exc}")
+        if set(saved) != {"config", "hmc", "artifacts", "results"}:
+            raise ValueError("results document has an unsupported shape")
+        if _decode_saved_config(saved["config"]) != state.config:
+            raise ValueError("results configuration does not match this run")
+        saved_hmc = saved["hmc"]
+        current_hmc = _hmc_identity(hmc_config)
+        if not isinstance(saved_hmc, dict) or set(saved_hmc) != set(current_hmc):
+            raise TypeError("results hmc identity must contain the expected fields")
+        if any(
+            type(saved_hmc[key]) is not type(value)
+            for key, value in current_hmc.items()
+        ):
+            raise TypeError("results hmc identity has the wrong JSON type")
+        if saved_hmc != current_hmc:
+            raise ValueError("results HMC identity does not match this run")
+        candidate = _decode_artifacts(saved["artifacts"])
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+        KeyError,
+    ) as exc:
+        print(f"  ⚠️  Could not restore artifacts from {results_path}: {exc}")
         return
 
-    context = state.context
-    for key, current in asdict(context).items():
-        if current is None and saved_ctx.get(key) is not None:
-            setattr(context, key, saved_ctx[key])
-        elif key == "lp3_baseline" and not current and saved_ctx.get(key):
-            context.lp3_baseline = saved_ctx[key]
-        elif key == "vmedia_orig_boot_order" and not current and saved_ctx.get(key):
-            context.vmedia_orig_boot_order = saved_ctx[key]
+    state.artifacts = candidate
     print(
-        f"  ℹ  Context restored from {results_path} "
-        f"(vios_uuid={context.vios_uuid}, "
-        f"system_uuid={context.system_uuid}, "
-        f"vg_uuid={context.vg_uuid})"
+        f"  ℹ  Artifacts restored from {results_path} "
+        f"(vios_uuid={candidate.vios_uuid}, "
+        f"system_uuid={candidate.system_uuid}, "
+        f"vg_uuid={candidate.vg_uuid})"
     )
 
 
@@ -675,16 +777,17 @@ async def main(
     subtask_filter: int | None = None,
     results_path: str = "test-results-round2.json",
     group: str | None = None,
-    context: LiveTestContext | None = None,
+    config: LiveTestConfig | None = None,
+    hmc_config: HMCConfig | None = None,
 ) -> int:
-    if context is None:
+    if config is None:
         try:
-            context = LiveTestContext.from_env_file()
+            config = LiveTestConfig.from_env_file()
         except ValueError as exc:
             print(f"❌ {_redact_failure_text(str(exc))}")
             return 1
-    state = RunState(context=context)
-    context = state.context
+    state = RunState(config=config)
+    hmc_config = hmc_config or HMCConfig()
     print(f"Starting live integration tests at {datetime.now(UTC).isoformat()}")
     schema_version = env_var_value("HMC_SCHEMA_VERSION") or "(not set)"
     print(f"HMC_SCHEMA_VERSION={schema_version}")
@@ -705,7 +808,7 @@ async def main(
         # Try vmedia results first, then round2
         for prior in ["test-results-vmedia.json", "test-results-round2.json"]:
             if Path(prior).exists():
-                _restore_ctx_from_results(state, prior)
+                _restore_artifacts_from_results(state, hmc_config, prior)
                 break
 
     # The escape hatch is opted in because this harness drives `hmc_run_command`
@@ -735,7 +838,14 @@ async def main(
     _write_results(
         Path(results_path),
         json.dumps(
-            {"context": asdict(context), "results": state.results}, indent=2, default=str
+            {
+                "config": asdict(state.config),
+                "hmc": _hmc_identity(hmc_config),
+                "artifacts": asdict(state.artifacts),
+                "results": state.results,
+            },
+            indent=2,
+            default=str,
         ),
     )
 
