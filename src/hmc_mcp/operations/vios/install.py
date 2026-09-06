@@ -16,15 +16,15 @@ from typing_extensions import TypedDict
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.errors import HMCError
 
-from ..audit import records as audit
-from ..resource_identity import (
+from ...audit import records as audit
+from ...resource_identity import (
     is_uuid,
     resolve_lpar_uuid,
     resolve_system_name,
     resolve_system_uuid,
     resolve_vios_uuid,
 )
-from ..ssh.install import (
+from ...ssh.install import (
     build_installios_command,
     run_installios,
     validate_hmc_name,
@@ -34,7 +34,7 @@ from ..ssh.install import (
     validate_mac_address,
     validate_vlan_id,
 )
-from ..ssh.lpar import resolve_lpar_cli_name
+from ...ssh.lpar import resolve_lpar_cli_name
 
 _logger = logging.getLogger(__name__)
 

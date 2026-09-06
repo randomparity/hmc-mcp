@@ -272,7 +272,7 @@ Destructive under §2 and §6 requires it to be classified and guarded in the PR
 introduces it.
 
 **Disposition of #366.** #366 shipped as a layering extraction only — it moved the
-tool bodies into `operations.install` unchanged and added no LPAR-capable install
+tool bodies into `operations.vios.install` unchanged and added no LPAR-capable install
 path. `install_vios_by_lpar_selector` can be *handed* a `LogicalPartition` selector, as the tool
 always could, but `installios` refuses a non-VIOS `-p`, so no mutation of a
 `LogicalPartition` is reachable through it. Both exports are therefore classified in

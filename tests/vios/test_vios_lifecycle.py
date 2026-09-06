@@ -208,7 +208,7 @@ def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc
         raise AssertionError("run_installios must not be called")
 
     with (
-        patch("hmc_mcp.operations.install.run_installios", new=fail),
+        patch("hmc_mcp.operations.vios.install.run_installios", new=fail),
         pytest.raises(ValueError, match="No VIOS named"),
     ):
         hmc_install_vios("nosuchvios", "sys1", **_INSTALL_KWARGS)

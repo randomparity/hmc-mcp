@@ -175,7 +175,7 @@ names are internal everywhere and are never inventoried.
   `translate_pcm_error`, `translate_template_error`, `translate_virtual_network_create_error`.
 - `operations.health` — operations: `fetch_fleet_health`; types: `FleetHealthResult`; excluded
   synchronous: none.
-- `operations.install` — operations: `install_vios`, `install_vios_by_lpar_selector`; types: `InstallHandle`, `InstallRequest`;
+- `operations.vios.install` — operations: `install_vios`, `install_vios_by_lpar_selector`; types: `InstallHandle`, `InstallRequest`;
   excluded synchronous: `validate_install_request`.
   - Note: the MCP tools call `validate_install_request` to reject a malformed argument before a
     client is opened, which the operations cannot do. Both operations submit the detached
@@ -352,7 +352,7 @@ wrapper. And at runtime it is a plain `dict`, so it reports no call signature: w
 Pydantic model reaches the frozen digest through the constructor its shape generates, a
 `TypedDict`'s keys are read into the digest directly. Without that an exported one would contribute
 no digest entry at all and renaming a key would move nothing (#468), which is the hole its five-key
-`operations.install` handle was filed against.
+`operations.vios.install` handle was filed against.
 
 Both halves run a third time over the constructors of the exported classes the field walk reads no
 field off — the pair the Decision names above. `typing.get_type_hints(cls.__init__)` feeds the type

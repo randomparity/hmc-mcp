@@ -8,12 +8,6 @@ from ..._app import (
     with_client,
 )
 from ...documents import VIOS_DEFAULT_RESOURCES, LparResources
-from ...operations.install import (
-    InstallRequest,
-    install_vios,
-    install_vios_by_lpar_selector,
-    validate_install_request,
-)
 from ...operations.vios.core import (
     BackupType,
     RestoreBackupType,
@@ -25,6 +19,12 @@ from ...operations.vios.core import (
     restore_vios,
     validate_vios_backup_request,
     validate_vios_restore_request,
+)
+from ...operations.vios.install import (
+    InstallRequest,
+    install_vios,
+    install_vios_by_lpar_selector,
+    validate_install_request,
 )
 from ...tool_registry import tool_module
 
