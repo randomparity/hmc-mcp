@@ -21,6 +21,7 @@ cleanup (does not attempt additional mutations on an unknown state).
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -656,32 +657,39 @@ async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
         await cleanup_sriov(client, state)
         return
 
-    # Phase 2: Assign
-    assign_ok = await assign_sriov_to_lp3(client, state)
+    try:
+        # Phase 2: Assign
+        assign_ok = await assign_sriov_to_lp3(client, state)
 
-    # Phase 3: Verify assign (always run, even if assign failed — documents state)
-    verify_ok = await verify_sriov_assigned(client, state)
+        # Phase 3: Verify assign (always run, even if assign failed — documents state)
+        verify_ok = await verify_sriov_assigned(client, state)
 
-    # Phase 4: Unassign (only if assign succeeded and verification passed)
-    if assign_ok and verify_ok:
-        unassign_ok = await unassign_sriov_from_lp3(client, state)
-    else:
-        state.skip(
-            26,
-            "hmc_unassign_sriov_logical_port",
-            f"skipping unassign: assign_ok={assign_ok} verify_ok={verify_ok}",
-        )
-        unassign_ok = False
+        # Phase 4: Unassign (only if assign succeeded and verification passed)
+        if assign_ok and verify_ok:
+            unassign_ok = await unassign_sriov_from_lp3(client, state)
+        else:
+            state.skip(
+                26,
+                "hmc_unassign_sriov_logical_port",
+                f"skipping unassign: assign_ok={assign_ok} verify_ok={verify_ok}",
+            )
+            unassign_ok = False
 
-    # Phase 5: Reassign (only if unassign succeeded — proves round-trip)
-    if unassign_ok:
-        await reassign_sriov_to_lp3(client, state)
-    else:
-        state.skip(
-            27,
-            "hmc_assign_sriov_logical_port (reassign)",
-            f"skipping reassign: unassign_ok={unassign_ok}",
-        )
-
-    # Phase 6: Cleanup — always runs regardless of test outcome
-    await cleanup_sriov(client, state)
+        # Phase 5: Reassign (only if unassign succeeded — proves round-trip)
+        if unassign_ok:
+            await reassign_sriov_to_lp3(client, state)
+        else:
+            state.skip(
+                27,
+                "hmc_assign_sriov_logical_port (reassign)",
+                f"skipping reassign: unassign_ok={unassign_ok}",
+            )
+    finally:
+        active_error = sys.exception()
+        try:
+            # Phase 6: Cleanup — always runs after a successful baseline.
+            await cleanup_sriov(client, state)
+        except BaseException as cleanup_error:
+            if active_error is None:
+                raise
+            active_error.add_note(f"SR-IOV cleanup failed: {cleanup_error}")

@@ -732,6 +732,87 @@ async def test_sriov_orchestrator_skips_mutations_after_assign_failure() -> None
     assert calls == ["baseline", "assign", "verify", "skip", "skip", "cleanup"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failing_phase", "expected_calls"),
+    [
+        ("assign", ["baseline", "assign", "cleanup"]),
+        ("verify", ["baseline", "assign", "verify", "cleanup"]),
+        ("unassign", ["baseline", "assign", "verify", "unassign", "cleanup"]),
+        (
+            "reassign",
+            ["baseline", "assign", "verify", "unassign", "reassign", "cleanup"],
+        ),
+    ],
+)
+async def test_sriov_orchestrator_cleans_up_after_post_baseline_error(
+    monkeypatch, failing_phase: str, expected_calls: list[str]
+) -> None:
+    """Every mutation failure leaves cleanup as the final, single operation."""
+    calls: list[str] = []
+
+    def phase(name: str):
+        async def run(*_args) -> bool:
+            calls.append(name)
+            if name == failing_phase:
+                raise RuntimeError(f"{name} failed")
+            return True
+
+        return run
+
+    monkeypatch.setattr(pcie, "capture_sriov_baseline", phase("baseline"))
+    monkeypatch.setattr(pcie, "assign_sriov_to_lp3", phase("assign"))
+    monkeypatch.setattr(pcie, "verify_sriov_assigned", phase("verify"))
+    monkeypatch.setattr(pcie, "unassign_sriov_from_lp3", phase("unassign"))
+    monkeypatch.setattr(pcie, "reassign_sriov_to_lp3", phase("reassign"))
+    monkeypatch.setattr(pcie, "cleanup_sriov", phase("cleanup"))
+
+    with pytest.raises(RuntimeError, match=f"{failing_phase} failed"):
+        await pcie.exercise_sriov_assignment(object(), object())
+
+    assert calls == expected_calls
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_propagates_cleanup_error(monkeypatch) -> None:
+    """Cleanup remains observable when it is the only failure."""
+    cleanup = AsyncMock(side_effect=RuntimeError("cleanup failed"))
+
+    monkeypatch.setattr(pcie, "capture_sriov_baseline", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "assign_sriov_to_lp3", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "verify_sriov_assigned", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "unassign_sriov_from_lp3", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "reassign_sriov_to_lp3", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
+
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        await pcie.exercise_sriov_assignment(object(), object())
+
+    assert cleanup.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_preserves_mutation_error_when_cleanup_fails(
+    monkeypatch,
+) -> None:
+    """A cleanup failure adds recovery context without replacing the mutation error."""
+    cleanup = AsyncMock(side_effect=RuntimeError("cleanup failed"))
+
+    monkeypatch.setattr(pcie, "capture_sriov_baseline", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        pcie,
+        "assign_sriov_to_lp3",
+        AsyncMock(side_effect=RuntimeError("assign failed")),
+    )
+    monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
+
+    with pytest.raises(RuntimeError, match="assign failed") as exc_info:
+        await pcie.exercise_sriov_assignment(object(), object())
+
+    assert cleanup.await_count == 1
+    assert exc_info.value.__notes__ == ["SR-IOV cleanup failed: cleanup failed"]
+
+
 def _isolate_runner(monkeypatch) -> None:
     monkeypatch.setattr(runner, "Client", _FakeClient)
 
