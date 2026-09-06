@@ -7,6 +7,7 @@ from typing import Any
 from ..._app import (
     with_client,
 )
+from ...client.core import HMCClient
 from ...documents import LparResources
 from ...operations.affinity.rest import ProvisionAffinityAssessment
 from ...operations.lpar.assignments import (
@@ -414,7 +415,7 @@ def hmc_power_off_lpar(
             approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
     """
 
-    async def power_off_job(hmc):
+    async def power_off_job(hmc: HMCClient) -> dict[str, Any] | None:
         result = await power_lpar(
             hmc,
             system_name_or_uuid,
@@ -429,4 +430,3 @@ def hmc_power_off_lpar(
         return result.job
 
     return with_client(power_off_job, profile=profile)
-
