@@ -123,7 +123,7 @@ class UsersMixin:
         path = f"/rest/api/uom/ManagementConsole/{console_path_id}?group=RemoteAccess"
         current_xml = await self._get_remote_access_xml(path)
         if not current_xml.strip():
-            raise ValueError("RemoteAccess GET returned no ManagementConsole document")
+            raise HMCError("GET returned no ManagementConsole document", 200, path)
         remote_access_xml = merge_remote_access_document(
             current_xml, values, clear_fields
         )
