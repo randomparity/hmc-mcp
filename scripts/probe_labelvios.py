@@ -31,10 +31,6 @@ from typing import NotRequired, TypedDict
 
 import asyncssh
 
-# ---------------------------------------------------------------------------
-# Config loading
-# ---------------------------------------------------------------------------
-
 _CONFIG_PATH = pathlib.Path.home() / ".config/hmc-mcp/config.toml"
 
 
@@ -92,11 +88,6 @@ def load_profiles() -> list[Profile]:
     return profiles
 
 
-# ---------------------------------------------------------------------------
-# SSH helpers
-# ---------------------------------------------------------------------------
-
-
 async def run(conn: asyncssh.SSHClientConnection, cmd: str) -> tuple[int, str, str]:
     """Run *cmd*; return (exit_status, stdout, stderr).  Never raises."""
     try:
@@ -129,11 +120,6 @@ def connect_kwargs(profile: Profile, *, insecure: bool = False) -> ConnectionOpt
     }
 
 
-# ---------------------------------------------------------------------------
-# Per-profile probe
-# ---------------------------------------------------------------------------
-
-
 async def probe_profile(profile: Profile, *, insecure: bool = False) -> ProbeResult:
     """Stage-1 + Stage-2 probe for one HMC profile."""
     result: ProbeResult = {
@@ -144,7 +130,6 @@ async def probe_profile(profile: Profile, *, insecure: bool = False) -> ProbeRes
     }
     try:
         async with asyncssh.connect(**connect_kwargs(profile, insecure=insecure)) as conn:
-            # --- Stage 1: HMC version and managed-system list ---
             rc, stdout, stderr = await run(conn, "lshmc -V")
             result["queries"]["lshmc -V"] = {
                 "cmd": "lshmc -V",
@@ -163,7 +148,6 @@ async def probe_profile(profile: Profile, *, insecure: bool = False) -> ProbeRes
                 "stderr": stderr.strip(),
             }
 
-            # Parse system names for stage 2
             systems: list[str] = []
             if rc == 0:
                 for line in stdout.strip().splitlines():
@@ -174,7 +158,6 @@ async def probe_profile(profile: Profile, *, insecure: bool = False) -> ProbeRes
                         systems.append(sys_name)
                         result["systems"].append({"name": sys_name, "state": state})
 
-            # --- Stage 2: lslabelvios per managed system ---
             for sys_name in systems:
                 import shlex
                 m = shlex.quote(sys_name)
@@ -213,10 +196,6 @@ async def probe_profile(profile: Profile, *, insecure: bool = False) -> ProbeRes
     return result
 
 
-# ---------------------------------------------------------------------------
-# Reporting
-# ---------------------------------------------------------------------------
-
 DIVIDER = "=" * 72
 
 
@@ -232,7 +211,6 @@ def report(results: list[ProbeResult]) -> None:
 
         for label, q in r["queries"].items():
             if label.startswith("["):
-                # Per-system block
                 sys_name = label
                 print(f"\n  {'─'*60}")
                 print(f"  SYSTEM: {sys_name}")
@@ -257,11 +235,6 @@ def _print_query(label: str, q: QueryResult) -> None:
             print(f"  stderr      : {line}")
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-
 async def main(*, insecure: bool = False) -> None:
     profiles = load_profiles()
     print(f"Probing {len(profiles)} HMC profile(s) …\n")
@@ -271,7 +244,6 @@ async def main(*, insecure: bool = False) -> None:
 
     report(list(results))
 
-    # Summary
     print(f"\n\n{'SUMMARY':^72}")
     print(f"{'Profile':<20} {'Host':<36} {'Systems':<8} {'Status'}")
     print("-" * 72)
