@@ -31,9 +31,11 @@ directory; original copies and four tar archives are retained outside the checko
 The 826 captured pages match #620's stated counts. Local navigation documents are
 accounted for separately; they do not enlarge the operation denominator. REST content
 includes overview and schema topics, so 466 REST pages do not mean 466 operations.
-Command overview/index files lack capture timestamps; record that absence, never a
-filesystem modification time or an invented capture time. Source pages carry IBM URLs,
-and captured content carries timestamps. Record each original file's SHA-256.
+All four index files carry explicit capture timestamps. Only the two command overview
+files lack them; record that absence, never a filesystem modification time or an invented
+capture time. Source pages carry IBM URLs, and captured content carries timestamps. Accept
+the index files' capitalized `Captured:` metadata as well as front matter `captured:`.
+Record each original file's SHA-256.
 
 ## Proposed representation
 
@@ -119,7 +121,9 @@ signature mismatches, malformed supported/disposition records, unsafe paths and 
 mismatches. Fault injection must show the tests reject omitted real-shape modes/parameters,
 topics, registry operations, and supported-surface evidence. A corpus fixture with multiple
 modes and nested parameters proves that topic-level accounting alone cannot substitute for
-the source-unit and capability rows.
+the source-unit and capability rows. Fixtures cover both lowercase front matter `captured:`
+and the navigation indexes' capitalized `Captured:` form; only genuinely absent metadata
+becomes explicit unknown.
 
 Run the real validator against the committed inventory and current registry, then verify
 all four retained corpora. Run `just verify` and `uv run --no-sync prek run --all-files`
