@@ -408,7 +408,9 @@ def test_power_cli_forwards_the_system_selector_and_override(
 ) -> None:
     hmc = _hmc(authorize=True)
     operation = AsyncMock(return_value=AsyncMock(lpar_uuid=LPAR_UUID, job=None))
-    monkeypatch.setattr(cli_lpars, "client", lambda: _factory_for(hmc))
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.runtime.client", lambda: _factory_for(hmc)
+    )
     monkeypatch.setattr(cli_lpars, "power_lpar", operation)
 
     result = CliRunner().invoke(

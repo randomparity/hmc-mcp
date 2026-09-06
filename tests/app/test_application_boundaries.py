@@ -352,7 +352,7 @@ def test_provision_cli_delegates_to_neutral_operation():
     with (
         patch("hmc_mcp.cli_commands.lpar.provision.provision_lpar", provision),
         patch(
-            "hmc_mcp.cli_commands.lpar.provision.client",
+            "hmc_mcp.cli_commands.runtime.client",
             return_value=_ClientContext(client),
         ),
     ):

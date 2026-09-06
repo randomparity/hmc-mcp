@@ -10,7 +10,6 @@ import pytest
 from typer.testing import CliRunner
 
 from hmc_mcp import cli
-from hmc_mcp.cli_commands.lpar import modify as cli_modify
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.documents import LparResources
 from hmc_mcp.operations.lpar.configuration import (
@@ -275,9 +274,10 @@ def test_cli_resource_modify_rejects_foreign_owner_before_hmc_write() -> None:
             "hmc_mcp.operations.lpar.ownership.get_lpar_description",
             new=AsyncMock(return_value=FOREIGN_OWNER),
         ),
-        patch.object(cli_modify, "client", return_value=context),
-        patch.object(
-            cli_modify, "run_cli_coroutine", side_effect=lambda fn: asyncio.run(fn())
+        patch("hmc_mcp.cli_commands.runtime.client", return_value=context),
+        patch(
+            "hmc_mcp.cli_commands.runtime.run_cli_coroutine",
+            side_effect=lambda fn: asyncio.run(fn()),
         ),
     ):
         result = CliRunner().invoke(

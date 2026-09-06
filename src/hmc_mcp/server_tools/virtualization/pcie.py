@@ -33,7 +33,12 @@ def hmc_list_dedicated_pcie_slots(
     system_name_or_uuid: str,
     profile: str | None = None,
 ) -> dict[str, Any]:
-    """List normalized dedicated PCIe slots with stable DRC identities."""
+    """List normalized dedicated PCIe slots with stable DRC identities.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def slots(hmc: Any) -> Any:
         return serialize_tool_result(
@@ -49,7 +54,13 @@ def hmc_list_sriov_adapters(
     adapter_id: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any]:
-    """List normalized SR-IOV adapters, or report capability unavailable."""
+    """List normalized SR-IOV adapters, or report capability unavailable.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        adapter_id: Optional physical adapter ID used to filter the inventory.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def adapters(hmc: Any) -> Any:
         return serialize_tool_result(
@@ -70,7 +81,14 @@ def hmc_list_sriov_physical_ports(
     physical_port_id: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any]:
-    """List normalized SR-IOV physical ports, or report capability unavailable."""
+    """List normalized SR-IOV physical ports, or report capability unavailable.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        adapter_id: Optional physical adapter ID used to filter the inventory.
+        physical_port_id: Optional physical port ID used to filter the inventory.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def ports(hmc: Any) -> Any:
         return serialize_tool_result(
@@ -94,7 +112,15 @@ def hmc_list_sriov_logical_ports(
     logical_port_id: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any]:
-    """List normalized SR-IOV logical ports, or report capability unavailable."""
+    """List normalized SR-IOV logical ports, or report capability unavailable.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        adapter_id: Optional physical adapter ID used to filter the inventory.
+        physical_port_id: Optional physical port ID used to filter the inventory.
+        logical_port_id: Optional logical port ID used to filter the inventory.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def ports(hmc: Any) -> Any:
         return serialize_tool_result(
@@ -116,7 +142,13 @@ def hmc_list_io_slots(
     pci_class: PciClass = "all",
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
-    """List physical I/O slots, optionally filtered by PCI class."""
+    """List physical I/O slots, optionally filtered by PCI class.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        pci_class: PCI device class to return, or ``all`` for every slot.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     return ssh_with_client(
         lambda config, system_name, _: list_io_slots(config, system_name, pci_class),

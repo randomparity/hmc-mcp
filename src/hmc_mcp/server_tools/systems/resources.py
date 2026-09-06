@@ -20,7 +20,12 @@ tool, register_tools, tool_security = tool_module()
 def hmc_get_proc_compat_modes(
     system_name_or_uuid: str, profile: str | None = None
 ) -> list[str]:
-    """List processor compatibility modes supported by a managed system."""
+    """List processor compatibility modes supported by a managed system.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     return ssh_with_client(
         lambda config, system_name, _: get_proc_compat_modes(config, system_name),
@@ -33,7 +38,12 @@ def hmc_get_proc_compat_modes(
 def hmc_list_memory_pools(
     system_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
-    """List shared memory pools and their assigned LPARs."""
+    """List shared memory pools and their assigned LPARs.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     return ssh_with_client(
         lambda config, system_name, _: list_memory_pools(config, system_name),
@@ -48,7 +58,13 @@ def hmc_list_memory_pools(
 def hmc_remove_memory_pool(
     system_name_or_uuid: str, pool_name: str, profile: str | None = None
 ) -> str:
-    """Remove an empty shared memory pool after server-side validation."""
+    """Remove an empty shared memory pool after server-side validation.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        pool_name: Shared memory pool name returned by ``hmc_list_memory_pools``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     return ssh_with_client(
         lambda config, system_name, _: remove_memory_pool(

@@ -54,7 +54,7 @@ _INVENTORY_PATHS = tuple(
         "operations/lpar/provision.py", "operations/affinity/ssh.py",
         "operations/virtualization/adapters.py", "operations/virtualization/pcie.py",
         "operations/virtualization/vnic.py", "operations/storage/resources.py",
-        "operations/templates/core.py", "operations/install.py",
+        "operations/templates/core.py", "operations/vios/install.py",
     )
 )
 _CLASSIFIED_MUTATORS = frozenset({
