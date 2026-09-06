@@ -1,0 +1,50 @@
+{
+  "format_version": 1,
+  "admission_policy": "existing-runtime-guards",
+  "operations": [
+    {
+      "operation": "system.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {"variant": "all-systems", "parameters": []}
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "sriov.set_mode",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "current-mode-confirmation",
+            "parameters": [
+              {
+                "name": "adapter_id",
+                "constraint": "matches exactly one adapter in an ADR 0056 admitted environment"
+              },
+              {
+                "name": "mode",
+                "constraint": "equals the adapter's current config_state; returns unchanged"
+              }
+            ]
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "adapter-mode-transition",
+            "parameters": [
+              {
+                "name": "mode",
+                "constraint": "differs from current config_state; changing adapter mode is unavailable"
+              }
+            ]
+          }
+        ]
+      },
+      "evidence": []
+    }
+  ]
+}
