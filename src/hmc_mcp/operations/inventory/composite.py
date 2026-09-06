@@ -115,11 +115,9 @@ async def _fetch_lpar_data(
             f"LPAR {lpar_uuid!r} not found after resolution. "
             "List logical partitions to inspect the available partitions."
         )
-    async with asyncio.TaskGroup() as tasks:
-        adapters_task = tasks.create_task(
-            hmc.list_child("LogicalPartition", lpar_uuid, "ClientNetworkAdapter")
-        )
-    adapters = adapters_task.result()
+    adapters = await hmc.list_child(
+        "LogicalPartition", lpar_uuid, "ClientNetworkAdapter"
+    )
     return lpar, adapters
 
 
@@ -178,7 +176,9 @@ def _system_summary(
     )
 
 
-async def fetch_system_summary(hmc: HMCClient, system_name_or_uuid: str) -> SystemSummary:
+async def fetch_system_summary(
+    hmc: HMCClient, system_name_or_uuid: str
+) -> SystemSummary:
     """Compose system, partition, and VIOS inventory into one summary.
 
     Raises ``ValueError`` when the managed system cannot be found.

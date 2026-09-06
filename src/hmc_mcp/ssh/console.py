@@ -208,9 +208,8 @@ def _escape_complete(data: bytes, start: int, cut: int) -> bool:
             index += 1
         return index < cut and 0x40 <= data[index] <= 0x7E
     if introducer in (0x50, 0x58, 0x5E, 0x5F, 0x5D):  # DCS/SOS/PM/APC/OSC strings
-        return (
-            data.find(b"\x1b\\", index + 1, cut) != -1
-            or (introducer == 0x5D and data.find(b"\x07", index + 1, cut) != -1)
+        return data.find(b"\x1b\\", index + 1, cut) != -1 or (
+            introducer == 0x5D and data.find(b"\x07", index + 1, cut) != -1
         )
     if 0x20 <= introducer <= 0x2F:  # intermediates then a final 0x30-0x7E
         index += 1
@@ -420,9 +419,9 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
         stdin.close()
 
 
-async def _read_release_probe(process: Any) -> Literal[
-    "acquired", "held", "remote-exited", "unproven"
-]:
+async def _read_release_probe(
+    process: Any,
+) -> Literal["acquired", "held", "remote-exited", "unproven"]:
     """Classify one bounded probe stream without making ownership decisions."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + _RELEASE_PROBE_SECONDS
@@ -617,7 +616,6 @@ async def capture_lpar_console(
             released=released,
             error=error,
         )
-        connection.close()
         return result
     finally:
         if connection is not None:

@@ -48,6 +48,27 @@ async def test_missing_lpar_is_reported_before_child_fetch():
 
 
 @pytest.mark.asyncio
+async def test_lpar_fetch_returns_parent_and_adapter_inventory():
+    parent = {"UUID": "lpar-uuid"}
+    adapters = [{"UUID": "adapter-uuid"}]
+
+    class Client:
+        async def get_logical_partition(self, uuid: str):
+            assert uuid == "lpar-uuid"
+            return parent
+
+        async def list_child(self, resource: str, uuid: str, child: str):
+            assert (resource, uuid, child) == (
+                "LogicalPartition",
+                "lpar-uuid",
+                "ClientNetworkAdapter",
+            )
+            return adapters
+
+    assert await _fetch_lpar_data(Client(), "lpar-uuid") == (parent, adapters)
+
+
+@pytest.mark.asyncio
 async def test_missing_system_is_reported_before_child_fetch():
     with pytest.raises(ValueError, match="Managed system 'system-uuid' not found"):
         await _fetch_system_summary_data(_MissingParentClient(), "system-uuid")
