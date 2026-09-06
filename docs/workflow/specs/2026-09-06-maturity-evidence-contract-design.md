@@ -59,7 +59,8 @@ Every evidence observation uses a uniform object with these fields:
   `description`;
 - `result`: `not-run`, `skipped`, `failed`, or `passed`;
 - `currency`: `current` or `stale`;
-- `observed_at`: an RFC 3339 UTC timestamp, or `null` for `not-run`;
+- `observed_at`: the canonical RFC 3339 UTC form `YYYY-MM-DDTHH:MM:SSZ`, or `null`
+  for `not-run`; offsets, fractional seconds, spaces, and basic compact forms are rejected;
 - `implementation_revision`: a full lowercase Git SHA, or `null` for `not-run`;
 - `deployed_revision`: a full lowercase Git SHA for live attempted observations,
   otherwise `null`;
@@ -84,7 +85,8 @@ Every evidence observation uses a uniform object with these fields:
   implementation surface for every current attempted observation; `null` for `not-run`;
   stale attempted history retains the fingerprint observed at its run;
 - `invalidated_by`: `null` for current observations; stale observations require an
-  object with a full lowercase `revision` and non-empty `reason`.
+  object with the new full lowercase `implementation_fingerprint` and a non-empty
+  `reason`. This pre-commit identity avoids predicting the invalidating commit's SHA.
 
 Attempted observations (`skipped`, `failed`, `passed`) require a timestamp,
 implementation revision, scenario, and provenance. A pass requires at least one asserted

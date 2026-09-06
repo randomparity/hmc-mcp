@@ -36,7 +36,10 @@ conditional validation in the existing script, focused fixtures/tests, and READM
   operator authorized one additional pass after iteration 2; its four blockers and one
   note are accepted-fixed by the current design edit. The operator authorized round 4
   beyond the ordinary ceiling to replace the remaining byte-equality contradiction with
-  the already-defined parsed canonical identity.
+  the already-defined parsed canonical identity. After round 4, the operator directed the
+  two remaining findings to be fixed without another design-loop pass and the quest to
+  continue: invalidation now uses the pre-commit fingerprint, and timestamp parsing has a
+  canonical lexical gate.
 - Review deferrals: none before design review.
 - Guardrail observations: `just adr-numbering` and `just doc-freshness` passed after
   the ADR/spec commit; commit hooks passed every configured static hook.
@@ -107,9 +110,10 @@ structural-validity line. No runtime interface is added.
   pass. Use the same focused green command.
 - Contract: all evidence states and channel-specific required fields.
   Mode: focused-test. Add `test_maturity_accepts_all_evidence_results` and
-  `test_live_pass_requires_scoped_postconditions_and_cleanup`; the red observation is that
-  `not-run`, skip, failure, and false live-pass shapes are not checked. Use the same focused
-  green command.
+  `test_live_pass_requires_scoped_postconditions_and_cleanup`, plus timestamp cases for a
+  space separator and compact basic form; the red observation is that `not-run`, skip,
+  failure, false live-pass shapes, and non-canonical timestamps are not checked. Use the
+  same focused green command.
 - Contract: live gaps retain their planned scenario and owned obligation.
   Mode: focused-test. Add `test_live_not_run_requires_prerequisites_and_obligation`; the
   red observation is that an unavailable scenario can omit all three. Use the same focused
@@ -146,10 +150,12 @@ structural-validity line. No runtime interface is added.
    implementation keys, normalized scope objects, set disjointness, and state/list
    combinations. Errors name `maturity operation <id>`. Re-run the focused command green.
 5. Add result/channel tests, run them red, then validate exact observation keys and the
-   conditional null/non-null rules from the spec. Use `datetime.fromisoformat()` after
-   replacing terminal `Z` with `+00:00` and require UTC; use a full-SHA regex. A live pass
-   must have environment, assertions, and successful or unnecessary cleanup. Non-live
-   evidence must have `environment` and `deployed_revision` set to `null`. Re-run green.
+   conditional null/non-null rules from the spec. First require the anchored lexical form
+   `YYYY-MM-DDTHH:MM:SSZ`, then use `datetime.fromisoformat()` after replacing terminal
+   `Z` with `+00:00` for semantic calendar validation. Reject space-separated, compact,
+   offset, and fractional forms. Use a full-SHA regex. A live pass must have environment,
+   assertions, and successful or unnecessary cleanup. Non-live evidence must have
+   `environment` and `deployed_revision` set to `null`. Re-run green.
 6. Add live-gap tests, run them red, then require a live `not-run` observation to retain
    scenario identity, prerequisites, environment, and a catalog obligation exactly equal
    to `<operation>#<observation-id>` while remaining explicitly non-promoting. Accept an
@@ -161,7 +167,8 @@ structural-validity line. No runtime interface is added.
    computed value. Re-run green.
 8. Add stale/regression and environment-key tests, run them red, then enforce catalog-wide
    evidence-ID uniqueness, current observations with `invalidated_by == null`, stale
-   observations with a valid invalidator, and one current observation per canonical tuple
+   observations with an invalidator carrying the new implementation fingerprint and a
+   reason, and one current observation per canonical tuple
    `(channel, scope-identity, scenario-id, environment-field-tuple)`. Construct identities
    from parsed field tuples rather than serialized JSON, and use the same scope identity
    for evidence membership in `implemented_scope`. Re-run green.

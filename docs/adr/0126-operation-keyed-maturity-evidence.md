@@ -54,9 +54,11 @@ The implementation fingerprint covers all tracked runtime source, scripts, and d
 manifests except the maturity catalog itself. This conservative repository-wide boundary
 makes a code, runner, or dependency change mechanically invalidate every promoting
 observation rather than silently missing a shared dependency. Re-evaluation marks the
-old observation `stale` with an invalidating revision and reason, then adds a new current
-observation. A current failure is a regression for only its exact scope, scenario, and
-environment; historical passes remain stale history.
+old observation `stale` with the new implementation fingerprint and a reason, then adds a
+new current observation. The fingerprint is available before commit, unlike that commit's
+future Git SHA, so the source and staleness edit can pass the guard in one commit. A current
+failure is a regression for only its exact scope, scenario, and environment; historical
+passes remain stale history.
 
 A live `not-run` gap names the intended scenario, prerequisites, and a durable catalog
 obligation whose identity joins back to that exact operation and observation. An optional
