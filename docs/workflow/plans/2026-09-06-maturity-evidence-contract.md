@@ -173,8 +173,10 @@ structural-validity line. No runtime interface is added.
    from parsed field tuples rather than serialized JSON, and use the same scope identity
    for evidence membership in `implemented_scope`. Re-run green.
 9. Create `maturity.json` with `system.list` as implemented and `sriov.set_mode` as partial.
-   Give each evidence channel an honest current `not-run` observation because existing test
-   links and narrative live records omit fields this contract requires. Run
+   Start both evidence lists empty unless a specific existing artifact establishes every
+   required observation field; absence of qualifying evidence remains unknown rather than
+   becoming an inferred `not-run`. Keep all evidence-result and live-gap coverage in the
+   focused fixtures. Run
    `just capability-inventory`; expect exit 0 and a structural line naming two maturity
    operations without changing the capability-coverage result.
 10. Re-read the code for ≤100-line functions and complexity ≤8. Split validation by

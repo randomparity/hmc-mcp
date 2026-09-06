@@ -120,9 +120,10 @@ artifact validator.
 
 The initial catalog contains representative records for `system.list` and
 `sriov.set_mode`. They ground implemented and partial scope respectively. Their evidence
-starts `not-run` unless an existing artifact contains every field this contract requires;
-test file references and older narrative hardware evidence are not upgraded into new
-passing records by inference.
+lists start empty unless an existing artifact establishes every field this contract
+requires. Absence of qualifying evidence remains unknown; test file references and older
+narrative hardware evidence are not upgraded into `not-run` or passing records by
+inference.
 
 ## Promotion and admission
 

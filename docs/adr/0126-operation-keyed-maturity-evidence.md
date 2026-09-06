@@ -78,7 +78,9 @@ catalog and its join. Do not add a runtime loader or dependency.
 
 Consumers can distinguish implementation progress from each evidence channel without
 inventing a global score. Sparse records let F2 establish the contract using
-representative operations while later verification work adds evidence incrementally.
+representative operations with empty evidence lists while later verification work adds
+grounded evidence incrementally. Missing evidence remains unknown and is never inferred
+to be `not-run`.
 The explicit environment makes live claims narrower and more verbose; that is the cost
 of preventing cross-hardware promotion. Repository-wide invalidation is intentionally
 conservative: unrelated runtime changes may require re-evaluation, but no authored
