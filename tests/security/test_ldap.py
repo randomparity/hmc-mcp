@@ -104,7 +104,11 @@ async def test_remote_access_empty_get_is_appliance_error(mock_hmc) -> None:
     get_route = mock_hmc.get(PATH).mock(return_value=httpx.Response(200, text=""))
     post_route = mock_hmc.post(PATH).mock(return_value=httpx.Response(200))
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="GET returned no ManagementConsole document"):
+        with pytest.raises(HMCError) as exc_info:
             await hmc.configure_remote_access(CONSOLE, {"LdapEnabled": True}, [])
+    assert PATH in str(exc_info.value)
+    assert "(HTTP 200)" in str(exc_info.value)
+    assert exc_info.value.status_code == 200
+    assert exc_info.value.body is None
     assert get_route.called
     assert not post_route.called
