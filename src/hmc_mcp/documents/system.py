@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from ..xmlutil import escapes_string_arguments
-from .common import (
-    MEM_MIRRORING_MODES,
-    POWER_OFF_POLICIES,
-    POWER_ON_LPAR_START_POLICIES,
-    MemoryMirroringMode,
-    PowerOffPolicy,
-    PowerOnLparStartPolicy,
-    document_envelope,
-)
+from .common import document_envelope
+
+POWER_OFF_POLICIES = (0, 1)
+POWER_ON_LPAR_START_POLICIES = ("autostart", "userinit", "autorecovery")
+MEM_MIRRORING_MODES = ("none", "sys_firmware_only")
+PowerOffPolicy = Literal[0, 1]
+PowerOnLparStartPolicy = Literal["autostart", "userinit", "autorecovery"]
+MemoryMirroringMode = Literal["none", "sys_firmware_only"]
 
 
 @escapes_string_arguments

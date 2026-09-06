@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from ..xmlutil import escapes_string_arguments
-from .common import (
-    AUTHENTICATION_TYPES,
-    DET,
-    ET,
-    UOM_NS,
-    WEB_NS,
-    AuthenticationType,
-    document_envelope,
-)
+from typing import Literal, get_args
+from xml.etree import ElementTree as ET  # nosec B405
+
+from defusedxml import ElementTree as DET
+
+from ..xmlutil import WEB_NS, escapes_string_arguments
+from .common import UOM_NS, document_envelope
+
+AuthenticationType = Literal["Local", "LDAP", "Kerberos"]
+AUTHENTICATION_TYPES = frozenset(get_args(AuthenticationType))
 
 
 @escapes_string_arguments
