@@ -1,0 +1,40 @@
+{
+  "format_version": 1,
+  "admission_policy": "existing-runtime-guards",
+  "operations": [
+    {
+      "operation": "system.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {"variant": "all-systems", "parameters": []}
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "sriov.set_mode",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "adapter-mode",
+            "parameters": [
+              {"name": "mode", "constraint": "supported transition"}
+            ]
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "live-confirmation",
+            "parameters": [
+              {"name": "mode", "constraint": "hardware-dependent transition"}
+            ]
+          }
+        ]
+      },
+      "evidence": []
+    }
+  ]
+}

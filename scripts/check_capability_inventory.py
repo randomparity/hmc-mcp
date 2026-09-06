@@ -7,10 +7,12 @@ import hashlib
 import inspect
 import json
 import re
+import subprocess
 import sys
 from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +24,13 @@ TABLE_SEPARATOR = re.compile(r"^\|(?:\s*:?-+:?\s*\|)+$")
 CAPTURE = re.compile(r"^(?:captured|Captured):\s*(\S.*)$", re.MULTILINE)
 METHODS = {"GET", "POST", "PUT", "DELETE"}
 DISPOSITIONS = {"supported", "coverage-child", "proposed-exclusion", "unknown"}
+MATURITY_STATES = {"absent", "partial", "implemented"}
+EVIDENCE_CHANNELS = {"contract-review", "automated", "live"}
+EVIDENCE_RESULTS = {"not-run", "skipped", "failed", "passed"}
+EVIDENCE_CURRENCY = {"current", "stale"}
+SHA_1 = re.compile(r"[0-9a-f]{40}")
+SHA_256 = re.compile(r"[0-9a-f]{64}")
+TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 
 
 class InventoryError(ValueError):
@@ -47,6 +56,7 @@ class Report:
     source_unit_count: int
     row_count: int
     operation_count: int
+    maturity_operation_count: int
 
     @property
     def complete(self) -> bool:
@@ -69,7 +79,9 @@ def _unique_pairs(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
 
 def load_json(path: Path) -> dict[str, object]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
+        value = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs
+        )
     except (OSError, UnicodeError, json.JSONDecodeError, InventoryError) as error:
         raise InventoryError(f"{path}: {error}") from error
     if not isinstance(value, dict):
@@ -117,7 +129,11 @@ def _safe_summary(kind: str, text: str) -> str:
         key = re.search(r'["\']([A-Za-z][A-Za-z0-9_-]*)["\']\s*:', text)
         return f"payload-root:{key.group(1)}" if key else "structured-payload"
     versions = re.findall(r"\bV?\d+(?:[._RrMm]\d+)+\b", text)
-    return "versions:" + ",".join(dict.fromkeys(versions)) if versions else "capability-note"
+    return (
+        "versions:" + ",".join(dict.fromkeys(versions))
+        if versions
+        else "capability-note"
+    )
 
 
 def extract_source_units(topic_id: str, text: str) -> list[dict[str, object]]:
@@ -191,7 +207,9 @@ def discover_registry() -> tuple[RegistryTool, ...]:
             }.values()
         )
         if len(handlers) != 1:
-            raise InventoryError(f"registry tool {tool!r} resolves to {len(handlers)} handlers")
+            raise InventoryError(
+                f"registry tool {tool!r} resolves to {len(handlers)} handlers"
+            )
         handler = inspect.unwrap(handlers[0])
         result.append(
             RegistryTool(
@@ -213,7 +231,9 @@ def _array(document: Mapping[str, object], key: str, errors: list[str]) -> list[
     return value
 
 
-def _objects(values: Sequence[object], key: str, errors: list[str]) -> list[dict[str, object]]:
+def _objects(
+    values: Sequence[object], key: str, errors: list[str]
+) -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
     for index, value in enumerate(values):
         if not isinstance(value, dict):
@@ -223,7 +243,9 @@ def _objects(values: Sequence[object], key: str, errors: list[str]) -> list[dict
     return result
 
 
-def _index(records: Sequence[dict[str, object]], kind: str, errors: list[str]) -> dict[str, dict[str, object]]:
+def _index(
+    records: Sequence[dict[str, object]], kind: str, errors: list[str]
+) -> dict[str, dict[str, object]]:
     result: dict[str, dict[str, object]] = {}
     for index, record in enumerate(records):
         identity = record.get("id")
@@ -236,7 +258,9 @@ def _index(records: Sequence[dict[str, object]], kind: str, errors: list[str]) -
     return result
 
 
-def _validate_versions(documents: Mapping[str, Mapping[str, object]], errors: list[str]) -> None:
+def _validate_versions(
+    documents: Mapping[str, Mapping[str, object]], errors: list[str]
+) -> None:
     for name, document in documents.items():
         if document.get("format_version") != 1:
             errors.append(f"{name}: format_version must be 1")
@@ -254,12 +278,21 @@ def _validate_topics(
         pair = (corpus, path)
         if corpus not in corpora:
             errors.append(f"topic {identity}: unknown corpus {corpus!r}")
-        if not isinstance(path, str) or Path(path).is_absolute() or ".." in Path(path).parts:
+        if (
+            not isinstance(path, str)
+            or Path(path).is_absolute()
+            or ".." in Path(path).parts
+        ):
             errors.append(f"topic {identity}: unsafe path {path!r}")
         elif pair in paths:
             errors.append(f"topic {identity}: duplicate corpus path {path!r}")
         paths.add(pair)
-        if topic.get("classification") not in {"operation", "schema", "overview", "navigation"}:
+        if topic.get("classification") not in {
+            "operation",
+            "schema",
+            "overview",
+            "navigation",
+        }:
             errors.append(f"topic {identity}: invalid classification")
         if not isinstance(topic.get("reason"), str) or not str(topic["reason"]).strip():
             errors.append(f"topic {identity}: classification reason is required")
@@ -278,7 +311,9 @@ def _validate_corpora(
         for field in ("captured_pages", "navigation_pages"):
             value = corpus.get(field)
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-                errors.append(f"corpus {identity}: {field} must be a non-negative integer")
+                errors.append(
+                    f"corpus {identity}: {field} must be a non-negative integer"
+                )
 
 
 def _validate_rows(
@@ -301,7 +336,10 @@ def _validate_rows(
             elif isinstance(ref, str):
                 accounted[ref] += 1
         disposition = row.get("disposition")
-        if not isinstance(disposition, dict) or disposition.get("kind") not in DISPOSITIONS:
+        if (
+            not isinstance(disposition, dict)
+            or disposition.get("kind") not in DISPOSITIONS
+        ):
             errors.append(f"row {identity}: invalid disposition")
             continue
         kind = str(disposition["kind"])
@@ -315,10 +353,13 @@ def _validate_rows(
                 errors.append(f"row {identity}: unknown requires question")
             unknown.append(identity)
         elif kind == "proposed-exclusion":
-            if not str(disposition.get("reason", "")).strip() or not str(
-                disposition.get("owner", "")
-            ).strip():
-                errors.append(f"row {identity}: proposed exclusion requires reason and owner")
+            if (
+                not str(disposition.get("reason", "")).strip()
+                or not str(disposition.get("owner", "")).strip()
+            ):
+                errors.append(
+                    f"row {identity}: proposed exclusion requires reason and owner"
+                )
             proposed.append(identity)
     for identity, unit in units.items():
         accounting = unit.get("accounting")
@@ -328,12 +369,20 @@ def _validate_rows(
         if accounting.get("kind") == "row":
             row_id = accounting.get("id")
             if row_id not in rows:
-                errors.append(f"source unit {identity}: unknown accounting row {row_id!r}")
-            elif accounted[identity] != 1 or identity not in rows[str(row_id)].get("source_units", []):
-                errors.append(f"source unit {identity}: accounting does not match row {row_id}")
+                errors.append(
+                    f"source unit {identity}: unknown accounting row {row_id!r}"
+                )
+            elif accounted[identity] != 1 or identity not in rows[str(row_id)].get(
+                "source_units", []
+            ):
+                errors.append(
+                    f"source unit {identity}: accounting does not match row {row_id}"
+                )
         elif accounting.get("kind") == "non-operation":
             if not str(accounting.get("reason", "")).strip():
-                errors.append(f"source unit {identity}: non-operation reason is required")
+                errors.append(
+                    f"source unit {identity}: non-operation reason is required"
+                )
         else:
             errors.append(f"source unit {identity}: invalid accounting")
         if accounted[identity] > 1:
@@ -364,7 +413,9 @@ def _validate_operations(
             continue
         for field in ("operation", "handler", "signature"):
             if record.get(field) != getattr(found, field):
-                errors.append(f"operation evidence {tool}: {field} does not match registry")
+                errors.append(
+                    f"operation evidence {tool}: {field} does not match registry"
+                )
         if tuple(record.get("surfaces", ())) != found.surfaces:
             errors.append(f"operation evidence {tool}: surfaces do not match registry")
         row_ids = record.get("row_ids")
@@ -375,7 +426,9 @@ def _validate_operations(
                 if row_id not in rows:
                     errors.append(f"operation evidence {tool}: unknown row {row_id!r}")
         if not row_ids and not str(record.get("composite_reason", "")).strip():
-            errors.append(f"operation evidence {tool}: rows or composite reason required")
+            errors.append(
+                f"operation evidence {tool}: rows or composite reason required"
+            )
         tests = record.get("tests")
         if not isinstance(tests, list):
             errors.append(f"operation evidence {tool}: tests must be an array")
@@ -388,9 +441,438 @@ def _validate_operations(
                     or not path.is_file()
                     or path.is_symlink()
                 ):
-                    errors.append(f"operation evidence {tool}: invalid test path {path_text!r}")
+                    errors.append(
+                        f"operation evidence {tool}: invalid test path {path_text!r}"
+                    )
     for tool in sorted(expected.keys() - observed.keys()):
         errors.append(f"registry operation {tool}: missing operation evidence")
+
+
+def _exact_keys(value: object, keys: set[str], label: str, errors: list[str]) -> bool:
+    if not isinstance(value, dict) or set(value) != keys:
+        errors.append(f"{label}: expected exactly {sorted(keys)}")
+        return False
+    return True
+
+
+def _nonempty(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _scope_identity(
+    value: object, label: str, errors: list[str]
+) -> tuple[object, ...] | None:
+    if not _exact_keys(value, {"variant", "parameters"}, label, errors):
+        return None
+    assert isinstance(value, dict)
+    variant = value["variant"]
+    parameters = value["parameters"]
+    if not _nonempty(variant) or not isinstance(parameters, list):
+        errors.append(f"{label}: invalid variant or parameters")
+        return None
+    pairs: list[tuple[str, str]] = []
+    for index, parameter in enumerate(parameters):
+        parameter_label = f"{label} parameter {index}"
+        if not _exact_keys(parameter, {"name", "constraint"}, parameter_label, errors):
+            continue
+        assert isinstance(parameter, dict)
+        name, constraint = parameter["name"], parameter["constraint"]
+        if not _nonempty(name) or not _nonempty(constraint):
+            errors.append(f"{parameter_label}: name and constraint are required")
+        else:
+            pairs.append((name, constraint))
+    if len({name for name, _ in pairs}) != len(pairs) or pairs != sorted(pairs):
+        errors.append(f"{label}: parameters must be unique and sorted")
+    return (variant, tuple(pairs))
+
+
+def _validate_implementation(
+    record: dict[str, object], label: str, errors: list[str]
+) -> set[tuple[object, ...]]:
+    implementation = record.get("implementation")
+    if not _exact_keys(
+        implementation, {"state", "implemented_scope", "missing_scope"}, label, errors
+    ):
+        return set()
+    assert isinstance(implementation, dict)
+    state = implementation["state"]
+    implemented = implementation["implemented_scope"]
+    missing = implementation["missing_scope"]
+    if (
+        state not in MATURITY_STATES
+        or not isinstance(implemented, list)
+        or not isinstance(missing, list)
+    ):
+        errors.append(f"{label}: invalid implementation state or scope lists")
+        return set()
+    implemented_ids = {_scope_identity(scope, label, errors) for scope in implemented}
+    missing_ids = {_scope_identity(scope, label, errors) for scope in missing}
+    implemented_ids.discard(None)
+    missing_ids.discard(None)
+    if len(implemented_ids) != len(implemented) or len(missing_ids) != len(missing):
+        errors.append(f"{label}: scope entries must be unique and valid")
+    valid_lists = {
+        "absent": (not implemented and bool(missing)),
+        "partial": (bool(implemented) and bool(missing)),
+        "implemented": (bool(implemented) and not missing),
+    }
+    if not valid_lists.get(state, False) or implemented_ids & missing_ids:
+        errors.append(f"{label}: contradictory implementation scope")
+    return implemented_ids
+
+
+def _validate_timestamp(value: object, label: str, errors: list[str]) -> None:
+    if not isinstance(value, str) or not TIMESTAMP.fullmatch(value):
+        errors.append(f"{label}: observed_at must be canonical UTC")
+        return
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        errors.append(f"{label}: observed_at is not a calendar timestamp")
+
+
+def _environment_identity(
+    value: object, label: str, errors: list[str]
+) -> tuple[str, ...] | None:
+    fields = (
+        "hmc_release",
+        "hmc_build",
+        "hardware_family",
+        "firmware",
+        "licensing",
+        "topology",
+    )
+    if not _exact_keys(value, set(fields), label, errors):
+        return None
+    assert isinstance(value, dict)
+    if not all(_nonempty(value[field]) for field in fields):
+        errors.append(f"{label}: environment fields are required")
+        return None
+    return tuple(value[field] for field in fields)
+
+
+def _validate_observation(
+    observation: object,
+    operation: str,
+    scopes: set[tuple[object, ...]],
+    evidence_ids: set[str],
+    current: set[tuple[object, ...]],
+    errors: list[str],
+) -> None:
+    required = {
+        "id",
+        "channel",
+        "scope",
+        "scenario",
+        "result",
+        "currency",
+        "observed_at",
+        "implementation_revision",
+        "deployed_revision",
+        "environment",
+        "assertions",
+        "cleanup",
+        "provenance",
+        "promotion",
+        "reason",
+        "prerequisites",
+        "obligation",
+        "implementation_fingerprint",
+        "invalidated_by",
+    }
+    if not _exact_keys(
+        observation, required, f"maturity operation {operation} evidence", errors
+    ):
+        return
+    assert isinstance(observation, dict)
+    identity = observation["id"]
+    label = (
+        f"maturity evidence {identity}"
+        if isinstance(identity, str)
+        else f"maturity operation {operation} evidence"
+    )
+    if not _nonempty(identity) or identity in evidence_ids:
+        errors.append(f"{label}: id must be catalog-wide unique")
+    if isinstance(identity, str):
+        evidence_ids.add(identity)
+    channel, result, currency = (
+        observation["channel"],
+        observation["result"],
+        observation["currency"],
+    )
+    if (
+        channel not in EVIDENCE_CHANNELS
+        or result not in EVIDENCE_RESULTS
+        or currency not in EVIDENCE_CURRENCY
+    ):
+        errors.append(f"{label}: invalid channel, result, or currency")
+        return
+    scope = _scope_identity(observation["scope"], label, errors)
+    if scope not in scopes:
+        errors.append(f"{label}: scope is not implemented")
+    scenario = observation["scenario"]
+    if scenario is not None and (
+        not _exact_keys(scenario, {"id", "description"}, label, errors)
+        or not all(_nonempty(value) for value in scenario.values())
+    ):
+        errors.append(f"{label}: invalid scenario")
+    environment = observation["environment"]
+    environment_id = (
+        _environment_identity(environment, label, errors) if channel == "live" else None
+    )
+    if (channel == "live") != (environment is not None):
+        errors.append(f"{label}: environment is required only for live evidence")
+    _validate_result(
+        observation, operation, channel, result, scenario, identity, label, errors
+    )
+    _validate_currency(
+        observation,
+        operation,
+        channel,
+        currency,
+        scope,
+        scenario,
+        environment_id,
+        current,
+        label,
+        errors,
+    )
+
+
+def _validate_result(
+    observation: dict[str, object],
+    operation: str,
+    channel: object,
+    result: object,
+    scenario: object,
+    identity: object,
+    label: str,
+    errors: list[str],
+) -> None:
+    assertions = observation["assertions"]
+    prerequisites = observation["prerequisites"]
+    if not isinstance(assertions, list) or not all(
+        _nonempty(item) for item in assertions
+    ):
+        errors.append(f"{label}: assertions must be non-empty strings")
+    elif len(set(assertions)) != len(assertions):
+        errors.append(f"{label}: assertions must be unique")
+    if not isinstance(prerequisites, list) or not all(
+        _nonempty(item) for item in prerequisites
+    ):
+        errors.append(f"{label}: prerequisites must be non-empty strings")
+    elif prerequisites != sorted(set(prerequisites)):
+        errors.append(f"{label}: prerequisites must be sorted and unique")
+    if observation["cleanup"] not in {"not-run", "not-required", "failed", "passed"}:
+        errors.append(f"{label}: invalid cleanup")
+    promotion = observation["promotion"]
+    if not _exact_keys(promotion, {"eligible", "reason"}, label, errors) or (
+        promotion.get("eligible") is not False
+    ):
+        errors.append(f"{label}: format 1 promotion must be ineligible")
+    if result == "not-run":
+        _validate_not_run(
+            observation, operation, channel, scenario, identity, label, errors
+        )
+    else:
+        _validate_attempted(observation, channel, result, label, errors)
+
+
+def _validate_attempted(
+    observation: dict[str, object],
+    channel: object,
+    result: object,
+    label: str,
+    errors: list[str],
+) -> None:
+    _validate_timestamp(observation["observed_at"], label, errors)
+    if not SHA_1.fullmatch(str(observation["implementation_revision"])):
+        errors.append(f"{label}: implementation_revision must be a full SHA")
+    if channel == "live" and not SHA_1.fullmatch(str(observation["deployed_revision"])):
+        errors.append(f"{label}: live evidence requires deployed_revision")
+    if channel != "live" and observation["deployed_revision"] is not None:
+        errors.append(f"{label}: non-live evidence has no deployed_revision")
+    provenance = observation["provenance"]
+    if _exact_keys(provenance, {"kind", "reference"}, label, errors) and (
+        provenance.get("kind") != "unverified"
+        or not _nonempty(provenance.get("reference"))
+    ):
+        errors.append(f"{label}: invalid provenance")
+    if result == "passed" and not observation["assertions"]:
+        errors.append(f"{label}: passed evidence requires assertions")
+    if (
+        channel == "live"
+        and result == "passed"
+        and observation["cleanup"] not in {"passed", "not-required"}
+    ):
+        errors.append(f"{label}: live pass requires successful cleanup")
+    if result in {"skipped", "failed"} and not _nonempty(observation["reason"]):
+        errors.append(f"{label}: result requires a reason")
+    if result == "passed" and observation["reason"] is not None:
+        errors.append(f"{label}: passed evidence has no reason")
+
+
+def _validate_not_run(
+    observation: dict[str, object],
+    operation: str,
+    channel: object,
+    scenario: object,
+    identity: object,
+    label: str,
+    errors: list[str],
+) -> None:
+    fields = (
+        "observed_at",
+        "implementation_revision",
+        "deployed_revision",
+        "provenance",
+        "implementation_fingerprint",
+    )
+    if any(observation[key] is not None for key in fields):
+        errors.append(f"{label}: not-run fields must be null")
+    if observation["assertions"] or observation["cleanup"] != "not-run":
+        errors.append(f"{label}: not-run has no assertions or cleanup")
+    if not _nonempty(observation["reason"]):
+        errors.append(f"{label}: result requires a reason")
+    obligation = observation["obligation"]
+    valid_obligation = (
+        isinstance(obligation, dict)
+        and set(obligation) <= {"catalog", "issue"}
+        and obligation.get("catalog") == f"{operation}#{identity}"
+    )
+    valid_issue = (
+        "issue" not in obligation
+        or (isinstance(obligation["issue"], int) and obligation["issue"] > 0)
+        if isinstance(obligation, dict)
+        else False
+    )
+    if channel == "live" and (
+        scenario is None
+        or not observation["prerequisites"]
+        or not valid_obligation
+        or not valid_issue
+    ):
+        errors.append(
+            f"{label}: live not-run requires scenario, prerequisites, and catalog obligation"
+        )
+    if channel != "live" and obligation is not None:
+        errors.append(f"{label}: non-live evidence has no obligation")
+
+
+def _validate_currency(
+    observation: dict[str, object],
+    operation: str,
+    channel: object,
+    currency: object,
+    scope: tuple[object, ...] | None,
+    scenario: object,
+    environment: tuple[str, ...] | None,
+    current: set[tuple[object, ...]],
+    label: str,
+    errors: list[str],
+) -> None:
+    if observation["result"] != "not-run" and not SHA_256.fullmatch(
+        str(observation["implementation_fingerprint"])
+    ):
+        errors.append(f"{label}: implementation_fingerprint must be a full SHA-256")
+    if currency == "current":
+        if observation["invalidated_by"] is not None:
+            errors.append(f"{label}: current evidence has no invalidator")
+        scenario_id = scenario.get("id") if isinstance(scenario, dict) else None
+        key = (operation, channel, scope, scenario_id, environment)
+        if key in current:
+            errors.append(f"{label}: duplicate current evidence")
+        current.add(key)
+        return
+    invalidator = observation["invalidated_by"]
+    if not _exact_keys(
+        invalidator, {"implementation_fingerprint", "reason"}, label, errors
+    ):
+        return
+    if not SHA_256.fullmatch(
+        str(invalidator.get("implementation_fingerprint"))
+    ) or not _nonempty(invalidator.get("reason")):
+        errors.append(f"{label}: stale evidence requires an invalidator")
+
+
+def _validate_maturity(
+    records: Sequence[dict[str, object]],
+    operation_ids: Collection[str],
+    errors: list[str],
+) -> None:
+    seen: set[str] = set()
+    evidence_ids: set[str] = set()
+    current: set[tuple[object, ...]] = set()
+    for record in records:
+        operation = record.get("operation")
+        label = f"maturity operation {operation}"
+        if not _exact_keys(
+            record, {"operation", "implementation", "evidence"}, label, errors
+        ):
+            continue
+        if not _nonempty(operation) or operation in seen:
+            errors.append(f"{label}: duplicate operation")
+        elif operation not in operation_ids:
+            errors.append(f"{label}: unknown operation")
+        seen.add(operation)
+        scopes = _validate_implementation(record, label, errors)
+        evidence = record["evidence"]
+        if not isinstance(evidence, list):
+            errors.append(f"{label}: evidence must be a list")
+            continue
+        for observation in evidence:
+            _validate_observation(
+                observation, str(operation), scopes, evidence_ids, current, errors
+            )
+
+
+def implementation_fingerprint(repo_root: Path) -> str:
+    paths = _implementation_paths(repo_root)
+    digest = hashlib.sha256()
+    for path in sorted(paths, key=lambda item: item.relative_to(repo_root).as_posix()):
+        relative = path.relative_to(repo_root).as_posix().encode()
+        content = path.read_bytes()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return digest.hexdigest()
+
+
+def _implementation_paths(repo_root: Path) -> list[Path]:
+    command = [
+        "git",
+        "-C",
+        str(repo_root),
+        "ls-files",
+        "-z",
+        "src",
+        "scripts",
+        "pyproject.toml",
+        "uv.lock",
+    ]
+    result = subprocess.run(command, capture_output=True, check=False)
+    names = (
+        result.stdout.decode(errors="surrogateescape").split("\0")
+        if result.returncode == 0
+        else []
+    )
+    paths = [repo_root / name for name in names if name]
+    if paths:
+        return [path for path in paths if path.is_file() and not path.is_symlink()]
+    directories = (repo_root / "src", repo_root / "scripts")
+    found = [
+        path
+        for directory in directories
+        if directory.is_dir()
+        for path in directory.rglob("*")
+    ]
+    found.extend(
+        path
+        for path in (repo_root / "pyproject.toml", repo_root / "uv.lock")
+        if path.is_file()
+    )
+    return [path for path in found if path.is_file() and not path.is_symlink()]
 
 
 def validate_inventory(
@@ -403,17 +885,39 @@ def validate_inventory(
     try:
         documents = {
             name: load_json(root / name)
-            for name in ("corpora.json", "rows.json", "operations.json")
+            for name in (
+                "corpora.json",
+                "rows.json",
+                "operations.json",
+                "maturity.json",
+            )
         }
     except InventoryError as error:
-        return Report((str(error),), (), (), (), 0, 0, 0, 0)
+        return Report((str(error),), (), (), (), 0, 0, 0, 0, 0)
     _validate_versions(documents, errors)
-    corpora_records = _objects(_array(documents["corpora.json"], "corpora", errors), "corpora", errors)
-    topic_records = _objects(_array(documents["corpora.json"], "topics", errors), "topics", errors)
-    unit_records = _objects(_array(documents["corpora.json"], "source_units", errors), "source_units", errors)
-    row_records = _objects(_array(documents["rows.json"], "rows", errors), "rows", errors)
+    if documents["maturity.json"].get("admission_policy") != "existing-runtime-guards":
+        errors.append("maturity.json: admission_policy must be existing-runtime-guards")
+    corpora_records = _objects(
+        _array(documents["corpora.json"], "corpora", errors), "corpora", errors
+    )
+    topic_records = _objects(
+        _array(documents["corpora.json"], "topics", errors), "topics", errors
+    )
+    unit_records = _objects(
+        _array(documents["corpora.json"], "source_units", errors),
+        "source_units",
+        errors,
+    )
+    row_records = _objects(
+        _array(documents["rows.json"], "rows", errors), "rows", errors
+    )
     operation_records = _objects(
         _array(documents["operations.json"], "operations", errors), "operations", errors
+    )
+    maturity_records = _objects(
+        _array(documents["maturity.json"], "operations", errors),
+        "maturity operations",
+        errors,
     )
     corpora = _index(corpora_records, "corpora", errors)
     topics = _index(topic_records, "topics", errors)
@@ -423,11 +927,38 @@ def validate_inventory(
     _validate_topics(corpora, topics, errors)
     for identity, unit in units.items():
         if unit.get("topic") not in topics:
-            errors.append(f"source unit {identity}: unknown topic {unit.get('topic')!r}")
+            errors.append(
+                f"source unit {identity}: unknown topic {unit.get('topic')!r}"
+            )
         if not HEX_256.fullmatch(str(unit.get("sha256", ""))):
             errors.append(f"source unit {identity}: invalid sha256")
     unknown, proposed, pending = _validate_rows(rows, units, errors)
     _validate_operations(operation_records, rows, registry, repo_root, errors)
+    _validate_maturity(
+        maturity_records,
+        {
+            record.get("operation")
+            for record in operation_records
+            if isinstance(record.get("operation"), str)
+        },
+        errors,
+    )
+    fingerprint = implementation_fingerprint(repo_root)
+    for record in maturity_records:
+        for evidence in (
+            record.get("evidence", [])
+            if isinstance(record.get("evidence"), list)
+            else []
+        ):
+            if (
+                isinstance(evidence, dict)
+                and evidence.get("currency") == "current"
+                and evidence.get("result") != "not-run"
+                and evidence.get("implementation_fingerprint") != fingerprint
+            ):
+                errors.append(
+                    f"maturity evidence {evidence.get('id')}: stale implementation fingerprint"
+                )
     return Report(
         tuple(errors),
         tuple(sorted(unknown)),
@@ -437,6 +968,7 @@ def validate_inventory(
         len(units),
         len(rows),
         len(operation_records),
+        len(maturity_records),
     )
 
 
@@ -447,14 +979,22 @@ def verify_corpora(root: Path, sources: Mapping[str, Path]) -> list[str]:
         return [str(error)]
     local_errors: list[str] = []
     corpus_records = _objects(
-        document.get("corpora", []) if isinstance(document.get("corpora"), list) else [],
+        document.get("corpora", [])
+        if isinstance(document.get("corpora"), list)
+        else [],
         "corpora",
         local_errors,
     )
     corpus_ids = {str(record.get("id")) for record in corpus_records}
-    topics = _objects(document.get("topics", []) if isinstance(document.get("topics"), list) else [], "topics", local_errors)
+    topics = _objects(
+        document.get("topics", []) if isinstance(document.get("topics"), list) else [],
+        "topics",
+        local_errors,
+    )
     units = _objects(
-        document.get("source_units", []) if isinstance(document.get("source_units"), list) else [],
+        document.get("source_units", [])
+        if isinstance(document.get("source_units"), list)
+        else [],
         "source_units",
         local_errors,
     )
@@ -486,7 +1026,9 @@ def verify_corpora(root: Path, sources: Mapping[str, Path]) -> list[str]:
             errors.append(f"{corpus}/{relative}: cannot read: {error}")
     for corpus, source in sources.items():
         if not source.is_dir() or source.is_symlink():
-            errors.append(f"{corpus}: source root is missing, symlinked, or not a directory")
+            errors.append(
+                f"{corpus}: source root is missing, symlinked, or not a directory"
+            )
             continue
         actual = {
             str(path.relative_to(source))
@@ -536,7 +1078,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         "capability inventory: structurally valid; "
         f"{report.topic_count} topics, {report.source_unit_count} source units, "
-        f"{report.row_count} rows, {report.operation_count} registry operations"
+        f"{report.row_count} rows, {report.operation_count} registry operations, "
+        f"{report.maturity_operation_count} maturity operations"
     )
     if report.complete:
         print("capability coverage: complete")
