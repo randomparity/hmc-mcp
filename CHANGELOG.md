@@ -521,7 +521,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `clear_lpar_boot_order` now accept a system-scoped LPAR name or UUID.
 - Changed: SSH affinity result types and workflows now live in
   `operations.affinity.ssh`; network inventory and vNIC mutation now live in
-  `operations.vnic`.
+  `operations.virtualization.vnic`.
 - Changed: `delete_vios`, `update_vios`, and `upgrade_vios` now place the
   optional managed-system selector before the VIOS selector, matching sibling VIOS
   operations and allowing update and upgrade names to be disambiguated.
@@ -537,7 +537,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - Changed: SSH-backed network and affinity operations now consistently name their
   selectors `system_name_or_uuid` and `lpar_name_or_uuid`.
 - Added: `resolve_and_authorize_lpar_mutation` and `resolve_and_authorize_lpar_names` after
-  ownership authorization moved to the cross-cutting `operations.ownership` module.
+  ownership authorization moved to the cross-cutting `operations.lpar.ownership` module.
 - Added: `StorageMapResult`; `map_storage` now returns this concrete result instead of the
   mapped resource alone.
 - Added: `VolumeGroup`, `OpticalMedia`, and `StorageMapping` replace raw HMC storage
