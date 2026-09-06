@@ -8,6 +8,7 @@ from ..._app import (
     run_limited_collection,
     with_client,
 )
+from ...client.core import HMCClient
 from ...operations.virtualization.network import (
     create_virtual_network,
     delete_virtual_network,
@@ -89,7 +90,7 @@ def hmc_create_virtual_network(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def operation(hmc):
+    async def operation(hmc: HMCClient) -> dict[str, Any] | None:
         result = await create_virtual_network(
             hmc,
             system_name_or_uuid,
@@ -123,7 +124,7 @@ def hmc_delete_virtual_network(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def _go(hmc):
+    async def _go(hmc: HMCClient) -> str:
         await delete_virtual_network(hmc, system_name_or_uuid, network_uuid)
         return f"Deleted VirtualNetwork {network_uuid} from {system_name_or_uuid}"
 
