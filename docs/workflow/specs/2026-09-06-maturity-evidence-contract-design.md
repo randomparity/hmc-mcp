@@ -53,8 +53,8 @@ Every evidence observation uses a uniform object with these fields:
 
 - `id`: a stable catalog-wide ID;
 - `channel`: `contract-review`, `automated`, or `live`;
-- `scope`: one canonical object byte-for-byte equal to an entry in the operation's
-  `implemented_scope` list;
+- `scope`: an object whose parsed canonical scope identity equals an entry in the
+  operation's `implemented_scope` list; JSON member order and whitespace are irrelevant;
 - `scenario`: an object with a stable non-empty `id` and public-safe non-empty
   `description`;
 - `result`: `not-run`, `skipped`, `failed`, or `passed`;

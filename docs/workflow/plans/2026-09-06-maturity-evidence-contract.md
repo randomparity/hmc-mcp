@@ -34,7 +34,9 @@ conditional validation in the existing script, focused fixtures/tests, and READM
   accepted-fixed in the design set: canonical scope/revision identity, trusted promotion
   provenance, checkable implementation invalidation, and live-gap obligations. The
   operator authorized one additional pass after iteration 2; its four blockers and one
-  note are accepted-fixed by the current design edit.
+  note are accepted-fixed by the current design edit. The operator authorized round 4
+  beyond the ordinary ceiling to replace the remaining byte-equality contradiction with
+  the already-defined parsed canonical identity.
 - Review deferrals: none before design review.
 - Guardrail observations: `just adr-numbering` and `just doc-freshness` passed after
   the ADR/spec commit; commit hooks passed every configured static hook.
@@ -161,7 +163,8 @@ structural-validity line. No runtime interface is added.
    evidence-ID uniqueness, current observations with `invalidated_by == null`, stale
    observations with a valid invalidator, and one current observation per canonical tuple
    `(channel, scope-identity, scenario-id, environment-field-tuple)`. Construct identities
-   from parsed field tuples rather than serialized JSON. Re-run green.
+   from parsed field tuples rather than serialized JSON, and use the same scope identity
+   for evidence membership in `implemented_scope`. Re-run green.
 9. Create `maturity.json` with `system.list` as implemented and `sriov.set_mode` as partial.
    Give each evidence channel an honest current `not-run` observation because existing test
    links and narrative live records omit fields this contract requires. Run
