@@ -43,23 +43,24 @@ Acceptance: no production access to `state.context` remains, and assignment to c
 
 Files: modify `scripts/live_test_runner.py`; modify `scripts/live_test/*.py`; modify `tests/test_live_runner.py`.
 
-Interfaces: `_restore_artifacts_from_results(state: RunState, results_path: str) -> None`; results document has `config`, `artifacts`, and `results` members.
+Interfaces: `_connection_identity(config: HMCConfig) -> dict[str, str | int | bool]`; `_restore_artifacts_from_results(state: RunState, connection: HMCConfig, results_path: str) -> bool`; results document has `config`, `connection`, `artifacts`, and `results` members.
 
 Verification:
 
 - Contract: one emitted result document keeps config and artifacts in distinct objects. Mode: focused-test. Add an async runner test; it fails while `context` is emitted and passes with `uv run --no-sync pytest tests/test_live_runner.py -q`.
 - Contract: restoration modifies only declared artifacts and rejects legacy or malformed documents without mutation. Mode: focused-test. Add restoration cases; they fail before the new reader and pass with the same command.
-- Contract: a selected run aborts before scenario dispatch when saved config differs or artifact decoding is malformed, leaving its existing artifacts unchanged. Mode: focused-test. Add mismatch and partial-decode cases; they fail before the guard and pass with the same command.
+- Contract: a selected run aborts before scenario dispatch when saved live-test config or non-secret HMC target identity differs, or artifact decoding is malformed, leaving its existing artifacts unchanged. Mode: focused-test. Add live-test config, connection identity, and partial-decode cases; they fail before the guard and pass with the same command.
 
 Steps:
 
 1. Replace scenario reads with `state.config` and mutations with `state.artifacts`; keep local aliases only when they name the explicit owner.
-2. Serialize `asdict(state.config)` and `asdict(state.artifacts)` under their envelope keys.
-3. Replace `_restore_ctx_from_results` with a declared-artifact-field reader; require saved config to equal `asdict(state.config)`, decode all artifact fields into a temporary value, and replace `state.artifacts` only on complete success. Reject missing or non-object members, including legacy `context` envelopes.
-4. Make restoration failure return a pre-scenario failure for a selected run; do not dispatch a scenario with blank or partially restored state.
-5. Add focused tests for emitted shape, artifact restoration, config non-mutation, legacy rejection, config mismatch, atomic malformed decode, and no scenario dispatch; run the focused suite.
+2. Derive the `connection` envelope member from the already bootstrapped `HMCConfig` using only `host`, `port`, `user`, and `verify_ssl`; never serialize a password, SSH key, memento, or timeout.
+3. Serialize `asdict(state.config)`, the connection identity, and `asdict(state.artifacts)` under their envelope keys.
+4. Replace `_restore_ctx_from_results` with a declared-artifact-field reader; require saved config and connection identity to equal the current values, decode all artifact fields into a temporary value, and replace `state.artifacts` only on complete success. Reject missing or non-object members, including legacy `context` envelopes.
+5. Make restoration failure return a pre-scenario failure for a selected run; do not dispatch a scenario with blank or partially restored state.
+6. Add focused tests for emitted shape, artifact restoration, config non-mutation, legacy rejection, live-test and connection mismatch, atomic malformed decode, secret omission, and no scenario dispatch; run the focused suite.
 
-Acceptance: restoration contains no config special cases, cannot mutate `state.config`, cannot partially mutate artifacts, and cannot dispatch a selected scenario after identity or decode failure.
+Acceptance: restoration contains no config special cases, stores no connection secret, cannot mutate `state.config`, cannot partially mutate artifacts, and cannot dispatch a selected scenario after identity or decode failure.
 
 ## Final verification
 

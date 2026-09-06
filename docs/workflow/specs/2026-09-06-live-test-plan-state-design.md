@@ -17,12 +17,15 @@ as `config` and `artifacts`. Scenario code reads configuration through
 
 The runner writes exactly `{"config": ..., "artifacts": ..., "results": ...}`.
 `_restore_artifacts_from_results()` accepts only objects whose saved `config`
-equals `asdict(state.config)` and whose `artifacts` object decodes completely
-into declared artifact fields. It constructs a temporary artifact value and
-replaces `state.artifacts` only after that validation succeeds. Missing,
-legacy, malformed, or configuration-mismatched documents abort a selected run
-before scenario dispatch. A selected-subtask invocation still restores from its
-prior results file when that identity matches. Old `{"context": ...}` documents
+equals `asdict(state.config)`, whose saved `connection` equals the current
+non-secret `{"host", "port", "user", "verify_ssl"}` identity derived from
+`HMCConfig`, and whose `artifacts` object decodes completely into declared
+artifact fields. It constructs a temporary artifact value and replaces
+`state.artifacts` only after that validation succeeds. Missing, legacy,
+malformed, configuration-mismatched, or connection-mismatched documents abort a
+selected run before scenario dispatch. A selected-subtask invocation still
+restores from its prior results file when both identities match. Old
+`{"context": ...}` documents
 are rejected as unsupported pre-release output rather than silently mixing
 configuration into mutable state.
 
@@ -31,9 +34,9 @@ configuration into mutable state.
 Configuration parsing remains before MCP creation. A frozen config rejects
 assignment, and restoration never writes into it. Tests prove configuration
 immutability, artifact-only atomic restoration, rejection of legacy,
-malformed, and configuration-mismatched files before dispatch, and the emitted
-envelope. Existing scenario tests are updated to exercise the new explicit
-ownership paths.
+malformed, configuration-mismatched, and connection-mismatched files before
+dispatch, and the emitted envelope. Existing scenario tests are updated to
+exercise the new explicit ownership paths.
 
 ## Non-goals
 
