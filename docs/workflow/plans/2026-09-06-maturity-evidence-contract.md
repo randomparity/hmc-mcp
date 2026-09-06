@@ -28,7 +28,7 @@ conditional validation in the existing script, focused fixtures/tests, and READM
 
 - Issue and scope token: `#622`, `q622-a9e980a4`.
 - Repository: `randomparity/hmc-mcp`.
-- Current phase: design review confirming pass; build follows the scope audit.
+- Current phase: build after the scope audit.
 - Routed review depth: iterating.
 - Open findings: design review iteration 1 found four contract gaps; all four are
   accepted-fixed in the design set: canonical scope/revision identity, trusted promotion
@@ -41,6 +41,11 @@ conditional validation in the existing script, focused fixtures/tests, and READM
   continue: invalidation now uses the pre-commit fingerprint, and timestamp parsing has a
   canonical lexical gate.
 - Review deferrals: none before design review.
+- Scope audit: F1 was accepted-fixed in commit `6c39b163`; representative records
+  begin with empty evidence arrays unless a repository artifact grounds every field.
+- Build checkpoint: the original focused pytest command was corrected to the repository's
+  documented `--no-cov` form after it collected seven passing tests but exited 1 against
+  the package-wide coverage floor on the clean baseline.
 - Guardrail observations: `just adr-numbering` and `just doc-freshness` passed after
   the ADR/spec commit; commit hooks passed every configured static hook.
 
@@ -102,7 +107,7 @@ structural-validity line. No runtime interface is added.
   `test_maturity_rejects_unknown_and_duplicate_operation_ids`; the red observation is
   `InventoryError` for missing `maturity.json` or no errors for malformed join data because
   the current validator does not load it. Green command:
-  `uv run --no-sync pytest tests/scripts/test_check_capability_inventory.py -q`.
+  `uv run --no-sync pytest --no-cov tests/scripts/test_check_capability_inventory.py -q`.
 - Contract: implementation-state scope invariants.
   Mode: focused-test. Add a parametrized `test_maturity_enforces_implementation_scope`
   covering absent, partial, and implemented plus each invalid empty/non-empty pairing and
