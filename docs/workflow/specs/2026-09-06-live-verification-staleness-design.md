@@ -30,8 +30,10 @@ Measured on `main` at `ded24a77`:
   Three route through `record_expected_or_real`, where a substring match over the exception
   text *and traceback* can record the harness's own defect as a known HMC limitation.
 - `PASS` means the call returned. A job that came back `FAILED_BEFORE_COMPLETION` records
-  identically to one that succeeded: the IBM job-status reference defines ten terminal
-  statuses and only `COMPLETED_OK` is success.
+  identically to one that succeeded: the repository defines eleven terminal statuses
+  (`src/hmc_mcp/jobs/core.py:13-27`, ADR 0081) and treats only `COMPLETED` and
+  `COMPLETED_OK` as successful (`:28`). Assert membership in `SUCCESSFUL_JOB_STATUSES`, never
+  equality with `COMPLETED_OK` — the latter would record every `COMPLETED` job as a failure.
 - `REST000E` and `REST000B`, the only codes the runner matches, are absent from the IBM
   REST reference; they are field-observed. No documented grammar covers them.
 - ADR 0126's fingerprint is one digest over 209 files; a stale one is a hard error. Detailed
@@ -54,10 +56,20 @@ name its arguments.
 
 `RunState.call` keeps its `(status, data)` return. On failure `data` is a `CallFailure`
 carrying the exception class name, the message, the traceback text, an `http_status` parsed
-as `HTTP \d{3}` from the message, and `denied`, true when the message matches ADR 0038's
-closed template ` is not permitted on .+ by access policy ` — the concrete exception type
-does not survive FastMCP's `ToolError`, and a test provokes a real denial through the
-composed application to hold that coupling.
+as `HTTP \d{3}` from the message, and `denied`, true when the message matches
+` is not permitted (?:on .+ )?by access policy ` — the concrete exception type does not
+survive FastMCP's `ToolError`, and a test provokes a real denial through the composed
+application to hold that coupling.
+
+The `on <targets>` segment is optional because the denial templates are not uniform. Connection
+scope always renders it (`src/hmc_mcp/authorization/connection_scope.py:47`) and so does one
+target-scope template (`target_scope.py:86`), but three others render
+`"{tool} is not permitted by access policy {policy}: …"` with no segment at all
+(`target_scope.py:71`, `:76`, `:80`). A pattern requiring `on .+` classifies those three as
+`denied=False`. That is closed rather than unsafe — an unmatched failure records `failed` and
+never `passed` — but an `ExpectedOutcome(denial=True)` would silently never match them, and
+the runner composes its policy with `include_arbitrary_command=True`, so target-scope denials
+are reachable.
 
 `ExpectedOutcome(reason, error_codes=frozenset(), denial=False)` replaces
 `expected_fail_substrings`. It matches a `CallFailure` when any declared code occurs as a
@@ -77,8 +89,9 @@ unchanged.
 | `failed` | error, unmatched denial, invalid arguments, or a false assertion | yes |
 | `skipped` | a declared `ExpectedOutcome` matched | never |
 
-`record` keeps its signature and yields `observed`, so the 196 existing sites cannot promote
-by omission. `record_verified(subtask, tool, *, operation, scenario, assertions, cleanup,
+`record` keeps its signature and never yields `passed`, so the 182 existing `record` sites
+(plus 53 `skip` and 17 `record_expected_or_real`, all of which route through it) cannot
+promote by omission. `record_verified(subtask, tool, *, operation, scenario, assertions, cleanup,
 data)` is the only path to `passed`. `assertions` is a non-empty tuple of
 `Assertion(id, holds)` where `id` matches `[a-z][a-z0-9-]{2,63}`; `operation` must exist in
 `operations.json` (guard test); `scenario` matches `st\d+-[a-z0-9-]+`.
@@ -87,8 +100,12 @@ Converted now, so the path is exercised. Both job scenarios in
 `scripts/live_test/metrics.py` assert the same three ids over a
 `hmc_mcp.jobs.JobOutcome`: `job-found` (`found`), `job-identity-matches` (`job_id` equals
 the identifier passed), and `job-status-successful` (`status` in
-`hmc_mcp.jobs.SUCCESSFUL_JOB_STATUSES`). `hmc_wait_for_job` already returns that outcome as
-a mapping; `hmc_get_job` returns the raw HMC entry (or `null`), which the scenario
+`hmc_mcp.jobs.SUCCESSFUL_JOB_STATUSES`). `hmc_wait_for_job` is annotated `-> JobOutcome`, so
+FastMCP serves an unwrapped seven-property `outputSchema` and `result.data` arrives as a
+generated pydantic model, **not** a `dict` — verified against `fastmcp 3.4.7`, which returns
+a `Root` instance for that return type. The scenario therefore normalizes by field name
+rather than by `isinstance(data, dict)`, which would silently fail every real run.
+`hmc_get_job` returns the raw HMC entry (or `null`) as a plain dict, which the scenario
 normalizes with `hmc_mcp.jobs.job_outcome(job_id, data)` — the module's own reader, which
 finds `Status` under the nested `Resource` and treats `None` as `found=False`. No scenario
 reads a status key by hand. `hmc_get_console_info` in `scripts/live_test/connectivity.py`
@@ -102,7 +119,7 @@ An attempted live observation in `maturity.json` format 2:
 
 ```json
 {
-  "id": "st12-job-get",
+  "id": "st12-hmc-get-job",
   "channel": "live",
   "result": "passed",
   "scenario": "st12-job-inspection",
@@ -112,18 +129,36 @@ An attempted live observation in `maturity.json` format 2:
   "hardware_family": "POWER10",
   "cleanup": "not-required",
   "closure_fingerprint": "<64 hex>",
-  "assertions": ["entry-identity-matches", "job-status-successful"]
+  "assertions": ["job-found", "job-identity-matches", "job-status-successful"]
 }
 ```
 
-Exact key set. `id` unique catalog-wide and matching `[a-z0-9][a-z0-9-]*`. `result` in
-`{passed, failed}`. `observed_at` matches the validator's existing `TIMESTAMP` (`Z` form).
+Exact key set. `id` unique catalog-wide and matching `[a-z0-9][a-z0-9-]*`; it is derived, not
+chosen — `f"st{subtask}-{tool}"` with `_` replaced by `-`, so subtask 12's `hmc_get_job` gives
+`st12-hmc-get-job` as above. `channel` is always `"live"` on this path and is written by
+`record_verified`, not by the emission step. `result` in `{passed, failed}`. `observed_at`
+matches the validator's existing `TIMESTAMP` (`Z` form).
+
+`assertions` lists the ids whose `holds` was true, in declaration order — the held subset,
+not the declared set. A `passed` observation therefore lists every declared id (that is what
+makes it `passed`); a `failed` observation lists the ones that still held and may list none.
+The distinction is not cosmetic: writing the declared set instead would make a `failed`
+record indistinguishable from a `passed` one on this field, and would let a reader conclude
+an assertion held when it did not.
 `hmc_release` and `hardware_family` match `[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}` and are the
 only free text; the validator additionally rejects a value containing a dot-separated run
 that parses as an IPv4 address. A `passed` observation has non-empty `assertions` and
-`cleanup` in `{passed, not-required}`. A `not-run` observation keeps ADR 0126's shape and
-obligation rules: `id`, `channel`, `result`, `scenario`, `reason`, `prerequisites`,
-`obligation`.
+`cleanup` in `{passed, not-required}`.
+
+A `not-run` observation carries exactly `id`, `channel`, `result`, `scenario`, `reason`,
+`prerequisites`, `obligation`. Its `scenario` is the **same string form** as an attempted
+observation's, matching `st\d+-[a-z0-9-]+` — not ADR 0126's `{id, description}` object.
+One key cannot hold two shapes in one list, and format 2 has no reader for the object form;
+the description has no consumer and is dropped. Of `_validate_not_run`'s current checks, the
+`reason` non-emptiness check and the whole obligation block survive; every check reading
+`assertions`, `cleanup`, `observed_at`, `implementation_revision`, `deployed_revision`,
+`provenance`, or `implementation_fingerprint` is deleted with its key, since `NOT_RUN_KEYS`
+excludes all seven.
 
 `admission_policy` and the implementation record are unchanged from format 1. Removed from
 observations: `currency`, `invalidated_by`, `promotion`, `implementation_fingerprint`,
@@ -132,9 +167,35 @@ observations: `currency`, `invalidated_by`, `promotion`, `implementation_fingerp
 ## Closure fingerprint
 
 `closure_fingerprint(repo_root, handler_module)` resolves the handler's module file under
-`src/hmc_mcp/`, parses it with `ast`, and follows every `from .x import y`,
-`from ..x import y` (resolved by `level`) and `from hmc_mcp.x import y`; when `y` names a
-module file it is included too. It recurses until closed, restricted to `src/hmc_mcp/`,
+`src/hmc_mcp/`, parses it with `ast`, and follows every import that can reach `src/hmc_mcp/`:
+
+- `ImportFrom` with a `module`: `from .x import y`, `from ..x import y` (resolved by
+  `level`) and `from hmc_mcp.x import y`; when `y` names a module file it is included too.
+- `ImportFrom` with `module is None` — the `from . import y` / `from .. import y` form.
+  Each `alias.name` resolves against the package named by `level` alone. This form is not
+  optional: `src/hmc_mcp/server_tools/lpar/lifecycle.py:27-28` imports `lifecycle_boot` and
+  `lifecycle_create` this way, and that module handles `hmc_delete_lpar` and
+  `hmc_power_on_lpar`, so omitting it would leave both operations un-stale after an edit to
+  either imported module — the silent omission ADR 0127 rejects hand-authored lists for.
+  Five such statements exist in `src/hmc_mcp/` today.
+- `Import` of a dotted `hmc_mcp.…` name. None exist in `src/hmc_mcp/` today (AST-verified),
+  but the walk handles the form rather than assuming it stays absent.
+
+**Resolution is defined for packages, not only modules**, because most real imports in this
+tree name a package. A dotted target resolves to `<path>.py` when that exists, else to
+`<path>/__init__.py`; every `__init__.py` on the resolution path is included and recursed
+into, and an imported `y` resolving to `<pkg>/<y>.py` or `<pkg>/<y>/__init__.py` is included
+and recursed into as well. Without this the closure is provably wrong where it matters most:
+`src/hmc_mcp/server_tools/jobs.py:9` is `from ..jobs import JobOutcome`, where `hmc_mcp.jobs`
+is a package and `JobOutcome` is a class, not a module. Under a module-file-only rule neither
+`jobs/__init__.py` nor `jobs/core.py` would enter the closure of the handler module for
+`hmc_get_job` and `hmc_wait_for_job` — so a change to `SUCCESSFUL_JOB_STATUSES`
+(`src/hmc_mcp/jobs/core.py:28`), the very constant those scenarios assert against, would
+leave their observations reading as current. The same applies to `from ..operations import
+jobs as operations_jobs` and `from ..tool_registry import tool_module` at `:10-11`.
+
+A name that resolves to no file under `src/hmc_mcp/` is skipped. The walk recurses until
+closed, restricted to `src/hmc_mcp/`,
 includes `TYPE_CHECKING`-guarded imports (conservative), and hashes the sorted
 (path, bytes) sequence with the same length-prefixed SHA-256 construction 0126 used.
 `scripts/` is excluded: the instrument changing is not the implementation changing, and the

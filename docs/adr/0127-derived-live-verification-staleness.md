@@ -80,9 +80,11 @@ hand-written until #706.
 ## Considered & rejected
 
 - **Keep the repository-wide fingerprint and only downgrade the error to a warning.**
-  verified: `git log --since='90 days ago' -- src scripts pyproject.toml uv.lock | wc -l` on
-  `ded24a77` returned 1441 of 2594 commits, median 0.1 h apart; every observation would
-  be stale within the hour whatever the severity, so the warning would be permanent noise.
+  verified: on `ded24a77`,
+  `git log --since='90 days ago' --oneline -- src scripts pyproject.toml uv.lock | wc -l`
+  returned 1441 and `git log --since='90 days ago' --oneline | wc -l` returned 2594, median
+  0.1 h apart; every observation would be stale within the hour whatever the severity, so the
+  warning would be permanent noise.
 - **Fingerprint at release-tag granularity.** judgment: rejected by the operator as shifting
   re-validation to release time and endangering the release schedule.
 - **Hand-authored per-operation dependency lists.** verified: ADR 0126, Considered &
@@ -100,7 +102,7 @@ hand-written until #706.
   independent design-review passes found its redaction gate rejected ordinary strings and
   admitted addresses and serials; closed-shape fields with no prose remove the detector's
   job rather than fixing the detector.
-- **Do nothing.** verified: `scripts/check_capability_inventory.py:940-956` on `ded24a77`
+- **Do nothing.** verified: `scripts/check_capability_inventory.py:942-957` on `ded24a77`
   appends `stale implementation fingerprint` to `errors` for any current attempted
   observation whose fingerprint differs from now, and `errors` fails the recipe; the first
   recorded observation would gate every commit.

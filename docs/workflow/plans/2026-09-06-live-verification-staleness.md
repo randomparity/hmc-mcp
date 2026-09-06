@@ -67,7 +67,7 @@ Modified:
 | `.gitignore` | `test-results*.json` |
 | `.env.example` | two `LIVE_TEST_ENV_*` keys |
 | `tests/test_live_runner.py` | argument guard; runner tests |
-| `tests/scripts/test_check_capability_inventory.py` | format 2, closure, report tests; 13 fixture bumps |
+| `tests/scripts/test_check_capability_inventory.py` | format 2, closure, report tests; **two** fixture bumps (`:95`, `:177`) plus one error-text update (`:381`) — see Task 4 step 1 |
 | `tests/test_ci_pipeline.py` | job test; counts 4→5 and 5→6; recipe assertion |
 | `CHANGELOG.md` | one entry |
 
@@ -113,7 +113,9 @@ def classify_failure(exc: BaseException) -> CallFailure: ...
 ```
 
 `_HTTP_STATUS_RE = re.compile(r"\bHTTP (\d{3})\b")`;
-`_DENIAL_RE = re.compile(r" is not permitted on .+ by access policy ")`. `ExpectedOutcome`
+`_DENIAL_RE = re.compile(r" is not permitted (?:on .+ )?by access policy ")` — the segment is
+optional so the three `target_scope.py` templates that omit it (`:71`, `:76`, `:80`) still
+classify as denials. `ExpectedOutcome`
 raises `ValueError("an expected outcome must name an error code or a denial")` when both
 are empty. `matches` is
 `any(re.search(rf"\b{re.escape(c)}\b", failure.message) for c in self.error_codes) or (self.denial and failure.denied)`.
@@ -131,7 +133,10 @@ def record_verified(self, subtask, tool, *, operation: str, scenario: str,
 `holds` and `cleanup in {"passed","not-required"}`, else `failed`, and additionally appends
 to `self.observations` (new `list[dict]` field) the catalog-shaped observation minus
 `tested_commit`, `closure_fingerprint`, `hmc_release`, `hardware_family` — Task 5 fills
-those at emission. `id` is `f"st{subtask}-{tool}"` with `_` → `-` and any ` (` suffix
+those four at emission, and only those four. Everything else in `ATTEMPTED_KEYS` is written
+here, **including `"channel": "live"`**, whose only legal value on this path is `live`; it is
+neither an emission field nor derivable later, so leaving it to Task 5 would produce a record
+the validator rejects. `id` is `f"st{subtask}-{tool}"` with `_` → `-` and any ` (` suffix
 dropped; uniqueness is checked at emission. `observed_at` is
 `datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")`.
 
@@ -151,6 +156,12 @@ dropped; uniqueness is checked at emission. `observed_at` is
   'not-granted' by access policy 'legacy-equivalent' …`. (Calling an *unregistered* tool
   such as `hmc_run_command` under this policy raises `Unknown tool`, which is not a denial —
   do not use it.) Red: `denied is False` before `_DENIAL_RE`. Green: `-k denial`.
+- **A target-scope denial without an `on <targets>` segment also classifies.** Mode:
+  focused-test. `test_a_target_scope_denial_classifies_as_denied` over the rendered
+  `target_scope.py:76` template — `"<tool> is not permitted by access policy <policy>: the
+  <argument> argument …"` — asserting `denied is True`. Red: against the
+  `on .+`-requiring pattern, which returns `False` for three of the four target-scope
+  templates.
 - **`ExpectedOutcome` matches whole tokens in the message.** Mode: focused-test.
   `test_expected_outcome_matches_whole_tokens_in_the_message`: `REST000E` matches
   `"… REST000E …"`, not `"… REST000EX …"`, not a traceback line. Red: `ImportError`.
@@ -176,7 +187,14 @@ dropped; uniqueness is checked at emission. `observed_at` is
    classify_failure, CLEANUP, RESULTS, SCENARIO_ID` from `live_test.observation`.
 3. In `RunState.call`, change the `except` branch to `return "FAIL", classify_failure(exc)`.
 4. Add `observations: list[dict[str, Any]] = field(default_factory=list)` to `RunState`.
-5. In `record`, add `"result": "failed" if status == "FAIL" else "observed"` to the entry.
+5. In `record`, map the status to the result explicitly — `"failed"` when
+   `status == "FAIL"`, `"skipped"` when `status == "SKIP"`, `"observed"` otherwise. The
+   `SKIP` arm is what gives the `skipped` vocabulary entry a producer: `RunState.skip`
+   delegates to `record(subtask, tool, "SKIP", None, reason)`
+   (`scripts/live_test_runner.py:501-503`), so without it all 53 plain `skip()` rows would be
+   stamped `observed` and `skipped` would be dead in the table. `record_with_expected` reaches
+   the same arm when a declared `ExpectedOutcome` matches. None of the three values promotes;
+   only `record_verified` reaches `passed`.
    When `data` is a `CallFailure`, persist `_redact_failure_text(data.message)` as the
    entry's `data` and drop the traceback; the existing redaction helpers stay in the runner.
 6. Replace `record_expected_or_real` with `record_with_expected` per Interfaces; an
@@ -243,17 +261,28 @@ the three #485 tests pass unchanged. `_served_schemas` composes the app exactly 
    None, False))`.
 3. In `main`, after the client opens:
    `state.schemas = {t.name: t.inputSchema for t in await client.list_tools()}`.
-4. Add `_dispatched_calls`, `_served_schemas`, and the four tests. Extend the unreadable
-   branch to raise on a keyword whose `arg is None` with message
-   `"call() dispatches arguments this guard cannot read — name them"`.
-5. Run `-k served_schema`; **expect 23 named dispatches.** Confirm the list equals Task 3's
-   table before proceeding.
+4. Add `_dispatched_calls`, `_served_schemas`, and the four tests. A keyword whose
+   `arg is None` — the `**mapping` splat — is **reported as one problem**, not raised on:
+   `f"{path}:{lineno} dispatches arguments this guard cannot read — name them"`. The raising
+   behaviour is exercised only by `test_argument_guard_refuses_a_splat_it_cannot_read` over a
+   synthetic source string.
+
+   This ordering is load-bearing. Exactly one splat exists in the tree —
+   `**_baseline_provision_resources(state)` at `scripts/live_test/provisioning.py:175`, inside
+   the `state.call` that begins at `:163` — and it is not removed until Task 3. A guard that
+   raised on it would abort before enumerating anything, so the count in step 5 could never be
+   observed and Task 3's per-module reruns would stay dark until that one site was rewritten.
+5. Run `-k served_schema`; **expect 23 problems at 23 sites** — the sites in Task 3's table.
+   `provisioning.py:163` is one of them; because its arguments are behind the splat it
+   reports as unreadable at this commit rather than naming its unknown and missing keywords,
+   and it reports its enumerated form only after Task 3 step 3 rewrites the sweep. Confirm
+   the site list equals the table before proceeding.
 6. Commit `test: guard live-test dispatch arguments against the served schema`.
 
 ### Acceptance criteria
 
-The three #485 guard tests pass unchanged; the new guard fails with exactly 23 at this
-commit.
+The three #485 guard tests pass unchanged; the new guard reports exactly 23 problems at the
+23 sites in Task 3's table at this commit.
 
 ---
 
@@ -269,8 +298,8 @@ Modifies the twelve `scripts/live_test/*.py` modules, `scripts/live_test_runner.
 | `metrics.py:81` | `hmc_get_job` | `job_uuid=` | `job_id=job_uuid` |
 | `metrics.py:91` | `hmc_wait_for_job` | `job_uuid=` | `job_id=job_uuid` |
 | `lpar.py:126`, `network.py:172`, `provisioning.py:78` | `hmc_delete_lpar` | omits system | add `system_name_or_uuid=config.system_name` |
-| `provisioning.py:37` | `hmc_provision_lpar` | flat `port_vlan_id`, `vios_partition_id`, `vios_slot`, `vios_uuid`, `storage_name`, `storage_kind`, `vg_uuid`, `desired_memory` | `adapters={"port_vlan_id":…,"vios_partition_id":…,"vios_slot":…}`, `storage={"vios_uuid":…,"storage_name":…,"kind":…,"vg_uuid":…}`, `resources={"desired_memory":…}` |
-| `provisioning.py:163` | `hmc_provision_lpar` | same, plus `**_baseline_provision_resources(state)` | same nesting; the helper's mapping becomes the `resources=` value |
+| `provisioning.py:37` | `hmc_provision_lpar` | flat `port_vlan_id`, `vios_uuid`, `vios_partition_id`, `vios_slot`, `storage_name`, `desired_memory` (six unknowns; `adapters`, `storage` missing) | `adapters={"port_vlan_id":…,"vios_partition_id":…,"vios_slot":…}`, `storage={"vios_uuid":…,"storage_name":…}`, `resources={"desired_memory":…}` — this site passes no `storage_kind` or `vg_uuid`, and `ProvisionStorage` defaults `kind="VirtualDisk"` and `vg_uuid=None`, so neither key is written |
+| `provisioning.py:163` | `hmc_provision_lpar` | flat, plus `storage_kind`, `vg_uuid` and `**_baseline_provision_resources(state)` at `:175` | same nesting, but `storage=` carries all four keys `{"vios_uuid":…,"storage_name":…,"kind":…,"vg_uuid":…}`; the helper's mapping becomes the `resources=` value and the splat goes away |
 | `users.py:27` | `hmc_create_user` | `name=`, `taskrole=` | `console_uuid=artifacts.console_uuid`, `user_id=config.test_user`, `password=_TEST_USER_PASSWORD`, `associated_task_role="viewer"` |
 | `users.py:45,72,91` | `hmc_list_users` | omits console | add `console_uuid=artifacts.console_uuid` |
 | `users.py:56` | `hmc_modify_user` | `name=` | `console_uuid=…`, `user_profile_uuid=artifacts.test_user_uuid` |
@@ -308,6 +337,14 @@ written before this change still restore. `vmedia.py:992` reads `lpar_name_or_uu
   `{"job_id": "j", "found": True, "timed_out": False, "status": "FAILED_BEFORE_COMPLETION", "error": "…", "job": {…}, "job_href": None}`.
   In each case the row is `failed` and `job-status-successful` is not among the held
   assertions. Red: before conversion both rows are `observed`.
+- **`hmc_wait_for_job`'s real serialized shape normalizes.** Mode: focused-test.
+  `test_wait_for_job_outcome_normalizes_from_the_served_shape`. The scripted stub returns a
+  `dict`, so it cannot catch a normalizer that only handles mappings — this arm builds a
+  `FastMCP` server holding one tool annotated `-> JobOutcome`, calls it through
+  `fastmcp.Client`, and asserts both that `result.data` is not a `dict` (pinning the
+  assumption to the installed FastMCP, so a future version that changes it fails here rather
+  than silently in the field) and that `_as_outcome` returns a `JobOutcome` with the right
+  `status`. Red: against an `isinstance(data, dict)`-only normalizer, which returns `None`.
 
 ### Steps
 
@@ -321,10 +358,29 @@ written before this change still restore. `vmedia.py:992` reads `lpar_name_or_uu
 5. Convert the two job scenarios and `hmc_get_console_info` to `record_verified`. In
    `metrics.py`: `from hmc_mcp.jobs import SUCCESSFUL_JOB_STATUSES, JobOutcome, job_outcome`
    (all three are exported by `src/hmc_mcp/jobs/__init__.py:9-22`; `job_outcome(requested_id:
-   str, job: dict | None) -> JobOutcome` is defined at `src/hmc_mcp/jobs/core.py:108`).
-   For `hmc_get_job`, `outcome = job_outcome(job_uuid, data if isinstance(data, dict) else None)`;
-   for `hmc_wait_for_job`, `outcome = JobOutcome(**data)` when `data` is a mapping with
-   exactly the seven `JobOutcome` field names, else a failed observation. Assertions for both:
+   str, job: dict | None) -> JobOutcome` is defined at `src/hmc_mcp/jobs/core.py:109`).
+   For `hmc_get_job`, `outcome = job_outcome(job_uuid, data if isinstance(data, dict) else None)`.
+   For `hmc_wait_for_job`, `data` is **not** a `dict`: the tool is annotated `-> JobOutcome`
+   (`src/hmc_mcp/server_tools/jobs.py:112`), so FastMCP serves an unwrapped seven-property
+   `outputSchema` and `result.data` is a generated pydantic model. Normalize by field name,
+   not by mapping test:
+
+   ```python
+   def _as_outcome(data: Any) -> JobOutcome | None:
+       names = [f.name for f in fields(JobOutcome)]
+       if isinstance(data, dict):
+           source = data
+       elif all(hasattr(data, n) for n in names):
+           source = {n: getattr(data, n) for n in names}
+       else:
+           return None
+       try:
+           return JobOutcome(**{n: source[n] for n in names})
+       except (KeyError, TypeError):
+           return None
+   ```
+
+   A `None` return records a failed observation. Assertions for both:
    `Assertion("job-found", outcome.found)`,
    `Assertion("job-identity-matches", outcome.job_id == job_uuid)`,
    `Assertion("job-status-successful", outcome.status in SUCCESSFUL_JOB_STATUSES)`;
@@ -357,23 +413,42 @@ NOT_RUN_KEYS = {"id","channel","result","scenario","reason","prerequisites","obl
 ENVIRONMENT_VALUE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}\Z")
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 
+STALE_REASONS = ("closure-changed", "age-exceeded")
+
+@dataclass(frozen=True)
+class OperationState:
+    state: str                  # unrecorded | unevidenced | stale | failed | current
+    reason: str | None = None   # a STALE_REASONS member when state == "stale", else None
+
 def closure_fingerprint(repo_root: Path, handler_module: str) -> str: ...
 def closure_paths(repo_root: Path, handler_module: str) -> list[Path]: ...
-def derive_states(records, registry, repo_root, now: datetime) -> dict[str, str]: ...
-def verification_report(states: Mapping[str, str], *, fail_on_stale: bool) -> int: ...
+def derive_states(records, registry, repo_root, now: datetime) -> dict[str, OperationState]: ...
+def verification_report(states: Mapping[str, OperationState], *, fail_on_stale: bool) -> int: ...
 ```
+
+`derive_states` returns the reason alongside the state because the report cannot recover it
+otherwise: the two triggers are distinct by construction, and a bare `str` state discards
+which one fired — leaving `::warning::<operation> is stale: <reason>` unimplementable without
+recomputing fingerprints inside the report. When both triggers apply, `closure-changed` wins,
+since it is the specific fact and the age ceiling is the backstop.
+
+The per-operation listing is emitted **sorted by operation id**, so the CI job summary is
+stable run to run. Registry order and catalog order are both available and neither is
+guaranteed stable against the other — `discover_registry()` yields tools sorted by tool name,
+while `operations.json` carries its own order.
 
 `_validate_versions` checks `corpora.json`, `rows.json`, `operations.json` at 1;
 `maturity.json` is checked separately at `MATURITY_FORMAT_VERSION`. `implementation_fingerprint`,
-`_implementation_paths`, and the error block at `:940-956` are deleted. `main` gains
+`_implementation_paths`, and the error block at `:942-957` are deleted. `main` gains
 `--verification-report` and `--fail-on-stale`; the report runs after validation and only
 when validation passed.
 
 ### Verification
 
 - **Format 1 rejected; format 2 accepted.** Mode: focused-test.
-  `test_maturity_format_one_is_rejected` (red: accepted today) and the 13 fixture sites
-  bumped to 2. Green: whole module.
+  `test_maturity_format_one_is_rejected` (red: accepted today), with the two maturity
+  fixtures (`:95`, `:177`) bumped to 2 and the other eleven `format_version` sites left at 1.
+  Green: whole module.
 - **Attempted and not-run observations have exact key sets.** Mode: focused-test.
   `test_observation_key_sets_are_exact`, parametrised over one extra and one missing key
   per shape.
@@ -382,8 +457,27 @@ when validation passed.
   `"10.1.2.3"` (rejected), 41 chars (rejected).
 - **Closure fingerprint tracks the closure and nothing else.** Mode: focused-test.
   `test_closure_fingerprint_changes_with_an_imported_module_only` over a `tmp_path` package
-  `src/hmc_mcp/{__init__,a,b,c}.py` where `a` imports `.b`: editing `b` changes `a`'s hash,
-  editing `c` does not. Red: `ImportError`.
+  `src/hmc_mcp/{__init__,a,b,c}.py` where `a` holds `from .b import thing`: editing `b`
+  changes `a`'s hash, editing `c` does not. Red: `ImportError`.
+- **Every import form that reaches `src/hmc_mcp/` enters the closure.** Mode: focused-test.
+  `test_closure_covers_each_import_form`, parametrised over the three forms in the spec —
+  `from .b import thing`, `from . import b`, and `import hmc_mcp.b` — each in its own
+  `tmp_path` package; every one must put `b` in `closure_paths(a)`. Red for the
+  `from . import b` case against a walk that only reads `ImportFrom.module`, which is `None`
+  there.
+- **A package import pulls in the package and its modules.** Mode: focused-test.
+  `test_closure_resolves_packages`: `closure_paths` for `hmc_mcp.server_tools.jobs` contains
+  both `src/hmc_mcp/jobs/__init__.py` and `src/hmc_mcp/jobs/core.py`. `server_tools/jobs.py:9`
+  is `from ..jobs import JobOutcome` — a package, and a class rather than a module — so a
+  module-file-only walk finds neither, and a change to `SUCCESSFUL_JOB_STATUSES` in `core.py`
+  would not invalidate the observations that assert against it. Red: both paths absent.
+- **The real `lpar.delete` closure holds its sibling modules.** Mode: focused-test.
+  `test_lifecycle_closure_includes_bare_relative_imports`: `closure_paths` for
+  `hmc_mcp.server_tools.lpar.lifecycle` contains `lifecycle_boot.py` and
+  `lifecycle_create.py`. This is the repository instance the parametrised test abstracts;
+  `src/hmc_mcp/server_tools/lpar/lifecycle.py:27-28` imports both as `from . import …`, and
+  without it an edit to either leaves `hmc_delete_lpar` and `hmc_power_on_lpar` falsely
+  current. Red: both paths absent.
 - **Each derived state.** Mode: focused-test. `test_derived_states`, parametrised over the
   five states with a fixed `now`. Red: `ImportError`.
 - **Report summary line and exit codes.** Mode: focused-test.
@@ -396,9 +490,23 @@ when validation passed.
 ### Steps
 
 1. Change `_validate_versions` and add the maturity version check; set maturity.json to 2.
+   **Only `maturity.json` moves.** The module holds 13 `format_version` occurrences and just
+   two of them write a maturity fixture: `:95` (`_minimal_inventory`) and `:177`
+   (`_write_maturity`) — bump those to 2. Update the expected text at `:381` from
+   `"maturity.json: format_version must be integer 1"` to `… integer 2`. Every other
+   occurrence stays at 1: `:35` (`corpora.json`), `:73` (`rows.json`), `:90`, `:195`, `:261`,
+   `:303` (`operations.json`/`corpora.json`), and `:224`, which is the duplicate-key literal
+   `'{"format_version":1,"format_version":1}'` and is not a version fixture at all. Bumping
+   them would contradict this task's own `_validate_versions` contract, which keeps the other
+   three catalogs at 1, and would turn the module red.
 2. Replace `_validate_observation` and its helpers with the two-shape validator per
-   Interfaces; keep `_validate_implementation`, `_scope_identity`, `_validate_not_run`'s
-   obligation rules.
+   Interfaces; keep `_validate_implementation` and `_scope_identity` whole. From
+   `_validate_not_run`, keep exactly two things: the `reason` non-emptiness check and the
+   obligation block. Delete every check that reads `assertions`, `cleanup`, `observed_at`,
+   `implementation_revision`, `deployed_revision`, `provenance`, or
+   `implementation_fingerprint` — `NOT_RUN_KEYS` excludes all seven, so those checks would
+   read keys that can no longer be present. Change `scenario` from the `{id, description}`
+   object check to the `SCENARIO_ID` string match, matching the attempted shape.
 3. Add `closure_paths` (AST walk per the spec's *Closure fingerprint*) and
    `closure_fingerprint` (length-prefixed SHA-256 over sorted `(relative path, bytes)`).
 4. Add `derive_states` and `verification_report`; the report prints one line per operation
@@ -407,7 +515,8 @@ when validation passed.
    per stale operation and append a Markdown table to `GITHUB_STEP_SUMMARY` if set.
 5. Delete `implementation_fingerprint`, `_implementation_paths`, and the error block.
 6. Wire `--verification-report` and `--fail-on-stale` in `main`.
-7. Add the seven tests; bump the 13 fixtures. Run the module; expect green. Run
+7. Add the seven tests; bump the two maturity fixtures per step 1. Run the module; expect
+   green. Run
    `just capability-inventory`; expect the existing two lines.
 8. Commit `feat: derive live-verification staleness from the import closure`.
 
@@ -529,7 +638,7 @@ Modifies `docs/capabilities/README.md`, `CHANGELOG.md`.
   carries no generation banner (its first line is `# HMC reference capability ledger`), so
   `just doc-freshness` reads nothing from it, and no test opens it; a wording test would be a
   prose snapshot. The machine-checkable half — the format the validator enforces — is Task 4.
-- **CHANGELOG entry.** Mode: task-test-not-applicable. `tests/unit/test_changelog.py:14-17`
+- **CHANGELOG entry.** Mode: task-test-not-applicable. `tests/unit/test_changelog.py:16-19`
   asserts only that the declared version has a `## [<version>]` heading; an entry under
   `## [Unreleased]` leaves it untouched.
 
