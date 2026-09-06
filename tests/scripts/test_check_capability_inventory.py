@@ -202,3 +202,18 @@ def test_extract_source_units_preserves_both_capture_forms() -> None:
     assert inventory.extract_capture_time("# Overview\n") is None
     units = inventory.extract_source_units("commands-p10:alpha", lower)
     assert any(unit["kind"] == "command-synopsis" for unit in units)
+
+
+def test_source_unit_summaries_do_not_publish_example_payload_values() -> None:
+    source = """# Resource
+
+```
+{"HostName": "private.example", "IPAddress": "192.0.2.1"}
+```
+"""
+
+    units = inventory.extract_source_units("rest-p10:resource", source)
+
+    assert units[0]["text"] == "payload-root:HostName"
+    assert "private.example" not in json.dumps(units)
+    assert "192.0.2.1" not in json.dumps(units)

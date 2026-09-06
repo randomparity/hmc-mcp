@@ -90,8 +90,29 @@ def _unit(topic_id: str, kind: str, line: int, text: str) -> dict[str, object]:
         "kind": kind,
         "line": line,
         "sha256": hashlib.sha256(normalized.encode()).hexdigest(),
-        "text": normalized,
+        "text": _safe_summary(kind, normalized),
     }
+
+
+def _safe_summary(kind: str, text: str) -> str:
+    """Keep structural source evidence without publishing example identifiers."""
+    if kind == "command-synopsis":
+        tokens = re.findall(r"(?<!\w)--?[A-Za-z0-9][A-Za-z0-9_-]*|^[A-Za-z0-9_]+", text)
+        return " ".join(dict.fromkeys(tokens)) or "syntax"
+    if kind in {"command-option", "command-table", "rest-method", "rest-field"}:
+        cells = [cell.strip(" *`") for cell in text.strip("|").split("|")]
+        return cells[0] if cells and cells[0] else "table-field"
+    if kind == "rest-resource":
+        path = re.search(r"/rest/[A-Za-z0-9_{}?&=./:-]+", text)
+        if path:
+            return path.group(0)
+        element = re.search(r"<([A-Za-z][A-Za-z0-9_.:-]*)", text)
+        if element:
+            return f"xml-root:{element.group(1)}"
+        key = re.search(r'["\']([A-Za-z][A-Za-z0-9_-]*)["\']\s*:', text)
+        return f"payload-root:{key.group(1)}" if key else "structured-payload"
+    versions = re.findall(r"\bV?\d+(?:[._RrMm]\d+)+\b", text)
+    return "versions:" + ",".join(dict.fromkeys(versions)) if versions else "capability-note"
 
 
 def extract_source_units(topic_id: str, text: str) -> list[dict[str, object]]:
