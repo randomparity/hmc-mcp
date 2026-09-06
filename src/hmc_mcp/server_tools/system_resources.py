@@ -4,128 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import serialize_tool_result, ssh_with_client, with_client
-from ..client.core import HMCClient
-from ..operations.virtualization.pcie import (
-    list_dedicated_slots,
-    list_sriov_adapters,
-    list_sriov_logical_ports,
-    list_sriov_physical_ports,
-)
-from ..ssh.io_inventory import PciClass, list_io_slots
+from .._app import ssh_with_client
 from ..ssh.memory import list_memory_pools, remove_memory_pool
 from ..ssh.profiles import get_proc_compat_modes
 from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
-
-
-@tool(
-    effect="read",
-    operation="pcie.list_dedicated_slots",
-    target_kind="managed_system",
-)
-def hmc_list_dedicated_pcie_slots(
-    system_name_or_uuid: str,
-    profile: str | None = None,
-) -> dict[str, Any]:
-    """List normalized dedicated PCIe slots with stable DRC identities.
-
-    Args:
-        system_name_or_uuid: Managed-system name or UUID.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-
-    async def slots(hmc: HMCClient) -> Any:
-        return serialize_tool_result(await list_dedicated_slots(hmc, system_name_or_uuid))
-
-    return with_client(slots, profile=profile)
-
-
-@tool(effect="read", operation="pcie.list_sriov_adapters", target_kind="managed_system")
-def hmc_list_sriov_adapters(
-    system_name_or_uuid: str,
-    adapter_id: str | None = None,
-    profile: str | None = None,
-) -> dict[str, Any]:
-    """List normalized SR-IOV adapters, or report capability unavailable.
-
-    Args:
-        system_name_or_uuid: Managed-system name or UUID.
-        adapter_id: Optional exact adapter selector.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-
-    async def adapters(hmc: HMCClient) -> Any:
-        return serialize_tool_result(await list_sriov_adapters(hmc, system_name_or_uuid, adapter_id))
-
-    return with_client(adapters, profile=profile)
-
-
-@tool(
-    effect="read",
-    operation="pcie.list_sriov_physical_ports",
-    target_kind="managed_system",
-)
-def hmc_list_sriov_physical_ports(
-    system_name_or_uuid: str,
-    adapter_id: str | None = None,
-    physical_port_id: str | None = None,
-    profile: str | None = None,
-) -> dict[str, Any]:
-    """List normalized SR-IOV physical ports, or report capability unavailable.
-
-    Args:
-        system_name_or_uuid: Managed-system name or UUID.
-        adapter_id: Optional parent adapter selector.
-        physical_port_id: Optional exact physical-port selector.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-
-    async def ports(hmc: HMCClient) -> Any:
-        return serialize_tool_result(
-            await list_sriov_physical_ports(
-                hmc, system_name_or_uuid, adapter_id, physical_port_id
-            )
-        )
-
-    return with_client(ports, profile=profile)
-
-
-@tool(
-    effect="read",
-    operation="pcie.list_sriov_logical_ports",
-    target_kind="managed_system",
-)
-def hmc_list_sriov_logical_ports(
-    system_name_or_uuid: str,
-    adapter_id: str | None = None,
-    physical_port_id: str | None = None,
-    logical_port_id: str | None = None,
-    profile: str | None = None,
-) -> dict[str, Any]:
-    """List normalized SR-IOV logical ports, or report capability unavailable.
-
-    Args:
-        system_name_or_uuid: Managed-system name or UUID.
-        adapter_id: Optional parent adapter selector.
-        physical_port_id: Optional parent physical-port selector.
-        logical_port_id: Optional exact logical-port selector.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-
-    async def ports(hmc: HMCClient) -> Any:
-        return serialize_tool_result(
-            await list_sriov_logical_ports(
-                hmc,
-                system_name_or_uuid,
-                adapter_id,
-                physical_port_id,
-                logical_port_id,
-            )
-        )
-
-    return with_client(ports, profile=profile)
 
 
 @tool(
@@ -144,26 +28,6 @@ def hmc_get_proc_compat_modes(
     """
     return ssh_with_client(
         lambda config, system_name, _: get_proc_compat_modes(config, system_name),
-        system_name_or_uuid=system_name_or_uuid,
-        profile=profile,
-    )
-
-
-@tool(effect="read", operation="io_slot.list", target_kind="managed_system")
-def hmc_list_io_slots(
-    system_name_or_uuid: str,
-    pci_class: PciClass = "all",
-    profile: str | None = None,
-) -> list[dict[str, Any]]:
-    """List physical I/O slots, optionally filtered by PCI class.
-
-    Args:
-        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
-        pci_class: ``all``, ``network``, ``storage``, or ``other`` slot class.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-    return ssh_with_client(
-        lambda config, system_name, _: list_io_slots(config, system_name, pci_class),
         system_name_or_uuid=system_name_or_uuid,
         profile=profile,
     )

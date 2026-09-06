@@ -44,6 +44,11 @@ def test_domain_handlers_live_in_focused_modules() -> None:
         system_resources.hmc_list_memory_pools: (
             "hmc_mcp.server_tools.system_resources"
         ),
+        pcie.hmc_list_dedicated_pcie_slots: "hmc_mcp.server_tools.virtualization.pcie",
+        pcie.hmc_list_sriov_adapters: "hmc_mcp.server_tools.virtualization.pcie",
+        pcie.hmc_list_sriov_physical_ports: "hmc_mcp.server_tools.virtualization.pcie",
+        pcie.hmc_list_sriov_logical_ports: "hmc_mcp.server_tools.virtualization.pcie",
+        pcie.hmc_list_io_slots: "hmc_mcp.server_tools.virtualization.pcie",
         network.hmc_list_virtual_networks: "hmc_mcp.server_tools.virtualization.network",
         pcie.hmc_set_sriov_adapter_mode: "hmc_mcp.server_tools.virtualization.pcie",
         vnic.hmc_list_vnics: "hmc_mcp.server_tools.virtualization.vnic",
