@@ -108,19 +108,18 @@ async def fetch_lpar_summary(
 async def _fetch_lpar_data(
     hmc, lpar_uuid: str
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Fetch LPAR entry and its client network adapters concurrently."""
-    async with asyncio.TaskGroup() as tasks:
-        lpar_task = tasks.create_task(hmc.get_logical_partition(lpar_uuid))
-        adapters_task = tasks.create_task(
-            hmc.list_child("LogicalPartition", lpar_uuid, "ClientNetworkAdapter")
-        )
-    lpar = lpar_task.result()
-    adapters = adapters_task.result()
+    """Fetch an LPAR, then fetch its client network adapters."""
+    lpar = await hmc.get_logical_partition(lpar_uuid)
     if lpar is None:
         raise ValueError(
             f"LPAR {lpar_uuid!r} not found after resolution. "
             "List logical partitions to inspect the available partitions."
         )
+    async with asyncio.TaskGroup() as tasks:
+        adapters_task = tasks.create_task(
+            hmc.list_child("LogicalPartition", lpar_uuid, "ClientNetworkAdapter")
+        )
+    adapters = adapters_task.result()
     return lpar, adapters
 
 
@@ -128,19 +127,18 @@ async def _fetch_system_summary_data(
     hmc,
     system_uuid: str,
 ) -> tuple[dict, list[dict], list[dict]]:
-    """Fetch system entry, LPARs, and VIOS concurrently."""
-    async with asyncio.TaskGroup() as tasks:
-        system_task = tasks.create_task(hmc.get_managed_system(system_uuid))
-        lpars_task = tasks.create_task(hmc.list_logical_partitions(system_uuid))
-        vios_task = tasks.create_task(hmc.list_vios(system_uuid))
-    system = system_task.result()
-    lpars = lpars_task.result()
-    vios_list = vios_task.result()
+    """Fetch a managed system, then its LPAR and VIOS collections concurrently."""
+    system = await hmc.get_managed_system(system_uuid)
     if system is None:
         raise ValueError(
             f"Managed system {system_uuid!r} not found after resolution. "
             "List managed systems to inspect the available systems."
         )
+    async with asyncio.TaskGroup() as tasks:
+        lpars_task = tasks.create_task(hmc.list_logical_partitions(system_uuid))
+        vios_task = tasks.create_task(hmc.list_vios(system_uuid))
+    lpars = lpars_task.result()
+    vios_list = vios_task.result()
     return system, lpars, vios_list
 
 
