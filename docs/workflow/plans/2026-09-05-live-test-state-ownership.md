@@ -9,9 +9,9 @@ both explicitly, and result documents persist and restore them separately.
 
 Tech stack: Python 3.11+, stdlib dataclasses and JSON, pytest, ruff, ty.
 
-Expected implementation size: 260–420 changed lines (L) — derived from splitting one
-dataclass, rewriting persistence atomically, and migrating the live-runner scenario and
-test references.
+Expected implementation size: 1,500–1,800 changed lines (L) — corrected from the
+initial 260–420 estimate after the required migration of roughly 260 references caused
+paired diff lines and call-site reflow, in addition to the state and persistence changes.
 
 ## Global Constraints
 
