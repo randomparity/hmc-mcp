@@ -74,14 +74,12 @@ src/hmc_mcp/
   documents/         # domain XML request builders and common envelopes
   jobs/*.py          # job outcome normalization, polling, and request builders
   operations/        # presentation-neutral workflows and authorization policy
-    affinity/        # affinity REST and SSH workflows
-    lpar/            # lifecycle, provisioning, migration, and DLPAR operations
-    storage/         # VIOS storage resources and shared-storage clusters
-    systems/         # managed-system configuration and health operations
-    updates/         # management-console update workflows
-    virtualization/  # virtual adapters, networks, PCIe/SR-IOV, vNIC, and validation
-  server_tools/      # MCP adapters grouped by domain (lpar, storage, systems, virtualization)
-  cli_commands/      # Typer adapters grouped by domain (lpar, storage, systems, virtualization)
+    affinity/, inventory/, io_virtualization/, lpar/, metrics/, storage/
+    systems/, templates/, updates/, users/, vios/, virtualization/
+                    # domain workflows; see each package for its resource scope
+  server_tools/      # MCP adapters: inventory, lpar, metrics, storage, systems,
+                     # templates, users, vios, and virtualization
+  cli_commands/      # Typer adapters: lpar, storage, systems, vios, and virtualization
   snapshots/         # portable LPAR snapshots and affinity assessment
   ssh/*.py           # asyncssh transport and resource-specific HMC CLI commands
   tool_registry.py   # local MCP tool collection and ToolSecurity metadata
