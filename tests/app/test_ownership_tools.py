@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
 import respx
 
+from hmc_mcp.operations.lpar.assignments import (
+    LparPcieAssignments,
+    SriovLogicalPortAssignment,
+)
+from hmc_mcp.operations.virtualization.pcie import InventorySelector
 from hmc_mcp.server_tools.lpar.lifecycle_create import hmc_create_lpar
 
 BASE = "https://hmc.test"
@@ -102,6 +109,70 @@ def test_create_lpar_ownership_stamped_true(monkeypatch):
     assert result.lpar["Resource"]["PartitionName"] == "test-lpar"
 
 
+def test_create_lpar_applies_validated_sriov_assignment(monkeypatch):
+    _env(monkeypatch)
+    assignment = SriovLogicalPortAssignment("default", "1", "2", "3", Decimal(5))
+    adapter = SimpleNamespace(
+        capability="available",
+        items=[SimpleNamespace(mode="sriov", availability="1")],
+        system="server1",
+    )
+    port = SimpleNamespace(
+        capability="available", items=[SimpleNamespace(availability="up")]
+    )
+    logical = SimpleNamespace(capability="available")
+    assigned = AsyncMock(return_value={"status": "ok"})
+    with respx.mock(base_url=BASE, assert_all_called=False) as router:
+        _setup_mock(router)
+        with (
+            patch(
+                "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
+                new=AsyncMock(return_value="stamp"),
+            ),
+            patch(
+                "hmc_mcp.operations.lpar.assignments.list_sriov_adapters",
+                AsyncMock(return_value=adapter),
+            ),
+            patch(
+                "hmc_mcp.operations.lpar.assignments.list_sriov_physical_ports",
+                AsyncMock(return_value=port),
+            ),
+            patch(
+                "hmc_mcp.operations.lpar.assignments.list_sriov_logical_ports",
+                AsyncMock(return_value=logical),
+            ),
+            patch(
+                "hmc_mcp.operations.lpar.assignments._existing_capacity",
+                AsyncMock(return_value=Decimal()),
+            ),
+            patch(
+                "hmc_mcp.operations.lpar.assignments.assign_sriov_logical_port",
+                assigned,
+            ),
+        ):
+            result = hmc_create_lpar(
+                SYSTEM_UUID,
+                "test-lpar",
+                assignments=LparPcieAssignments(sriov=(assignment,)),
+            )
+
+    assigned.assert_awaited_once_with(
+        ANY,
+        SYSTEM_UUID,
+        "test-lpar",
+        InventorySelector("1", "2", "3"),
+        Decimal(5),
+        profile_name="default",
+        ownership_override=False,
+    )
+    assert [(step.step, step.status) for step in result.steps] == [
+        ("create", "ok"),
+        ("sriov[0]", "ok"),
+    ]
+    assert result.resource_created and result.workflow_completed
+    assert result.lpar["Resource"]["PartitionName"] == "test-lpar"
+
+
 # ---------------------------------------------------------------------- #
 # Stamp failure
 # ---------------------------------------------------------------------- #
@@ -158,8 +229,9 @@ def test_create_lpar_invalid_caller_token_zero_routes(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with pytest.raises(ValueError, match="caller_token"):
-            hmc_create_lpar(system_name_or_uuid=SYSTEM_UUID, name="test-lpar",
-                            caller_token="a=b")
+            hmc_create_lpar(
+                system_name_or_uuid=SYSTEM_UUID, name="test-lpar", caller_token="a=b"
+            )
         assert all(not route.called for route in router.routes)
 
 
@@ -167,8 +239,9 @@ def test_create_lpar_valid_caller_token_stamped(monkeypatch):
     """A valid token threads through to the composed ownership stamp."""
     captured: dict[str, str] = {}
 
-    async def capture_stamp(config, system_name, lpar_name, *, agent_id=None,
-                            caller_token=None):
+    async def capture_stamp(
+        config, system_name, lpar_name, *, agent_id=None, caller_token=None
+    ):
         captured["description"] = (
             f"[hmc-mcp owner:hmc-mcp created:2026-08-21] [caller {caller_token}]"
         )
@@ -181,7 +254,8 @@ def test_create_lpar_valid_caller_token_stamped(monkeypatch):
             "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership", new=capture_stamp
         ):
             result = hmc_create_lpar(
-                system_name_or_uuid=SYSTEM_UUID, name="test-lpar",
+                system_name_or_uuid=SYSTEM_UUID,
+                name="test-lpar",
                 caller_token="CHG-9",
             )
     assert result.resource_created is True
