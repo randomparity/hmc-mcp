@@ -114,5 +114,5 @@ class UpdatesMixin:
             return _normalize_platform_update_response(response.json())
         except ValueError as exc:
             raise HMCError(
-                "Malformed PlatformUpdate response: body is not valid JSON"
+                f"PUT {path}: Malformed PlatformUpdate response: body is not valid JSON"
             ) from exc

@@ -570,6 +570,27 @@ async def test_submit_platform_update_sanitizes_non_success(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_submit_platform_update_reports_path_for_invalid_json(mock_hmc):
+    """Malformed success bodies identify the endpoint without exposing their contents."""
+    private_sentinel = "private-update-payload"
+    path = f"/rest/api/uom/ManagedSystem/{SYS_UUID}/do/PlatformUpdate"
+    mock_hmc.put(path).mock(
+        return_value=httpx.Response(202, content=f"{{{private_sentinel}".encode())
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.submit_platform_update(SYS_UUID, {"JobRequest": {}})
+
+    assert str(raised.value) == (
+        f"PUT {path}: Malformed PlatformUpdate response: body is not valid JSON"
+    )
+    assert private_sentinel not in str(raised.value)
+    assert raised.value.body is None
+    assert isinstance(raised.value.__cause__, ValueError)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("payload", "field"),
     [
