@@ -388,12 +388,11 @@ async def _preflight_add(
     config = hmc.config
     await require_admitted_environment(config, system_name)
     identity = await read_vios_identity(config, system_name, selector.vios_name)
-    expected = {
-        "name": selector.vios_name,
-        "lpar_id": selector.vios_lpar_id,
-        "lpar_env": "vioserver",
-    }
-    if identity != expected:
+    if (
+        identity["name"] != selector.vios_name
+        or identity["lpar_id"] != selector.vios_lpar_id
+        or identity["lpar_env"] != "vioserver"
+    ):
         raise VnicCapabilityError(
             "selected VIOS name, ID, or partition type does not match inventory"
         )
