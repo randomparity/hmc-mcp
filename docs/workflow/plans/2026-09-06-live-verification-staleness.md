@@ -337,6 +337,20 @@ written before this change still restore. `vmedia.py:992` reads `lpar_name_or_uu
   `{"job_id": "j", "found": True, "timed_out": False, "status": "FAILED_BEFORE_COMPLETION", "error": "…", "job": {…}, "job_href": None}`.
   In each case the row is `failed` and `job-status-successful` is not among the held
   assertions. Red: before conversion both rows are `observed`.
+- **A scenario's declared assertion ids are pinned.** Mode: focused-test.
+  `test_scenarios_declare_their_expected_assertion_ids`, using the same AST reader Task 2
+  builds to collect `record_verified` call sites, against the literal
+  `{"st12-job-inspection": {"job-found", "job-identity-matches", "job-status-successful"},
+  "st1-console-identity": {"console-uuid-present"}}`.
+
+  The closure covers only `src/hmc_mcp/` and deliberately excludes `scripts/`, so neither
+  staleness trigger sees the harness change. Without this pin, deleting
+  `Assertion("job-status-successful", …)` from `metrics.py` leaves a committed observation
+  that still lists the id, still matches the recomputed closure hash, and still reports
+  `current` — a reader concludes a postcondition was checked that the harness no longer
+  checks. The test fails in the pull request that changes the assertions, which is where a
+  reviewer can still see which committed observations are about to become misleading. Red:
+  remove an id from a scenario and the suite stays green.
 - **`hmc_wait_for_job`'s real serialized shape normalizes.** Mode: focused-test.
   `test_wait_for_job_outcome_normalizes_from_the_served_shape`. The scripted stub returns a
   `dict`, so it cannot catch a normalizer that only handles mappings — this arm builds a
@@ -410,7 +424,11 @@ STALE_AFTER_DAYS = 90
 ATTEMPTED_KEYS = {"id","channel","result","scenario","tested_commit","observed_at",
                   "hmc_release","hardware_family","cleanup","closure_fingerprint","assertions"}
 NOT_RUN_KEYS = {"id","channel","result","scenario","reason","prerequisites","obligation"}
-ENVIRONMENT_VALUE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}\Z")
+NOT_RUN_REASON_MAX = 200        # `reason` is human prose, not closed-shape
+NOT_RUN_PREREQUISITE_MAX = 120  # per list entry
+HMC_RELEASE = re.compile(r"\AV\d+R\d+(?:M\d+)?\Z")   # V10R3
+HARDWARE_FAMILY = re.compile(r"\APOWER\d+\Z")        # POWER10
+ASSERTION_ID = re.compile(r"\A[a-z][a-z0-9-]{2,63}\Z")
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 
 STALE_REASONS = ("closure-changed", "age-exceeded")
@@ -439,7 +457,7 @@ while `operations.json` carries its own order.
 
 `_validate_versions` checks `corpora.json`, `rows.json`, `operations.json` at 1;
 `maturity.json` is checked separately at `MATURITY_FORMAT_VERSION`. `implementation_fingerprint`,
-`_implementation_paths`, and the error block at `:942-957` are deleted. `main` gains
+`_implementation_paths`, and the error block at `:940-955` are deleted. `main` gains
 `--verification-report` and `--fail-on-stale`; the report runs after validation and only
 when validation passed.
 
@@ -449,12 +467,29 @@ when validation passed.
   `test_maturity_format_one_is_rejected` (red: accepted today), with the two maturity
   fixtures (`:95`, `:177`) bumped to 2 and the other eleven `format_version` sites left at 1.
   Green: whole module.
+- **Not-run prose is length-capped and IPv4-rejected.** Mode: focused-test.
+  `test_not_run_prose_is_bounded`: a `reason` of 201 characters is rejected, a
+  `prerequisites` entry of 121 characters is rejected, and a `reason` containing `10.1.2.3`
+  is rejected. These three fields are the only committed prose in the format; the bound stops
+  an address, not a hostname, which is why the threat model names review as the control.
+  Red: accepted today.
 - **Attempted and not-run observations have exact key sets.** Mode: focused-test.
   `test_observation_key_sets_are_exact`, parametrised over one extra and one missing key
   per shape.
-- **Environment strings are pattern-bound and reject IPv4.** Mode: focused-test.
-  `test_environment_values_are_bounded_and_never_addresses` over `"V10R3"` (ok),
-  `"10.1.2.3"` (rejected), 41 chars (rejected).
+- **Environment strings admit their grammar and nothing else.** Mode: focused-test.
+  `test_environment_values_reject_private_identifiers`, parametrised: `"V10R3"` and
+  `"V10R3M1"` accepted for `hmc_release`, `"POWER10"` for `hardware_family`; every one of
+  `"hmc01.lab.example.com"`, `"0644C7T"`, `"U78CB.001.WZS0044-P1-C2"`, `"lab-hmc-3"`,
+  `"10.1.2.3"` rejected for both. These five are the identifier classes the repository's
+  privacy rule names, and all five pass a `[A-Za-z0-9 ._-]{0,39}` class with an IPv4
+  rejection — which is why that class was replaced rather than patched. Red: accepted today.
+- **Committed hashes, assertion ids and cleanup are validated on the way in.** Mode:
+  focused-test. `test_attempted_observation_fields_are_pattern_bound`, parametrised over a
+  `tested_commit` that is not 40 hex, a `closure_fingerprint` that is not 64 hex, an
+  `assertions` element that is not an `ASSERTION_ID`, a duplicated assertion id, and a
+  `failed` observation whose `cleanup` is outside `CLEANUP` — each rejected. The runner bounds
+  these fields on the way out, but `maturity.json` is hand-copied and hand-editable, so the
+  validator is the only check that sees a hand-authored record. Red: all five accepted.
 - **Closure fingerprint tracks the closure and nothing else.** Mode: focused-test.
   `test_closure_fingerprint_changes_with_an_imported_module_only` over a `tmp_path` package
   `src/hmc_mcp/{__init__,a,b,c}.py` where `a` holds `from .b import thing`: editing `b`
@@ -465,6 +500,15 @@ when validation passed.
   `tmp_path` package; every one must put `b` in `closure_paths(a)`. Red for the
   `from . import b` case against a walk that only reads `ImportFrom.module`, which is `None`
   there.
+- **The closure does not collapse to the whole package.** Mode: focused-test.
+  `test_closure_excludes_function_body_imports`, over the **real tree**, not `tmp_path`:
+  `closure_paths(ROOT, "hmc_mcp.server_tools.permissions")` must not contain
+  `src/hmc_mcp/cli.py` and must hold fewer than 20 files. Every `tmp_path` test in this task
+  passes under either traversal reading because their `__init__.py` files are empty, so this
+  is the only arm that bites. `src/hmc_mcp/__init__.py:15` imports `.cli` inside `main()` and
+  sits on every resolution path, so an `ast.walk` implementation yields 179 of 180 files for
+  all three handler modules measured (51, 75 and 7 respectively under the module-body rule).
+  Red: 179 files, `cli.py` present.
 - **A package import pulls in the package and its modules.** Mode: focused-test.
   `test_closure_resolves_packages`: `closure_paths` for `hmc_mcp.server_tools.jobs` contains
   both `src/hmc_mcp/jobs/__init__.py` and `src/hmc_mcp/jobs/core.py`. `server_tools/jobs.py:9`
@@ -478,8 +522,21 @@ when validation passed.
   `src/hmc_mcp/server_tools/lpar/lifecycle.py:27-28` imports both as `from . import …`, and
   without it an edit to either leaves `hmc_delete_lpar` and `hmc_power_on_lpar` falsely
   current. Red: both paths absent.
+- **The walk stays inside the package.** Mode: focused-test.
+  `test_closure_containment`, two arms over `tmp_path`: a symlinked `.py` under the package
+  is skipped rather than read and hashed (otherwise a link pointing outside the repository
+  makes the fingerprint machine-dependent, so the runner and CI never agree and the
+  observation reads `stale` forever), and a `from ....x import y` whose `level` exceeds the
+  package depth is skipped rather than resolving outside. Red: both traverse.
 - **Each derived state.** Mode: focused-test. `test_derived_states`, parametrised over the
   five states with a fixed `now`. Red: `ImportError`.
+- **A re-run replaces an operation's observation.** Mode: focused-test.
+  `test_re_validation_replaces_the_previous_observation`: emitting `st12-hmc-get-job` twice
+  leaves one observation, and `just capability-inventory` reports no duplicate-id error. Red:
+  two observations and `id must be catalog-wide unique`.
+- **The listing carries the implementation state.** Mode: focused-test.
+  `test_report_line_carries_implementation_state`: the `sriov.set_mode` line reads
+  `partial current`, not `current`. Red: implementation state absent.
 - **Report summary line and exit codes.** Mode: focused-test.
   `test_verification_report_summary_and_fail_on_stale`: exit 0 with a stale operation
   unless `--fail-on-stale`, then 1; summary line exact.
@@ -506,8 +563,16 @@ when validation passed.
    `implementation_revision`, `deployed_revision`, `provenance`, or
    `implementation_fingerprint` — `NOT_RUN_KEYS` excludes all seven, so those checks would
    read keys that can no longer be present. Change `scenario` from the `{id, description}`
-   object check to the `SCENARIO_ID` string match, matching the attempted shape.
-3. Add `closure_paths` (AST walk per the spec's *Closure fingerprint*) and
+   object check to the `SCENARIO_ID` string match, matching the attempted shape. Apply the
+   two length caps and the `IPV4` rejection to `reason` and to each `prerequisites` entry:
+   these are the only committed fields carrying human prose, so they get the weak mechanical
+   bound the environment strings get, and the spec's threat model records that review — not
+   validation — is the real control on them.
+3. Add `closure_paths` per the spec's *Closure fingerprint*. **Do not reach for `ast.walk`**:
+   traverse the module body plus the bodies of module-level `If`/`Try` statements, and never
+   descend into `FunctionDef`/`AsyncFunctionDef`/`ClassDef`. `ast.walk` yields 179 of 180
+   files for every handler and silently reinstates ADR 0126's repository-wide fingerprint.
+   Add
    `closure_fingerprint` (length-prefixed SHA-256 over sorted `(relative path, bytes)`).
 4. Add `derive_states` and `verification_report`; the report prints one line per operation
    `verification: <operation> <state>` and the summary from the spec; when
@@ -568,8 +633,19 @@ missing environment, or no observations.
 - **Emitted objects are catalog-shaped.** Mode: focused-test.
   `test_emitted_observations_validate_against_the_catalog_shape`: feed the emitted objects
   through `check_capability_inventory`'s observation validator with an empty error list.
-- **`.gitignore` covers the runner's default output.** Mode: focused-test.
-  `test_gitignore_covers_live_test_results`: `git check-ignore test-results-round2.json`
+- **A lone environment key fails at startup, not after the run.** Mode: focused-test.
+  `test_a_lone_environment_key_exits_before_the_run`: `_run_from_arguments` returns 1 and no
+  client is opened. Red: the `ValueError` surfaces from `_emit_observations` after
+  `_write_results`, discarding the run summary.
+- **Emission refuses an unignored destination.** Mode: focused-test.
+  `test_emission_refuses_a_path_git_does_not_ignore`: with `--results-file evidence.json`,
+  `_emit_observations` writes nothing and prints the path. Red: writes
+  `evidence-observations.json` into the working tree.
+- **`.gitignore` covers the runner's default output and its temp file.** Mode: focused-test.
+  `test_gitignore_covers_live_test_results`: `git check-ignore` exits 0 for
+  `test-results-round2.json` **and** for `.test-results-round2.json.abc123.tmp`. Red: the
+  temp name is unignored under both the old and the new `test-results*.json` pattern.
+  Reference: `git check-ignore test-results-round2.json`
   exits 0. Red: exits 1 today.
 
 ### Steps
@@ -577,11 +653,33 @@ missing environment, or no observations.
 1. In `LiveTestConfig.from_env_file`, `continue` on keys starting `LIVE_TEST_ENV_` before
    the `_CONFIG_FIELDS` membership test (`:327`).
 2. Add both keys to `.env.example` with values `V10R3` and `POWER10`.
-3. Replace `.gitignore` line 2 with `test-results*.json`.
-4. Add the three helpers; call `_emit_observations` in `main` after `_write_results`, with
+3. Replace `.gitignore` line 2 with `test-results*.json`, and add `.test-results*.tmp` on the
+   next line. The second pattern is not redundant: `_write_results` writes through
+   `tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")`
+   (`scripts/live_test_runner.py:761-773`), so a crash or signal between `mkstemp` and
+   `replace` strands `.test-results-round2.json.<rand>.tmp` in the repository root. That file
+   holds the whole results document, whose `data` is stored verbatim on the PASS path (`:481`
+   redacts only when `status == "FAIL"`) — the raw HMC responses `.gitignore:1` itself
+   describes as containing "internal hostnames/IPs/serials". Neither the old pattern nor
+   `test-results*.json` matches a name that begins with `.` and ends `.tmp`.
+4. Gate emission on the destination actually being ignored rather than on the pattern being
+   assumed correct: `_emit_observations` runs `git check-ignore -q <path>` and refuses,
+   printing the path and the reason, when it exits non-zero. `--results-file` (`:589`) lets an
+   operator set any stem — `--results-file evidence.json` yields `evidence.json` and
+   `evidence-observations.json`, neither ignored by any pattern — so the check is what makes
+   the claim true for a path the design cannot enumerate in advance.
+5. Add the three helpers; call `_emit_observations` in `main` after `_write_results`, with
    path `Path(results_path).with_name(Path(results_path).stem + "-observations.json")`.
-5. Add the six tests. Run the module; `just lint`; `just typecheck`.
-6. Commit `feat: emit catalog-shaped live observations from a clean tree`.
+6. Validate the two `LIVE_TEST_ENV_*` keys in `_run_from_arguments` (`:603-620`), beside
+   `LiveTestConfig.from_env_file`, and pass the resolved pair into `main`; `_emit_observations`
+   then only decides whether to write. A lone key must not raise from `_emit_observations`:
+   that call sits after `_write_results`, i.e. after a completed run against real hardware, and
+   an uncaught `ValueError` there would replace the run summary and failed-test listing
+   (`:852-866`) with a traceback. `_run_from_arguments` already catches `ValueError` from
+   `from_env_file` and returns 1, which is this runner's established shape for a configuration
+   error; a one-line `.env` typo should cost a startup exit, not a hardware run's output.
+7. Add the six tests. Run the module; `just lint`; `just typecheck`.
+8. Commit `feat: emit catalog-shaped live observations from a clean tree`.
 
 ### Acceptance criteria
 

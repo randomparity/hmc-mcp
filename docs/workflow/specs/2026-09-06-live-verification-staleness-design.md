@@ -145,9 +145,21 @@ makes it `passed`); a `failed` observation lists the ones that still held and ma
 The distinction is not cosmetic: writing the declared set instead would make a `failed`
 record indistinguishable from a `passed` one on this field, and would let a reader conclude
 an assertion held when it did not.
-`hmc_release` and `hardware_family` match `[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}` and are the
-only free text; the validator additionally rejects a value containing a dot-separated run
-that parses as an IPv4 address. A `passed` observation has non-empty `assertions` and
+`tested_commit` matches `SHA_1`, `closure_fingerprint` matches `SHA_256`, every `assertions`
+element matches `ASSERTION_ID` and the list is unique in declaration order, and `cleanup` is
+in `CLEANUP` for a `failed` observation as well as a `passed` one. The validator applies all
+of these, not just the runner: the file it guards is hand-copied and hand-editable, so a
+check the runner performs on the way out is not a check on the way in. Both SHA patterns
+already exist in the module for format 1's revision and fingerprint fields.
+
+`hmc_release` and `hardware_family` are the only free text, and each has a real grammar
+rather than a permissive character class: `hmc_release` matches `\AV\d+R\d+(?:M\d+)?\Z` and
+`hardware_family` matches `\APOWER\d+\Z`. The `.env.example` values `V10R3` and `POWER10`
+conform. A looser `[A-Za-z0-9 ._-]{0,39}` class with an IPv4 rejection was the first design
+and is not enough: it admits `hmc01.lab.example.com`, `0644C7T`, `U78CB.001.WZS0044-P1-C2`
+and `lab-hmc-3` verbatim — every identifier class the repository's privacy rule names —
+while rejecting only a dotted quad, which is the one value nobody types into a field called
+"HMC release". The narrow grammars admit the values these fields are for and nothing else. A `passed` observation has non-empty `assertions` and
 `cleanup` in `{passed, not-required}`.
 
 A `not-run` observation carries exactly `id`, `channel`, `result`, `scenario`, `reason`,
@@ -194,9 +206,43 @@ is a package and `JobOutcome` is a class, not a module. Under a module-file-only
 leave their observations reading as current. The same applies to `from ..operations import
 jobs as operations_jobs` and `from ..tool_registry import tool_module` at `:10-11`.
 
-A name that resolves to no file under `src/hmc_mcp/` is skipped. The walk recurses until
-closed, restricted to `src/hmc_mcp/`,
-includes `TYPE_CHECKING`-guarded imports (conservative), and hashes the sorted
+A name that resolves to no file under `src/hmc_mcp/` is skipped. Two containment rules go
+with that: skip any path that is not a regular file or that is a symlink, and skip any
+relative import whose `level` exceeds the containing package's depth (a naive `parts[:-level]`
+yields an empty or negative slice and can resolve outside the package). The symlink rule
+follows the module's existing convention — `check_capability_inventory.py` already guards
+symlinks at `:400`, `:859`, `:872`, `:1001` and `:1020`, and `_implementation_paths`, the
+function this walk replaces, is two of those. Both cases need a file committed under
+`src/hmc_mcp/`, so this is reproducibility rather than a reachable attack: a symlink pointing
+outside the repository makes the hash machine-dependent, so the runner's value and CI's
+recomputation never agree and the observation reads `stale` forever.
+
+**Traversal depth is part of the contract, not an implementation detail.** Follow `Import`
+and `ImportFrom` nodes appearing in the module body and in the bodies of module-level `If`
+and `Try` statements — that is what picks up `TYPE_CHECKING`-guarded imports, which sit
+inside a module-level `If` and so are absent from `tree.body` itself. Do **not** follow
+imports inside `FunctionDef`, `AsyncFunctionDef` or `ClassDef` bodies.
+
+The distinction decides whether this design works at all. `src/hmc_mcp/__init__.py:15` holds
+`from .cli import app` inside `main()`, and that file is on the resolution path of every
+`hmc_mcp.*` name, so an `ast.walk` implementation pulls `cli.py` into every closure; `cli.py`
+reaches `cli_commands/`, which reaches `server_tools.catalog`, which imports every tool
+module. Measured over this tree, the two readings give:
+
+| handler module | `ast.walk` | module body + `If`/`Try` |
+|---|---:|---:|
+| `hmc_mcp.server_tools.jobs` | 179 | 51 |
+| `hmc_mcp.server_tools.lpar.lifecycle` | 179 | 75 |
+| `hmc_mcp.server_tools.permissions` | 179 | 7 |
+
+180 `.py` files exist under `src/hmc_mcp/`. The `ast.walk` reading collapses every closure to
+the whole package, which is ADR 0126's repository-wide fingerprint wearing a different name —
+it would make ADR 0127's "evidence stops counting when its operation's implementation
+changes, not when an unrelated file gains a comment" false, and re-expose observations to the
+1,441-commits-in-90-days churn this design exists to escape. A function-body import is a
+deferred or cycle-breaking import, not part of the module's import-time implementation.
+
+The walk recurses until closed, restricted to `src/hmc_mcp/`, and hashes the sorted
 (path, bytes) sequence with the same length-prefixed SHA-256 construction 0126 used.
 `scripts/` is excluded: the instrument changing is not the implementation changing, and the
 instrument changes on most pull requests. The handler module is the `handler` field of
@@ -207,16 +253,36 @@ function name.
 
 ## Derived staleness and the report
 
-For each operation the report derives one state from its most recent attempted live
-observation:
+**An operation carries at most one attempted live observation, and re-validating replaces
+it.** The `id` is derived (`f"st{subtask}-{tool}"`) and so is identical on every run of the
+same scenario, while `id` must be unique catalog-wide — so a catalog that accumulated
+observations would reject the second run of any scenario. Re-validation after a stale mark is
+the design's only forcing function, and it must not terminate in a validation error the first
+time an operator uses it. Superseded observations are not history the catalog needs to hold:
+the file is versioned, so the previous record is in `git log` where a reader can find it, and
+nothing in the report ever reads a non-latest observation.
+
+For each operation the report derives one state from that observation:
 
 | State | Condition |
 |---|---|
 | `unrecorded` | no maturity record |
 | `unevidenced` | record, no attempted live observation |
-| `stale` | latest observation's `closure_fingerprint` ≠ recomputed, or `observed_at` older than 90 days |
-| `failed` | latest observation `failed` and not stale |
-| `current` | latest observation `passed` and not stale |
+| `stale` | the observation's `closure_fingerprint` ≠ recomputed, or `observed_at` older than 90 days |
+| `failed` | the observation is `failed` and not stale |
+| `current` | the observation is `passed` and not stale |
+
+Each per-operation line carries the **implementation state beside the derived state** —
+`verification: sriov.set_mode partial current`, not `verification: sriov.set_mode current`.
+Format 2 drops the per-observation `scope`, and with it format 1's check that a current
+observation names an implemented scope, so the derived state alone no longer says which
+variant of a partly implemented operation was exercised. The catalog holds exactly this case
+today: `sriov.set_mode` is `partial`, its implemented scope is `current-mode-confirmation`
+("equals the adapter's current config_state; returns unchanged") and its missing scope is
+`adapter-mode-transition`. A bare `current` would tell a reader that setting an adapter's
+mode is live-verified when the only verified variant is the one that changes nothing.
+`derive_states` already receives the maturity records, so this costs one column and no
+schema change.
 
 Staleness is never a validation error. `check_capability_inventory.py --verification-report`
 prints one line per operation and a summary
@@ -263,10 +329,27 @@ and writes a job summary.
 **Actors.** A contributor opening a pull request; a local operator with a real HMC. No
 network actor: the validator and report are offline.
 
-**Controls.** Every committed field except two is a closed vocabulary, hash, SHA, date or
-pattern-bound id; the two environment strings are pattern-bound, length-capped and
-IPv4-rejected. The runner emits only to a gitignored path. The CI job has `contents: read`
-and no secret. Workflow `run:` lines carry no `${{ }}` expression.
+**Controls.** Every field the *runner emits* is a closed vocabulary, hash, SHA, date or
+pattern-bound id, except the two environment strings, which are pattern-bound, length-capped
+and IPv4-rejected. That is the whole of an attempted observation.
+
+A `not-run` observation is different and must not be described as closed-shape: `reason`,
+`prerequisites` and `obligation` carry human prose. No runner writes them — a maintainer
+authors them in a pull request, which is where a reviewer sees the text — but they are still
+committed fields, and charter criterion 7 admits no private identifier in a committed
+observation. They are bounded mechanically rather than trusted: each is length-capped (200
+characters for `reason`, 120 per `prerequisites` entry) and rejected on the same IPv4 pattern
+as the environment strings. That bound is deliberately weak — it stops an address, not a
+hostname or a serial — so the not-run row is the one place in this format where review, not
+validation, is the control, and the spec says so rather than implying the validator has it
+covered.
+
+The runner refuses to emit to a path `git check-ignore` does not claim, rather than trusting
+a fixed pattern to cover every destination: `--results-file` accepts an arbitrary stem, and
+the atomic write's `.{name}.<rand>.tmp` file — which holds the full results document,
+including the verbatim HMC responses kept on the PASS path — needs its own `.test-results*.tmp`
+pattern. The CI job has `contents: read` and no secret. Workflow `run:` lines carry no
+`${{ }}` expression.
 
 **Out of scope.** Proving an observation true; a maintainer committing a fabricated
 observation together with a matching closure hash — the record is small and reviewed.

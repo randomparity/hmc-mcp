@@ -48,8 +48,13 @@ Two triggers, either of which makes an observation stale:
 The observation shrinks to closed-shape fields: operation, result, scenario id, tested
 commit, observation time, HMC release, hardware family, cleanup disposition, closure
 fingerprint, and assertion ids drawn from a fixed pattern. The two environment strings are
-the only free text in a committed record. There is no stored `currency`, `invalidated_by`,
+the only free text the runner ever writes. There is no stored `currency`, `invalidated_by`,
 `promotion`, `implementation_fingerprint`, or per-observation `scope`.
+
+A `not-run` row is the exception, and it is not runner-emitted: its `reason`, `prerequisites`
+and `obligation` are human prose, length-capped and IPv4-rejected but not closed-shape.
+Pull-request review is the control there. The spec's threat model states that rather than
+letting the closed-shape claim cover a field it does not reach.
 
 A `passed` observation that is not stale is a current promotion; no other state promotes.
 The runner emits observations only from a clean tree, only from the `record_verified` path
@@ -70,8 +75,10 @@ behaviour 0126 wanted preserved.
 
 The validator proves shape and derives currency; it does not prove an observation is true.
 Trust rests on the record being small, closed-shape, and reviewed in the pull request that
-commits it. The runner writes only to a gitignored path, so committing an observation is a
-deliberate act.
+commits it. The runner refuses to write observations to a path `git check-ignore` does not
+claim, so committing an observation is a deliberate act. The check is what makes that true:
+`--results-file` lets an operator name any stem, and the atomic write's own temp file needs a
+pattern of its own, so a fixed gitignore line alone would not establish it.
 
 The weekly red run is the only forcing function. A stale observation that nobody re-runs
 stays visibly stale in every report; nothing promotes it back. Scenario coverage remains
@@ -102,7 +109,7 @@ hand-written until #706.
   independent design-review passes found its redaction gate rejected ordinary strings and
   admitted addresses and serials; closed-shape fields with no prose remove the detector's
   job rather than fixing the detector.
-- **Do nothing.** verified: `scripts/check_capability_inventory.py:942-957` on `ded24a77`
+- **Do nothing.** verified: `scripts/check_capability_inventory.py:940-955` on `ded24a77`
   appends `stale implementation fingerprint` to `errors` for any current attempted
   observation whose fingerprint differs from now, and `errors` fails the recipe; the first
   recorded observation would gate every commit.
