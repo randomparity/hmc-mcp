@@ -309,7 +309,7 @@ must not appear inside values.  See [Attribute record grammar](#attribute-record
 **`lpar_env`** values: `aixlinux` (AIX or Linux), `vioserver` (VIOS),
 `os400` (IBM i).
 
-**Repository use:** `create_lpar_via_cli` in `ssh_commands.py`; REST 406
+**Repository use:** [`create_lpar_via_cli`](../src/hmc_mcp/ssh/lpar.py); REST 406
 fallback in `hmc_provision_lpar`; place_lpars tooling.
 
 ---
@@ -424,7 +424,7 @@ bkprofdata -m <system> -f <hmc-local-path> --force   # overwrite existing
 no automatic retrieval; use `cpfile` or `scp` to copy the file off the HMC
 afterwards.
 
-**Repository use:** `backup_lpar_profiles` (`ssh_commands.py`); exposed as
+**Repository use:** [`backup_lpar_profiles`](../src/hmc_mcp/ssh/profiles.py); exposed as
 `hmc_backup_lpar_profiles`.
 
 ---
@@ -443,7 +443,7 @@ merge-current-wins, `4` initialize (no `-f` needed).
 
 **Warning:** `-l 1` and `-l 4` overwrite the current profile configuration.
 
-**Repository use:** `restore_lpar_profiles` (`ssh_commands.py`); exposed as
+**Repository use:** [`restore_lpar_profiles`](../src/hmc_mcp/ssh/profiles.py); exposed as
 `hmc_restore_lpar_profiles`.
 
 ---
@@ -634,6 +634,6 @@ Validated against live P9, P10, and P11 managed systems on HMC V10R3M1060 and HM
 ## Further reading
 
 - [IBM HMC commands reference (Power10)](https://www.ibm.com/docs/en/power10/7063-CR1?topic=hmc-commands)
-- [`src/hmc_mcp/ssh_commands.py`](../src/hmc_mcp/ssh_commands.py) — all SSH command construction
-- [`src/hmc_mcp/server_tools/vios.py`](../src/hmc_mcp/server_tools/vios.py) — VIOS backup commands
+- [`src/hmc_mcp/ssh/commands.py`](../src/hmc_mcp/ssh/commands.py) — shared SSH command construction
+- [`src/hmc_mcp/server_tools/vios/core.py`](../src/hmc_mcp/server_tools/vios/core.py) — VIOS backup commands
 - [`scripts/live_test_runner.py`](../scripts/live_test_runner.py) — live-test uses of HMC CLI

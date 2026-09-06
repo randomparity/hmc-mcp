@@ -8,9 +8,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 # Not `typing.TypedDict`: pydantic refuses one on Python < 3.12, which is inside
-# this package's supported range, and `InstallHandle` is a facade export a
-# consumer may put in a `TypeAdapter` or a response model. Same reason `jobs.py`
-# imports it here.
+# this package's supported range, and `InstallHandle` may be used in a
+# `TypeAdapter` or response model. Same reason `jobs.py` imports it here.
 from typing_extensions import TypedDict
 
 from hmc_mcp.client.core import HMCClient
@@ -52,9 +51,8 @@ class InstallHandle(TypedDict):
     """What a detached ``installios`` submission leaves the caller to work with.
 
     Every key is composed by this package and none is read back from the HMC, so
-    no firmware level can vary the shape — this is a package-owned contract, not
-    one of ADR 0029's opaque HMC resource payloads. Naming it here is what puts
-    the five keys inside the frozen signature digest.
+    no firmware level can vary the shape. It is a package-owned result rather
+    than an opaque HMC resource payload.
 
     There is no HMC job on this path (ADR 0069/0070), so ``pid`` and
     ``log_path`` are the only handles on an install in flight.
