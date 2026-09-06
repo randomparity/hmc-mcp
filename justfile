@@ -40,6 +40,10 @@ env-vars:
 nicknames:
     uv run --no-sync python scripts/check_nicknames.py
 
+# verify the capability ledger remains structurally valid and reconciles the registry
+capability-inventory:
+    uv run --no-sync python scripts/check_capability_inventory.py
+
 # regenerate docs/tools/ from the MCP tool registry
 tool-docs:
     uv run --no-sync python scripts/gen_tool_reference.py
@@ -58,7 +62,7 @@ doc-freshness:
 
 # local and hosted static-analysis gate
 static: lint typecheck secrets workflow-security env-vars nicknames \
-        tool-docs-check adr-numbering doc-freshness
+        capability-inventory tool-docs-check adr-numbering doc-freshness
 
 # run the full pytest suite with one semantic summary
 test:

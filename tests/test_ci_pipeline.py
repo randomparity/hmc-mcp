@@ -85,6 +85,7 @@ STATIC_GATES = {
     "workflow-security",
     "env-vars",
     "nicknames",
+    "capability-inventory",
     "tool-docs-check",
     "adr-numbering",
     "doc-freshness",
