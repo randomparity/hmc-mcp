@@ -15,7 +15,8 @@ as `config` and `artifacts`. Scenario code reads configuration through
 
 ## Persisted contract
 
-The runner writes exactly `{"config": ..., "artifacts": ..., "results": ...}`.
+The runner writes exactly
+`{"config": ..., "connection": ..., "artifacts": ..., "results": ...}`.
 `_restore_artifacts_from_results()` accepts only objects whose saved `config`
 equals `asdict(state.config)`, whose saved `connection` equals the current
 non-secret `{"host", "port", "user", "verify_ssl"}` identity derived from
