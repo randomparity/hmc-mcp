@@ -25,10 +25,12 @@ than retaining the ambiguous name `context`.
 
 ## Persistence and restoration
 
-The result document stores `config`, `hmc`, and `artifacts` as separate top-level
-members. `hmc` contains only the non-secret connection identity: `host`, `port`, `user`,
-and `verify_ssl`. `main` resolves the current `HMCConfig` after bootstrap, uses it to
-write that member, and passes it to restoration for comparison.
+The result document stores `config`, `hmc`, `artifacts`, and the existing `results`
+scenario-outcome rows as separate top-level members. `hmc` contains only the non-secret
+connection identity: `host`, `port`, `user`, and `verify_ssl`. `main` resolves the current
+`HMCConfig` after bootstrap, uses it to write that member, and passes it to restoration
+for comparison. Restoration validates only `config`, `hmc`, and `artifacts`; it does not
+interpret prior result rows.
 
 Restoration accepts only the new shape. Before changing live state, it validates that:
 
@@ -71,6 +73,8 @@ do not change.
   `protected_lpar_names`), restore artifacts, reject each config or HMC identity
   mismatch, reject legacy, unknown-key, and wrong-type documents (including bool in an
   integer field), and prove failure applies no partial mutation.
+- A focused serialization assertion proves accumulated PASS/FAIL/SKIP result rows remain
+  present under the top-level `results` member.
 - The live-runner suite proves all scenario call arguments and cleanup behavior remain
   intact after explicit member migration.
 - `just verify` and `uv run --no-sync prek run --all-files` prove repository guardrails.

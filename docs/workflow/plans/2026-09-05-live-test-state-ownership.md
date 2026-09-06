@@ -38,10 +38,10 @@ Interfaces:
   virtual-media flag, and restored runtime value.
 - Define `RunState.config: LiveTestConfig` and
   `RunState.artifacts: LiveTestArtifacts` using default factories.
-- Persist top-level `config`, `hmc`, and `artifacts` objects. `hmc` contains `host`,
-  `port`, `user`, and `verify_ssl` from the post-bootstrap `HMCConfig`; restoration
-  receives that current config and installs artifacts only after all comparisons and
-  decoding succeed.
+- Persist top-level `config`, `hmc`, `artifacts`, and `results` members. `results`
+  preserves `state.results` unchanged. `hmc` contains `host`, `port`, `user`, and
+  `verify_ssl` from the post-bootstrap `HMCConfig`; restoration receives that current
+  config and installs artifacts only after all comparisons and decoding succeed.
 - Decode saved config through its declared schema so JSON arrays such as
   `protected_lpar_names` become their in-memory tuple form before equality comparison.
 - Decode artifacts with explicit nullable-string, integer-not-boolean, boolean, mapping,
@@ -58,6 +58,9 @@ Verification:
   `protected_lpar_names`, per-field HMC identity mismatch, config mismatch, unknown-key,
   wrong-type (including bool-as-int), legacy-shape, and no-partial-update cases; the same
   focused command must pass.
+- Mode: focused-test — persisted scenario evidence; assert a written report retains the
+  accumulated `state.results` rows under its top-level `results` member; the same focused
+  command must pass.
 
 Steps:
 
@@ -71,9 +74,10 @@ Steps:
    frozen `LiveTestConfig`; move mutable fields into `LiveTestArtifacts`; replace
    `RunState.context` with explicit members.
 4. Update result serialization to write `asdict(state.config)`, the four-field non-secret
-   HMC identity, and `asdict(state.artifacts)`. Add explicit config and artifact decoders;
-   reject missing or extra members, unknown keys, wrong JSON types, config/identity
-   mismatches, and the old `context` shape before assigning the fresh candidate.
+   HMC identity, `asdict(state.artifacts)`, and `state.results`. Add explicit config and
+   artifact decoders; reject missing or extra restoration members, unknown keys, wrong
+   JSON types, config/identity mismatches, and the old `context` shape before assigning
+   the fresh candidate. Keep result rows opaque to restoration.
 5. Run `uv run --no-sync pytest tests/test_live_runner.py -q`; expect all tests green.
 6. Commit with `refactor: separate live-test state ownership`.
 
