@@ -6,13 +6,13 @@ domain mixin; this module only defines methods for pcm.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Unpack
 from urllib.parse import urlencode
 
 from ..errors import HMCError
 from .client_contracts import PcmClient
 from .client_parse import _metric_links, _pcm_preferences
-from .pcm_payloads import build_pcm_preferences_document
+from .pcm_payloads import PCMPreferenceFlags, build_pcm_preferences_document
 
 
 class PcmMixin:
@@ -28,7 +28,10 @@ class PcmMixin:
         return _pcm_preferences(xml, path) if xml else {}
 
     async def set_pcm_preferences(
-        self: PcmClient, category: str, resource_uuid: str, **flags: bool
+        self: PcmClient,
+        category: str,
+        resource_uuid: str,
+        **flags: Unpack[PCMPreferenceFlags],
     ) -> dict[str, Any]:
         """Set PCM preferences, e.g. LongTermMonitorEnabled=True.
 
