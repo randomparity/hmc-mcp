@@ -40,7 +40,8 @@ def _single_vios_selector(
         )
     if vios_name is not None:
         return "vios_names", _nonblank(vios_name, "vios_name")
-    assert vios_id is not None
+    if vios_id is None:
+        raise ValueError("VIOS label operation requires vios_id when vios_name is absent")
     if vios_id <= 0:
         raise ValueError("VIOS label operation vios_id must be positive")
     return "vios_ids", vios_id
@@ -77,7 +78,8 @@ def _member_selector(
             build_attribute_record([("vios_names", name)])
         _require_bounded_member_bytes("vios_names", validated)
         return "vios_names", validated
-    assert vios_ids is not None
+    if vios_ids is None:
+        raise ValueError("VIOS group label operation requires vios_ids when names are absent")
     if len(vios_ids) > _MAX_GROUP_MEMBERS:
         raise ValueError(
             f"VIOS group label vios_ids accepts at most {_MAX_GROUP_MEMBERS} members"
@@ -193,7 +195,8 @@ async def set_vios_fc_port_label(
 ) -> dict[str, object]:
     system = _nonblank(system_name, "system_name")
     selected = _single_vios_selector(vios_name, vios_id, required=True)
-    assert selected is not None
+    if selected is None:
+        raise ValueError("VIOS label operation requires a VIOS selector")
     label_value = _nonblank(label, "label")
     port = _nonblank(port_name, "port_name")
     record = build_attribute_record(
@@ -224,7 +227,8 @@ async def remove_vios_fc_port_label(
 ) -> dict[str, object]:
     system = _nonblank(system_name, "system_name")
     selected = _single_vios_selector(vios_name, vios_id, required=True)
-    assert selected is not None
+    if selected is None:
+        raise ValueError("VIOS label operation requires a VIOS selector")
     port = _nonblank(port_name, "port_name")
     record = build_attribute_record(
         [("resource", "fcport"), ("port_name", port), selected]
