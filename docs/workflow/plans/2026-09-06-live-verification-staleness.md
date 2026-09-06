@@ -86,6 +86,8 @@ Provides:
 # scripts/live_test/observation.py
 RESULTS = frozenset({"observed", "passed", "failed", "skipped"})
 CLEANUP = frozenset({"not-run", "not-required", "failed", "passed"})
+# CLEANUP's "not-run" is a cleanup disposition (cleanup did not run) and is unrelated to
+# ADR 0126's deleted `not-run` observation shape. RESULTS deliberately has no such member.
 ASSERTION_ID = re.compile(r"\A[a-z][a-z0-9-]{2,63}\Z")
 SCENARIO_ID = re.compile(r"\Ast\d+-[a-z0-9-]+\Z")
 
@@ -423,9 +425,7 @@ MATURITY_FORMAT_VERSION = 2
 STALE_AFTER_DAYS = 90
 ATTEMPTED_KEYS = {"id","channel","result","scenario","tested_commit","observed_at",
                   "hmc_release","hardware_family","cleanup","closure_fingerprint","assertions"}
-NOT_RUN_KEYS = {"id","channel","result","scenario","reason","prerequisites","obligation"}
-NOT_RUN_REASON_MAX = 200        # `reason` is human prose, not closed-shape
-NOT_RUN_PREREQUISITE_MAX = 120  # per list entry
+# No NOT_RUN_KEYS: format 2 has one observation shape (see spec §Observation record).
 HMC_RELEASE = re.compile(r"\AV\d+R\d+(?:M\d+)?\Z")   # V10R3
 HARDWARE_FAMILY = re.compile(r"\APOWER\d+\Z")        # POWER10
 ASSERTION_ID = re.compile(r"\A[a-z][a-z0-9-]{2,63}\Z")
@@ -467,15 +467,12 @@ when validation passed.
   `test_maturity_format_one_is_rejected` (red: accepted today), with the two maturity
   fixtures (`:95`, `:177`) bumped to 2 and the other eleven `format_version` sites left at 1.
   Green: whole module.
-- **Not-run prose is length-capped and IPv4-rejected.** Mode: focused-test.
-  `test_not_run_prose_is_bounded`: a `reason` of 201 characters is rejected, a
-  `prerequisites` entry of 121 characters is rejected, and a `reason` containing `10.1.2.3`
-  is rejected. These three fields are the only committed prose in the format; the bound stops
-  an address, not a hostname, which is why the threat model names review as the control.
-  Red: accepted today.
-- **Attempted and not-run observations have exact key sets.** Mode: focused-test.
-  `test_observation_key_sets_are_exact`, parametrised over one extra and one missing key
-  per shape.
+- **The `not-run` shape is gone.** Mode: focused-test.
+  `test_a_not_run_observation_is_rejected`: an observation with `result: "not-run"`, or
+  carrying any of `reason`, `prerequisites`, `obligation`, fails the exact-key-set check.
+  Red: accepted today by `_validate_not_run`.
+- **The observation has an exact key set.** Mode: focused-test.
+  `test_observation_key_sets_are_exact`, parametrised over one extra and one missing key.
 - **Environment strings admit their grammar and nothing else.** Mode: focused-test.
   `test_environment_values_reject_private_identifiers`, parametrised: `"V10R3"` and
   `"V10R3M1"` accepted for `hmc_release`, `"POWER10"` for `hardware_family`; every one of
@@ -556,18 +553,14 @@ when validation passed.
    `'{"format_version":1,"format_version":1}'` and is not a version fixture at all. Bumping
    them would contradict this task's own `_validate_versions` contract, which keeps the other
    three catalogs at 1, and would turn the module red.
-2. Replace `_validate_observation` and its helpers with the two-shape validator per
-   Interfaces; keep `_validate_implementation` and `_scope_identity` whole. From
-   `_validate_not_run`, keep exactly two things: the `reason` non-emptiness check and the
-   obligation block. Delete every check that reads `assertions`, `cleanup`, `observed_at`,
-   `implementation_revision`, `deployed_revision`, `provenance`, or
-   `implementation_fingerprint` — `NOT_RUN_KEYS` excludes all seven, so those checks would
-   read keys that can no longer be present. Change `scenario` from the `{id, description}`
-   object check to the `SCENARIO_ID` string match, matching the attempted shape. Apply the
-   two length caps and the `IPV4` rejection to `reason` and to each `prerequisites` entry:
-   these are the only committed fields carrying human prose, so they get the weak mechanical
-   bound the environment strings get, and the spec's threat model records that review — not
-   validation — is the real control on them.
+2. Replace `_validate_observation` and its helpers with the single-shape validator per
+   Interfaces; keep `_validate_implementation` and `_scope_identity` whole. **Delete
+   `_validate_not_run` entirely**, along with `_validate_evidence_lists` and every check
+   reading `reason`, `prerequisites`, `obligation`, `assertions` (in its old form), `cleanup`,
+   `observed_at`, `implementation_revision`, `deployed_revision`, `provenance` or
+   `implementation_fingerprint`. Format 2 has one observation shape; `result` no longer admits
+   `not-run`, so nothing reaches those checks. `scenario` becomes a `SCENARIO_ID` string match
+   in place of the `{id, description}` object check.
 3. Add `closure_paths` per the spec's *Closure fingerprint*. **Do not reach for `ast.walk`**:
    traverse the module body plus the bodies of module-level `If`/`Try` statements, and never
    descend into `FunctionDef`/`AsyncFunctionDef`/`ClassDef`. `ast.walk` yields 179 of 180
@@ -668,6 +661,12 @@ missing environment, or no observations.
    operator set any stem — `--results-file evidence.json` yields `evidence.json` and
    `evidence-observations.json`, neither ignored by any pattern — so the check is what makes
    the claim true for a path the design cannot enumerate in advance.
+
+   Criterion 14 as originally frozen named only `test-results*.json`. The scope audit flagged
+   both mechanisms in this step as unauthorized; the operator amended criterion 14 to cover
+   them (amendment 3, 2026-09-06), on the grounds that `.gitignore:1` describes these files as
+   holding "internal hostnames/IPs/serials" and both paths are real ways that data reaches a
+   commit.
 5. Add the three helpers; call `_emit_observations` in `main` after `_write_results`, with
    path `Path(results_path).with_name(Path(results_path).stem + "-observations.json")`.
 6. Validate the two `LIVE_TEST_ENV_*` keys in `_run_from_arguments` (`:603-620`), beside
@@ -705,6 +704,12 @@ Modifies `justfile`, `.github/workflows/ci.yml`, `tests/test_ci_pipeline.py`.
   under `if: github.event_name == 'schedule'`, no `${{` in any `run:` line, no
   `permissions:`. Existing counts updated: `runs-on: ubuntu-24.04` → 5, checkout settings
   → 6. Red: the new test fails before the job exists.
+
+  This test asserts job shape, not job counts, so it sits outside the charter's original
+  narrowing of `tests/test_ci_pipeline.py` to "the assertions that count jobs and recipes".
+  The scope audit flagged it; the operator widened the surface for this file to admit it
+  (amendment 3, 2026-09-06), because criterion 13 requires the warn-on-PR / fail-on-schedule
+  split and pins `permissions: contents: read`, and nothing else would test either.
 - **Workflow security.** Mode: focused-test. `just workflow-security` (zizmor) exits 0.
 
 ### Steps

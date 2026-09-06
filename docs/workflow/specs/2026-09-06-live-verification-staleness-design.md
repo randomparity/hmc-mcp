@@ -162,15 +162,14 @@ while rejecting only a dotted quad, which is the one value nobody types into a f
 "HMC release". The narrow grammars admit the values these fields are for and nothing else. A `passed` observation has non-empty `assertions` and
 `cleanup` in `{passed, not-required}`.
 
-A `not-run` observation carries exactly `id`, `channel`, `result`, `scenario`, `reason`,
-`prerequisites`, `obligation`. Its `scenario` is the **same string form** as an attempted
-observation's, matching `st\d+-[a-z0-9-]+` — not ADR 0126's `{id, description}` object.
-One key cannot hold two shapes in one list, and format 2 has no reader for the object form;
-the description has no consumer and is dropped. Of `_validate_not_run`'s current checks, the
-`reason` non-emptiness check and the whole obligation block survive; every check reading
-`assertions`, `cleanup`, `observed_at`, `implementation_revision`, `deployed_revision`,
-`provenance`, or `implementation_fingerprint` is deleted with its key, since `NOT_RUN_KEYS`
-excludes all seven.
+**Format 2 has one observation shape.** ADR 0126's `not-run` row is dropped, not carried
+forward: `_validate_not_run` and its keys (`reason`, `prerequisites`, `obligation`) are
+deleted whole. Those three were human prose, so retaining them would leave a committed record
+with free text beyond the two environment strings — and would put that free text precisely
+where a maintainer describes unavailable hardware, which is where hostnames, serials and
+location codes get written. The catalog holds no `not-run` row today, so nothing is lost, and
+an operation with no observation already derives `unevidenced`, which is what the row said.
+Reinstating a placeholder with a closed vocabulary is future work for whatever needs it.
 
 `admission_policy` and the implementation record are unchanged from format 1. Removed from
 observations: `currency`, `invalidated_by`, `promotion`, `implementation_fingerprint`,
@@ -267,7 +266,7 @@ For each operation the report derives one state from that observation:
 | State | Condition |
 |---|---|
 | `unrecorded` | no maturity record |
-| `unevidenced` | record, no attempted live observation |
+| `unevidenced` | record, no live observation |
 | `stale` | the observation's `closure_fingerprint` ≠ recomputed, or `observed_at` older than 90 days |
 | `failed` | the observation is `failed` and not stale |
 | `current` | the observation is `passed` and not stale |
@@ -329,20 +328,16 @@ and writes a job summary.
 **Actors.** A contributor opening a pull request; a local operator with a real HMC. No
 network actor: the validator and report are offline.
 
-**Controls.** Every field the *runner emits* is a closed vocabulary, hash, SHA, date or
-pattern-bound id, except the two environment strings, which are pattern-bound, length-capped
-and IPv4-rejected. That is the whole of an attempted observation.
+**Controls.** Every field of a committed observation is a closed vocabulary, hash, SHA, date
+or pattern-bound id, except the two environment strings, which match `\AV\d+R\d+(?:M\d+)?\Z`
+and `\APOWER\d+\Z` — grammars narrow enough to exclude a hostname, serial or location code
+rather than merely a dotted quad. There is one observation shape, so that statement has no
+exception.
 
-A `not-run` observation is different and must not be described as closed-shape: `reason`,
-`prerequisites` and `obligation` carry human prose. No runner writes them — a maintainer
-authors them in a pull request, which is where a reviewer sees the text — but they are still
-committed fields, and charter criterion 7 admits no private identifier in a committed
-observation. They are bounded mechanically rather than trusted: each is length-capped (200
-characters for `reason`, 120 per `prerequisites` entry) and rejected on the same IPv4 pattern
-as the environment strings. That bound is deliberately weak — it stops an address, not a
-hostname or a serial — so the not-run row is the one place in this format where review, not
-validation, is the control, and the spec says so rather than implying the validator has it
-covered.
+There is no second shape to reason about. ADR 0126's `not-run` row carried three prose fields
+and was the one place in the format where review rather than validation would have been the
+control; it is deleted instead of bounded, so the closed-shape claim holds for every committed
+observation without a carve-out.
 
 The runner refuses to emit to a path `git check-ignore` does not claim, rather than trusting
 a fixed pattern to cover every destination: `--results-file` accepts an arbitrary stem, and

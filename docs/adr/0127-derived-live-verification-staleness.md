@@ -51,10 +51,14 @@ fingerprint, and assertion ids drawn from a fixed pattern. The two environment s
 the only free text the runner ever writes. There is no stored `currency`, `invalidated_by`,
 `promotion`, `implementation_fingerprint`, or per-observation `scope`.
 
-A `not-run` row is the exception, and it is not runner-emitted: its `reason`, `prerequisites`
-and `obligation` are human prose, length-capped and IPv4-rejected but not closed-shape.
-Pull-request review is the control there. The spec's threat model states that rather than
-letting the closed-shape claim cover a field it does not reach.
+Format 2 has one observation shape. ADR 0126's `not-run` row — a placeholder naming an
+intended scenario, its prerequisites and a durable obligation — is dropped rather than carried
+forward. Its `reason`, `prerequisites` and `obligation` were human prose, so keeping it would
+have made "no free text beyond the two environment strings" false for a committed record and
+left the format's one unbounded surface exactly where a maintainer describes unavailable
+hardware. No such row exists in the catalog, so nothing is lost. An operation with no
+observation is already reported as `unevidenced`, which is what a `not-run` row said, without
+a field to write it in.
 
 A `passed` observation that is not stale is a current promotion; no other state promotes.
 The runner emits observations only from a clean tree, only from the `record_verified` path
