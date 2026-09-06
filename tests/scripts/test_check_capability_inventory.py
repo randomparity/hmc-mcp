@@ -295,10 +295,7 @@ def test_verify_corpora_detects_changed_and_extra_files(tmp_path: Path) -> None:
     data.mkdir()
     source.mkdir()
     page = source / "alpha.md"
-    page.write_text(
-        "---\nsource: https://example.test/alpha\ncaptured: now\n---\n",
-        encoding="utf-8",
-    )
+    page.write_text("---\nsource: https://example.test/alpha\ncaptured: now\n---\n", encoding="utf-8")
     digest = inventory.format_sha256(page.read_bytes())
     _write_json(
         data / "corpora.json",

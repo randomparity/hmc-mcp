@@ -79,9 +79,7 @@ def _unique_pairs(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
 
 def load_json(path: Path) -> dict[str, object]:
     try:
-        value = json.loads(
-            path.read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs
-        )
+        value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
     except (OSError, UnicodeError, json.JSONDecodeError, InventoryError) as error:
         raise InventoryError(f"{path}: {error}") from error
     if not isinstance(value, dict):
@@ -129,11 +127,7 @@ def _safe_summary(kind: str, text: str) -> str:
         key = re.search(r'["\']([A-Za-z][A-Za-z0-9_-]*)["\']\s*:', text)
         return f"payload-root:{key.group(1)}" if key else "structured-payload"
     versions = re.findall(r"\bV?\d+(?:[._RrMm]\d+)+\b", text)
-    return (
-        "versions:" + ",".join(dict.fromkeys(versions))
-        if versions
-        else "capability-note"
-    )
+    return "versions:" + ",".join(dict.fromkeys(versions)) if versions else "capability-note"
 
 
 def extract_source_units(topic_id: str, text: str) -> list[dict[str, object]]:
@@ -207,9 +201,7 @@ def discover_registry() -> tuple[RegistryTool, ...]:
             }.values()
         )
         if len(handlers) != 1:
-            raise InventoryError(
-                f"registry tool {tool!r} resolves to {len(handlers)} handlers"
-            )
+            raise InventoryError(f"registry tool {tool!r} resolves to {len(handlers)} handlers")
         handler = inspect.unwrap(handlers[0])
         result.append(
             RegistryTool(
@@ -231,9 +223,7 @@ def _array(document: Mapping[str, object], key: str, errors: list[str]) -> list[
     return value
 
 
-def _objects(
-    values: Sequence[object], key: str, errors: list[str]
-) -> list[dict[str, object]]:
+def _objects(values: Sequence[object], key: str, errors: list[str]) -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
     for index, value in enumerate(values):
         if not isinstance(value, dict):
@@ -243,9 +233,7 @@ def _objects(
     return result
 
 
-def _index(
-    records: Sequence[dict[str, object]], kind: str, errors: list[str]
-) -> dict[str, dict[str, object]]:
+def _index(records: Sequence[dict[str, object]], kind: str, errors: list[str]) -> dict[str, dict[str, object]]:
     result: dict[str, dict[str, object]] = {}
     for index, record in enumerate(records):
         identity = record.get("id")
@@ -258,9 +246,7 @@ def _index(
     return result
 
 
-def _validate_versions(
-    documents: Mapping[str, Mapping[str, object]], errors: list[str]
-) -> None:
+def _validate_versions(documents: Mapping[str, Mapping[str, object]], errors: list[str]) -> None:
     for name, document in documents.items():
         if document.get("format_version") != 1:
             errors.append(f"{name}: format_version must be 1")
@@ -278,21 +264,12 @@ def _validate_topics(
         pair = (corpus, path)
         if corpus not in corpora:
             errors.append(f"topic {identity}: unknown corpus {corpus!r}")
-        if (
-            not isinstance(path, str)
-            or Path(path).is_absolute()
-            or ".." in Path(path).parts
-        ):
+        if not isinstance(path, str) or Path(path).is_absolute() or ".." in Path(path).parts:
             errors.append(f"topic {identity}: unsafe path {path!r}")
         elif pair in paths:
             errors.append(f"topic {identity}: duplicate corpus path {path!r}")
         paths.add(pair)
-        if topic.get("classification") not in {
-            "operation",
-            "schema",
-            "overview",
-            "navigation",
-        }:
+        if topic.get("classification") not in {"operation", "schema", "overview", "navigation"}:
             errors.append(f"topic {identity}: invalid classification")
         if not isinstance(topic.get("reason"), str) or not str(topic["reason"]).strip():
             errors.append(f"topic {identity}: classification reason is required")
@@ -311,9 +288,7 @@ def _validate_corpora(
         for field in ("captured_pages", "navigation_pages"):
             value = corpus.get(field)
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-                errors.append(
-                    f"corpus {identity}: {field} must be a non-negative integer"
-                )
+                errors.append(f"corpus {identity}: {field} must be a non-negative integer")
 
 
 def _validate_rows(
@@ -336,10 +311,7 @@ def _validate_rows(
             elif isinstance(ref, str):
                 accounted[ref] += 1
         disposition = row.get("disposition")
-        if (
-            not isinstance(disposition, dict)
-            or disposition.get("kind") not in DISPOSITIONS
-        ):
+        if not isinstance(disposition, dict) or disposition.get("kind") not in DISPOSITIONS:
             errors.append(f"row {identity}: invalid disposition")
             continue
         kind = str(disposition["kind"])
@@ -353,13 +325,10 @@ def _validate_rows(
                 errors.append(f"row {identity}: unknown requires question")
             unknown.append(identity)
         elif kind == "proposed-exclusion":
-            if (
-                not str(disposition.get("reason", "")).strip()
-                or not str(disposition.get("owner", "")).strip()
-            ):
-                errors.append(
-                    f"row {identity}: proposed exclusion requires reason and owner"
-                )
+            if not str(disposition.get("reason", "")).strip() or not str(
+                disposition.get("owner", "")
+            ).strip():
+                errors.append(f"row {identity}: proposed exclusion requires reason and owner")
             proposed.append(identity)
     for identity, unit in units.items():
         accounting = unit.get("accounting")
@@ -369,20 +338,12 @@ def _validate_rows(
         if accounting.get("kind") == "row":
             row_id = accounting.get("id")
             if row_id not in rows:
-                errors.append(
-                    f"source unit {identity}: unknown accounting row {row_id!r}"
-                )
-            elif accounted[identity] != 1 or identity not in rows[str(row_id)].get(
-                "source_units", []
-            ):
-                errors.append(
-                    f"source unit {identity}: accounting does not match row {row_id}"
-                )
+                errors.append(f"source unit {identity}: unknown accounting row {row_id!r}")
+            elif accounted[identity] != 1 or identity not in rows[str(row_id)].get("source_units", []):
+                errors.append(f"source unit {identity}: accounting does not match row {row_id}")
         elif accounting.get("kind") == "non-operation":
             if not str(accounting.get("reason", "")).strip():
-                errors.append(
-                    f"source unit {identity}: non-operation reason is required"
-                )
+                errors.append(f"source unit {identity}: non-operation reason is required")
         else:
             errors.append(f"source unit {identity}: invalid accounting")
         if accounted[identity] > 1:
@@ -413,9 +374,7 @@ def _validate_operations(
             continue
         for field in ("operation", "handler", "signature"):
             if record.get(field) != getattr(found, field):
-                errors.append(
-                    f"operation evidence {tool}: {field} does not match registry"
-                )
+                errors.append(f"operation evidence {tool}: {field} does not match registry")
         if tuple(record.get("surfaces", ())) != found.surfaces:
             errors.append(f"operation evidence {tool}: surfaces do not match registry")
         row_ids = record.get("row_ids")
@@ -426,9 +385,7 @@ def _validate_operations(
                 if row_id not in rows:
                     errors.append(f"operation evidence {tool}: unknown row {row_id!r}")
         if not row_ids and not str(record.get("composite_reason", "")).strip():
-            errors.append(
-                f"operation evidence {tool}: rows or composite reason required"
-            )
+            errors.append(f"operation evidence {tool}: rows or composite reason required")
         tests = record.get("tests")
         if not isinstance(tests, list):
             errors.append(f"operation evidence {tool}: tests must be an array")
@@ -441,9 +398,7 @@ def _validate_operations(
                     or not path.is_file()
                     or path.is_symlink()
                 ):
-                    errors.append(
-                        f"operation evidence {tool}: invalid test path {path_text!r}"
-                    )
+                    errors.append(f"operation evidence {tool}: invalid test path {path_text!r}")
     for tool in sorted(expected.keys() - observed.keys()):
         errors.append(f"registry operation {tool}: missing operation evidence")
 
@@ -948,20 +903,10 @@ def validate_inventory(
         errors.append("maturity.json: format_version must be integer 1")
     if maturity_document.get("admission_policy") != "existing-runtime-guards":
         errors.append("maturity.json: admission_policy must be existing-runtime-guards")
-    corpora_records = _objects(
-        _array(documents["corpora.json"], "corpora", errors), "corpora", errors
-    )
-    topic_records = _objects(
-        _array(documents["corpora.json"], "topics", errors), "topics", errors
-    )
-    unit_records = _objects(
-        _array(documents["corpora.json"], "source_units", errors),
-        "source_units",
-        errors,
-    )
-    row_records = _objects(
-        _array(documents["rows.json"], "rows", errors), "rows", errors
-    )
+    corpora_records = _objects(_array(documents["corpora.json"], "corpora", errors), "corpora", errors)
+    topic_records = _objects(_array(documents["corpora.json"], "topics", errors), "topics", errors)
+    unit_records = _objects(_array(documents["corpora.json"], "source_units", errors), "source_units", errors)
+    row_records = _objects(_array(documents["rows.json"], "rows", errors), "rows", errors)
     operation_records = _objects(
         _array(documents["operations.json"], "operations", errors), "operations", errors
     )
@@ -978,9 +923,7 @@ def validate_inventory(
     _validate_topics(corpora, topics, errors)
     for identity, unit in units.items():
         if unit.get("topic") not in topics:
-            errors.append(
-                f"source unit {identity}: unknown topic {unit.get('topic')!r}"
-            )
+            errors.append(f"source unit {identity}: unknown topic {unit.get('topic')!r}")
         if not HEX_256.fullmatch(str(unit.get("sha256", ""))):
             errors.append(f"source unit {identity}: invalid sha256")
     unknown, proposed, pending = _validate_rows(rows, units, errors)
@@ -1030,22 +973,14 @@ def verify_corpora(root: Path, sources: Mapping[str, Path]) -> list[str]:
         return [str(error)]
     local_errors: list[str] = []
     corpus_records = _objects(
-        document.get("corpora", [])
-        if isinstance(document.get("corpora"), list)
-        else [],
+        document.get("corpora", []) if isinstance(document.get("corpora"), list) else [],
         "corpora",
         local_errors,
     )
     corpus_ids = {str(record.get("id")) for record in corpus_records}
-    topics = _objects(
-        document.get("topics", []) if isinstance(document.get("topics"), list) else [],
-        "topics",
-        local_errors,
-    )
+    topics = _objects(document.get("topics", []) if isinstance(document.get("topics"), list) else [], "topics", local_errors)
     units = _objects(
-        document.get("source_units", [])
-        if isinstance(document.get("source_units"), list)
-        else [],
+        document.get("source_units", []) if isinstance(document.get("source_units"), list) else [],
         "source_units",
         local_errors,
     )
@@ -1077,9 +1012,7 @@ def verify_corpora(root: Path, sources: Mapping[str, Path]) -> list[str]:
             errors.append(f"{corpus}/{relative}: cannot read: {error}")
     for corpus, source in sources.items():
         if not source.is_dir() or source.is_symlink():
-            errors.append(
-                f"{corpus}: source root is missing, symlinked, or not a directory"
-            )
+            errors.append(f"{corpus}: source root is missing, symlinked, or not a directory")
             continue
         actual = {
             str(path.relative_to(source))
