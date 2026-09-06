@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+from dataclasses import FrozenInstanceError, asdict
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -112,7 +113,7 @@ def _logical_port_state(
     if owner is not None:
         items.append(
             {
-                "logical_port_id": state.context.sriov_logical_port_id,
+                "logical_port_id": state.config.sriov_logical_port_id,
                 "availability": "1",
                 "owner_lpar": owner,
                 "capacity_percent": capacity,
@@ -156,7 +157,7 @@ def test_sriov_baseline_helpers_compute_capacity_and_configuration() -> None:
 @pytest.mark.asyncio
 async def test_sriov_phases_assign_verify_unassign_and_reassign() -> None:
     state = _ScriptedSriovState([])
-    owned = _logical_port_state(state, owner=state.context.lp3_name)
+    owned = _logical_port_state(state, owner=state.config.lp3_name)
     state._responses = iter(
         [
             ("hmc_assign_sriov_logical_port", "PASS", {"changed": True}),
@@ -179,13 +180,13 @@ async def test_sriov_phases_assign_verify_unassign_and_reassign() -> None:
     assign_tool, assign_args = state.calls[0]
     assert assign_tool == "hmc_assign_sriov_logical_port"
     assert assign_args == {
-        "system_name_or_uuid": state.context.system_name,
-        "lpar_name_or_uuid": state.context.lp3_name,
-        "adapter_id": state.context.sriov_adapter_id,
-        "physical_port_id": state.context.sriov_physical_port_id,
-        "logical_port_id": state.context.sriov_logical_port_id,
-        "capacity_percent": state.context.sriov_capacity_percent,
-        "profile_name": state.context.sriov_profile_name,
+        "system_name_or_uuid": state.config.system_name,
+        "lpar_name_or_uuid": state.config.lp3_name,
+        "adapter_id": state.config.sriov_adapter_id,
+        "physical_port_id": state.config.sriov_physical_port_id,
+        "logical_port_id": state.config.sriov_logical_port_id,
+        "capacity_percent": state.config.sriov_capacity_percent,
+        "profile_name": state.config.sriov_profile_name,
         "ownership_override": True,
     }
     assert state.calls[3][0] == "hmc_unassign_sriov_logical_port"
@@ -271,7 +272,7 @@ async def test_sriov_cleanup_removes_owned_port_and_verifies_baseline() -> None:
             (
                 "hmc_list_sriov_logical_ports",
                 "PASS",
-                _logical_port_state(state, owner=state.context.lp3_name),
+                _logical_port_state(state, owner=state.config.lp3_name),
             ),
             _profile_state("configured-port"),
             ("hmc_unassign_sriov_logical_port", "PASS", {"changed": True}),
@@ -332,11 +333,11 @@ async def test_profile_inventory_records_all_selector_scoped_probes() -> None:
             "hmc_list_resource_group_memopt_scores",
             "hmc_plan_resource_group_memopt_scores",
         }:
-            assert kwargs == {"system_name_or_uuid": state.context.system_name}
+            assert kwargs == {"system_name_or_uuid": state.config.system_name}
         else:
-            assert kwargs["system_name_or_uuid"] == state.context.system_name
+            assert kwargs["system_name_or_uuid"] == state.config.system_name
             if tool != "hmc_get_proc_compat_modes":
-                assert kwargs.get("lpar_name_or_uuid") == state.context.lp3_name
+                assert kwargs.get("lpar_name_or_uuid") == state.config.lp3_name
 
 
 @pytest.mark.asyncio
@@ -365,23 +366,23 @@ async def test_connectivity_inventory_discovers_context_and_records_probes() -> 
 
     await connectivity.inventory_connectivity(object(), state)
 
-    assert (state.context.console_uuid, state.context.system_uuid) == (
+    assert (state.artifacts.console_uuid, state.artifacts.system_uuid) == (
         "console-uuid",
         "system-uuid",
     )
     assert (
-        state.context.lp3_uuid,
-        state.context.vios_uuid,
-        state.context.vios_partition_id,
+        state.artifacts.lp3_uuid,
+        state.artifacts.vios_uuid,
+        state.artifacts.vios_partition_id,
     ) == (
         "lp3-uuid",
         "vios-uuid",
         3,
     )
-    assert state.context.job_uuid_sample == "job-uuid"
+    assert state.artifacts.job_uuid_sample == "job-uuid"
     assert state.calls[7] == (
         "hmc_find_placement",
-        {"desired_memory_mib": state.context.placement_memory_mib},
+        {"desired_memory_mib": state.config.placement_memory_mib},
     )
     assert all(entry["subtask"] == 1 for entry in state.results)
 
@@ -403,7 +404,7 @@ async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
             ("hmc_list_partition_templates", "FAIL", "template unavailable"),
         ]
     )
-    state.context.job_uuid_sample = "job-uuid"
+    state.artifacts.job_uuid_sample = "job-uuid"
 
     await metrics.inspect_metrics_jobs(object(), state)
     await metrics.inspect_metrics_templates(object(), state)
@@ -415,7 +416,7 @@ async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
         "timeout_seconds": 10,
         "poll_interval": 2,
     }
-    assert state.context.lp3_baseline.get("pcm_prefs") is None
+    assert state.artifacts.lp3_baseline.get("pcm_prefs") is None
     assert [entry["status"] for entry in state.results if entry["subtask"] == 5] == [
         "SKIP",
         "SKIP",
@@ -455,24 +456,24 @@ async def test_provision_dry_run_requires_vios_and_uses_baseline_vlan() -> None:
     state = _ScriptedSriovState(
         [("hmc_provision_lpar", "PASS", {"steps": [{"status": "dry_run"}]})]
     )
-    state.context.vios_uuid = "vios-uuid"
-    state.context.lp3_baseline["pvid"] = 99
-    state.context.vios_partition_id = 4
-    state.context.lp3_baseline["vios_slot"] = 6
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.lp3_baseline["pvid"] = 99
+    state.artifacts.vios_partition_id = 4
+    state.artifacts.lp3_baseline["vios_slot"] = 6
     await provisioning.validate_provisioning_dry_run(object(), state)
     assert state.calls == [
         (
             "hmc_provision_lpar",
             {
                 "dry_run": True,
-                "system_name_or_uuid": state.context.system_name,
-                "name": state.context.dry_run_lpar_name,
+                "system_name_or_uuid": state.config.system_name,
+                "name": state.config.dry_run_lpar_name,
                 "port_vlan_id": 99,
                 "vios_uuid": "vios-uuid",
                 "vios_partition_id": 4,
                 "vios_slot": 6,
-                "storage_name": state.context.dry_run_storage_name,
-                "desired_memory": state.context.dry_run_memory_mib,
+                "storage_name": state.config.dry_run_storage_name,
+                "desired_memory": state.config.dry_run_memory_mib,
             },
         )
     ]
@@ -496,14 +497,14 @@ async def test_lpar_lifecycle_captures_jobs_and_clears_scratch_identity() -> Non
 
     await lpar.exercise_lpar_lifecycle(object(), state)
 
-    assert state.context.system_uuid == "system-uuid"
-    assert state.context.scratch_uuid is None
-    assert state.context.job_uuid_sample == "boot-job"
+    assert state.artifacts.system_uuid == "system-uuid"
+    assert state.artifacts.scratch_uuid is None
+    assert state.artifacts.job_uuid_sample == "boot-job"
     assert state.calls[1][1]["resources"] == {
-        "desired_memory": state.context.scratch_create_desired_memory_mib,
-        "max_memory": state.context.scratch_create_max_memory_mib,
-        "desired_vcpus": state.context.scratch_create_desired_vcpus,
-        "max_vcpus": state.context.scratch_create_max_vcpus,
+        "desired_memory": state.config.scratch_create_desired_memory_mib,
+        "max_memory": state.config.scratch_create_max_memory_mib,
+        "desired_vcpus": state.config.scratch_create_desired_vcpus,
+        "max_vcpus": state.config.scratch_create_max_vcpus,
     }
     assert [entry["subtask"] for entry in state.results] == [8] * 8
 
@@ -523,7 +524,7 @@ async def test_lpar_property_mutation_refuses_non_vios_and_restores_baseline() -
             ("hmc_backup_lpar_profiles", "PASS", {}),
         ]
     )
-    state.context.lp3_baseline["description"] = "original description"
+    state.artifacts.lp3_baseline["description"] = "original description"
 
     await lpar.mutate_lpar_properties(object(), state)
 
@@ -554,14 +555,14 @@ async def test_vmedia_mount_requires_iso_and_preserves_safe_delete_boundary() ->
             ("hmc_list_optical_media", "PASS", []),
         ]
     )
-    state.context.vios_uuid = "vios-uuid"
-    state.context.vg_uuid = "vg-uuid"
-    state.context.vmedia_iso_name = "boot.iso"
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.vmedia_iso_name = "boot.iso"
 
     await vmedia.vmedia_mount_unmount(object(), state)
 
-    assert state.context.vmedia_mapping_uuid is None
-    assert state.context.vmedia_iso_name is None
+    assert state.artifacts.vmedia_mapping_uuid is None
+    assert state.artifacts.vmedia_iso_name is None
     assert state.calls[3] == (
         "hmc_unmount_optical_media",
         {"vios_name_or_uuid": "vios-uuid", "mapping_uuid": "mapping-uuid"},
@@ -587,16 +588,16 @@ async def test_vmedia_teardown_restores_boot_and_removes_artifacts_in_order() ->
             ("hmc_list_volume_groups", "PASS", []),
         ]
     )
-    state.context.vios_uuid = "vios-uuid"
-    state.context.vg_uuid = "vg-uuid"
-    state.context.lp3_uuid = "lp3-uuid"
-    state.context.vmedia_orig_boot_order = ["disk", "network"]
-    state.context.vmedia_repo_created = True
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.lp3_uuid = "lp3-uuid"
+    state.artifacts.vmedia_orig_boot_order = ["disk", "network"]
+    state.artifacts.vmedia_repo_created = True
 
     await vmedia.vmedia_teardown(object(), state)
 
-    assert state.context.vmedia_orig_boot_order == []
-    assert not state.context.vmedia_repo_created
+    assert state.artifacts.vmedia_orig_boot_order == []
+    assert not state.artifacts.vmedia_repo_created
     assert [tool for tool, _ in state.calls] == [
         "hmc_set_lpar_boot_order",
         "hmc_list_optical_mappings",
@@ -904,15 +905,15 @@ def test_the_iso_allowlist_merge_reaches_the_field_and_is_idempotent(monkeypatch
     monkeypatch.setenv(name, "canonical.example.com")
     monkeypatch.setenv("hmc_iso_url_allowlist", "variant.example.com")
 
-    context = runner.LiveTestContext()
-    vmedia._allow_iso_host(context)
+    config = runner.LiveTestConfig()
+    vmedia._allow_iso_host(config)
 
     merged = os.environ[name]
     assert [k for k in os.environ if k.lower() == name.lower()] == [name]
-    assert merged.split(",") == ["variant.example.com", context.iso_host]
+    assert merged.split(",") == ["variant.example.com", config.iso_host]
     assert HMCConfig(host="h", user="u", password="p").iso_url_allowlist == merged
 
-    vmedia._allow_iso_host(context)
+    vmedia._allow_iso_host(config)
     assert os.environ[name] == merged
 
 
@@ -930,13 +931,20 @@ def test_the_iso_allowlist_merge_keeps_a_variant_only_operator_entry(monkeypatch
     _clear(monkeypatch, name)
     monkeypatch.setenv("hmc_iso_url_allowlist", "operator.example.com")
 
-    context = runner.LiveTestContext()
-    vmedia._allow_iso_host(context)
+    config = runner.LiveTestConfig()
+    vmedia._allow_iso_host(config)
 
-    assert os.environ[name].split(",") == ["operator.example.com", context.iso_host]
+    assert os.environ[name].split(",") == ["operator.example.com", config.iso_host]
 
 
-def test_live_context_reads_the_complete_example_and_ignores_exports(
+def test_live_config_is_frozen() -> None:
+    config = runner.LiveTestConfig()
+
+    with pytest.raises(FrozenInstanceError):
+        config.system_name = "changed"
+
+
+def test_live_config_reads_the_complete_example_and_ignores_exports(
     monkeypatch, tmp_path
 ) -> None:
     """The checked-in example is a complete, authoritative live-test mapping."""
@@ -945,12 +953,12 @@ def test_live_context_reads_the_complete_example_and_ignores_exports(
     config_path.write_text(example.read_text())
     monkeypatch.setenv("LIVE_TEST_SYSTEM_NAME", "ambient-target")
 
-    context = runner.LiveTestContext.from_env_file(config_path)
+    config = runner.LiveTestConfig.from_env_file(config_path)
 
-    assert context.system_name == "example-lt-609-system"
-    assert context.sriov_logical_port_id == 917003
-    assert context.iso_url == "http://iso.example.test:18090/example-lt-609.iso"
-    assert context.protected_lpar_names == (
+    assert config.system_name == "example-lt-609-system"
+    assert config.sriov_logical_port_id == 917003
+    assert config.iso_url == "http://iso.example.test:18090/example-lt-609.iso"
+    assert config.protected_lpar_names == (
         "example-lt-609-protected-a",
         "example-lt-609-protected-b",
     )
@@ -1169,51 +1177,147 @@ def test_result_helpers_filter_malformed_entries_and_resource_shapes():
     }
 
 
-def test_restore_context_restores_identifiers_and_baseline(tmp_path):
-    results_path = tmp_path / "previous.json"
-    results_path.write_text(
-        json.dumps(
-            {
-                "context": {
-                    "system_uuid": "system-1",
-                    "vios_uuid": "vios-1",
-                    "lp3_baseline": {"description": "original"},
-                }
-            }
-        )
+def _live_hmc_config() -> HMCConfig:
+    return HMCConfig.from_mapping(
+        {"host": "hmc.test", "port": 12443, "user": "operator", "verify_ssl": False}
     )
-    state = runner.RunState()
 
-    runner._restore_ctx_from_results(state, str(results_path))
 
-    assert state.context.system_uuid == "system-1"
-    assert state.context.vios_uuid == "vios-1"
-    assert state.context.lp3_baseline == {"description": "original"}
+def _result_document(
+    config: runner.LiveTestConfig,
+    hmc_config: HMCConfig,
+    artifacts: runner.LiveTestArtifacts | None = None,
+) -> dict:
+    return {
+        "config": asdict(config),
+        "hmc": runner._hmc_identity(hmc_config),
+        "artifacts": asdict(artifacts or runner.LiveTestArtifacts()),
+        "results": [{"status": "PASS"}],
+    }
+
+
+def test_restore_artifacts_round_trips_config_and_preserves_result_rows(tmp_path):
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    artifacts = runner.LiveTestArtifacts(
+        system_uuid="system-1",
+        vios_uuid="vios-1",
+        lp3_baseline={"description": "original"},
+    )
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(_result_document(config, hmc_config, artifacts)))
+    state = runner.RunState(config=config)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts.system_uuid == "system-1"
+    assert state.artifacts.vios_uuid == "vios-1"
+    assert state.artifacts.lp3_baseline == {"description": "original"}
+    assert json.loads(results_path.read_text())["results"] == [{"status": "PASS"}]
 
 
 @pytest.mark.parametrize("document", ["not JSON", "[]", '{"context": []}'])
-def test_restore_context_reports_expected_results_file_failures(
+def test_restore_artifacts_reports_expected_results_file_failures(
     tmp_path, capsys, document
 ):
     results_path = tmp_path / "previous.json"
     results_path.write_text(document)
 
-    runner._restore_ctx_from_results(runner.RunState(), str(results_path))
+    runner._restore_artifacts_from_results(
+        runner.RunState(), _live_hmc_config(), str(results_path)
+    )
 
-    assert "Could not restore context" in capsys.readouterr().out
+    assert "Could not restore artifacts" in capsys.readouterr().out
 
 
-def test_restore_context_propagates_unexpected_restoration_defects(
+def test_restore_artifacts_rejects_wrong_types_without_partial_mutation(
+    tmp_path, capsys
+):
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    document["artifacts"]["system_uuid"] = "would-be-installed"
+    document["artifacts"]["vios_partition_id"] = True
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    original = runner.LiveTestArtifacts(system_uuid="original")
+    state = runner.RunState(config=config, artifacts=original)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts is original
+    assert state.artifacts.system_uuid == "original"
+    assert "must be an integer or null" in capsys.readouterr().out
+
+
+def test_restore_artifacts_rejects_config_mismatch_without_mutation(tmp_path, capsys):
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    document["config"]["system_name"] = "other-system"
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    original = runner.LiveTestArtifacts(system_uuid="original")
+    state = runner.RunState(config=config, artifacts=original)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts is original
+    assert "configuration does not match this run" in capsys.readouterr().out
+
+
+def test_restore_artifacts_rejects_unknown_fields_without_mutation(tmp_path, capsys):
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    document["artifacts"]["unknown"] = "value"
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    original = runner.LiveTestArtifacts(system_uuid="original")
+    state = runner.RunState(config=config, artifacts=original)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts is original
+    assert "fields do not match" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("field", ["host", "port", "user", "verify_ssl"])
+def test_restore_artifacts_rejects_each_hmc_identity_mismatch(tmp_path, capsys, field):
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    document["hmc"][field] = {
+        "host": "other.test",
+        "port": 443,
+        "user": "other",
+        "verify_ssl": True,
+    }[field]
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+
+    state = runner.RunState(config=config)
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts == runner.LiveTestArtifacts()
+    assert "does not match this run" in capsys.readouterr().out
+
+
+def test_restore_artifacts_propagates_unexpected_restoration_defects(
     tmp_path, monkeypatch
 ):
     results_path = tmp_path / "previous.json"
-    results_path.write_text('{"context": {}}')
+    results_path.write_text(
+        json.dumps(_result_document(runner.LiveTestConfig(), _live_hmc_config()))
+    )
     monkeypatch.setattr(
         runner, "asdict", lambda _context: (_ for _ in ()).throw(RuntimeError("defect"))
     )
 
     with pytest.raises(RuntimeError, match="defect"):
-        runner._restore_ctx_from_results(runner.RunState(), str(results_path))
+        runner._restore_artifacts_from_results(
+            runner.RunState(), _live_hmc_config(), str(results_path)
+        )
 
 
 @pytest.mark.parametrize(
@@ -1271,11 +1375,11 @@ def test_live_runner_parses_selection_and_result_defaults():
     )
 
 
-def test_live_context_has_no_mapping_facade():
-    context = runner.LiveTestContext()
+def test_live_config_has_no_mapping_facade():
+    config = runner.LiveTestConfig()
 
-    assert not hasattr(context, "__getitem__")
-    assert not hasattr(context, "get")
+    assert not hasattr(config, "__getitem__")
+    assert not hasattr(config, "get")
 
 
 def test_numeric_dispatch_uses_intent_revealing_workflow_names():
@@ -1474,14 +1578,14 @@ def test_every_live_workflow_dispatch_has_exactly_client_and_tool_arguments():
     assert invalid == []
 
 
-def _configure_vmedia_context(state, values):
+def _configure_vmedia_artifacts(state, values):
     for name, value in values.items():
-        setattr(state.context, name, value)
+        setattr(state.artifacts, name, value)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("workflow", "context", "expected_tools"),
+    ("workflow", "artifacts", "expected_tools"),
     [
         (
             runner.vmedia_bootstrap_and_create_repo,
@@ -1592,7 +1696,7 @@ def _configure_vmedia_context(state, values):
     ],
 )
 async def test_vmedia_workflows_execute_their_behavioral_contracts(
-    monkeypatch, workflow, context, expected_tools
+    monkeypatch, workflow, artifacts, expected_tools
 ):
     calls = []
     counts = {}
@@ -1630,7 +1734,7 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
     monkeypatch.setattr(vmedia.Path, "is_file", lambda _path: True)
     state = runner.RunState()
     monkeypatch.setattr(state.iso_http_server, "start", lambda _context: None)
-    _configure_vmedia_context(state, context)
+    _configure_vmedia_artifacts(state, artifacts)
 
     await workflow(None, state)
 
@@ -1673,7 +1777,7 @@ async def test_vmedia_boot_failure_still_restores_boot_order_and_unmounts(monkey
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
     monkeypatch.setattr(state.iso_http_server, "start", lambda _context: None)
-    _configure_vmedia_context(
+    _configure_vmedia_artifacts(
         state,
         {
             "vmedia_repo_created": True,
@@ -1688,8 +1792,8 @@ async def test_vmedia_boot_failure_still_restores_boot_order_and_unmounts(monkey
     tools = [tool for tool, _ in calls]
     assert "hmc_unmount_optical_media" in tools
     assert tools.count("hmc_set_lpar_boot_order") == 2
-    assert state.context.vmedia_mapping_uuid is None
-    assert state.context.vmedia_orig_boot_order == []
+    assert state.artifacts.vmedia_mapping_uuid is None
+    assert state.artifacts.vmedia_orig_boot_order == []
 
 
 @pytest.mark.asyncio
@@ -1708,7 +1812,7 @@ async def test_vmedia_teardown_continues_after_orphan_unmount_failure(monkeypatc
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    _configure_vmedia_context(
+    _configure_vmedia_artifacts(
         state,
         {"vmedia_repo_created": True, "vios_uuid": "vios", "vg_uuid": "vg"},
     )
@@ -1733,8 +1837,8 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
         state.iso_http_server.close = lambda: closed_servers.append(
             state.iso_http_server
         )
-        initial_system_uuids.append(state.context.system_uuid)
-        state.context.system_uuid = "first-run-only"
+        initial_system_uuids.append(state.artifacts.system_uuid)
+        state.artifacts.system_uuid = "first-run-only"
         state.record(0, "fake", "PASS", {})
 
     monkeypatch.setattr(runner, "SUBTASKS", {0: fake_subtask})
@@ -1742,16 +1846,12 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
     second_path = tmp_path / "second.json"
 
     assert (
-        await runner.main(
-            results_path=str(first_path), context=runner.LiveTestContext()
-        )
+        await runner.main(results_path=str(first_path), config=runner.LiveTestConfig())
         == 0
     )
-    seen_states[0].context.system_uuid = "mutated-after-run"
+    seen_states[0].artifacts.system_uuid = "mutated-after-run"
     assert (
-        await runner.main(
-            results_path=str(second_path), context=runner.LiveTestContext()
-        )
+        await runner.main(results_path=str(second_path), config=runner.LiveTestConfig())
         == 0
     )
 
@@ -1763,7 +1863,7 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
         seen_states[1].iso_http_server,
     ]
     assert (
-        json.loads(second_path.read_text())["context"]["system_uuid"]
+        json.loads(second_path.read_text())["artifacts"]["system_uuid"]
         == "first-run-only"
     )
 
@@ -1790,7 +1890,7 @@ async def test_main_redacts_direct_failure_before_persisting(
 
     assert (
         await runner.main(
-            results_path=str(results_path), context=runner.LiveTestContext()
+            results_path=str(results_path), config=runner.LiveTestConfig()
         )
         == 1
     )
@@ -1815,7 +1915,7 @@ async def test_main_rejects_unknown_numeric_workflow(monkeypatch, tmp_path):
     results_path = tmp_path / "unknown.json"
 
     assert (
-        await runner.main(999, str(results_path), context=runner.LiveTestContext()) == 1
+        await runner.main(999, str(results_path), config=runner.LiveTestConfig()) == 1
     )
 
     saved = json.loads(results_path.read_text())
@@ -1888,12 +1988,12 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
     assert calls[7][1] == {"desired_memory_mib": 3072}
     assert calls[9][1] == {"resource_type": "LogicalPartition"}
     assert calls[10][1] == {"limit": 10}
-    assert state.context.console_uuid == "console-uuid"
-    assert state.context.system_uuid == "system-uuid"
-    assert state.context.lp3_uuid == "lpar-uuid"
-    assert state.context.vios_uuid == "vios-uuid"
-    assert state.context.vios_partition_id == 7
-    assert state.context.job_uuid_sample == "job-uuid"
+    assert state.artifacts.console_uuid == "console-uuid"
+    assert state.artifacts.system_uuid == "system-uuid"
+    assert state.artifacts.lp3_uuid == "lpar-uuid"
+    assert state.artifacts.vios_uuid == "vios-uuid"
+    assert state.artifacts.vios_partition_id == 7
+    assert state.artifacts.job_uuid_sample == "job-uuid"
 
 
 @pytest.mark.asyncio
@@ -1923,10 +2023,10 @@ async def test_metrics_template_inventory_records_expected_limitation_and_contin
     ]
     assert calls[0][1] == {
         "category": "ManagedSystem",
-        "resource_name_or_uuid": state.context.system_name,
+        "resource_name_or_uuid": state.config.system_name,
     }
     assert calls[1][1]["start_ts"] == "2026-01-01T00:00:00.000Z"
-    assert state.context.lp3_baseline["pcm_prefs"] == {"long_term_monitor": True}
+    assert state.artifacts.lp3_baseline["pcm_prefs"] == {"long_term_monitor": True}
     assert state.results[1]["status"] == "SKIP"
 
 
@@ -1992,10 +2092,10 @@ async def test_user_administration_cleans_up_only_a_created_user(
         expected.extend(["hmc_modify_user", "hmc_delete_user"])
     expected.append("hmc_list_users")
     assert [tool for tool, _ in calls] == expected
-    assert calls[0][1]["name"] == state.context.test_user
+    assert calls[0][1]["name"] == state.config.test_user
     if create_status == "PASS":
         assert calls[2][1]["description"].endswith("updated")
-        assert calls[3][1] == {"name": state.context.test_user}
+        assert calls[3][1] == {"name": state.config.test_user}
     else:
         skipped = [
             result["tool"] for result in state.results if result["status"] == "SKIP"
@@ -2017,7 +2117,7 @@ async def test_metrics_jobs_restores_disabled_preference_and_forwards_job_option
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.job_uuid_sample = "job-uuid"
+    state.artifacts.job_uuid_sample = "job-uuid"
 
     await metrics.inspect_metrics_jobs(None, state)
 
@@ -2061,8 +2161,8 @@ async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
     create_call = next(
         item for item in calls if item[0] == "hmc_create_virtual_network"
     )
-    assert state.context.test_vswitch_id == 7
-    assert state.context.test_vlan_id == 3101
+    assert state.artifacts.test_vswitch_id == 7
+    assert state.artifacts.test_vlan_id == 3101
     assert create_call[1]["vlan_id"] == 3101
     assert create_call[1]["virtual_switch_id"] == 7
 
@@ -2083,7 +2183,7 @@ async def test_malformed_vlan_inventory_blocks_network_mutation(monkeypatch):
     await runner.inventory_network(None, state)
     await runner.mutate_virtual_networking(None, state)
 
-    assert state.context.test_vlan_id is None
+    assert state.artifacts.test_vlan_id is None
     assert not any(tool == "hmc_create_virtual_network" for tool, _ in calls)
     result = next(
         item for item in state.results if item["tool"] == "hmc_list_virtual_networks"
@@ -2124,7 +2224,7 @@ async def test_mutating_workflows_stop_when_inventory_context_is_missing(
 
     monkeypatch.setattr(runner.RunState, "call", unexpected_call)
     state = runner.RunState()
-    configure(state.context)
+    configure(state.artifacts)
 
     await workflow(None, state)
 
@@ -2159,7 +2259,7 @@ async def test_malformed_inventory_capacity_blocks_storage_mutation(monkeypatch)
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.vios_uuid = "vios-uuid"
+    state.artifacts.vios_uuid = "vios-uuid"
 
     await runner.inventory_storage(None, state)
     await runner.exercise_storage_provisioning(None, state)
@@ -2170,7 +2270,7 @@ async def test_malformed_inventory_capacity_blocks_storage_mutation(monkeypatch)
         if result["tool"] == "parse virtual disk capacity"
     )
     assert failure["status"] == "FAIL"
-    assert state.context.vdisk_size_mib is None
+    assert state.artifacts.vdisk_size_mib is None
     assert not any(tool == "hmc_create_virtual_disk" for tool, _ in calls)
 
 
@@ -2190,11 +2290,11 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.vios_uuid = "vios-uuid"
-    state.context.vg_uuid = "vg-uuid"
-    state.context.vios_partition_id = 7
-    state.context.vdisk_size_mib = 2048
-    state.context.lp3_baseline = {
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.vios_partition_id = 7
+    state.artifacts.vdisk_size_mib = 2048
+    state.artifacts.lp3_baseline = {
         "pvid": 3101,
         "vios_slot": 11,
         "lpars": {
@@ -2225,13 +2325,13 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     ]
     provision = calls[8][1]
     assert provision == {
-        "system_name_or_uuid": state.context.system_name,
-        "name": state.context.lp3_name,
+        "system_name_or_uuid": state.config.system_name,
+        "name": state.config.lp3_name,
         "port_vlan_id": 3101,
         "vios_uuid": "vios-uuid",
         "vios_partition_id": 7,
         "vios_slot": 11,
-        "storage_name": state.context.vdisk_name,
+        "storage_name": state.config.vdisk_name,
         "storage_kind": "VirtualDisk",
         "vg_uuid": "vg-uuid",
         "min_memory": 1024,
@@ -2243,9 +2343,9 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
         "power_on": True,
         "dry_run": False,
     }
-    assert calls[9][1] == {"lpar_name_or_uuid": state.context.lp3_name}
-    assert calls[10][1] == {"lpar_name_or_uuid": state.context.lp3_name}
-    assert state.context.lp3_uuid == "recreated-lp3"
+    assert calls[9][1] == {"lpar_name_or_uuid": state.config.lp3_name}
+    assert calls[10][1] == {"lpar_name_or_uuid": state.config.lp3_name}
+    assert state.artifacts.lp3_uuid == "recreated-lp3"
 
 
 @pytest.mark.asyncio
@@ -2262,7 +2362,7 @@ async def test_lpar_lifecycle_sequences_create_power_and_cleanup(monkeypatch):
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.system_uuid = "system-uuid"
+    state.artifacts.system_uuid = "system-uuid"
 
     await runner.exercise_lpar_lifecycle(None, state)
 
@@ -2276,8 +2376,8 @@ async def test_lpar_lifecycle_sequences_create_power_and_cleanup(monkeypatch):
         "hmc_delete_lpar",
         "hmc_list_lpars",
     ]
-    assert state.context.scratch_uuid is None
-    assert state.context.job_uuid_sample == "job-uuid"
+    assert state.artifacts.scratch_uuid is None
+    assert state.artifacts.job_uuid_sample == "job-uuid"
 
 
 @pytest.mark.parametrize(
@@ -2313,7 +2413,7 @@ async def test_lpar_property_workflow_skips_an_unrestorable_description(monkeypa
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.lp3_baseline["description"] = "web tier, prod"
+    state.artifacts.lp3_baseline["description"] = "web tier, prod"
 
     await runner.mutate_lpar_properties(None, state)
 
@@ -2341,7 +2441,7 @@ async def test_lpar_property_workflow_restores_description(monkeypatch):
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.lp3_baseline["description"] = "original description"
+    state.artifacts.lp3_baseline["description"] = "original description"
 
     await runner.mutate_lpar_properties(None, state)
 
@@ -2372,7 +2472,7 @@ async def test_final_restore_replays_baseline_and_audits(monkeypatch):
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.lp3_baseline["description"] = "baseline"
+    state.artifacts.lp3_baseline["description"] = "baseline"
 
     await runner.restore_lpar_baseline(None, state)
 

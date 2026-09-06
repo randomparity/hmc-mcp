@@ -21,13 +21,13 @@ _REST000E_SKIP = ["REST000E", "400", "not available on this HMC"]
 
 
 async def administer_test_user(client: Client, state: RunState) -> None:
-    context = state.context
+    config = state.config
     print("\n=== ST11: User Administration ===")
 
     st, data = await state.call(
         client,
         "hmc_create_user",
-        name=context.test_user,
+        name=config.test_user,
         taskrole="viewer",
         password=_TEST_USER_PASSWORD,
         description="MCP live test user R2",
@@ -56,7 +56,7 @@ async def administer_test_user(client: Client, state: RunState) -> None:
         st, data = await state.call(
             client,
             "hmc_modify_user",
-            name=context.test_user,
+            name=config.test_user,
             description="MCP live test user R2 — updated",
         )
         state.record(11, "hmc_modify_user", st, data)
@@ -64,7 +64,7 @@ async def administer_test_user(client: Client, state: RunState) -> None:
         state.skip(11, "hmc_modify_user", "user not created (REST000E expected)")
 
     if user_created:
-        st, data = await state.call(client, "hmc_delete_user", name=context.test_user)
+        st, data = await state.call(client, "hmc_delete_user", name=config.test_user)
         state.record(11, "hmc_delete_user", st, data)
     else:
         state.skip(11, "hmc_delete_user", "user not created (REST000E expected)")
@@ -78,6 +78,7 @@ async def administer_test_user(client: Client, state: RunState) -> None:
         expected_fail_substrings=_REST000E_SKIP,
         skip_reason="HmcUser REST not supported (expected)",
     )
+
 
 # ---------------------------------------------------------------------------
 # ST6 — User Inventory

@@ -17,14 +17,15 @@ if TYPE_CHECKING:
 
 
 async def inspect_metrics_jobs(client: Client, state: RunState) -> None:
-    context = state.context
+    config = state.config
+    artifacts = state.artifacts
     print("\n=== ST12: PCM Metrics & Job Monitoring ===")
 
     st, data = await state.call(
         client,
         "hmc_get_pcm_preferences",
         category="ManagedSystem",
-        resource_name_or_uuid=context.system_name,
+        resource_name_or_uuid=config.system_name,
     )
     state.record_expected_or_real(
         12,
@@ -47,7 +48,7 @@ async def inspect_metrics_jobs(client: Client, state: RunState) -> None:
             client,
             "hmc_set_pcm_preferences",
             category="ManagedSystem",
-            resource_name_or_uuid=context.system_name,
+            resource_name_or_uuid=config.system_name,
             long_term_monitor=new_ltm,
         )
         state.record(12, "hmc_set_pcm_preferences (toggle)", st, data)
@@ -56,7 +57,7 @@ async def inspect_metrics_jobs(client: Client, state: RunState) -> None:
             client,
             "hmc_get_pcm_preferences",
             category="ManagedSystem",
-            resource_name_or_uuid=context.system_name,
+            resource_name_or_uuid=config.system_name,
         )
         state.record(12, "hmc_get_pcm_preferences (verify)", st, data)
 
@@ -64,7 +65,7 @@ async def inspect_metrics_jobs(client: Client, state: RunState) -> None:
             client,
             "hmc_set_pcm_preferences",
             category="ManagedSystem",
-            resource_name_or_uuid=context.system_name,
+            resource_name_or_uuid=config.system_name,
             long_term_monitor=bool(current_ltm),
         )
         state.record(12, "hmc_set_pcm_preferences (restore)", st, data)
@@ -75,7 +76,7 @@ async def inspect_metrics_jobs(client: Client, state: RunState) -> None:
             "PCM not licensed/enabled on this HMC (expected)",
         )
 
-    job_uuid = context.job_uuid_sample
+    job_uuid = artifacts.job_uuid_sample
     if job_uuid:
         st, data = await state.call(client, "hmc_get_job", job_uuid=job_uuid)
         state.record_expected_or_real(
@@ -109,11 +110,12 @@ async def inspect_metrics_jobs(client: Client, state: RunState) -> None:
     st, data = await state.call(client, "hmc_list_recent_jobs", limit=20)
     state.record(12, "hmc_list_recent_jobs (post-tests)", st, data)
     # Opportunistically capture a job UUID if we still don't have one
-    if not context.job_uuid_sample and st == "PASS":
+    if not artifacts.job_uuid_sample and st == "PASS":
         for e in entries(data):
             if isinstance(e, dict) and e.get("type") != "error":
-                context.job_uuid_sample = e.get("UUID") or e.get("uuid")
+                artifacts.job_uuid_sample = e.get("UUID") or e.get("uuid")
                 break
+
 
 # ---------------------------------------------------------------------------
 # ST5 — Metrics & Templates
@@ -121,14 +123,15 @@ async def inspect_metrics_jobs(client: Client, state: RunState) -> None:
 
 
 async def inspect_metrics_templates(client: Client, state: RunState) -> None:
-    context = state.context
+    config = state.config
+    artifacts = state.artifacts
     print("\n=== ST5: Metrics & Templates ===")
 
     st, data = await state.call(
         client,
         "hmc_get_pcm_preferences",
         category="ManagedSystem",
-        resource_name_or_uuid=context.system_name,
+        resource_name_or_uuid=config.system_name,
     )
     state.record_expected_or_real(
         5,
@@ -139,13 +142,13 @@ async def inspect_metrics_templates(client: Client, state: RunState) -> None:
         skip_reason="PCM not licensed on this HMC (expected)",
     )
     if st == "PASS":
-        context.lp3_baseline["pcm_prefs"] = data
+        artifacts.lp3_baseline["pcm_prefs"] = data
 
     st, data = await state.call(
         client,
         "hmc_processed_metric_links",
         category="ManagedSystem",
-        resource_name_or_uuid=context.system_name,
+        resource_name_or_uuid=config.system_name,
         start_ts="2026-01-01T00:00:00.000Z",
     )
     state.record_expected_or_real(
@@ -161,7 +164,7 @@ async def inspect_metrics_templates(client: Client, state: RunState) -> None:
         client,
         "hmc_aggregated_metric_links",
         category="ManagedSystem",
-        resource_name_or_uuid=context.system_name,
+        resource_name_or_uuid=config.system_name,
         start_ts="2026-01-01T00:00:00.000Z",
     )
     state.record_expected_or_real(

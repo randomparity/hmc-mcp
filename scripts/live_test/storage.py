@@ -27,38 +27,39 @@ def _virtual_disks(resource: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _capture_disk_capacity(state: RunState, disk: dict[str, Any]) -> bool:
-    context = state.context
+    config = state.config
+    artifacts = state.artifacts
     resource = get_resource(disk)
-    if resource.get("DiskName") != context.vdisk_name:
+    if resource.get("DiskName") != config.vdisk_name:
         return False
     raw = resource.get("DiskCapacity") or resource.get("disk_capacity")
     try:
         gib = int(float(raw))
         if gib <= 0:
             raise ValueError("capacity must be positive")
-        context.vdisk_size_mib = gib * 1024
+        artifacts.vdisk_size_mib = gib * 1024
     except (TypeError, ValueError):
-        context.vdisk_size_mib = None
+        artifacts.vdisk_size_mib = None
         state.record(
             3,
             "parse virtual disk capacity",
             "FAIL",
-            f"Disk {context.vdisk_name!r} has invalid DiskCapacity {raw!r}; "
+            f"Disk {config.vdisk_name!r} has invalid DiskCapacity {raw!r}; "
             "storage mutation will be skipped",
         )
     return True
 
 
 def _capture_volume_group(state: RunState, data: Any) -> None:
-    context = state.context
+    artifacts = state.artifacts
     for volume_group in entries(data):
         resource = get_resource(volume_group)
         found_target = any(
             _capture_disk_capacity(state, disk) for disk in _virtual_disks(resource)
         )
-        if found_target or not context.vg_uuid:
-            context.vg_uuid = volume_group.get("UUID") or volume_group.get("uuid")
-            context.vdisk_vg_name = (
+        if found_target or not artifacts.vg_uuid:
+            artifacts.vg_uuid = volume_group.get("UUID") or volume_group.get("uuid")
+            artifacts.vdisk_vg_name = (
                 resource.get("GroupName") or resource.get("group_name") or ""
             )
         if found_target:
@@ -66,8 +67,8 @@ def _capture_volume_group(state: RunState, data: Any) -> None:
 
 
 async def _discover_volume_group(client: Client, state: RunState) -> None:
-    context = state.context
-    if not context.vios_uuid:
+    artifacts = state.artifacts
+    if not artifacts.vios_uuid:
         state.skip(
             3,
             "hmc_list_volume_groups",
@@ -75,16 +76,16 @@ async def _discover_volume_group(client: Client, state: RunState) -> None:
         )
         return
     st, data = await state.call(
-        client, "hmc_list_volume_groups", vios_name_or_uuid=context.vios_uuid
+        client, "hmc_list_volume_groups", vios_name_or_uuid=artifacts.vios_uuid
     )
     state.record(3, "hmc_list_volume_groups", st, data)
     if st == "PASS":
         _capture_volume_group(state, data)
-    print(f"  VG UUID: {context.vg_uuid}  vdisk_size_mib: {context.vdisk_size_mib}")
+    print(f"  VG UUID: {artifacts.vg_uuid}  vdisk_size_mib: {artifacts.vdisk_size_mib}")
 
 
 async def _record_storage_collections(client: Client, state: RunState) -> None:
-    context = state.context
+    config = state.config
     st, data = await state.call(client, "hmc_list_clusters")
     state.record(3, "hmc_list_clusters", st, data)
 
@@ -92,12 +93,12 @@ async def _record_storage_collections(client: Client, state: RunState) -> None:
     state.record(3, "hmc_list_shared_storage_pools", st, data)
 
     st, data = await state.call(
-        client, "hmc_list_io_slots", system_name_or_uuid=context.system_name
+        client, "hmc_list_io_slots", system_name_or_uuid=config.system_name
     )
     state.record(3, "hmc_list_io_slots", st, data)
 
     st, data = await state.call(
-        client, "hmc_list_memory_pools", system_name_or_uuid=context.system_name
+        client, "hmc_list_memory_pools", system_name_or_uuid=config.system_name
     )
     state.record(3, "hmc_list_memory_pools", st, data)
 
