@@ -362,6 +362,28 @@ def test_sparse_maturity_allows_unknown_operations(tmp_path: Path) -> None:
     assert report.maturity_operation_count == 0
 
 
+def test_maturity_rejects_extra_root_keys(tmp_path: Path) -> None:
+    _minimal_inventory(tmp_path)
+    maturity = inventory.load_json(tmp_path / "maturity.json")
+    maturity["unexpected"] = None
+    _write_json(tmp_path / "maturity.json", maturity)
+
+    report = inventory.validate_inventory(tmp_path, (), repo_root=tmp_path)
+
+    assert any("maturity.json: expected exactly" in error for error in report.errors)
+
+
+def test_maturity_rejects_boolean_format_version(tmp_path: Path) -> None:
+    _minimal_inventory(tmp_path)
+    maturity = inventory.load_json(tmp_path / "maturity.json")
+    maturity["format_version"] = True
+    _write_json(tmp_path / "maturity.json", maturity)
+
+    report = inventory.validate_inventory(tmp_path, (), repo_root=tmp_path)
+
+    assert "maturity.json: format_version must be integer 1" in report.errors
+
+
 def test_maturity_rejects_unknown_and_duplicate_operation_ids(tmp_path: Path) -> None:
     _minimal_inventory(tmp_path)
     _write_maturity(
@@ -468,6 +490,10 @@ def test_live_pass_requires_scoped_postconditions_and_cleanup(
         ("prerequisites", []),
         ("obligation", None),
         ("obligation", {"catalog": "system.list#missing"}),
+        (
+            "obligation",
+            {"catalog": "system.list#evidence-alpha", "issue": True},
+        ),
     ],
 )
 def test_live_not_run_requires_prerequisites_and_obligation(

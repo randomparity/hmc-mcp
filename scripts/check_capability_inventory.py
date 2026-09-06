@@ -783,7 +783,7 @@ def _validate_not_run(
     )
     valid_issue = (
         "issue" not in obligation
-        or (isinstance(obligation["issue"], int) and obligation["issue"] > 0)
+        or (type(obligation["issue"]) is int and obligation["issue"] > 0)
         if isinstance(obligation, dict)
         else False
     )
@@ -937,7 +937,16 @@ def validate_inventory(
     except InventoryError as error:
         return Report((str(error),), (), (), (), 0, 0, 0, 0, 0)
     _validate_versions(documents, errors)
-    if documents["maturity.json"].get("admission_policy") != "existing-runtime-guards":
+    maturity_document = documents["maturity.json"]
+    _exact_keys(
+        maturity_document,
+        {"format_version", "admission_policy", "operations"},
+        "maturity.json",
+        errors,
+    )
+    if type(maturity_document.get("format_version")) is not int:
+        errors.append("maturity.json: format_version must be integer 1")
+    if maturity_document.get("admission_policy") != "existing-runtime-guards":
         errors.append("maturity.json: admission_policy must be existing-runtime-guards")
     corpora_records = _objects(
         _array(documents["corpora.json"], "corpora", errors), "corpora", errors
