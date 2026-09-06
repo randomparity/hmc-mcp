@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from conftest import mock_uuid_resolution
 
-from hmc_mcp.server_tools.system_resources import (
+from hmc_mcp.server_tools.systems.resources import (
     hmc_list_memory_pools,
     hmc_remove_memory_pool,
 )

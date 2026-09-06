@@ -17,7 +17,6 @@ from __future__ import annotations
 from .cli_commands import (
     config,
     jobs,
-    memory_pools,
     metrics,
     raw,
     snapshot,
@@ -85,6 +84,7 @@ from .cli_commands.runtime import (
 from .cli_commands.storage import cluster
 from .cli_commands.storage import resources as storage
 from .cli_commands.systems import core as systems
+from .cli_commands.systems import memory_pools
 from .cli_commands.vios import core as vios
 from .cli_commands.vios import labels as vios_labels
 from .cli_commands.virtualization import adapters, network, pcie, vnic

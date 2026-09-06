@@ -5,9 +5,9 @@ from __future__ import annotations
 import typer
 from rich.table import Table
 
-from ..ssh.memory import list_memory_pools, remove_memory_pool
-from .output import console, err_console, print_json
-from .runtime import run_cli_coroutine, ssh_config
+from ...ssh.memory import list_memory_pools, remove_memory_pool
+from ..output import console, err_console, print_json
+from ..runtime import run_cli_coroutine, ssh_config
 
 
 def memory_pools_list(
@@ -38,19 +38,16 @@ def memory_pools_remove(
     pool_name: str = typer.Argument(..., help="Memory pool name"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Remove a shared memory pool (HMC CLI via SSH).
-
-    Performs an LPAR-assignment safety check before issuing the remove
-    command.  If LPARs are still assigned to the pool the command is
-    blocked and the LPAR names are reported.
-    """
+    """Remove a shared memory pool after confirming operator intent."""
     if not yes and not typer.confirm(
         f"Remove memory pool '{pool_name}' on system '{system_name}'?"
     ):
         raise typer.Abort()
 
     config = ssh_config()
-    result = run_cli_coroutine(lambda: remove_memory_pool(config, system_name, pool_name))
+    result = run_cli_coroutine(
+        lambda: remove_memory_pool(config, system_name, pool_name)
+    )
 
     console.print(
         f"[green]Memory pool '{pool_name}' removed from '{system_name}'[/green]"
@@ -60,6 +57,6 @@ def memory_pools_remove(
 
 
 def register_commands(group: typer.Typer) -> None:
-    """Register this module’s commands on *group*."""
+    """Register this module's commands on *group*."""
     group.command("list")(memory_pools_list)
     group.command("remove")(memory_pools_remove)

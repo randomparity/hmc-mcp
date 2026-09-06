@@ -33,7 +33,7 @@ from hmc_mcp.server_tools.lpar.configuration import (
 from hmc_mcp.server_tools.lpar.profiles import (
     hmc_backup_lpar_profiles,
 )
-from hmc_mcp.server_tools.system_resources import (
+from hmc_mcp.server_tools.systems.resources import (
     hmc_list_memory_pools,
     hmc_remove_memory_pool,
 )

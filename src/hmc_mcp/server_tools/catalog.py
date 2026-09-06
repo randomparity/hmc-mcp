@@ -8,7 +8,6 @@ from hmc_mcp.server_tools import (
     console,
     jobs,
     snapshot,
-    system_resources,
     updates,
 )
 from hmc_mcp.server_tools.command import HMC_RUN_COMMAND_SECURITY
@@ -27,6 +26,7 @@ from hmc_mcp.server_tools.permissions import EFFECTIVE_PERMISSIONS_SECURITY
 from hmc_mcp.server_tools.storage import resources as storage
 from hmc_mcp.server_tools.systems import core as systems
 from hmc_mcp.server_tools.systems import health
+from hmc_mcp.server_tools.systems import resources as system_resources
 from hmc_mcp.server_tools.templates import core as templates
 from hmc_mcp.server_tools.users import core as users
 from hmc_mcp.server_tools.vios import core as vios

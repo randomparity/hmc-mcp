@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 import ast
+import importlib
 from pathlib import Path
+
+import pytest
 
 import hmc_mcp.ssh.transport as ssh
 from hmc_mcp import server
 from hmc_mcp.cli_commands.virtualization import network as cli_network
 from hmc_mcp.cli_commands.virtualization import pcie as cli_pcie
 from hmc_mcp.cli_commands.virtualization import vnic as cli_vnic
-from hmc_mcp.server_tools import command, jobs, system_resources
+from hmc_mcp.server_tools import command, jobs
 from hmc_mcp.server_tools.inventory import capacity
 from hmc_mcp.server_tools.lpar import configuration, lifecycle
 from hmc_mcp.server_tools.storage import resources as storage
 from hmc_mcp.server_tools.systems import core as systems
 from hmc_mcp.server_tools.systems import health
+from hmc_mcp.server_tools.systems import resources as system_resources
 from hmc_mcp.server_tools.vios import core as vios
 from hmc_mcp.server_tools.virtualization import adapters, network, pcie, vnic
 
@@ -39,10 +43,13 @@ def test_domain_handlers_live_in_focused_modules() -> None:
             "hmc_mcp.server_tools.lpar.configuration"
         ),
         system_resources.hmc_get_proc_compat_modes: (
-            "hmc_mcp.server_tools.system_resources"
+            "hmc_mcp.server_tools.systems.resources"
         ),
         system_resources.hmc_list_memory_pools: (
-            "hmc_mcp.server_tools.system_resources"
+            "hmc_mcp.server_tools.systems.resources"
+        ),
+        system_resources.hmc_remove_memory_pool: (
+            "hmc_mcp.server_tools.systems.resources"
         ),
         pcie.hmc_list_dedicated_pcie_slots: "hmc_mcp.server_tools.virtualization.pcie",
         pcie.hmc_list_sriov_adapters: "hmc_mcp.server_tools.virtualization.pcie",
@@ -76,6 +83,15 @@ def test_ssh_transport_does_not_own_resource_commands() -> None:
     assert transport_api <= public_names
     assert "get_lpar_description" not in public_names
     assert "list_memory_pools" not in public_names
+
+
+def test_removed_catch_all_modules_are_not_importable() -> None:
+    for module_name in (
+        "hmc_mcp.server_tools.system_resources",
+        "hmc_mcp.cli_commands.memory_pools",
+    ):
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(module_name)
 
 
 def test_server_tools_do_not_construct_unmanaged_hmc_clients() -> None:
