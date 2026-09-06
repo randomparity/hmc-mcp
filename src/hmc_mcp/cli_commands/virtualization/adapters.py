@@ -6,6 +6,7 @@ import typer
 
 from ...client.client_contracts import ADAPTER_TYPES, AdapterType
 from ...operations.virtualization.adapters import (
+    AdapterResult,
     add_network_adapter,
     add_vfc_adapter,
     add_vscsi_adapter,
@@ -13,7 +14,7 @@ from ...operations.virtualization.adapters import (
     list_adapters,
 )
 from ..output import console, output, print_json
-from ..runtime import client, run_cli_coroutine
+from ..runtime import with_client
 
 _ADAPTER_TYPES = " | ".join(sorted(ADAPTER_TYPES))
 
@@ -27,11 +28,7 @@ def adapters_list(
 ) -> None:
     """List an LPAR's virtual adapters of a given type."""
 
-    async def _go():
-        async with client() as hmc:
-            return await list_adapters(hmc, None, lpar, adapter_type)
-
-    adapters = run_cli_coroutine(_go)
+    adapters = with_client(lambda hmc: list_adapters(hmc, None, lpar, adapter_type))
 
     output(adapters, as_json, None, f"No {adapter_type} adapters on {lpar}")
 
@@ -57,21 +54,12 @@ def adapters_add_network(
     if not yes and not typer.confirm(f"Add network adapter (VLAN {vlan}) to '{lpar}'?"):
         raise typer.Abort()
 
-    async def _go():
-        async with client() as hmc:
-            return await add_network_adapter(
-                hmc,
-                None,
-                lpar,
-                vlan,
-                slot_number=slot,
-                virtual_switch_id=virtual_switch_id,
-                tagged=tagged,
-                mac_address=mac,
-                ownership_override=ownership_override,
-            )
-
-    _adapter_mutation(_go, lpar, "network")
+    result = with_client(
+        lambda hmc: add_network_adapter(hmc, None, lpar, vlan, slot_number=slot,
+            virtual_switch_id=virtual_switch_id, tagged=tagged, mac_address=mac,
+            ownership_override=ownership_override)
+    )
+    _adapter_mutation(result, lpar, "network")
 
 
 def adapters_add_vscsi(
@@ -91,19 +79,10 @@ def adapters_add_vscsi(
     ):
         raise typer.Abort()
 
-    async def _go():
-        async with client() as hmc:
-            return await add_vscsi_adapter(
-                hmc,
-                None,
-                lpar,
-                vios_id,
-                vios_slot,
-                slot_number=slot,
-                ownership_override=ownership_override,
-            )
-
-    _adapter_mutation(_go, lpar, "vSCSI")
+    result = with_client(lambda hmc: add_vscsi_adapter(
+        hmc, None, lpar, vios_id, vios_slot, slot_number=slot,
+        ownership_override=ownership_override))
+    _adapter_mutation(result, lpar, "vSCSI")
 
 
 def adapters_add_vfc(
@@ -123,19 +102,10 @@ def adapters_add_vfc(
     ):
         raise typer.Abort()
 
-    async def _go():
-        async with client() as hmc:
-            return await add_vfc_adapter(
-                hmc,
-                None,
-                lpar,
-                vios_id,
-                vios_slot,
-                slot_number=slot,
-                ownership_override=ownership_override,
-            )
-
-    _adapter_mutation(_go, lpar, "vFC")
+    result = with_client(lambda hmc: add_vfc_adapter(
+        hmc, None, lpar, vios_id, vios_slot, slot_number=slot,
+        ownership_override=ownership_override))
+    _adapter_mutation(result, lpar, "vFC")
 
 
 def adapters_delete(
@@ -154,24 +124,14 @@ def adapters_delete(
     ):
         raise typer.Abort()
 
-    async def _go():
-        async with client() as hmc:
-            return await delete_adapter(
-                hmc,
-                None,
-                lpar,
-                adapter_type,
-                adapter_uuid,
-                ownership_override=ownership_override,
-            )
-
-    deleted_uuid = run_cli_coroutine(_go)
+    deleted_uuid = with_client(lambda hmc: delete_adapter(
+        hmc, None, lpar, adapter_type, adapter_uuid,
+        ownership_override=ownership_override))
 
     console.print(f"[green]Deleted {adapter_type} {deleted_uuid}[/green] from {lpar}")
 
 
-def _adapter_mutation(go_coro, lpar: str, kind: str) -> None:
-    result = run_cli_coroutine(go_coro)
+def _adapter_mutation(result: AdapterResult, lpar: str, kind: str) -> None:
     console.print(f"[green]Added {kind} adapter[/green] to {result.lpar_uuid}")
     print_json(result.resource)
 
