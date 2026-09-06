@@ -217,6 +217,37 @@ def remote_restart_lpar_job(
     retain_devices: bool = False,
 ) -> str:
     """Build a RemoteRestart request using its dedicated parameter vocabulary."""
+    _validate_remote_restart(
+        operation,
+        target_managed_system,
+        target_managed_system_uuid,
+        use_current_data,
+        retain_devices,
+    )
+    parameters = {
+        "Operation": operation,
+        "managedSystem": managed_system,
+        "logicalPartitionUuid": logical_partition_uuid,
+    }
+    if target_managed_system:
+        parameters["targetManagedSystem"] = target_managed_system
+    if target_managed_system_uuid:
+        parameters["targetManagedSystemUUID"] = target_managed_system_uuid
+    if use_current_data:
+        parameters["usecurrdata"] = "true"
+    if retain_devices:
+        parameters["retaindev"] = "true"
+    return build_job_request("RemoteRestart", "LogicalPartition", parameters)
+
+
+def _validate_remote_restart(
+    operation: RemoteRestartOperation,
+    target_managed_system: str | None,
+    target_managed_system_uuid: str | None,
+    use_current_data: bool,
+    retain_devices: bool,
+) -> None:
+    """Validate the operation-specific RemoteRestart parameter vocabulary."""
     if operation not in REMOTE_RESTART_OPERATIONS:
         allowed = ", ".join(sorted(REMOTE_RESTART_OPERATIONS))
         raise ValueError(f"RemoteRestart operation must be one of: {allowed}")
@@ -232,20 +263,6 @@ def remote_restart_lpar_job(
         raise ValueError("use_current_data is valid only for RemoteRestart 'restart'")
     if retain_devices and operation != "cleanup":
         raise ValueError("retain_devices is valid only for RemoteRestart 'cleanup'")
-    parameters = {
-        "Operation": operation,
-        "managedSystem": managed_system,
-        "logicalPartitionUuid": logical_partition_uuid,
-    }
-    if target_managed_system:
-        parameters["targetManagedSystem"] = target_managed_system
-    if target_managed_system_uuid:
-        parameters["targetManagedSystemUUID"] = target_managed_system_uuid
-    if use_current_data:
-        parameters["usecurrdata"] = "true"
-    if retain_devices:
-        parameters["retaindev"] = "true"
-    return build_job_request("RemoteRestart", "LogicalPartition", parameters)
 
 
 def deploy_partition_template_job(
