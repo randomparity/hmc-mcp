@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .._app import serialize_tool_result, ssh_with_client, with_client
+from ..client.core import HMCClient
 from ..operations.virtualization.pcie import (
     list_dedicated_slots,
     list_sriov_adapters,
@@ -35,7 +36,7 @@ def hmc_list_dedicated_pcie_slots(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def slots(hmc):
+    async def slots(hmc: HMCClient) -> Any:
         return serialize_tool_result(await list_dedicated_slots(hmc, system_name_or_uuid))
 
     return with_client(slots, profile=profile)
@@ -55,7 +56,7 @@ def hmc_list_sriov_adapters(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def adapters(hmc):
+    async def adapters(hmc: HMCClient) -> Any:
         return serialize_tool_result(await list_sriov_adapters(hmc, system_name_or_uuid, adapter_id))
 
     return with_client(adapters, profile=profile)
@@ -81,7 +82,7 @@ def hmc_list_sriov_physical_ports(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def ports(hmc):
+    async def ports(hmc: HMCClient) -> Any:
         return serialize_tool_result(
             await list_sriov_physical_ports(
                 hmc, system_name_or_uuid, adapter_id, physical_port_id
@@ -113,7 +114,7 @@ def hmc_list_sriov_logical_ports(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def ports(hmc):
+    async def ports(hmc: HMCClient) -> Any:
         return serialize_tool_result(
             await list_sriov_logical_ports(
                 hmc,
