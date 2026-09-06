@@ -10,8 +10,10 @@ and partial states while all unrecorded operations remain explicitly unknown to 
 
 Tech stack: Python 3.11 standard library, UTF-8 JSON, pytest, Ruff, ty, just, and prek.
 
-Expected implementation size: 360–560 changed lines (M) — derived from one catalog,
-conditional validation in the existing script, focused fixtures/tests, and README updates.
+Expected implementation size: 900–1,050 changed lines (L) — Task 1 is 906 changed lines
+across the audited catalog, validator, and focused fixtures/tests; reserve the remaining
+range for Task 2's README contract update. The earlier 360–560 estimate undercounted the
+exact conditional evidence schema and its negative-contract coverage.
 
 ## Global Constraints
 
@@ -46,6 +48,11 @@ conditional validation in the existing script, focused fixtures/tests, and READM
 - Build checkpoint: the original focused pytest command was corrected to the repository's
   documented `--no-cov` form after it collected seven passing tests but exited 1 against
   the package-wide coverage floor on the clean baseline.
+- Estimate correction: Task 1 landed in `0fce6b206fa1b59360e995bbe90b7ab8296fc730`
+  with 906 changed lines. This is an estimate-only correction: the audited four-file
+  implementation surface has not expanded, the required contract breadth remains intact,
+  and the operator directed no additional design review before continuing. Spellcraft is
+  therefore not reopened.
 - Guardrail observations: `just adr-numbering` and `just doc-freshness` passed after
   the ADR/spec commit; commit hooks passed every configured static hook.
 
