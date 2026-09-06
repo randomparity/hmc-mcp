@@ -752,7 +752,7 @@ async def main(
         for r in state.results:
             if r["status"] == "FAIL":
                 print(f"  ST{r['subtask']} {r['tool']}")
-                print(f"    {str(r['data'])[:200]}")
+                print(f"    {str(_redact_failure_data(r['data']))[:200]}")
     return 1 if failed else 0
 
 
