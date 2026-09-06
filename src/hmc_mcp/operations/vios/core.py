@@ -147,27 +147,42 @@ async def _resolve_vios_backup_system_name(
     resource = (entry or {}).get("Resource") or {}
     mtms = resource.get("MachineTypeModelSerialNumber")
     if isinstance(mtms, str):
-        machine_type, dash, model_and_serial = mtms.partition("-")
-        model, star, serial = model_and_serial.partition("*")
-        components = (machine_type, model, serial)
-        if dash and star and all(part and part == part.strip() for part in components):
-            rendered = f"{machine_type}-{model}*{serial}"
-            if rendered == mtms:
-                return rendered
+        normalized = _normalize_mtms_string(mtms)
+        if normalized is not None:
+            return normalized
     elif isinstance(mtms, Mapping):
-        components = (
-            mtms.get("MachineType"),
-            mtms.get("Model"),
-            mtms.get("SerialNumber"),
-        )
-        if all(isinstance(part, str) and part.strip() for part in components):
-            machine_type, model, serial = components
-            return f"{machine_type}-{model}*{serial}"
+        normalized = _normalize_mtms_mapping(mtms)
+        if normalized is not None:
+            return normalized
     raise ValueError(
         f"Managed system {system_name_or_uuid!r} has no complete, valid "
         "MachineTypeModelSerialNumber (MTMS). Use hmc_list_systems to inspect "
         "the managed system before retrying."
     )
+
+
+def _normalize_mtms_string(value: str) -> str | None:
+    """Return a canonical, complete scalar MTMS value."""
+    machine_type, dash, model_and_serial = value.partition("-")
+    model, star, serial = model_and_serial.partition("*")
+    components = (machine_type, model, serial)
+    rendered = f"{machine_type}-{model}*{serial}"
+    if dash and star and all(part and part == part.strip() for part in components):
+        return rendered if rendered == value else None
+    return None
+
+
+def _normalize_mtms_mapping(value: Mapping[str, object]) -> str | None:
+    """Return a complete MTMS rendered from HMC's structured response shape."""
+    components = (
+        value.get("MachineType"),
+        value.get("Model"),
+        value.get("SerialNumber"),
+    )
+    if not all(isinstance(part, str) and part.strip() for part in components):
+        return None
+    machine_type, model, serial = components
+    return f"{machine_type}-{model}*{serial}"
 
 
 BackupType = Literal["vios", "viosioconfig", "ssp"]
