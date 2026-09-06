@@ -350,35 +350,6 @@ def validate_memopt_scenario(
         )
 
 
-# HMC CLI -i attribute record grammar (see ADR 0045)
-# `chsyscfg`/`mksyscfg` take their configuration as one `-i` argument holding
-# an attribute record: `name=lpar1,description=web tier`.  Three characters carry
-# that record's structure, and the HMC splits the record itself *after* the
-# shell has finished with the argument — so `shlex.quote` cannot protect them.
-
-_RECORD_DELIMITERS: dict[str, tuple[str, str]] = {
-    ",": ("a comma", "a comma separates one attribute from the next"),
-    "=": (
-        "an equals sign",
-        "an equals sign separates an attribute name from its value",
-    ),
-    '"': (
-        "a double quote",
-        ("a double quote is the HMC's own escape for a value containing a comma, "
-         "so it opens a quoted region that swallows the attributes after it"),
-    ),
-}
-
-# An HMC attribute name, optionally carrying the list append/remove operator
-# that `chsyscfg -r prof` uses (`io_slots+=…` / `io_slots-=…`).
-_ATTRIBUTE_NAME = re.compile(r"^[a-z_][a-z0-9_]*[+-]?$")
-
-# Characters `set_lpar_description` has always refused in the LPAR name it
-# writes a description for.  Neither is record structure — IBM's own escaping
-# note shows an unquoted `name=No comma name` — so this rejection is not part
-# of the record grammar and is deliberately not extended to the other records.
-# It is kept at its historical site, unchanged, because widening or dropping a
-# public tool's accepted input is not this module's call to make.  See ADR 0045.
 async def list_lpar_memopt_scores(
     config: HMCConfig,
     system_name: str,
