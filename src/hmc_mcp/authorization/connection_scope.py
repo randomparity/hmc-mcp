@@ -144,7 +144,7 @@ def connection_permitted(connection: str | None, grant_connections: Container) -
     return connection in grant_connections
 
 
-def _bounded(token: Any) -> Any:
+def _connection_token_for_denial(token: Any) -> Any:
     """The caller's token as the denial renders it: absent-or-default, and bounded.
 
     Bounded to ``audit.MAX_VALUE_LENGTH`` rather than to a second constant, because the
@@ -178,7 +178,7 @@ def connection_denial(
             # that value is a profile key read from config.toml, and a denial is
             # one probe. repr() also neutralizes any control character a caller
             # puts in it.
-            connection=repr(_bounded(token)),
+            connection=repr(_connection_token_for_denial(token)),
             policy=repr(policy_name),
             clause=_clause(argument, collapsed),
         )

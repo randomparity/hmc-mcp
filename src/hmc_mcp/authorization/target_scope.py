@@ -213,7 +213,7 @@ def denial_reason(
     return "target-not-granted"
 
 
-def _bounded(value: str | _Unresolved) -> str | _Unresolved:
+def _bounded_target_for_denial(value: str | _Unresolved) -> str | _Unresolved:
     """One extracted selector as the denial renders it, bounded.
 
     ``audit.MAX_VALUE_LENGTH`` rather than a second constant, for the reason
@@ -285,7 +285,8 @@ def target_denial(
             # them discloses nothing it did not send. repr() also neutralizes any
             # control character a caller puts in one.
             targets=", ".join(
-                f"{kind}={_bounded(value)!r}" for kind, _argument, value in extracted
+                f"{kind}={_bounded_target_for_denial(value)!r}"
+                for kind, _argument, value in extracted
             ),
         )
     )
