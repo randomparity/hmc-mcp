@@ -20,7 +20,8 @@ without answering" — the ADR 0040 / ADR 0043 regression it exists to disprove.
   child's `hmc_mcp` resolves inside this checkout. L5 binds one `command` list from it and
   uses it at both spawns. The blinded spawn keeps `/bin/sh -c "exec … 2>&-"`; only the prefix
   changes. The module docstring records the constraint beside the POSIX-only note.
-- `tests/test_entry_points.py` (new) — `python -m hmc_mcp` and `hmc-mcp` are one program.
+- `tests/app/test_fail_closed_startup.py` — its L1 docstring argues from "there is no
+  `__main__.py`"; the shim falsifies that, so the sentence is corrected. Nothing else changes.
 - `CHANGELOG.md` — `python -m hmc_mcp` under Unreleased.
 
 L5 gives up the console script *under a closed sink* — exercised below the threshold on all
@@ -36,14 +37,14 @@ console-script generation; Windows support; parsing in `__main__.py`. No deferra
    reach it.
 2. Both L5 spawns consume one `command` list, so the runs compared differ only in the sink.
 3. The L5 fixture fails when the child's `hmc_mcp` resolves outside this checkout.
-4. `python -m hmc_mcp` and `hmc-mcp` expose the same command tree and the same bad-argument
-   exit status, modulo the program-name token.
-5. The module docstring records the constraint; `CHANGELOG.md` records the invocation.
+4. `python -m hmc_mcp` runs the CLI; L5 exercises it twice on every run.
+5. The module docstring records the constraint, `CHANGELOG.md` the invocation, and
+   `test_fail_closed_startup.py` no longer asserts there is no `__main__.py`.
 6. `just verify` and `uv run --no-sync prek run --all-files` are green.
 
 ## Validation
 
-- **L5 under a closed sink** (success 1, 3). Mode: focused-test. Case
+- **L5 under a closed sink** (success 1, 3, 4). Mode: focused-test. Case
   `…live.py::test_a_failed_sink_leaves_the_denial_unchanged`. Red: a uv-form trampoline
   substituted for the fixture's command exits 120; an `hmc_mcp` outside the checkout trips
   the fixture. Green: `uv run --no-sync pytest tests/app/test_authorization_audit_live.py`.
@@ -51,10 +52,6 @@ console-script generation; Windows support; parsing in `__main__.py`. No deferra
   consume one `command` list bound once in the test body, so a second mechanism needs a
   second list — an edit no run distinguishes, since the reference spawn's stderr goes to a
   file and never reaches the closed-fd path.
-- **Entry-point equivalence** (success 4). Mode: focused-test.
-  `tests/test_entry_points.py::test_module_entry_point_matches_the_console_script`. Red: the
-  two command trees or exit statuses differ. Green:
-  `uv run --no-sync pytest tests/test_entry_points.py`.
 - **Docstring and changelog wording** (success 5). Mode: task-test-not-applicable. Prose with
   no executable consumer; `tests/unit/test_changelog.py` checks only the released-version
   heading, and asserting on wording tests the sentence, not the behaviour.

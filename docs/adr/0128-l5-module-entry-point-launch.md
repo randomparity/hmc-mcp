@@ -73,14 +73,18 @@ asserts the answer is inside this checkout.
   is not a supported production configuration, and L1–L4 and
   `test_an_audit_level_of_warning_suppresses_permits_but_keeps_denials` keep the shipped
   console script covered with the sink open.
-- `python -m hmc_mcp` becomes a supported public invocation. That is chosen, not incidental:
-  it is the conventional module invocation, and issue #709 proposes it by name. It is
-  recorded in `CHANGELOG.md` and must stay equivalent to `hmc-mcp`;
-  `tests/test_entry_points.py` holds that equivalence.
-- The two invocations are not identical, and the equivalence test normalises the difference:
-  Click derives the program name from how the process was started, so it reports
-  `python -m hmc_mcp` rather than `hmc-mcp`, in every `Usage:` line and every usage-error
-  message, not only in `--help`.
+- `python -m hmc_mcp` becomes a working invocation, recorded in `CHANGELOG.md`. It is held
+  equivalent to `hmc-mcp` **by construction, not by a standing test**: `__main__.py` has no
+  logic of its own, so the two cannot diverge without adding logic to it, which exclusion (a)
+  forbids. L5 exercises the invocation twice on every run. No dedicated equivalence test is
+  added — that would be new surface the frozen charter does not carry, and it is recorded as
+  a follow-up candidate instead.
+- The two invocations are not textually identical. Typer takes its program name from Click,
+  which derives it from how the process was started, so it reports `python -m hmc_mcp` rather
+  than `hmc-mcp` — in every `Usage:` line and usage-error message, not only in `--help`.
+- `tests/app/test_fail_closed_startup.py`'s L1 docstring argues from "there is no
+  `__main__.py`". The shim falsifies that sentence, so this change corrects it; the test's
+  own behaviour is untouched.
 - The new fixture reproduces one half of `server_binary`'s guarantee — the source is inside
   this checkout — while the environment half is carried instead by `sys.executable` being the
   interpreter running pytest. `server_binary` pins the environment and reaches source
@@ -94,11 +98,11 @@ asserts the answer is inside this checkout.
 - **Launch the interpreter without a module entry point** —
   `[sys.executable, "-P", "-c", "from hmc_mcp import main; main()"]`, or a private helper
   under `tests/`. verified: equally shebang-free and opens no script file, so it fixes the
-  failure identically; it also avoids the wheel coupling, the public invocation, the
-  changelog entry and the equivalence test. judgment: rejected because the public entry point
-  is wanted for its own sake — `python -m hmc_mcp` is the invocation users expect a Python
-  package to answer, issue #709 proposes it by name, and inline source in a spawn argument is
-  the less readable of the two.
+  failure identically; it also avoids the wheel coupling and the changelog entry. judgment:
+  rejected because the entry point is wanted for its own sake — `python -m hmc_mcp` is the
+  invocation users expect a Python package to answer, issue #709 proposes it by name, the
+  charter's permitted surface admits it, and inline source in a spawn argument is the less
+  readable of the two.
 - **Skip L5 when the console script is a trampoline** (issue #709's option 2: read the first
   line, `pytest.skip` naming the path length). verified: issue #709 records that this
   repository's agent workflows routinely clone into deep temporary directories, so the skip
