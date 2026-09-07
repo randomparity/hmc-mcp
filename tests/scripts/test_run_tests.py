@@ -1,5 +1,6 @@
 """Tests for the compact pytest output adapter."""
 
+import contextlib
 import importlib.util
 import inspect
 import io
@@ -73,7 +74,10 @@ def _wait_for_process_marker(
         if process.poll() is not None:
             pytest.fail(f"child exited with {process.returncode} before becoming ready")
         if time.monotonic() >= deadline:
-            process.kill()
+            # start_new_session makes the child a group leader, so process.kill()
+            # alone would strand the grandchild pytest.
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
             pytest.fail(f"child did not create readiness marker {marker}")
         time.sleep(0.01)
 
@@ -298,17 +302,23 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
     try:
         stdout, stderr = process.communicate(timeout=budget)
     except subprocess.TimeoutExpired:
-        process.kill()
-        process.communicate()
-        pytest.fail(f"child did not exit within {budget}s of SIGINT")
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        _stdout, stderr = process.communicate()
+        pytest.fail(
+            f"child did not exit within {budget}s of SIGINT; "
+            f"stderr tail: {stderr[-2000:]!r}"
+        )
     settled_in = time.monotonic() - signalled_at
 
     assert process.returncode == 130
     assert stdout == b""
-    if b"KeyboardInterrupt" not in stderr and settled_in >= grace:
-        pytest.fail(
-            f"host too slow: the child spent {settled_in:.1f}s settling, reaching "
-            f"run_tests.INTERRUPT_GRACE_SECONDS ({grace}s), so pytest was "
-            "terminated before it wrote its diagnostic"
-        )
-    assert b"KeyboardInterrupt" in stderr
+    # The settle interval and the grace it ran against are the evidence a reader
+    # needs to tell a slow host from a regression. The test does not attribute:
+    # a regression that lowered INTERRUPT_GRACE_SECONDS would satisfy any
+    # `settled_in >= grace` guard trivially and be reported as host slowness.
+    assert b"KeyboardInterrupt" in stderr, (
+        f"no KeyboardInterrupt after {settled_in:.1f}s settling "
+        f"(run_tests.INTERRUPT_GRACE_SECONDS is {grace}s); "
+        f"stderr tail: {stderr[-2000:]!r}"
+    )

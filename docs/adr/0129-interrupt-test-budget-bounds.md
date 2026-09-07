@@ -56,17 +56,22 @@ rather than against a stopwatch on an idle machine.**
   first term from the module the test already imports. That term is `_settle_interrupted`'s
   bounded portion, up to the `kill()`; the 10-second second term covers the unbounded post-kill
   reap, `_replay`, and the parent's own teardown, which the first term does not bound.
-- `communicate` is wrapped: on `subprocess.TimeoutExpired` the test kills the group, drains,
-  and calls `pytest.fail` with a message naming the budget. A teardown timeout is therefore
-  never reported as an assertion on `returncode`, `stdout`, or `stderr`.
-- The test times the interval from `SIGINT` to exit. A missing `KeyboardInterrupt` after an
-  interval that reached `INTERRUPT_GRACE_SECONDS` fails with its own message naming the
-  truncation, because reaching the grace is exactly the condition under which
-  `_settle_interrupted` escalates to `SIGTERM`. Every other missing diagnostic still falls
-  through to the existing assertion. Without this branch the raised readiness ceiling would
-  make things worse where readiness lands between 10 s and 60 s: the old code failed there with
-  `_wait_for_process_marker`'s clear marker message, and the new code would instead reach the
-  stderr assertion and report a host artifact in the shape of a regression.
+- `communicate` is wrapped: on `subprocess.TimeoutExpired` the test `SIGKILL`s the child's
+  whole session and then reaps it, and calls `pytest.fail` with a message naming the budget and
+  a bounded tail of the child's stderr. `start_new_session=True` makes the child a group leader,
+  so `process.kill()` would strand the grandchild pytest; `_wait_for_process_marker`'s own
+  timeout arm had that defect already and is corrected with it. A teardown timeout is therefore
+  never reported as an assertion on `returncode`, `stdout`, or `stderr`, and it carries a
+  diagnostic.
+- The test times the interval from `SIGINT` to exit and puts that interval, the grace constant
+  it ran against, and a bounded stderr tail into the `KeyboardInterrupt` assertion's own
+  message. **It does not attribute the failure.** A guard firing on `settled_in >= grace` would
+  have called a lowered `INTERRUPT_GRACE_SECONDS` — a genuine regression in the code under
+  test — host slowness, since any settle interval clears a small enough grace. Reporting the
+  evidence and leaving the inference to the reader cannot misclassify, and it is what keeps the
+  raised readiness ceiling from making things worse where readiness lands between 10 s and
+  60 s: the old code failed there with `_wait_for_process_marker`'s clear marker message, and a
+  bare assertion would have replaced it with one carrying no numbers at all.
 
 For the collection path this is issue #721's option 2, taken deliberately rather than for
 simplicity. Its stated objection — that a constant reinstates the defect on the next slower
@@ -83,8 +88,8 @@ target — applies to a budget racing host latency. This one races a constant in
 - The readiness wait becomes the binding constraint on every host: collection is clamped near
   3.4 s, so a host slow enough to spend 16 s there would have exhausted the 60 s readiness
   ceiling first and reported a hang.
-- **Residual, named but not closed: the truncated diagnostic.** The branch above reports it
-  accurately; it does not stop it happening. `INTERRUPT_GRACE_SECONDS` is in
+- **Residual, named but not closed: the truncated diagnostic.** The assertion message above
+  carries the evidence for it; it does not stop it happening. `INTERRUPT_GRACE_SECONDS` is in
   `scripts/run_tests.py`, outside this change's frozen surface, and moving it is a decision
   about that script's production contract rather than about a test budget. Owner: a follow-up
   candidate returned to this run's caller, which is where filing authority sits — an unattended
