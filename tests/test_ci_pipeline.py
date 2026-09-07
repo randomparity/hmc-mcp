@@ -12,7 +12,7 @@ ROOT = Path(__file__).parents[1]
 TOOL_PINS = {
     "detect-secrets==1.5.0",
     "prek==0.5.0",
-    "ruff==0.16.4",
+    "ruff==0.16.5",
     "ty==0.0.74",
     "zizmor==1.29.0",
 }
