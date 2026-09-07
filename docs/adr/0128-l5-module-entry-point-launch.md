@@ -30,8 +30,13 @@ body, under `sh -c "exec <script> 2>&-"`:
 
 | `/bin/sh` | fd 2 after the exec |
 |---|---|
-| bash (Fedora, Arch, RHEL, macOS) | the script file — the failure is reachable |
-| dash (Debian, and the `ubuntu-24.04` CI runners) | free; `ls` takes it — no failure |
+| bash 5.x (measured on Fedora) | the script file — the failure is reachable |
+| dash (measured in `debian:stable-slim`) | free; `ls` takes it — no failure |
+
+`/proc/self/fd` is Linux-only, so those two rows are the measurements. By inference the bash
+row covers the distributions whose `/bin/sh` is bash — Arch, RHEL, and macOS, whose bash 3.2
+in POSIX mode was not measured — and the dash row covers Debian and the `ubuntu-24.04` CI
+runners.
 
 So dash opens the script exactly as bash does; it simply does not leave that descriptor on
 fd 2. Measured on this branch (uv 0.12.1, `/bin/sh` → bash, CPython 3.11.15, x86_64), with a
@@ -49,10 +54,9 @@ not absent, it is unwritable. The child dies before emitting a JSON-RPC frame an
 the server refusing to start under a closed sink, exactly the production behaviour L5 exists
 to disprove, rather than as an install-path artifact. It is latent for ordinary checkouts,
 and unreachable on all eight `ci` legs at *any* path length, because those runners' `/bin/sh`
-is dash. It bites a developer whose `/bin/sh` is bash — which is every Fedora, Arch, RHEL and
-macOS host — once a clone lands deep enough, and this repository's agent workflows routinely
-produce such clones (issue #709). CI cannot catch it, which is most of why it is worth
-recording rather than only fixing.
+is dash. It bites a developer whose `/bin/sh` is bash — Fedora, Arch, RHEL, macOS — once a clone lands
+deep enough, and this repository's agent workflows routinely produce such clones (issue #709).
+CI cannot catch it, which is most of why it is worth recording rather than only fixing.
 
 ## Decision
 
@@ -111,6 +115,16 @@ asserts the answer is inside this checkout.
 - `tests/test_package_version.py::test_wheel_metadata_and_package_contents` already asserts
   every `src/hmc_mcp/*.py` appears in the wheel, so the shim cannot be dropped from a build
   without that test failing.
+- **The fd-2 invariant is recorded, not enforced, and is structurally invisible to CI.** All
+  eight legs run dash, so a future edit returning L5's launch to a script-based one would be
+  green on every leg and red only on a contributor's bash-as-`/bin/sh` host — reported there
+  with the ADR 0040/0043 regression signature rather than a harness one, which is the original
+  #709 trap. Accepted rather than closed: a bash-as-`/bin/sh` CI leg or a standing
+  shell-behaviour test is new surface this change does not carry.
+- `python -m hmc_mcp` needs the `app` extra, exactly as the console script does; a bare
+  library wheel ships the entry point and tracebacks on the same missing import. That is not a
+  regression — before this change the same invocation failed with `No module named
+  hmc_mcp.__main__` — but it is why the changelog entry is conditioned rather than absolute.
 
 ## Considered & rejected
 

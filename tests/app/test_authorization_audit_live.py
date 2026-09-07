@@ -2,9 +2,10 @@
 
 ADR 0040's contract is a *sink*, so a unit test against a mock logger proves the
 payload and almost nothing about delivery. This drives the real console script
-over raw newline-delimited JSON-RPC — deliberately not a client library, so that
-anything the server prints outside the protocol shows up as an unparseable line
-on stdout and is observable.
+(L1-L4) and the module entry point (L5, for the reason below) over raw
+newline-delimited JSON-RPC — deliberately not a client library, so that anything
+the server prints outside the protocol shows up as an unparseable line on stdout
+and is observable.
 
 Covers docs/workflow/specs/2026-08-19-authorization-audit-events-design.md.
 
