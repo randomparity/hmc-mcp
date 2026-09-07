@@ -612,8 +612,9 @@ failure injection cannot coexist: every mechanism that makes the sink fail eithe
 empties it, which is the stream Run A reads. So L5 asserts on **stdout only**.
 
 Launched through `sh -c '… 2>&-'` so fd 2 is closed at interpreter start and `sys.stderr` is
-`None` — the #221 condition, and the arm the handler guards with an early return. Issue the same
-denied call as Run A's L4 and assert, **on the parsed frame rather than its bytes**: the same
+`None` — the #221 condition, and the arm the handler guards with an early return. Run B launches
+twice from one command list — a reference child with stderr open, then the blinded child — and
+issues L4's denied call to each, asserting **on the parsed frame rather than its bytes**: the same
 JSON-RPC error code, `isError` set, and the same ADR 0039 denial message string. Not a
 byte-identical comparison — the two bodies come from separately launched processes, and their
 key ordering and any request metadata are FastMCP's to change, so a byte assertion is stronger
