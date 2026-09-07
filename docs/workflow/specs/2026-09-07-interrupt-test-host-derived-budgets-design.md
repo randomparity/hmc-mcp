@@ -6,12 +6,12 @@ Decision: [ADR 0129](../../adr/0129-interrupt-test-budget-bounds.md).
 ## Problem
 
 `test_real_interrupt_preserves_pytest_diagnostic` waits for a real `scripts/run_tests.py`
-child's readiness marker under a fixed 10 s budget, sends `SIGINT`, then collects output under
-a second, independent fixed 10 s budget. Both were sized on an idle machine. Measured on one
-amd64 host (CPython 3.13, tree pinned to one core under N busy loops), readiness rises from
-0.23 s idle to 8.77 s at 80-way contention — 1.14x from expiring — while collection stays under
-3.42 s, clamped by `_settle_interrupted` (`scripts/run_tests.py:21-31`). Either expiry arrives
-as `subprocess.TimeoutExpired`, indistinguishable from a regression.
+child's readiness marker under a fixed 10 s budget, sends `SIGINT`, then collects output under a
+second fixed 10 s budget, both sized on an idle machine. Measured on one amd64 host, readiness
+rises from 0.23 s idle to 8.77 s at 80-way single-core contention — 1.14x from expiring — while
+collection stays under 3.42 s, clamped by `_settle_interrupted` (`scripts/run_tests.py:21-31`).
+At that load the grandchild also misses the 3 s grace, is `SIGTERM`ed, and its
+`KeyboardInterrupt` never reaches stderr.
 
 ## Scope
 
@@ -20,41 +20,41 @@ as `subprocess.TimeoutExpired`, indistinguishable from a regression.
 - `_wait_for_process_marker`'s default becomes `_READINESS_TIMEOUT_SECONDS = 60.0`, a hang
   ceiling paid only by a child that never becomes ready. Signature and body are unchanged.
 - The collection budget becomes
-  `2 * run_tests.INTERRUPT_GRACE_SECONDS + _INTERRUPT_COLLECTION_SLACK_SECONDS` (10.0).
-- The collection call is wrapped so `subprocess.TimeoutExpired` kills the group, drains, and
-  fails with a message naming the budget, distinct from the assertions.
+  `2 * run_tests.INTERRUPT_GRACE_SECONDS + _INTERRUPT_COLLECTION_SLACK_SECONDS` (10.0), and the
+  call is wrapped so `subprocess.TimeoutExpired` kills the group, drains, and fails naming it.
+- The test times `SIGINT` to exit. A missing `KeyboardInterrupt` after an interval reaching
+  `INTERRUPT_GRACE_SECONDS` fails with its own truncation message, the existing assertion
+  standing behind it otherwise. Without it the raised ceiling would turn that band's clear
+  marker failure into an `AssertionError` shaped like a regression.
 
-Deferral carried: at 80-way contention the grandchild misses `INTERRUPT_GRACE_SECONDS`, is
-`SIGTERM`ed, and `KeyboardInterrupt` never reaches stderr — the real host-load red, unreachable
-from this surface. Owner: a follow-up issue, reported to this run's caller.
+Deferral carried: the truncation is governed by `INTERRUPT_GRACE_SECONDS` in
+`scripts/run_tests.py`, outside this surface, so this change names it rather than fixing it.
+Owner: a follow-up candidate returned to this run's caller.
 
 Out of scope per the frozen charter: `tests/test_ci_pipeline.py`'s `timeout=180` budgets and
 `tests/vios/test_vios_backup.py`'s `timeout=300.0` mock assertions. No `CHANGELOG.md` entry.
 
 ## Success
 
-1. Neither budget is sized against an idle machine: the readiness ceiling is sized to a hang,
-   the collection budget to `scripts/run_tests.py`'s own settle bound.
+1. The ceiling is sized to a hang and the collection budget to `run_tests.py`'s settle bound.
 2. Raising `INTERRUPT_GRACE_SECONDS` raises the collection budget without editing the test.
-3. Both budgets stay finite: a child that never becomes ready fails in 60 s, one that never
-   exits after `SIGINT` in 16 s.
-4. A collection timeout fails with its own message, never as an assertion on `returncode`,
-   `stdout`, or `stderr`.
+3. Both stay finite: 60 s for a child that never becomes ready, 16 s for one that never exits.
+4. Neither a teardown timeout nor a grace-truncated diagnostic reads as an assertion failure.
 5. The assertions hold: `returncode == 130`, empty stdout, `KeyboardInterrupt` in stderr.
 6. `just verify` and `uv run --no-sync prek run --all-files` are green.
 
 ## Validation
 
-- **Distinguishable teardown timeout and budget coupling** (success 1–4). Mode: focused-test.
-  Case `…test_run_tests.py::test_real_interrupt_preserves_pytest_diagnostic`. Red: setting
-  `run_tests.INTERRUPT_GRACE_SECONDS` and the slack constant to 0.001 puts the budget under the
-  0.22 s idle collection measured above; the run then fails with the new message, not an
-  `AssertionError`, and moving it only through those two names is success 2. Green:
+- **Teardown timeout and budget coupling** (success 1–4). Mode: focused-test. Case
+  `…test_run_tests.py::test_real_interrupt_preserves_pytest_diagnostic`. Red: setting
+  `run_tests.INTERRUPT_GRACE_SECONDS` and the slack to 0.001 puts the budget under the 0.22 s
+  idle collection, so the run fails with the new message, not an `AssertionError`. Green:
   `uv run --no-sync pytest tests/scripts/test_run_tests.py`.
+- **Truncation is named, not misread** (success 4, 5). Mode: focused-test. Same case. Red: run
+  it under the 80-way single-core contention that reproduced the truncation above; it fails
+  with the truncation message rather than on `KeyboardInterrupt`.
 - **Readiness ceiling still bounds a hang** (success 3). Mode: focused-test. Same case. Red: a
-  `test_slow.py` that never touches the marker and sleeps past 60 s — it must outlive the
-  ceiling, or `poll()` reports the exit first — fails through the existing "did not create
-  readiness marker" path.
-- **Existing interrupt assertions** (success 5). Mode: focused-test. Same case, unchanged.
+  `test_slow.py` that never touches the marker and sleeps past 60 s, so `poll()` cannot report
+  an exit first, fails through the existing marker path.
 - **Guardrails** (success 6). Mode: task-test-not-applicable. `just verify` and
   `prek run --all-files` are themselves the observation.

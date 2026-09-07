@@ -59,6 +59,14 @@ rather than against a stopwatch on an idle machine.**
 - `communicate` is wrapped: on `subprocess.TimeoutExpired` the test kills the group, drains,
   and calls `pytest.fail` with a message naming the budget. A teardown timeout is therefore
   never reported as an assertion on `returncode`, `stdout`, or `stderr`.
+- The test times the interval from `SIGINT` to exit. A missing `KeyboardInterrupt` after an
+  interval that reached `INTERRUPT_GRACE_SECONDS` fails with its own message naming the
+  truncation, because reaching the grace is exactly the condition under which
+  `_settle_interrupted` escalates to `SIGTERM`. Every other missing diagnostic still falls
+  through to the existing assertion. Without this branch the raised readiness ceiling would
+  make things worse where readiness lands between 10 s and 60 s: the old code failed there with
+  `_wait_for_process_marker`'s clear marker message, and the new code would instead reach the
+  stderr assertion and report a host artifact in the shape of a regression.
 
 For the collection path this is issue #721's option 2, taken deliberately rather than for
 simplicity. Its stated objection — that a constant reinstates the defect on the next slower
@@ -75,13 +83,13 @@ target — applies to a budget racing host latency. This one races a constant in
 - The readiness wait becomes the binding constraint on every host: collection is clamped near
   3.4 s, so a host slow enough to spend 16 s there would have exhausted the 60 s readiness
   ceiling first and reported a hang.
-- **Residual, not closed: the truncated diagnostic.** Reproduced in the table above.
-  `INTERRUPT_GRACE_SECONDS` is in `scripts/run_tests.py`, outside this change's frozen surface,
-  and moving it is a decision about that script's production contract rather than about a test
-  budget. Owner: a follow-up issue; this run reports it to its caller instead of filing,
-  because an unattended run cannot obtain the confirmation filing requires. Weakening the
-  `KeyboardInterrupt` assertion is not the remedy — it is the behaviour the test exists to
-  prove.
+- **Residual, named but not closed: the truncated diagnostic.** The branch above reports it
+  accurately; it does not stop it happening. `INTERRUPT_GRACE_SECONDS` is in
+  `scripts/run_tests.py`, outside this change's frozen surface, and moving it is a decision
+  about that script's production contract rather than about a test budget. Owner: a follow-up
+  candidate returned to this run's caller, which is where filing authority sits — an unattended
+  run cannot obtain the confirmation `$bounty` requires. Weakening the `KeyboardInterrupt`
+  assertion is not the remedy: it is the behaviour the test exists to prove.
 - Every number here comes from one amd64 host on CPython 3.13. The eight `ci` legs, including
   the four native `ubuntu-24.04-arm` ones, are unmeasured. Both constants are sized to sit far
   above any plausible leg rather than tuned per leg, which is what makes that acceptable.
@@ -111,6 +119,10 @@ target — applies to a budget racing host latency. This one races a constant in
   no `pytest-timeout` dependency and no `timeout` ini option, so this adds one. judgment: a
   whole-test ceiling cannot separate a slow readiness wait from a hung teardown, which is the
   distinction the issue asks for.
+- **Skip the test instead of failing it when the diagnostic is truncated.** verified: ADR 0128
+  rejected the same shape for L5 — "a green run that silently proved nothing is a worse failure
+  mode than the misleading red it replaces". judgment: the same reasoning holds here, and the
+  named red costs a reader one line to understand.
 - **Do nothing.** verified: readiness reached 8.77 s against its 10 s budget at 80-way
   contention, and issue #721 reports the wait expiring on a loaded host during review of
   PR #720. judgment: a constant one step of load from expiring produces an intermittent red
