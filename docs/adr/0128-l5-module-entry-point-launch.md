@@ -7,69 +7,103 @@ Accepted
 ## Context
 
 `tests/app/test_authorization_audit_live.py::test_a_failed_sink_leaves_the_denial_unchanged`
-(L5) is the live suite's only fd-2-closed launch. It execs the server under `2>&-` to prove
-that losing the audit sink costs the record and nothing else (ADR 0040, ADR 0043).
+(L5) is the live suite's only fd-2-closed launch. It runs
+`/bin/sh -c "exec <console script> serve … 2>&-"` to prove that losing the audit sink costs
+the record and nothing else (ADR 0040, ADR 0043).
 
-It launches the `hmc-mcp` console script that `uv sync` generates. `uv` writes that script
-with a direct `#!<interpreter>` shebang while the venv interpreter path is at most 127
-characters, and with a `/bin/sh` polyglot trampoline past that, because a longer `#!` line is
-not portable. The trampoline interposes a shell between the redirection and the interpreter,
-and that shell does not survive being exec'd with no stderr.
+`uv` writes that console script with a direct `#!<interpreter>` shebang while the venv
+interpreter path is short enough, and with a `/bin/sh` polyglot trampoline past that, because
+a long `#!` line is not portable. Issue #709 reports the boundary at 127 characters,
+reproduced there at 63 characters (direct) and 128 characters (trampoline); this record does
+not re-derive that number, and it is `uv`'s private threshold rather than a project setting.
 
-Reproduced on this branch, with a uv-form trampoline written over this venv's own
-console-script body: `sh -c 'exec <trampoline> --version 2>&-'` exits 120 — CPython's "could
-not flush a standard stream at finalization" — while `sh -c 'exec <venv>/bin/python -c
-"print(1)" 2>&-'` exits 0 and the direct-shebang console script exits with the command's own
-status. The child dies before emitting a JSON-RPC frame, so L5 fails as "the server closed
-stdout without answering (exit=120, no stderr captured)".
+The trampoline breaks L5, but not for the reason it first appears. `sh` must **open the
+script file to read it**, and with fd 2 closed by the redirection the lowest free descriptor
+is 2 — so the script file itself becomes fd 2, read-only. The interpreter then inherits a
+valid-but-unwritable stderr instead of no stderr at all: writes buffer without raising, and
+`Py_FinalizeEx`'s flush of the standard streams fails, which is exit 120.
 
-That reads as the server refusing to start under a closed sink — exactly the production
-behaviour L5 exists to disprove — rather than as an install-path artifact. It is latent for
-ordinary checkouts and for CI, and bites automated clones into deep temporary directories,
-which this repository's agent workflows routinely produce (issue #709).
+Measured on this branch (uv 0.12.1, `/bin/sh` → bash, CPython 3.11.15, x86_64), with a
+uv-form trampoline written over this venv's own console-script body:
+
+| Launch under `sh -c "exec … 2>&-"` | `os.fstat(2)` | `sys.stderr` | Exit on a stderr write |
+|---|---|---|---|
+| Trampoline | open, mode 100755 | real stream | 120 |
+| Direct `#!` shebang | `EBADF` | `None` | the program's own status |
+| `<python> -m <module>` | `EBADF` | `None` | the program's own status |
+
+So under the trampoline L5 does not even inject the condition it means to inject: the sink is
+not absent, it is unwritable. The child dies before emitting a JSON-RPC frame and L5 reports
+"the server closed stdout without answering (exit=120, no stderr captured)" — which reads as
+the server refusing to start under a closed sink, exactly the production behaviour L5 exists
+to disprove, rather than as an install-path artifact. It is latent for ordinary checkouts and
+for all eight `ci` legs, and bites automated clones into deep temporary directories, which
+this repository's agent workflows routinely produce (issue #709).
 
 ## Decision
 
-**L5 alone launches the server as `[sys.executable, "-m", "hmc_mcp"]`**, through a new
-`src/hmc_mcp/__main__.py` whose only content is a call to the existing `hmc_mcp.main`. The
-redirection then applies to the interpreter directly, with no shell in between, at any
-install path.
+**L5 alone launches the server as `[sys.executable, "-P", "-m", "hmc_mcp"]`**, through a new
+`src/hmc_mcp/__main__.py` whose only content is a call to the existing `hmc_mcp.main`.
 
-Both of L5's spawns use it — the reference run that keeps stderr open and the blinded run —
-so the two runs the test compares still differ only in the sink.
+The shell stays: `2>&-` is a POSIX shell redirection and is how L5 closes fd 2 at all, so the
+blinded spawn remains `/bin/sh -c "exec … 2>&-"` with only the command prefix changed. What
+changes is that `sh` now execs an interpreter **by path** and opens no script file, so fd 2
+stays closed through the exec at any install path. The invariant this record establishes is
+therefore *no intermediate process may open a file before exec'ing the interpreter* — not
+"no shell", which is both false here and wrong as a general rule.
 
-The other four live tests keep the shared `server_binary` console-script fixture unchanged, so
-the installed console script stays covered by the live suite. L5 gets its own fixture, which
-carries `server_binary`'s "*this* checkout, not a foreign build" guarantee forward in the form
-the module route admits: it asserts the `hmc_mcp` the child would import resolves inside this
-checkout.
+`-P` keeps the child's current working directory off `sys.path`, which `-m` would otherwise
+prepend. That makes the child resolve `hmc_mcp` exactly as the parent does, so the fixture's
+guard below binds the process that actually runs.
 
-`__main__.py` parses no arguments. Delegation is its whole body, so `python -m hmc_mcp` and
-`hmc-mcp` cannot diverge.
+Both of L5's spawns consume one `command` list — the reference run that keeps stderr open and
+the blinded run — so the two runs the test compares still differ only in the sink.
+
+The other four live tests keep the shared `server_binary` console-script fixture unchanged.
+L5 gets its own fixture, which asks that same interpreter where `hmc_mcp` resolves and
+asserts the answer is inside this checkout.
+
+`__main__.py` parses no arguments. Delegation is its whole body.
 
 ## Consequences
 
-- L5 no longer proves the installed console script survives a closed sink; it proves the
-  interpreter and the server do. L1–L4 and
-  `test_an_audit_level_of_warning_suppresses_permits_but_keeps_denials` still launch the
-  console script, so what is lost is only the intersection — console script *and* closed
-  sink — which no install path could exercise reliably anyway.
-- `python -m hmc_mcp` becomes a supported public invocation, recorded in `CHANGELOG.md`. It
-  must stay equivalent to `hmc-mcp`; `tests/test_entry_points.py` holds that equivalence.
-- Typer reports the program name as `__main__` under `python -m`, so `--help` differs in that
-  one string. L5 never reads it, and the equivalence test normalises it.
+- L5 gives up the console script **under a closed sink**. That intersection is exercised
+  reliably *below* `uv`'s threshold — on this checkout and on all eight `ci` legs, whose
+  runner paths are short — and is unreachable above it. The loss is accepted: a closed stderr
+  is not a supported production configuration, and L1–L4 and
+  `test_an_audit_level_of_warning_suppresses_permits_but_keeps_denials` keep the shipped
+  console script covered with the sink open.
+- `python -m hmc_mcp` becomes a supported public invocation. That is chosen, not incidental:
+  it is the conventional module invocation, and issue #709 proposes it by name. It is
+  recorded in `CHANGELOG.md` and must stay equivalent to `hmc-mcp`;
+  `tests/test_entry_points.py` holds that equivalence.
+- The two invocations are not identical, and the equivalence test normalises the difference:
+  Click derives the program name from how the process was started, so it reports
+  `python -m hmc_mcp` rather than `hmc-mcp`, in every `Usage:` line and every usage-error
+  message, not only in `--help`.
+- The new fixture reproduces one half of `server_binary`'s guarantee — the source is inside
+  this checkout — while the environment half is carried instead by `sys.executable` being the
+  interpreter running pytest. `server_binary` pins the environment and reaches source
+  identity through the editable install; the new guard pins source identity directly.
 - `tests/test_package_version.py::test_wheel_metadata_and_package_contents` already asserts
   every `src/hmc_mcp/*.py` appears in the wheel, so the shim cannot be dropped from a build
   without that test failing.
 
 ## Considered & rejected
 
+- **Launch the interpreter without a module entry point** —
+  `[sys.executable, "-P", "-c", "from hmc_mcp import main; main()"]`, or a private helper
+  under `tests/`. verified: equally shebang-free and opens no script file, so it fixes the
+  failure identically; it also avoids the wheel coupling, the public invocation, the
+  changelog entry and the equivalence test. judgment: rejected because the public entry point
+  is wanted for its own sake — `python -m hmc_mcp` is the invocation users expect a Python
+  package to answer, issue #709 proposes it by name, and inline source in a spawn argument is
+  the less readable of the two.
 - **Skip L5 when the console script is a trampoline** (issue #709's option 2: read the first
-  line, `pytest.skip` naming the path length). verified: the trampoline appears exactly when
-  the interpreter path exceeds 127 characters, and issue #709 records that this repository's
-  agent workflows routinely clone into deep temporary directories — so the skip would fire
-  precisely where the proof is most likely to run. judgment: a green run that silently proved
-  nothing is a worse failure mode than the misleading red it replaces.
+  line, `pytest.skip` naming the path length). verified: issue #709 records that this
+  repository's agent workflows routinely clone into deep temporary directories, so the skip
+  would fire precisely where the proof is most likely to run. judgment: a green run that
+  silently proved nothing is a worse failure mode than the misleading red it replaces.
 - **Parse the trampoline and exec the interpreter it names.** verified: the generated script's
   `exec` line does name this venv's interpreter, so it is recoverable. judgment: a bespoke
   parser for another tool's generated output, over a format `uv` does not document as stable,
@@ -77,7 +111,8 @@ checkout.
 - **Change how the console script is generated** — a shorter install path, or a different
   install mode. verified: `justfile:15` generates it via
   `uv sync --locked --extra app --link-mode copy`; the trampoline is `uv`'s own portability
-  fallback, not a project setting. Excluded from this change by the operator, and it trades a
-  test-harness constraint for a build-tooling one.
-- **Do nothing.** verified: the reproduction in Context. The failure is deterministic past the
-  threshold and misattributes a harness artifact to the server.
+  fallback. Excluded from this change by the operator, and it trades a test-harness
+  constraint for a build-tooling one.
+- **Do nothing.** verified: the measured table above. judgment: the failure is deterministic
+  past the threshold and misattributes a harness artifact to the server, and it is invisible
+  to CI — so it lands on whoever is least equipped to recognise it.
