@@ -1254,6 +1254,47 @@ def test_expected_outcome_matches_whole_tokens_in_the_message():
     )
 
 
+@pytest.mark.parametrize(
+    ("outcome", "message"),
+    [
+        ("lpar._REST_MODIFY_UNSUPPORTED", "HMCError: HTTP 406 Not Acceptable"),
+        ("network._REST_CREATE_UNSUPPORTED", "HMCError: HTTP 406 Not Acceptable"),
+        (
+            "metrics._TEMPLATES_UNLICENSED",
+            "HMCError: partition templates are not available",
+        ),
+        ("metrics._PCM_UNLICENSED", "HMCError: PCM is not licensed"),
+        (
+            "provisioning._TEST_DISK_ABSENT",
+            "HMCError: 0516-306 lvmo: Unable to find device",
+        ),
+        ("provisioning._TEST_DISK_ABSENT", "HMCError: No Such device or address"),
+        ("vmedia._ALREADY_POWERED_OFF", "HMCError: partition is Not Running"),
+        ("users._HMCUSER_UNSUPPORTED", "HMCError: REST000E unsupported"),
+    ],
+)
+def test_declared_outcomes_match_the_message_forms_the_hmc_really_renders(
+    outcome, message
+):
+    """The substring match this replaced was case-insensitive; so is this one.
+
+    The HMC renders `Not Acceptable`, `No Such` and `Not Running` in title case,
+    and `templates` in the plural. A case-sensitive whole-token pattern misses
+    all four, recording a known limitation as a real failure on live hardware —
+    a regression no `tmp_path` fixture would show.
+    """
+    module, _, name = outcome.partition(".")
+    declared = getattr(globals()[module], name)
+
+    assert declared.matches(observation.classify_failure(RuntimeError(message)))
+
+
+def test_a_declared_outcome_does_not_match_an_unrelated_failure():
+    assert not metrics._PCM_UNLICENSED.matches(
+        observation.classify_failure(RuntimeError("HMCError: HTTP 500 internal"))
+    )
+
+
 def test_expected_outcome_requires_a_code_or_a_denial():
     with pytest.raises(ValueError, match="error code or a denial"):
         observation.ExpectedOutcome(reason="nothing to match on")

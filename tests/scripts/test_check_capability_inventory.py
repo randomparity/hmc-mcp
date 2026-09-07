@@ -594,6 +594,10 @@ def test_environment_values_reject_private_identifiers(
             {"result": "failed", "cleanup": "wiped"},
             "invalid cleanup",
         ),
+        # What stops a hand-authored `passed` row that asserted nothing, or one
+        # whose cleanup failed, from deriving `current`.
+        ({"assertions": []}, "passed evidence requires assertions"),
+        ({"cleanup": "failed"}, "a passed observation requires successful cleanup"),
     ],
 )
 def test_attempted_observation_fields_are_pattern_bound(
@@ -766,6 +770,11 @@ def _closure_registry(
         ([{"evidence": [{"observed_at": "2026-01-01T00:00:00Z"}]}], "stale", "age-exceeded"),
         ([{"evidence": [{"result": "failed"}]}], "failed", None),
         ([{"evidence": [{}]}], "current", None),
+        # Only a live observation derives a state: the validator still admits
+        # `contract-review` and `automated`, and promoting either as live
+        # verification is exactly the claim ADR 0127 makes about `current`.
+        ([{"evidence": [{"channel": "contract-review"}]}], "unevidenced", None),
+        ([{"evidence": [{"channel": "automated"}]}], "unevidenced", None),
     ],
 )
 def test_derived_states(
@@ -831,3 +840,54 @@ def test_a_stale_observation_is_not_an_error(
     record["evidence"] = [_observation(fingerprint="c" * 64)]
 
     assert not _maturity_report(tmp_path, registered_inventory, [record]).errors
+
+
+def test_verification_report_annotates_a_github_actions_run(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """The CI job's whole purpose is the annotations, and nothing else covers them."""
+    summary = tmp_path / "step-summary.md"
+    monkeypatch.setenv("GITHUB_ACTIONS", "1")
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    states = {
+        "system.list": inventory.OperationState("stale", "age-exceeded", "implemented"),
+        "sriov.set_mode": inventory.OperationState("current", None, "partial"),
+    }
+
+    assert inventory.verification_report(states, fail_on_stale=False) == 0
+
+    output = capsys.readouterr().out
+    assert "::warning::system.list is stale: age-exceeded" in output
+    assert "::warning::sriov.set_mode" not in output
+    table = summary.read_text(encoding="utf-8")
+    assert "| Operation | Implementation | State | Reason |" in table
+    assert "| system.list | implemented | stale | age-exceeded |" in table
+    assert "| sriov.set_mode | partial | current |  |" in table
+
+
+def test_verification_report_survives_an_unwritable_step_summary(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """An unwritable summary path must not redden the pull request job."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "1")
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "missing" / "summary.md"))
+
+    assert (
+        inventory.verification_report(
+            {"system.list": inventory.OperationState("unrecorded")}, fail_on_stale=False
+        )
+        == 0
+    )
+    assert "could not append the step summary" in capsys.readouterr().err
+
+
+def test_verification_report_is_quiet_outside_github_actions(
+    monkeypatch, capsys
+) -> None:
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    states = {"system.list": inventory.OperationState("stale", "age-exceeded", "implemented")}
+
+    inventory.verification_report(states, fail_on_stale=False)
+
+    assert "::warning::" not in capsys.readouterr().out

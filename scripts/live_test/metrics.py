@@ -21,7 +21,10 @@ _PCM_UNLICENSED = ExpectedOutcome(
 )
 _TEMPLATES_UNLICENSED = ExpectedOutcome(
     reason="Partition templates not licensed on this HMC (expected)",
-    error_codes=frozenset({"406", "template"}),
+    # Both numbers, because matching is whole-token now: the substring this
+    # replaced matched "template" inside "templates", and a declared literal
+    # has to name the token the message actually carries.
+    error_codes=frozenset({"406", "template", "templates"}),
 )
 
 #: ST12's job scenario: both tools are asserted against the same postconditions.

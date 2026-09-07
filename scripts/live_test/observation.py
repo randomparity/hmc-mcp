@@ -63,9 +63,16 @@ class ExpectedOutcome:
             raise ValueError("an expected outcome must name an error code or a denial")
 
     def matches(self, failure: CallFailure) -> bool:
-        """Report whether ``failure`` is the limitation this outcome declares."""
+        """Report whether ``failure`` is the limitation this outcome declares.
+
+        Matching is case-insensitive, as the substring match this replaced was:
+        HMC messages render `Not Acceptable` and `Not Running` in title case,
+        which a case-sensitive pattern would miss, silently recording a known
+        limitation as a real failure. What changed is *where* and *how* the
+        match runs — the message only, whole tokens only — not its case rule.
+        """
         return any(
-            re.search(rf"\b{re.escape(code)}\b", failure.message)
+            re.search(rf"\b{re.escape(code)}\b", failure.message, re.IGNORECASE)
             for code in self.error_codes
         ) or (self.denial and failure.denied)
 

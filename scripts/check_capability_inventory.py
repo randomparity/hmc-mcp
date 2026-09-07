@@ -885,8 +885,13 @@ def _append_step_summary(states: Mapping[str, OperationState]) -> None:
         f"| {states[operation].state} | {states[operation].reason or ''} |"
         for operation in sorted(states)
     ]
-    with open(destination, "a", encoding="utf-8") as summary:
-        summary.write("\n".join(lines) + "\n")
+    try:
+        with open(destination, "a", encoding="utf-8") as summary:
+            summary.write("\n".join(lines) + "\n")
+    except OSError as error:
+        # The report must never fail a pull request; an unwritable summary path
+        # is a runner problem, not evidence that anything is stale.
+        print(f"could not append the step summary: {error}", file=sys.stderr)
 
 
 def validate_inventory(
