@@ -2,9 +2,10 @@
 
 ADR 0040's contract is a *sink*, so a unit test against a mock logger proves the
 payload and almost nothing about delivery. This drives the real console script
-over raw newline-delimited JSON-RPC — deliberately not a client library, so that
-anything the server prints outside the protocol shows up as an unparseable line
-on stdout and is observable.
+(L1-L4) and the module entry point (L5, for the reason below) over raw
+newline-delimited JSON-RPC — deliberately not a client library, so that anything
+the server prints outside the protocol shows up as an unparseable line on stdout
+and is observable.
 
 Covers docs/workflow/specs/2026-08-19-authorization-audit-events-design.md.
 
@@ -20,6 +21,16 @@ POSIX shell redirection; Run A's fixture steers ``config_dir()`` through ``HOME`
 which on win32 resolves from ``APPDATA`` while ``Path.home()`` reads
 ``USERPROFILE`` — so on Windows the fixture would write its sentinel-bearing
 ``config.toml`` over the developer's real one.
+
+L5 additionally needs an interpreter it can exec directly, so it alone launches
+``[sys.executable, "-P", "-m", "hmc_mcp"]`` instead of the console script. Past
+``uv``'s shebang threshold that script is a ``/bin/sh`` trampoline. The shell opens
+it to read it, and where ``/bin/sh`` is **bash** that descriptor survives the
+``exec`` — landing the script file on fd 2, which ``2>&-`` had just freed — so the
+interpreter inherits an unwritable stderr rather than none and exits 120 before
+answering, which reads as the server refusing to start. Where ``/bin/sh`` is dash
+it does not, so CI never sees this. Exec'ing the interpreter by path leaves no
+descriptor on fd 2 under either shell. See ADR 0128; L1-L4 keep the console script.
 """
 
 from __future__ import annotations
@@ -144,6 +155,51 @@ def server_binary():
         "the live proof would run against a different build of hmc-mcp"
     )
     return path
+
+
+@pytest.fixture
+def server_module_command():
+    """L5's launch — this interpreter running the package, not the console script.
+
+    ``server_binary`` cannot serve L5: at a long install path the console script
+    is a ``/bin/sh`` trampoline, which fails under ``2>&-`` for the reason the
+    module docstring records. Exec'ing the interpreter by path opens no script.
+
+    ``-P`` keeps the child's working directory off ``sys.path``, which ``-m``
+    would otherwise prepend. That is what lets the check below bind the child:
+    with no cwd entry it resolves ``hmc_mcp`` exactly as this subprocess does.
+
+    The check is ``server_binary``'s guarantee in the form this route admits.
+    ``shutil.which`` cannot go wrong here — there is no PATH lookup — but a
+    ``pytest`` run from outside this checkout still could, so the interpreter is
+    asked where the package it would import actually lives.
+    """
+    # The probe and the launch share this prefix on purpose: the guard binds the
+    # child only while both resolve `hmc_mcp` the same way.
+    interpreter = [sys.executable, "-P"]
+    probe = subprocess.run(
+        [*interpreter, "-c", "import hmc_mcp; print(hmc_mcp.__file__)"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    # Not check=True: CalledProcessError stringifies to the exit status alone and
+    # leaves the child's traceback in an attribute nobody prints, so a venv without
+    # the project installed would abort here with no cause named.
+    assert probe.returncode == 0, (
+        f"{sys.executable} cannot import hmc_mcp, so the live proof has no server "
+        f"to launch:\n{probe.stderr}"
+    )
+    origin = probe.stdout.strip()
+    # The source tree, not the checkout root: `.venv` lives inside the checkout, so
+    # a copied (non-editable) install there would satisfy a root-relative check
+    # while being a build that has silently drifted from the working tree.
+    source = Path(__file__).resolve().parents[2] / "src"
+    assert Path(origin).resolve().is_relative_to(source), (
+        f"{origin} is not this branch's source tree ({source}); the live proof "
+        "would run against a different or stale build of hmc_mcp"
+    )
+    return [*interpreter, "-m", "hmc_mcp"]
 
 
 class _Server:
@@ -438,7 +494,9 @@ def test_an_audit_level_of_warning_suppresses_permits_but_keeps_denials(
     assert reasons == ["connection-not-granted"]
 
 
-def test_a_failed_sink_leaves_the_denial_unchanged(child_env, server_binary, tmp_path):
+def test_a_failed_sink_leaves_the_denial_unchanged(
+    child_env, server_module_command, tmp_path
+):
     """L5 — Run B, a separate subprocess with fd 2 closed at interpreter start.
 
     The observation channel and the failure injection cannot coexist: every
@@ -448,13 +506,12 @@ def test_a_failed_sink_leaves_the_denial_unchanged(child_env, server_binary, tmp
     processes and their key ordering is FastMCP's to change, while the denial
     *message* is what ADR 0038 and ADR 0039 fixed as the client contract.
     """
+    # One list, both runs: a second launch mechanism would confound the
+    # comparison, which is meant to isolate the sink and nothing else.
+    command = [*server_module_command, "serve", "--access-policy", "lab-scoped"]
     log = tmp_path / "reference.log"
     with log.open("w") as sink:
-        reference = _Server(
-            _spawn([server_binary, "serve", "--access-policy", "lab-scoped"],
-                   child_env, sink),
-            log,
-        )
+        reference = _Server(_spawn(command, child_env, sink), log)
         try:
             reference.initialize()
             expected = reference.call(
@@ -466,7 +523,7 @@ def test_a_failed_sink_leaves_the_denial_unchanged(child_env, server_binary, tmp
     # shlex.quote, not " ".join: this repository's own path contains spaces, and
     # an unquoted one makes `sh -c` split it into words and fail to exec at all —
     # which looks exactly like the server refusing to start.
-    quoted = shlex.join([server_binary, "serve", "--access-policy", "lab-scoped"])
+    quoted = shlex.join(command)
     blinded = _Server(
         _spawn(["/bin/sh", "-c", f"exec {quoted} 2>&-"], child_env, subprocess.DEVNULL)
     )
