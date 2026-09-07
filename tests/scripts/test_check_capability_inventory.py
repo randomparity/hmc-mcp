@@ -446,11 +446,26 @@ def test_maturity_reports_invalid_identity_and_state_types(
     )
 
 
+def test_a_colliding_observation_id_is_distinguished_from_a_malformed_one(
+    tmp_path: Path, registered_inventory: tuple[inventory.RegistryTool, ...]
+) -> None:
+    """Two defects, two diagnostics: a mis-cased id is not a collision."""
+    record = _operation()
+    record["evidence"] = [_observation(), _observation()]
+
+    errors = _maturity_report(tmp_path, registered_inventory, [record]).errors
+
+    assert (
+        "maturity evidence st1-hmc-get-console-info: id must be catalog-wide unique"
+        in errors
+    )
+
+
 @pytest.mark.parametrize(
     ("field", "value", "diagnostic"),
     [
-        ("id", [], "id must be catalog-wide unique"),
-        ("id", "Not-An-Id", "id must be catalog-wide unique"),
+        ("id", [], "id must match [a-z0-9][a-z0-9-]*"),
+        ("id", "Not-An-Id", "id must match [a-z0-9][a-z0-9-]*"),
         ("channel", [], "invalid channel or result"),
         ("channel", {}, "invalid channel or result"),
         ("result", [], "invalid channel or result"),
@@ -891,3 +906,28 @@ def test_verification_report_is_quiet_outside_github_actions(
     inventory.verification_report(states, fail_on_stale=False)
 
     assert "::warning::" not in capsys.readouterr().out
+
+
+def test_closure_refuses_a_relative_import_that_leaves_the_package(
+    tmp_path: Path,
+) -> None:
+    """At package depth 1, `from ..x import y` resolves against `src/` itself."""
+    _package(tmp_path, {"a.py": "from ..outside import thing\n"})
+    (tmp_path / "src" / "outside.py").write_text("thing = 1\n", encoding="utf-8")
+
+    paths = inventory.closure_paths(tmp_path, "hmc_mcp.a")
+
+    assert tmp_path / "src" / "outside.py" not in paths
+    assert paths == [
+        tmp_path / "src" / "hmc_mcp" / "__init__.py",
+        tmp_path / "src" / "hmc_mcp" / "a.py",
+    ]
+
+
+def test_fail_on_stale_requires_the_report(capsys) -> None:
+    """Silently ignoring the flag would report success on a stale catalog."""
+    with pytest.raises(SystemExit) as raised:
+        inventory.main(["--fail-on-stale"])
+
+    assert raised.value.code == 2
+    assert "--fail-on-stale requires --verification-report" in capsys.readouterr().err

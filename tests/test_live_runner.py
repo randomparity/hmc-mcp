@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
 import json
 import os
@@ -1902,6 +1903,9 @@ async def test_every_dispatched_argument_matches_the_served_schema():
         Path(module.__file__).name: Path(module.__file__).read_text(encoding="utf-8")
         for module in LIVE_WORKFLOW_MODULES
     }
+    # The runner itself dispatches nothing today; covering it keeps a dispatch
+    # added there from being the one the guard never reads.
+    sources[_RUNNER_PATH.name] = _RUNNER_PATH.read_text(encoding="utf-8")
 
     _assert_dispatch_arguments(sources, schemas)
 
@@ -3142,7 +3146,11 @@ def _live_repo(tmp_path: Path) -> Path:
     (tmp_path / ".gitignore").write_text(
         "test-results*.json\n.test-results*.tmp\n", encoding="utf-8"
     )
-    (tmp_path / "src").mkdir()
+    package = tmp_path / "src" / "hmc_mcp"
+    package.mkdir(parents=True)
+    # A real module, so the validated `closure_fingerprint` is a hash of files
+    # rather than the empty-input digest, which would say nothing about the walk.
+    (package / "__init__.py").write_text("", encoding="utf-8")
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "placeholder.py").write_text("", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
@@ -3231,13 +3239,19 @@ def test_emitted_observations_validate_against_the_catalog_shape(tmp_path):
 
     document = json.loads(destination.read_text())
     errors: list[str] = []
+    # One shared id set across the document, so a duplicate id is caught here
+    # exactly as `just capability-inventory` would catch it after a copy-in.
+    evidence_ids: set[str] = set()
     for entry in document:
         runner.check_capability_inventory._validate_observation(
-            entry["observation"], entry["operation"], set(), errors
+            entry["observation"], entry["operation"], evidence_ids, errors
         )
     assert errors == []
     assert document[0]["operation"] == "console.info"
     assert document[0]["observation"]["result"] == "passed"
+    assert document[0]["observation"]["closure_fingerprint"] != hashlib.sha256(
+        b""
+    ).hexdigest()
 
 
 def test_a_lone_environment_key_exits_before_the_run(monkeypatch, tmp_path, capsys):
@@ -3305,3 +3319,44 @@ def test_gitignore_covers_live_test_results():
             ).returncode
             == 0
         ), name
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["hmc01.lab.example.com", "0644C7T", "U78CB.001.WZS0044-P1-C2", "lab-hmc-3", "10.1.2.3"],
+)
+def test_an_environment_value_outside_its_grammar_is_rejected(tmp_path, value):
+    """These two strings are the only free text an observation carries.
+
+    Rejecting them at read time keeps a hostname or serial from reaching disk at
+    all, rather than surfacing when a human pastes it into `maturity.json`.
+    """
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        f"LIVE_TEST_ENV_HMC_RELEASE={value}\nLIVE_TEST_ENV_HARDWARE_FAMILY=POWER10\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="does not match its grammar"):
+        runner._read_environment(env_file)
+
+
+def test_the_repository_root_is_resolved_from_git_not_the_working_directory(
+    tmp_path, monkeypatch
+):
+    """From a subdirectory, `Path.cwd()` would fingerprint no files at all."""
+    repo = _live_repo(tmp_path)
+    subdirectory = repo / "scripts"
+    monkeypatch.chdir(subdirectory)
+
+    assert runner._repository_root() == repo
+
+
+def test_the_repository_root_refuses_a_checkout_without_the_package(
+    tmp_path, monkeypatch
+):
+    """A repository that is not this one must not silently fingerprint nothing."""
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
+    monkeypatch.chdir(tmp_path)
+
+    assert runner._repository_root() is None

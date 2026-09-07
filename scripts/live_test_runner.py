@@ -938,7 +938,25 @@ def _read_environment(path: Path | None = None) -> tuple[str, str] | None:
             + " and ".join(ENVIRONMENT_KEYS)
             + " must be set together"
         )
-    return values[ENVIRONMENT_KEYS[0]], values[ENVIRONMENT_KEYS[1]]
+    # The catalog's own grammars, applied here rather than at copy-in: these two
+    # strings are the only free text an observation carries, and a hostname or a
+    # serial typed into either would otherwise be written to disk and discovered
+    # only when a human pastes it into `maturity.json`.
+    release, family = values[ENVIRONMENT_KEYS[0]], values[ENVIRONMENT_KEYS[1]]
+    invalid = [
+        key
+        for key, value, pattern in (
+            (ENVIRONMENT_KEYS[0], release, check_capability_inventory.HMC_RELEASE),
+            (ENVIRONMENT_KEYS[1], family, check_capability_inventory.HARDWARE_FAMILY),
+        )
+        if not pattern.fullmatch(value)
+    ]
+    if invalid:
+        raise ValueError(
+            "invalid live-test configuration: "
+            + ", ".join(f"{key} does not match its grammar" for key in invalid)
+        )
+    return release, family
 
 
 def _git(repo_root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -948,6 +966,20 @@ def _git(repo_root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+def _repository_root() -> Path | None:
+    """The repository the runner is checked out in, whatever directory it ran from.
+
+    `Path.cwd()` would silently produce an empty import closure when the runner
+    is invoked from a subdirectory, giving every observation the digest of no
+    files and marking it stale forever.
+    """
+    result = _git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if result.returncode != 0:
+        return None
+    root = Path(result.stdout.strip())
+    return root if (root / "src" / "hmc_mcp").is_dir() else None
 
 
 def _tree_is_clean(repo_root: Path) -> bool:
@@ -1098,12 +1130,16 @@ async def main(
     )
 
     observations_path = Path(results_path)
-    _emit_observations(
-        state,
-        observations_path.with_name(f"{observations_path.stem}-observations.json"),
-        environment,
-        Path.cwd(),
-    )
+    repo_root = _repository_root()
+    if repo_root is None:
+        print("not inside the hmc-mcp repository — observations not written")
+    else:
+        _emit_observations(
+            state,
+            observations_path.with_name(f"{observations_path.stem}-observations.json"),
+            environment,
+            repo_root,
+        )
 
     total = len(state.results)
     passed = sum(1 for r in state.results if r["status"] == "PASS")

@@ -64,10 +64,6 @@ ASSERTION_ID = re.compile(r"[a-z][a-z0-9-]{2,63}")
 HMC_RELEASE = re.compile(r"V\d+R\d+(?:M\d+)?")
 HARDWARE_FAMILY = re.compile(r"POWER\d+")
 
-#: Ordered by specificity: a changed closure is the concrete fact, and the age
-#: ceiling is the backstop that sees changes this repository cannot.
-STALE_REASONS = ("closure-changed", "age-exceeded")
-
 
 class InventoryError(ValueError):
     """An inventory artifact cannot be parsed safely."""
@@ -555,7 +551,10 @@ def _validate_observation(
         if isinstance(identity, str)
         else f"maturity operation {operation} evidence"
     )
-    if not _matches(OBSERVATION_ID, identity) or identity in evidence_ids:
+    if not _matches(OBSERVATION_ID, identity):
+        errors.append(f"{label}: id must match {OBSERVATION_ID.pattern}")
+        return
+    if identity in evidence_ids:
         errors.append(f"{label}: id must be catalog-wide unique")
         return
     assert isinstance(identity, str)
@@ -732,8 +731,9 @@ def _import_from_names(
     """Resolve one `from ... import ...` to dotted names, absolute or relative."""
     if statement.level:
         upward = statement.level - 1
-        if upward > len(package):
-            # Resolving further up than the package goes would leave it.
+        if upward >= len(package):
+            # Resolving this far up leaves the package: at `package` depth 1,
+            # `from ..x import y` would resolve `x` against `src/` itself.
             return []
         base = package[: len(package) - upward]
     elif statement.module and (
@@ -1063,6 +1063,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="exit non-zero when any operation's evidence has gone stale",
     )
     args = parser.parse_args(argv)
+    if args.fail_on_stale and not args.verification_report:
+        parser.error("--fail-on-stale requires --verification-report")
     try:
         registry = discover_registry()
     except InventoryError as error:

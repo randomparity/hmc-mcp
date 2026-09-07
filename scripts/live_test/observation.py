@@ -6,14 +6,11 @@ import re
 import traceback
 from dataclasses import dataclass, field
 
-#: Every value a recorded row's ``result`` may take. Only ``passed`` promotes, and
-#: only :meth:`RunState.record_verified` can reach it.
-RESULTS = frozenset({"observed", "passed", "failed", "skipped"})
-
 #: Every value an observation's ``cleanup`` disposition may take. This ``not-run``
 #: means cleanup did not run; it is unrelated to ADR 0126's deleted ``not-run``
-#: observation shape, which ADR 0127 dropped. ``RESULTS`` deliberately has no such
-#: member.
+#: observation shape, which ADR 0127 dropped. The result vocabulary itself
+#: (``observed``, ``passed``, ``failed``, ``skipped``) is produced by
+#: ``_result_for`` and ``record_verified`` in the runner and has no such member.
 CLEANUP = frozenset({"not-run", "not-required", "failed", "passed"})
 
 ASSERTION_ID = re.compile(r"\A[a-z][a-z0-9-]{2,63}\Z")
