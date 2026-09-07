@@ -13,9 +13,14 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
+from hmc_mcp.authorization import target_scope
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.server import TOOL_SECURITY
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.ssh import affinity as ssh_affinity
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
@@ -27,6 +32,7 @@ from live_test import (  # noqa: E402
     lpar,
     metrics,
     network,
+    observation,
     pcie,
     profiles,
     provisioning,
@@ -1125,7 +1131,10 @@ async def test_call_failure_is_redacted_when_recorded(capsys):
         assert value not in output
         assert value not in recorded
     assert "RuntimeError: transport failed" in recorded
-    assert "Traceback" in recorded
+    # The traceback stays on the CallFailure for the caller that classifies it and
+    # is not persisted: the results document keeps only the redacted message.
+    assert "Traceback" not in recorded
+    assert "Traceback" in data.traceback_text
 
 
 @pytest.mark.asyncio
@@ -1140,23 +1149,218 @@ async def test_call_reports_unexpected_result_parser_failure(monkeypatch):
     )
 
     assert status == "FAIL"
-    assert "TypeError: parser bug" in data
+    assert "TypeError: parser bug" in data.message
 
 
 def test_expected_hmc_limitation_is_classified_as_skip():
     state = runner.RunState()
 
-    state.record_expected_or_real(
+    state.record_with_expected(
         5,
         "optional_tool",
         "FAIL",
-        "HTTP 406 Not Acceptable",
-        ["406"],
-        "feature unavailable",
+        observation.classify_failure(RuntimeError("HTTP 406 Not Acceptable")),
+        [
+            observation.ExpectedOutcome(
+                reason="feature unavailable", error_codes=frozenset({"406"})
+            )
+        ],
     )
 
     assert state.results[0]["status"] == "SKIP"
     assert state.results[0]["note"] == "feature unavailable"
+
+
+def test_classify_failure_reads_the_message_not_the_traceback():
+    """A status quoted by an unrelated frame must not reclassify the failure."""
+    try:
+        try:
+            raise RuntimeError("inner frame mentions HTTP 500")
+        except RuntimeError as inner:
+            raise RuntimeError("transport returned HTTP 400") from inner
+    except RuntimeError as exc:
+        failure = observation.classify_failure(exc)
+
+    assert failure.http_status == 400
+    assert "HTTP 500" in failure.traceback_text
+
+
+@pytest.mark.asyncio
+async def test_a_real_access_policy_denial_classifies_as_denied():
+    """The denial pattern is coupled to the message the application really renders."""
+    policy = compile_legacy_policy(
+        TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=False
+    )
+    async with Client(create_mcp(policy)) as client:
+        with pytest.raises(ToolError) as raised:
+            await client.call_tool("hmc_list_systems", {"profile": "not-granted"})
+
+    assert observation.classify_failure(raised.value).denied is True
+
+
+def test_a_target_scope_denial_classifies_as_denied():
+    """Three of the four target-scope templates omit the ``on <targets>`` segment."""
+    rendered = target_scope._UNREADABLE_VALUE.format(
+        tool="hmc_get_lpar",
+        policy="'legacy-equivalent'",
+        argument="lpar_name_or_uuid",
+        kind="lpar",
+    )
+
+    assert observation.classify_failure(RuntimeError(rendered)).denied is True
+
+
+def test_expected_outcome_matches_whole_tokens_in_the_message():
+    outcome = observation.ExpectedOutcome(
+        reason="job REST type unsupported", error_codes=frozenset({"REST000E"})
+    )
+
+    assert outcome.matches(
+        observation.classify_failure(RuntimeError("saw REST000E here"))
+    )
+    assert not outcome.matches(
+        observation.classify_failure(RuntimeError("saw REST000EX here"))
+    )
+
+
+def test_expected_outcome_requires_a_code_or_a_denial():
+    with pytest.raises(ValueError, match="error code or a denial"):
+        observation.ExpectedOutcome(reason="nothing to match on")
+
+
+def test_an_unmatched_failure_is_recorded_as_failed():
+    """An undeclared failure is never laundered into a skip."""
+    state = runner.RunState()
+
+    state.record_with_expected(
+        12,
+        "hmc_get_job",
+        "FAIL",
+        observation.classify_failure(RuntimeError("HTTP 500 Internal Server Error")),
+        [
+            observation.ExpectedOutcome(
+                reason="job REST type unsupported", error_codes=frozenset({"REST000E"})
+            )
+        ],
+    )
+
+    assert state.results[0]["status"] == "FAIL"
+    assert state.results[0]["result"] == "failed"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("PASS", "observed"), ("FAIL", "failed"), ("SKIP", "skipped")],
+)
+def test_record_always_yields_a_non_promoting_result(status, expected):
+    state = runner.RunState()
+
+    state.record(1, "hmc_get_console_info", status, {"uuid": "c"})
+
+    assert state.results[0]["result"] == expected
+    assert state.results[0]["result"] != "passed"
+
+
+def test_record_verified_yields_failed_on_a_false_assertion():
+    state = runner.RunState()
+
+    state.record_verified(
+        12,
+        "hmc_get_job",
+        operation="jobs.get",
+        scenario="st12-job-inspection",
+        assertions=[
+            observation.Assertion("job-found", True),
+            observation.Assertion("job-status-successful", False),
+        ],
+        cleanup="not-required",
+        data={"UUID": "j"},
+    )
+
+    assert state.results[0]["result"] == "failed"
+    assert state.observations[0]["observation"]["result"] == "failed"
+    assert state.observations[0]["observation"]["assertions"] == ["job-found"]
+
+
+def test_record_verified_yields_failed_on_failed_cleanup():
+    state = runner.RunState()
+
+    state.record_verified(
+        12,
+        "hmc_get_job",
+        operation="jobs.get",
+        scenario="st12-job-inspection",
+        assertions=[observation.Assertion("job-found", True)],
+        cleanup="failed",
+        data={"UUID": "j"},
+    )
+
+    assert state.results[0]["result"] == "failed"
+    assert state.observations[0]["observation"]["cleanup"] == "failed"
+
+
+def test_record_verified_writes_a_catalog_shaped_observation():
+    state = runner.RunState()
+
+    state.record_verified(
+        1,
+        "hmc_get_console_info",
+        operation="console.info",
+        scenario="st1-console-identity",
+        assertions=[observation.Assertion("console-uuid-present", True)],
+        cleanup="not-required",
+        data={"uuid": "c"},
+    )
+
+    recorded = state.observations[0]
+    assert recorded["operation"] == "console.info"
+    assert recorded["observation"]["id"] == "st1-hmc-get-console-info"
+    assert recorded["observation"]["channel"] == "live"
+    assert recorded["observation"]["result"] == "passed"
+    assert set(recorded["observation"]) == {
+        "id",
+        "channel",
+        "result",
+        "scenario",
+        "observed_at",
+        "cleanup",
+        "assertions",
+    }
+
+
+@pytest.mark.parametrize(
+    ("assertions", "cleanup", "scenario", "match"),
+    [
+        ([], "not-required", "st1-console-identity", "at least one condition"),
+        (
+            [("console-uuid-present", True)],
+            "unknown",
+            "st1-console-identity",
+            "cleanup disposition",
+        ),
+        ([("console-uuid-present", True)], "not-required", "console", "scenario id"),
+    ],
+)
+def test_record_verified_rejects_a_malformed_observation(
+    assertions, cleanup, scenario, match
+):
+    state = runner.RunState()
+
+    with pytest.raises(ValueError, match=match):
+        state.record_verified(
+            1,
+            "hmc_get_console_info",
+            operation="console.info",
+            scenario=scenario,
+            assertions=[observation.Assertion(*item) for item in assertions],
+            cleanup=cleanup,
+            data={},
+        )
+
+
+def test_assertion_id_must_be_a_closed_shape_token():
+    with pytest.raises(ValueError, match="closed-shape token"):
+        observation.Assertion("entry UUID equals job id", True)
 
 
 def test_result_helpers_filter_malformed_entries_and_resource_shapes():

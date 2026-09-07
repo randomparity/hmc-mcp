@@ -24,7 +24,7 @@ import json
 import os
 import re
 import tempfile
-import traceback
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,6 +41,14 @@ from live_test.lpar import (
 )
 from live_test.metrics import inspect_metrics_jobs, inspect_metrics_templates
 from live_test.network import inventory_network, mutate_virtual_networking
+from live_test.observation import (
+    CLEANUP,
+    SCENARIO_ID,
+    Assertion,
+    CallFailure,
+    ExpectedOutcome,
+    classify_failure,
+)
 from live_test.pcie import exercise_sriov_assignment
 from live_test.profiles import inventory_lpar_profiles
 from live_test.provisioning import (
@@ -443,6 +451,24 @@ class LiveTestArtifacts:
     vmedia_orig_boot_order: list[str] = field(default_factory=list)
 
 
+def _result_for(status: str) -> str:
+    """Map a printed status to its result vocabulary entry.
+
+    None of the three promotes; ``passed`` is reachable only through
+    :meth:`RunState.record_verified`.
+    """
+    if status == "FAIL":
+        return "failed"
+    if status == "SKIP":
+        return "skipped"
+    return "observed"
+
+
+def _observation_id(subtask: int, tool: str) -> str:
+    """Derive an observation id from the recording site's subtask and tool."""
+    return f"st{subtask}-{tool.split(' (')[0].replace('_', '-')}"
+
+
 @dataclass
 class RunState:
     """Mutable output owned by a single invocation of the live runner."""
@@ -450,6 +476,7 @@ class RunState:
     config: LiveTestConfig = field(default_factory=LiveTestConfig)
     artifacts: LiveTestArtifacts = field(default_factory=LiveTestArtifacts)
     results: list[dict[str, Any]] = field(default_factory=list)
+    observations: list[dict[str, Any]] = field(default_factory=list)
     iso_http_server: IsoHttpServer = field(default_factory=IsoHttpServer)
 
     async def call(self, client: Client, tool: str, **kwargs: Any) -> tuple[str, Any]:
@@ -472,17 +499,24 @@ class RunState:
                 data = text
             return "PASS", data
         except Exception as exc:  # noqa: BLE001 - the harness records any tool failure as a FAIL row; totality is the contract
-            return "FAIL", f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
+            return "FAIL", classify_failure(exc)
 
     def record(
         self, subtask: int, tool: str, status: str, data: Any, note: str = ""
     ) -> None:
         """Append and print one result entry."""
-        safe_data = _redact_failure_data(data) if status == "FAIL" else data
+        if isinstance(data, CallFailure):
+            # Only the message is persisted: the traceback text stays on the
+            # ``CallFailure`` for the caller that classifies it, and never reaches
+            # the results document, whose redaction pass reads string leaves.
+            safe_data: Any = _redact_failure_text(data.message)
+        else:
+            safe_data = _redact_failure_data(data) if status == "FAIL" else data
         entry = {
             "subtask": subtask,
             "tool": tool,
             "status": status,
+            "result": _result_for(status),
             "timestamp": datetime.now(UTC).isoformat(),
             "note": note,
             "data": (
@@ -502,22 +536,76 @@ class RunState:
         """Record a skipped operation."""
         self.record(subtask, tool, "SKIP", None, reason)
 
-    def record_expected_or_real(
+    def record_with_expected(
         self,
         subtask: int,
         tool: str,
         status: str,
         data: Any,
-        expected_fail_substrings: list[str],
-        skip_reason: str,
+        expected: Sequence[ExpectedOutcome],
     ) -> None:
-        """Turn a known HMC limitation into SKIP; record other outcomes verbatim."""
-        if status == "FAIL" and any(
-            text.lower() in str(data).lower() for text in expected_fail_substrings
+        """Turn a declared HMC limitation into SKIP; record other outcomes verbatim.
+
+        An ``InvalidDispatch`` failure is the harness's own defect, so it is
+        recorded before any declaration is consulted — that is the substitution
+        the old substring match allowed.
+        """
+        if (
+            status == "FAIL"
+            and isinstance(data, CallFailure)
+            and data.exception_type != "InvalidDispatch"
         ):
-            self.skip(subtask, tool, skip_reason)
-            return
+            for outcome in expected:
+                if outcome.matches(data):
+                    self.skip(subtask, tool, outcome.reason)
+                    return
         self.record(subtask, tool, status, data)
+
+    def record_verified(
+        self,
+        subtask: int,
+        tool: str,
+        *,
+        operation: str,
+        scenario: str,
+        assertions: Sequence[Assertion],
+        cleanup: str,
+        data: Any,
+    ) -> None:
+        """Record one scenario's asserted postconditions — the only promoting path."""
+        if not assertions:
+            raise ValueError(
+                "a verified observation must assert at least one condition"
+            )
+        if cleanup not in CLEANUP:
+            raise ValueError(f"cleanup disposition is not a known value: {cleanup!r}")
+        if not SCENARIO_ID.fullmatch(scenario):
+            raise ValueError(f"scenario id is not a closed-shape token: {scenario!r}")
+        passed = all(item.holds for item in assertions) and cleanup in {
+            "passed",
+            "not-required",
+        }
+        unmet = [item.id for item in assertions if not item.holds]
+        note = "" if passed else "unmet: " + ", ".join(unmet or [f"cleanup {cleanup}"])
+        self.record(subtask, tool, "PASS" if passed else "FAIL", data, note)
+        self.results[-1]["result"] = "passed" if passed else "failed"
+        self.observations.append(
+            {
+                "operation": operation,
+                # ``tested_commit``, ``closure_fingerprint``, ``hmc_release`` and
+                # ``hardware_family`` are filled at emission; ``channel`` is not
+                # derivable there, so it is written here.
+                "observation": {
+                    "id": _observation_id(subtask, tool),
+                    "channel": "live",
+                    "result": "passed" if passed else "failed",
+                    "scenario": scenario,
+                    "observed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "cleanup": cleanup,
+                    "assertions": [item.id for item in assertions if item.holds],
+                },
+            }
+        )
 
 
 # ---------------------------------------------------------------------------
