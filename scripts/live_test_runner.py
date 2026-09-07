@@ -24,7 +24,7 @@ import json
 import os
 import re
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
@@ -451,6 +451,30 @@ class LiveTestArtifacts:
     vmedia_orig_boot_order: list[str] = field(default_factory=list)
 
 
+def _dispatch_problems(
+    tool: str,
+    keywords: Iterable[str],
+    schemas: Mapping[str, Mapping[str, Any]],
+) -> tuple[str, ...]:
+    """Report every way a dispatch disagrees with the tool's served input schema."""
+    schema = schemas.get(tool)
+    if schema is None:
+        return (f"{tool} is not a registered tool",)
+    properties = schema.get("properties") or {}
+    supplied = list(keywords)
+    problems = [
+        f"{tool}: unknown argument {name}"
+        for name in supplied
+        if name not in properties
+    ]
+    problems += [
+        f"{tool}: missing required argument {name}"
+        for name in schema.get("required") or ()
+        if name not in supplied
+    ]
+    return tuple(problems)
+
+
 def _result_for(status: str) -> str:
     """Map a printed status to its result vocabulary entry.
 
@@ -477,10 +501,21 @@ class RunState:
     artifacts: LiveTestArtifacts = field(default_factory=LiveTestArtifacts)
     results: list[dict[str, Any]] = field(default_factory=list)
     observations: list[dict[str, Any]] = field(default_factory=list)
+    schemas: dict[str, dict[str, Any]] = field(default_factory=dict)
     iso_http_server: IsoHttpServer = field(default_factory=IsoHttpServer)
 
     async def call(self, client: Client, tool: str, **kwargs: Any) -> tuple[str, Any]:
         """Call a tool and return a PASS or FAIL result without raising."""
+        # FastMCP would reject an invalid dispatch anyway; checking here is what
+        # gives the failure a stable reason instead of a pydantic rendering, and
+        # keeps a harness defect from ever reaching the real HMC.
+        problems = (
+            _dispatch_problems(tool, kwargs, self.schemas) if self.schemas else ()
+        )
+        if problems:
+            return "FAIL", CallFailure(
+                "InvalidDispatch", "; ".join(problems), "", None, False
+            )
         try:
             result = await client.call_tool(tool, kwargs)
             if hasattr(result, "data") and result.data is not None:
@@ -914,6 +949,9 @@ async def main(
     )
     try:
         async with Client(mcp) as client:
+            state.schemas = {
+                tool.name: tool.inputSchema for tool in await client.list_tools()
+            }
             for n in tasks:
                 fn = SUBTASKS.get(n)
                 if fn:

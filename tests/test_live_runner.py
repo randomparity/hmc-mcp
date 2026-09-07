@@ -20,7 +20,8 @@ from hmc_mcp.authorization import target_scope
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
+from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 from hmc_mcp.ssh import affinity as ssh_affinity
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
@@ -73,6 +74,11 @@ class _FakeClient:
 
     async def __aexit__(self, *_args):
         return None
+
+    async def list_tools(self):
+        # An empty schema map leaves the runtime dispatch guard inert, which is
+        # what these isolation tests want: they script their own tool responses.
+        return []
 
 
 class _ToolResult:
@@ -1708,14 +1714,16 @@ def test_live_runner_contains_no_executable_optmem_command():
     assert re.search(r"(?<![\w-])optmem(?![\w-])", source) is None
 
 
-def _dispatched_tool_names(source: str) -> set[str]:
-    """Every tool name ``source`` hands to the runner's ``call`` dispatcher.
+def _dispatched_calls(source: str) -> list[tuple[int, str, tuple[str | None, ...]]]:
+    """Every ``call`` dispatch in ``source``: its line, tool name and keywords.
 
     A dispatch whose tool argument is not a string literal cannot be read here,
     and skipping it would silently shrink the guard's coverage, so it fails
-    instead.
+    instead. A ``**mapping`` splat yields ``None`` in place of a keyword name:
+    reporting that as one problem, rather than raising on it, is what lets the
+    caller finish enumerating every other site in the tree.
     """
-    names: set[str] = set()
+    dispatches: list[tuple[int, str, tuple[str | None, ...]]] = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.Call):
             continue
@@ -1727,8 +1735,47 @@ def _dispatched_tool_names(source: str) -> set[str]:
                 f"line {node.lineno}: call() dispatches a tool name this guard "
                 "cannot read — pass a string literal"
             )
-        names.add(tool.value)
-    return names
+        dispatches.append(
+            (node.lineno, tool.value, tuple(keyword.arg for keyword in node.keywords))
+        )
+    return dispatches
+
+
+def _dispatched_tool_names(source: str) -> set[str]:
+    """Every tool name ``source`` hands to the runner's ``call`` dispatcher."""
+    return {tool for _, tool, _ in _dispatched_calls(source)}
+
+
+async def _served_schemas() -> dict[str, dict[str, object]]:
+    """The input schema the composed application actually serves for each tool."""
+    policy = compile_legacy_policy(
+        TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
+    )
+    application = create_mcp(policy)
+    permits, authorize = _gates(policy)
+    await configure_arbitrary_command_tool(
+        True, application, permits=permits, authorize=authorize
+    )
+    async with Client(application) as client:
+        return {tool.name: tool.inputSchema for tool in await client.list_tools()}
+
+
+def _assert_dispatch_arguments(sources: dict[str, str], schemas) -> None:
+    """Fail naming every dispatch whose keywords disagree with the served schema."""
+    problems: list[str] = []
+    for path, source in sources.items():
+        for lineno, tool, keywords in _dispatched_calls(source):
+            if None in keywords:
+                problems.append(
+                    f"{path}:{lineno} dispatches arguments this guard "
+                    "cannot read — name them"
+                )
+                continue
+            problems += [
+                f"{path}:{lineno} {problem}"
+                for problem in runner._dispatch_problems(tool, keywords, schemas)
+            ]
+    assert problems == [], "\n".join(problems)
 
 
 def test_every_dispatched_tool_name_is_registered():
@@ -1762,6 +1809,60 @@ def test_dispatch_guard_refuses_a_tool_name_it_cannot_read():
 
     with pytest.raises(AssertionError, match="cannot read"):
         _dispatched_tool_names(source)
+
+
+@pytest.mark.asyncio
+async def test_every_dispatched_argument_matches_the_served_schema():
+    """A dispatch the served schema rejects is a defect the harness ships blind."""
+    schemas = await _served_schemas()
+    sources = {
+        Path(module.__file__).name: Path(module.__file__).read_text(encoding="utf-8")
+        for module in LIVE_WORKFLOW_MODULES
+    }
+
+    _assert_dispatch_arguments(sources, schemas)
+
+
+@pytest.mark.asyncio
+async def test_argument_guard_refuses_a_splat_it_cannot_read():
+    source = (
+        "async def workflow(client):\n"
+        '    await state.call(client, "hmc_list_lpars", **overrides)\n'
+    )
+
+    with pytest.raises(AssertionError, match="cannot read"):
+        _assert_dispatch_arguments({"synthetic.py": source}, await _served_schemas())
+
+
+@pytest.mark.asyncio
+async def test_argument_guard_reports_an_unknown_keyword():
+    source = (
+        "async def workflow(client):\n"
+        '    await state.call(client, "hmc_get_job", job_uuid="x")\n'
+    )
+
+    with pytest.raises(AssertionError) as raised:
+        _assert_dispatch_arguments({"synthetic.py": source}, await _served_schemas())
+
+    assert "unknown argument job_uuid" in str(raised.value)
+    assert "missing required argument job_id" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_an_invalid_dispatch_never_reaches_the_client():
+    class _RefusingClient:
+        async def call_tool(self, _tool, _kwargs):
+            raise AssertionError("an invalid dispatch reached the client")
+
+    state = runner.RunState()
+    state.schemas = await _served_schemas()
+
+    status, data = await state.call(_RefusingClient(), "hmc_get_job", job_uuid="x")
+    state.record(12, "hmc_get_job", status, data)
+
+    assert status == "FAIL"
+    assert data.exception_type == "InvalidDispatch"
+    assert state.results[0]["result"] == "failed"
 
 
 def test_every_live_workflow_dispatch_has_exactly_client_and_tool_arguments():
