@@ -45,6 +45,31 @@
         ]
       },
       "evidence": []
+    },
+    {
+      "operation": "console.info",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {"variant": "console-identity", "parameters": []}
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-get-console-info",
+          "channel": "live",
+          "result": "failed",
+          "scenario": "st1-console-identity",
+          "tested_commit": "8a9c8d52056a9853d3e3722a9d54eeff6e9f0f98",
+          "observed_at": "2026-09-07T18:42:31Z",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER10",
+          "cleanup": "not-required",
+          "closure_fingerprint": "66ab1d6a13762a8def7434d0a852c6ce29d7688dbeaed8b7372c726ea7f55f5c",
+          "assertions": []
+        }
+      ]
     }
   ]
 }
