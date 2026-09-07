@@ -607,7 +607,7 @@ driven with `initialize`, then `notifications/initialized`, then `tools/call` fr
 | L3 | all of the above | every stdout line parses as a JSON-RPC frame; zero unparseable lines. |
 | L4 | `hmc_power_off_lpar(lpar_name_or_uuid="A"*500, system_name_or_uuid="sys-a", profile="lab")` | denied `target-not-granted`; the `lpar_name_or_uuid` entry's `value` is exactly 128 characters. |
 
-**Run B — failure injection (L5), a separate subprocess.** The observation channel and the
+**Run B — failure injection (L5), two separate subprocesses.** The observation channel and the
 failure injection cannot coexist: every mechanism that makes the sink fail either closes stderr or
 empties it, which is the stream Run A reads. So L5 asserts on **stdout only**.
 
@@ -679,7 +679,8 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
   hangs every CI leg with no diagnostic. Since ADR 0128 that `shutil.which` assertion guards the
   console-script launches only — Run A and the `--audit-level WARNING` check. L5 has its own
   fixture, which has no PATH lookup to guard and instead asks the interpreter where `hmc_mcp`
-  resolves and asserts the answer is inside this checkout's `src/`.
+  resolves and asserts the answer is inside this checkout's `src/`. That probe is a short-lived
+  import check rather than a bounded wait, so its hang-safety rests on the import returning.
 - A13. The live proof runs and passes on the branch head: Run A (L1-L4) against a real
   `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as two separate
   children launched from one command list — a reference child, and a blinded one under
