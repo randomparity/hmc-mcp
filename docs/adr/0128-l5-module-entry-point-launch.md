@@ -94,24 +94,36 @@ asserts the answer is inside this checkout.
   console script covered with the sink open.
 - `python -m hmc_mcp` becomes a working invocation, recorded in `CHANGELOG.md`. It is held
   equivalent to `hmc-mcp` **by construction, not by a standing test**: `__main__.py`
-  reproduces the generated console script's whole body — `sys.exit(main())`, written here as
-  `raise SystemExit(main())` — and adds nothing, so the two cannot diverge without adding
-  logic to it, which exclusion (a) forbids. The exit-status wrapper is part of that
+  reproduces the generated console script's exit-status wrapper — `sys.exit(main())`, written
+  here as `raise SystemExit(main())` — and adds nothing, so the two cannot diverge without
+  adding logic to it, which exclusion (a) forbids. It omits only the generated script's two
+  Windows `sys.argv[0]` suffix rewrites, which the `-m` form cannot exhibit because its
+  `sys.argv[0]` is the path to `__main__.py`. The exit-status wrapper is part of that
   construction and not an optional flourish: a bare `main()` would diverge the moment
   `hmc_mcp.main` returned a status instead of raising, a change entirely inside `main` that
   exclusion (a) would not catch. L5 exercises the invocation twice on every run. No dedicated
   equivalence test is added — that would be new surface the frozen charter does not carry —
   and it is recorded as a follow-up candidate instead.
-- The two invocations are not textually identical. Typer takes its program name from Click,
+- The two invocations are not identical in two ways. Typer takes its program name from Click,
   which derives it from how the process was started, so it reports `python -m hmc_mcp` rather
-  than `hmc-mcp` — in every `Usage:` line and usage-error message, not only in `--help`.
+  than `hmc-mcp` — in every `Usage:` line and usage-error message, not only in `--help`. More
+  consequentially, **`-m` puts the caller's working directory first on `sys.path`** where the
+  console script puts its own `bin` directory: a `hmc_mcp/`, `typer.py`, or `json.py` in the
+  launch directory is imported before the installed package, in a process that holds profile
+  passwords and a granted access policy. `hmc-mcp` therefore stays the form to prefer for a
+  served process, and `python -P -m hmc_mcp` (or `PYTHONSAFEPATH=1`) is the form to use when
+  launching from a directory the operator does not control. No guard inside the package can
+  close this: the shadowing is decided before `__main__.py` runs, which is why L5's own
+  fixture passes `-P`.
 - `tests/app/test_fail_closed_startup.py`'s L1 docstring argues from "there is no
   `__main__.py`". The shim falsifies that sentence, so this change corrects it; the test's
   own behaviour is untouched.
-- The new fixture reproduces one half of `server_binary`'s guarantee — the source is inside
-  this checkout — while the environment half is carried instead by `sys.executable` being the
+- The new fixture reproduces one half of `server_binary`'s guarantee — the source is this
+  branch's — while the environment half is carried instead by `sys.executable` being the
   interpreter running pytest. `server_binary` pins the environment and reaches source
-  identity through the editable install; the new guard pins source identity directly.
+  identity through the editable install; the new guard pins source identity directly, against
+  `src/` rather than the checkout root, so a copied non-editable install into the in-checkout
+  `.venv` fails it instead of passing as "this checkout".
 - `tests/test_package_version.py::test_wheel_metadata_and_package_contents` already asserts
   every `src/hmc_mcp/*.py` appears in the wheel, so the shim cannot be dropped from a build
   without that test failing.

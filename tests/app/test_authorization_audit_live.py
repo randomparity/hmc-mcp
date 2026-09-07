@@ -188,10 +188,13 @@ def server_module_command():
         f"to launch:\n{probe.stderr}"
     )
     origin = probe.stdout.strip()
-    root = Path(__file__).resolve().parents[2]
-    assert Path(origin).resolve().is_relative_to(root), (
-        f"{origin} is not inside this checkout ({root}); the live proof would "
-        "run against a different build of hmc_mcp"
+    # The source tree, not the checkout root: `.venv` lives inside the checkout, so
+    # a copied (non-editable) install there would satisfy a root-relative check
+    # while being a build that has silently drifted from the working tree.
+    source = Path(__file__).resolve().parents[2] / "src"
+    assert Path(origin).resolve().is_relative_to(source), (
+        f"{origin} is not this branch's source tree ({source}); the live proof "
+        "would run against a different or stale build of hmc_mcp"
     )
     return [sys.executable, "-P", "-m", "hmc_mcp"]
 
