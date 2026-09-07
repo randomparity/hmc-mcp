@@ -75,6 +75,12 @@ record establishes is therefore *no intermediate process may leave a descriptor 
 across the exec of the interpreter* — not "no shell", which is false here, and not "opens no
 file", which is too broad: dash opens the script and the launch still works.
 
+The reciprocal is worth stating, because it is what a closed sink actually means: fd 2 is then
+the lowest free descriptor, so the child's first opened file takes it. Under `serve` that is
+inert — the files opened are read-only and closed — but anything addressing raw fd 2 rather
+than `sys.stderr` would write into that file rather than nowhere. It is one more reason a
+closed stderr is a failure-injection condition and not a supported production configuration.
+
 `-P` keeps the child's current working directory off `sys.path`, which `-m` would otherwise
 prepend. That makes the child resolve `hmc_mcp` exactly as the parent does, so the fixture's
 guard below binds the process that actually runs.
@@ -116,12 +122,15 @@ asserts the answer is inside this checkout.
   launch directory is imported before the installed package, in a process that holds profile
   passwords and a granted access policy. `hmc-mcp` therefore stays the form to prefer for a
   served process, and `python -P -m hmc_mcp` (or `PYTHONSAFEPATH=1`) is the form to use when
-  launching from a directory the operator does not control. A shadowing `hmc_mcp/` package is
-  resolved before `__main__.py` exists as a frame, so no in-package guard can close that half.
-  A shadowed *dependency* — `typer.py`, `json.py` — could be, by dropping `sys.path[0]` before
-  delegating, since `main` imports `.cli` lazily; that is deliberately not done, because logic
-  in `__main__.py` is exactly the divergence this record forbids. L5's own fixture passes `-P`
-  instead, which is the same protection applied from outside the package.
+  launching from a directory the operator does not control. No in-package guard closes this.
+  A shadowing `hmc_mcp/` package is resolved before `__main__.py` exists as a frame; and a
+  shadowed *dependency* is only partly reachable, because `runpy` imports
+  `hmc_mcp/__init__.py` first and its module-scope `from importlib.metadata import version`
+  already resolves `csv`, `email`, `zipfile`, `textwrap` — and `json` on 3.13+ — against the
+  launch directory. A `sys.path[0]` drop inside `__main__.py` would arrive after those ran, so
+  it would cover only what `main` imports lazily, quite apart from being the logic this record
+  forbids. `-P` / `PYTHONSAFEPATH=1` is the one remedy that covers both halves, which is why
+  L5's fixture uses it and why the changelog points operators at it.
 - `tests/app/test_fail_closed_startup.py`'s L1 docstring argues from "there is no
   `__main__.py`". The shim falsifies that sentence, so this change corrects it; the test's
   own behaviour is untouched.
