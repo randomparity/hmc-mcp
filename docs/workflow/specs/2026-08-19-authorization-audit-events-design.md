@@ -673,7 +673,11 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
   assertions (both config files at the resolved path, the four environment variables absent,
   `shutil.which("hmc-mcp")` not `None`) that fail setup rather than hang. Not prose — this is the
   suite's first long-lived `hmc-mcp serve` child, and a blocking read on one that never answers
-  hangs every CI leg with no diagnostic.
+  hangs every CI leg with no diagnostic. Since ADR 0128 the `shutil.which` assertion guards Run A
+  alone: L5 has its own fixture, which has no PATH lookup to guard and instead asks the
+  interpreter where `hmc_mcp` resolves and asserts the answer is inside this checkout's `src/`.
 - A13. The live proof runs and passes on the branch head: Run A (L1-L4) against a real
   `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as a separate
-  `sh -c '… 2>&-'` subprocess. POSIX only; skipped elsewhere.
+  `sh -c '… 2>&-'` subprocess. POSIX only; skipped elsewhere. Since ADR 0128 the command inside
+  that shell is `python -P -m hmc_mcp serve --access-policy lab-scoped`, not the console script;
+  the `sh -c '… 2>&-'` shape is unchanged.
