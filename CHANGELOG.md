@@ -10,6 +10,17 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- Live-verification evidence is now trustworthy promotion evidence. `maturity.json`
+  moves to format 2: one closed observation shape, no stored currency, and no free
+  text beyond two grammar-bound environment strings. Staleness is derived when the
+  catalog is read — from the operation's own import closure, or a 90-day ceiling —
+  and is never a validation error, so recording evidence cannot turn the build red.
+  `just verification-report` prints each operation's state; it warns on pull requests
+  and fails only on the weekly scheduled run. The live runner asserts named
+  postconditions instead of treating "the call returned" as a pass, checks every
+  dispatch against the served tool schema, and emits observations only from a clean
+  tree to a path Git ignores (#623, ADR 0127, superseding ADR 0126).
+
 - Streamlined the README around installation, CLI, and MCP quick starts; moved
   configuration, API contracts, operation details, and development reference into
   topic guides under `docs/`.

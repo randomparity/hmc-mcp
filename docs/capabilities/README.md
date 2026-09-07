@@ -48,34 +48,85 @@ approved exclusion, and either it or an unknown blocks a complete-coverage claim
 ## Maturity and evidence catalog
 
 `maturity.json` is a sparse, format-versioned catalog keyed by the stable operation
-IDs in `operations.json`. An operation without a maturity row is unknown; an empty
-`evidence` list is also unknown, not an inferred `not-run` result. Implementation
-state and scope are recorded independently from evidence observations.
+IDs in `operations.json`. It is at format 2 ([ADR 0127](../adr/0127-derived-live-verification-staleness.md)),
+which supersedes [ADR 0126](../adr/0126-operation-keyed-maturity-evidence.md)'s evidence,
+currency, and promotion model. The implementation record — `absent`, `partial`, or
+`implemented`, with explicit implemented and missing scope — is carried forward
+unchanged and is recorded independently from evidence.
 
-Evidence is independent across three channels:
+Format 2 has one observation shape, with an exact key set:
 
-- `contract-review` records review of the operation contract.
-- `automated` records an automated check.
-- `live` records a check in its named HMC release/build, hardware family, firmware,
-  licensing, and topology.
+```json
+{
+  "id": "st12-hmc-get-job",
+  "channel": "live",
+  "result": "passed",
+  "scenario": "st12-job-inspection",
+  "tested_commit": "<40 hex>",
+  "observed_at": "2026-09-06T00:03:02Z",
+  "hmc_release": "V10R3",
+  "hardware_family": "POWER10",
+  "cleanup": "not-required",
+  "closure_fingerprint": "<64 hex>",
+  "assertions": ["job-found", "job-identity-matches", "job-status-successful"]
+}
+```
 
-Every observation has a result (`not-run`, `skipped`, `failed`, or `passed`) and
-currency (`current` or `stale`). `not-run` is an explicit unattempted observation;
-for a live gap it names the intended scenario, prerequisites, and a catalog obligation
-joined to that operation and observation. `skipped` records an attempted check that
-was not completed, `failed` records an attempted check that did not pass, and `passed`
-records a check with asserted postconditions. `current` evidence has no invalidator
-and covers the current implementation fingerprint. `stale` evidence is retained
-history with an invalidating fingerprint and reason, including when its formerly
-implemented scope has since been removed or narrowed; a changed runtime source, script,
-or dependency manifest requires re-evaluation.
+`result` is `passed` or `failed`; ADR 0126's `not-run` placeholder is gone, because an
+operation with no observation already reports as `unevidenced`. `assertions` lists the
+ids that **held**, in declaration order — so a `failed` observation is distinguishable
+from a `passed` one on that field alone. `hmc_release` and `hardware_family` are the
+only free text and each has a grammar (`V<n>R<n>[M<n>]` and `POWER<n>`) rather than a
+permissive character class, so a hostname, serial, or location code cannot be written
+there. An operation carries at most one live observation; re-validating replaces it, and
+the superseded record stays in `git log`.
 
-Format 1 admits no trusted promotion: every observation has `unverified` provenance.
-Mocks, skips, opt-in, issue closure, transport-only success, and evidence from another
-live environment do not promote live evidence because trusted provenance is absent;
-free-text assertions alone do not establish trusted postconditions. A live-gap
-obligation is work tracking, never evidence or promotion; an issue number is only an
-optional pointer and does not own the obligation.
+### Derived staleness
+
+Currency is **derived when the catalog is read**, never stored, and never a validation
+error. An observation goes stale when either trigger fires:
+
+- its operation's **import closure changed** — the SHA-256 over the handler module and
+  every `src/hmc_mcp/` module it transitively imports no longer matches; the closure is
+  computed from the source, so nothing is omitted by hand;
+- it is **older than 90 days** — the ceiling that sees changes on the HMC itself, which
+  this repository cannot observe.
+
+Each operation then reports one of five states:
+
+| State | Condition |
+|---|---|
+| `unrecorded` | no maturity record |
+| `unevidenced` | a record, but no live observation |
+| `stale` | the closure changed, or the observation exceeded the age ceiling |
+| `failed` | a `failed` observation that is not stale |
+| `current` | a `passed` observation that is not stale — the only promoting state |
+
+### Reporting
+
+`just verification-report` prints one line per operation carrying the implementation
+state beside the derived state — `verification: sriov.set_mode partial current`, so a
+partly implemented operation cannot read as fully verified — and a summary line. It
+exits 0 and emits workflow warnings on a pull request or push; the weekly scheduled run
+passes `--fail-on-stale` and fails when anything is stale. That weekly run is the only
+forcing function: a stale observation nobody re-runs stays visibly stale, and nothing
+promotes it back.
+
+### Recording an observation
+
+The live runner writes observations to a gitignored file beside its results document,
+and never into the catalog: a human copies them in, and the pull request that commits
+one is where the record is reviewed. The runner writes nothing unless the tree is clean
+under `src/` and `scripts/`, both environment settings are present in `.env`
+(`LIVE_TEST_ENV_HMC_RELEASE` and `LIVE_TEST_ENV_HARDWARE_FAMILY` — both or neither), and
+`git check-ignore` claims the destination.
+
+The validator proves shape, not truth. It applies every bound the runner applies —
+because the catalog is hand-copied and hand-editable, so a check on the way out is not a
+check on the way in — but it cannot know whether an observation describes a run that
+happened. Trust rests on the record being small, closed-shape, and reviewed.
+
+Scenario coverage remains hand-written until #706.
 
 The catalog records no runtime eligibility. `existing-runtime-guards` neither grants
 nor revokes admission: authorization, ownership, validation, capability, and safety
