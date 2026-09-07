@@ -1,5 +1,8 @@
 # Live integration test results (contains raw API data with internal hostnames/IPs/serials)
-test-results.json
+test-results*.json
+# `_write_results` writes through `tempfile.mkstemp(prefix=f".{name}.", suffix=".tmp")`,
+# so a crash between the write and the rename strands the whole document here.
+.test-results*.tmp
 
 # Python-generated files
 __pycache__/

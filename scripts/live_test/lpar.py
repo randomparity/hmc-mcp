@@ -12,8 +12,16 @@ from fastmcp import Client
 from hmc_mcp.ssh.commands import build_filter
 from hmc_mcp.ssh.lpar import validate_lpar_description
 
+from .observation import ExpectedOutcome
+
 if TYPE_CHECKING:
     from live_test_runner import RunState
+
+_REST_MODIFY_UNSUPPORTED = ExpectedOutcome(
+    reason="HMC firmware returns HTTP 406 for REST LPAR modify (same limitation "
+    "as create — REST write path unsupported)",
+    error_codes=frozenset({"406", "not acceptable"}),
+)
 
 
 async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
@@ -78,13 +86,8 @@ async def _modify_and_summarize_scratch_lpar(client: Client, state: RunState) ->
             "max_memory": config.scratch_modify_max_memory_mib,
         },
     )
-    state.record_expected_or_real(
-        8,
-        "hmc_modify_lpar",
-        status,
-        data,
-        expected_fail_substrings=["406", "not acceptable"],
-        skip_reason="HMC firmware returns HTTP 406 for REST LPAR modify (same limitation as create — REST write path unsupported)",
+    state.record_with_expected(
+        8, "hmc_modify_lpar", status, data, [_REST_MODIFY_UNSUPPORTED]
     )
 
     status, data = await state.call(
@@ -124,7 +127,10 @@ async def _power_off_and_delete_scratch_lpar(client: Client, state: RunState) ->
         artifacts.job_uuid_sample = data.get("job_uuid") or data.get("UUID")
 
     status, data = await state.call(
-        client, "hmc_delete_lpar", lpar_name_or_uuid=config.scratch_name
+        client,
+        "hmc_delete_lpar",
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=config.scratch_name,
     )
     state.record(8, "hmc_delete_lpar", status, data)
     if status == "PASS":

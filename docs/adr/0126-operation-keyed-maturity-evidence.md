@@ -4,6 +4,8 @@
 
 Accepted
 
+> **Superseded by [0127](0127-derived-live-verification-staleness.md)** (2026-09-06)
+
 ## Context
 
 The capability ledger from ADR 0125 identifies reference rows and registered

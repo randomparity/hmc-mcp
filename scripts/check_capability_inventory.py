@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import inspect
 import json
+import os
 import re
-import subprocess
 import sys
 from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,11 +27,42 @@ METHODS = {"GET", "POST", "PUT", "DELETE"}
 DISPOSITIONS = {"supported", "coverage-child", "proposed-exclusion", "unknown"}
 MATURITY_STATES = {"absent", "partial", "implemented"}
 EVIDENCE_CHANNELS = {"contract-review", "automated", "live"}
-EVIDENCE_RESULTS = {"not-run", "skipped", "failed", "passed"}
-EVIDENCE_CURRENCY = {"current", "stale"}
+EVIDENCE_RESULTS = {"failed", "passed"}
 SHA_1 = re.compile(r"[0-9a-f]{40}")
 SHA_256 = re.compile(r"[0-9a-f]{64}")
 TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+
+#: `maturity.json` alone moves to format 2 (ADR 0127); the other three catalogs
+#: are unchanged and stay at 1.
+MATURITY_FORMAT_VERSION = 2
+STALE_AFTER_DAYS = 90
+PACKAGE = "hmc_mcp"
+
+#: The exact key set of a format 2 observation. There is one observation shape:
+#: ADR 0126's `not-run` placeholder is dropped rather than carried forward.
+ATTEMPTED_KEYS = {
+    "id",
+    "channel",
+    "result",
+    "scenario",
+    "tested_commit",
+    "observed_at",
+    "hmc_release",
+    "hardware_family",
+    "cleanup",
+    "closure_fingerprint",
+    "assertions",
+}
+CLEANUP = {"not-run", "not-required", "failed", "passed"}
+OBSERVATION_ID = re.compile(r"[a-z0-9][a-z0-9-]*")
+SCENARIO_ID = re.compile(r"st\d+-[a-z0-9-]+")
+ASSERTION_ID = re.compile(r"[a-z][a-z0-9-]{1,62}[a-z0-9]")
+
+#: Narrow grammars, not a permissive character class with an address rejection:
+#: `[A-Za-z0-9 ._-]{0,39}` admits a hostname, a serial and a location code
+#: verbatim while rejecting only a dotted quad.
+HMC_RELEASE = re.compile(r"V\d+R\d+(?:M\d+)?")
+HARDWARE_FAMILY = re.compile(r"POWER\d+")
 
 
 class InventoryError(ValueError):
@@ -248,6 +280,8 @@ def _index(records: Sequence[dict[str, object]], kind: str, errors: list[str]) -
 
 def _validate_versions(documents: Mapping[str, Mapping[str, object]], errors: list[str]) -> None:
     for name, document in documents.items():
+        if name == "maturity.json":
+            continue
         if document.get("format_version") != 1:
             errors.append(f"{name}: format_version must be 1")
 
@@ -494,57 +528,20 @@ def _validate_timestamp(value: object, label: str, errors: list[str]) -> None:
         errors.append(f"{label}: observed_at is not a calendar timestamp")
 
 
-def _environment_identity(
-    value: object, label: str, errors: list[str]
-) -> tuple[str, ...] | None:
-    fields = (
-        "hmc_release",
-        "hmc_build",
-        "hardware_family",
-        "firmware",
-        "licensing",
-        "topology",
-    )
-    if not _exact_keys(value, set(fields), label, errors):
-        return None
-    assert isinstance(value, dict)
-    if not all(_nonempty(value[field]) for field in fields):
-        errors.append(f"{label}: environment fields are required")
-        return None
-    return tuple(value[field] for field in fields)
-
-
 def _validate_observation(
     observation: object,
     operation: str,
-    scopes: set[tuple[object, ...]],
     evidence_ids: set[str],
-    current: set[tuple[object, ...]],
     errors: list[str],
 ) -> None:
-    required = {
-        "id",
-        "channel",
-        "scope",
-        "scenario",
-        "result",
-        "currency",
-        "observed_at",
-        "implementation_revision",
-        "deployed_revision",
-        "environment",
-        "assertions",
-        "cleanup",
-        "provenance",
-        "promotion",
-        "reason",
-        "prerequisites",
-        "obligation",
-        "implementation_fingerprint",
-        "invalidated_by",
-    }
+    """Validate one format 2 observation against its single closed shape.
+
+    `maturity.json` is hand-copied from the runner's output and hand-editable, so
+    every bound the runner applies on the way out is applied again here: the
+    validator is the only check a hand-authored record ever meets.
+    """
     if not _exact_keys(
-        observation, required, f"maturity operation {operation} evidence", errors
+        observation, ATTEMPTED_KEYS, f"maturity operation {operation} evidence", errors
     ):
         return
     assert isinstance(observation, dict)
@@ -554,239 +551,53 @@ def _validate_observation(
         if isinstance(identity, str)
         else f"maturity operation {operation} evidence"
     )
-    if not _nonempty(identity) or identity in evidence_ids:
+    if not _matches(OBSERVATION_ID, identity):
+        errors.append(f"{label}: id must match {OBSERVATION_ID.pattern}")
+        return
+    if identity in evidence_ids:
         errors.append(f"{label}: id must be catalog-wide unique")
         return
     assert isinstance(identity, str)
     evidence_ids.add(identity)
-    channel, result, currency = (
-        observation["channel"],
-        observation["result"],
-        observation["currency"],
-    )
-    if (
-        not _one_of(channel, EVIDENCE_CHANNELS)
-        or not _one_of(result, EVIDENCE_RESULTS)
-        or not _one_of(currency, EVIDENCE_CURRENCY)
+    if not _one_of(observation["channel"], EVIDENCE_CHANNELS) or not _one_of(
+        observation["result"], EVIDENCE_RESULTS
     ):
-        errors.append(f"{label}: invalid channel, result, or currency")
+        errors.append(f"{label}: invalid channel or result")
         return
-    scope = _scope_identity(observation["scope"], label, errors)
-    if scope is None:
-        return
-    if currency == "current" and scope not in scopes:
-        errors.append(f"{label}: scope is not implemented")
-        return
-    scenario = observation["scenario"]
-    if scenario is not None and (
-        not _exact_keys(scenario, {"id", "description"}, label, errors)
-        or not all(_nonempty(value) for value in scenario.values())
+    if not _matches(SCENARIO_ID, observation["scenario"]):
+        errors.append(f"{label}: scenario must match st<n>-<slug>")
+    if not _matches(SHA_1, observation["tested_commit"]):
+        errors.append(f"{label}: tested_commit must be a full SHA")
+    if not _matches(SHA_256, observation["closure_fingerprint"]):
+        errors.append(f"{label}: closure_fingerprint must be a full SHA-256")
+    _validate_timestamp(observation["observed_at"], label, errors)
+    if not _matches(HMC_RELEASE, observation["hmc_release"]) or not _matches(
+        HARDWARE_FAMILY, observation["hardware_family"]
     ):
-        errors.append(f"{label}: invalid scenario")
-        return
-    environment = observation["environment"]
-    environment_id = (
-        _environment_identity(environment, label, errors) if channel == "live" else None
-    )
-    if (channel == "live") != (environment is not None):
-        errors.append(f"{label}: environment is required only for live evidence")
-    if channel == "live" and environment_id is None:
-        return
-    _validate_result(
-        observation, operation, channel, result, scenario, identity, label, errors
-    )
-    _validate_currency(
-        observation,
-        operation,
-        channel,
-        currency,
-        scope,
-        scenario,
-        environment_id,
-        current,
-        label,
-        errors,
-    )
+        errors.append(f"{label}: environment values do not match their grammar")
+    if not _one_of(observation["cleanup"], CLEANUP):
+        errors.append(f"{label}: invalid cleanup")
+    _validate_assertions(observation, label, errors)
 
 
-def _validate_evidence_lists(
+def _validate_assertions(
     observation: dict[str, object], label: str, errors: list[str]
 ) -> None:
+    """Validate the held-assertion list and what a `passed` observation requires."""
     assertions = observation["assertions"]
-    prerequisites = observation["prerequisites"]
     if not isinstance(assertions, list) or not all(
-        _nonempty(item) for item in assertions
+        _matches(ASSERTION_ID, item) for item in assertions
     ):
-        errors.append(f"{label}: assertions must be non-empty strings")
-    elif len(set(assertions)) != len(assertions):
+        errors.append(f"{label}: assertions must be closed-shape tokens")
+        return
+    if len(set(assertions)) != len(assertions):
         errors.append(f"{label}: assertions must be unique")
-    if not isinstance(prerequisites, list) or not all(
-        _nonempty(item) for item in prerequisites
-    ):
-        errors.append(f"{label}: prerequisites must be non-empty strings")
-    elif prerequisites != sorted(set(prerequisites)):
-        errors.append(f"{label}: prerequisites must be sorted and unique")
-
-
-def _validate_result(
-    observation: dict[str, object],
-    operation: str,
-    channel: object,
-    result: object,
-    scenario: object,
-    identity: object,
-    label: str,
-    errors: list[str],
-) -> None:
-    _validate_evidence_lists(observation, label, errors)
-    if not _one_of(
-        observation["cleanup"], {"not-run", "not-required", "failed", "passed"}
-    ):
-        errors.append(f"{label}: invalid cleanup")
-    promotion = observation["promotion"]
-    if not _exact_keys(promotion, {"eligible", "reason"}, label, errors) or (
-        promotion.get("eligible") is not False
-    ):
-        errors.append(f"{label}: format 1 promotion must be ineligible")
-    elif not _nonempty(promotion.get("reason")):
-        errors.append(f"{label}: promotion reason is required")
-    if (channel, result) != ("live", "not-run") and observation[
-        "obligation"
-    ] is not None:
-        errors.append(f"{label}: obligation is only valid for live not-run")
-    if result == "not-run":
-        _validate_not_run(
-            observation, operation, channel, scenario, identity, label, errors
-        )
-    else:
-        _validate_attempted(observation, channel, result, label, errors)
-
-
-def _validate_attempted(
-    observation: dict[str, object],
-    channel: object,
-    result: object,
-    label: str,
-    errors: list[str],
-) -> None:
-    _validate_timestamp(observation["observed_at"], label, errors)
-    if observation["scenario"] is None:
-        errors.append(f"{label}: attempted evidence requires scenario")
-    if not _matches(SHA_1, observation["implementation_revision"]):
-        errors.append(f"{label}: implementation_revision must be a full SHA")
-    if channel == "live" and not _matches(SHA_1, observation["deployed_revision"]):
-        errors.append(f"{label}: live evidence requires deployed_revision")
-    if channel != "live" and observation["deployed_revision"] is not None:
-        errors.append(f"{label}: non-live evidence has no deployed_revision")
-    provenance = observation["provenance"]
-    if _exact_keys(provenance, {"kind", "reference"}, label, errors) and (
-        provenance.get("kind") != "unverified"
-        or not _nonempty(provenance.get("reference"))
-    ):
-        errors.append(f"{label}: invalid provenance")
-    _validate_attempt_outcome(observation, channel, result, label, errors)
-
-
-def _validate_attempt_outcome(
-    observation: dict[str, object],
-    channel: object,
-    result: object,
-    label: str,
-    errors: list[str],
-) -> None:
-    if result == "passed" and not observation["assertions"]:
+    if observation["result"] != "passed":
+        return
+    if not assertions:
         errors.append(f"{label}: passed evidence requires assertions")
-    if (
-        channel == "live"
-        and result == "passed"
-        and not _one_of(observation["cleanup"], {"passed", "not-required"})
-    ):
-        errors.append(f"{label}: live pass requires successful cleanup")
-    if result in {"skipped", "failed"} and not _nonempty(observation["reason"]):
-        errors.append(f"{label}: result requires a reason")
-    if result == "passed" and observation["reason"] is not None:
-        errors.append(f"{label}: passed evidence has no reason")
-
-
-def _validate_not_run(
-    observation: dict[str, object],
-    operation: str,
-    channel: object,
-    scenario: object,
-    identity: object,
-    label: str,
-    errors: list[str],
-) -> None:
-    fields = (
-        "observed_at",
-        "implementation_revision",
-        "deployed_revision",
-        "provenance",
-        "implementation_fingerprint",
-    )
-    if any(observation[key] is not None for key in fields):
-        errors.append(f"{label}: not-run fields must be null")
-    if observation["assertions"] or observation["cleanup"] != "not-run":
-        errors.append(f"{label}: not-run has no assertions or cleanup")
-    if not _nonempty(observation["reason"]):
-        errors.append(f"{label}: result requires a reason")
-    obligation = observation["obligation"]
-    valid_obligation = (
-        isinstance(obligation, dict)
-        and set(obligation) <= {"catalog", "issue"}
-        and obligation.get("catalog") == f"{operation}#{identity}"
-    )
-    valid_issue = (
-        "issue" not in obligation
-        or (type(obligation["issue"]) is int and obligation["issue"] > 0)
-        if isinstance(obligation, dict)
-        else False
-    )
-    if channel == "live" and (
-        scenario is None
-        or not observation["prerequisites"]
-        or not valid_obligation
-        or not valid_issue
-    ):
-        errors.append(
-            f"{label}: live not-run requires scenario, prerequisites, and catalog obligation"
-        )
-
-
-def _validate_currency(
-    observation: dict[str, object],
-    operation: str,
-    channel: object,
-    currency: object,
-    scope: tuple[object, ...] | None,
-    scenario: object,
-    environment: tuple[str, ...] | None,
-    current: set[tuple[object, ...]],
-    label: str,
-    errors: list[str],
-) -> None:
-    if observation["result"] != "not-run" and not _matches(
-        SHA_256, observation["implementation_fingerprint"]
-    ):
-        errors.append(f"{label}: implementation_fingerprint must be a full SHA-256")
-    if currency == "current":
-        if observation["invalidated_by"] is not None:
-            errors.append(f"{label}: current evidence has no invalidator")
-        scenario_id = scenario.get("id") if isinstance(scenario, dict) else None
-        key = (operation, channel, scope, scenario_id, environment)
-        if key in current:
-            errors.append(f"{label}: duplicate current evidence")
-        current.add(key)
-        return
-    invalidator = observation["invalidated_by"]
-    if not _exact_keys(
-        invalidator, {"implementation_fingerprint", "reason"}, label, errors
-    ):
-        return
-    if not _matches(
-        SHA_256, invalidator.get("implementation_fingerprint")
-    ) or not _nonempty(invalidator.get("reason")):
-        errors.append(f"{label}: stale evidence requires an invalidator")
+    if not _one_of(observation["cleanup"], {"passed", "not-required"}):
+        errors.append(f"{label}: a passed observation requires successful cleanup")
 
 
 def _validate_maturity(
@@ -796,7 +607,6 @@ def _validate_maturity(
 ) -> None:
     seen: set[str] = set()
     evidence_ids: set[str] = set()
-    current: set[tuple[object, ...]] = set()
     for record in records:
         operation = record.get("operation")
         label = f"maturity operation {operation}"
@@ -812,21 +622,153 @@ def _validate_maturity(
         elif operation not in operation_ids:
             errors.append(f"{label}: unknown operation")
         seen.add(operation)
-        scopes = _validate_implementation(record, label, errors)
+        _validate_implementation(record, label, errors)
         evidence = record["evidence"]
         if not isinstance(evidence, list):
             errors.append(f"{label}: evidence must be a list")
             continue
         for observation in evidence:
-            _validate_observation(
-                observation, str(operation), scopes, evidence_ids, current, errors
-            )
+            _validate_observation(observation, str(operation), evidence_ids, errors)
 
 
-def implementation_fingerprint(repo_root: Path) -> str:
-    paths = _implementation_paths(repo_root)
+@dataclass(frozen=True)
+class OperationState:
+    """One operation's derived verification state, and why it is stale."""
+
+    state: str
+    reason: str | None = None
+    implementation: str | None = None
+
+
+def _readable(path: Path) -> bool:
+    """Report whether a path is a regular file this walk may hash.
+
+    A symlink is skipped rather than followed: one pointing outside the
+    repository would make the fingerprint machine-dependent, so the runner's
+    recorded value and CI's recomputation could never agree and the observation
+    would read stale forever.
+    """
+    return path.is_file() and not path.is_symlink()
+
+
+def _resolution_chain(package_root: Path, dotted: str) -> list[Path]:
+    """Every file a dotted name resolves through, packages included.
+
+    A dotted target resolves to ``<path>.py`` when that exists, else to
+    ``<path>/__init__.py``; each ``__init__.py`` on the way is part of what the
+    import executes and so belongs in the closure.
+    """
+    parts = dotted.split(".")
+    found: list[Path] = []
+    for index in range(1, len(parts) + 1):
+        directory = package_root.joinpath(*parts[:index])
+        if _readable(directory / "__init__.py"):
+            found.append(directory / "__init__.py")
+        if index == len(parts):
+            module = directory.with_suffix(".py")
+            if _readable(module):
+                found.append(module)
+    return found
+
+
+def _package_of(package_root: Path, path: Path) -> tuple[str, ...]:
+    """The dotted package a module file's relative imports resolve against.
+
+    Both forms drop their last component: `jobs/core.py` and `jobs/__init__.py`
+    each sit in the package `hmc_mcp.jobs`, so `from .core import …` written in
+    the latter resolves against `hmc_mcp.jobs`, not `hmc_mcp.jobs.__init__`.
+    """
+    return path.relative_to(package_root).with_suffix("").parts[:-1]
+
+
+def _module_level_statements(body: Sequence[ast.stmt]) -> list[ast.stmt]:
+    """Statements the module executes at import time, one `If`/`Try` level in.
+
+    A `TYPE_CHECKING` guard is a module-level `If`, so its body has to be read;
+    a `FunctionDef`, `AsyncFunctionDef` or `ClassDef` body must not be. The
+    distinction decides the design: `src/hmc_mcp/__init__.py` imports `.cli`
+    inside `main()` and sits on every resolution path, so an `ast.walk` here
+    would pull 179 of 180 files into every closure and silently reinstate ADR
+    0126's repository-wide fingerprint.
+    """
+    statements: list[ast.stmt] = []
+    for statement in body:
+        statements.append(statement)
+        if isinstance(statement, ast.If):
+            statements += _module_level_statements(statement.body)
+            statements += _module_level_statements(statement.orelse)
+        elif isinstance(statement, ast.Try):
+            statements += _module_level_statements(statement.body)
+            for handler in statement.handlers:
+                statements += _module_level_statements(handler.body)
+            statements += _module_level_statements(statement.orelse)
+            statements += _module_level_statements(statement.finalbody)
+    return statements
+
+
+def _imported_names(path: Path, package: tuple[str, ...]) -> list[str]:
+    """Every dotted name this module imports that could reach the package."""
+    try:
+        tree = ast.parse(path.read_bytes())
+    except (OSError, SyntaxError, ValueError):
+        return []
+    names: list[str] = []
+    for statement in _module_level_statements(tree.body):
+        if isinstance(statement, ast.Import):
+            names += [
+                alias.name
+                for alias in statement.names
+                if alias.name == PACKAGE or alias.name.startswith(f"{PACKAGE}.")
+            ]
+        elif isinstance(statement, ast.ImportFrom):
+            names += _import_from_names(statement, package)
+    return names
+
+
+def _import_from_names(
+    statement: ast.ImportFrom, package: tuple[str, ...]
+) -> list[str]:
+    """Resolve one `from ... import ...` to dotted names, absolute or relative."""
+    if statement.level:
+        upward = statement.level - 1
+        if upward >= len(package):
+            # Resolving this far up leaves the package: at `package` depth 1,
+            # `from ..x import y` would resolve `x` against `src/` itself.
+            return []
+        base = package[: len(package) - upward]
+    elif statement.module and (
+        statement.module == PACKAGE or statement.module.startswith(f"{PACKAGE}.")
+    ):
+        base = ()
+    else:
+        return []
+    target = (*base, *(statement.module.split(".") if statement.module else ()))
+    if not target:
+        return []
+    dotted = ".".join(target)
+    # An imported name may itself be a module in that package, or may be a class
+    # or constant, in which case the name resolves to nothing and is skipped.
+    return [dotted, *(f"{dotted}.{alias.name}" for alias in statement.names)]
+
+
+def closure_paths(repo_root: Path, handler_module: str) -> list[Path]:
+    """Every `src/hmc_mcp/` file the handler module transitively imports."""
+    package_root = repo_root / "src"
+    found: set[Path] = set()
+    pending = [handler_module]
+    while pending:
+        for path in _resolution_chain(package_root, pending.pop()):
+            if path in found:
+                continue
+            found.add(path)
+            pending += _imported_names(path, _package_of(package_root, path))
+    return sorted(found)
+
+
+def closure_fingerprint(repo_root: Path, handler_module: str) -> str:
+    """Hash the operation's import closure, length-prefixed and path-ordered."""
     digest = hashlib.sha256()
-    for path in sorted(paths, key=lambda item: item.relative_to(repo_root).as_posix()):
+    for path in closure_paths(repo_root, handler_module):
         relative = path.relative_to(repo_root).as_posix().encode()
         content = path.read_bytes()
         digest.update(len(relative).to_bytes(8, "big"))
@@ -836,40 +778,120 @@ def implementation_fingerprint(repo_root: Path) -> str:
     return digest.hexdigest()
 
 
-def _implementation_paths(repo_root: Path) -> list[Path]:
-    command = [
-        "git",
-        "-C",
-        str(repo_root),
-        "ls-files",
-        "-z",
-        "src",
-        "scripts",
-        "pyproject.toml",
-        "uv.lock",
-    ]
-    result = subprocess.run(command, capture_output=True, check=False)
-    names = (
-        result.stdout.decode(errors="surrogateescape").split("\0")
-        if result.returncode == 0
-        else []
+def _handler_module(handler: str) -> str:
+    """The module holding a registry handler, dropping the function component.
+
+    The composed `hmc_effective_permissions` record ends in `<composed>` rather
+    than a function name, and the same rule resolves it.
+    """
+    return handler.rsplit(".", 1)[0]
+
+
+def _stale_reason(
+    observation: Mapping[str, object], repo_root: Path, handler: str, now: datetime
+) -> str | None:
+    """Which staleness trigger fired, most specific first, or None."""
+    if observation.get("closure_fingerprint") != closure_fingerprint(
+        repo_root, _handler_module(handler)
+    ):
+        return "closure-changed"
+    try:
+        observed = datetime.fromisoformat(str(observation.get("observed_at")))
+    except ValueError:
+        return "age-exceeded"
+    if (now - observed).days > STALE_AFTER_DAYS:
+        return "age-exceeded"
+    return None
+
+
+def derive_states(
+    records: Sequence[Mapping[str, object]],
+    registry: Collection[RegistryTool],
+    repo_root: Path,
+    now: datetime,
+) -> dict[str, OperationState]:
+    """Derive every operation's verification state; never stored, never an error."""
+    by_operation = {
+        record["operation"]: record
+        for record in records
+        if isinstance(record.get("operation"), str)
+    }
+    states: dict[str, OperationState] = {}
+    for tool in registry:
+        record = by_operation.get(tool.operation)
+        if record is None:
+            states[tool.operation] = OperationState("unrecorded")
+            continue
+        implementation = record.get("implementation")
+        state = (
+            implementation.get("state") if isinstance(implementation, dict) else None
+        )
+        implementation_state = state if isinstance(state, str) else None
+        evidence = record.get("evidence")
+        observations = [
+            observation
+            for observation in (evidence if isinstance(evidence, list) else [])
+            if isinstance(observation, dict) and observation.get("channel") == "live"
+        ]
+        if not observations:
+            states[tool.operation] = OperationState(
+                "unevidenced", implementation=implementation_state
+            )
+            continue
+        # An operation carries at most one live observation, because re-validation
+        # replaces it; ordering by time keeps a hand-edited catalog deterministic.
+        latest = max(observations, key=lambda item: str(item.get("observed_at")))
+        reason = _stale_reason(latest, repo_root, tool.handler, now)
+        states[tool.operation] = OperationState(
+            "stale" if reason else ("current" if latest.get("result") == "passed" else "failed"),
+            reason,
+            implementation_state,
+        )
+    return states
+
+
+def verification_report(
+    states: Mapping[str, OperationState], *, fail_on_stale: bool
+) -> int:
+    """Print every operation's state and the summary; fail only when asked to."""
+    in_actions = bool(os.environ.get("GITHUB_ACTIONS"))
+    for operation in sorted(states):
+        derived = states[operation]
+        columns = [operation, derived.implementation, derived.state]
+        print("verification: " + " ".join(column for column in columns if column))
+        if in_actions and derived.state == "stale":
+            print(f"::warning::{operation} is stale: {derived.reason}")
+    counts = Counter(derived.state for derived in states.values())
+    print(
+        "verification coverage: "
+        + ", ".join(
+            f"{counts.get(name, 0)} {name}"
+            for name in ("unrecorded", "unevidenced", "stale", "failed", "current")
+        )
+        + f" (of {len(states)})"
     )
-    paths = [repo_root / name for name in names if name]
-    if paths:
-        return [path for path in paths if path.is_file() and not path.is_symlink()]
-    directories = (repo_root / "src", repo_root / "scripts")
-    found = [
-        path
-        for directory in directories
-        if directory.is_dir()
-        for path in directory.rglob("*")
+    _append_step_summary(states)
+    return 1 if fail_on_stale and counts.get("stale") else 0
+
+
+def _append_step_summary(states: Mapping[str, OperationState]) -> None:
+    """Append the report as a Markdown table to the GitHub step summary."""
+    destination = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not destination:
+        return
+    lines = ["| Operation | Implementation | State | Reason |", "| --- | --- | --- | --- |"]
+    lines += [
+        f"| {operation} | {states[operation].implementation or ''} "
+        f"| {states[operation].state} | {states[operation].reason or ''} |"
+        for operation in sorted(states)
     ]
-    found.extend(
-        path
-        for path in (repo_root / "pyproject.toml", repo_root / "uv.lock")
-        if path.is_file()
-    )
-    return [path for path in found if path.is_file() and not path.is_symlink()]
+    try:
+        with open(destination, "a", encoding="utf-8") as summary:
+            summary.write("\n".join(lines) + "\n")
+    except OSError as error:
+        # The report must never fail a pull request; an unwritable summary path
+        # is a runner problem, not evidence that anything is stale.
+        print(f"could not append the step summary: {error}", file=sys.stderr)
 
 
 def validate_inventory(
@@ -899,8 +921,12 @@ def validate_inventory(
         "maturity.json",
         errors,
     )
-    if type(maturity_document.get("format_version")) is not int:
-        errors.append("maturity.json: format_version must be integer 1")
+    if maturity_document.get("format_version") != MATURITY_FORMAT_VERSION or type(
+        maturity_document.get("format_version")
+    ) is not int:
+        errors.append(
+            f"maturity.json: format_version must be integer {MATURITY_FORMAT_VERSION}"
+        )
     if maturity_document.get("admission_policy") != "existing-runtime-guards":
         errors.append("maturity.json: admission_policy must be existing-runtime-guards")
     corpora_records = _objects(_array(documents["corpora.json"], "corpora", errors), "corpora", errors)
@@ -937,22 +963,6 @@ def validate_inventory(
         },
         errors,
     )
-    fingerprint = implementation_fingerprint(repo_root)
-    for record in maturity_records:
-        for evidence in (
-            record.get("evidence", [])
-            if isinstance(record.get("evidence"), list)
-            else []
-        ):
-            if (
-                isinstance(evidence, dict)
-                and evidence.get("currency") == "current"
-                and evidence.get("result") != "not-run"
-                and evidence.get("implementation_fingerprint") != fingerprint
-            ):
-                errors.append(
-                    f"maturity evidence {evidence.get('id')}: stale implementation fingerprint"
-                )
     return Report(
         tuple(errors),
         tuple(sorted(unknown)),
@@ -1042,7 +1052,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inventory", type=Path, default=DEFAULT_INVENTORY)
     parser.add_argument("--source", action="append", default=[], type=_source)
+    parser.add_argument(
+        "--verification-report",
+        action="store_true",
+        help="print each operation's derived live-verification state",
+    )
+    parser.add_argument(
+        "--fail-on-stale",
+        action="store_true",
+        help="exit non-zero when any operation's evidence has gone stale",
+    )
     args = parser.parse_args(argv)
+    if args.fail_on_stale and not args.verification_report:
+        parser.error("--fail-on-stale requires --verification-report")
     try:
         registry = discover_registry()
     except InventoryError as error:
@@ -1059,6 +1081,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
+    if args.verification_report:
+        # Derived staleness is never a validation error, so the report runs only
+        # after validation has passed and reports separately from it.
+        maturity = load_json(args.inventory / "maturity.json").get("operations")
+        states = derive_states(
+            [record for record in maturity if isinstance(record, dict)]
+            if isinstance(maturity, list)
+            else [],
+            registry,
+            ROOT,
+            datetime.now(UTC),
+        )
+        return verification_report(states, fail_on_stale=args.fail_on_stale)
     print(
         "capability inventory: structurally valid; "
         f"{report.topic_count} topics, {report.source_unit_count} source units, "

@@ -23,13 +23,15 @@ import asyncio
 import json
 import os
 import re
+import subprocess
 import tempfile
-import traceback
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
+import check_capability_inventory
 from fastmcp import Client
 from live_test.connectivity import inventory_connectivity
 from live_test.escape_hatch import exercise_cli_escape_hatch
@@ -41,6 +43,14 @@ from live_test.lpar import (
 )
 from live_test.metrics import inspect_metrics_jobs, inspect_metrics_templates
 from live_test.network import inventory_network, mutate_virtual_networking
+from live_test.observation import (
+    CLEANUP,
+    SCENARIO_ID,
+    Assertion,
+    CallFailure,
+    ExpectedOutcome,
+    classify_failure,
+)
 from live_test.pcie import exercise_sriov_assignment
 from live_test.profiles import inventory_lpar_profiles
 from live_test.provisioning import (
@@ -71,6 +81,12 @@ from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 # ---------------------------------------------------------------------------
 
 _ENV_FILE = Path(".env")
+
+_ENVIRONMENT_PREFIX = "LIVE_TEST_ENV_"
+
+#: The environment a live observation was made in. Both or neither: a lone key
+#: is a configuration error, caught at startup rather than after a hardware run.
+ENVIRONMENT_KEYS = ("LIVE_TEST_ENV_HMC_RELEASE", "LIVE_TEST_ENV_HARDWARE_FAMILY")
 
 _SECRET_VALUE_RE = re.compile(
     r"(?i)\b(?P<name>password|passwd|token|secret|api[_-]?key)"
@@ -324,6 +340,9 @@ class LiveTestConfig:
             key, value = key.strip(), value.strip().strip('"').strip("'")
             if not key.startswith("LIVE_TEST_"):
                 continue
+            if key.startswith(_ENVIRONMENT_PREFIX):
+                # Read separately by `_read_environment`; not a config field.
+                continue
             if key not in cls._CONFIG_FIELDS:
                 duplicates.append(f"unknown setting {key} (line {line_number})")
                 continue
@@ -427,6 +446,7 @@ class LiveTestArtifacts:
     vios_uuid: str | None = None
     vios_partition_id: int | None = None
     console_uuid: str | None = None
+    test_user_uuid: str | None = None
     test_vlan_id: int | None = None
     test_vswitch_id: int | None = None
     test_network_uuid: str | None = None
@@ -443,6 +463,48 @@ class LiveTestArtifacts:
     vmedia_orig_boot_order: list[str] = field(default_factory=list)
 
 
+def _dispatch_problems(
+    tool: str,
+    keywords: Iterable[str],
+    schemas: Mapping[str, Mapping[str, Any]],
+) -> tuple[str, ...]:
+    """Report every way a dispatch disagrees with the tool's served input schema."""
+    schema = schemas.get(tool)
+    if schema is None:
+        return (f"{tool} is not a registered tool",)
+    properties = schema.get("properties") or {}
+    supplied = list(keywords)
+    problems = [
+        f"{tool}: unknown argument {name}"
+        for name in supplied
+        if name not in properties
+    ]
+    problems += [
+        f"{tool}: missing required argument {name}"
+        for name in schema.get("required") or ()
+        if name not in supplied
+    ]
+    return tuple(problems)
+
+
+def _result_for(status: str) -> str:
+    """Map a printed status to its result vocabulary entry.
+
+    None of the three promotes; ``passed`` is reachable only through
+    :meth:`RunState.record_verified`.
+    """
+    if status == "FAIL":
+        return "failed"
+    if status == "SKIP":
+        return "skipped"
+    return "observed"
+
+
+def _observation_id(subtask: int, tool: str) -> str:
+    """Derive an observation id from the recording site's subtask and tool."""
+    return f"st{subtask}-{tool.split(' (')[0].replace('_', '-')}"
+
+
 @dataclass
 class RunState:
     """Mutable output owned by a single invocation of the live runner."""
@@ -450,10 +512,22 @@ class RunState:
     config: LiveTestConfig = field(default_factory=LiveTestConfig)
     artifacts: LiveTestArtifacts = field(default_factory=LiveTestArtifacts)
     results: list[dict[str, Any]] = field(default_factory=list)
+    observations: list[dict[str, Any]] = field(default_factory=list)
+    schemas: dict[str, dict[str, Any]] = field(default_factory=dict)
     iso_http_server: IsoHttpServer = field(default_factory=IsoHttpServer)
 
     async def call(self, client: Client, tool: str, **kwargs: Any) -> tuple[str, Any]:
         """Call a tool and return a PASS or FAIL result without raising."""
+        # FastMCP would reject an invalid dispatch anyway; checking here is what
+        # gives the failure a stable reason instead of a pydantic rendering, and
+        # keeps a harness defect from ever reaching the real HMC.
+        problems = (
+            _dispatch_problems(tool, kwargs, self.schemas) if self.schemas else ()
+        )
+        if problems:
+            return "FAIL", CallFailure(
+                "InvalidDispatch", "; ".join(problems), "", None, False
+            )
         try:
             result = await client.call_tool(tool, kwargs)
             if hasattr(result, "data") and result.data is not None:
@@ -472,17 +546,37 @@ class RunState:
                 data = text
             return "PASS", data
         except Exception as exc:  # noqa: BLE001 - the harness records any tool failure as a FAIL row; totality is the contract
-            return "FAIL", f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
+            return "FAIL", classify_failure(exc)
 
     def record(
-        self, subtask: int, tool: str, status: str, data: Any, note: str = ""
+        self,
+        subtask: int,
+        tool: str,
+        status: str,
+        data: Any,
+        note: str = "",
+        *,
+        result: str | None = None,
     ) -> None:
-        """Append and print one result entry."""
-        safe_data = _redact_failure_data(data) if status == "FAIL" else data
+        """Append and print one result entry.
+
+        `result` is supplied only by `record_verified`, the one path that can
+        reach `passed`. Passing it in keeps the row and its verdict written
+        together, rather than patching `results[-1]` after the fact where any
+        later change to how rows are appended would retarget the patch.
+        """
+        if isinstance(data, CallFailure):
+            # Only the message is persisted: the traceback text stays on the
+            # ``CallFailure`` for the caller that classifies it, and never reaches
+            # the results document, whose redaction pass reads string leaves.
+            safe_data: Any = _redact_failure_text(data.message)
+        else:
+            safe_data = _redact_failure_data(data) if status == "FAIL" else data
         entry = {
             "subtask": subtask,
             "tool": tool,
             "status": status,
+            "result": result or _result_for(status),
             "timestamp": datetime.now(UTC).isoformat(),
             "note": note,
             "data": (
@@ -502,22 +596,82 @@ class RunState:
         """Record a skipped operation."""
         self.record(subtask, tool, "SKIP", None, reason)
 
-    def record_expected_or_real(
+    def record_with_expected(
         self,
         subtask: int,
         tool: str,
         status: str,
         data: Any,
-        expected_fail_substrings: list[str],
-        skip_reason: str,
+        expected: Sequence[ExpectedOutcome],
     ) -> None:
-        """Turn a known HMC limitation into SKIP; record other outcomes verbatim."""
-        if status == "FAIL" and any(
-            text.lower() in str(data).lower() for text in expected_fail_substrings
+        """Turn a declared HMC limitation into SKIP; record other outcomes verbatim.
+
+        An ``InvalidDispatch`` failure is the harness's own defect, so it is
+        recorded before any declaration is consulted — that is the substitution
+        the old substring match allowed.
+        """
+        if (
+            status == "FAIL"
+            and isinstance(data, CallFailure)
+            and data.exception_type != "InvalidDispatch"
         ):
-            self.skip(subtask, tool, skip_reason)
-            return
+            for outcome in expected:
+                if outcome.matches(data):
+                    self.skip(subtask, tool, outcome.reason)
+                    return
         self.record(subtask, tool, status, data)
+
+    def record_verified(
+        self,
+        subtask: int,
+        tool: str,
+        *,
+        operation: str,
+        scenario: str,
+        assertions: Sequence[Assertion],
+        cleanup: str,
+        data: Any,
+    ) -> None:
+        """Record one scenario's asserted postconditions — the only promoting path."""
+        if not assertions:
+            raise ValueError(
+                "a verified observation must assert at least one condition"
+            )
+        if cleanup not in CLEANUP:
+            raise ValueError(f"cleanup disposition is not a known value: {cleanup!r}")
+        if not SCENARIO_ID.fullmatch(scenario):
+            raise ValueError(f"scenario id is not a closed-shape token: {scenario!r}")
+        passed = all(item.holds for item in assertions) and cleanup in {
+            "passed",
+            "not-required",
+        }
+        unmet = [item.id for item in assertions if not item.holds]
+        note = "" if passed else "unmet: " + ", ".join(unmet or [f"cleanup {cleanup}"])
+        self.record(
+            subtask,
+            tool,
+            "PASS" if passed else "FAIL",
+            data,
+            note,
+            result="passed" if passed else "failed",
+        )
+        self.observations.append(
+            {
+                "operation": operation,
+                # ``tested_commit``, ``closure_fingerprint``, ``hmc_release`` and
+                # ``hardware_family`` are filled at emission; ``channel`` is not
+                # derivable there, so it is written here.
+                "observation": {
+                    "id": _observation_id(subtask, tool),
+                    "channel": "live",
+                    "result": "passed" if passed else "failed",
+                    "scenario": scenario,
+                    "observed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "cleanup": cleanup,
+                    "assertions": [item.id for item in assertions if item.holds],
+                },
+            }
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -605,8 +759,32 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
     arguments = _parse_arguments(argv)
     try:
         config = LiveTestConfig.from_env_file()
+        # Validated here, beside the rest of the configuration: `_emit_observations`
+        # runs after a completed hardware run, and an uncaught ValueError there
+        # would replace the run summary and failed-test listing with a traceback.
+        environment = _read_environment()
     except ValueError as exc:
         print(f"❌ {exc}")
+        return 1
+    # Both destinations are checked before the run, not after it. The results
+    # document holds every tool response verbatim on the success path — the raw
+    # HMC data `.gitignore` line 1 describes as internal hostnames, addresses and
+    # serials — so a `--results-file` stem no pattern covers must cost a startup
+    # exit, never a completed run against real hardware whose output then has
+    # nowhere safe to land.
+    unsafe = [
+        str(path)
+        for path in (
+            Path(arguments.results_path),
+            _observations_path(arguments.results_path),
+        )
+        if not _destination_is_ignored(path)
+    ]
+    if unsafe:
+        print(
+            "❌ git does not ignore " + ", ".join(unsafe) + " — choose a results "
+            "path matching an ignored pattern (see .gitignore)"
+        )
         return 1
     if not _bootstrap_config() or not _ensure_schema_version():
         return 1
@@ -616,6 +794,7 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
             results_path=arguments.results_path,
             group=arguments.group,
             config=config,
+            environment=environment,
         )
     )
 
@@ -627,6 +806,7 @@ _ARTIFACT_NULLABLE_STRINGS = frozenset(
         "scratch_uuid",
         "vios_uuid",
         "console_uuid",
+        "test_user_uuid",
         "test_network_uuid",
         "test_adapter_uuid",
         "nettest_uuid",
@@ -671,9 +851,12 @@ def _decode_artifacts(value: Any) -> LiveTestArtifacts:
     if not isinstance(value, dict):
         raise TypeError("results artifacts must be a JSON object")
     expected_fields = {item.name for item in fields(LiveTestArtifacts)}
-    if set(value) != expected_fields:
-        raise ValueError("results artifact fields do not match LiveTestArtifacts")
     parsed = dict(value)
+    # A results document written before `test_user_uuid` existed is still a valid
+    # restore source; every other field difference remains a mismatch.
+    parsed.setdefault("test_user_uuid", None)
+    if set(parsed) != expected_fields:
+        raise ValueError("results artifact fields do not match LiveTestArtifacts")
     for name in _ARTIFACT_NULLABLE_STRINGS:
         if parsed[name] is not None and not isinstance(parsed[name], str):
             raise TypeError(f"results artifact {name} must be a string or null")
@@ -773,12 +956,171 @@ def _write_results(path: Path, document: str) -> None:
         raise
 
 
+def _read_environment(path: Path | None = None) -> tuple[str, str] | None:
+    """Read the observation environment from `.env`: both keys, or neither."""
+    path = path or _ENV_FILE
+    values: dict[str, str] = {}
+    if path.is_file():
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key, value = key.strip(), value.strip().strip('"').strip("'")
+            if key in ENVIRONMENT_KEYS and value:
+                values[key] = value
+    if not values:
+        return None
+    if len(values) != len(ENVIRONMENT_KEYS):
+        raise ValueError(
+            "invalid live-test configuration: "
+            + " and ".join(ENVIRONMENT_KEYS)
+            + " must be set together"
+        )
+    # The catalog's own grammars, applied here rather than at copy-in: these two
+    # strings are the only free text an observation carries, and a hostname or a
+    # serial typed into either would otherwise be written to disk and discovered
+    # only when a human pastes it into `maturity.json`.
+    release, family = values[ENVIRONMENT_KEYS[0]], values[ENVIRONMENT_KEYS[1]]
+    invalid = [
+        key
+        for key, value, pattern in (
+            (ENVIRONMENT_KEYS[0], release, check_capability_inventory.HMC_RELEASE),
+            (ENVIRONMENT_KEYS[1], family, check_capability_inventory.HARDWARE_FAMILY),
+        )
+        if not pattern.fullmatch(value)
+    ]
+    if invalid:
+        raise ValueError(
+            "invalid live-test configuration: "
+            + ", ".join(f"{key} does not match its grammar" for key in invalid)
+        )
+    return release, family
+
+
+def _git(repo_root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(repo_root), *arguments],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _repository_root() -> Path | None:
+    """The repository the runner is checked out in, whatever directory it ran from.
+
+    `Path.cwd()` would silently produce an empty import closure when the runner
+    is invoked from a subdirectory, giving every observation the digest of no
+    files and marking it stale forever.
+    """
+    result = _git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if result.returncode != 0:
+        return None
+    root = Path(result.stdout.strip())
+    return root if (root / "src" / "hmc_mcp").is_dir() else None
+
+
+def _destination_is_ignored(path: Path, repo_root: Path | None = None) -> bool:
+    """Report whether Git would let *path* be committed from where it is written.
+
+    Exit 0 means ignored, 1 means the path sits in a repository unignored, and
+    anything else means no repository, or a path outside one — in which case
+    there is nothing to commit into and the write is safe.
+    """
+    return (
+        _git(repo_root or Path.cwd(), "check-ignore", "-q", str(path)).returncode != 1
+    )
+
+
+def _observations_path(results_path: str) -> Path:
+    """The observations file written beside a run's results document."""
+    path = Path(results_path)
+    return path.with_name(f"{path.stem}-observations.json")
+
+
+def _tree_is_clean(repo_root: Path) -> bool:
+    """Report whether the implementation the observation names is what is committed."""
+    result = _git(repo_root, "status", "--porcelain", "--", "src", "scripts")
+    return result.returncode == 0 and not result.stdout.strip()
+
+
+def _emit_observations(
+    state: RunState,
+    path: Path,
+    environment: tuple[str, str] | None,
+    repo_root: Path,
+) -> bool:
+    """Write the run's catalog-shaped observations, or say why it wrote none."""
+    if environment is None:
+        print("no LIVE_TEST_ENV_* settings — observations not written")
+        return False
+    if not state.observations:
+        print("no verified observations — nothing to write")
+        return False
+    if not _tree_is_clean(repo_root):
+        print("src/ or scripts/ is modified — observations not written")
+        return False
+    # `--results-file` lets an operator name any stem, so no fixed `.gitignore`
+    # pattern can establish that the destination is ignored; ask Git instead.
+    # `_run_from_arguments` checks the same thing before the run; this covers a
+    # direct call to `main`.
+    if not _destination_is_ignored(path, repo_root):
+        print(f"{path} is not ignored by git — observations not written")
+        return False
+    head = _git(repo_root, "rev-parse", "HEAD")
+    if head.returncode != 0:
+        print("cannot resolve HEAD — observations not written")
+        return False
+    handlers = {
+        tool.operation: tool.handler
+        for tool in check_capability_inventory.discover_registry()
+    }
+    document: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for recorded in state.observations:
+        handler = handlers.get(recorded["operation"])
+        if handler is None:
+            # Skip the one unresolvable row rather than discarding the document:
+            # every other observation came from the same expensive hardware run,
+            # and `test_verified_scenarios_name_registered_operations` is what
+            # catches a mistyped operation before it ever reaches a live run.
+            print(
+                f"  ⚠️  unknown operation {recorded['operation']} — observation skipped"
+            )
+            continue
+        observation = dict(recorded["observation"])
+        if observation["id"] in seen:
+            print(
+                f"duplicate observation id {observation['id']} — observations not written"
+            )
+            return False
+        seen.add(observation["id"])
+        observation["tested_commit"] = head.stdout.strip()
+        observation["hmc_release"], observation["hardware_family"] = environment
+        observation["closure_fingerprint"] = (
+            check_capability_inventory.closure_fingerprint(
+                repo_root, handler.rsplit(".", 1)[0]
+            )
+        )
+        document.append(
+            {"operation": recorded["operation"], "observation": observation}
+        )
+    if not document:
+        print("no resolvable observations — nothing written")
+        return False
+    _write_results(path, json.dumps(document, indent=2))
+    print(f"Observations written to {path}")
+    return True
+
+
 async def main(
     subtask_filter: int | None = None,
     results_path: str = "test-results-round2.json",
     group: str | None = None,
     config: LiveTestConfig | None = None,
     hmc_config: HMCConfig | None = None,
+    environment: tuple[str, str] | None = None,
 ) -> int:
     if config is None:
         try:
@@ -826,6 +1168,9 @@ async def main(
     )
     try:
         async with Client(mcp) as client:
+            state.schemas = {
+                tool.name: tool.inputSchema for tool in await client.list_tools()
+            }
             for n in tasks:
                 fn = SUBTASKS.get(n)
                 if fn:
@@ -848,6 +1193,14 @@ async def main(
             default=str,
         ),
     )
+
+    repo_root = _repository_root()
+    if repo_root is None:
+        print("not inside the hmc-mcp repository — observations not written")
+    else:
+        _emit_observations(
+            state, _observations_path(results_path), environment, repo_root
+        )
 
     total = len(state.results)
     passed = sum(1 for r in state.results if r["status"] == "PASS")

@@ -6,10 +6,23 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Client
 
+from .observation import ExpectedOutcome
 from .results import resource as get_resource
 
 if TYPE_CHECKING:
     from live_test_runner import RunState
+
+_TEST_DISK_ABSENT = ExpectedOutcome(
+    reason="test disk is not present on VIOS (already cleaned up or never existed)",
+    error_codes=frozenset(
+        {"does not exist", "not found", "No such", "0516-306", "0516-404"}
+    ),
+)
+_VOLUME_GROUP_POST_UNSUPPORTED = ExpectedOutcome(
+    reason="REST VolumeGroup POST not supported on this HMC firmware — "
+    "pre-existing test disk must be recreated manually on the VIOS",
+    error_codes=frozenset({"406", "not acceptable"}),
+)
 
 # ---------------------------------------------------------------------------
 # ST13 — Provision Dry Run
@@ -40,12 +53,16 @@ async def validate_provisioning_dry_run(client: Client, state: RunState) -> None
         dry_run=True,
         system_name_or_uuid=config.system_name,
         name=config.dry_run_lpar_name,
-        port_vlan_id=int(pvid),
-        vios_uuid=vios_uuid,
-        vios_partition_id=int(vios_pid or config.dry_run_vios_partition_id),
-        vios_slot=int(vios_slot),
-        storage_name=config.dry_run_storage_name,
-        desired_memory=config.dry_run_memory_mib,
+        adapters={
+            "port_vlan_id": int(pvid),
+            "vios_partition_id": int(vios_pid or config.dry_run_vios_partition_id),
+            "vios_slot": int(vios_slot),
+        },
+        storage={
+            "vios_uuid": vios_uuid,
+            "storage_name": config.dry_run_storage_name,
+        },
+        resources={"desired_memory": config.dry_run_memory_mib},
     )
     state.record(13, "hmc_provision_lpar (dry_run)", st, data)
     if st == "PASS" and isinstance(data, dict):
@@ -76,7 +93,10 @@ async def _remove_previous_test_lpar(client: Client, state: RunState) -> None:
         )
         state.record(14, "hmc_power_off_lpar", status, data)
         status, data = await state.call(
-            client, "hmc_delete_lpar", lpar_name_or_uuid=config.lp3_name
+            client,
+            "hmc_delete_lpar",
+            system_name_or_uuid=config.system_name,
+            lpar_name_or_uuid=config.lp3_name,
         )
         state.record(14, "hmc_delete_lpar", status, data)
     else:
@@ -109,19 +129,12 @@ async def _recreate_test_disk(
         f' -c "rmvlog -vg {vg_name} -lv {config.vdisk_name}"'
     )
     status, data = await state.call(client, "hmc_run_command", cmd=command)
-    state.record_expected_or_real(
+    state.record_with_expected(
         14,
         "hmc_run_command rmvlog (delete old test disk)",
         status,
         data,
-        expected_fail_substrings=[
-            "does not exist",
-            "not found",
-            "No such",
-            "0516-306",
-            "0516-404",
-        ],
-        skip_reason="test disk is not present on VIOS (already cleaned up or never existed)",
+        [_TEST_DISK_ABSENT],
     )
 
     status, data = await state.call(
@@ -132,14 +145,12 @@ async def _recreate_test_disk(
         disk_name=config.vdisk_name,
         capacity_mib=vdisk_size_mib,
     )
-    state.record_expected_or_real(
+    state.record_with_expected(
         14,
         "hmc_create_virtual_disk (test disk)",
         status,
         data,
-        expected_fail_substrings=["406", "not acceptable"],
-        skip_reason="REST VolumeGroup POST not supported on this HMC firmware — "
-        "pre-existing test disk must be recreated manually on the VIOS",
+        [_VOLUME_GROUP_POST_UNSUPPORTED],
     )
 
     status, data = await state.call(
@@ -165,14 +176,18 @@ async def _provision_from_baseline(
         "hmc_provision_lpar",
         system_name_or_uuid=config.system_name,
         name=config.lp3_name,
-        port_vlan_id=pvid,
-        vios_uuid=vios_uuid,
-        vios_partition_id=vios_pid,
-        vios_slot=vios_slot,
-        storage_name=config.vdisk_name,
-        storage_kind="VirtualDisk",
-        vg_uuid=vg_uuid,
-        **_baseline_provision_resources(state),
+        adapters={
+            "port_vlan_id": pvid,
+            "vios_partition_id": vios_pid,
+            "vios_slot": vios_slot,
+        },
+        storage={
+            "vios_uuid": vios_uuid,
+            "storage_name": config.vdisk_name,
+            "kind": "VirtualDisk",
+            "vg_uuid": vg_uuid,
+        },
+        resources=_baseline_provision_resources(state),
         partition_type="AIX/Linux",
         power_on=True,
         dry_run=False,

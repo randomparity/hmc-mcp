@@ -6,11 +6,18 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
+from .observation import ExpectedOutcome
 from .results import entries
 from .results import resource as get_resource
 
 if TYPE_CHECKING:
     from live_test_runner import RunState
+
+_REST_CREATE_UNSUPPORTED = ExpectedOutcome(
+    reason="HMC firmware returns HTTP 406 for REST VirtualNetwork create "
+    "(same PUT limitation as LPAR create)",
+    error_codes=frozenset({"406", "not acceptable"}),
+)
 
 # ---------------------------------------------------------------------------
 # ST9 — Virtual Networking Mutations
@@ -61,13 +68,8 @@ async def _create_network_and_nettest_lpar(
         virtual_switch_id=vswitch_id,
         tagged=False,
     )
-    state.record_expected_or_real(
-        9,
-        "hmc_create_virtual_network",
-        st,
-        data,
-        expected_fail_substrings=["406", "not acceptable"],
-        skip_reason="HMC firmware returns HTTP 406 for REST VirtualNetwork create (same PUT limitation as LPAR create)",
+    state.record_with_expected(
+        9, "hmc_create_virtual_network", st, data, [_REST_CREATE_UNSUPPORTED]
     )
     if st == "PASS" and isinstance(data, dict):
         artifacts.test_network_uuid = data.get("uuid") or data.get("UUID")
@@ -170,7 +172,10 @@ async def _cleanup_network_mutation(client: Client, state: RunState) -> None:
 
     if artifacts.nettest_uuid:
         st, data = await state.call(
-            client, "hmc_delete_lpar", lpar_name_or_uuid=config.nettest_name
+            client,
+            "hmc_delete_lpar",
+            system_name_or_uuid=config.system_name,
+            lpar_name_or_uuid=config.nettest_name,
         )
         state.record(9, "hmc_delete_lpar (nettest)", st, data)
         if st == "PASS":

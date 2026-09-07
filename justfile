@@ -44,6 +44,10 @@ nicknames:
 capability-inventory:
     uv run --no-sync python scripts/check_capability_inventory.py
 
+# report each operation's derived live-verification state (ADR 0127)
+verification-report *ARGS:
+    uv run --no-sync python scripts/check_capability_inventory.py --verification-report {{ARGS}}
+
 # regenerate docs/tools/ from the MCP tool registry
 tool-docs:
     uv run --no-sync python scripts/gen_tool_reference.py

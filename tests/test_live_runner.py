@@ -3,19 +3,28 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 from dataclasses import FrozenInstanceError, asdict
 from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ToolError
 
+from hmc_mcp.authorization import target_scope
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.server import TOOL_SECURITY
+from hmc_mcp.jobs import JobOutcome
+from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
+from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 from hmc_mcp.ssh import affinity as ssh_affinity
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
@@ -27,6 +36,7 @@ from live_test import (  # noqa: E402
     lpar,
     metrics,
     network,
+    observation,
     pcie,
     profiles,
     provisioning,
@@ -68,6 +78,11 @@ class _FakeClient:
     async def __aexit__(self, *_args):
         return None
 
+    async def list_tools(self):
+        # An empty schema map leaves the runtime dispatch guard inert, which is
+        # what these isolation tests want: they script their own tool responses.
+        return []
+
 
 class _ToolResult:
     def __init__(self, *, data=None, content=None):
@@ -89,6 +104,21 @@ class _ScriptedClient:
         if self.error is not None:
             raise self.error
         return self.result
+
+
+def _failure(text: str) -> observation.CallFailure:
+    """The shape `RunState.call` really returns on failure, for a scripted stub."""
+    return observation.classify_failure(RuntimeError(text))
+
+
+def _optical_mapping(media_name: str, lpar: str = "lp3-uuid") -> dict:
+    """One `hmc_list_optical_mappings` entry, shaped as the client really returns it."""
+    return {
+        "Storage": {"VirtualOpticalMedia": {"MediaName": media_name}},
+        "AssociatedLogicalPartition": {
+            "href": f"/rest/api/uom/LogicalPartition/{lpar}"
+        },
+    }
 
 
 class _ScriptedSriovState(runner.RunState):
@@ -398,10 +428,10 @@ async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
             ("hmc_get_job", "PASS", {}),
             ("hmc_wait_for_job", "PASS", {}),
             ("hmc_list_recent_jobs", "PASS", {"entries": []}),
-            ("hmc_get_pcm_preferences", "FAIL", "PCM unavailable"),
-            ("hmc_processed_metric_links", "FAIL", "PCM unavailable"),
-            ("hmc_aggregated_metric_links", "FAIL", "PCM unavailable"),
-            ("hmc_list_partition_templates", "FAIL", "template unavailable"),
+            ("hmc_get_pcm_preferences", "FAIL", _failure("PCM unavailable")),
+            ("hmc_processed_metric_links", "FAIL", _failure("PCM unavailable")),
+            ("hmc_aggregated_metric_links", "FAIL", _failure("PCM unavailable")),
+            ("hmc_list_partition_templates", "FAIL", _failure("template unavailable")),
         ]
     )
     state.artifacts.job_uuid_sample = "job-uuid"
@@ -412,7 +442,7 @@ async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
     assert state.calls[1][1]["long_term_monitor"] is False
     assert state.calls[3][1]["long_term_monitor"] is True
     assert state.calls[5][1] == {
-        "job_uuid": "job-uuid",
+        "job_id": "job-uuid",
         "timeout_seconds": 10,
         "poll_interval": 2,
     }
@@ -468,12 +498,16 @@ async def test_provision_dry_run_requires_vios_and_uses_baseline_vlan() -> None:
                 "dry_run": True,
                 "system_name_or_uuid": state.config.system_name,
                 "name": state.config.dry_run_lpar_name,
-                "port_vlan_id": 99,
-                "vios_uuid": "vios-uuid",
-                "vios_partition_id": 4,
-                "vios_slot": 6,
-                "storage_name": state.config.dry_run_storage_name,
-                "desired_memory": state.config.dry_run_memory_mib,
+                "adapters": {
+                    "port_vlan_id": 99,
+                    "vios_partition_id": 4,
+                    "vios_slot": 6,
+                },
+                "storage": {
+                    "vios_uuid": "vios-uuid",
+                    "storage_name": state.config.dry_run_storage_name,
+                },
+                "resources": {"desired_memory": state.config.dry_run_memory_mib},
             },
         )
     ]
@@ -548,7 +582,7 @@ async def test_vmedia_mount_requires_iso_and_preserves_safe_delete_boundary() ->
         [
             ("hmc_mount_optical_media", "PASS", {"ElementID": "mapping-uuid"}),
             ("hmc_list_optical_mappings", "PASS", []),
-            ("hmc_delete_optical_media", "FAIL", "media is mapped"),
+            ("hmc_delete_optical_media", "FAIL", _failure("media is mapped")),
             ("hmc_unmount_optical_media", "PASS", {}),
             ("hmc_list_optical_mappings", "PASS", []),
             ("hmc_delete_optical_media", "PASS", {}),
@@ -565,7 +599,11 @@ async def test_vmedia_mount_requires_iso_and_preserves_safe_delete_boundary() ->
     assert state.artifacts.vmedia_iso_name is None
     assert state.calls[3] == (
         "hmc_unmount_optical_media",
-        {"vios_name_or_uuid": "vios-uuid", "mapping_uuid": "mapping-uuid"},
+        {
+            "vios_name_or_uuid": "vios-uuid",
+            "lpar_name_or_uuid": state.config.lp3_name,
+            "media_name": "boot.iso",
+        },
     )
     assert any(
         entry["tool"] == "hmc_delete_optical_media (blocked — expected)"
@@ -579,7 +617,7 @@ async def test_vmedia_teardown_restores_boot_and_removes_artifacts_in_order() ->
     state = _ScriptedSriovState(
         [
             ("hmc_set_lpar_boot_order", "PASS", {}),
-            ("hmc_list_optical_mappings", "PASS", [{"UUID": "orphan-uuid"}]),
+            ("hmc_list_optical_mappings", "PASS", [_optical_mapping("orphan.iso")]),
             ("hmc_unmount_optical_media", "PASS", {}),
             ("hmc_list_optical_media", "PASS", [{"MediaName": "orphan.iso"}]),
             ("hmc_delete_optical_media", "PASS", {}),
@@ -1125,7 +1163,10 @@ async def test_call_failure_is_redacted_when_recorded(capsys):
         assert value not in output
         assert value not in recorded
     assert "RuntimeError: transport failed" in recorded
-    assert "Traceback" in recorded
+    # The traceback stays on the CallFailure for the caller that classifies it and
+    # is not persisted: the results document keeps only the redacted message.
+    assert "Traceback" not in recorded
+    assert "Traceback" in data.traceback_text
 
 
 @pytest.mark.asyncio
@@ -1140,23 +1181,259 @@ async def test_call_reports_unexpected_result_parser_failure(monkeypatch):
     )
 
     assert status == "FAIL"
-    assert "TypeError: parser bug" in data
+    assert "TypeError: parser bug" in data.message
 
 
 def test_expected_hmc_limitation_is_classified_as_skip():
     state = runner.RunState()
 
-    state.record_expected_or_real(
+    state.record_with_expected(
         5,
         "optional_tool",
         "FAIL",
-        "HTTP 406 Not Acceptable",
-        ["406"],
-        "feature unavailable",
+        observation.classify_failure(RuntimeError("HTTP 406 Not Acceptable")),
+        [
+            observation.ExpectedOutcome(
+                reason="feature unavailable", error_codes=frozenset({"406"})
+            )
+        ],
     )
 
     assert state.results[0]["status"] == "SKIP"
     assert state.results[0]["note"] == "feature unavailable"
+
+
+def test_classify_failure_reads_the_message_not_the_traceback():
+    """A status quoted by an unrelated frame must not reclassify the failure."""
+    try:
+        try:
+            raise RuntimeError("inner frame mentions HTTP 500")
+        except RuntimeError as inner:
+            raise RuntimeError("transport returned HTTP 400") from inner
+    except RuntimeError as exc:
+        failure = observation.classify_failure(exc)
+
+    assert failure.http_status == 400
+    assert "HTTP 500" in failure.traceback_text
+
+
+@pytest.mark.asyncio
+async def test_a_real_access_policy_denial_classifies_as_denied():
+    """The denial pattern is coupled to the message the application really renders."""
+    policy = compile_legacy_policy(
+        TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=False
+    )
+    async with Client(create_mcp(policy)) as client:
+        with pytest.raises(ToolError) as raised:
+            await client.call_tool("hmc_list_systems", {"profile": "not-granted"})
+
+    assert observation.classify_failure(raised.value).denied is True
+
+
+def test_a_target_scope_denial_classifies_as_denied():
+    """Three of the four target-scope templates omit the ``on <targets>`` segment."""
+    rendered = target_scope._UNREADABLE_VALUE.format(
+        tool="hmc_get_lpar",
+        policy="'legacy-equivalent'",
+        argument="lpar_name_or_uuid",
+        kind="lpar",
+    )
+
+    assert observation.classify_failure(RuntimeError(rendered)).denied is True
+
+
+def test_expected_outcome_matches_whole_tokens_in_the_message():
+    outcome = observation.ExpectedOutcome(
+        reason="job REST type unsupported", error_codes=frozenset({"REST000E"})
+    )
+
+    assert outcome.matches(
+        observation.classify_failure(RuntimeError("saw REST000E here"))
+    )
+    assert not outcome.matches(
+        observation.classify_failure(RuntimeError("saw REST000EX here"))
+    )
+
+
+@pytest.mark.parametrize(
+    ("outcome", "message"),
+    [
+        ("lpar._REST_MODIFY_UNSUPPORTED", "HMCError: HTTP 406 Not Acceptable"),
+        ("network._REST_CREATE_UNSUPPORTED", "HMCError: HTTP 406 Not Acceptable"),
+        (
+            "metrics._TEMPLATES_UNLICENSED",
+            "HMCError: partition templates are not available",
+        ),
+        ("metrics._PCM_UNLICENSED", "HMCError: PCM is not licensed"),
+        (
+            "provisioning._TEST_DISK_ABSENT",
+            "HMCError: 0516-306 lvmo: Unable to find device",
+        ),
+        ("provisioning._TEST_DISK_ABSENT", "HMCError: No Such device or address"),
+        ("vmedia._ALREADY_POWERED_OFF", "HMCError: partition is Not Running"),
+        ("users._HMCUSER_UNSUPPORTED", "HMCError: REST000E unsupported"),
+    ],
+)
+def test_declared_outcomes_match_the_message_forms_the_hmc_really_renders(
+    outcome, message
+):
+    """The substring match this replaced was case-insensitive; so is this one.
+
+    The HMC renders `Not Acceptable`, `No Such` and `Not Running` in title case,
+    and `templates` in the plural. A case-sensitive whole-token pattern misses
+    all four, recording a known limitation as a real failure on live hardware —
+    a regression no `tmp_path` fixture would show.
+    """
+    module, _, name = outcome.partition(".")
+    declared = getattr(globals()[module], name)
+
+    assert declared.matches(observation.classify_failure(RuntimeError(message)))
+
+
+def test_a_declared_outcome_does_not_match_an_unrelated_failure():
+    assert not metrics._PCM_UNLICENSED.matches(
+        observation.classify_failure(RuntimeError("HMCError: HTTP 500 internal"))
+    )
+
+
+def test_expected_outcome_requires_a_code_or_a_denial():
+    with pytest.raises(ValueError, match="error code or a denial"):
+        observation.ExpectedOutcome(reason="nothing to match on")
+
+
+def test_an_unmatched_failure_is_recorded_as_failed():
+    """An undeclared failure is never laundered into a skip."""
+    state = runner.RunState()
+
+    state.record_with_expected(
+        12,
+        "hmc_get_job",
+        "FAIL",
+        observation.classify_failure(RuntimeError("HTTP 500 Internal Server Error")),
+        [
+            observation.ExpectedOutcome(
+                reason="job REST type unsupported", error_codes=frozenset({"REST000E"})
+            )
+        ],
+    )
+
+    assert state.results[0]["status"] == "FAIL"
+    assert state.results[0]["result"] == "failed"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("PASS", "observed"), ("FAIL", "failed"), ("SKIP", "skipped")],
+)
+def test_record_always_yields_a_non_promoting_result(status, expected):
+    state = runner.RunState()
+
+    state.record(1, "hmc_get_console_info", status, {"uuid": "c"})
+
+    assert state.results[0]["result"] == expected
+    assert state.results[0]["result"] != "passed"
+
+
+def test_record_verified_yields_failed_on_a_false_assertion():
+    state = runner.RunState()
+
+    state.record_verified(
+        12,
+        "hmc_get_job",
+        operation="job.get",
+        scenario="st12-job-inspection",
+        assertions=[
+            observation.Assertion("job-found", True),
+            observation.Assertion("job-status-successful", False),
+        ],
+        cleanup="not-required",
+        data={"UUID": "j"},
+    )
+
+    assert state.results[0]["result"] == "failed"
+    assert state.observations[0]["observation"]["result"] == "failed"
+    assert state.observations[0]["observation"]["assertions"] == ["job-found"]
+
+
+def test_record_verified_yields_failed_on_failed_cleanup():
+    state = runner.RunState()
+
+    state.record_verified(
+        12,
+        "hmc_get_job",
+        operation="job.get",
+        scenario="st12-job-inspection",
+        assertions=[observation.Assertion("job-found", True)],
+        cleanup="failed",
+        data={"UUID": "j"},
+    )
+
+    assert state.results[0]["result"] == "failed"
+    assert state.observations[0]["observation"]["cleanup"] == "failed"
+
+
+def test_record_verified_writes_a_catalog_shaped_observation():
+    state = runner.RunState()
+
+    state.record_verified(
+        1,
+        "hmc_get_console_info",
+        operation="console.info",
+        scenario="st1-console-identity",
+        assertions=[observation.Assertion("console-uuid-present", True)],
+        cleanup="not-required",
+        data={"uuid": "c"},
+    )
+
+    recorded = state.observations[0]
+    assert recorded["operation"] == "console.info"
+    assert recorded["observation"]["id"] == "st1-hmc-get-console-info"
+    assert recorded["observation"]["channel"] == "live"
+    assert recorded["observation"]["result"] == "passed"
+    assert set(recorded["observation"]) == {
+        "id",
+        "channel",
+        "result",
+        "scenario",
+        "observed_at",
+        "cleanup",
+        "assertions",
+    }
+
+
+@pytest.mark.parametrize(
+    ("assertions", "cleanup", "scenario", "match"),
+    [
+        ([], "not-required", "st1-console-identity", "at least one condition"),
+        (
+            [("console-uuid-present", True)],
+            "unknown",
+            "st1-console-identity",
+            "cleanup disposition",
+        ),
+        ([("console-uuid-present", True)], "not-required", "console", "scenario id"),
+    ],
+)
+def test_record_verified_rejects_a_malformed_observation(
+    assertions, cleanup, scenario, match
+):
+    state = runner.RunState()
+
+    with pytest.raises(ValueError, match=match):
+        state.record_verified(
+            1,
+            "hmc_get_console_info",
+            operation="console.info",
+            scenario=scenario,
+            assertions=[observation.Assertion(*item) for item in assertions],
+            cleanup=cleanup,
+            data={},
+        )
+
+
+def test_assertion_id_must_be_a_closed_shape_token():
+    with pytest.raises(ValueError, match="closed-shape token"):
+        observation.Assertion("entry UUID equals job id", True)
 
 
 def test_result_helpers_filter_malformed_entries_and_resource_shapes():
@@ -1214,6 +1491,23 @@ def test_restore_artifacts_round_trips_config_and_preserves_result_rows(tmp_path
     assert state.artifacts.vios_uuid == "vios-1"
     assert state.artifacts.lp3_baseline == {"description": "original"}
     assert json.loads(results_path.read_text())["results"] == [{"status": "PASS"}]
+
+
+def test_restore_artifacts_tolerates_a_results_document_without_test_user_uuid(
+    tmp_path,
+):
+    """A report written before the field existed is still a valid restore source."""
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    del document["artifacts"]["test_user_uuid"]
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    state = runner.RunState(config=config)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts.test_user_uuid is None
 
 
 @pytest.mark.parametrize("document", ["not JSON", "[]", '{"context": []}'])
@@ -1504,14 +1798,16 @@ def test_live_runner_contains_no_executable_optmem_command():
     assert re.search(r"(?<![\w-])optmem(?![\w-])", source) is None
 
 
-def _dispatched_tool_names(source: str) -> set[str]:
-    """Every tool name ``source`` hands to the runner's ``call`` dispatcher.
+def _dispatched_calls(source: str) -> list[tuple[int, str, tuple[str | None, ...]]]:
+    """Every ``call`` dispatch in ``source``: its line, tool name and keywords.
 
     A dispatch whose tool argument is not a string literal cannot be read here,
     and skipping it would silently shrink the guard's coverage, so it fails
-    instead.
+    instead. A ``**mapping`` splat yields ``None`` in place of a keyword name:
+    reporting that as one problem, rather than raising on it, is what lets the
+    caller finish enumerating every other site in the tree.
     """
-    names: set[str] = set()
+    dispatches: list[tuple[int, str, tuple[str | None, ...]]] = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.Call):
             continue
@@ -1523,8 +1819,47 @@ def _dispatched_tool_names(source: str) -> set[str]:
                 f"line {node.lineno}: call() dispatches a tool name this guard "
                 "cannot read — pass a string literal"
             )
-        names.add(tool.value)
-    return names
+        dispatches.append(
+            (node.lineno, tool.value, tuple(keyword.arg for keyword in node.keywords))
+        )
+    return dispatches
+
+
+def _dispatched_tool_names(source: str) -> set[str]:
+    """Every tool name ``source`` hands to the runner's ``call`` dispatcher."""
+    return {tool for _, tool, _ in _dispatched_calls(source)}
+
+
+async def _served_schemas() -> dict[str, dict[str, object]]:
+    """The input schema the composed application actually serves for each tool."""
+    policy = compile_legacy_policy(
+        TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
+    )
+    application = create_mcp(policy)
+    permits, authorize = _gates(policy)
+    await configure_arbitrary_command_tool(
+        True, application, permits=permits, authorize=authorize
+    )
+    async with Client(application) as client:
+        return {tool.name: tool.inputSchema for tool in await client.list_tools()}
+
+
+def _assert_dispatch_arguments(sources: dict[str, str], schemas) -> None:
+    """Fail naming every dispatch whose keywords disagree with the served schema."""
+    problems: list[str] = []
+    for path, source in sources.items():
+        for lineno, tool, keywords in _dispatched_calls(source):
+            if None in keywords:
+                problems.append(
+                    f"{path}:{lineno} dispatches arguments this guard "
+                    "cannot read — name them"
+                )
+                continue
+            problems += [
+                f"{path}:{lineno} {problem}"
+                for problem in runner._dispatch_problems(tool, keywords, schemas)
+            ]
+    assert problems == [], "\n".join(problems)
 
 
 def test_every_dispatched_tool_name_is_registered():
@@ -1558,6 +1893,63 @@ def test_dispatch_guard_refuses_a_tool_name_it_cannot_read():
 
     with pytest.raises(AssertionError, match="cannot read"):
         _dispatched_tool_names(source)
+
+
+@pytest.mark.asyncio
+async def test_every_dispatched_argument_matches_the_served_schema():
+    """A dispatch the served schema rejects is a defect the harness ships blind."""
+    schemas = await _served_schemas()
+    sources = {
+        Path(module.__file__).name: Path(module.__file__).read_text(encoding="utf-8")
+        for module in LIVE_WORKFLOW_MODULES
+    }
+    # The runner itself dispatches nothing today; covering it keeps a dispatch
+    # added there from being the one the guard never reads.
+    sources[_RUNNER_PATH.name] = _RUNNER_PATH.read_text(encoding="utf-8")
+
+    _assert_dispatch_arguments(sources, schemas)
+
+
+@pytest.mark.asyncio
+async def test_argument_guard_refuses_a_splat_it_cannot_read():
+    source = (
+        "async def workflow(client):\n"
+        '    await state.call(client, "hmc_list_lpars", **overrides)\n'
+    )
+
+    with pytest.raises(AssertionError, match="cannot read"):
+        _assert_dispatch_arguments({"synthetic.py": source}, await _served_schemas())
+
+
+@pytest.mark.asyncio
+async def test_argument_guard_reports_an_unknown_keyword():
+    source = (
+        "async def workflow(client):\n"
+        '    await state.call(client, "hmc_get_job", job_uuid="x")\n'
+    )
+
+    with pytest.raises(AssertionError) as raised:
+        _assert_dispatch_arguments({"synthetic.py": source}, await _served_schemas())
+
+    assert "unknown argument job_uuid" in str(raised.value)
+    assert "missing required argument job_id" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_an_invalid_dispatch_never_reaches_the_client():
+    class _RefusingClient:
+        async def call_tool(self, _tool, _kwargs):
+            raise AssertionError("an invalid dispatch reached the client")
+
+    state = runner.RunState()
+    state.schemas = await _served_schemas()
+
+    status, data = await state.call(_RefusingClient(), "hmc_get_job", job_uuid="x")
+    state.record(12, "hmc_get_job", status, data)
+
+    assert status == "FAIL"
+    assert data.exception_type == "InvalidDispatch"
+    assert state.results[0]["result"] == "failed"
 
 
 def test_every_live_workflow_dispatch_has_exactly_client_and_tool_arguments():
@@ -1727,7 +2119,7 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
         if tool == "hmc_read_lpar_boot_order":
             return "PASS", {"pending_boot_string": "disk,network"}
         if tool == "hmc_list_optical_mappings" and workflow is runner.vmedia_teardown:
-            return "PASS", [{"UUID": "mapping"}]
+            return "PASS", [_optical_mapping("test.iso")]
         return "PASS", {}
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
@@ -2007,7 +2399,7 @@ async def test_metrics_template_inventory_records_expected_limitation_and_contin
         if tool == "hmc_get_pcm_preferences":
             return "PASS", {"long_term_monitor": True}
         if tool == "hmc_processed_metric_links":
-            return "FAIL", "PCM is not licensed"
+            return "FAIL", _failure("PCM is not licensed")
         return "PASS", []
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
@@ -2036,14 +2428,30 @@ async def test_user_inventory_classifies_unsupported_endpoint(monkeypatch):
 
     async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
-        return "FAIL", "REST000E: endpoint unavailable"
+        return "FAIL", _failure("REST000E: endpoint unavailable")
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.console_uuid = "console-uuid"
+
+    await users.inventory_users(None, state)
+
+    assert calls == [("hmc_list_users", {"console_uuid": "console-uuid"})]
+    assert state.results[0]["status"] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_user_inventory_skips_without_a_console_uuid(monkeypatch):
+    """Every user tool addresses the console by UUID, so ST1 gates the whole path."""
+
+    async def scripted_call(_state, _client, _tool, **_kwargs):
+        raise AssertionError("a user tool ran without a console UUID")
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
 
     await users.inventory_users(None, state)
 
-    assert calls == [("hmc_list_users", {})]
     assert state.results[0]["status"] == "SKIP"
 
 
@@ -2079,11 +2487,16 @@ async def test_user_administration_cleans_up_only_a_created_user(
     async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
         if tool == "hmc_create_user":
-            return create_status, {} if create_status == "PASS" else "REST000E"
+            if create_status == "PASS":
+                return "PASS", {}
+            return "FAIL", _failure("REST000E")
+        if tool == "hmc_list_users":
+            return "PASS", [{"UserID": state.config.test_user, "uuid": "profile-uuid"}]
         return "PASS", []
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
+    state.artifacts.console_uuid = "console-uuid"
 
     await users.administer_test_user(None, state)
 
@@ -2092,15 +2505,50 @@ async def test_user_administration_cleans_up_only_a_created_user(
         expected.extend(["hmc_modify_user", "hmc_delete_user"])
     expected.append("hmc_list_users")
     assert [tool for tool, _ in calls] == expected
-    assert calls[0][1]["name"] == state.config.test_user
+    assert calls[0][1]["user_id"] == state.config.test_user
+    assert calls[0][1]["console_uuid"] == "console-uuid"
     if create_status == "PASS":
         assert calls[2][1]["description"].endswith("updated")
-        assert calls[3][1] == {"name": state.config.test_user}
+        assert calls[3][1] == {
+            "console_uuid": "console-uuid",
+            "user_profile_uuid": "profile-uuid",
+        }
+        assert state.artifacts.test_user_uuid is None
     else:
         skipped = [
             result["tool"] for result in state.results if result["status"] == "SKIP"
         ]
         assert skipped == ["hmc_create_user", "hmc_modify_user", "hmc_delete_user"]
+
+
+@pytest.mark.asyncio
+async def test_user_administration_skips_without_a_profile_uuid(monkeypatch):
+    """Modify and delete address the profile by UUID; without one they must not run."""
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        assert tool not in {"hmc_modify_user", "hmc_delete_user"}
+        if tool == "hmc_list_users":
+            return "PASS", [{"UserID": "someone-else", "uuid": "other-uuid"}]
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.console_uuid = "console-uuid"
+
+    await users.administer_test_user(None, state)
+
+    assert state.artifacts.test_user_uuid is None
+    skipped = [
+        (result["tool"], result["note"])
+        for result in state.results
+        if result["status"] == "SKIP"
+    ]
+    assert skipped == [
+        ("hmc_modify_user", "user profile UUID not found after create"),
+        ("hmc_delete_user", "user profile UUID not found after create"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -2134,7 +2582,7 @@ async def test_metrics_jobs_restores_disabled_preference_and_forwards_job_option
     assert [kwargs["long_term_monitor"] for kwargs in set_calls] == [True, False]
     wait_call = next(kwargs for tool, kwargs in calls if tool == "hmc_wait_for_job")
     assert wait_call == {
-        "job_uuid": "job-uuid",
+        "job_id": "job-uuid",
         "timeout_seconds": 10,
         "poll_interval": 2,
     }
@@ -2327,18 +2775,24 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     assert provision == {
         "system_name_or_uuid": state.config.system_name,
         "name": state.config.lp3_name,
-        "port_vlan_id": 3101,
-        "vios_uuid": "vios-uuid",
-        "vios_partition_id": 7,
-        "vios_slot": 11,
-        "storage_name": state.config.vdisk_name,
-        "storage_kind": "VirtualDisk",
-        "vg_uuid": "vg-uuid",
-        "min_memory": 1024,
-        "desired_memory": 2048,
-        "max_memory": 4096,
-        "desired_vcpus": 2,
-        "max_vcpus": 4,
+        "adapters": {
+            "port_vlan_id": 3101,
+            "vios_partition_id": 7,
+            "vios_slot": 11,
+        },
+        "storage": {
+            "vios_uuid": "vios-uuid",
+            "storage_name": state.config.vdisk_name,
+            "kind": "VirtualDisk",
+            "vg_uuid": "vg-uuid",
+        },
+        "resources": {
+            "min_memory": 1024,
+            "desired_memory": 2048,
+            "max_memory": 4096,
+            "desired_vcpus": 2,
+            "max_vcpus": 4,
+        },
         "partition_type": "AIX/Linux",
         "power_on": True,
         "dry_run": False,
@@ -2492,3 +2946,498 @@ async def test_final_restore_replays_baseline_and_audits(monkeypatch):
         "hmc_run_command",
         "hmc_lpar_summary",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "response"),
+    [
+        ("hmc_get_job", {"UUID": "job-uuid", "Status": "FAILED_BEFORE_COMPLETION"}),
+        (
+            "hmc_wait_for_job",
+            {
+                "job_id": "job-uuid",
+                "found": True,
+                "timed_out": False,
+                "status": "FAILED_BEFORE_COMPLETION",
+                "error": "the job did not complete",
+                "job": {"UUID": "job-uuid"},
+                "job_href": None,
+            },
+        ),
+    ],
+)
+async def test_job_scenarios_fail_on_a_non_successful_status(
+    monkeypatch, tool, response
+):
+    """`PASS` meant the call returned; a job that came back failed must not promote."""
+
+    async def scripted_call(_state, _client, dispatched, **_kwargs):
+        if dispatched == tool:
+            return "PASS", response
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.job_uuid_sample = "job-uuid"
+
+    await metrics.inspect_metrics_jobs(None, state)
+
+    row = next(entry for entry in state.results if entry["tool"] == tool)
+    assert row["result"] == "failed"
+    held = next(
+        item["observation"]["assertions"]
+        for item in state.observations
+        if item["observation"]["id"] == f"st12-{tool.replace('_', '-')}"
+    )
+    assert "job-status-successful" not in held
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_outcome_normalizes_from_the_served_shape():
+    """FastMCP serves `hmc_wait_for_job` unwrapped, so `result.data` is not a dict.
+
+    The scripted stubs above hand `_as_outcome` a mapping, so only this arm can
+    catch a normalizer that handles nothing else.
+    """
+    application = FastMCP("job-shape-probe")
+
+    @application.tool
+    async def probe() -> JobOutcome:
+        return JobOutcome(
+            job_id="job-uuid",
+            status="COMPLETED_OK",
+            timed_out=False,
+            error=None,
+            job={"UUID": "job-uuid"},
+            found=True,
+            job_href=None,
+        )
+
+    async with Client(application) as client:
+        result = await client.call_tool("probe", {})
+
+    assert not isinstance(result.data, dict)
+    outcome = metrics._as_outcome(result.data)
+    assert outcome is not None
+    assert outcome.status == "COMPLETED_OK"
+    assert outcome.job_id == "job-uuid"
+
+
+def _recorded_scenarios() -> dict[str, set[str]]:
+    """Every scenario's declared assertion ids, read from the workflow sources."""
+    declared: dict[str, set[str]] = {}
+    for module in LIVE_WORKFLOW_MODULES:
+        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+        constants = {
+            target.id: node.value.value
+            for node in tree.body
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+            for target in node.targets
+            if isinstance(target, ast.Name) and isinstance(node.value.value, str)
+        }
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "record_verified"
+            ):
+                continue
+            keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+            scenario = keywords["scenario"]
+            if isinstance(scenario, ast.Constant):
+                name = scenario.value
+            else:
+                name = constants[scenario.id]
+            declared.setdefault(name, set()).update(
+                _assertion_ids(keywords["assertions"], module)
+            )
+    return declared
+
+
+def _assertion_ids(node: ast.expr, module) -> set[str]:
+    """The ids of the `Assertion(...)` values a `record_verified` call declares."""
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        # A helper builds the list; read the ids from the helper's own body.
+        helper = next(
+            item
+            for item in ast.parse(
+                Path(module.__file__).read_text(encoding="utf-8")
+            ).body
+            if isinstance(item, ast.FunctionDef) and item.name == node.func.id
+        )
+        return _assertion_ids_in(helper)
+    return _assertion_ids_in(node)
+
+
+def _assertion_ids_in(node: ast.AST) -> set[str]:
+    return {
+        item.args[0].value
+        for item in ast.walk(node)
+        if isinstance(item, ast.Call)
+        and isinstance(item.func, ast.Name)
+        and item.func.id == "Assertion"
+        and item.args
+        and isinstance(item.args[0], ast.Constant)
+    }
+
+
+def _recorded_operations() -> set[str]:
+    """Every `operation=` literal a `record_verified` call names."""
+    declared: set[str] = set()
+    for module in LIVE_WORKFLOW_MODULES:
+        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "record_verified"
+            ):
+                continue
+            operation = {keyword.arg: keyword.value for keyword in node.keywords}[
+                "operation"
+            ]
+            assert isinstance(operation, ast.Constant), (
+                f"{Path(module.__file__).name}:{node.lineno} names an operation "
+                "this guard cannot read — pass a string literal"
+            )
+            declared.add(operation.value)
+    return declared
+
+
+def test_verified_scenarios_name_registered_operations():
+    """An observation whose operation is not in the catalog can never be filed.
+
+    `_emit_observations` resolves the closure fingerprint through the registry, so
+    a mistyped id yields an observation nothing can fingerprint. Caught here, in
+    the pull request, rather than after an expensive run against real hardware.
+    """
+    registered = {
+        tool.operation
+        for tool in runner.check_capability_inventory.discover_registry()
+    }
+    declared = _recorded_operations()
+
+    assert declared, "no record_verified operations found — the guard would pass vacuously"
+    assert sorted(declared - registered) == []
+
+
+def test_scenarios_declare_their_expected_assertion_ids():
+    """Deleting an assertion must fail here, not go unnoticed in a stale observation.
+
+    The closure fingerprint covers `src/hmc_mcp/` only, so removing an assertion
+    from a harness module leaves every committed observation still listing its id,
+    still matching its recomputed hash, and still reported `current` — a reader
+    concludes a postcondition was checked that nothing checks any more.
+    """
+    assert _recorded_scenarios() == {
+        "st12-job-inspection": {
+            "job-found",
+            "job-identity-matches",
+            "job-status-successful",
+        },
+        "st1-console-identity": {"console-uuid-present"},
+    }
+
+
+def _live_repo(tmp_path: Path) -> Path:
+    """A throwaway git repository whose ignore rules match the real one's."""
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
+    (tmp_path / ".gitignore").write_text(
+        "test-results*.json\n.test-results*.tmp\n", encoding="utf-8"
+    )
+    package = tmp_path / "src" / "hmc_mcp"
+    package.mkdir(parents=True)
+    # A real module, so the validated `closure_fingerprint` is a hash of files
+    # rather than the empty-input digest, which would say nothing about the walk.
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "placeholder.py").write_text("", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "-c", "user.email=t@example.test",
+         "-c", "user.name=t", "commit", "-qm", "base"],
+        check=True,
+    )
+    return tmp_path
+
+
+def _state_with_one_observation():
+    state = runner.RunState()
+    state.record_verified(
+        1,
+        "hmc_get_console_info",
+        operation="console.info",
+        scenario="st1-console-identity",
+        assertions=[observation.Assertion("console-uuid-present", True)],
+        cleanup="not-required",
+        data={"uuid": "console"},
+    )
+    return state
+
+
+def test_a_lone_environment_key_is_rejected(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("LIVE_TEST_ENV_HMC_RELEASE=V10R3\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must be set together"):
+        runner._read_environment(env_file)
+
+
+def test_both_environment_keys_are_read(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "LIVE_TEST_ENV_HMC_RELEASE=V10R3\nLIVE_TEST_ENV_HARDWARE_FAMILY=POWER10\n",
+        encoding="utf-8",
+    )
+
+    assert runner._read_environment(env_file) == ("V10R3", "POWER10")
+
+
+def test_observations_are_not_emitted_without_environment(tmp_path, capsys):
+    repo = _live_repo(tmp_path)
+    destination = repo / "test-results-round2-observations.json"
+
+    assert not runner._emit_observations(
+        _state_with_one_observation(), destination, None, repo
+    )
+    assert "no LIVE_TEST_ENV_* settings" in capsys.readouterr().out
+    assert not destination.exists()
+
+
+def test_observations_are_not_emitted_from_a_dirty_tree(tmp_path, capsys, monkeypatch):
+    repo = _live_repo(tmp_path)
+    monkeypatch.setattr(runner, "_tree_is_clean", lambda _root: False)
+    destination = repo / "test-results-round2-observations.json"
+
+    assert not runner._emit_observations(
+        _state_with_one_observation(), destination, ("V10R3", "POWER10"), repo
+    )
+    assert "is modified" in capsys.readouterr().out
+    assert not destination.exists()
+
+
+def test_emission_refuses_a_path_git_does_not_ignore(tmp_path, capsys):
+    """`--results-file` accepts any stem, so no fixed pattern can cover it."""
+    repo = _live_repo(tmp_path)
+    destination = repo / "evidence-observations.json"
+
+    assert not runner._emit_observations(
+        _state_with_one_observation(), destination, ("V10R3", "POWER10"), repo
+    )
+    assert "is not ignored by git" in capsys.readouterr().out
+    assert not destination.exists()
+
+
+def test_emitted_observations_validate_against_the_catalog_shape(tmp_path):
+    repo = _live_repo(tmp_path)
+    destination = repo / "test-results-round2-observations.json"
+
+    assert runner._emit_observations(
+        _state_with_one_observation(), destination, ("V10R3", "POWER10"), repo
+    )
+
+    document = json.loads(destination.read_text())
+    errors: list[str] = []
+    # One shared id set across the document, so a duplicate id is caught here
+    # exactly as `just capability-inventory` would catch it after a copy-in.
+    evidence_ids: set[str] = set()
+    for entry in document:
+        runner.check_capability_inventory._validate_observation(
+            entry["observation"], entry["operation"], evidence_ids, errors
+        )
+    assert errors == []
+    assert document[0]["operation"] == "console.info"
+    assert document[0]["observation"]["result"] == "passed"
+    assert document[0]["observation"]["closure_fingerprint"] != hashlib.sha256(
+        b""
+    ).hexdigest()
+
+
+def test_a_lone_environment_key_exits_before_the_run(monkeypatch, tmp_path, capsys):
+    """A one-line `.env` typo costs a startup exit, not a hardware run's output."""
+    monkeypatch.setattr(
+        runner, "_read_environment", lambda *_a: (_ for _ in ()).throw(ValueError("lone key"))
+    )
+    monkeypatch.setattr(
+        runner.LiveTestConfig, "from_env_file", classmethod(lambda _cls: runner.LiveTestConfig())
+    )
+    monkeypatch.setattr(runner, "create_mcp", lambda *_a, **_k: pytest.fail("created MCP"))
+
+    assert runner._run_from_arguments([]) == 1
+    assert "lone key" in capsys.readouterr().out
+
+
+def test_an_invalid_dispatch_is_never_laundered_into_a_skip():
+    """The harness's own defect must not be recorded as a known HMC limitation.
+
+    An `InvalidDispatch` message names the offending argument, so it can contain
+    a token a declared `ExpectedOutcome` matches; consulting declarations first
+    would turn the substitution the old substring match allowed back on.
+    """
+    state = runner.RunState()
+
+    state.record_with_expected(
+        12,
+        "hmc_get_job",
+        "FAIL",
+        observation.CallFailure(
+            "InvalidDispatch", "hmc_get_job: unknown argument 406", "", None, False
+        ),
+        [observation.ExpectedOutcome(reason="not licensed", error_codes=frozenset({"406"}))],
+    )
+
+    assert state.results[0]["status"] == "FAIL"
+    assert state.results[0]["result"] == "failed"
+
+
+def test_emission_skips_an_unknown_operation_and_keeps_the_rest(tmp_path, capsys):
+    """One unresolvable row must not discard an expensive run's other evidence."""
+    repo = _live_repo(tmp_path)
+    state = _state_with_one_observation()
+    state.observations.insert(
+        0, {"operation": "not.an.operation", "observation": dict(state.observations[0]["observation"], id="st0-bogus")}
+    )
+    destination = repo / "test-results-round2-observations.json"
+
+    assert runner._emit_observations(
+        state, destination, ("V10R3", "POWER10"), repo
+    )
+
+    document = json.loads(destination.read_text())
+    assert [entry["operation"] for entry in document] == ["console.info"]
+    assert "unknown operation not.an.operation" in capsys.readouterr().out
+
+
+def test_gitignore_covers_live_test_results():
+    """Both the results document and the atomic write's stranded temp file."""
+    root = Path(__file__).parents[1]
+    for name in ("test-results-round2.json", ".test-results-round2.json.abc123.tmp"):
+        assert (
+            subprocess.run(
+                ["git", "-C", str(root), "check-ignore", "-q", name], check=False
+            ).returncode
+            == 0
+        ), name
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["hmc01.lab.example.com", "0644C7T", "U78CB.001.WZS0044-P1-C2", "lab-hmc-3", "10.1.2.3"],
+)
+def test_an_environment_value_outside_its_grammar_is_rejected(tmp_path, value):
+    """These two strings are the only free text an observation carries.
+
+    Rejecting them at read time keeps a hostname or serial from reaching disk at
+    all, rather than surfacing when a human pastes it into `maturity.json`.
+    """
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        f"LIVE_TEST_ENV_HMC_RELEASE={value}\nLIVE_TEST_ENV_HARDWARE_FAMILY=POWER10\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="does not match its grammar"):
+        runner._read_environment(env_file)
+
+
+def test_the_repository_root_is_resolved_from_git_not_the_working_directory(
+    tmp_path, monkeypatch
+):
+    """From a subdirectory, `Path.cwd()` would fingerprint no files at all."""
+    repo = _live_repo(tmp_path)
+    subdirectory = repo / "scripts"
+    monkeypatch.chdir(subdirectory)
+
+    assert runner._repository_root() == repo
+
+
+def test_the_repository_root_refuses_a_checkout_without_the_package(
+    tmp_path, monkeypatch
+):
+    """A repository that is not this one must not silently fingerprint nothing."""
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
+    monkeypatch.chdir(tmp_path)
+
+    assert runner._repository_root() is None
+
+
+def test_an_unignored_results_path_exits_before_the_run(monkeypatch, tmp_path, capsys):
+    """The results document is the larger, more sensitive of the two writes.
+
+    Guarding only the observations file would refuse the small write and let the
+    verbatim HMC responses land unignored beside it.
+    """
+    repo = _live_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(
+        runner.LiveTestConfig,
+        "from_env_file",
+        classmethod(lambda _cls: runner.LiveTestConfig()),
+    )
+    monkeypatch.setattr(runner, "_read_environment", lambda *_a: ("V10R3", "POWER10"))
+    monkeypatch.setattr(
+        runner, "create_mcp", lambda *_a, **_k: pytest.fail("created MCP")
+    )
+
+    assert runner._run_from_arguments(["--results-file", "evidence.json"]) == 1
+
+    output = capsys.readouterr().out
+    assert "git does not ignore evidence.json" in output
+    assert "evidence-observations.json" in output
+    assert not (repo / "evidence.json").exists()
+
+
+def test_an_ignored_results_path_passes_the_startup_gate(monkeypatch, tmp_path):
+    repo = _live_repo(tmp_path)
+    monkeypatch.chdir(repo)
+
+    assert runner._destination_is_ignored(Path("test-results-round2.json"))
+    assert runner._destination_is_ignored(
+        runner._observations_path("test-results-round2.json")
+    )
+    assert not runner._destination_is_ignored(Path("evidence.json"))
+
+
+def test_record_honours_an_explicit_result():
+    """`record_verified` supplies its verdict here rather than patching it after."""
+    state = runner.RunState()
+
+    state.record(1, "hmc_get_console_info", "PASS", {}, result="passed")
+
+    assert state.results[0]["result"] == "passed"
+
+
+def test_record_verified_writes_its_verdict_with_the_row():
+    """The verdict must not be patched onto `results[-1]` after the append."""
+    state = runner.RunState()
+    state.record(0, "unrelated", "PASS", {})
+    state.record_verified(
+        1,
+        "hmc_get_console_info",
+        operation="console.info",
+        scenario="st1-console-identity",
+        assertions=[observation.Assertion("console-uuid-present", True)],
+        cleanup="not-required",
+        data={"uuid": "c"},
+    )
+
+    assert [row["result"] for row in state.results] == ["observed", "passed"]
+
+
+@pytest.mark.parametrize("identity", ["job-", "j", "ab", "Job-found", "-job", "job_found"])
+def test_assertion_id_rejects_a_truncated_or_malformed_token(identity):
+    """A trailing hyphen is a truncated token, not a closed-shape one."""
+    with pytest.raises(ValueError, match="closed-shape token"):
+        observation.Assertion(identity, True)
+
+
+def test_the_two_assertion_id_patterns_agree():
+    """The runner bounds ids on the way out; the validator bounds them on the way in."""
+    anchored = observation.ASSERTION_ID.pattern
+
+    assert anchored.startswith("\\A") and anchored.endswith("\\Z")
+    assert (
+        anchored.removeprefix("\\A").removesuffix("\\Z")
+        == runner.check_capability_inventory.ASSERTION_ID.pattern
+    )
