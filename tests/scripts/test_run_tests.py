@@ -53,8 +53,19 @@ class BinaryStderr:
         self.buffer = RecordingBuffer()
 
 
+# A hang ceiling, not a latency budget: the poll loop below returns the moment
+# the marker appears, so only a child that never becomes ready ever pays this.
+_READINESS_TIMEOUT_SECONDS = 60.0
+
+# Covers what `run_tests._settle_interrupted` does not bound -- the post-kill
+# reap, the captured-output replay, and the parent's own teardown.
+_INTERRUPT_COLLECTION_SLACK_SECONDS = 10.0
+
+
 def _wait_for_process_marker(
-    marker: Path, process: subprocess.Popen[bytes], timeout_seconds: float = 10
+    marker: Path,
+    process: subprocess.Popen[bytes],
+    timeout_seconds: float = _READINESS_TIMEOUT_SECONDS,
 ) -> None:
     """Wait until the child declares readiness or exits unexpectedly."""
     deadline = time.monotonic() + timeout_seconds
@@ -281,8 +292,23 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
     )
     _wait_for_process_marker(ready, process)
     os.killpg(process.pid, signal.SIGINT)
-    stdout, stderr = process.communicate(timeout=10)
+    signalled_at = time.monotonic()
+    grace = run_tests.INTERRUPT_GRACE_SECONDS
+    budget = 2 * grace + _INTERRUPT_COLLECTION_SLACK_SECONDS
+    try:
+        stdout, stderr = process.communicate(timeout=budget)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
+        pytest.fail(f"child did not exit within {budget}s of SIGINT")
+    settled_in = time.monotonic() - signalled_at
 
     assert process.returncode == 130
     assert stdout == b""
+    if b"KeyboardInterrupt" not in stderr and settled_in >= grace:
+        pytest.fail(
+            f"host too slow: the child spent {settled_in:.1f}s settling, reaching "
+            f"run_tests.INTERRUPT_GRACE_SECONDS ({grace}s), so pytest was "
+            "terminated before it wrote its diagnostic"
+        )
     assert b"KeyboardInterrupt" in stderr
