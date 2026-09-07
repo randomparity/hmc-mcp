@@ -548,7 +548,7 @@ drove the same two subprocess shapes with weaker assertions; Runs A and B are th
 the assertions written out.
 
 This record's entire contract is a *sink*. A unit test against a mock logger proves the payload
-and almost nothing about delivery, so a real `hmc-mcp serve` stdio subprocess with a policy
+and almost nothing about delivery, so a real stdio subprocess serving this checkout with a policy
 selected must demonstrate all five of these before the PR is called ready. Driven over raw
 newline-delimited JSON-RPC rather than a client library, so that anything printed outside the
 protocol shows up as an unparseable line:
@@ -594,8 +594,9 @@ by schema validation before any authorization decision is reached. A setup step 
 argument of each call is present in that tool's generated schema, so this class of error fails at
 setup rather than as a wrong verdict.
 
-Launched as `hmc-mcp serve --access-policy lab-scoped`, driven with `initialize`, then
-`notifications/initialized`, then `tools/call` frames.
+Run A is launched as `hmc-mcp serve --access-policy lab-scoped`; since ADR 0128 Run B is launched
+as `[sys.executable, "-P", "-m", "hmc_mcp"] serve --access-policy lab-scoped` instead. Both are
+driven with `initialize`, then `notifications/initialized`, then `tools/call` frames.
 
 **Run A — observation (L1–L4).** stderr captured to a file, stdout read frame by frame.
 
@@ -673,11 +674,12 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
   assertions (both config files at the resolved path, the four environment variables absent,
   `shutil.which("hmc-mcp")` not `None`) that fail setup rather than hang. Not prose — this is the
   suite's first long-lived `hmc-mcp serve` child, and a blocking read on one that never answers
-  hangs every CI leg with no diagnostic. Since ADR 0128 the `shutil.which` assertion guards Run A
-  alone: L5 has its own fixture, which has no PATH lookup to guard and instead asks the
-  interpreter where `hmc_mcp` resolves and asserts the answer is inside this checkout's `src/`.
+  hangs every CI leg with no diagnostic. Since ADR 0128 that `shutil.which` assertion guards the
+  console-script launches only — Run A and the `--audit-level WARNING` check. L5 has its own
+  fixture, which has no PATH lookup to guard and instead asks the interpreter where `hmc_mcp`
+  resolves and asserts the answer is inside this checkout's `src/`.
 - A13. The live proof runs and passes on the branch head: Run A (L1-L4) against a real
   `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as a separate
   `sh -c '… 2>&-'` subprocess. POSIX only; skipped elsewhere. Since ADR 0128 the command inside
-  that shell is `python -P -m hmc_mcp serve --access-policy lab-scoped`, not the console script;
-  the `sh -c '… 2>&-'` shape is unchanged.
+  that shell is `[sys.executable, "-P", "-m", "hmc_mcp"] serve --access-policy lab-scoped`, not
+  the console script; the `sh -c '… 2>&-'` shape is unchanged.
