@@ -611,16 +611,17 @@ driven with `initialize`, then `notifications/initialized`, then `tools/call` fr
 failure injection cannot coexist: every mechanism that makes the sink fail either closes stderr or
 empties it, which is the stream Run A reads. So L5 asserts on **stdout only**.
 
-Launched through `sh -c '… 2>&-'` so fd 2 is closed at interpreter start and `sys.stderr` is
-`None` — the #221 condition, and the arm the handler guards with an early return. Run B launches
-twice from one command list — a reference child with stderr open, then the blinded child — and
-issues L4's denied call to each, asserting **on the parsed frame rather than its bytes**: the same
-JSON-RPC error code, `isError` set, and the same ADR 0039 denial message string. Not a
+Run B launches twice from one command list: a reference child with its stderr on a log file, then
+the blinded child through `sh -c '… 2>&-'`, so fd 2 is closed at interpreter start and
+`sys.stderr` is `None` — the #221 condition, and the arm the handler guards with an early return.
+Issue the connection-denied call to each — `hmc_power_off_lpar` with `profile="prod"`, which the
+grant's `connections = ["lab"]` does not cover — and compare the two replies **on the parsed frame
+rather than its bytes**: the denial message extracted from each must be the same. Not a
 byte-identical comparison — the two bodies come from separately launched processes, and their
 key ordering and any request metadata are FastMCP's to change, so a byte assertion is stronger
 than the property under test and would block a PR on a rendering change. The denial *message* is
 the deterministic part, and it is what ADR 0038 and ADR 0039 fixed as the client contract. Then
-assert the process is still serving (a subsequent `tools/list` succeeds).
+assert the blinded child is still serving (a subsequent `tools/list` succeeds).
 
 The `OSError`/EPIPE arm is covered at unit level by tests 12–13; forcing it live would require
 closing the parent's read end, which destroys the same channel again for no additional assurance.
@@ -680,7 +681,8 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
   fixture, which has no PATH lookup to guard and instead asks the interpreter where `hmc_mcp`
   resolves and asserts the answer is inside this checkout's `src/`.
 - A13. The live proof runs and passes on the branch head: Run A (L1-L4) against a real
-  `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as a separate
-  `sh -c '… 2>&-'` subprocess. POSIX only; skipped elsewhere. Since ADR 0128 the command inside
-  that shell is `[sys.executable, "-P", "-m", "hmc_mcp"] serve --access-policy lab-scoped`, not
-  the console script; the `sh -c '… 2>&-'` shape is unchanged.
+  `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as two separate
+  children launched from one command list — a reference child, and a blinded one under
+  `sh -c '… 2>&-'`. POSIX only; skipped elsewhere. Since ADR 0128 that command is
+  `[sys.executable, "-P", "-m", "hmc_mcp"] serve --access-policy lab-scoped`, not the console
+  script; the `sh -c '… 2>&-'` shape is unchanged.
