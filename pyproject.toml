@@ -20,7 +20,7 @@ app = [
     "fastmcp-slim[server]==3.4.7",
     "mcp==1.29.0",
     "rich==15.0.0",
-    "typer==0.27.1",
+    "typer==0.27.2",
     "uvicorn==0.52.4",
 ]
 
@@ -46,7 +46,7 @@ include = [
 
 [dependency-groups]
 dev = [
-    "cryptography==50.0.0",
+    "cryptography==50.0.1",
     "detect-secrets==1.5.0",
     "fastmcp-slim[client]==3.4.7",
     "hatchling==1.32.0",
