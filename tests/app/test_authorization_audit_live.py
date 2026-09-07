@@ -20,6 +20,15 @@ POSIX shell redirection; Run A's fixture steers ``config_dir()`` through ``HOME`
 which on win32 resolves from ``APPDATA`` while ``Path.home()`` reads
 ``USERPROFILE`` — so on Windows the fixture would write its sentinel-bearing
 ``config.toml`` over the developer's real one.
+
+L5 additionally needs an interpreter it can exec directly, so it alone launches
+``[sys.executable, "-P", "-m", "hmc_mcp"]`` instead of the console script. Past
+``uv``'s shebang threshold that script is a ``/bin/sh`` trampoline, and a shell
+that must open a script file to read it lands that file on fd 2 once ``2>&-`` has
+closed it: the interpreter inherits an unwritable stderr rather than none and
+exits 120 before answering, which reads as the server refusing to start. Exec'ing
+the interpreter by path opens no script, so fd 2 stays closed at any install
+path. See ADR 0128; L1-L4 keep the console script.
 """
 
 from __future__ import annotations
@@ -144,6 +153,37 @@ def server_binary():
         "the live proof would run against a different build of hmc-mcp"
     )
     return path
+
+
+@pytest.fixture
+def server_module_command():
+    """L5's launch — this interpreter running the package, not the console script.
+
+    ``server_binary`` cannot serve L5: at a long install path the console script
+    is a ``/bin/sh`` trampoline, which fails under ``2>&-`` for the reason the
+    module docstring records. Exec'ing the interpreter by path opens no script.
+
+    ``-P`` keeps the child's working directory off ``sys.path``, which ``-m``
+    would otherwise prepend. That is what lets the check below bind the child:
+    with no cwd entry it resolves ``hmc_mcp`` exactly as this subprocess does.
+
+    The check is ``server_binary``'s guarantee in the form this route admits.
+    ``shutil.which`` cannot go wrong here — there is no PATH lookup — but a
+    ``pytest`` run from outside this checkout still could, so the interpreter is
+    asked where the package it would import actually lives.
+    """
+    origin = subprocess.run(
+        [sys.executable, "-P", "-c", "import hmc_mcp; print(hmc_mcp.__file__)"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    root = Path(__file__).resolve().parents[2]
+    assert Path(origin).resolve().is_relative_to(root), (
+        f"{origin} is not inside this checkout ({root}); the live proof would "
+        "run against a different build of hmc_mcp"
+    )
+    return [sys.executable, "-P", "-m", "hmc_mcp"]
 
 
 class _Server:
@@ -438,7 +478,9 @@ def test_an_audit_level_of_warning_suppresses_permits_but_keeps_denials(
     assert reasons == ["connection-not-granted"]
 
 
-def test_a_failed_sink_leaves_the_denial_unchanged(child_env, server_binary, tmp_path):
+def test_a_failed_sink_leaves_the_denial_unchanged(
+    child_env, server_module_command, tmp_path
+):
     """L5 — Run B, a separate subprocess with fd 2 closed at interpreter start.
 
     The observation channel and the failure injection cannot coexist: every
@@ -448,13 +490,12 @@ def test_a_failed_sink_leaves_the_denial_unchanged(child_env, server_binary, tmp
     processes and their key ordering is FastMCP's to change, while the denial
     *message* is what ADR 0038 and ADR 0039 fixed as the client contract.
     """
+    # One list, both runs: a second launch mechanism here would confound the
+    # comparison this test exists to make, which is meant to isolate the sink.
+    command = [*server_module_command, "serve", "--access-policy", "lab-scoped"]
     log = tmp_path / "reference.log"
     with log.open("w") as sink:
-        reference = _Server(
-            _spawn([server_binary, "serve", "--access-policy", "lab-scoped"],
-                   child_env, sink),
-            log,
-        )
+        reference = _Server(_spawn(command, child_env, sink), log)
         try:
             reference.initialize()
             expected = reference.call(
@@ -466,7 +507,7 @@ def test_a_failed_sink_leaves_the_denial_unchanged(child_env, server_binary, tmp
     # shlex.quote, not " ".join: this repository's own path contains spaces, and
     # an unquoted one makes `sh -c` split it into words and fail to exec at all —
     # which looks exactly like the server refusing to start.
-    quoted = shlex.join([server_binary, "serve", "--access-policy", "lab-scoped"])
+    quoted = shlex.join(command)
     blinded = _Server(
         _spawn(["/bin/sh", "-c", f"exec {quoted} 2>&-"], child_env, subprocess.DEVNULL)
     )

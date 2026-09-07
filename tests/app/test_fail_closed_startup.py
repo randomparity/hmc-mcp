@@ -463,9 +463,9 @@ def test_a_dangling_symlink_is_not_reported_as_an_absent_file(steer_config):
 def test_serve_without_a_policy_exits_2_as_a_subprocess():
     """L1: an in-process assertion cannot see the exit code an operator sees.
 
-    The console script, not `python -m hmc_mcp`: there is no `__main__.py`, so the module
-    form would exit 1 with "No module named hmc_mcp.__main__" and satisfy a non-zero-exit
-    intuition while proving nothing about the refusal.
+    The console script, not `python -m hmc_mcp`: since ADR 0128 both reach the same
+    `main`, but the console script is what an operator actually runs, and the exit
+    code an operator meets is the whole of what this test proves.
     """
     executable = shutil.which("hmc-mcp")
     if executable is None:
