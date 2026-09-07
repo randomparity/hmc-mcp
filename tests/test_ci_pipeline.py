@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 TOOL_PINS = {
     "detect-secrets==1.5.0",
-    "prek==0.4.14",
+    "prek==0.5.0",
     "ruff==0.16.4",
     "ty==0.0.74",
     "zizmor==1.29.0",
