@@ -174,8 +174,11 @@ def server_module_command():
     ``pytest`` run from outside this checkout still could, so the interpreter is
     asked where the package it would import actually lives.
     """
+    # The probe and the launch share this prefix on purpose: the guard binds the
+    # child only while both resolve `hmc_mcp` the same way.
+    interpreter = [sys.executable, "-P"]
     probe = subprocess.run(
-        [sys.executable, "-P", "-c", "import hmc_mcp; print(hmc_mcp.__file__)"],
+        [*interpreter, "-c", "import hmc_mcp; print(hmc_mcp.__file__)"],
         capture_output=True,
         text=True,
         check=False,
@@ -196,7 +199,7 @@ def server_module_command():
         f"{origin} is not this branch's source tree ({source}); the live proof "
         "would run against a different or stale build of hmc_mcp"
     )
-    return [sys.executable, "-P", "-m", "hmc_mcp"]
+    return [*interpreter, "-m", "hmc_mcp"]
 
 
 class _Server:
@@ -503,8 +506,8 @@ def test_a_failed_sink_leaves_the_denial_unchanged(
     processes and their key ordering is FastMCP's to change, while the denial
     *message* is what ADR 0038 and ADR 0039 fixed as the client contract.
     """
-    # One list, both runs: a second launch mechanism here would confound the
-    # comparison this test exists to make, which is meant to isolate the sink.
+    # One list, both runs: a second launch mechanism would confound the
+    # comparison, which is meant to isolate the sink and nothing else.
     command = [*server_module_command, "serve", "--access-policy", "lab-scoped"]
     log = tmp_path / "reference.log"
     with log.open("w") as sink:
