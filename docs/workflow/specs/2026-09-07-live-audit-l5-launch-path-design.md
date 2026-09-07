@@ -7,10 +7,11 @@ Decision: [ADR 0128](../../adr/0128-l5-module-entry-point-launch.md).
 
 `test_a_failed_sink_leaves_the_denial_unchanged` (L5) is the live suite's only fd-2-closed
 launch: `/bin/sh -c "exec <console script> … 2>&-"`. Past `uv`'s shebang threshold that
-script is a `/bin/sh` trampoline, and `sh` opens it to read it — which with fd 2 closed lands
-the script file on fd 2. The interpreter inherits an unwritable stderr rather than none, so
-the flush at finalization fails: exit 120, no frame. L5 reports "the server closed stdout
-without answering" — the ADR 0040 / ADR 0043 regression it exists to disprove.
+script is a `/bin/sh` trampoline, and `sh` opens it to read it — which, where `/bin/sh` is
+bash, leaves the script file on the fd 2 that `2>&-` just freed. The interpreter inherits an
+unwritable stderr rather than none, so the flush at finalization fails: exit 120, no frame.
+L5 reports "the server closed stdout without answering" — the ADR 0040 / ADR 0043 regression
+it exists to disprove. dash does not, so CI never sees it.
 
 ## Scope
 
@@ -21,7 +22,7 @@ without answering" — the ADR 0040 / ADR 0043 regression it exists to disprove.
   uses it at both spawns. The blinded spawn keeps `/bin/sh -c "exec … 2>&-"`; only the prefix
   changes. The module docstring records the constraint beside the POSIX-only note.
 - `tests/app/test_fail_closed_startup.py` — its L1 docstring argues from "there is no
-  `__main__.py`"; the shim falsifies that, so the sentence is corrected. Nothing else changes.
+  `__main__.py`"; the shim falsifies that, so the sentence is corrected.
 - `CHANGELOG.md` — `python -m hmc_mcp` under Unreleased.
 
 L5 gives up the console script *under a closed sink* — exercised below the threshold on all

@@ -23,12 +23,13 @@ which on win32 resolves from ``APPDATA`` while ``Path.home()`` reads
 
 L5 additionally needs an interpreter it can exec directly, so it alone launches
 ``[sys.executable, "-P", "-m", "hmc_mcp"]`` instead of the console script. Past
-``uv``'s shebang threshold that script is a ``/bin/sh`` trampoline, and a shell
-that must open a script file to read it lands that file on fd 2 once ``2>&-`` has
-closed it: the interpreter inherits an unwritable stderr rather than none and
-exits 120 before answering, which reads as the server refusing to start. Exec'ing
-the interpreter by path opens no script, so fd 2 stays closed at any install
-path. See ADR 0128; L1-L4 keep the console script.
+``uv``'s shebang threshold that script is a ``/bin/sh`` trampoline. The shell opens
+it to read it, and where ``/bin/sh`` is **bash** that descriptor survives the
+``exec`` — landing the script file on fd 2, which ``2>&-`` had just freed — so the
+interpreter inherits an unwritable stderr rather than none and exits 120 before
+answering, which reads as the server refusing to start. Where ``/bin/sh`` is dash
+it does not, so CI never sees this. Exec'ing the interpreter by path leaves no
+descriptor on fd 2 under either shell. See ADR 0128; L1-L4 keep the console script.
 """
 
 from __future__ import annotations
@@ -172,12 +173,20 @@ def server_module_command():
     ``pytest`` run from outside this checkout still could, so the interpreter is
     asked where the package it would import actually lives.
     """
-    origin = subprocess.run(
+    probe = subprocess.run(
         [sys.executable, "-P", "-c", "import hmc_mcp; print(hmc_mcp.__file__)"],
         capture_output=True,
         text=True,
-        check=True,
-    ).stdout.strip()
+        check=False,
+    )
+    # Not check=True: CalledProcessError stringifies to the exit status alone and
+    # leaves the child's traceback in an attribute nobody prints, so a venv without
+    # the project installed would abort here with no cause named.
+    assert probe.returncode == 0, (
+        f"{sys.executable} cannot import hmc_mcp, so the live proof has no server "
+        f"to launch:\n{probe.stderr}"
+    )
+    origin = probe.stdout.strip()
     root = Path(__file__).resolve().parents[2]
     assert Path(origin).resolve().is_relative_to(root), (
         f"{origin} is not inside this checkout ({root}); the live proof would "

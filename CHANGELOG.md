@@ -84,8 +84,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - `python -m hmc_mcp` now runs the CLI, as an alias for the `hmc-mcp` console script. It
   delegates to the same entry point and takes no arguments of its own, so the two remain one
   program; the program name Typer reports differs. The live audit proof uses it because the
-  generated console script cannot be exec'd with stderr closed once the interpreter path is
-  long enough that `uv` emits a `/bin/sh` trampoline (#709, ADR 0128).
+  generated console script cannot be relied on to exec with stderr closed once the
+  interpreter path is long enough that `uv` emits a `/bin/sh` trampoline (#709, ADR 0128).
 - A warning-level `install-submitted` audit event now carries the remote PID returned by a
   detached `installios` submission to served operators (#544, ADR 0109).
 - Serve startup now submits a warning-level `power-ownership-guard` audit record for every

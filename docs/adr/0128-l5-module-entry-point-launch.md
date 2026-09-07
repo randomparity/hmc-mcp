@@ -17,16 +17,27 @@ a long `#!` line is not portable. Issue #709 reports the boundary at 127 charact
 reproduced there at 63 characters (direct) and 128 characters (trampoline); this record does
 not re-derive that number, and it is `uv`'s private threshold rather than a project setting.
 
-The trampoline breaks L5, but not for the reason it first appears. `sh` must **open the
-script file to read it**, and with fd 2 closed by the redirection the lowest free descriptor
-is 2 — so the script file itself becomes fd 2, read-only. The interpreter then inherits a
+The trampoline breaks L5, but not for the reason it first appears, and **not on every
+shell**. `sh` opens the script file to read it, and with fd 2 closed by the redirection the
+lowest free descriptor is 2 — so on a shell that leaves that descriptor open across the
+`exec`, the script file itself becomes fd 2, read-only. The interpreter then inherits a
 valid-but-unwritable stderr instead of no stderr at all: writes buffer without raising, and
 `Py_FinalizeEx`'s flush of the standard streams fails, which is exit 120.
 
-Measured on this branch (uv 0.12.1, `/bin/sh` → bash, CPython 3.11.15, x86_64), with a
+Whether the descriptor survives the `exec` is the shell's choice, and the two common
+`/bin/sh` implementations differ. Measured with `exec ls -l /proc/self/fd` as the script
+body, under `sh -c "exec <script> 2>&-"`:
+
+| `/bin/sh` | fd 2 after the exec |
+|---|---|
+| bash (Fedora, Arch, RHEL, macOS) | the script file — the failure is reachable |
+| dash (Debian, and the `ubuntu-24.04` CI runners) | free; `ls` takes it — no failure |
+
+So dash opens the script exactly as bash does; it simply does not leave that descriptor on
+fd 2. Measured on this branch (uv 0.12.1, `/bin/sh` → bash, CPython 3.11.15, x86_64), with a
 uv-form trampoline written over this venv's own console-script body:
 
-| Launch under `sh -c "exec … 2>&-"` | `os.fstat(2)` | `sys.stderr` | Exit on a stderr write |
+| Launch under `bash -c "exec … 2>&-"` | `os.fstat(2)` | `sys.stderr` | Exit on a stderr write |
 |---|---|---|---|
 | Trampoline | open, mode 100755 | real stream | 120 |
 | Direct `#!` shebang | `EBADF` | `None` | the program's own status |
@@ -36,9 +47,12 @@ So under the trampoline L5 does not even inject the condition it means to inject
 not absent, it is unwritable. The child dies before emitting a JSON-RPC frame and L5 reports
 "the server closed stdout without answering (exit=120, no stderr captured)" — which reads as
 the server refusing to start under a closed sink, exactly the production behaviour L5 exists
-to disprove, rather than as an install-path artifact. It is latent for ordinary checkouts and
-for all eight `ci` legs, and bites automated clones into deep temporary directories, which
-this repository's agent workflows routinely produce (issue #709).
+to disprove, rather than as an install-path artifact. It is latent for ordinary checkouts,
+and unreachable on all eight `ci` legs at *any* path length, because those runners' `/bin/sh`
+is dash. It bites a developer whose `/bin/sh` is bash — which is every Fedora, Arch, RHEL and
+macOS host — once a clone lands deep enough, and this repository's agent workflows routinely
+produce such clones (issue #709). CI cannot catch it, which is most of why it is worth
+recording rather than only fixing.
 
 ## Decision
 
@@ -48,9 +62,10 @@ this repository's agent workflows routinely produce (issue #709).
 The shell stays: `2>&-` is a POSIX shell redirection and is how L5 closes fd 2 at all, so the
 blinded spawn remains `/bin/sh -c "exec … 2>&-"` with only the command prefix changed. What
 changes is that `sh` now execs an interpreter **by path** and opens no script file, so fd 2
-stays closed through the exec at any install path. The invariant this record establishes is
-therefore *no intermediate process may open a file before exec'ing the interpreter* — not
-"no shell", which is both false here and wrong as a general rule.
+stays closed through the exec at any install path and under either shell. The invariant this
+record establishes is therefore *no intermediate process may leave a descriptor open on fd 2
+across the exec of the interpreter* — not "no shell", which is false here, and not "opens no
+file", which is too broad: dash opens the script and the launch still works.
 
 `-P` keeps the child's current working directory off `sys.path`, which `-m` would otherwise
 prepend. That makes the child resolve `hmc_mcp` exactly as the parent does, so the fixture's
@@ -74,11 +89,15 @@ asserts the answer is inside this checkout.
   `test_an_audit_level_of_warning_suppresses_permits_but_keeps_denials` keep the shipped
   console script covered with the sink open.
 - `python -m hmc_mcp` becomes a working invocation, recorded in `CHANGELOG.md`. It is held
-  equivalent to `hmc-mcp` **by construction, not by a standing test**: `__main__.py` has no
-  logic of its own, so the two cannot diverge without adding logic to it, which exclusion (a)
-  forbids. L5 exercises the invocation twice on every run. No dedicated equivalence test is
-  added — that would be new surface the frozen charter does not carry, and it is recorded as
-  a follow-up candidate instead.
+  equivalent to `hmc-mcp` **by construction, not by a standing test**: `__main__.py`
+  reproduces the generated console script's whole body — `sys.exit(main())`, written here as
+  `raise SystemExit(main())` — and adds nothing, so the two cannot diverge without adding
+  logic to it, which exclusion (a) forbids. The exit-status wrapper is part of that
+  construction and not an optional flourish: a bare `main()` would diverge the moment
+  `hmc_mcp.main` returned a status instead of raising, a change entirely inside `main` that
+  exclusion (a) would not catch. L5 exercises the invocation twice on every run. No dedicated
+  equivalence test is added — that would be new surface the frozen charter does not carry —
+  and it is recorded as a follow-up candidate instead.
 - The two invocations are not textually identical. Typer takes its program name from Click,
   which derives it from how the process was started, so it reports `python -m hmc_mcp` rather
   than `hmc-mcp` — in every `Usage:` line and usage-error message, not only in `--help`.
