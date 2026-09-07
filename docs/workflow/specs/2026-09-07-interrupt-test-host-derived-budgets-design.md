@@ -49,10 +49,10 @@ Out of scope per the frozen charter: `tests/test_ci_pipeline.py`'s `timeout=180`
   `…test_run_tests.py::test_real_interrupt_preserves_pytest_diagnostic`. Red: setting
   `run_tests.INTERRUPT_GRACE_SECONDS` and the slack to 0.001 puts the budget under the 0.22 s
   idle collection, so the run fails with the new message, not an `AssertionError`. Green:
-  `uv run --no-sync pytest tests/scripts/test_run_tests.py`.
-- **Truncation is named, not misread** (success 4, 5). Mode: focused-test. Same case. Red: run
-  it under the 80-way single-core contention that reproduced the truncation above; it fails
-  with the truncation message rather than on `KeyboardInterrupt`.
+  `uv run --no-sync pytest tests/scripts/test_run_tests.py --no-cov` — the repo-wide
+  coverage gate reddens any single-file run.
+- **Truncation is named, not misread** (success 4, 5). Mode: focused-test. Same case. Red:
+  under the 80-way contention above it fails with the truncation message, not on the assertion.
 - **Readiness ceiling still bounds a hang** (success 3). Mode: focused-test. Same case. Red: a
   `test_slow.py` that never touches the marker and sleeps past 60 s, so `poll()` cannot report
   an exit first, fails through the existing marker path.
