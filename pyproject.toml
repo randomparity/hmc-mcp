@@ -56,8 +56,8 @@ dev = [
     "pytest-cov==7.1.0",
     "respx==0.23.1",
     "ruff==0.16.5",
-    "ty==0.0.75",
-    "zizmor==1.29.0",
+    "ty==0.0.76",
+    "zizmor==1.30.0",
 ]
 
 [tool.ruff.lint]
