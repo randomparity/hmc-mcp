@@ -13,9 +13,13 @@ the record and nothing else (ADR 0040, ADR 0043).
 
 `uv` writes that console script with a direct `#!<interpreter>` shebang while the venv
 interpreter path is short enough, and with a `/bin/sh` polyglot trampoline past that, because
-a long `#!` line is not portable. Issue #709 reports the boundary at 127 characters,
-reproduced there at 63 characters (direct) and 128 characters (trampoline); this record does
-not re-derive that number, and it is `uv`'s private threshold rather than a project setting.
+a long `#!` line is not portable. The bounded quantity is the shebang **line** — `#!` plus the
+interpreter path plus the newline, at most 127 bytes — not the path alone, so the path
+boundary is three bytes lower. Measured with uv 0.12.1 on x86_64 Linux by generating venvs at
+controlled depths: an interpreter path of 124 characters still gets a direct shebang and 125
+gets the trampoline. Issue #709 quotes 127 for the path, and its two data points (63 and 128)
+sit far enough either side that neither exposed the difference. This is `uv`'s own threshold,
+not a project setting, and the CI legs pin a different uv version.
 
 The trampoline breaks L5, but not for the reason it first appears, and **not on every
 shell**. `sh` opens the script file to read it, and with fd 2 closed by the redirection the
@@ -112,9 +116,12 @@ asserts the answer is inside this checkout.
   launch directory is imported before the installed package, in a process that holds profile
   passwords and a granted access policy. `hmc-mcp` therefore stays the form to prefer for a
   served process, and `python -P -m hmc_mcp` (or `PYTHONSAFEPATH=1`) is the form to use when
-  launching from a directory the operator does not control. No guard inside the package can
-  close this: the shadowing is decided before `__main__.py` runs, which is why L5's own
-  fixture passes `-P`.
+  launching from a directory the operator does not control. A shadowing `hmc_mcp/` package is
+  resolved before `__main__.py` exists as a frame, so no in-package guard can close that half.
+  A shadowed *dependency* — `typer.py`, `json.py` — could be, by dropping `sys.path[0]` before
+  delegating, since `main` imports `.cli` lazily; that is deliberately not done, because logic
+  in `__main__.py` is exactly the divergence this record forbids. L5's own fixture passes `-P`
+  instead, which is the same protection applied from outside the package.
 - `tests/app/test_fail_closed_startup.py`'s L1 docstring argues from "there is no
   `__main__.py`". The shim falsifies that sentence, so this change corrects it; the test's
   own behaviour is untouched.
