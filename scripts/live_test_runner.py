@@ -990,8 +990,12 @@ def _emit_observations(
     for recorded in state.observations:
         handler = handlers.get(recorded["operation"])
         if handler is None:
-            print(f"unknown operation {recorded['operation']} — observations not written")
-            return False
+            # Skip the one unresolvable row rather than discarding the document:
+            # every other observation came from the same expensive hardware run,
+            # and `test_verified_scenarios_name_registered_operations` is what
+            # catches a mistyped operation before it ever reaches a live run.
+            print(f"  ⚠️  unknown operation {recorded['operation']} — observation skipped")
+            continue
         observation = dict(recorded["observation"])
         if observation["id"] in seen:
             print(f"duplicate observation id {observation['id']} — observations not written")
@@ -1005,6 +1009,9 @@ def _emit_observations(
         document.append(
             {"operation": recorded["operation"], "observation": observation}
         )
+    if not document:
+        print("no resolvable observations — nothing written")
+        return False
     _write_results(path, json.dumps(document, indent=2))
     print(f"Observations written to {path}")
     return True

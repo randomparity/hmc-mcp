@@ -1298,7 +1298,7 @@ def test_record_verified_yields_failed_on_a_false_assertion():
     state.record_verified(
         12,
         "hmc_get_job",
-        operation="jobs.get",
+        operation="job.get",
         scenario="st12-job-inspection",
         assertions=[
             observation.Assertion("job-found", True),
@@ -1319,7 +1319,7 @@ def test_record_verified_yields_failed_on_failed_cleanup():
     state.record_verified(
         12,
         "hmc_get_job",
-        operation="jobs.get",
+        operation="job.get",
         scenario="st12-job-inspection",
         assertions=[observation.Assertion("job-found", True)],
         cleanup="failed",
@@ -3037,6 +3037,46 @@ def _assertion_ids_in(node: ast.AST) -> set[str]:
     }
 
 
+def _recorded_operations() -> set[str]:
+    """Every `operation=` literal a `record_verified` call names."""
+    declared: set[str] = set()
+    for module in LIVE_WORKFLOW_MODULES:
+        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "record_verified"
+            ):
+                continue
+            operation = {keyword.arg: keyword.value for keyword in node.keywords}[
+                "operation"
+            ]
+            assert isinstance(operation, ast.Constant), (
+                f"{Path(module.__file__).name}:{node.lineno} names an operation "
+                "this guard cannot read — pass a string literal"
+            )
+            declared.add(operation.value)
+    return declared
+
+
+def test_verified_scenarios_name_registered_operations():
+    """An observation whose operation is not in the catalog can never be filed.
+
+    `_emit_observations` resolves the closure fingerprint through the registry, so
+    a mistyped id yields an observation nothing can fingerprint. Caught here, in
+    the pull request, rather than after an expensive run against real hardware.
+    """
+    registered = {
+        tool.operation
+        for tool in runner.check_capability_inventory.discover_registry()
+    }
+    declared = _recorded_operations()
+
+    assert declared, "no record_verified operations found — the guard would pass vacuously"
+    assert sorted(declared - registered) == []
+
+
 def test_scenarios_declare_their_expected_assertion_ids():
     """Deleting an assertion must fail here, not go unnoticed in a stale observation.
 
@@ -3171,6 +3211,47 @@ def test_a_lone_environment_key_exits_before_the_run(monkeypatch, tmp_path, caps
 
     assert runner._run_from_arguments([]) == 1
     assert "lone key" in capsys.readouterr().out
+
+
+def test_an_invalid_dispatch_is_never_laundered_into_a_skip():
+    """The harness's own defect must not be recorded as a known HMC limitation.
+
+    An `InvalidDispatch` message names the offending argument, so it can contain
+    a token a declared `ExpectedOutcome` matches; consulting declarations first
+    would turn the substitution the old substring match allowed back on.
+    """
+    state = runner.RunState()
+
+    state.record_with_expected(
+        12,
+        "hmc_get_job",
+        "FAIL",
+        observation.CallFailure(
+            "InvalidDispatch", "hmc_get_job: unknown argument 406", "", None, False
+        ),
+        [observation.ExpectedOutcome(reason="not licensed", error_codes=frozenset({"406"}))],
+    )
+
+    assert state.results[0]["status"] == "FAIL"
+    assert state.results[0]["result"] == "failed"
+
+
+def test_emission_skips_an_unknown_operation_and_keeps_the_rest(tmp_path, capsys):
+    """One unresolvable row must not discard an expensive run's other evidence."""
+    repo = _live_repo(tmp_path)
+    state = _state_with_one_observation()
+    state.observations.insert(
+        0, {"operation": "not.an.operation", "observation": dict(state.observations[0]["observation"], id="st0-bogus")}
+    )
+    destination = repo / "test-results-round2-observations.json"
+
+    assert runner._emit_observations(
+        state, destination, ("V10R3", "POWER10"), repo
+    )
+
+    document = json.loads(destination.read_text())
+    assert [entry["operation"] for entry in document] == ["console.info"]
+    assert "unknown operation not.an.operation" in capsys.readouterr().out
 
 
 def test_gitignore_covers_live_test_results():

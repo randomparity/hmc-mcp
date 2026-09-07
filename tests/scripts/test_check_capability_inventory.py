@@ -640,15 +640,45 @@ def test_closure_fingerprint_changes_with_an_imported_module_only(
 
 @pytest.mark.parametrize(
     "statement",
-    ["from .b import thing", "from . import b", "import hmc_mcp.b"],
+    [
+        "from .b import thing",
+        "from . import b",
+        "import hmc_mcp.b",
+        # A `TYPE_CHECKING` guard is a module-level `If`, so the import is absent
+        # from `tree.body` itself; a `try:/except ImportError:` is the same shape.
+        "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from .b import thing",
+        "try:\n    from .b import thing\nexcept ImportError:\n    thing = None",
+        "try:\n    thing = None\nexcept ImportError:\n    from .b import thing",
+        "try:\n    pass\nfinally:\n    from .b import thing",
+    ],
 )
 def test_closure_covers_each_import_form(tmp_path: Path, statement: str) -> None:
-    """`from . import b` has `module is None`; a walk reading only `module` misses it."""
+    """`from . import b` has `module is None`; a walk reading only `module` misses it.
+
+    The guarded forms pin the traversal depth from the other side: reading only
+    `tree.body` skips them, and an operation whose only path to a module runs
+    through a `TYPE_CHECKING` guard would then never go stale when it changes.
+    """
     _package(tmp_path, {"a.py": f"{statement}\n", "b.py": "thing = 1\n"})
 
     paths = inventory.closure_paths(tmp_path, "hmc_mcp.a")
 
     assert tmp_path / "src" / "hmc_mcp" / "b.py" in paths
+
+
+def test_closure_stops_at_a_function_boundary_inside_a_guard(tmp_path: Path) -> None:
+    """The `If` recursion must not become an excuse to read function bodies."""
+    _package(
+        tmp_path,
+        {
+            "a.py": "if True:\n    def later():\n        from .b import thing\n",
+            "b.py": "thing = 1\n",
+        },
+    )
+
+    assert tmp_path / "src" / "hmc_mcp" / "b.py" not in inventory.closure_paths(
+        tmp_path, "hmc_mcp.a"
+    )
 
 
 def test_closure_excludes_function_body_imports() -> None:
