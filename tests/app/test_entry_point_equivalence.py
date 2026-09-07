@@ -35,18 +35,24 @@ and both are accommodated rather than asserted:
   the `sys.path[0]` entry an operator's launch has while pointing it at a directory
   that shadows nothing. Neither compared observation reads `sys.path[0]`.
 
-The child environment is pinned rather than inherited. Click sizes help text from the
-terminal and rich styles it, so unequal geometry -- or an exported `FORCE_COLOR`,
-which splits the module form's program name into three escape-delimited runs -- would
-fail the comparison for a reason unrelated to the invariant. `COLUMNS` is wide enough
-that the longer program name's `Usage:` line does not wrap; a narrower equal width is
-not sufficient, because the two names differ in length and no single-line
-substitution reconciles a differing line count.
+The child environment is pinned rather than inherited, because Click sizes help text
+from the terminal. `COLUMNS` is wide enough that the longer program name's `Usage:`
+line does not wrap; a narrower *equal* width is not sufficient, because the two names
+differ in length and no single-line substitution reconciles a differing line count.
+
+Styling is stripped rather than suppressed. rich decides it is writing to a terminal
+from any of `TTY_COMPATIBLE`, `FORCE_COLOR`, `PY_COLORS` or -- via Typer -- `GITHUB_ACTIONS`,
+which is set on every CI leg; and `NO_COLOR` then removes the colour but not the other
+SGR attributes. A styled `Usage:` line matches no prefix and splits the module form's
+program name into escape-delimited runs, so both normalisation steps fail at once.
+Chasing that key list would mean tracking rich's own precedence, so the escapes come
+out of the captured text instead and any future key is covered by construction.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -58,10 +64,17 @@ REPO_ROOT = Path(__file__).parents[2]
 
 _PLACEHOLDER = "<prog>"
 
-# Removed from the child environment: `HMC_*` selects a connection, the config-dir
-# keys move where a profile is read from, and the colour keys defeat both
-# normalisation steps at once.
-_DROPPED = ("XDG_CONFIG_HOME", "APPDATA", "FORCE_COLOR", "CLICOLOR_FORCE")
+# Removed from the child environment: `HMC_*` selects a connection, the config-dir keys
+# move where a profile is read from, the colour keys make rich style what it renders,
+# and Typer reads `TERMINAL_WIDTH` in preference to the `COLUMNS` pinned below -- a
+# narrow inherited value would wrap the longer program name's `Usage:` line alone.
+_DROPPED = (
+    "XDG_CONFIG_HOME", "APPDATA", "FORCE_COLOR", "CLICOLOR_FORCE", "TERMINAL_WIDTH",
+)
+
+# SGR escapes, which survive `NO_COLOR`. The sibling idiom at
+# `tests/app/test_fail_closed_startup.py:94-96`.
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _launchers() -> tuple[list[str], list[str]]:
@@ -116,8 +129,13 @@ def _run_both(args: list[str], tmp_path: Path) -> tuple[
 
 
 def _rstripped(text: str) -> list[str]:
-    """rich pads every rendered line out to the terminal width."""
-    return [line.rstrip() for line in text.splitlines()]
+    """Unstyle, then rstrip: rich pads every line out to the terminal width.
+
+    In that order, because a forced-terminal render puts the padding *inside* the
+    styling and closes with a reset, so the spaces are not trailing until the escapes
+    are gone.
+    """
+    return [_ANSI.sub("", line).rstrip() for line in text.splitlines()]
 
 
 def _usage_line(lines: list[str], form: str) -> str:
@@ -145,11 +163,15 @@ def _normalise(
     prefix = os.path.commonprefix([console_usage, module_usage])
     tail = _common_suffix(console_usage, module_usage)
     # Without this, a divergence in the command *path* would sit in the differing
-    # middle and be normalised away along with the program name.
+    # middle and be normalised away along with the program name. Whole tokens, not
+    # substrings: a `systems` renamed to `legacysystems` is a suffix of itself.
+    # What it bounds is that the command path survived, not that the substituted
+    # middle held the program name and nothing else.
     for token in (*command_path, "[OPTIONS]"):
-        assert token in tail, (
-            f"{token!r} is not in the two Usage lines' shared tail {tail!r}, so the "
-            "command trees diverged rather than only the program name"
+        assert token in tail.split(), (
+            f"{token!r} is not a whole token in the two Usage lines' shared tail "
+            f"{tail!r}: either the command trees diverged rather than only the program "
+            "name, or the Usage line wrapped at the pinned width"
         )
 
     replaced = prefix + _PLACEHOLDER + tail
@@ -169,6 +191,13 @@ def test_both_forms_render_the_same_command_tree(tmp_path, command_path):
             f"the {form} exited {result.returncode} rather than rendering help: "
             f"{result.stderr}"
         )
+    # Rendering help writes nothing to stderr under either form, so anything one of
+    # them emits there is logic the other does not have -- a warning filter, a logging
+    # handler, or a banner added to `__main__.py`, which no stdout comparison sees.
+    assert console.stderr == module.stderr == "", (
+        f"rendering help wrote to stderr: console {console.stderr!r}, module "
+        f"{module.stderr!r}"
+    )
 
     normalised_console, normalised_module = _normalise(
         _rstripped(console.stdout), _rstripped(module.stdout), command_path
