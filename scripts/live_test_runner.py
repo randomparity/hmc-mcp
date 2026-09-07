@@ -380,7 +380,10 @@ class LiveTestConfig:
             )
         except ValueError as exc:
             raise ValueError(f"invalid live-test configuration: {exc}") from exc
-        numeric_fields = (
+        # Fields that must be strictly positive (> 0).
+        # sriov_physical_port_id is intentionally excluded: physical port IDs
+        # are zero-indexed on Power hardware, so port 0 is valid.
+        positive_fields = (
             "scratch_create_desired_memory_mib",
             "scratch_create_max_memory_mib",
             "scratch_create_desired_vcpus",
@@ -396,7 +399,6 @@ class LiveTestConfig:
             "provision_desired_vcpus",
             "provision_max_vcpus",
             "sriov_adapter_id",
-            "sriov_physical_port_id",
             "sriov_logical_port_id",
             "sriov_capacity_percent",
             "iso_http_port",
@@ -406,7 +408,10 @@ class LiveTestConfig:
             "vlan_range_start",
             "vlan_range_end",
         )
-        invalid = [name for name in numeric_fields if parsed[name] <= 0]
+        # sriov_physical_port_id must be non-negative (>= 0).
+        invalid = [name for name in positive_fields if parsed[name] <= 0]
+        if parsed["sriov_physical_port_id"] < 0:
+            invalid.append("sriov_physical_port_id")
         if not parsed["protected_lpar_names"]:
             invalid.append("LIVE_TEST_PROTECTED_LPAR_NAMES")
         if parsed["iso_http_port"] > 65535:
