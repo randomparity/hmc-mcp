@@ -8,13 +8,28 @@ import os
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from fastmcp import Client
 
 from hmc_mcp.config import env_var_value
 
+from .observation import ExpectedOutcome
 from .results import entries
 from .results import resource as get_resource
+
+_ALREADY_POWERED_OFF = ExpectedOutcome(
+    reason="lp3 already powered off (expected)",
+    error_codes=frozenset(
+        {"already", "not activated", "powered off", "not running"}
+    ),
+)
+_REPOSITORY_ALREADY_GONE = ExpectedOutcome(
+    reason="repository already gone (expected on re-run)",
+    error_codes=frozenset(
+        {"not found", "does not exist", "no repository", "no media"}
+    ),
+)
 
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
@@ -575,18 +590,21 @@ async def _unmount_and_delete_vmedia(client: Client, state: RunState) -> None:
     artifacts = state.artifacts
     vios = artifacts.vios_uuid
     vg = artifacts.vg_uuid
-    if artifacts.vmedia_mapping_uuid:
+    # The tool resolves the mapping from the LPAR and media name, so the captured
+    # mapping UUID is only the marker that a mount happened.
+    if artifacts.vmedia_mapping_uuid and artifacts.vmedia_iso_name:
         st, data = await state.call(
             client,
             "hmc_unmount_optical_media",
             vios_name_or_uuid=vios,
-            mapping_uuid=artifacts.vmedia_mapping_uuid,
+            lpar_name_or_uuid=config.lp3_name,
+            media_name=artifacts.vmedia_iso_name,
         )
         state.record(19, "hmc_unmount_optical_media", st, data)
         if st == "PASS":
             artifacts.vmedia_mapping_uuid = None
     else:
-        state.skip(19, "hmc_unmount_optical_media", "no mapping UUID captured")
+        state.skip(19, "hmc_unmount_optical_media", "no mounted media captured")
 
     # Step 6 — Confirm mapping gone
     st, data = await state.call(
@@ -689,18 +707,8 @@ async def _prepare_boot_media(
         immediate=True,
         wait=True,
     )
-    state.record_expected_or_real(
-        20,
-        "hmc_power_off_lpar (pre-boot)",
-        status,
-        data,
-        expected_fail_substrings=[
-            "already",
-            "not activated",
-            "powered off",
-            "not running",
-        ],
-        skip_reason="lp3 already powered off (expected)",
+    state.record_with_expected(
+        20, "hmc_power_off_lpar (pre-boot)", status, data, [_ALREADY_POWERED_OFF]
     )
 
     status, data = await state.call(
@@ -738,7 +746,7 @@ async def _configure_boot_order(
         client,
         "hmc_read_lpar_boot_order",
         system_name_or_uuid=config.system_name,
-        lpar_uuid=lpar_uuid,
+        lpar_name_or_uuid=lpar_uuid,
     )
     state.record(20, "hmc_read_lpar_boot_order (baseline)", status, data)
     if status == "PASS" and isinstance(data, dict):
@@ -751,7 +759,7 @@ async def _configure_boot_order(
         client,
         "hmc_set_lpar_boot_order",
         system_name_or_uuid=config.system_name,
-        lpar_uuid=lpar_uuid,
+        lpar_name_or_uuid=lpar_uuid,
         devices=["cd", "network", "disk"],
     )
     state.record(20, "hmc_set_lpar_boot_order (cd first)", status, data)
@@ -765,7 +773,7 @@ async def _run_boot_probe(client: Client, state: RunState) -> None:
         "hmc_power_on_lpar",
         lpar_name_or_uuid=config.lp3_name,
         wait=True,
-        timeout=120,
+        timeout_seconds=120,
     )
     state.record(20, "hmc_power_on_lpar", status, data)
 
@@ -794,12 +802,13 @@ async def _restore_boot_configuration(
     """Unmount the test ISO, restore boot order, and verify the restored state."""
     config = state.config
     artifacts = state.artifacts
-    if artifacts.vmedia_mapping_uuid:
+    if artifacts.vmedia_mapping_uuid and artifacts.vmedia_iso_name:
         status, data = await state.call(
             client,
             "hmc_unmount_optical_media",
             vios_name_or_uuid=vios_uuid,
-            mapping_uuid=artifacts.vmedia_mapping_uuid,
+            lpar_name_or_uuid=config.lp3_name,
+            media_name=artifacts.vmedia_iso_name,
         )
         state.record(20, "hmc_unmount_optical_media (boot test cleanup)", status, data)
         if status == "PASS":
@@ -808,7 +817,7 @@ async def _restore_boot_configuration(
         state.skip(
             20,
             "hmc_unmount_optical_media (boot test cleanup)",
-            "no mapping UUID to unmount",
+            "no mounted media to unmount",
         )
 
     if artifacts.vmedia_orig_boot_order:
@@ -816,7 +825,7 @@ async def _restore_boot_configuration(
             client,
             "hmc_set_lpar_boot_order",
             system_name_or_uuid=config.system_name,
-            lpar_uuid=lpar_uuid,
+            lpar_name_or_uuid=lpar_uuid,
             devices=artifacts.vmedia_orig_boot_order,
         )
     else:
@@ -824,7 +833,7 @@ async def _restore_boot_configuration(
             client,
             "hmc_clear_lpar_boot_order",
             system_name_or_uuid=config.system_name,
-            lpar_uuid=lpar_uuid,
+            lpar_name_or_uuid=lpar_uuid,
         )
     state.record(20, "hmc_set_lpar_boot_order (restore)", status, data)
     if status == "PASS":
@@ -834,7 +843,7 @@ async def _restore_boot_configuration(
         client,
         "hmc_read_lpar_boot_order",
         system_name_or_uuid=config.system_name,
-        lpar_uuid=lpar_uuid,
+        lpar_name_or_uuid=lpar_uuid,
     )
     state.record(20, "hmc_read_lpar_boot_order (verify restore)", status, data)
 
@@ -952,7 +961,7 @@ async def _restore_teardown_boot_order(client: Client, state: RunState) -> None:
             client,
             "hmc_set_lpar_boot_order",
             system_name_or_uuid=config.system_name,
-            lpar_uuid=artifacts.lp3_uuid,
+            lpar_name_or_uuid=artifacts.lp3_uuid,
             devices=artifacts.vmedia_orig_boot_order,
         )
         state.record(22, "hmc_set_lpar_boot_order (boot order restore guard)", st, data)
@@ -972,6 +981,25 @@ async def _restore_teardown_boot_order(client: Client, state: RunState) -> None:
         )
 
 
+def _mapping_identity(mapping: object) -> tuple[str, str] | None:
+    """Read the LPAR and media name that address one optical mapping.
+
+    ``hmc_unmount_optical_media`` resolves a mapping from the pair, so an entry
+    missing either half cannot be unmounted and is skipped rather than guessed at.
+    """
+    if not isinstance(mapping, dict):
+        return None
+    storage = mapping.get("Storage")
+    optical = storage.get("VirtualOpticalMedia") if isinstance(storage, dict) else None
+    media_name = optical.get("MediaName") if isinstance(optical, dict) else None
+    partition = mapping.get("AssociatedLogicalPartition")
+    href = partition.get("href") if isinstance(partition, dict) else None
+    lpar = urlparse(href).path.rsplit("/", 1)[-1] if isinstance(href, str) else None
+    if not isinstance(media_name, str) or not media_name or not lpar:
+        return None
+    return lpar, media_name
+
+
 async def _remove_orphan_mappings(client: Client, state: RunState, vios: str) -> None:
     """Unmount every optical mapping left behind by earlier vMedia stages."""
     st, data = await state.call(
@@ -984,23 +1012,24 @@ async def _remove_orphan_mappings(client: Client, state: RunState, vios: str) ->
         mappings = data if isinstance(data, list) else []
         if not mappings:
             state.skip(22, "hmc_unmount_optical_media (orphan)", "no orphan mappings")
-        for m in mappings:
-            m_uuid = m.get("ElementID") or m.get("UUID") or m.get("uuid")
-            resource = m.get("Resource") or {}
-            m_uuid = m_uuid or resource.get("ElementID") or resource.get("UUID")
-            if m_uuid:
-                st_u, data_u = await state.call(
-                    client,
-                    "hmc_unmount_optical_media",
-                    vios_name_or_uuid=vios,
-                    mapping_uuid=m_uuid,
-                )
-                state.record(
-                    22,
-                    f"hmc_unmount_optical_media (orphan {m_uuid[:8]}…)",
-                    st_u,
-                    data_u,
-                )
+        for mapping in mappings:
+            identity = _mapping_identity(mapping)
+            if identity is None:
+                continue
+            lpar, media_name = identity
+            st_u, data_u = await state.call(
+                client,
+                "hmc_unmount_optical_media",
+                vios_name_or_uuid=vios,
+                lpar_name_or_uuid=lpar,
+                media_name=media_name,
+            )
+            state.record(
+                22,
+                f"hmc_unmount_optical_media (orphan {media_name})",
+                st_u,
+                data_u,
+            )
 
 
 async def _remove_optical_media(
@@ -1044,18 +1073,12 @@ async def _remove_repository_and_audit(
             vios_name_or_uuid=vios,
             vg_uuid=vg,
         )
-        state.record_expected_or_real(
+        state.record_with_expected(
             22,
             "hmc_delete_media_repository",
             st,
             data,
-            expected_fail_substrings=[
-                "not found",
-                "does not exist",
-                "no repository",
-                "no media",
-            ],
-            skip_reason="repository already gone (expected on re-run)",
+            [_REPOSITORY_ALREADY_GONE],
         )
         if st == "PASS":
             state.artifacts.vmedia_repo_created = False

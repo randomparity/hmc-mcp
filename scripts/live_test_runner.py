@@ -435,6 +435,7 @@ class LiveTestArtifacts:
     vios_uuid: str | None = None
     vios_partition_id: int | None = None
     console_uuid: str | None = None
+    test_user_uuid: str | None = None
     test_vlan_id: int | None = None
     test_vswitch_id: int | None = None
     test_network_uuid: str | None = None
@@ -750,6 +751,7 @@ _ARTIFACT_NULLABLE_STRINGS = frozenset(
         "scratch_uuid",
         "vios_uuid",
         "console_uuid",
+        "test_user_uuid",
         "test_network_uuid",
         "test_adapter_uuid",
         "nettest_uuid",
@@ -794,9 +796,12 @@ def _decode_artifacts(value: Any) -> LiveTestArtifacts:
     if not isinstance(value, dict):
         raise TypeError("results artifacts must be a JSON object")
     expected_fields = {item.name for item in fields(LiveTestArtifacts)}
-    if set(value) != expected_fields:
-        raise ValueError("results artifact fields do not match LiveTestArtifacts")
     parsed = dict(value)
+    # A results document written before `test_user_uuid` existed is still a valid
+    # restore source; every other field difference remains a mismatch.
+    parsed.setdefault("test_user_uuid", None)
+    if set(parsed) != expected_fields:
+        raise ValueError("results artifact fields do not match LiveTestArtifacts")
     for name in _ARTIFACT_NULLABLE_STRINGS:
         if parsed[name] is not None and not isinstance(parsed[name], str):
             raise TypeError(f"results artifact {name} must be a string or null")

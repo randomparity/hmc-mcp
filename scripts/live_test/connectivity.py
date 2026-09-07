@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Client
 
+from .observation import Assertion
 from .results import entries
 from .results import resource as get_resource
 
@@ -19,7 +20,20 @@ if TYPE_CHECKING:
 
 async def _discover_console(client: Client, state: RunState) -> None:
     st, data = await state.call(client, "hmc_get_console_info")
-    state.record(1, "hmc_get_console_info", st, data)
+    state.record_verified(
+        1,
+        "hmc_get_console_info",
+        operation="console.info",
+        scenario="st1-console-identity",
+        assertions=[
+            Assertion(
+                "console-uuid-present",
+                bool(isinstance(data, dict) and (data.get("uuid") or data.get("UUID"))),
+            )
+        ],
+        cleanup="not-required",
+        data=data,
+    )
     if st == "PASS" and isinstance(data, dict):
         state.artifacts.console_uuid = data.get("uuid") or data.get("UUID")
 

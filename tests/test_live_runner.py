@@ -13,13 +13,14 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-from fastmcp import Client
+from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 
 from hmc_mcp.authorization import target_scope
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.jobs import JobOutcome
 from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
 from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 from hmc_mcp.ssh import affinity as ssh_affinity
@@ -101,6 +102,21 @@ class _ScriptedClient:
         if self.error is not None:
             raise self.error
         return self.result
+
+
+def _failure(text: str) -> observation.CallFailure:
+    """The shape `RunState.call` really returns on failure, for a scripted stub."""
+    return observation.classify_failure(RuntimeError(text))
+
+
+def _optical_mapping(media_name: str, lpar: str = "lp3-uuid") -> dict:
+    """One `hmc_list_optical_mappings` entry, shaped as the client really returns it."""
+    return {
+        "Storage": {"VirtualOpticalMedia": {"MediaName": media_name}},
+        "AssociatedLogicalPartition": {
+            "href": f"/rest/api/uom/LogicalPartition/{lpar}"
+        },
+    }
 
 
 class _ScriptedSriovState(runner.RunState):
@@ -410,10 +426,10 @@ async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
             ("hmc_get_job", "PASS", {}),
             ("hmc_wait_for_job", "PASS", {}),
             ("hmc_list_recent_jobs", "PASS", {"entries": []}),
-            ("hmc_get_pcm_preferences", "FAIL", "PCM unavailable"),
-            ("hmc_processed_metric_links", "FAIL", "PCM unavailable"),
-            ("hmc_aggregated_metric_links", "FAIL", "PCM unavailable"),
-            ("hmc_list_partition_templates", "FAIL", "template unavailable"),
+            ("hmc_get_pcm_preferences", "FAIL", _failure("PCM unavailable")),
+            ("hmc_processed_metric_links", "FAIL", _failure("PCM unavailable")),
+            ("hmc_aggregated_metric_links", "FAIL", _failure("PCM unavailable")),
+            ("hmc_list_partition_templates", "FAIL", _failure("template unavailable")),
         ]
     )
     state.artifacts.job_uuid_sample = "job-uuid"
@@ -424,7 +440,7 @@ async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
     assert state.calls[1][1]["long_term_monitor"] is False
     assert state.calls[3][1]["long_term_monitor"] is True
     assert state.calls[5][1] == {
-        "job_uuid": "job-uuid",
+        "job_id": "job-uuid",
         "timeout_seconds": 10,
         "poll_interval": 2,
     }
@@ -480,12 +496,16 @@ async def test_provision_dry_run_requires_vios_and_uses_baseline_vlan() -> None:
                 "dry_run": True,
                 "system_name_or_uuid": state.config.system_name,
                 "name": state.config.dry_run_lpar_name,
-                "port_vlan_id": 99,
-                "vios_uuid": "vios-uuid",
-                "vios_partition_id": 4,
-                "vios_slot": 6,
-                "storage_name": state.config.dry_run_storage_name,
-                "desired_memory": state.config.dry_run_memory_mib,
+                "adapters": {
+                    "port_vlan_id": 99,
+                    "vios_partition_id": 4,
+                    "vios_slot": 6,
+                },
+                "storage": {
+                    "vios_uuid": "vios-uuid",
+                    "storage_name": state.config.dry_run_storage_name,
+                },
+                "resources": {"desired_memory": state.config.dry_run_memory_mib},
             },
         )
     ]
@@ -560,7 +580,7 @@ async def test_vmedia_mount_requires_iso_and_preserves_safe_delete_boundary() ->
         [
             ("hmc_mount_optical_media", "PASS", {"ElementID": "mapping-uuid"}),
             ("hmc_list_optical_mappings", "PASS", []),
-            ("hmc_delete_optical_media", "FAIL", "media is mapped"),
+            ("hmc_delete_optical_media", "FAIL", _failure("media is mapped")),
             ("hmc_unmount_optical_media", "PASS", {}),
             ("hmc_list_optical_mappings", "PASS", []),
             ("hmc_delete_optical_media", "PASS", {}),
@@ -577,7 +597,11 @@ async def test_vmedia_mount_requires_iso_and_preserves_safe_delete_boundary() ->
     assert state.artifacts.vmedia_iso_name is None
     assert state.calls[3] == (
         "hmc_unmount_optical_media",
-        {"vios_name_or_uuid": "vios-uuid", "mapping_uuid": "mapping-uuid"},
+        {
+            "vios_name_or_uuid": "vios-uuid",
+            "lpar_name_or_uuid": state.config.lp3_name,
+            "media_name": "boot.iso",
+        },
     )
     assert any(
         entry["tool"] == "hmc_delete_optical_media (blocked — expected)"
@@ -591,7 +615,7 @@ async def test_vmedia_teardown_restores_boot_and_removes_artifacts_in_order() ->
     state = _ScriptedSriovState(
         [
             ("hmc_set_lpar_boot_order", "PASS", {}),
-            ("hmc_list_optical_mappings", "PASS", [{"UUID": "orphan-uuid"}]),
+            ("hmc_list_optical_mappings", "PASS", [_optical_mapping("orphan.iso")]),
             ("hmc_unmount_optical_media", "PASS", {}),
             ("hmc_list_optical_media", "PASS", [{"MediaName": "orphan.iso"}]),
             ("hmc_delete_optical_media", "PASS", {}),
@@ -1426,6 +1450,23 @@ def test_restore_artifacts_round_trips_config_and_preserves_result_rows(tmp_path
     assert json.loads(results_path.read_text())["results"] == [{"status": "PASS"}]
 
 
+def test_restore_artifacts_tolerates_a_results_document_without_test_user_uuid(
+    tmp_path,
+):
+    """A report written before the field existed is still a valid restore source."""
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    del document["artifacts"]["test_user_uuid"]
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    state = runner.RunState(config=config)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts.test_user_uuid is None
+
+
 @pytest.mark.parametrize("document", ["not JSON", "[]", '{"context": []}'])
 def test_restore_artifacts_reports_expected_results_file_failures(
     tmp_path, capsys, document
@@ -2032,7 +2073,7 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
         if tool == "hmc_read_lpar_boot_order":
             return "PASS", {"pending_boot_string": "disk,network"}
         if tool == "hmc_list_optical_mappings" and workflow is runner.vmedia_teardown:
-            return "PASS", [{"UUID": "mapping"}]
+            return "PASS", [_optical_mapping("test.iso")]
         return "PASS", {}
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
@@ -2312,7 +2353,7 @@ async def test_metrics_template_inventory_records_expected_limitation_and_contin
         if tool == "hmc_get_pcm_preferences":
             return "PASS", {"long_term_monitor": True}
         if tool == "hmc_processed_metric_links":
-            return "FAIL", "PCM is not licensed"
+            return "FAIL", _failure("PCM is not licensed")
         return "PASS", []
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
@@ -2341,14 +2382,30 @@ async def test_user_inventory_classifies_unsupported_endpoint(monkeypatch):
 
     async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
-        return "FAIL", "REST000E: endpoint unavailable"
+        return "FAIL", _failure("REST000E: endpoint unavailable")
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.console_uuid = "console-uuid"
+
+    await users.inventory_users(None, state)
+
+    assert calls == [("hmc_list_users", {"console_uuid": "console-uuid"})]
+    assert state.results[0]["status"] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_user_inventory_skips_without_a_console_uuid(monkeypatch):
+    """Every user tool addresses the console by UUID, so ST1 gates the whole path."""
+
+    async def scripted_call(_state, _client, _tool, **_kwargs):
+        raise AssertionError("a user tool ran without a console UUID")
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
 
     await users.inventory_users(None, state)
 
-    assert calls == [("hmc_list_users", {})]
     assert state.results[0]["status"] == "SKIP"
 
 
@@ -2384,11 +2441,16 @@ async def test_user_administration_cleans_up_only_a_created_user(
     async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
         if tool == "hmc_create_user":
-            return create_status, {} if create_status == "PASS" else "REST000E"
+            if create_status == "PASS":
+                return "PASS", {}
+            return "FAIL", _failure("REST000E")
+        if tool == "hmc_list_users":
+            return "PASS", [{"UserID": state.config.test_user, "uuid": "profile-uuid"}]
         return "PASS", []
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
+    state.artifacts.console_uuid = "console-uuid"
 
     await users.administer_test_user(None, state)
 
@@ -2397,15 +2459,50 @@ async def test_user_administration_cleans_up_only_a_created_user(
         expected.extend(["hmc_modify_user", "hmc_delete_user"])
     expected.append("hmc_list_users")
     assert [tool for tool, _ in calls] == expected
-    assert calls[0][1]["name"] == state.config.test_user
+    assert calls[0][1]["user_id"] == state.config.test_user
+    assert calls[0][1]["console_uuid"] == "console-uuid"
     if create_status == "PASS":
         assert calls[2][1]["description"].endswith("updated")
-        assert calls[3][1] == {"name": state.config.test_user}
+        assert calls[3][1] == {
+            "console_uuid": "console-uuid",
+            "user_profile_uuid": "profile-uuid",
+        }
+        assert state.artifacts.test_user_uuid is None
     else:
         skipped = [
             result["tool"] for result in state.results if result["status"] == "SKIP"
         ]
         assert skipped == ["hmc_create_user", "hmc_modify_user", "hmc_delete_user"]
+
+
+@pytest.mark.asyncio
+async def test_user_administration_skips_without_a_profile_uuid(monkeypatch):
+    """Modify and delete address the profile by UUID; without one they must not run."""
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        assert tool not in {"hmc_modify_user", "hmc_delete_user"}
+        if tool == "hmc_list_users":
+            return "PASS", [{"UserID": "someone-else", "uuid": "other-uuid"}]
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.console_uuid = "console-uuid"
+
+    await users.administer_test_user(None, state)
+
+    assert state.artifacts.test_user_uuid is None
+    skipped = [
+        (result["tool"], result["note"])
+        for result in state.results
+        if result["status"] == "SKIP"
+    ]
+    assert skipped == [
+        ("hmc_modify_user", "user profile UUID not found after create"),
+        ("hmc_delete_user", "user profile UUID not found after create"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -2439,7 +2536,7 @@ async def test_metrics_jobs_restores_disabled_preference_and_forwards_job_option
     assert [kwargs["long_term_monitor"] for kwargs in set_calls] == [True, False]
     wait_call = next(kwargs for tool, kwargs in calls if tool == "hmc_wait_for_job")
     assert wait_call == {
-        "job_uuid": "job-uuid",
+        "job_id": "job-uuid",
         "timeout_seconds": 10,
         "poll_interval": 2,
     }
@@ -2632,18 +2729,24 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     assert provision == {
         "system_name_or_uuid": state.config.system_name,
         "name": state.config.lp3_name,
-        "port_vlan_id": 3101,
-        "vios_uuid": "vios-uuid",
-        "vios_partition_id": 7,
-        "vios_slot": 11,
-        "storage_name": state.config.vdisk_name,
-        "storage_kind": "VirtualDisk",
-        "vg_uuid": "vg-uuid",
-        "min_memory": 1024,
-        "desired_memory": 2048,
-        "max_memory": 4096,
-        "desired_vcpus": 2,
-        "max_vcpus": 4,
+        "adapters": {
+            "port_vlan_id": 3101,
+            "vios_partition_id": 7,
+            "vios_slot": 11,
+        },
+        "storage": {
+            "vios_uuid": "vios-uuid",
+            "storage_name": state.config.vdisk_name,
+            "kind": "VirtualDisk",
+            "vg_uuid": "vg-uuid",
+        },
+        "resources": {
+            "min_memory": 1024,
+            "desired_memory": 2048,
+            "max_memory": 4096,
+            "desired_vcpus": 2,
+            "max_vcpus": 4,
+        },
         "partition_type": "AIX/Linux",
         "power_on": True,
         "dry_run": False,
@@ -2797,3 +2900,155 @@ async def test_final_restore_replays_baseline_and_audits(monkeypatch):
         "hmc_run_command",
         "hmc_lpar_summary",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "response"),
+    [
+        ("hmc_get_job", {"UUID": "job-uuid", "Status": "FAILED_BEFORE_COMPLETION"}),
+        (
+            "hmc_wait_for_job",
+            {
+                "job_id": "job-uuid",
+                "found": True,
+                "timed_out": False,
+                "status": "FAILED_BEFORE_COMPLETION",
+                "error": "the job did not complete",
+                "job": {"UUID": "job-uuid"},
+                "job_href": None,
+            },
+        ),
+    ],
+)
+async def test_job_scenarios_fail_on_a_non_successful_status(
+    monkeypatch, tool, response
+):
+    """`PASS` meant the call returned; a job that came back failed must not promote."""
+
+    async def scripted_call(_state, _client, dispatched, **_kwargs):
+        if dispatched == tool:
+            return "PASS", response
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.job_uuid_sample = "job-uuid"
+
+    await metrics.inspect_metrics_jobs(None, state)
+
+    row = next(entry for entry in state.results if entry["tool"] == tool)
+    assert row["result"] == "failed"
+    held = next(
+        item["observation"]["assertions"]
+        for item in state.observations
+        if item["observation"]["id"] == f"st12-{tool.replace('_', '-')}"
+    )
+    assert "job-status-successful" not in held
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_outcome_normalizes_from_the_served_shape():
+    """FastMCP serves `hmc_wait_for_job` unwrapped, so `result.data` is not a dict.
+
+    The scripted stubs above hand `_as_outcome` a mapping, so only this arm can
+    catch a normalizer that handles nothing else.
+    """
+    application = FastMCP("job-shape-probe")
+
+    @application.tool
+    async def probe() -> JobOutcome:
+        return JobOutcome(
+            job_id="job-uuid",
+            status="COMPLETED_OK",
+            timed_out=False,
+            error=None,
+            job={"UUID": "job-uuid"},
+            found=True,
+            job_href=None,
+        )
+
+    async with Client(application) as client:
+        result = await client.call_tool("probe", {})
+
+    assert not isinstance(result.data, dict)
+    outcome = metrics._as_outcome(result.data)
+    assert outcome is not None
+    assert outcome.status == "COMPLETED_OK"
+    assert outcome.job_id == "job-uuid"
+
+
+def _recorded_scenarios() -> dict[str, set[str]]:
+    """Every scenario's declared assertion ids, read from the workflow sources."""
+    declared: dict[str, set[str]] = {}
+    for module in LIVE_WORKFLOW_MODULES:
+        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+        constants = {
+            target.id: node.value.value
+            for node in tree.body
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+            for target in node.targets
+            if isinstance(target, ast.Name) and isinstance(node.value.value, str)
+        }
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "record_verified"
+            ):
+                continue
+            keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+            scenario = keywords["scenario"]
+            if isinstance(scenario, ast.Constant):
+                name = scenario.value
+            else:
+                name = constants[scenario.id]
+            declared.setdefault(name, set()).update(
+                _assertion_ids(keywords["assertions"], module)
+            )
+    return declared
+
+
+def _assertion_ids(node: ast.expr, module) -> set[str]:
+    """The ids of the `Assertion(...)` values a `record_verified` call declares."""
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        # A helper builds the list; read the ids from the helper's own body.
+        helper = next(
+            item
+            for item in ast.parse(
+                Path(module.__file__).read_text(encoding="utf-8")
+            ).body
+            if isinstance(item, ast.FunctionDef) and item.name == node.func.id
+        )
+        return _assertion_ids_in(helper)
+    return _assertion_ids_in(node)
+
+
+def _assertion_ids_in(node: ast.AST) -> set[str]:
+    return {
+        item.args[0].value
+        for item in ast.walk(node)
+        if isinstance(item, ast.Call)
+        and isinstance(item.func, ast.Name)
+        and item.func.id == "Assertion"
+        and item.args
+        and isinstance(item.args[0], ast.Constant)
+    }
+
+
+def test_scenarios_declare_their_expected_assertion_ids():
+    """Deleting an assertion must fail here, not go unnoticed in a stale observation.
+
+    The closure fingerprint covers `src/hmc_mcp/` only, so removing an assertion
+    from a harness module leaves every committed observation still listing its id,
+    still matching its recomputed hash, and still reported `current` — a reader
+    concludes a postcondition was checked that nothing checks any more.
+    """
+    assert _recorded_scenarios() == {
+        "st12-job-inspection": {
+            "job-found",
+            "job-identity-matches",
+            "job-status-successful",
+        },
+        "st1-console-identity": {"console-uuid-present"},
+    }
