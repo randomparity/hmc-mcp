@@ -56,7 +56,7 @@ ATTEMPTED_KEYS = {
 CLEANUP = {"not-run", "not-required", "failed", "passed"}
 OBSERVATION_ID = re.compile(r"[a-z0-9][a-z0-9-]*")
 SCENARIO_ID = re.compile(r"st\d+-[a-z0-9-]+")
-ASSERTION_ID = re.compile(r"[a-z][a-z0-9-]{2,63}")
+ASSERTION_ID = re.compile(r"[a-z][a-z0-9-]{1,62}[a-z0-9]")
 
 #: Narrow grammars, not a permissive character class with an address rejection:
 #: `[A-Za-z0-9 ._-]{0,39}` admits a hostname, a serial and a location code

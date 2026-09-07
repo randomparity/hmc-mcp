@@ -93,7 +93,8 @@ unchanged.
 (plus 53 `skip` and 17 `record_expected_or_real`, all of which route through it) cannot
 promote by omission. `record_verified(subtask, tool, *, operation, scenario, assertions, cleanup,
 data)` is the only path to `passed`. `assertions` is a non-empty tuple of
-`Assertion(id, holds)` where `id` matches `[a-z][a-z0-9-]{2,63}`; `operation` must exist in
+`Assertion(id, holds)` where `id` matches `[a-z][a-z0-9-]{1,62}[a-z0-9]` —
+the closing class rejects a trailing hyphen, which a `{2,63}` tail admitted; `operation` must exist in
 `operations.json` (guard test); `scenario` matches `st\d+-[a-z0-9-]+`.
 
 Converted now, so the path is exercised. Both job scenarios in

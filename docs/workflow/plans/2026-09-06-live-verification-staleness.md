@@ -88,7 +88,7 @@ RESULTS = frozenset({"observed", "passed", "failed", "skipped"})
 CLEANUP = frozenset({"not-run", "not-required", "failed", "passed"})
 # CLEANUP's "not-run" is a cleanup disposition (cleanup did not run) and is unrelated to
 # ADR 0126's deleted `not-run` observation shape. RESULTS deliberately has no such member.
-ASSERTION_ID = re.compile(r"\A[a-z][a-z0-9-]{2,63}\Z")
+ASSERTION_ID = re.compile(r"\A[a-z][a-z0-9-]{1,62}[a-z0-9]\Z")
 SCENARIO_ID = re.compile(r"\Ast\d+-[a-z0-9-]+\Z")
 
 @dataclass(frozen=True)
@@ -428,7 +428,7 @@ ATTEMPTED_KEYS = {"id","channel","result","scenario","tested_commit","observed_a
 # No NOT_RUN_KEYS: format 2 has one observation shape (see spec §Observation record).
 HMC_RELEASE = re.compile(r"\AV\d+R\d+(?:M\d+)?\Z")   # V10R3
 HARDWARE_FAMILY = re.compile(r"\APOWER\d+\Z")        # POWER10
-ASSERTION_ID = re.compile(r"\A[a-z][a-z0-9-]{2,63}\Z")
+ASSERTION_ID = re.compile(r"\A[a-z][a-z0-9-]{1,62}[a-z0-9]\Z")
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 
 STALE_REASONS = ("closure-changed", "age-exceeded")

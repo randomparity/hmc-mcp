@@ -3360,3 +3360,84 @@ def test_the_repository_root_refuses_a_checkout_without_the_package(
     monkeypatch.chdir(tmp_path)
 
     assert runner._repository_root() is None
+
+
+def test_an_unignored_results_path_exits_before_the_run(monkeypatch, tmp_path, capsys):
+    """The results document is the larger, more sensitive of the two writes.
+
+    Guarding only the observations file would refuse the small write and let the
+    verbatim HMC responses land unignored beside it.
+    """
+    repo = _live_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(
+        runner.LiveTestConfig,
+        "from_env_file",
+        classmethod(lambda _cls: runner.LiveTestConfig()),
+    )
+    monkeypatch.setattr(runner, "_read_environment", lambda *_a: ("V10R3", "POWER10"))
+    monkeypatch.setattr(
+        runner, "create_mcp", lambda *_a, **_k: pytest.fail("created MCP")
+    )
+
+    assert runner._run_from_arguments(["--results-file", "evidence.json"]) == 1
+
+    output = capsys.readouterr().out
+    assert "git does not ignore evidence.json" in output
+    assert "evidence-observations.json" in output
+    assert not (repo / "evidence.json").exists()
+
+
+def test_an_ignored_results_path_passes_the_startup_gate(monkeypatch, tmp_path):
+    repo = _live_repo(tmp_path)
+    monkeypatch.chdir(repo)
+
+    assert runner._destination_is_ignored(Path("test-results-round2.json"))
+    assert runner._destination_is_ignored(
+        runner._observations_path("test-results-round2.json")
+    )
+    assert not runner._destination_is_ignored(Path("evidence.json"))
+
+
+def test_record_honours_an_explicit_result():
+    """`record_verified` supplies its verdict here rather than patching it after."""
+    state = runner.RunState()
+
+    state.record(1, "hmc_get_console_info", "PASS", {}, result="passed")
+
+    assert state.results[0]["result"] == "passed"
+
+
+def test_record_verified_writes_its_verdict_with_the_row():
+    """The verdict must not be patched onto `results[-1]` after the append."""
+    state = runner.RunState()
+    state.record(0, "unrelated", "PASS", {})
+    state.record_verified(
+        1,
+        "hmc_get_console_info",
+        operation="console.info",
+        scenario="st1-console-identity",
+        assertions=[observation.Assertion("console-uuid-present", True)],
+        cleanup="not-required",
+        data={"uuid": "c"},
+    )
+
+    assert [row["result"] for row in state.results] == ["observed", "passed"]
+
+
+@pytest.mark.parametrize("identity", ["job-", "j", "ab", "Job-found", "-job", "job_found"])
+def test_assertion_id_rejects_a_truncated_or_malformed_token(identity):
+    """A trailing hyphen is a truncated token, not a closed-shape one."""
+    with pytest.raises(ValueError, match="closed-shape token"):
+        observation.Assertion(identity, True)
+
+
+def test_the_two_assertion_id_patterns_agree():
+    """The runner bounds ids on the way out; the validator bounds them on the way in."""
+    anchored = observation.ASSERTION_ID.pattern
+
+    assert anchored.startswith("\\A") and anchored.endswith("\\Z")
+    assert (
+        anchored.removeprefix("\\A").removesuffix("\\Z")
+        == runner.check_capability_inventory.ASSERTION_ID.pattern
+    )

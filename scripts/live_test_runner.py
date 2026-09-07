@@ -549,9 +549,22 @@ class RunState:
             return "FAIL", classify_failure(exc)
 
     def record(
-        self, subtask: int, tool: str, status: str, data: Any, note: str = ""
+        self,
+        subtask: int,
+        tool: str,
+        status: str,
+        data: Any,
+        note: str = "",
+        *,
+        result: str | None = None,
     ) -> None:
-        """Append and print one result entry."""
+        """Append and print one result entry.
+
+        `result` is supplied only by `record_verified`, the one path that can
+        reach `passed`. Passing it in keeps the row and its verdict written
+        together, rather than patching `results[-1]` after the fact where any
+        later change to how rows are appended would retarget the patch.
+        """
         if isinstance(data, CallFailure):
             # Only the message is persisted: the traceback text stays on the
             # ``CallFailure`` for the caller that classifies it, and never reaches
@@ -563,7 +576,7 @@ class RunState:
             "subtask": subtask,
             "tool": tool,
             "status": status,
-            "result": _result_for(status),
+            "result": result or _result_for(status),
             "timestamp": datetime.now(UTC).isoformat(),
             "note": note,
             "data": (
@@ -634,8 +647,14 @@ class RunState:
         }
         unmet = [item.id for item in assertions if not item.holds]
         note = "" if passed else "unmet: " + ", ".join(unmet or [f"cleanup {cleanup}"])
-        self.record(subtask, tool, "PASS" if passed else "FAIL", data, note)
-        self.results[-1]["result"] = "passed" if passed else "failed"
+        self.record(
+            subtask,
+            tool,
+            "PASS" if passed else "FAIL",
+            data,
+            note,
+            result="passed" if passed else "failed",
+        )
         self.observations.append(
             {
                 "operation": operation,
@@ -746,6 +765,26 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
         environment = _read_environment()
     except ValueError as exc:
         print(f"❌ {exc}")
+        return 1
+    # Both destinations are checked before the run, not after it. The results
+    # document holds every tool response verbatim on the success path — the raw
+    # HMC data `.gitignore` line 1 describes as internal hostnames, addresses and
+    # serials — so a `--results-file` stem no pattern covers must cost a startup
+    # exit, never a completed run against real hardware whose output then has
+    # nowhere safe to land.
+    unsafe = [
+        str(path)
+        for path in (
+            Path(arguments.results_path),
+            _observations_path(arguments.results_path),
+        )
+        if not _destination_is_ignored(path)
+    ]
+    if unsafe:
+        print(
+            "❌ git does not ignore " + ", ".join(unsafe) + " — choose a results "
+            "path matching an ignored pattern (see .gitignore)"
+        )
         return 1
     if not _bootstrap_config() or not _ensure_schema_version():
         return 1
@@ -982,6 +1021,24 @@ def _repository_root() -> Path | None:
     return root if (root / "src" / "hmc_mcp").is_dir() else None
 
 
+def _destination_is_ignored(path: Path, repo_root: Path | None = None) -> bool:
+    """Report whether Git would let *path* be committed from where it is written.
+
+    Exit 0 means ignored, 1 means the path sits in a repository unignored, and
+    anything else means no repository, or a path outside one — in which case
+    there is nothing to commit into and the write is safe.
+    """
+    return (
+        _git(repo_root or Path.cwd(), "check-ignore", "-q", str(path)).returncode != 1
+    )
+
+
+def _observations_path(results_path: str) -> Path:
+    """The observations file written beside a run's results document."""
+    path = Path(results_path)
+    return path.with_name(f"{path.stem}-observations.json")
+
+
 def _tree_is_clean(repo_root: Path) -> bool:
     """Report whether the implementation the observation names is what is committed."""
     result = _git(repo_root, "status", "--porcelain", "--", "src", "scripts")
@@ -1006,7 +1063,9 @@ def _emit_observations(
         return False
     # `--results-file` lets an operator name any stem, so no fixed `.gitignore`
     # pattern can establish that the destination is ignored; ask Git instead.
-    if _git(repo_root, "check-ignore", "-q", str(path)).returncode != 0:
+    # `_run_from_arguments` checks the same thing before the run; this covers a
+    # direct call to `main`.
+    if not _destination_is_ignored(path, repo_root):
         print(f"{path} is not ignored by git — observations not written")
         return False
     head = _git(repo_root, "rev-parse", "HEAD")
@@ -1026,17 +1085,23 @@ def _emit_observations(
             # every other observation came from the same expensive hardware run,
             # and `test_verified_scenarios_name_registered_operations` is what
             # catches a mistyped operation before it ever reaches a live run.
-            print(f"  ⚠️  unknown operation {recorded['operation']} — observation skipped")
+            print(
+                f"  ⚠️  unknown operation {recorded['operation']} — observation skipped"
+            )
             continue
         observation = dict(recorded["observation"])
         if observation["id"] in seen:
-            print(f"duplicate observation id {observation['id']} — observations not written")
+            print(
+                f"duplicate observation id {observation['id']} — observations not written"
+            )
             return False
         seen.add(observation["id"])
         observation["tested_commit"] = head.stdout.strip()
         observation["hmc_release"], observation["hardware_family"] = environment
-        observation["closure_fingerprint"] = check_capability_inventory.closure_fingerprint(
-            repo_root, handler.rsplit(".", 1)[0]
+        observation["closure_fingerprint"] = (
+            check_capability_inventory.closure_fingerprint(
+                repo_root, handler.rsplit(".", 1)[0]
+            )
         )
         document.append(
             {"operation": recorded["operation"], "observation": observation}
@@ -1129,16 +1194,12 @@ async def main(
         ),
     )
 
-    observations_path = Path(results_path)
     repo_root = _repository_root()
     if repo_root is None:
         print("not inside the hmc-mcp repository — observations not written")
     else:
         _emit_observations(
-            state,
-            observations_path.with_name(f"{observations_path.stem}-observations.json"),
-            environment,
-            repo_root,
+            state, _observations_path(results_path), environment, repo_root
         )
 
     total = len(state.results)

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 #: ``_result_for`` and ``record_verified`` in the runner and has no such member.
 CLEANUP = frozenset({"not-run", "not-required", "failed", "passed"})
 
-ASSERTION_ID = re.compile(r"\A[a-z][a-z0-9-]{2,63}\Z")
+ASSERTION_ID = re.compile(r"\A[a-z][a-z0-9-]{1,62}[a-z0-9]\Z")
 SCENARIO_ID = re.compile(r"\Ast\d+-[a-z0-9-]+\Z")
 
 _HTTP_STATUS_RE = re.compile(r"\bHTTP (\d{3})\b")
