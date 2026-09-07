@@ -23,6 +23,7 @@ import asyncio
 import json
 import os
 import re
+import subprocess
 import tempfile
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, fields
@@ -30,6 +31,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
+import check_capability_inventory
 from fastmcp import Client
 from live_test.connectivity import inventory_connectivity
 from live_test.escape_hatch import exercise_cli_escape_hatch
@@ -79,6 +81,12 @@ from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 # ---------------------------------------------------------------------------
 
 _ENV_FILE = Path(".env")
+
+_ENVIRONMENT_PREFIX = "LIVE_TEST_ENV_"
+
+#: The environment a live observation was made in. Both or neither: a lone key
+#: is a configuration error, caught at startup rather than after a hardware run.
+ENVIRONMENT_KEYS = ("LIVE_TEST_ENV_HMC_RELEASE", "LIVE_TEST_ENV_HARDWARE_FAMILY")
 
 _SECRET_VALUE_RE = re.compile(
     r"(?i)\b(?P<name>password|passwd|token|secret|api[_-]?key)"
@@ -331,6 +339,9 @@ class LiveTestConfig:
             key, _, value = line.partition("=")
             key, value = key.strip(), value.strip().strip('"').strip("'")
             if not key.startswith("LIVE_TEST_"):
+                continue
+            if key.startswith(_ENVIRONMENT_PREFIX):
+                # Read separately by `_read_environment`; not a config field.
                 continue
             if key not in cls._CONFIG_FIELDS:
                 duplicates.append(f"unknown setting {key} (line {line_number})")
@@ -729,6 +740,10 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
     arguments = _parse_arguments(argv)
     try:
         config = LiveTestConfig.from_env_file()
+        # Validated here, beside the rest of the configuration: `_emit_observations`
+        # runs after a completed hardware run, and an uncaught ValueError there
+        # would replace the run summary and failed-test listing with a traceback.
+        environment = _read_environment()
     except ValueError as exc:
         print(f"❌ {exc}")
         return 1
@@ -740,6 +755,7 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
             results_path=arguments.results_path,
             group=arguments.group,
             config=config,
+            environment=environment,
         )
     )
 
@@ -901,12 +917,106 @@ def _write_results(path: Path, document: str) -> None:
         raise
 
 
+def _read_environment(path: Path | None = None) -> tuple[str, str] | None:
+    """Read the observation environment from `.env`: both keys, or neither."""
+    path = path or _ENV_FILE
+    values: dict[str, str] = {}
+    if path.is_file():
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key, value = key.strip(), value.strip().strip('"').strip("'")
+            if key in ENVIRONMENT_KEYS and value:
+                values[key] = value
+    if not values:
+        return None
+    if len(values) != len(ENVIRONMENT_KEYS):
+        raise ValueError(
+            "invalid live-test configuration: "
+            + " and ".join(ENVIRONMENT_KEYS)
+            + " must be set together"
+        )
+    return values[ENVIRONMENT_KEYS[0]], values[ENVIRONMENT_KEYS[1]]
+
+
+def _git(repo_root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(repo_root), *arguments],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _tree_is_clean(repo_root: Path) -> bool:
+    """Report whether the implementation the observation names is what is committed."""
+    result = _git(repo_root, "status", "--porcelain", "--", "src", "scripts")
+    return result.returncode == 0 and not result.stdout.strip()
+
+
+def _emit_observations(
+    state: RunState,
+    path: Path,
+    environment: tuple[str, str] | None,
+    repo_root: Path,
+) -> bool:
+    """Write the run's catalog-shaped observations, or say why it wrote none."""
+    if environment is None:
+        print("no LIVE_TEST_ENV_* settings — observations not written")
+        return False
+    if not state.observations:
+        print("no verified observations — nothing to write")
+        return False
+    if not _tree_is_clean(repo_root):
+        print("src/ or scripts/ is modified — observations not written")
+        return False
+    # `--results-file` lets an operator name any stem, so no fixed `.gitignore`
+    # pattern can establish that the destination is ignored; ask Git instead.
+    if _git(repo_root, "check-ignore", "-q", str(path)).returncode != 0:
+        print(f"{path} is not ignored by git — observations not written")
+        return False
+    head = _git(repo_root, "rev-parse", "HEAD")
+    if head.returncode != 0:
+        print("cannot resolve HEAD — observations not written")
+        return False
+    handlers = {
+        tool.operation: tool.handler
+        for tool in check_capability_inventory.discover_registry()
+    }
+    document: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for recorded in state.observations:
+        handler = handlers.get(recorded["operation"])
+        if handler is None:
+            print(f"unknown operation {recorded['operation']} — observations not written")
+            return False
+        observation = dict(recorded["observation"])
+        if observation["id"] in seen:
+            print(f"duplicate observation id {observation['id']} — observations not written")
+            return False
+        seen.add(observation["id"])
+        observation["tested_commit"] = head.stdout.strip()
+        observation["hmc_release"], observation["hardware_family"] = environment
+        observation["closure_fingerprint"] = check_capability_inventory.closure_fingerprint(
+            repo_root, handler.rsplit(".", 1)[0]
+        )
+        document.append(
+            {"operation": recorded["operation"], "observation": observation}
+        )
+    _write_results(path, json.dumps(document, indent=2))
+    print(f"Observations written to {path}")
+    return True
+
+
 async def main(
     subtask_filter: int | None = None,
     results_path: str = "test-results-round2.json",
     group: str | None = None,
     config: LiveTestConfig | None = None,
     hmc_config: HMCConfig | None = None,
+    environment: tuple[str, str] | None = None,
 ) -> int:
     if config is None:
         try:
@@ -978,6 +1088,14 @@ async def main(
             indent=2,
             default=str,
         ),
+    )
+
+    observations_path = Path(results_path)
+    _emit_observations(
+        state,
+        observations_path.with_name(f"{observations_path.stem}-observations.json"),
+        environment,
+        Path.cwd(),
     )
 
     total = len(state.results)

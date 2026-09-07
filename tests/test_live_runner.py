@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 from dataclasses import FrozenInstanceError, asdict
 from pathlib import Path
@@ -3052,3 +3053,133 @@ def test_scenarios_declare_their_expected_assertion_ids():
         },
         "st1-console-identity": {"console-uuid-present"},
     }
+
+
+def _live_repo(tmp_path: Path) -> Path:
+    """A throwaway git repository whose ignore rules match the real one's."""
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
+    (tmp_path / ".gitignore").write_text(
+        "test-results*.json\n.test-results*.tmp\n", encoding="utf-8"
+    )
+    (tmp_path / "src").mkdir()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "placeholder.py").write_text("", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "-c", "user.email=t@example.test",
+         "-c", "user.name=t", "commit", "-qm", "base"],
+        check=True,
+    )
+    return tmp_path
+
+
+def _state_with_one_observation():
+    state = runner.RunState()
+    state.record_verified(
+        1,
+        "hmc_get_console_info",
+        operation="console.info",
+        scenario="st1-console-identity",
+        assertions=[observation.Assertion("console-uuid-present", True)],
+        cleanup="not-required",
+        data={"uuid": "console"},
+    )
+    return state
+
+
+def test_a_lone_environment_key_is_rejected(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("LIVE_TEST_ENV_HMC_RELEASE=V10R3\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must be set together"):
+        runner._read_environment(env_file)
+
+
+def test_both_environment_keys_are_read(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "LIVE_TEST_ENV_HMC_RELEASE=V10R3\nLIVE_TEST_ENV_HARDWARE_FAMILY=POWER10\n",
+        encoding="utf-8",
+    )
+
+    assert runner._read_environment(env_file) == ("V10R3", "POWER10")
+
+
+def test_observations_are_not_emitted_without_environment(tmp_path, capsys):
+    repo = _live_repo(tmp_path)
+    destination = repo / "test-results-round2-observations.json"
+
+    assert not runner._emit_observations(
+        _state_with_one_observation(), destination, None, repo
+    )
+    assert "no LIVE_TEST_ENV_* settings" in capsys.readouterr().out
+    assert not destination.exists()
+
+
+def test_observations_are_not_emitted_from_a_dirty_tree(tmp_path, capsys, monkeypatch):
+    repo = _live_repo(tmp_path)
+    monkeypatch.setattr(runner, "_tree_is_clean", lambda _root: False)
+    destination = repo / "test-results-round2-observations.json"
+
+    assert not runner._emit_observations(
+        _state_with_one_observation(), destination, ("V10R3", "POWER10"), repo
+    )
+    assert "is modified" in capsys.readouterr().out
+    assert not destination.exists()
+
+
+def test_emission_refuses_a_path_git_does_not_ignore(tmp_path, capsys):
+    """`--results-file` accepts any stem, so no fixed pattern can cover it."""
+    repo = _live_repo(tmp_path)
+    destination = repo / "evidence-observations.json"
+
+    assert not runner._emit_observations(
+        _state_with_one_observation(), destination, ("V10R3", "POWER10"), repo
+    )
+    assert "is not ignored by git" in capsys.readouterr().out
+    assert not destination.exists()
+
+
+def test_emitted_observations_validate_against_the_catalog_shape(tmp_path):
+    repo = _live_repo(tmp_path)
+    destination = repo / "test-results-round2-observations.json"
+
+    assert runner._emit_observations(
+        _state_with_one_observation(), destination, ("V10R3", "POWER10"), repo
+    )
+
+    document = json.loads(destination.read_text())
+    errors: list[str] = []
+    for entry in document:
+        runner.check_capability_inventory._validate_observation(
+            entry["observation"], entry["operation"], set(), errors
+        )
+    assert errors == []
+    assert document[0]["operation"] == "console.info"
+    assert document[0]["observation"]["result"] == "passed"
+
+
+def test_a_lone_environment_key_exits_before_the_run(monkeypatch, tmp_path, capsys):
+    """A one-line `.env` typo costs a startup exit, not a hardware run's output."""
+    monkeypatch.setattr(
+        runner, "_read_environment", lambda *_a: (_ for _ in ()).throw(ValueError("lone key"))
+    )
+    monkeypatch.setattr(
+        runner.LiveTestConfig, "from_env_file", classmethod(lambda _cls: runner.LiveTestConfig())
+    )
+    monkeypatch.setattr(runner, "create_mcp", lambda *_a, **_k: pytest.fail("created MCP"))
+
+    assert runner._run_from_arguments([]) == 1
+    assert "lone key" in capsys.readouterr().out
+
+
+def test_gitignore_covers_live_test_results():
+    """Both the results document and the atomic write's stranded temp file."""
+    root = Path(__file__).parents[1]
+    for name in ("test-results-round2.json", ".test-results-round2.json.abc123.tmp"):
+        assert (
+            subprocess.run(
+                ["git", "-C", str(root), "check-ignore", "-q", name], check=False
+            ).returncode
+            == 0
+        ), name
