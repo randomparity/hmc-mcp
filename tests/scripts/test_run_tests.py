@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, BinaryIO, cast
 
 import pytest
 
@@ -54,6 +54,39 @@ class BinaryStderr:
         self.buffer = RecordingBuffer()
 
 
+class InterruptingProcess:
+    """A child whose first `interrupts` waits raise `KeyboardInterrupt`.
+
+    One stub covers the whole escalation ladder: one interrupt is the ordinary
+    Ctrl-C, two reach `terminate()`, three reach `kill()`. `payload` stands in
+    for whatever pytest managed to write before the first interrupt.
+    """
+
+    returncode = 2
+
+    def __init__(self, interrupts: int, capture: BinaryIO, payload: bytes) -> None:
+        self.interrupts = interrupts
+        self.capture = capture
+        self.payload = payload
+        self.wait_count = 0
+        self.terminated = False
+        self.killed = False
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.wait_count += 1
+        if self.wait_count == 1:
+            self.capture.write(self.payload)
+        if self.wait_count <= self.interrupts:
+            raise KeyboardInterrupt
+        return self.returncode
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+    def kill(self) -> None:
+        self.killed = True
+
+
 # A hang ceiling, not a latency budget: the poll loop below returns the moment
 # the marker appears, so only a child that never becomes ready ever pays this.
 _READINESS_TIMEOUT_SECONDS = 60.0
@@ -84,9 +117,10 @@ def _wait_for_process_marker(
 ) -> float:
     """Wait for the child to declare readiness, returning how long that took.
 
-    That figure is what the caller reports: readiness is the quantity that
-    moves with host load, where the post-interrupt settle interval is clamped
-    by `run_tests._settle_interrupted`.
+    That figure is what the caller reports. Both it and the post-interrupt
+    settle interval move with host load -- ADR 0130 measured them tracking each
+    other once `run_tests`'s old 3-second clamp stopped hiding the relation --
+    so readiness is reported beside the settle interval, never instead of it.
     """
     started = time.monotonic()
     deadline = started + timeout_seconds
@@ -231,28 +265,105 @@ def test_interruption_replays_captured_output_without_traceback(
     output = b"partial pytest diagnostic before SIGINT \xff\n"
     stderr = BinaryStderr()
     temporary_file = TrackingTemporaryFile()
-
-    class InterruptedProcess:
-        returncode = 2
-        wait_count = 0
-
-        def wait(self, timeout: int | None = None) -> int:
-            self.wait_count += 1
-            if self.wait_count == 1:
-                temporary_file.write(output)
-                raise KeyboardInterrupt
-            return self.returncode
+    process = InterruptingProcess(1, temporary_file, output)
 
     monkeypatch.setattr(run_tests.sys, "stderr", stderr)
     monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
     monkeypatch.setattr(
-        run_tests.subprocess, "Popen", lambda _command, **_kwargs: InterruptedProcess()
+        run_tests.subprocess, "Popen", lambda _command, **_kwargs: process
     )
 
     assert run_tests.main() == 130
 
     assert stderr.buffer.getvalue() == output
     assert temporary_file.closed
+
+
+def test_diagnostic_window_covers_the_readiness_ceiling() -> None:
+    """ADR 0130: no host clearing the readiness ceiling may lose the diagnostic.
+
+    The window is floored by the ceiling so the script and its test move
+    together; dropping it below reinstates issue #728 on a slow enough host.
+    """
+    assert run_tests.INTERRUPT_GRACE_SECONDS >= _READINESS_TIMEOUT_SECONDS
+    assert run_tests.TERMINATE_GRACE_SECONDS < run_tests.INTERRUPT_GRACE_SECONDS
+
+
+@pytest.mark.parametrize(("interrupts", "killed"), [(2, False), (3, True)])
+def test_further_interrupts_escalate_without_escaping_main(
+    monkeypatch: pytest.MonkeyPatch, interrupts: int, killed: bool
+) -> None:
+    """A further Ctrl-C escalates; it must not escape `main` and strand the child."""
+    payload = b"pytest report before the next interrupt \xff\n"
+    stderr = BinaryStderr()
+    temporary_file = TrackingTemporaryFile()
+    process = InterruptingProcess(interrupts, temporary_file, payload)
+
+    monkeypatch.setattr(run_tests.sys, "stderr", stderr)
+    monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
+    monkeypatch.setattr(
+        run_tests.subprocess, "Popen", lambda _command, **_kwargs: process
+    )
+
+    assert run_tests.main() == 130
+
+    assert process.terminated
+    assert process.killed is killed
+    assert stderr.buffer.getvalue() == payload
+    assert temporary_file.closed
+
+
+def test_a_wedged_child_is_terminated_then_killed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A child that never exits is escalated through both rungs, not waited on.
+
+    This is the only test driving the window's and the reap's timeout branches
+    rather than their interrupt branches, so it is what proves an interrupted
+    run still fails on a bounded budget instead of stalling.
+    """
+    temporary_file = TrackingTemporaryFile()
+
+    class WedgedProcess:
+        returncode = -9
+
+        def __init__(self) -> None:
+            self.timeouts: list[float | None] = []
+            self.terminated = False
+            self.killed = False
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.timeouts.append(timeout)
+            if len(self.timeouts) == 1:
+                raise KeyboardInterrupt
+            if timeout is not None:
+                raise subprocess.TimeoutExpired(["pytest"], timeout)
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def kill(self) -> None:
+            self.killed = True
+
+    process = WedgedProcess()
+    monkeypatch.setattr(run_tests.sys, "stderr", BinaryStderr())
+    monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
+    monkeypatch.setattr(
+        run_tests.subprocess, "Popen", lambda _command, **_kwargs: process
+    )
+
+    assert run_tests.main() == 130
+
+    assert process.terminated
+    assert process.killed
+    # Pins the routing, both constants, and both escalation rungs at once.
+    assert process.timeouts == [
+        run_tests.TEST_TIMEOUT_SECONDS,
+        run_tests.INTERRUPT_GRACE_SECONDS,
+        run_tests.TERMINATE_GRACE_SECONDS,
+        None,
+    ]
 
 
 def test_timeout_terminates_pytest_and_returns_timeout_status(
@@ -263,10 +374,14 @@ def test_timeout_terminates_pytest_and_returns_timeout_status(
 
     class TimedOutProcess:
         returncode = 143
-        wait_count = 0
 
-        def wait(self, timeout: int | None = None) -> int:
+        def __init__(self) -> None:
+            self.wait_count = 0
+            self.timeouts: list[float | None] = []
+
+        def wait(self, timeout: float | None = None) -> int:
             self.wait_count += 1
+            self.timeouts.append(timeout)
             if self.wait_count == 1:
                 temporary_file.write(b"pytest stalled\n")
                 raise subprocess.TimeoutExpired(["pytest"], timeout)
@@ -288,6 +403,12 @@ def test_timeout_terminates_pytest_and_returns_timeout_status(
     assert "pytest stalled" in error_output
     assert "timed out" in error_output
     assert process.wait_count == 2
+    # The timeout arm escalates straight away: nothing has asked this child to
+    # stop, so a diagnostic window would only delay the report (ADR 0130).
+    assert process.timeouts == [
+        run_tests.TEST_TIMEOUT_SECONDS,
+        run_tests.TERMINATE_GRACE_SECONDS,
+    ]
     assert temporary_file.closed
 
 
@@ -359,8 +480,9 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
     with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGINT)
     signalled_at = time.monotonic()
-    grace = run_tests.INTERRUPT_GRACE_SECONDS
-    budget = 2 * grace + _INTERRUPT_COLLECTION_SLACK_SECONDS
+    window = run_tests.INTERRUPT_GRACE_SECONDS
+    reap = run_tests.TERMINATE_GRACE_SECONDS
+    budget = window + reap + _INTERRUPT_COLLECTION_SLACK_SECONDS
     try:
         stdout, stderr = process.communicate(timeout=budget)
     except subprocess.TimeoutExpired as expired:
@@ -372,7 +494,8 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
         with contextlib.suppress(subprocess.TimeoutExpired):
             _stdout, stderr = process.communicate(timeout=5)
         pytest.fail(
-            f"child did not exit within {budget}s of SIGINT (grace {grace}s) "
+            f"child did not exit within {budget}s of SIGINT "
+            f"(window {window}s, reap {reap}s) "
             f"after becoming ready in {ready_in:.1f}s; "
             f"stderr tail: {stderr[-2000:]!r}"
         )
@@ -380,13 +503,14 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
 
     assert process.returncode == 130
     assert stdout == b""
-    # Report, do not attribute. Readiness is the figure that moves with load --
-    # the settle interval is clamped near 2 * grace whatever the host is doing --
-    # and a regression that lowered INTERRUPT_GRACE_SECONDS would satisfy any
-    # `settled_in >= grace` guard trivially and be reported as host slowness.
+    # Report, do not attribute. Both figures now move with load: ADR 0130
+    # measured the settle interval tracking readiness at 0.95x once the old
+    # 3-second clamp stopped hiding it. That is why neither is evidence on its
+    # own -- a regression that lowered INTERRUPT_GRACE_SECONDS would satisfy any
+    # `settled_in >= window` guard trivially and be reported as host slowness.
     assert b"KeyboardInterrupt" in stderr, (
         f"no KeyboardInterrupt: the child became ready in {ready_in:.1f}s and "
-        f"settled in {settled_in:.1f}s against a "
-        f"run_tests.INTERRUPT_GRACE_SECONDS of {grace}s; "
+        f"settled in {settled_in:.1f}s against a window of {window}s "
+        f"and a reap of {reap}s; "
         f"stderr tail: {stderr[-2000:]!r}"
     )

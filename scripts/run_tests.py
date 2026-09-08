@@ -8,7 +8,8 @@ import tempfile
 from typing import BinaryIO
 
 CHUNK_SIZE = 64 * 1024
-INTERRUPT_GRACE_SECONDS = 3
+INTERRUPT_GRACE_SECONDS = 60
+TERMINATE_GRACE_SECONDS = 3
 TEST_TIMEOUT_SECONDS = 20 * 60
 _PYTEST_ENVIRONMENT_OVERRIDES = {"PYTEST_ADDOPTS", "COVERAGE_RCFILE", "COVERAGE_FILE"}
 
@@ -18,17 +19,34 @@ def _replay(output: BinaryIO) -> None:
     shutil.copyfileobj(output, sys.stderr.buffer, length=CHUNK_SIZE)
 
 
+def _stop(process: subprocess.Popen[bytes]) -> None:
+    """Stop a child that will not exit on its own, escalating to SIGKILL.
+
+    A `KeyboardInterrupt` here is a further Ctrl-C asking to stop now, so it
+    escalates exactly as an expired wait does.
+    """
+    process.terminate()
+    try:
+        process.wait(timeout=TERMINATE_GRACE_SECONDS)
+    except (subprocess.TimeoutExpired, KeyboardInterrupt):
+        process.kill()
+        try:
+            process.wait()
+        except KeyboardInterrupt:
+            pass
+
+
 def _settle_interrupted(process: subprocess.Popen[bytes]) -> None:
-    """Give an interrupted pytest time to emit diagnostics, then stop it."""
+    """Give an interrupted pytest time to emit diagnostics, then stop it.
+
+    The window is a ceiling, not a latency budget: the wait returns the moment
+    the child exits, so only a child that has not exited pays it. ADR 0130
+    sizes it against the readiness ceiling ADR 0129 set.
+    """
     try:
         process.wait(timeout=INTERRUPT_GRACE_SECONDS)
-    except subprocess.TimeoutExpired:
-        process.terminate()
-        try:
-            process.wait(timeout=INTERRUPT_GRACE_SECONDS)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
+    except (subprocess.TimeoutExpired, KeyboardInterrupt):
+        _stop(process)
 
 
 def _exit_status(returncode: int) -> int:
@@ -55,7 +73,7 @@ def main() -> int:
             process.wait(timeout=TEST_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             timed_out = True
-            _settle_interrupted(process)
+            _stop(process)
         except KeyboardInterrupt:
             interrupted = True
             _settle_interrupted(process)
