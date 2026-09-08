@@ -127,12 +127,11 @@ def installed_package(tmp_path_factory) -> Path:
     Against `src/` rather than the checkout root, so a copied non-editable install into
     the in-checkout `.venv` fails this instead of passing as "this checkout".
 
-    On `_pinned_env` and not a bare inherit, which is the sibling's other half: "the
-    guard binds the child only while both resolve `hmc_mcp` the same way"
-    (`test_authorization_audit_live.py:177-178`). `_DROPPED` removes `PYTHONPATH` from
-    the launches below, so a probe that inherited it would answer for a `sys.path` no
-    launch has -- and on a developer host exporting one, report this checkout's `src/`
-    while every launch imported something else.
+    On `_pinned_env` and not a bare inherit, which is that fixture's other half: the
+    guard binds the child only while both resolve `hmc_mcp` the same way. `_DROPPED`
+    removes `PYTHONPATH` from the launches below, so a probe that inherited it would
+    answer for a `sys.path` no launch has -- and on a developer host exporting one,
+    report this checkout's `src/` while every launch imported something else.
     """
     probe = subprocess.run(
         [sys.executable, "-P", "-c", "import hmc_mcp; print(hmc_mcp.__file__)"],
