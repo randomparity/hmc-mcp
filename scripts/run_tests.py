@@ -41,7 +41,8 @@ def _settle_interrupted(process: subprocess.Popen[bytes]) -> None:
 
     The window is a ceiling, not a latency budget: the wait returns the moment
     the child exits, so only a child that has not exited pays it. ADR 0130
-    sizes it against the readiness ceiling ADR 0129 set.
+    sizes it against the suite this script wraps, and records why a second
+    Ctrl-C, not the number, is what bounds an interactive run.
     """
     try:
         process.wait(timeout=INTERRUPT_GRACE_SECONDS)
