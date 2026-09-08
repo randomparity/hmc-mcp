@@ -39,7 +39,8 @@ and both are accommodated rather than asserted:
 * `sys.path[0]`, which `-m` sets to the working directory. Both forms are launched
   with `cwd` at an empty `tmp_path` rather than under `-P`, so the module form keeps
   the `sys.path[0]` entry an operator's launch has while pointing it at a directory
-  that shadows nothing. Neither compared observation reads `sys.path[0]`.
+  that shadows nothing. Neither compared observation reads `sys.path[0]`; whether `-P`
+  closes the shadowing exposure ADR 0128:120-133 records is issue #725.
 
 The child environment is pinned rather than inherited, because Click sizes help text
 from the terminal. `COLUMNS` is wide enough that the longer program name's `Usage:`

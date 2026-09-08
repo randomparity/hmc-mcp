@@ -30,7 +30,7 @@ at `tests/app/test_fail_closed_startup.py:463`; the module form is
 - **Exit status.** An unknown root subcommand (parser-raised) and `serve` without
   `--access-policy` (command-body-raised); each must exit 2 under both forms.
 
-Deferral carried: `sys.path[0]` shadowing coverage, to be filed as a follow-up.
+Deferral carried: `sys.path[0]` shadowing coverage, owned by #725.
 
 ## Success
 
