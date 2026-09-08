@@ -38,8 +38,8 @@ Out of scope per the charter: `timeout=180` budgets in `tests/test_ci_pipeline.p
 1. The ceiling is sized to a hang and the collection budget to `run_tests.py`'s settle bound.
 2. Raising `INTERRUPT_GRACE_SECONDS` raises the collection budget without editing the test.
 3. Both stay finite: 60 s for a child that never becomes ready, 16 s for one that never exits.
-4. A teardown timeout fails with its own message, and it and a lost diagnostic both carry
-   readiness, the settle interval, grace, and a stderr tail.
+4. A teardown timeout fails with its own message; it and a lost diagnostic carry readiness,
+   the grace, and whatever stderr was drained, which may legitimately be empty.
 5. The assertions hold: `returncode == 130`, empty stdout, `KeyboardInterrupt` in stderr.
 6. `just verify` and `uv run --no-sync prek run --all-files` are green.
 

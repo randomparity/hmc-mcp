@@ -35,8 +35,8 @@ readiness span.
 **The failure host load actually produces is not a timeout.** At 80 spinners the grandchild
 pytest could not finish its interrupt report inside the 3-second grace, `_settle_interrupted`
 sent `SIGTERM`, and `KeyboardInterrupt` never reached stderr. The test fails there as an
-`AssertionError` on `tests/scripts/test_run_tests.py:288`, with both 10-second budgets
-unexhausted. No change to either budget addresses it; the governing constant is
+`AssertionError` on the `KeyboardInterrupt` assertion closing
+`test_real_interrupt_preserves_pytest_diagnostic`, with both 10-second budgets unexhausted. No change to either budget addresses it; the governing constant is
 `INTERRUPT_GRACE_SECONDS`, in a file this change may not touch.
 
 **A budget multiplied out of the readiness observation would price the wrong quantity.**
@@ -58,7 +58,8 @@ rather than against a stopwatch on an idle machine.**
   reap, `_replay`, and the parent's own teardown, which the first term does not bound.
 - `communicate` is wrapped: on `subprocess.TimeoutExpired` the test kills the child's whole
   session, drains it under a bounded second wait, and calls `pytest.fail` naming the budget, the
-  readiness figure below, and a bounded tail of the child's stderr. The kill goes through a
+  readiness figure below, the grace, and a bounded tail of whatever stderr was drained — which
+  is legitimately empty when the child is killed before writing. The kill goes through a
   helper mirroring `_kill_group` in `scripts/check_generated_docs.py`, fallback included:
   `start_new_session=True` makes the child a group leader, so `process.kill()` alone strands the
   grandchild pytest, and `_wait_for_process_marker`'s own timeout arm had that defect already. A
@@ -87,9 +88,13 @@ target — applies to a budget racing host latency. This one races a constant in
   `scripts/run_tests.py` edit moves a test budget.
 - Worst case is 16 s, fixed, against the `ci` job's `timeout-minutes: 20`. A child that ignores
   `SIGINT` fails the test in 16 s, and one that never becomes ready in 60 s.
-- The readiness wait becomes the binding constraint on every host: collection is clamped near
-  3.4 s, so a host slow enough to spend 16 s there would have exhausted the 60 s readiness
-  ceiling first and reported a hang.
+- Of the two budgets this record sets, the readiness wait is the binding one: collection is
+  clamped near 3.4 s, so a host slow enough to spend 16 s there would have exhausted the 60 s
+  readiness ceiling first and reported a hang. Neither is the binding constraint on the *test*.
+  On the second host the diagnostic is already lost at readiness around 7.4 s — inside the 10 s
+  budget this change replaced — so on every host measured so far `INTERRUPT_GRACE_SECONDS`
+  fires first, and the follow-up below is the change that reaches the issue's outcome. What
+  this record buys is that the test says so when it happens.
 - **Residual, named but not closed: the truncated diagnostic.** The assertion message above
   carries the evidence for it; it does not stop it happening. `INTERRUPT_GRACE_SECONDS` is in
   `scripts/run_tests.py`, outside this change's frozen surface, and moving it is a decision
@@ -137,7 +142,8 @@ target — applies to a budget racing host latency. This one races a constant in
   mode than the misleading red it replaces". judgment: the same reasoning holds here, and the
   named red costs a reader one line to understand.
 - **Do nothing.** verified: readiness reached 8.77 s against its 10 s budget at 80-way
-  contention, and issue #721 reports the wait expiring on a loaded host during review of
-  PR #720. judgment: a constant one step of load from expiring produces an intermittent red
+  contention here and 24.9 s on the second host. Issue #721 reports a budget expiring on a
+  loaded host during review of PR #720 and names `communicate(timeout=10)` — the one call none
+  of these measurements reproduce, since collection stayed clamped throughout. judgment: a constant one step of load from expiring produces an intermittent red
   that passes on re-run, which teaches readers to re-run — which is how a real
   interrupt-handling regression gets re-run away.

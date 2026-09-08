@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -291,6 +291,47 @@ def test_timeout_terminates_pytest_and_returns_timeout_status(
     assert temporary_file.closed
 
 
+def test_a_refused_group_kill_still_kills_the_direct_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`killpg` can be refused, and then nothing has killed the direct child."""
+    killed: list[int] = []
+
+    class RefusedProcess:
+        pid = 4321
+
+        def kill(self) -> None:
+            killed.append(self.pid)
+
+    def refused(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", refused)
+
+    _kill_process_group(cast(subprocess.Popen[bytes], RefusedProcess()))
+
+    assert killed == [4321]
+
+
+def test_killing_a_group_that_has_already_gone_is_not_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both signals raise when nothing is left, and neither may escape."""
+
+    def gone(*_args: object, **_kwargs: object) -> None:
+        raise ProcessLookupError("no such process")
+
+    class GoneProcess:
+        pid = 4322
+
+        def kill(self) -> None:
+            raise ProcessLookupError("no such process")
+
+    monkeypatch.setattr(os, "killpg", gone)
+
+    _kill_process_group(cast(subprocess.Popen[bytes], GoneProcess()))
+
+
 def test_main_accepts_no_arguments() -> None:
     assert list(inspect.signature(run_tests.main).parameters) == []
 
@@ -323,15 +364,18 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
     stderr = b""
     try:
         stdout, stderr = process.communicate(timeout=budget)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as expired:
         _kill_process_group(process)
-        # Bounded, so a drain that cannot finish still leaves a message to fail
-        # with rather than replacing the budget with an unbounded wait.
+        # Whatever the timed-out call had already read, so a drain that cannot
+        # finish still reports something. The drain is bounded rather than bare:
+        # an unbounded wait here would replace the budget it just enforced.
+        stderr = expired.stderr or b""
         with contextlib.suppress(subprocess.TimeoutExpired):
             _stdout, stderr = process.communicate(timeout=5)
         pytest.fail(
-            f"child did not exit within {budget}s of SIGINT after becoming "
-            f"ready in {ready_in:.1f}s; stderr tail: {stderr[-2000:]!r}"
+            f"child did not exit within {budget}s of SIGINT (grace {grace}s) "
+            f"after becoming ready in {ready_in:.1f}s; "
+            f"stderr tail: {stderr[-2000:]!r}"
         )
     settled_in = time.monotonic() - signalled_at
 
