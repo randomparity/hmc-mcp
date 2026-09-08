@@ -494,40 +494,66 @@ def test_an_audit_level_of_warning_suppresses_permits_but_keeps_denials(
     assert reasons == ["connection-not-granted"]
 
 
-def test_l5_execs_an_interpreter_and_opens_no_script(server_module_command):
-    """ADR 0128's fd-2 invariant, in the one form every CI leg can observe.
+def _assert_interpreter_launch(command: list[str]) -> None:
+    """Fail unless *command* execs an interpreter directly and opens no script.
 
-    L5 blinds its child with ``sh -c '… 2>&-'``. Past ``uv``'s shebang threshold
+    ADR 0128's invariant is *no intermediate process may leave a descriptor open
+    on fd 2 across the exec of the interpreter*. Past ``uv``'s shebang threshold
     the ``hmc-mcp`` console script is a ``/bin/sh`` trampoline: the shell opens it
     to read it, and where ``/bin/sh`` is **bash** that descriptor survives the
     ``exec`` and lands on the fd 2 ``2>&-`` had just freed, so the interpreter
-    inherits an unwritable stderr and exits 120 before answering. ADR 0128 states
-    the resulting invariant as *no intermediate process may leave a descriptor
-    open on fd 2 across the exec of the interpreter*, and records that nothing
-    enforces it. This is that enforcement.
+    inherits an unwritable stderr and exits 120 before answering.
 
-    It asserts the launch's **shape** rather than the child's runtime view of
-    fd 2, and the choice is the point. All eight verify legs run ``ubuntu-24.04``,
-    whose ``/bin/sh`` is dash, and under dash fd 2 comes out free whichever
-    command runs — so a behavioural assertion would pass on every leg and bite
-    only on the bash host it exists to protect, which is the trap itself. The
-    shape is wrong on every leg the moment the launch regresses.
+    This asserts the launch's **shape** rather than the child's runtime view of
+    fd 2, and the choice is the point. All eight verify legs run Ubuntu 24.04
+    (``ubuntu-24.04`` and ``ubuntu-24.04-arm``), whose ``/bin/sh`` is dash, and
+    under dash fd 2 comes out free whichever command runs — so a behavioural
+    assertion would pass on every leg and bite only on the bash host it exists to
+    protect, which is the trap itself. A wrong shape is wrong on every leg.
+
+    ``-P`` is asserted with the rest rather than treated as decoration: ADR 0128
+    makes ``PYTHONSAFEPATH`` the remedy for the cwd-shadowing hazard ``-m`` opens
+    in a child holding profile passwords and a granted access policy, and A13
+    names it in the command it requires.
+
+    What this does *not* observe is the ``sh -c 'exec … 2>&-'`` wrapper L5 builds
+    around the list. It binds the command being launched, not the blinding.
     """
-    assert server_module_command[0] == sys.executable, (
+    assert command[0] == sys.executable, (
         f"L5 must exec this interpreter by path; the command starts with "
-        f"{server_module_command[0]!r}, not {sys.executable!r}. See ADR 0128."
+        f"{command[0]!r}, not {sys.executable!r}. See ADR 0128."
     )
-    for element in server_module_command:
-        path = Path(element)
-        if not path.is_file():
+    assert "-P" in command, (
+        f"L5's launch must keep -P, which keeps the child's working directory off "
+        f"sys.path; {command!r} has dropped it. See ADR 0128."
+    )
+    for element in command:
+        candidate = Path(element)
+        if not candidate.is_absolute():
+            # Against the checkout, not pytest's cwd: a relatively named script
+            # would otherwise be skipped rather than inspected, and `continue` on
+            # an unresolvable element looks exactly like `continue` on a flag.
+            candidate = Path(__file__).resolve().parents[2] / element
+        if not candidate.is_file():
             continue
-        with path.open("rb") as handle:
+        with candidate.open("rb") as handle:
             magic = handle.read(2)
         assert magic != b"#!", (
-            f"{path} is a #!-bearing script, so the shell running L5's blinded "
-            "child opens it and can leave that descriptor on fd 2 across the "
-            "exec. Launch the interpreter directly instead; see ADR 0128."
+            f"{candidate} is a #!-bearing script, so the shell running L5's "
+            "blinded child opens it and can leave that descriptor on fd 2 across "
+            "the exec. Launch the interpreter directly instead; see ADR 0128."
         )
+
+
+def test_l5_execs_an_interpreter_and_opens_no_script(server_module_command):
+    """ADR 0128's fd-2 invariant, at the fixture that supplies L5's launch.
+
+    L5 asserts the same thing on the list it actually spawns, which is what binds
+    the invariant to the launch. This one keeps the check reachable, and named
+    after the invariant, when L5 itself does not run — so a failure here reads as
+    the launch shape regressing rather than as the live proof breaking.
+    """
+    _assert_interpreter_launch(server_module_command)
 
 
 def test_a_failed_sink_leaves_the_denial_unchanged(
@@ -545,6 +571,10 @@ def test_a_failed_sink_leaves_the_denial_unchanged(
     # One list, both runs: a second launch mechanism would confound the
     # comparison, which is meant to isolate the sink and nothing else.
     command = [*server_module_command, "serve", "--access-policy", "lab-scoped"]
+    # Asserted on the list this test actually launches, not on the fixture alone:
+    # switching back to `server_binary` here is the revert ADR 0128 forbids, and
+    # it is invisible to every dash CI leg. See _assert_interpreter_launch.
+    _assert_interpreter_launch(command)
     log = tmp_path / "reference.log"
     with log.open("w") as sink:
         reference = _Server(_spawn(command, child_env, sink), log)

@@ -692,6 +692,10 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
   `[sys.executable, "-P", "-m", "hmc_mcp"] serve --access-policy lab-scoped`, not the console
   script; the `sh -c '… 2>&-'` shape is unchanged. This is a requirement on future edits, not a
   note on the current state: returning L5 to a console-script launch reintroduces the #709 trap.
-  `test_l5_execs_an_interpreter_and_opens_no_script` enforces it, and asserts the launch's shape
-  rather than the child's runtime view of fd 2 so that it fails on the dash-based verify legs too
-  — under dash the runtime symptom is absent, so a behavioural check would be green on all eight.
+  `_assert_interpreter_launch` enforces it, and L5 calls it on the command list it launches — so
+  a revert reddens whether it edits the fixture or L5's own command. It asserts that list's shape
+  (interpreter first, `-P` retained, no `#!`-bearing element) rather than the child's runtime view
+  of fd 2, so that it fails on the dash-based verify legs too — under dash the runtime symptom is
+  absent, so a behavioural check would be green on all eight. What it does not observe is the
+  `sh -c '… 2>&-'` wrapper L5 builds around that list, which stays a reviewed rather than a
+  gated shape.
