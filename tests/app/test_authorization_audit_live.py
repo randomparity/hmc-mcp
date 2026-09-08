@@ -182,6 +182,11 @@ def server_module_command():
         capture_output=True,
         text=True,
         check=False,
+        # Bounded like every other wait here. Nothing at `hmc_mcp` import time
+        # blocks today, so this is a bound against a future import that does:
+        # TimeoutExpired names the interpreter and the command, where an
+        # unbounded probe would hang `just verify` and every CI leg silently.
+        timeout=DEADLINE,
     )
     # Not check=True: CalledProcessError stringifies to the exit status alone and
     # leaves the child's traceback in an attribute nobody prints, so a venv without
@@ -554,6 +559,34 @@ def test_l5_execs_an_interpreter_and_opens_no_script(server_module_command):
     the launch shape regressing rather than as the live proof breaking.
     """
     _assert_interpreter_launch(server_module_command)
+
+
+def test_the_l5_import_probe_waits_no_longer_than_the_deadline(request, monkeypatch):
+    """The fixture's import probe is bounded, like every other wait in this module.
+
+    Asserted on the call's shape rather than on a hang, for the reason
+    ``_assert_interpreter_launch`` gives about behavioural assertions here: nothing
+    at ``hmc_mcp`` import time blocks, so there is no hang to construct and a
+    behavioural check would pass by doing nothing. An unbounded probe would hang
+    ``just verify`` and every CI leg with no diagnostic — the same failure DEADLINE
+    exists to prevent for frame reads — so the bound is asserted where it is written.
+    """
+    calls = []
+    unbounded_run = subprocess.run
+
+    def recording_run(*args, **kwargs):
+        calls.append(kwargs)
+        return unbounded_run(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", recording_run)
+    request.getfixturevalue("server_module_command")
+
+    assert [call.get("timeout") for call in calls] == [DEADLINE], (
+        f"the fixture's import probe must pass timeout={DEADLINE} so a hung "
+        f"interpreter fails setup naming the interpreter; it ran {len(calls)} "
+        f"subprocess call(s) with timeouts "
+        f"{[call.get('timeout') for call in calls]!r}"
+    )
 
 
 def test_a_failed_sink_leaves_the_denial_unchanged(
