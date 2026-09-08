@@ -1,5 +1,6 @@
 """Tests for the compact pytest output adapter."""
 
+import contextlib
 import importlib.util
 import inspect
 import io
@@ -9,7 +10,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -53,18 +54,50 @@ class BinaryStderr:
         self.buffer = RecordingBuffer()
 
 
+# A hang ceiling, not a latency budget: the poll loop below returns the moment
+# the marker appears, so only a child that never becomes ready ever pays this.
+_READINESS_TIMEOUT_SECONDS = 60.0
+
+# Covers what `run_tests._settle_interrupted` does not bound -- the post-kill
+# reap, the captured-output replay, and the parent's own teardown.
+_INTERRUPT_COLLECTION_SLACK_SECONDS = 10.0
+
+
+def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
+    """Kill the child and everything it started.
+
+    `start_new_session=True` makes the child a group leader, so a bare
+    `process.kill()` strands the grandchild pytest. Mirrors `_kill_group` in
+    `scripts/check_generated_docs.py`, fallback included: the direct child is
+    covered by the group kill except when signalling the group was refused.
+    """
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(process.pid, signal.SIGKILL)
+    with contextlib.suppress(ProcessLookupError):
+        process.kill()
+
+
 def _wait_for_process_marker(
-    marker: Path, process: subprocess.Popen[bytes], timeout_seconds: float = 10
-) -> None:
-    """Wait until the child declares readiness or exits unexpectedly."""
-    deadline = time.monotonic() + timeout_seconds
+    marker: Path,
+    process: subprocess.Popen[bytes],
+    timeout_seconds: float = _READINESS_TIMEOUT_SECONDS,
+) -> float:
+    """Wait for the child to declare readiness, returning how long that took.
+
+    That figure is what the caller reports: readiness is the quantity that
+    moves with host load, where the post-interrupt settle interval is clamped
+    by `run_tests._settle_interrupted`.
+    """
+    started = time.monotonic()
+    deadline = started + timeout_seconds
     while not marker.exists():
         if process.poll() is not None:
             pytest.fail(f"child exited with {process.returncode} before becoming ready")
         if time.monotonic() >= deadline:
-            process.kill()
+            _kill_process_group(process)
             pytest.fail(f"child did not create readiness marker {marker}")
         time.sleep(0.01)
+    return time.monotonic() - started
 
 
 def _stub_pytest(
@@ -258,6 +291,47 @@ def test_timeout_terminates_pytest_and_returns_timeout_status(
     assert temporary_file.closed
 
 
+def test_a_refused_group_kill_still_kills_the_direct_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`killpg` can be refused, and then nothing has killed the direct child."""
+    killed: list[int] = []
+
+    class RefusedProcess:
+        pid = 4321
+
+        def kill(self) -> None:
+            killed.append(self.pid)
+
+    def refused(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", refused)
+
+    _kill_process_group(cast(subprocess.Popen[bytes], RefusedProcess()))
+
+    assert killed == [4321]
+
+
+def test_killing_a_group_that_has_already_gone_is_not_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both signals raise when nothing is left, and neither may escape."""
+
+    def gone(*_args: object, **_kwargs: object) -> None:
+        raise ProcessLookupError("no such process")
+
+    class GoneProcess:
+        pid = 4322
+
+        def kill(self) -> None:
+            raise ProcessLookupError("no such process")
+
+    monkeypatch.setattr(os, "killpg", gone)
+
+    _kill_process_group(cast(subprocess.Popen[bytes], GoneProcess()))
+
+
 def test_main_accepts_no_arguments() -> None:
     assert list(inspect.signature(run_tests.main).parameters) == []
 
@@ -279,10 +353,40 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         start_new_session=True,
     )
-    _wait_for_process_marker(ready, process)
-    os.killpg(process.pid, signal.SIGINT)
-    stdout, stderr = process.communicate(timeout=10)
+    ready_in = _wait_for_process_marker(ready, process)
+    # A group that has already gone means the child exited on its own; the
+    # returncode assertion below reports that far better than an errno would.
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGINT)
+    signalled_at = time.monotonic()
+    grace = run_tests.INTERRUPT_GRACE_SECONDS
+    budget = 2 * grace + _INTERRUPT_COLLECTION_SLACK_SECONDS
+    try:
+        stdout, stderr = process.communicate(timeout=budget)
+    except subprocess.TimeoutExpired as expired:
+        _kill_process_group(process)
+        # Whatever the timed-out call had already read, so a drain that cannot
+        # finish still reports something. The drain is bounded rather than bare:
+        # an unbounded wait here would replace the budget it just enforced.
+        stderr = expired.stderr or b""
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            _stdout, stderr = process.communicate(timeout=5)
+        pytest.fail(
+            f"child did not exit within {budget}s of SIGINT (grace {grace}s) "
+            f"after becoming ready in {ready_in:.1f}s; "
+            f"stderr tail: {stderr[-2000:]!r}"
+        )
+    settled_in = time.monotonic() - signalled_at
 
     assert process.returncode == 130
     assert stdout == b""
-    assert b"KeyboardInterrupt" in stderr
+    # Report, do not attribute. Readiness is the figure that moves with load --
+    # the settle interval is clamped near 2 * grace whatever the host is doing --
+    # and a regression that lowered INTERRUPT_GRACE_SECONDS would satisfy any
+    # `settled_in >= grace` guard trivially and be reported as host slowness.
+    assert b"KeyboardInterrupt" in stderr, (
+        f"no KeyboardInterrupt: the child became ready in {ready_in:.1f}s and "
+        f"settled in {settled_in:.1f}s against a "
+        f"run_tests.INTERRUPT_GRACE_SECONDS of {grace}s; "
+        f"stderr tail: {stderr[-2000:]!r}"
+    )
