@@ -493,10 +493,12 @@ Modifies `src/hmc_mcp/server.py`, `README.md`; creates `docs/authorization-audit
 
    **Child environment and executable, settled here because the spec's wording invites two
    readings.** Copy `os.environ`, delete the four names, set `HOME` — a copy, not a from-scratch
-   mapping. An explicitly built environment carries no `PATH`, and the child is the `hmc-mcp`
-   console script (this package ships no `__main__.py`), so it would not be found at all. Resolve
-   it once with `shutil.which("hmc-mcp")` and assert it is not `None` in the same setup block that
-   asserts the two config files exist and the four variables are gone.
+   mapping. An explicitly built environment carries no `PATH`, and Run A's child is the `hmc-mcp`
+   console script, so it would not be found at all. Resolve it once with `shutil.which("hmc-mcp")`
+   and assert it is not `None` in the same setup block that asserts the two config files exist and
+   the four variables are gone. That guard is Run A's alone: since ADR 0128 added
+   `src/hmc_mcp/__main__.py`, Run B launches as `[sys.executable, "-P", "-m", "hmc_mcp"]`, which
+   resolves through the interpreter rather than a `PATH` lookup.
 
    **Mark the whole module POSIX-only** — `pytestmark = pytest.mark.skipif(os.name != "posix", ...)`
    — not just Run B. Both halves of the fixture are POSIX assumptions: `config_dir()` on win32
