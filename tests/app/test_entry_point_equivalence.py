@@ -13,6 +13,12 @@ Two arms, because they fail on different regressions:
   signalled -- ADR 0128's named risk, `hmc_mcp.main` returning a status instead of
   raising while `__main__.py` no longer wraps it.
 
+Between them the arms observe rendered help, stderr during that render, and an exit
+code, and nothing else -- so logic added to `__main__.py` that changes only import
+order, `sys.path`, logging configuration, or the child environment passes unseen. What
+covers that is exclusion (a) and review, not this module: observing it from a CLI
+subprocess needs an instrumented launch surface costing more than the risk it removes.
+
 Measured on this branch, that named regression needs *both* halves. A bare `main()`
 in `__main__.py` alone does not diverge, because `app()` runs in Click's standalone
 mode and raises `SystemExit` itself; with `main` also returning a status, the console
@@ -92,9 +98,11 @@ def _launchers() -> tuple[list[str], list[str]]:
         "the console script resolves outside this checkout, so the equivalence proved "
         "would belong to a different build of hmc-mcp"
     )
-    # Unresolved on both sides: a venv's `bin/python` is a symlink out to the
-    # interpreter it was created from, and resolving it would leave the venv.
-    assert Path(sys.executable).parent == Path(executable).parent, (
+    # The parent directories are resolved, not the interpreter: a venv's `bin/python`
+    # is a symlink out to the interpreter it was created from, so resolving *it* would
+    # leave the venv, while resolving its directory stays inside and makes one venv
+    # reached by two spellings compare equal.
+    assert Path(sys.executable).parent.resolve() == Path(executable).parent.resolve(), (
         f"{sys.executable} is not beside {executable}, so the two forms would compare "
         "two different installs rather than two entry points into one"
     )
