@@ -126,6 +126,13 @@ def _wait_for_process_marker(
     deadline = started + timeout_seconds
     while not marker.exists():
         if process.poll() is not None:
+            # The direct child is gone, but the grandchild pytest it started
+            # keeps the group alive -- which is both why the kill reaches it and
+            # why the pgid is not yet free to be recycled. Not the timeout arm's
+            # case below: poll() has already reaped the child here, so this
+            # signal rests on that surviving member rather than on the leader.
+            # See `_kill_process_group`.
+            _kill_process_group(process)
             pytest.fail(f"child exited with {process.returncode} before becoming ready")
         if time.monotonic() >= deadline:
             _kill_process_group(process)
@@ -453,6 +460,43 @@ def test_killing_a_group_that_has_already_gone_is_not_an_error(
     monkeypatch.setattr(os, "killpg", gone)
 
     _kill_process_group(cast(subprocess.Popen[bytes], GoneProcess()))
+
+
+def test_a_child_that_exits_early_has_its_group_killed_too(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The early-exit arm must tear the group down, as the timeout arm does.
+
+    A child that dies before writing the marker can still have started the
+    grandchild pytest, and that grandchild outlives the direct child --
+    `_kill_process_group`'s own docstring is why. Failing without the group kill
+    strands it for the rest of the run.
+    """
+    killed: list[int] = []
+
+    def recording_killpg(pid: int, _signal: int) -> None:
+        killed.append(pid)
+
+    class ExitedProcess:
+        pid = 4323
+        returncode = 3
+
+        def poll(self) -> int:
+            return self.returncode
+
+        def kill(self) -> None:
+            pass
+
+    monkeypatch.setattr(os, "killpg", recording_killpg)
+
+    with pytest.raises(pytest.fail.Exception) as failure:
+        _wait_for_process_marker(
+            tmp_path / "never-written",
+            cast(subprocess.Popen[bytes], ExitedProcess()),
+        )
+
+    assert "exited with 3" in str(failure.value)
+    assert killed == [4323]
 
 
 def test_main_accepts_no_arguments() -> None:
