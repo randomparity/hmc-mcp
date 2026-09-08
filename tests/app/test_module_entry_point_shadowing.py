@@ -91,7 +91,8 @@ _DROPPED = (
 # SGR escapes, which survive `NO_COLOR`. rich decides it is writing to a terminal from
 # any of `TTY_COMPATIBLE`, `FORCE_COLOR`, `PY_COLORS` or -- via Typer -- `GITHUB_ACTIONS`,
 # which is set on every `ci` leg, so the `Usage:` line arrives styled there and plain
-# here. The sibling idiom at `tests/app/test_entry_point_equivalence.py:96-97`.
+# here. The sibling idiom is `_ANSI` in `tests/app/test_entry_point_equivalence.py`,
+# named rather than cited by line for the reason the module docstring gives above.
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
