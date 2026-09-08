@@ -684,6 +684,12 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
 - A13. The live proof runs and passes on the branch head: Run A (L1-L4) against a real
   `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as two separate
   children launched from one command list — a reference child, and a blinded one under
-  `sh -c '… 2>&-'`. POSIX only; skipped elsewhere. Since ADR 0128 that command is
+  `sh -c '… 2>&-'`. POSIX only; skipped elsewhere. That command list **must** exec an interpreter
+  directly and name no `#!`-bearing script — ADR 0128's fd-2 invariant, which the console script
+  breaks past `uv`'s shebang threshold. It is therefore
   `[sys.executable, "-P", "-m", "hmc_mcp"] serve --access-policy lab-scoped`, not the console
-  script; the `sh -c '… 2>&-'` shape is unchanged.
+  script; the `sh -c '… 2>&-'` shape is unchanged. This binds future edits rather than describing
+  the current state, and the live-proof module asserts it on the list L5 launches, so a revert
+  reddens whether it edits the fixture or L5. The assertion is on the launch's shape rather than
+  the child's runtime view of fd 2 so that it also fails on the verify legs, where `/bin/sh` is
+  dash and the runtime symptom is absent.
