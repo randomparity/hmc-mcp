@@ -184,8 +184,10 @@ def server_module_command():
         check=False,
         # Bounded like every other wait here. Nothing at `hmc_mcp` import time
         # blocks today, so this is a bound against a future import that does:
-        # TimeoutExpired names the interpreter and the command, where an
-        # unbounded probe would hang `just verify` and every CI leg silently.
+        # TimeoutExpired names the interpreter and the command. Unbounded, the
+        # probe is not stuck forever — `scripts/run_tests.py` caps the pytest
+        # child at 1200s and CI's `ci` job at 20 minutes — but each reports its
+        # own cap, and CI's cancellation takes the buffered replay with it.
         timeout=DEADLINE,
     )
     # Not check=True: CalledProcessError stringifies to the exit status alone and
@@ -567,9 +569,10 @@ def test_the_l5_import_probe_waits_no_longer_than_the_deadline(request, monkeypa
     Asserted on the call's shape rather than on a hang, for the reason
     ``_assert_interpreter_launch`` gives about behavioural assertions here: nothing
     at ``hmc_mcp`` import time blocks, so there is no hang to construct and a
-    behavioural check would pass by doing nothing. An unbounded probe would hang
-    ``just verify`` and every CI leg with no diagnostic — the same failure DEADLINE
-    exists to prevent for frame reads — so the bound is asserted where it is written.
+    behavioural check would pass by doing nothing. What an unbounded probe costs is
+    not an endless hang but an uninformative one: the enclosing caps — 1200s in
+    ``scripts/run_tests.py``, 20 minutes on CI's ``ci`` job — report themselves and
+    never the probe, so the bound is asserted where it is written.
     """
     calls = []
     unbounded_run = subprocess.run

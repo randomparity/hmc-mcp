@@ -126,9 +126,12 @@ def _wait_for_process_marker(
     deadline = started + timeout_seconds
     while not marker.exists():
         if process.poll() is not None:
-            # The direct child is gone, but its group is not: the grandchild
-            # pytest it started outlives it, and the same reasoning as the
-            # timeout arm below applies -- see `_kill_process_group`.
+            # The direct child is gone, but the grandchild pytest it started
+            # keeps the group alive -- which is both why the kill reaches it and
+            # why the pgid is not yet free to be recycled. Not the timeout arm's
+            # case below: poll() has already reaped the child here, so this
+            # signal rests on that surviving member rather than on the leader.
+            # See `_kill_process_group`.
             _kill_process_group(process)
             pytest.fail(f"child exited with {process.returncode} before becoming ready")
         if time.monotonic() >= deadline:
