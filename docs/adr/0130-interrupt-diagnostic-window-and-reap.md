@@ -4,6 +4,10 @@
 
 Accepted
 
+Extends [ADR 0129](0129-interrupt-test-budget-bounds.md), closing the residual it recorded. Its
+two test budgets stand unchanged; this record corrects one of its Context findings and sets the
+production bounds that residual named.
+
 ## Context
 
 `_settle_interrupted` (`scripts/run_tests.py:21-31`) spends one constant,
@@ -47,7 +51,10 @@ A second `Ctrl-C` inside the window is also unhandled: `_settle_interrupted` cat
   readiness ceiling ADR 0129 chose so the script and its test move together rather than being
   independently guessed. Under `test_real_interrupt_preserves_pytest_diagnostic` that equality
   also means a host slow enough to lose the diagnostic has already exhausted the readiness ceiling
-  and been reported as a hang; on the interactive path the 3.5x margin is the whole ground.
+  and been reported as a hang. On the interactive path there is no readiness wait, so the margin
+  is the whole ground — and it is 3.5x only against this host: the same extrapolation that puts
+  ADR 0129's slower host near 50 s leaves 60 about 1.2x there. That thinness is why the escape
+  hatch below, not the number, is what bounds the interactive case.
 - `TERMINATE_GRACE_SECONDS = 3` — the reap, between `SIGTERM` and `SIGKILL`. Value unchanged, and
   roughly 9x the worst reap measured.
 - Every wait catches `KeyboardInterrupt`, so a second `Ctrl-C` escalates at once and a third
@@ -74,8 +81,8 @@ A second `Ctrl-C` inside the window is also unhandled: `_settle_interrupted` cat
   puts the worst case past 300 s — not on the clamp. The coupling widens and reverses:
   `TERMINATE_GRACE_SECONDS` now moves the test budget too, and since the test asserts the window
   covers the readiness ceiling, raising `_READINESS_TIMEOUT_SECONDS` forces
-  `INTERRUPT_GRACE_SECONDS` up with it, so ADR 0129's "raising it trades away no headroom" no
-  longer holds. The test's collection budget rises from 16 s to 73 s and its overall worst case
+  `INTERRUPT_GRACE_SECONDS` up with it, so the property ADR 0129's *Decision* claims for that
+  ceiling — "raising it trades away no headroom" — no longer holds. The test's collection budget rises from 16 s to 73 s and its overall worst case
   from 76 s to 133 s against the `ci` job's 20-minute leg, paid only by a child that does not exit.
 - The ladder is bounded, not total: the post-`SIGKILL` reap suppresses a further
   `KeyboardInterrupt`, but `_replay` does not, so an interrupt during the replay still discards the
