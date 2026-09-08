@@ -120,23 +120,25 @@ def _child_env(home: Path) -> dict[str, str]:
     return env
 
 
-def _run_both(args: list[str], tmp_path: Path) -> tuple[
-    subprocess.CompletedProcess[str], subprocess.CompletedProcess[str]
-]:
+Completed = subprocess.CompletedProcess[str]
+
+
+def _run_both(args: list[str], tmp_path: Path) -> tuple[Completed, Completed]:
     """Run one argument list under both forms, from one environment."""
     console, module = _launchers()
     env = _child_env(tmp_path)
-    return tuple(  # type: ignore[return-value]
-        subprocess.run(
+
+    def run(launcher: list[str]) -> Completed:
+        return subprocess.run(
             [*launcher, *args],
             capture_output=True, text=True, env=env, cwd=tmp_path,
             stdin=subprocess.DEVNULL, timeout=60, check=False,
         )
-        for launcher in (console, module)
-    )
+
+    return run(console), run(module)
 
 
-def _rstripped(text: str) -> list[str]:
+def _plain_lines(text: str) -> list[str]:
     """Unstyle, then rstrip: rich pads every line out to the terminal width.
 
     In that order, because a forced-terminal render puts the padding *inside* the
@@ -208,7 +210,7 @@ def test_both_forms_render_the_same_command_tree(tmp_path, command_path):
     )
 
     normalised_console, normalised_module = _normalise(
-        _rstripped(console.stdout), _rstripped(module.stdout), command_path
+        _plain_lines(console.stdout), _plain_lines(module.stdout), command_path
     )
     assert normalised_console == normalised_module, (
         "the console script and python -m hmc_mcp render different command trees; "
