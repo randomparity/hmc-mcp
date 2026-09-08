@@ -30,7 +30,9 @@ collection budgets ADR 0129 set; a bare raise of the existing constant as the wh
    diagnostic has already exhausted the 60-second readiness ceiling.
 2. A child ignoring `SIGINT` is still escalated and reaped, so the real-interrupt test fails on
    a bounded 73-second budget rather than stalling.
-3. A second `Ctrl-C` escalates at once, returns `130`, replays the captured output and leaves no
-   orphan; a third kills.
+3. A second `Ctrl-C` arriving while the parent waits on the child escalates to `SIGTERM` at once
+   and a third to `SIGKILL`, with the run still returning `130`, replaying the captured output
+   and leaving no orphan. Interrupts arriving during `_replay` are not caught, and ADR 0130
+   records that.
 4. The timeout arm is not slowed by the widened window.
 5. `just verify` green; `CHANGELOG.md` carries an `## [Unreleased]` entry.
