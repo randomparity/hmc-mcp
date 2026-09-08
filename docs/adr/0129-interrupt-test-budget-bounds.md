@@ -56,22 +56,24 @@ rather than against a stopwatch on an idle machine.**
   first term from the module the test already imports. That term is `_settle_interrupted`'s
   bounded portion, up to the `kill()`; the 10-second second term covers the unbounded post-kill
   reap, `_replay`, and the parent's own teardown, which the first term does not bound.
-- `communicate` is wrapped: on `subprocess.TimeoutExpired` the test `SIGKILL`s the child's
-  whole session and then reaps it, and calls `pytest.fail` with a message naming the budget and
-  a bounded tail of the child's stderr. `start_new_session=True` makes the child a group leader,
-  so `process.kill()` would strand the grandchild pytest; `_wait_for_process_marker`'s own
-  timeout arm had that defect already and is corrected with it. A teardown timeout is therefore
-  never reported as an assertion on `returncode`, `stdout`, or `stderr`, and it carries a
-  diagnostic.
-- The test times the interval from `SIGINT` to exit and puts that interval, the grace constant
-  it ran against, and a bounded stderr tail into the `KeyboardInterrupt` assertion's own
-  message. **It does not attribute the failure.** A guard firing on `settled_in >= grace` would
-  have called a lowered `INTERRUPT_GRACE_SECONDS` — a genuine regression in the code under
-  test — host slowness, since any settle interval clears a small enough grace. Reporting the
-  evidence and leaving the inference to the reader cannot misclassify, and it is what keeps the
-  raised readiness ceiling from making things worse where readiness lands between 10 s and
-  60 s: the old code failed there with `_wait_for_process_marker`'s clear marker message, and a
-  bare assertion would have replaced it with one carrying no numbers at all.
+- `communicate` is wrapped: on `subprocess.TimeoutExpired` the test kills the child's whole
+  session, drains it under a bounded second wait, and calls `pytest.fail` naming the budget, the
+  readiness figure below, and a bounded tail of the child's stderr. The kill goes through a
+  helper mirroring `_kill_group` in `scripts/check_generated_docs.py`, fallback included:
+  `start_new_session=True` makes the child a group leader, so `process.kill()` alone strands the
+  grandchild pytest, and `_wait_for_process_marker`'s own timeout arm had that defect already. A
+  teardown timeout is therefore never reported as an assertion on `returncode`, `stdout`, or
+  `stderr`, and it carries a diagnostic.
+- `_wait_for_process_marker` returns how long readiness took, and both failure messages carry
+  it beside the settle interval, the grace, and a bounded stderr tail. **The test reports; it
+  does not attribute.** A guard firing on `settled_in >= grace` would have called a lowered
+  `INTERRUPT_GRACE_SECONDS` — a genuine regression in the code under test — host slowness, since
+  any settle interval clears a small enough grace. The settle interval is also the wrong number
+  to print alone: it is clamped near `2 * grace` at every load, while readiness moved 104x
+  across the contention range a second host measured during review. Readiness is what tells a
+  reader they are in the 10-60 s band the raised ceiling opened — where the old code stopped
+  with `_wait_for_process_marker`'s clear marker message and the new code proceeds to the
+  assertion — so it is the figure the raised ceiling's safety rests on.
 
 For the collection path this is issue #721's option 2, taken deliberately rather than for
 simplicity. Its stated objection — that a constant reinstates the defect on the next slower
@@ -95,7 +97,13 @@ target — applies to a budget racing host latency. This one races a constant in
   candidate returned to this run's caller, which is where filing authority sits — an unattended
   run cannot obtain the confirmation `$bounty` requires. Weakening the `KeyboardInterrupt`
   assertion is not the remedy: it is the behaviour the test exists to prove.
-- Every number here comes from one amd64 host on CPython 3.13. The eight `ci` legs, including
+- **The table is one host's calibration, not a headroom guarantee.** A second
+  same-architecture host, measured during review at matched contention, saw readiness roughly
+  3x higher — 12.0-12.5 s at 40 spinners against 3.9-4.2 s here — and lost `KeyboardInterrupt`
+  at 40 spinners rather than 80. What the rows establish is the ordering the decision rests on:
+  collection stayed bounded, 0.22 s to 3.89 s, while readiness moved 104x on that host. The
+  failure boundary is nearer than these rows suggest, and it is not a per-host constant.
+- Every number in the table comes from one amd64 host on CPython 3.13. The eight `ci` legs, including
   the four native `ubuntu-24.04-arm` ones, are unmeasured. Both constants are sized to sit far
   above any plausible leg rather than tuned per leg, which is what makes that acceptable.
 

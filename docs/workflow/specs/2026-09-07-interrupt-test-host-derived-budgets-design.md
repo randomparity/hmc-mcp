@@ -17,15 +17,14 @@ At that load the grandchild also misses the 3 s grace and its `KeyboardInterrupt
 `tests/scripts/test_run_tests.py` only.
 
 - `_wait_for_process_marker`'s default becomes `_READINESS_TIMEOUT_SECONDS = 60.0`, a hang
-  ceiling paid only by a child that never becomes ready. Signature and body are unchanged.
+  ceiling paid only by a child that never becomes ready, and it returns the readiness elapsed.
 - The collection budget becomes
-  `2 * run_tests.INTERRUPT_GRACE_SECONDS + _INTERRUPT_COLLECTION_SLACK_SECONDS` (10.0), and the
-  call is wrapped so `TimeoutExpired` `SIGKILL`s the session, reaps it, and fails with the
-  budget and a bounded stderr tail. Both kill sites use `killpg`: the child is a group leader,
-  so `process.kill()` stranded the grandchild.
-- The test times `SIGINT` to exit and puts that interval, the grace it ran against, and a
-  stderr tail into the `KeyboardInterrupt` assertion's message rather than attributing the
-  failure — a `settled_in >= grace` guard would call a lowered grace host slowness.
+  `2 * run_tests.INTERRUPT_GRACE_SECONDS + _INTERRUPT_COLLECTION_SLACK_SECONDS` (10.0), wrapped
+  so `TimeoutExpired` kills the child's session, drains under a bound, and fails. Both kill
+  sites go through one helper mirroring `scripts/check_generated_docs.py`'s `_kill_group`.
+- Both failure messages carry the readiness figure, the settle interval, the grace, and a
+  stderr tail. The test reports rather than attributes: readiness is what moves with load, and
+  a `settled_in >= grace` guard would call a lowered grace host slowness.
 
 Deferral carried: the truncation is governed by `INTERRUPT_GRACE_SECONDS` in
 `scripts/run_tests.py`, outside this surface, so this change names it rather than fixing it.
@@ -39,8 +38,8 @@ Out of scope per the charter: `timeout=180` budgets in `tests/test_ci_pipeline.p
 1. The ceiling is sized to a hang and the collection budget to `run_tests.py`'s settle bound.
 2. Raising `INTERRUPT_GRACE_SECONDS` raises the collection budget without editing the test.
 3. Both stay finite: 60 s for a child that never becomes ready, 16 s for one that never exits.
-4. A teardown timeout fails with its own message; a lost diagnostic carries the settle
-   interval, grace, and a stderr tail.
+4. A teardown timeout fails with its own message, and it and a lost diagnostic both carry
+   readiness, the settle interval, grace, and a stderr tail.
 5. The assertions hold: `returncode == 130`, empty stdout, `KeyboardInterrupt` in stderr.
 6. `just verify` and `uv run --no-sync prek run --all-files` are green.
 
