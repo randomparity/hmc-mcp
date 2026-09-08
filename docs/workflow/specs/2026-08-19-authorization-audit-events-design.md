@@ -548,7 +548,7 @@ drove the same two subprocess shapes with weaker assertions; Runs A and B are th
 the assertions written out.
 
 This record's entire contract is a *sink*. A unit test against a mock logger proves the payload
-and almost nothing about delivery, so a real `hmc-mcp serve` stdio subprocess with a policy
+and almost nothing about delivery, so a real stdio subprocess serving this checkout with a policy
 selected must demonstrate all five of these before the PR is called ready. Driven over raw
 newline-delimited JSON-RPC rather than a client library, so that anything printed outside the
 protocol shows up as an unparseable line:
@@ -594,8 +594,9 @@ by schema validation before any authorization decision is reached. A setup step 
 argument of each call is present in that tool's generated schema, so this class of error fails at
 setup rather than as a wrong verdict.
 
-Launched as `hmc-mcp serve --access-policy lab-scoped`, driven with `initialize`, then
-`notifications/initialized`, then `tools/call` frames.
+Run A is launched as `hmc-mcp serve --access-policy lab-scoped`; since ADR 0128 Run B is launched
+as `[sys.executable, "-P", "-m", "hmc_mcp"] serve --access-policy lab-scoped` instead. Both are
+driven with `initialize`, then `notifications/initialized`, then `tools/call` frames.
 
 **Run A — observation (L1–L4).** stderr captured to a file, stdout read frame by frame.
 
@@ -606,19 +607,21 @@ Launched as `hmc-mcp serve --access-policy lab-scoped`, driven with `initialize`
 | L3 | all of the above | every stdout line parses as a JSON-RPC frame; zero unparseable lines. |
 | L4 | `hmc_power_off_lpar(lpar_name_or_uuid="A"*500, system_name_or_uuid="sys-a", profile="lab")` | denied `target-not-granted`; the `lpar_name_or_uuid` entry's `value` is exactly 128 characters. |
 
-**Run B — failure injection (L5), a separate subprocess.** The observation channel and the
+**Run B — failure injection (L5), two separate subprocesses.** The observation channel and the
 failure injection cannot coexist: every mechanism that makes the sink fail either closes stderr or
 empties it, which is the stream Run A reads. So L5 asserts on **stdout only**.
 
-Launched through `sh -c '… 2>&-'` so fd 2 is closed at interpreter start and `sys.stderr` is
-`None` — the #221 condition, and the arm the handler guards with an early return. Issue the same
-denied call as Run A's L4 and assert, **on the parsed frame rather than its bytes**: the same
-JSON-RPC error code, `isError` set, and the same ADR 0039 denial message string. Not a
+Run B launches twice from one command list: a reference child with its stderr on a log file, then
+the blinded child through `sh -c '… 2>&-'`, so fd 2 is closed at interpreter start and
+`sys.stderr` is `None` — the #221 condition, and the arm the handler guards with an early return.
+Issue the connection-denied call to each — `hmc_power_off_lpar` with `profile="prod"`, which the
+grant's `connections = ["lab"]` does not cover — and compare the two replies **on the parsed frame
+rather than its bytes**: the denial message extracted from each must be the same. Not a
 byte-identical comparison — the two bodies come from separately launched processes, and their
 key ordering and any request metadata are FastMCP's to change, so a byte assertion is stronger
 than the property under test and would block a PR on a rendering change. The denial *message* is
 the deterministic part, and it is what ADR 0038 and ADR 0039 fixed as the client contract. Then
-assert the process is still serving (a subsequent `tools/list` succeeds).
+assert the blinded child is still serving (a subsequent `tools/list` succeeds).
 
 The `OSError`/EPIPE arm is covered at unit level by tests 12–13; forcing it live would require
 closing the parent's read end, which destroys the same channel again for no additional assurance.
@@ -673,7 +676,14 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
   assertions (both config files at the resolved path, the four environment variables absent,
   `shutil.which("hmc-mcp")` not `None`) that fail setup rather than hang. Not prose — this is the
   suite's first long-lived `hmc-mcp serve` child, and a blocking read on one that never answers
-  hangs every CI leg with no diagnostic.
+  hangs every CI leg with no diagnostic. Since ADR 0128 that `shutil.which` assertion guards the
+  console-script launches only — Run A and the `--audit-level WARNING` check. L5 has its own
+  fixture, which has no PATH lookup to guard and instead asks the interpreter where `hmc_mcp`
+  resolves and asserts the answer is inside this checkout's `src/`. That probe is a short-lived
+  import check rather than a bounded wait, so its hang-safety rests on the import returning.
 - A13. The live proof runs and passes on the branch head: Run A (L1-L4) against a real
-  `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as a separate
-  `sh -c '… 2>&-'` subprocess. POSIX only; skipped elsewhere.
+  `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as two separate
+  children launched from one command list — a reference child, and a blinded one under
+  `sh -c '… 2>&-'`. POSIX only; skipped elsewhere. Since ADR 0128 that command is
+  `[sys.executable, "-P", "-m", "hmc_mcp"] serve --access-policy lab-scoped`, not the console
+  script; the `sh -c '… 2>&-'` shape is unchanged.
