@@ -43,7 +43,7 @@ Consumed, all confirmed present at `313256d2`: `TEST_TIMEOUT_SECONDS`,
 `_replay(output: BinaryIO) -> None`, `main() -> int` in `scripts/run_tests.py`; `run_tests`,
 `TrackingTemporaryFile`, `BinaryStderr`, `_READINESS_TIMEOUT_SECONDS`,
 `_INTERRUPT_COLLECTION_SLACK_SECONDS` in the test module (lines 21, 25, 50, 59, 63). Provided:
-`run_tests.INTERRUPT_GRACE_SECONDS: int` (60), `run_tests.TERMINATE_GRACE_SECONDS: int` (3),
+`run_tests.INTERRUPT_GRACE_SECONDS: int` (300), `run_tests.TERMINATE_GRACE_SECONDS: int` (3),
 `run_tests._stop(process: subprocess.Popen[bytes]) -> None`, the unchanged signature of
 `_settle_interrupted`, and `InterruptingProcess`.
 
@@ -53,7 +53,8 @@ Green command: `uv run --no-sync pytest tests/scripts/test_run_tests.py --no-cov
 
 - **The window is at least the readiness ceiling, and the reap is the smaller bound.** Mode:
   focused-test. Test: `test_diagnostic_window_covers_the_readiness_ceiling`. Red:
-  `AssertionError: assert 3 >= 60.0`. Selector: `diagnostic_window_covers`.
+  `AssertionError: assert 3 >= 60.0`. Selector: `diagnostic_window_covers`. The window is
+  sized against the repository suite in ADR 0130, not against this floor.
 - **A further `KeyboardInterrupt` escalates instead of escaping `main`** — a second reaches
   `terminate()` with the output still replayed and status `130`, a third reaches `kill()`. Mode:
   focused-test. Test: `test_further_interrupts_escalate_without_escaping_main`, parametrized over
@@ -141,7 +142,7 @@ Code is specified, not quoted: every constant, signature, branch and assertion i
    `TERMINATE_GRACE_SECONDS`. No other test may fail.
 
 10. In `scripts/run_tests.py`, replace line 11's single constant with
-    `INTERRUPT_GRACE_SECONDS = 60` and `TERMINATE_GRACE_SECONDS = 3`.
+    `INTERRUPT_GRACE_SECONDS = 300` and `TERMINATE_GRACE_SECONDS = 3`.
 
 11. Replace `_settle_interrupted` (lines 21-31) with two functions.
     `_stop(process: subprocess.Popen[bytes]) -> None` calls `process.terminate()`, then

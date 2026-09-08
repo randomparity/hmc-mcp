@@ -9,9 +9,9 @@ verification inventory are in `../plans/2026-09-07-interrupt-grace-bounds.md`.
 
 `INTERRUPT_GRACE_SECONDS = 3` is spent on both of `_settle_interrupted`'s waits — a diagnostic
 window that must cover host latency, and a reap that need not. Measured unclamped, those needed
-16.9 s and 0.22 s at the same 80-way contention, so one constant cannot serve both and 3 s
-truncates the `KeyboardInterrupt` report on a loaded host. The same function catches only
-`subprocess.TimeoutExpired`, so a second `Ctrl-C` inside the window escapes `main`, skips
+72.9 s and 0.22 s at the same 80-way contention for the suite `just test` wraps, so one constant
+cannot serve both and 3 s truncates the `KeyboardInterrupt` report on a loaded host. The same
+function catches only `subprocess.TimeoutExpired`, so a second `Ctrl-C` escapes `main`, skips
 `_replay`, discards the captured output, returns `-2` instead of `130`, and orphans the child;
 widening the window widens that exposure, so it is fixed here rather than left.
 
@@ -26,10 +26,11 @@ collection budgets ADR 0129 set; a bare raise of the existing constant as the wh
 
 ## Success
 
-1. The window cannot fire before ADR 0129's budgets apply: a host slow enough to truncate the
-   diagnostic has already exhausted the 60-second readiness ceiling.
+1. The window is sized against the workload it guards — the repository suite, whose diagnostic
+   ADR 0130 measures at 72.9 s under 80-way single-core contention — not against the one-test
+   fixture, and it stays above ADR 0129's 60-second readiness ceiling so the two are coupled.
 2. A child ignoring `SIGINT` is still escalated and reaped, so the real-interrupt test fails on
-   a bounded 73-second budget rather than stalling.
+   a bounded 313-second budget rather than stalling.
 3. A second `Ctrl-C` arriving while the parent waits on the child escalates to `SIGTERM` at once
    and a third to `SIGKILL`, with the run still returning `130`, replaying the captured output
    and leaving no orphan. Interrupts arriving during `_replay` are not caught, and ADR 0130

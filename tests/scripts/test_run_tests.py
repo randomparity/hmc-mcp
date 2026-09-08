@@ -280,16 +280,19 @@ def test_interruption_replays_captured_output_without_traceback(
 
 
 def test_diagnostic_window_covers_the_readiness_ceiling() -> None:
-    """ADR 0130: no host clearing the readiness ceiling may lose the diagnostic.
+    """The window is floored at the ceiling so the two are not guessed apart.
 
-    The window is floored by the ceiling so the script and its test move
-    together; dropping it below reinstates issue #728 on a slow enough host.
+    That floor is a coupling, not a proof: ADR 0130 measures the diagnostic's
+    share of readiness moving with the installed plugin set and cache state
+    rather than with the host, so a window above the ceiling does not by itself
+    put truncation out of reach. The window's own size is sized against the
+    suite `just test` wraps, which is the workload the constant guards.
     """
     assert run_tests.INTERRUPT_GRACE_SECONDS >= _READINESS_TIMEOUT_SECONDS
     assert run_tests.TERMINATE_GRACE_SECONDS < run_tests.INTERRUPT_GRACE_SECONDS
 
 
-@pytest.mark.parametrize(("interrupts", "killed"), [(2, False), (3, True)])
+@pytest.mark.parametrize(("interrupts", "killed"), [(2, False), (3, True), (4, True)])
 def test_further_interrupts_escalate_without_escaping_main(
     monkeypatch: pytest.MonkeyPatch, interrupts: int, killed: bool
 ) -> None:
