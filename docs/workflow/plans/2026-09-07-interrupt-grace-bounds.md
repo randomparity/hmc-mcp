@@ -51,10 +51,11 @@ Consumed, all confirmed present at `313256d2`: `TEST_TIMEOUT_SECONDS`,
 
 Green command: `uv run --no-sync pytest tests/scripts/test_run_tests.py --no-cov -k <selector>`.
 
-- **The window is at least the readiness ceiling, and the reap is the smaller bound.** Mode:
-  focused-test. Test: `test_diagnostic_window_covers_the_readiness_ceiling`. Red:
-  `AssertionError: assert 3 >= 60.0`. Selector: `diagnostic_window_covers`. The window is
-  sized against the repository suite in ADR 0130, not against this floor.
+- **The reap is the smaller of the two bounds.** Mode: focused-test. Test:
+  `test_the_reap_is_the_smaller_of_the_two_bounds`. Red: `AttributeError: module 'run_tests' has
+  no attribute 'TERMINATE_GRACE_SECONDS'`. Selector: `reap_is_the_smaller`. The window's size
+  answers to the repository suite measured in ADR 0130, which no test here can observe, so only
+  the ladder's ordering is asserted.
 - **A further `KeyboardInterrupt` escalates instead of escaping `main`** — a second reaches
   `terminate()` with the output still replayed and status `130`, a third reaches `kill()`. Mode:
   focused-test. Test: `test_further_interrupts_escalate_without_escaping_main`, parametrized over
@@ -95,10 +96,10 @@ Code is specified, not quoted: every constant, signature, branch and assertion i
    `InterruptingProcess(1, temporary_file, output)` and drop its local class, keeping every
    existing assertion unchanged.
 
-3. Add `test_diagnostic_window_covers_the_readiness_ceiling()`, no fixtures, asserting
-   `run_tests.INTERRUPT_GRACE_SECONDS >= _READINESS_TIMEOUT_SECONDS` and then
-   `run_tests.TERMINATE_GRACE_SECONDS < run_tests.INTERRUPT_GRACE_SECONDS`, its docstring naming
-   ADR 0130 as why the window may not drop below the ceiling.
+3. Add `test_the_reap_is_the_smaller_of_the_two_bounds()`, no fixtures, asserting
+   `run_tests.TERMINATE_GRACE_SECONDS < run_tests.INTERRUPT_GRACE_SECONDS`, its docstring saying
+   the window's size answers to the suite ADR 0130 measures and recording why it is deliberately
+   not floored against `_READINESS_TIMEOUT_SECONDS`.
 
 4. Add `test_further_interrupts_escalate_without_escaping_main`, decorated
    `@pytest.mark.parametrize(("interrupts", "killed"), [(2, False), (3, True)])`. Build

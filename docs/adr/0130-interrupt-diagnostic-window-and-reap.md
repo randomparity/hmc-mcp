@@ -75,10 +75,11 @@ A second `Ctrl-C` inside the window is also unhandled: `_settle_interrupted` cat
 - `INTERRUPT_GRACE_SECONDS = 300` — the diagnostic window, before `SIGTERM`. It is sized against
   the repository suite, not the fixture: 4.1x the worst diagnostic write measured (72.9 s at
   80-way single-core contention) and 2.3x the worst child exit (133.2 s), at a load no CI leg or
-  developer machine approaches. It stays above `_READINESS_TIMEOUT_SECONDS` so the script and its
-  test are not guessed apart, but that floor is a coupling rather than a proof — the ratio above
-  moves with the plugin set, so a window over the ceiling does not by itself put truncation out of
-  reach. What makes a number this large affordable is that the wait returns the moment the child
+  developer machine approaches. Composed with the roughly 3x host divergence recorded above, a host
+  of ADR 0129's slower class would need about 206 s at that same load, leaving about 1.5x — still a
+  margin, at a contention level nothing real reaches, and the honest figure to carry rather than
+  the single-host 4.1x. What makes a number this large affordable is that the wait returns the
+  moment the child
   exits, so only a child that has not exited pays it, and the escape hatch below bounds the
   interactive case whatever the number is.
 - `TERMINATE_GRACE_SECONDS = 3` — the reap, between `SIGTERM` and `SIGKILL`. Value unchanged, and
@@ -88,7 +89,7 @@ A second `Ctrl-C` inside the window is also unhandled: `_settle_interrupted` cat
   short.
 - The timeout arm escalates directly, skipping the window: nothing has asked that child to stop,
   so waiting cannot help it write anything, and without this split raising the shared constant
-  would add 57 s to a path this change has no business slowing. The test's collection budget
+  would add 297 s to a path this change has no business slowing. The test's collection budget
   becomes the two bounds plus `_INTERRUPT_COLLECTION_SLACK_SECONDS`, keeping ADR 0129's coupling.
 
 ## Consequences
@@ -98,27 +99,37 @@ A second `Ctrl-C` inside the window is also unhandled: `_settle_interrupted` cat
   `scripts/run_tests.py` never signals its own child before the wait, so a `SIGINT` aimed at the
   wrapper's pid alone leaves the child running, and the wait cannot preserve a report the child
   was never asked to write. This change lengthens that dead wait: reproduced at 3.26 s before and
-  60.26 s after. Its bound is the escape hatch, a second signal escalating at once, and it costs
-  a wait rather than a diagnostic, because on that path there is none to lose.
+  300.28 s after, against a fixture whose child cannot exit on its own. It costs a wait rather than
+  a diagnostic, because on that path there is none to lose. **Its bound is a human.** A second
+  signal escalates at once, but a supervisor signalling by pid — `timeout -s INT`, a systemd unit
+  with `KillSignal=SIGINT`, any parent holding a pid rather than a pgid — presses nothing, and a
+  wrapper started as a background shell job inherits `SIGINT` as `SIG_IGN`, so CPython installs no
+  handler and no interrupt reaches it at all. Those paths pay the full window. Forwarding `SIGINT`
+  would close this and is rejected below on measured evidence.
 - ADR 0129's residual is closed. Its decision stands; its Context finding that collection is
   host-independent is corrected by the table above, as are the Consequences at ADR 0129:92-93
   resting on the same clamp. Its rejection of a readiness-derived collection budget
   (ADR 0129:117-121) survives on its second ground — a generous multiple over the 60 s ceiling
-  puts the worst case past 300 s — not on the clamp. The coupling widens and reverses:
-  `TERMINATE_GRACE_SECONDS` now moves the test budget too, and since the test asserts the window
-  covers the readiness ceiling, raising `_READINESS_TIMEOUT_SECONDS` forces
-  `INTERRUPT_GRACE_SECONDS` up with it, so the property ADR 0129's *Decision* claims for that
-  ceiling — "raising it trades away no headroom" — no longer holds. The test's collection budget rises from 16 s to 73 s and its overall worst case
-  from 76 s to 373 s against the `ci` job's 20-minute leg, paid only by a child that does not exit.
+  puts the worst case past 300 s — not on the clamp. The coupling widens: `TERMINATE_GRACE_SECONDS`
+  now moves the test budget too. The property ADR 0129's *Decision* claims for the readiness
+  ceiling — "raising it trades away no headroom" — is preserved, because no test pins the
+  production window to that ceiling.
+- The real-interrupt test's collection budget rises from 16 s to 313 s (300 + 3 + 10), and its
+  worst case from 76 s to 373 s once the 60 s readiness ceiling is added. Against the `ci` job's
+  `timeout-minutes: 20` that is about 6.2 minutes, roughly a third of the leg — paid only by a
+  child that does not exit, which is the defect the test exists to report, and on legs whose
+  4 vCPUs make the rest of the suite slower than the 270 s it takes on an idle host here.
 - The ladder is bounded, not total: the post-`SIGKILL` reap suppresses a further
   `KeyboardInterrupt`, but `_replay` does not, so an interrupt during the replay still discards the
   remaining output. A developer whose pytest is wedged waits 5 minutes rather than 6 s unless they
   interrupt again, and two rapid `Ctrl-C`s now truncate the diagnostic deliberately, where before
   they discarded it, misreported the status and orphaned the child.
 - Every number comes from one amd64 host, where ADR 0129 measured two hosts on 3.13. The
-  interpreter axis is settled by the four-version table above and is flat, so the unmeasured
-  residual is architecture alone: the four native `ubuntu-24.04-arm` legs. Both constants sit far
-  above any plausible leg rather than being tuned per leg, which is what that flat axis supports.
+  four-version sweep was taken on the fixture; the table that sizes the constant is the repository
+  suite on CPython 3.11.15 alone. The unmeasured residual is therefore architecture — the four
+  native `ubuntu-24.04-arm` legs — plus the interpreter axis on the real suite, which the flat
+  fixture sweep makes likely without establishing. Both constants sit far above any plausible leg
+  rather than being tuned per leg.
 
 ## Considered & rejected
 

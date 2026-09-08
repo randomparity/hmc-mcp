@@ -28,7 +28,7 @@ collection budgets ADR 0129 set; a bare raise of the existing constant as the wh
 
 1. The window is sized against the workload it guards — the repository suite, whose diagnostic
    ADR 0130 measures at 72.9 s under 80-way single-core contention — not against the one-test
-   fixture, and it stays above ADR 0129's 60-second readiness ceiling so the two are coupled.
+   fixture, and not against any test-file constant.
 2. A child ignoring `SIGINT` is still escalated and reaped, so the real-interrupt test fails on
    a bounded 313-second budget rather than stalling.
 3. A second `Ctrl-C` arriving while the parent waits on the child escalates to `SIGTERM` at once

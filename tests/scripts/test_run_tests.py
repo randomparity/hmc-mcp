@@ -279,16 +279,15 @@ def test_interruption_replays_captured_output_without_traceback(
     assert temporary_file.closed
 
 
-def test_diagnostic_window_covers_the_readiness_ceiling() -> None:
-    """The window is floored at the ceiling so the two are not guessed apart.
+def test_the_reap_is_the_smaller_of_the_two_bounds() -> None:
+    """The ladder's invariant: the reap follows the diagnostic window.
 
-    That floor is a coupling, not a proof: ADR 0130 measures the diagnostic's
-    share of readiness moving with the installed plugin set and cache state
-    rather than with the host, so a window above the ceiling does not by itself
-    put truncation out of reach. The window's own size is sized against the
-    suite `just test` wraps, which is the workload the constant guards.
+    Only the ordering is asserted. The window's size answers to the suite
+    `just test` wraps, which ADR 0130 measures and no test here can; and it is
+    deliberately not floored against `_READINESS_TIMEOUT_SECONDS`, because
+    pinning a production constant to a test-file one would make raising this
+    module's readiness ceiling raise the shipped window with it.
     """
-    assert run_tests.INTERRUPT_GRACE_SECONDS >= _READINESS_TIMEOUT_SECONDS
     assert run_tests.TERMINATE_GRACE_SECONDS < run_tests.INTERRUPT_GRACE_SECONDS
 
 
