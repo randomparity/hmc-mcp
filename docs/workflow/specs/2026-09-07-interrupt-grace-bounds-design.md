@@ -1,10 +1,9 @@
 # Interrupt grace bounds in `scripts/run_tests.py`
 
-Issue: [#728](https://github.com/randomparity/hmc-mcp/issues/728). The decision, its
-measurements and the rejected alternatives are in
-[ADR 0130](../../adr/0130-interrupt-diagnostic-window-and-reap.md), extending
-[ADR 0129](../../adr/0129-interrupt-test-budget-bounds.md); the execution and its verification
-inventory are in `../plans/2026-09-07-interrupt-grace-bounds.md`.
+Issue: [#728](https://github.com/randomparity/hmc-mcp/issues/728). The decision, measurements and
+rejected alternatives are in [ADR 0130](../../adr/0130-interrupt-diagnostic-window-and-reap.md),
+extending [ADR 0129](../../adr/0129-interrupt-test-budget-bounds.md); the execution and its
+verification inventory are in `../plans/2026-09-07-interrupt-grace-bounds.md`.
 
 ## Problem
 

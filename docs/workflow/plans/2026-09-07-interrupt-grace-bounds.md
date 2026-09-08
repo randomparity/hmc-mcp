@@ -19,9 +19,9 @@ standard library only; pytest; `just` for guardrails.
   with `just setup`. ADR 0129 is merged, append-only, not superseded here and must not be edited;
   there is no ADR index.
 
-Expected implementation size: 85–115 changed lines (S) — from the file map: about 30 changed
-lines in `scripts/run_tests.py`, about 70 in `tests/scripts/test_run_tests.py` (one shared stub
-replacing a local one, two new tests, two edits), about 4 in `CHANGELOG.md`.
+Expected implementation size: 85–115 changed lines (S) — from the file map: about 30 in
+`scripts/run_tests.py`, about 70 in `tests/scripts/test_run_tests.py` (a shared stub replacing a
+local one, two new tests, two edits), about 4 in `CHANGELOG.md`.
 
 ## File map
 
@@ -33,8 +33,8 @@ replacing a local one, two new tests, two edits), about 4 in `CHANGELOG.md`.
 
 ## Task 1 — Separate the diagnostic window from the reap
 
-One task: no reviewer could accept the constants without the escalation behaviour that makes the
-larger one affordable, or either without the tests.
+One task: the constants are unacceptable without the escalation behaviour that makes the larger
+one affordable, and neither is acceptable without the tests.
 
 ### Interfaces
 

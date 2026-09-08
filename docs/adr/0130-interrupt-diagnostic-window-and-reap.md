@@ -37,8 +37,8 @@ The second wait guards a different quantity. Against a child ignoring the signal
 A second `Ctrl-C` inside the window is also unhandled: `_settle_interrupted` catches only
 `subprocess.TimeoutExpired`, so a `KeyboardInterrupt` raised there escapes `main`, `_replay`
 (`scripts/run_tests.py:66`) never runs, the captured pytest output is discarded entirely, the
-status is `-2` rather than the specified `130`, and the child pytest is left orphaned.
-Reproduced at 40 spinners against `313256d2b0f0ec39a4198e7cca498cc49541cf3c`.
+status is `-2` rather than the specified `130`, and the child pytest is left orphaned. Reproduced
+at 40 spinners against `313256d2b0f0ec39a4198e7cca498cc49541cf3c`.
 
 ## Decision
 
@@ -95,6 +95,6 @@ Reproduced at 40 spinners against `313256d2b0f0ec39a4198e7cca498cc49541cf3c`.
   how long pytest ran before the interrupt — set by the suite's length and the user's patience,
   not by the host. judgment: the derivation has no input, and a synthetic calibration loop is
   machinery this path does not need.
-- **Do nothing.** verified: the diagnostic is lost at 40 spinners here, at 40 on ADR 0129's
-  host 2, and at 80 on its host 1. judgment: a developer who interrupts a slow suite gets a
-  truncated report with nothing indicating that it was truncated.
+- **Do nothing.** verified: the diagnostic is lost at 40 spinners here, at 40 on ADR 0129's host
+  2 and at 80 on its host 1. judgment: a developer interrupting a slow suite gets a truncated
+  report with nothing indicating it was truncated.
