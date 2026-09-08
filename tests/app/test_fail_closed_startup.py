@@ -96,7 +96,7 @@ def _unstyle(text: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
-def _console_script(proof: str) -> str:
+def _console_script(*, proof: str) -> str:
     """This checkout's `hmc-mcp` console script, or skip.
 
     The same-checkout assertion `test_authorization_audit_live.py` makes: a proof that
@@ -104,12 +104,10 @@ def _console_script(proof: str) -> str:
     caller was about to prove, so the failure says which guarantee would have been made
     about the wrong build.
 
-    Shared by L1 and L2 only. The third copy of this form, in
-    `test_entry_point_equivalence.py:_launchers`, stays where it is: `tests/app/` cannot
-    hold a `conftest.py` to share it from — see this module's sibling note in issue #731
-    — and the fourth, `test_authorization_audit_live.py:server_binary`, is deliberately
-    not this function, because a missing script must fail the live audit proof rather
-    than skip it.
+    L1 and L2 only, rather than a `tests/app/conftest.py` the other copies of this form
+    could share: `pythonpath = ["tests"]` plus pytest's prepend import mode makes a
+    second `conftest.py` shadow `tests/conftest.py` for the 49 modules that reach it
+    with `from conftest import ...`.
     """
     executable = shutil.which("hmc-mcp")
     if executable is None:
@@ -492,7 +490,7 @@ def test_serve_without_a_policy_exits_2_as_a_subprocess():
     `main`, but the console script is what an operator actually runs, and the exit
     code an operator meets is the whole of what this test proves.
     """
-    executable = _console_script("refusal")
+    executable = _console_script(proof="refusal")
 
     completed = subprocess.run(
         [executable, "serve"], capture_output=True, text=True, timeout=60,
@@ -521,7 +519,7 @@ def test_the_documented_migration_works_end_to_end(tmp_path):
     `HMC_HOST` and `HMC_PROFILE` go too: they change which connection a call selects,
     and a developer with either exported would otherwise be testing their machine.
     """
-    executable = _console_script("migration")
+    executable = _console_script(proof="migration")
 
     env = dict(os.environ)
     for name in ("HMC_HOST", "HMC_PROFILE", "XDG_CONFIG_HOME", "APPDATA"):
