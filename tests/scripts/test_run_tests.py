@@ -361,7 +361,6 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
     signalled_at = time.monotonic()
     grace = run_tests.INTERRUPT_GRACE_SECONDS
     budget = 2 * grace + _INTERRUPT_COLLECTION_SLACK_SECONDS
-    stderr = b""
     try:
         stdout, stderr = process.communicate(timeout=budget)
     except subprocess.TimeoutExpired as expired:
