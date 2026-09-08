@@ -96,6 +96,29 @@ def _unstyle(text: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
+def _console_script(*, proof: str) -> str:
+    """This checkout's `hmc-mcp` console script, or skip.
+
+    The same-checkout assertion `test_authorization_audit_live.py` makes: a proof that
+    silently ran against another build is worse than no proof. `proof` names what the
+    caller was about to prove, so the failure says which guarantee would have been made
+    about the wrong build.
+
+    L1 and L2 only, rather than a `tests/app/conftest.py` the other copies of this form
+    could share: `pythonpath = ["tests"]` plus pytest's prepend import mode makes a
+    second `conftest.py` shadow `tests/conftest.py` for the 49 modules that reach it
+    with `from conftest import ...`.
+    """
+    executable = shutil.which("hmc-mcp")
+    if executable is None:
+        pytest.skip("the hmc-mcp console script is not on PATH")
+    assert str(REPO_ROOT) in str(Path(executable).resolve().parents[1]), (
+        f"the console script resolves outside this checkout, so the {proof} proved would "
+        "belong to a different build of hmc-mcp"
+    )
+    return executable
+
+
 # ---------------------------------------------------------------------------
 # R1 / G1 — composition requires a policy
 # ---------------------------------------------------------------------------
@@ -467,15 +490,7 @@ def test_serve_without_a_policy_exits_2_as_a_subprocess():
     `main`, but the console script is what an operator actually runs, and the exit
     code an operator meets is the whole of what this test proves.
     """
-    executable = shutil.which("hmc-mcp")
-    if executable is None:
-        pytest.skip("the hmc-mcp console script is not on PATH")
-    # The same-checkout assertion `test_authorization_audit_live.py` makes: a proof that
-    # silently ran against another build is worse than no proof.
-    assert str(REPO_ROOT) in str(Path(executable).resolve().parents[1]), (
-        "the console script resolves outside this checkout, so the refusal proved would "
-        "belong to a different build of hmc-mcp"
-    )
+    executable = _console_script(proof="refusal")
 
     completed = subprocess.run(
         [executable, "serve"], capture_output=True, text=True, timeout=60,
@@ -504,12 +519,7 @@ def test_the_documented_migration_works_end_to_end(tmp_path):
     `HMC_HOST` and `HMC_PROFILE` go too: they change which connection a call selects,
     and a developer with either exported would otherwise be testing their machine.
     """
-    executable = shutil.which("hmc-mcp")
-    if executable is None:
-        pytest.skip("the hmc-mcp console script is not on PATH")
-    assert str(REPO_ROOT) in str(Path(executable).resolve().parents[1]), (
-        "the console script resolves outside this checkout"
-    )
+    executable = _console_script(proof="migration")
 
     env = dict(os.environ)
     for name in ("HMC_HOST", "HMC_PROFILE", "XDG_CONFIG_HOME", "APPDATA"):
