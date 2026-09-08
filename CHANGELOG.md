@@ -10,6 +10,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `scripts/run_tests.py` now preserves an interrupted pytest's `KeyboardInterrupt`
+  diagnostic under the host load ADR 0130 measured, where a fixed 3-second grace
+  truncated it. The window before `SIGTERM` and the reap before `SIGKILL` are separate
+  bounds sized to the quantities they guard, and a second `Ctrl-C` escalates at once
+  instead of escaping with the captured output unreplayed, the status misreported and
+  the pytest child orphaned (#728, ADR 0130).
+
 - Live-verification evidence is now trustworthy promotion evidence. `maturity.json`
   moves to format 2: one closed observation shape, no stored currency, and no free
   text beyond two grammar-bound environment strings. Staleness is derived when the
