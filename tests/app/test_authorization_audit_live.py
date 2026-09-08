@@ -575,20 +575,20 @@ def test_the_l5_import_probe_waits_no_longer_than_the_deadline(request, monkeypa
     never the probe, so the bound is asserted where it is written.
     """
     calls = []
-    unbounded_run = subprocess.run
+    unpatched_run = subprocess.run
 
     def recording_run(*args, **kwargs):
         calls.append(kwargs)
-        return unbounded_run(*args, **kwargs)
+        return unpatched_run(*args, **kwargs)
 
     monkeypatch.setattr(subprocess, "run", recording_run)
     request.getfixturevalue("server_module_command")
 
-    assert [call.get("timeout") for call in calls] == [DEADLINE], (
+    timeouts = [call.get("timeout") for call in calls]
+    assert timeouts == [DEADLINE], (
         f"the fixture's import probe must pass timeout={DEADLINE} so a hung "
-        f"interpreter fails setup naming the interpreter; it ran {len(calls)} "
-        f"subprocess call(s) with timeouts "
-        f"{[call.get('timeout') for call in calls]!r}"
+        f"interpreter fails setup naming the interpreter; it ran {len(timeouts)} "
+        f"subprocess call(s) with timeouts {timeouts!r}"
     )
 
 
