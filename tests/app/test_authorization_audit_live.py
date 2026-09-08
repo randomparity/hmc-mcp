@@ -515,17 +515,17 @@ def _assert_interpreter_launch(command: list[str]) -> None:
     makes ``PYTHONSAFEPATH`` the remedy for the cwd-shadowing hazard ``-m`` opens
     in a child holding profile passwords and a granted access policy, and A13
     names it in the command it requires.
-
-    What this does *not* observe is the ``sh -c 'exec … 2>&-'`` wrapper L5 builds
-    around the list. It binds the command being launched, not the blinding.
     """
     assert command[0] == sys.executable, (
         f"L5 must exec this interpreter by path; the command starts with "
         f"{command[0]!r}, not {sys.executable!r}. See ADR 0128."
     )
-    assert "-P" in command, (
-        f"L5's launch must keep -P, which keeps the child's working directory off "
-        f"sys.path; {command!r} has dropped it. See ADR 0128."
+    # Ahead of `-m`, so it is an interpreter option: `-P` after the module name is
+    # an argument the application receives, which leaves sys.path unchanged.
+    options = command[1 : command.index("-m")] if "-m" in command else command[1:]
+    assert "-P" in options, (
+        f"L5's launch must pass -P to the interpreter, which keeps the child's "
+        f"working directory off sys.path; {command!r} does not. See ADR 0128."
     )
     for element in command:
         candidate = Path(element)
@@ -590,6 +590,11 @@ def test_a_failed_sink_leaves_the_denial_unchanged(
     # an unquoted one makes `sh -c` split it into words and fail to exec at all —
     # which looks exactly like the server refusing to start.
     quoted = shlex.join(command)
+    # Again, on what the shell will actually exec rather than on `command`: the
+    # invariant is about this argv, and anything inserted into `quoted` between
+    # here and there — a wrapper script, another interpreter — would not appear
+    # in the list checked above.
+    _assert_interpreter_launch(shlex.split(quoted))
     blinded = _Server(
         _spawn(["/bin/sh", "-c", f"exec {quoted} 2>&-"], child_env, subprocess.DEVNULL)
     )

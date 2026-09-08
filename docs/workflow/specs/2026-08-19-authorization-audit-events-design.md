@@ -685,17 +685,11 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
   `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as two separate
   children launched from one command list — a reference child, and a blinded one under
   `sh -c '… 2>&-'`. POSIX only; skipped elsewhere. That command list **must** exec an interpreter
-  directly and name no `#!`-bearing script, because ADR 0128's invariant is that no intermediate
-  process may leave a descriptor open on fd 2 across the exec of the interpreter — and past `uv`'s
-  shebang threshold the `hmc-mcp` console script is a `/bin/sh` trampoline that breaks it wherever
-  `/bin/sh` is bash. It is therefore
+  directly and name no `#!`-bearing script — ADR 0128's fd-2 invariant, which the console script
+  breaks past `uv`'s shebang threshold. It is therefore
   `[sys.executable, "-P", "-m", "hmc_mcp"] serve --access-policy lab-scoped`, not the console
-  script; the `sh -c '… 2>&-'` shape is unchanged. This is a requirement on future edits, not a
-  note on the current state: returning L5 to a console-script launch reintroduces the #709 trap.
-  `_assert_interpreter_launch` enforces it, and L5 calls it on the command list it launches — so
-  a revert reddens whether it edits the fixture or L5's own command. It asserts that list's shape
-  (interpreter first, `-P` retained, no `#!`-bearing element) rather than the child's runtime view
-  of fd 2, so that it fails on the dash-based verify legs too — under dash the runtime symptom is
-  absent, so a behavioural check would be green on all eight. What it does not observe is the
-  `sh -c '… 2>&-'` wrapper L5 builds around that list, which stays a reviewed rather than a
-  gated shape.
+  script; the `sh -c '… 2>&-'` shape is unchanged. This binds future edits rather than describing
+  the current state, and the live-proof module asserts it on the list L5 launches, so a revert
+  reddens whether it edits the fixture or L5. The assertion is on the launch's shape rather than
+  the child's runtime view of fd 2 so that it also fails on the verify legs, where `/bin/sh` is
+  dash and the runtime symptom is absent.
