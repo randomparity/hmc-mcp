@@ -5,7 +5,9 @@ ADR 0128:120-133 records `-m` as putting the caller's working directory first on
 the launch directory is imported before the installed package -- in a process that
 holds profile passwords and a granted access policy. The same record states that **no
 in-package guard closes this**, and names `-P` / `PYTHONSAFEPATH=1` as the one remedy;
-`CHANGELOG.md:90-93` is where operators are told to use it.
+the `python -m hmc_mcp` entry under `### Added` in `CHANGELOG.md` is where operators are
+told to use it. Cited by section rather than by line: a changelog gains entries above
+that one every release, so a line citation goes stale with nothing to notice.
 
 Until this module, that remedy was documented and unverified. `tests/app/
 test_entry_point_equivalence.py` launches both forms with `cwd` at an empty `tmp_path`
@@ -33,9 +35,13 @@ Scope, from ADR 0128 and issue #725:
 * the package half only. The record's other half is a shadowed *dependency*, reachable
   because `hmc_mcp/__init__.py`'s module-scope `from importlib.metadata import version`
   resolves `csv`, `email`, `zipfile`, `textwrap` -- and `json` on 3.13+ -- against the
-  launch directory. That set is version-dependent by the record's own account and this
-  suite runs on CPython 3.11 through 3.14, so no assertion over it holds across the
-  eight `ci` legs. It is out of scope here rather than covered version-conditionally.
+  launch directory. Which of those names is reachable *is* version-dependent, but not
+  uniformly: measured on 3.11.15, 3.12.13, 3.13.14 and 3.14.7 by launching
+  `from importlib.metadata import version` from a directory holding one stub module,
+  `email`, `zipfile` and `textwrap` are reached on all four while `csv` stops at 3.12
+  and `json` starts at 3.13. So a version-stable assertion over that half does exist,
+  and covering it here is deferred by an approved non-goal rather than blocked by the
+  matrix. Issue #725 owns the deferral; a follow-up owns the coverage.
 * no `sys.path[0]` guard in `src/hmc_mcp/__main__.py` is proposed or implied. ADR 0128
   rejects that logic in that file: it would arrive after the module-scope imports above
   had already resolved against the launch directory.
@@ -89,8 +95,25 @@ _DROPPED = (
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
+def _pinned_env(home: Path) -> dict[str, str]:
+    """`os.environ` with the steering variables above removed and the rest pinned.
+
+    A copy rather than a mapping built from scratch, so the child keeps the `PATH` and
+    loader state it needs; `HOME` is redirected at a scratch directory so no developer's
+    real profile or access policy is in reach of the child.
+    """
+    env = {name: value for name, value in os.environ.items() if not name.startswith("HMC_")}
+    for name in _DROPPED:
+        env.pop(name, None)
+    env["HOME"] = str(home)
+    env["NO_COLOR"] = "1"
+    env["COLUMNS"] = "100"
+    env["LINES"] = "50"
+    return env
+
+
 @pytest.fixture(scope="module")
-def installed_package() -> Path:
+def installed_package(tmp_path_factory) -> Path:
     """Where a shadow-free launch finds `hmc_mcp` -- required to be this checkout's.
 
     `tests/app/test_authorization_audit_live.py::server_module_command`'s guard, for
@@ -102,11 +125,19 @@ def installed_package() -> Path:
 
     Against `src/` rather than the checkout root, so a copied non-editable install into
     the in-checkout `.venv` fails this instead of passing as "this checkout".
+
+    On `_pinned_env` and not a bare inherit, which is the sibling's other half: "the
+    guard binds the child only while both resolve `hmc_mcp` the same way"
+    (`test_authorization_audit_live.py:177-178`). `_DROPPED` removes `PYTHONPATH` from
+    the launches below, so a probe that inherited it would answer for a `sys.path` no
+    launch has -- and on a developer host exporting one, report this checkout's `src/`
+    while every launch imported something else.
     """
     probe = subprocess.run(
         [sys.executable, "-P", "-c", "import hmc_mcp; print(hmc_mcp.__file__)"],
         capture_output=True,
         text=True,
+        env=_pinned_env(tmp_path_factory.mktemp("probe-home")),
         check=False,
         timeout=_DEADLINE,
     )
@@ -149,16 +180,7 @@ def _launch(
     overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """`python [flags] -m hmc_mcp --help`, from `cwd`, on a pinned environment."""
-    env = {name: value for name, value in os.environ.items() if not name.startswith("HMC_")}
-    for name in _DROPPED:
-        env.pop(name, None)
-    # A copy rather than a mapping built from scratch, so the child keeps the `PATH`
-    # and loader state it needs; `HOME` is redirected at the scratch directory so no
-    # developer's real profile or access policy is in reach of the child.
-    env["HOME"] = str(cwd)
-    env["NO_COLOR"] = "1"
-    env["COLUMNS"] = "100"
-    env["LINES"] = "50"
+    env = _pinned_env(cwd)
     env.update(overrides or {})
 
     return subprocess.run(
@@ -203,14 +225,15 @@ def test_a_bare_module_launch_imports_the_shadowing_package(shadowed_cwd, instal
 def test_the_documented_remedy_reaches_the_installed_package(
     shadowed_cwd, installed_package, flags, overrides
 ):
-    """Both spellings `CHANGELOG.md:90-93` gives operators, from that same directory."""
+    """Both spellings the `CHANGELOG.md` entry gives operators, from that directory."""
     result = _launch(shadowed_cwd, flags=flags, overrides=overrides)
 
     assert result.returncode == 0, (
         f"expected the installed CLI to render help (0), got {result.returncode}; "
         f"{_SHADOW_INIT_STATUS} or {_SHADOW_MAIN_STATUS} means the shadowing package "
-        f"was reached anyway, so the remedy ADR 0128:120-133 and CHANGELOG.md:90-93 "
-        f"give operators no longer keeps the launch directory off sys.path. "
+        f"was reached anyway, so the remedy ADR 0128:120-133 and the `python -m "
+        f"hmc_mcp` CHANGELOG entry give operators no longer keeps the launch directory "
+        f"off sys.path. "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
     rendered = [_ANSI.sub("", line).lstrip() for line in result.stdout.splitlines()]
