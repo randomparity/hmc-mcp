@@ -494,6 +494,42 @@ def test_an_audit_level_of_warning_suppresses_permits_but_keeps_denials(
     assert reasons == ["connection-not-granted"]
 
 
+def test_l5_execs_an_interpreter_and_opens_no_script(server_module_command):
+    """ADR 0128's fd-2 invariant, in the one form every CI leg can observe.
+
+    L5 blinds its child with ``sh -c '… 2>&-'``. Past ``uv``'s shebang threshold
+    the ``hmc-mcp`` console script is a ``/bin/sh`` trampoline: the shell opens it
+    to read it, and where ``/bin/sh`` is **bash** that descriptor survives the
+    ``exec`` and lands on the fd 2 ``2>&-`` had just freed, so the interpreter
+    inherits an unwritable stderr and exits 120 before answering. ADR 0128 states
+    the resulting invariant as *no intermediate process may leave a descriptor
+    open on fd 2 across the exec of the interpreter*, and records that nothing
+    enforces it. This is that enforcement.
+
+    It asserts the launch's **shape** rather than the child's runtime view of
+    fd 2, and the choice is the point. All eight verify legs run ``ubuntu-24.04``,
+    whose ``/bin/sh`` is dash, and under dash fd 2 comes out free whichever
+    command runs — so a behavioural assertion would pass on every leg and bite
+    only on the bash host it exists to protect, which is the trap itself. The
+    shape is wrong on every leg the moment the launch regresses.
+    """
+    assert server_module_command[0] == sys.executable, (
+        f"L5 must exec this interpreter by path; the command starts with "
+        f"{server_module_command[0]!r}, not {sys.executable!r}. See ADR 0128."
+    )
+    for element in server_module_command:
+        path = Path(element)
+        if not path.is_file():
+            continue
+        with path.open("rb") as handle:
+            magic = handle.read(2)
+        assert magic != b"#!", (
+            f"{path} is a #!-bearing script, so the shell running L5's blinded "
+            "child opens it and can leave that descriptor on fd 2 across the "
+            "exec. Launch the interpreter directly instead; see ADR 0128."
+        )
+
+
 def test_a_failed_sink_leaves_the_denial_unchanged(
     child_env, server_module_command, tmp_path
 ):

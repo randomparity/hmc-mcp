@@ -684,6 +684,14 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
 - A13. The live proof runs and passes on the branch head: Run A (L1-L4) against a real
   `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as two separate
   children launched from one command list — a reference child, and a blinded one under
-  `sh -c '… 2>&-'`. POSIX only; skipped elsewhere. Since ADR 0128 that command is
+  `sh -c '… 2>&-'`. POSIX only; skipped elsewhere. That command list **must** exec an interpreter
+  directly and name no `#!`-bearing script, because ADR 0128's invariant is that no intermediate
+  process may leave a descriptor open on fd 2 across the exec of the interpreter — and past `uv`'s
+  shebang threshold the `hmc-mcp` console script is a `/bin/sh` trampoline that breaks it wherever
+  `/bin/sh` is bash. It is therefore
   `[sys.executable, "-P", "-m", "hmc_mcp"] serve --access-policy lab-scoped`, not the console
-  script; the `sh -c '… 2>&-'` shape is unchanged.
+  script; the `sh -c '… 2>&-'` shape is unchanged. This is a requirement on future edits, not a
+  note on the current state: returning L5 to a console-script launch reintroduces the #709 trap.
+  `test_l5_execs_an_interpreter_and_opens_no_script` enforces it, and asserts the launch's shape
+  rather than the child's runtime view of fd 2 so that it fails on the dash-based verify legs too
+  — under dash the runtime symptom is absent, so a behavioural check would be green on all eight.
