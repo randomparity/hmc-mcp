@@ -24,9 +24,15 @@ core with `taskset` alongside N busy-loop spinners; x86_64, 48 cores, CPython 3.
 | 40 | 13.0-13.6 s | 7.97-8.20 s | 12.5-12.7 s |
 | 80 | 25.1-27.3 s | 15.3-16.9 s | 23.5-26.6 s |
 
-Collection does not stop racing host latency below the clamp; the clamp is what hid that it never
-did. The grace is therefore a latency budget sized on an idle machine — the shape ADR 0129 itself
-rejected for the test budgets. Two loss boundaries have been observed, not three: the unmodified
+**This supersedes ADR 0129 on that point.** ADR 0129 read collection through its own 3-second
+clamp, so it saw a quantity that could not move and concluded the host was not what moved it.
+Unclamped, the diagnostic tracks readiness at 0.57-0.62x and child exit tracks it at 0.95x, across
+a 94x readiness span: collection never stopped racing host latency, and the clamp is what hid it.
+ADR 0129's Context finding at :29-33 and its Consequences at :92-93 both rest on that reading and
+are corrected here; its two test-budget decisions stand. The grace is therefore a latency budget
+sized on an idle machine — the shape ADR 0129 itself rejected for the test budgets.
+
+Two loss boundaries have been observed, not three: the unmodified
 script loses the diagnostic at 40 spinners here and ADR 0129's host 2 also lost it at 40, while
 its host 1 held to 80. This host matches host 2 within about 8% under contention and diverges
 about 3x from host 1, yet all three agree at idle. That divergence is unexplained: interpreter
@@ -124,12 +130,17 @@ A second `Ctrl-C` inside the window is also unhandled: `_settle_interrupted` cat
   remaining output. A developer whose pytest is wedged waits 5 minutes rather than 6 s unless they
   interrupt again, and two rapid `Ctrl-C`s now truncate the diagnostic deliberately, where before
   they discarded it, misreported the status and orphaned the child.
-- Every number comes from one amd64 host, where ADR 0129 measured two hosts on 3.13. The
-  four-version sweep was taken on the fixture; the table that sizes the constant is the repository
-  suite on CPython 3.11.15 alone. The unmeasured residual is therefore architecture — the four
-  native `ubuntu-24.04-arm` legs — plus the interpreter axis on the real suite, which the flat
-  fixture sweep makes likely without establishing. Both constants sit far above any plausible leg
-  rather than being tuned per leg.
+- **What was not measured, and why it matters.** Every number comes from one amd64 host, where
+  ADR 0129 measured two hosts on 3.13. The four-version interpreter sweep was taken on the
+  fixture; the table that sizes the constant is the repository suite on CPython 3.11.15 alone. So
+  the unmeasured residual is architecture — the four native `ubuntu-24.04-arm` legs — plus the
+  interpreter axis on the real suite, which the flat fixture sweep makes likely without
+  establishing. `arm64` is a declared target of this repository, not an incidental leg, so that
+  gap is a real one: the four `ubuntu-24.04-arm` CI legs are the first evidence on it, and a green
+  run there is part of this change's evidence rather than a formality. No upper bound on report
+  latency was established either — the 600-second unclamped runs never approached their ceiling.
+  Both constants are sized to sit far above any plausible leg rather than being tuned per leg,
+  which is what makes the unmeasured axes acceptable rather than ignored.
 
 ## Considered & rejected
 
