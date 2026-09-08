@@ -24,7 +24,7 @@ core with `taskset` alongside N busy-loop spinners; x86_64, 48 cores, CPython 3.
 | 40 | 13.0-13.6 s | 7.97-8.20 s | 12.5-12.7 s |
 | 80 | 25.1-27.3 s | 15.3-16.9 s | 23.5-26.6 s |
 
-**This supersedes ADR 0129 on that point.** ADR 0129 read collection through its own 3-second
+**This corrects ADR 0129 on that point.** ADR 0129 read collection through its own 3-second
 clamp, so it saw a quantity that could not move and concluded the host was not what moved it.
 Unclamped, the diagnostic tracks readiness at 0.57-0.62x and child exit tracks it at 0.95x, across
 a 94x readiness span: collection never stopped racing host latency, and the clamp is what hid it.
@@ -52,14 +52,17 @@ interrupt sent 5 s after collection finished:
 | 40 | 36.8 s | 68.5 s |
 | 80 | 72.9 s | 133.2 s |
 
-The real suite costs 5.2-6.3x the fixture at every load, and the 80-spinner row was reproduced
+The real suite costs 4.5-5.3x the fixture at each load the two tables share, and the 80-spinner
+row was reproduced
 end-to-end against an earlier draft of this change that used a 60-second window: the window
 expired, `SIGTERM` arrived 12.9 s before pytest finished, and the replay stopped mid-line with
 `KeyboardInterrupt` absent — issue #728 verbatim. The 80-spinner figures come from review of this
 change; the other three rows were taken directly.
 
-The diagnostic's share of readiness is not a stable ratio either. On this host at 80 spinners it
-was 0.62-0.73x with the repository's plugin set, 0.82-0.84x with a plugin-matched scratch venv,
+The diagnostic's share of readiness is not a stable ratio either. The 0.57-0.62x above is the
+fixture table's own arithmetic; separate runs during review of this change, on the same host at
+80 spinners, put it at 0.62-0.73x with the repository's plugin set, 0.82-0.84x with a
+plugin-matched scratch venv,
 and 1.25-1.48x with a pytest-only venv — the diagnostic outlasting readiness there. Readiness is
 dominated by interpreter start, plugin import and collection, which warm caches make cheap; the
 diagnostic is traceback formatting, which they do not. The ratio follows the installed plugin set
@@ -81,10 +84,11 @@ A second `Ctrl-C` inside the window is also unhandled: `_settle_interrupted` cat
 - `INTERRUPT_GRACE_SECONDS = 300` — the diagnostic window, before `SIGTERM`. It is sized against
   the repository suite, not the fixture: 4.1x the worst diagnostic write measured (72.9 s at
   80-way single-core contention) and 2.3x the worst child exit (133.2 s), at a load no CI leg or
-  developer machine approaches. Composed with the roughly 3x host divergence recorded above, a host
-  of ADR 0129's slower class would need about 206 s at that same load, leaving about 1.5x — still a
-  margin, at a contention level nothing real reaches, and the honest figure to carry rather than
-  the single-host 4.1x. What makes a number this large affordable is that the wait returns the
+  developer machine approaches. That 4.1x is single-host. Composed with the roughly 3x divergence
+  recorded above, a host of ADR 0129's slower class would need about 219 s to write the diagnostic
+  at that same load — about 1.4x — and would not finish exiting inside the window at all, so
+  `SIGTERM` would arrive after the report was written rather than during it. Carry 1.4x as the
+  margin, not 4.1x. What makes a number this large affordable is that the wait returns the
   moment the child
   exits, so only a child that has not exited pays it, and the escape hatch below bounds the
   interactive case whatever the number is.
@@ -109,9 +113,12 @@ A second `Ctrl-C` inside the window is also unhandled: `_settle_interrupted` cat
   a diagnostic, because on that path there is none to lose. **Its bound is a human.** A second
   signal escalates at once, but a supervisor signalling by pid — `timeout -s INT`, a systemd unit
   with `KillSignal=SIGINT`, any parent holding a pid rather than a pgid — presses nothing, and a
-  wrapper started as a background shell job inherits `SIGINT` as `SIG_IGN`, so CPython installs no
-  handler and no interrupt reaches it at all. Those paths pay the full window. Forwarding `SIGINT`
-  would close this and is rejected below on measured evidence.
+  presses nothing and pays the full window. A wrapper started as a background shell job is a
+  different case again: it inherits `SIGINT` as `SIG_IGN`, CPython installs its handler only over
+  `SIG_DFL`, so no `KeyboardInterrupt` is ever raised, the window never opens, and the run is not
+  `SIGINT`-stoppable at all — a pre-existing property of the shell's job control, neither caused
+  nor worsened here. Forwarding `SIGINT` would close the pid-supervisor case and is rejected below
+  on measured evidence.
 - ADR 0129's residual is closed. Its decision stands; its Context finding that collection is
   host-independent is corrected by the table above, as are the Consequences at ADR 0129:92-93
   resting on the same clamp. Its rejection of a readiness-derived collection budget
@@ -123,8 +130,17 @@ A second `Ctrl-C` inside the window is also unhandled: `_settle_interrupted` cat
 - The real-interrupt test's collection budget rises from 16 s to 313 s (300 + 3 + 10), and its
   worst case from 76 s to 373 s once the 60 s readiness ceiling is added. Against the `ci` job's
   `timeout-minutes: 20` that is about 6.2 minutes, roughly a third of the leg — paid only by a
-  child that does not exit, which is the defect the test exists to report, and on legs whose
-  4 vCPUs make the rest of the suite slower than the 270 s it takes on an idle host here.
+  child that does not exit, which is the defect the test exists to report. The legs have the
+  headroom: on the run of this change's base commit all eight were green with whole jobs at
+  305-506 s, so even the slowest plus a 373 s worst case leaves about 27% of the 1200 s budget
+  unused, and the four `arm64` legs (275-392 s) track the four `amd64` ones (240-423 s).
+- **The wait is silent, and that is a deliberate trade.** Nothing is printed when the window
+  opens, so a developer who interrupts a wedged pytest sees no output and is not told that a
+  second `Ctrl-C` stops it now — the affordance the window's affordability rests on is
+  undiscoverable. Announcing it would mean either a line on every interrupt, including the common
+  one where the child exits in under a second and the line is noise, or a two-stage wait to decide
+  when to print, which is more ladder than this buys. The wrapper's contract is that its stderr is
+  the child's output; a hint would be the first thing it writes on its own account.
 - The ladder is bounded, not total: the post-`SIGKILL` reap suppresses a further
   `KeyboardInterrupt`, but `_replay` does not, so an interrupt during the replay still discards the
   remaining output. A developer whose pytest is wedged waits 5 minutes rather than 6 s unless they
