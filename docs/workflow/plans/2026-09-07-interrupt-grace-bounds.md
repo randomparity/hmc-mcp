@@ -72,8 +72,7 @@ Green command: `uv run --no-sync pytest tests/scripts/test_run_tests.py -k <sele
 
 ### Steps
 
-Code is specified rather than quoted throughout: every constant, signature, branch and assertion
-is named, and ADR 0130 fixes the behaviour behind them.
+Code is specified, not quoted: every constant, signature, branch and assertion is named.
 
 1. In `tests/scripts/test_run_tests.py`, add `BinaryIO` to the `typing` import (line 13) and a
    module-level stub `InterruptingProcess` after `BinaryStderr` (ends line 54), replacing the
