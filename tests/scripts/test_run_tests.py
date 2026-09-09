@@ -298,6 +298,18 @@ def test_the_reap_is_the_smaller_of_the_two_bounds() -> None:
     assert run_tests.TERMINATE_GRACE_SECONDS < run_tests.INTERRUPT_GRACE_SECONDS
 
 
+def test_timeout_is_below_the_ci_leg_budget() -> None:
+    """The script's timeout must fire before the CI leg budget expires.
+
+    `.github/workflows/ci.yml` sets `timeout-minutes: 20` (1200 s) for the
+    ``ci`` job. When the two are equal the runner cancels the job before the
+    script's timeout arm can fire, so the diagnostic output and exit code 124
+    are lost. This guard keeps a margin for the replay to complete.
+    """
+    _CI_LEG_BUDGET_SECONDS = 20 * 60  # timeout-minutes: 20 in ci.yml
+    assert run_tests.TEST_TIMEOUT_SECONDS < _CI_LEG_BUDGET_SECONDS
+
+
 @pytest.mark.parametrize(("interrupts", "killed"), [(2, False), (3, True), (4, True)])
 def test_further_interrupts_escalate_without_escaping_main(
     monkeypatch: pytest.MonkeyPatch, interrupts: int, killed: bool
