@@ -34,11 +34,11 @@ prek correspondence keep the guard on local and CI paths.
 
 - Contract: canonical layout. Mode: focused-test; case:
   `test_accepts_only_canonical_conftest`; expected red: checker module absent;
-  green: `uv run --no-sync pytest tests/scripts/test_check_test_layout.py -q`.
+  green: `uv run --no-sync pytest tests/scripts/test_check_test_layout.py -q --no-cov`.
 - Contract: nested and second conftest rejection with actionable diagnostics.
   Mode: focused-test; cases: `test_rejects_nested_conftest` and
   `test_rejects_second_root_conftest`; expected red: checker module absent;
-  green: `uv run --no-sync pytest tests/scripts/test_check_test_layout.py -q`.
+  green: `uv run --no-sync pytest tests/scripts/test_check_test_layout.py -q --no-cov`.
 - Contract: static, prek, and inventory wiring. Mode: focused-test; case:
   `test_prek_hooks_delegate_to_focused_just_recipes`; expected red: new gate is
-  absent; green: `uv run --no-sync pytest tests/test_ci_pipeline.py -q`.
+  absent; green: `uv run --no-sync pytest tests/test_ci_pipeline.py -q --no-cov`.
