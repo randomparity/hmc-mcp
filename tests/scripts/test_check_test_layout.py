@@ -32,6 +32,7 @@ def test_accepts_only_canonical_conftest(tmp_path: Path, capsys) -> None:
 
 def test_rejects_nested_conftest(tmp_path: Path, capsys) -> None:
     root = _repository(tmp_path, "tests/conftest.py", "tests/app/conftest.py")
+    subprocess.run(["git", "add", "tests/app/conftest.py"], cwd=root, check=True)
 
     assert check_test_layout.main(["--repo-root", str(root)]) == 1
     error = capsys.readouterr().err
