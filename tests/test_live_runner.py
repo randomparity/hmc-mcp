@@ -1002,6 +1002,38 @@ def test_live_config_reads_the_complete_example_and_ignores_exports(
     )
 
 
+def _example_env_with(tmp_path: Path, key: str, value: str) -> Path:
+    """Write the checked-in example with one key overridden."""
+    example = Path(__file__).parents[1] / ".env.example"
+    lines = [
+        f"{key}={value}" if line.startswith(f"{key}=") else line
+        for line in example.read_text().splitlines()
+    ]
+    config_path = tmp_path / ".env"
+    config_path.write_text("\n".join(lines) + "\n")
+    return config_path
+
+
+def test_live_config_accepts_zero_sriov_physical_port_id(tmp_path) -> None:
+    """Physical port IDs are zero-indexed on Power, so port 0 is the first port.
+
+    A `> 0` check here aborts every SR-IOV run configured against port 0
+    before the runner reaches the HMC.
+    """
+    config_path = _example_env_with(tmp_path, "LIVE_TEST_SRIOV_PHYSICAL_PORT_ID", "0")
+
+    config = runner.LiveTestConfig.from_env_file(config_path)
+
+    assert config.sriov_physical_port_id == 0
+
+
+def test_live_config_rejects_negative_sriov_physical_port_id(tmp_path) -> None:
+    config_path = _example_env_with(tmp_path, "LIVE_TEST_SRIOV_PHYSICAL_PORT_ID", "-1")
+
+    with pytest.raises(ValueError, match="sriov_physical_port_id"):
+        runner.LiveTestConfig.from_env_file(config_path)
+
+
 @pytest.mark.asyncio
 async def test_main_rejects_missing_live_test_file_before_creating_mcp(
     monkeypatch, tmp_path, capsys
