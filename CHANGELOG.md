@@ -8,6 +8,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ## [Unreleased]
 
+### Fixed
+
+- The live-test runner no longer rejects `LIVE_TEST_SRIOV_PHYSICAL_PORT_ID=0`. Physical
+  port IDs are zero-indexed on Power SR-IOV hardware, so port 0 is the first and most
+  common port, but it was covered by a strictly-positive check that aborted the run
+  during configuration parsing — before the runner reached the HMC. Adapter and logical
+  port IDs keep the positive check; the physical port ID is now bounded at zero (#708).
+
 ### Changed
 
 - Installed CLI, MCP discovery, and generated tool references now publish the same
@@ -93,6 +101,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and `StorageMapping` values instead of raw HMC response mappings (ADR 0117).
 
 ### Added
+
+- `docs/capabilities/maturity.json` carries its first live observation, from the
+  harness shake-down run against V10R3 / POWER10 hardware: `console.info`, result
+  `failed`, on an HMC firmware defect serializing a null `Session/SessionId` property.
+  The row derives as `stale (closure-changed)` rather than `failed` on current `main`,
+  because the operation's import closure moved after the observation was taken — the
+  staleness rule working as designed, not a recording error (#708).
 
 - `python -m hmc_mcp` now runs the CLI, as an alias for the `hmc-mcp` console script wherever
   the `app` extra is installed — like the console script, it needs that extra and fails the
