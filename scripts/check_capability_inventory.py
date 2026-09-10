@@ -10,15 +10,17 @@ import json
 import os
 import re
 import sys
+import tempfile
 from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INVENTORY = ROOT / "docs" / "capabilities"
+DEFAULT_RUNTIME_PROJECTION = ROOT / "src" / "hmc_mcp" / "_operation_maturity.json"
 HEX_256 = re.compile(r"(?:[0-9a-f]{8}-){7}[0-9a-f]{8}")
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]*")
 TABLE_SEPARATOR = re.compile(r"^\|(?:\s*:?-+:?\s*\|)+$")
@@ -638,6 +640,7 @@ class OperationState:
     state: str
     reason: str | None = None
     implementation: str | None = None
+    observed_at: str | None = None
 
 
 def _readable(path: Path) -> bool:
@@ -788,7 +791,12 @@ def _handler_module(handler: str) -> str:
 
 
 def _stale_reason(
-    observation: Mapping[str, object], repo_root: Path, handler: str, now: datetime
+    observation: Mapping[str, object],
+    repo_root: Path,
+    handler: str,
+    now: datetime,
+    *,
+    age_staleness: bool,
 ) -> str | None:
     """Which staleness trigger fired, most specific first, or None."""
     if observation.get("closure_fingerprint") != closure_fingerprint(
@@ -799,7 +807,7 @@ def _stale_reason(
         observed = datetime.fromisoformat(str(observation.get("observed_at")))
     except ValueError:
         return "age-exceeded"
-    if (now - observed).days > STALE_AFTER_DAYS:
+    if age_staleness and now - observed > timedelta(days=STALE_AFTER_DAYS):
         return "age-exceeded"
     return None
 
@@ -809,6 +817,8 @@ def derive_states(
     registry: Collection[RegistryTool],
     repo_root: Path,
     now: datetime,
+    *,
+    age_staleness: bool = True,
 ) -> dict[str, OperationState]:
     """Derive every operation's verification state; never stored, never an error."""
     by_operation = {
@@ -841,13 +851,91 @@ def derive_states(
         # An operation carries at most one live observation, because re-validation
         # replaces it; ordering by time keeps a hand-edited catalog deterministic.
         latest = max(observations, key=lambda item: str(item.get("observed_at")))
-        reason = _stale_reason(latest, repo_root, tool.handler, now)
+        reason = _stale_reason(
+            latest,
+            repo_root,
+            tool.handler,
+            now,
+            age_staleness=age_staleness,
+        )
         states[tool.operation] = OperationState(
             "stale" if reason else ("current" if latest.get("result") == "passed" else "failed"),
             reason,
             implementation_state,
+            str(latest.get("observed_at")),
         )
     return states
+
+
+def render_runtime_projection(
+    records: Sequence[Mapping[str, object]],
+    registry: Collection[RegistryTool],
+    repo_root: Path,
+    now: datetime,
+) -> str:
+    """Render the sparse, generated package projection as canonical JSON."""
+    recorded = {
+        str(record["operation"])
+        for record in records
+        if isinstance(record.get("operation"), str)
+    }
+    states = derive_states(
+        records, registry, repo_root, now, age_staleness=False
+    )
+    operations = [
+        {
+            "operation": operation,
+            "implementation": states[operation].implementation,
+            "verification": states[operation].state,
+            "reason": states[operation].reason,
+            "observed_at": states[operation].observed_at,
+        }
+        for operation in sorted(recorded & states.keys())
+    ]
+    return json.dumps(
+        {
+            "format_version": 1,
+            "runtime_eligibility": "existing-runtime-guards",
+            "operations": operations,
+        },
+        indent=2,
+    ) + "\n"
+
+
+def write_runtime_projection(path: Path, document: str) -> None:
+    """Atomically replace the generated runtime projection."""
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", text=True
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(document)
+        temporary.replace(path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _check_runtime_projection(path: Path, expected: str) -> list[str]:
+    """Report a missing or byte-stale generated package projection."""
+    try:
+        actual = path.read_bytes()
+    except OSError as error:
+        return [
+            (
+                f"runtime projection {path} cannot be read: {error}; "
+                "run `just capability-metadata`"
+            )
+        ]
+    if actual != expected.encode("utf-8"):
+        return [
+            (
+                f"runtime projection {path} is malformed or stale; "
+                "run `just capability-metadata`"
+            )
+        ]
+    return []
 
 
 def verification_report(
@@ -1062,6 +1150,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="exit non-zero when any operation's evidence has gone stale",
     )
+    parser.add_argument(
+        "--write-runtime-projection",
+        type=Path,
+        help="atomically write the generated runtime projection to PATH",
+    )
     args = parser.parse_args(argv)
     if args.fail_on_stale and not args.verification_report:
         parser.error("--fail-on-stale requires --verification-report")
@@ -1077,18 +1170,38 @@ def main(argv: Sequence[str] | None = None) -> int:
         if len(sources) != len(args.source):
             errors.append("duplicate --source corpus ID")
         errors.extend(verify_corpora(args.inventory, sources))
+    maturity_records: list[dict[str, object]] = []
+    rendered_projection = ""
+    if not errors:
+        maturity = load_json(args.inventory / "maturity.json").get("operations")
+        maturity_records = (
+            [record for record in maturity if isinstance(record, dict)]
+            if isinstance(maturity, list)
+            else []
+        )
+        rendered_projection = render_runtime_projection(
+            maturity_records, registry, ROOT, datetime.now(UTC)
+        )
+        if args.write_runtime_projection is None:
+            errors.extend(
+                _check_runtime_projection(DEFAULT_RUNTIME_PROJECTION, rendered_projection)
+            )
     for error in errors:
         print(f"ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
+    if args.write_runtime_projection is not None:
+        try:
+            write_runtime_projection(args.write_runtime_projection, rendered_projection)
+        except OSError as error:
+            print(f"ERROR: cannot write runtime projection: {error}", file=sys.stderr)
+            return 1
+        print(f"wrote runtime projection: {args.write_runtime_projection}")
     if args.verification_report:
         # Derived staleness is never a validation error, so the report runs only
         # after validation has passed and reports separately from it.
-        maturity = load_json(args.inventory / "maturity.json").get("operations")
         states = derive_states(
-            [record for record in maturity if isinstance(record, dict)]
-            if isinstance(maturity, list)
-            else [],
+            maturity_records,
             registry,
             ROOT,
             datetime.now(UTC),

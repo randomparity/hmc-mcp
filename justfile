@@ -48,6 +48,11 @@ test-layout:
 capability-inventory:
     uv run --no-sync python scripts/check_capability_inventory.py
 
+# regenerate the packaged operation-maturity projection
+capability-metadata:
+    uv run --no-sync python scripts/check_capability_inventory.py \
+        --write-runtime-projection src/hmc_mcp/_operation_maturity.json
+
 # report each operation's derived live-verification state (ADR 0127)
 verification-report *ARGS:
     uv run --no-sync python scripts/check_capability_inventory.py --verification-report {{ARGS}}
