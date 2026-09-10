@@ -4,13 +4,13 @@
 
 8 tools in the `storage` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_attach_disk_to_lpar` | `mutate` | `storage.attach_disk` | `lpar` | Create and attach a virtual disk to an existing LPAR. |
-| `hmc_create_virtual_disk` | `mutate` | `storage.create_disk` | `vios` | Create a Virtual Disk (logical volume) inside a Volume Group. |
-| `hmc_create_volume_group` | `mutate` | `storage.create_volume_group` | `vios` | Create a Volume Group on a VIOS from one or more physical volumes. |
-| `hmc_delete_virtual_disk` | `destructive` | `storage.delete_disk` | `vios` | Delete a Virtual Disk from a Volume Group. |
-| `hmc_detach_storage_mapping` | `destructive` | `storage.detach_mapping` | `vios` | Detach a VirtualSCSIMapping by its inventory UUID. |
-| `hmc_list_storage_mappings` | `read` | `storage.list_mappings` | `vios` | List VirtualSCSIMappings on a VIOS, optionally filtered by LPAR. |
-| `hmc_list_volume_groups` | `read` | `storage.list_volume_groups` | `vios` | List Volume Groups on a VIOS. |
-| `hmc_map_storage_to_lpar` | `mutate` | `storage.map` | `vios` | Map backing storage to an LPAR via a Virtual SCSI mapping on a VIOS. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_attach_disk_to_lpar` | `mutate` | `storage.attach_disk` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create and attach a virtual disk to an existing LPAR. |
+| `hmc_create_virtual_disk` | `mutate` | `storage.create_disk` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create a Virtual Disk (logical volume) inside a Volume Group. |
+| `hmc_create_volume_group` | `mutate` | `storage.create_volume_group` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create a Volume Group on a VIOS from one or more physical volumes. |
+| `hmc_delete_virtual_disk` | `destructive` | `storage.delete_disk` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Delete a Virtual Disk from a Volume Group. |
+| `hmc_detach_storage_mapping` | `destructive` | `storage.detach_mapping` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Detach a VirtualSCSIMapping by its inventory UUID. |
+| `hmc_list_storage_mappings` | `read` | `storage.list_mappings` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List VirtualSCSIMappings on a VIOS, optionally filtered by LPAR. |
+| `hmc_list_volume_groups` | `read` | `storage.list_volume_groups` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List Volume Groups on a VIOS. |
+| `hmc_map_storage_to_lpar` | `mutate` | `storage.map` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Map backing storage to an LPAR via a Virtual SCSI mapping on a VIOS. |

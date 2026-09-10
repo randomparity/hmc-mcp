@@ -4,10 +4,10 @@
 
 5 tools in the `user` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_create_user` | `mutate` | `user.create` | `user` | Create a documented UOM UserProfile below a management console. |
-| `hmc_delete_user` | `destructive` | `user.delete` | `user` | Permanently delete a UOM UserProfile identified by UUID. |
-| `hmc_get_user` | `read` | `user.get` | `user` | Get a UserProfile by its management-console and profile UUIDs. |
-| `hmc_list_users` | `read` | `user.list` | `console` | List UserProfile children of a management console. |
-| `hmc_modify_user` | `mutate` | `user.modify` | `user` | Modify supplied fields of a UOM UserProfile identified by UUID. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_create_user` | `mutate` | `user.create` | `user` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create a documented UOM UserProfile below a management console. |
+| `hmc_delete_user` | `destructive` | `user.delete` | `user` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Permanently delete a UOM UserProfile identified by UUID. |
+| `hmc_get_user` | `read` | `user.get` | `user` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Get a UserProfile by its management-console and profile UUIDs. |
+| `hmc_list_users` | `read` | `user.list` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List UserProfile children of a management console. |
+| `hmc_modify_user` | `mutate` | `user.modify` | `user` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Modify supplied fields of a UOM UserProfile identified by UUID. |

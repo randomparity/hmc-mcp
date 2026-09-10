@@ -4,6 +4,6 @@
 
 1 tool in the `capacity` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_capacity_report` | `read` | `capacity.report` | `console` | Report assigned and available memory and processors by system. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_capacity_report` | `read` | `capacity.report` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Report assigned and available memory and processors by system. |

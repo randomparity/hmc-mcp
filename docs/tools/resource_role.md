@@ -4,6 +4,6 @@
 
 1 tool in the `resource_role` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_list_resource_roles` | `read` | `resource_role.list` | `console` | List ResourceRole children of a management console. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_list_resource_roles` | `read` | `resource_role.list` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List ResourceRole children of a management console. |

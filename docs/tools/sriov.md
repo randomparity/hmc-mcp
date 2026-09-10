@@ -4,8 +4,8 @@
 
 3 tools in the `sriov` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_assign_sriov_logical_port` | `mutate` | `sriov.assign_logical_port` | `lpar` | Assign an evidence-backed Ethernet SR-IOV logical port. |
-| `hmc_set_sriov_adapter_mode` | `mutate` | `sriov.set_mode` | `managed_system` | Verify that a physical adapter is already in the requested mode. |
-| `hmc_unassign_sriov_logical_port` | `mutate` | `sriov.unassign_logical_port` | `lpar` | Unassign a profile logical port on a Not Activated LPAR. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_assign_sriov_logical_port` | `mutate` | `sriov.assign_logical_port` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Assign an evidence-backed Ethernet SR-IOV logical port. |
+| `hmc_set_sriov_adapter_mode` | `mutate` | `sriov.set_mode` | `managed_system` | `partial` | `unevidenced` | `existing-runtime-guards` | Verify that a physical adapter is already in the requested mode. |
+| `hmc_unassign_sriov_logical_port` | `mutate` | `sriov.unassign_logical_port` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Unassign a profile logical port on a Not Activated LPAR. |

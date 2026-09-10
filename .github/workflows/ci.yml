@@ -410,6 +410,24 @@ jobs:
           uv pip install --no-deps --python .wheel-venv/bin/python \
             "${wheels[0]}[app]"
           .wheel-venv/bin/hmc-mcp --help >/dev/null
+          .wheel-venv/bin/hmc-mcp capabilities --json > capabilities.json
+          .wheel-venv/bin/python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          capabilities = json.loads(Path("capabilities.json").read_text())
+          assert capabilities
+          for capability in capabilities:
+              assert re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", capability["operation"])
+              assert capability["implementation"] in {
+                  "unrecorded", "absent", "partial", "implemented"
+              }
+              assert capability["verification"] in {
+                  "unrecorded", "unevidenced", "current", "stale", "failed"
+              }
+              assert capability["runtime_eligibility"] == "existing-runtime-guards"
+          PY
           # Renders every group's help page off the command tree the installed
           # wheel builds, so a new group needs no edit here. The script is
           # harness code, not package code: run this way sys.path[0] is

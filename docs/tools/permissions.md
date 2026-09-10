@@ -4,6 +4,6 @@
 
 1 tool in the `permissions` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_effective_permissions` | `read` | `permissions.describe` | `none` | Report what this MCP server may currently do. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_effective_permissions` | `read` | `permissions.describe` | `none` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Report what this MCP server may currently do. |

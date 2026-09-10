@@ -147,19 +147,23 @@ def test_library_guide_documents_the_typed_facade_and_its_covered_surface() -> N
     assert "not compatibility promises" in guide
 
 
-def test_vios_backup_hmc_floor_is_published_without_narrowing_general_support() -> None:
+def test_hmc_compatibility_claims_are_evidence_scoped() -> None:
     readme = (ROOT / "docs/compatibility.md").read_text()
     cheatsheet = (ROOT / "docs" / "hmc-cli-cheatsheet.md").read_text()
     compatibility = readme.split("## HMC version compatibility", 1)[1].split(
         "### Firmware write-path compatibility", 1
     )[0]
 
-    assert "HMC V8 through V11" in compatibility
+    assert "HMC V8 through V11" not in compatibility
+    assert "all the POWER generations" not in compatibility
+    assert "POWER10 and POWER11" in compatibility
+    assert "capabilities/README.md" in compatibility
     assert "HMC V10 or newer" in compatibility
     for tool in VIOS_BACKUP_TOOLS:
         assert tool in compatibility
         assert tool in cheatsheet
     assert "require HMC V10 or newer" in cheatsheet
+    assert "Some HMC V10 firmware builds return HTTP 406" in readme
 
 
 def test_access_policy_guidance_matches_connectionless_dispatch_semantics() -> None:

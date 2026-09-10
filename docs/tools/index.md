@@ -14,6 +14,14 @@ This reference covers every tool the server registers, including the ones a defa
 | `mutate` | 51 |
 | `read` | 73 |
 
+## Maturity vocabulary
+
+The maturity fields come from the [canonical HMC reference capability ledger](../capabilities/README.md). They report evidence, not permission to run an operation.
+
+- **Implementation:** `unrecorded`, `absent`, `partial`, or `implemented`.
+- **Verification:** `unrecorded`, `unevidenced`, `current`, `stale`, or `failed`. A stale value includes `closure-changed` or `age-exceeded` in parentheses.
+- **Runtime eligibility:** `existing-runtime-guards`; authorization, ownership, validation, capability, and safety checks remain authoritative.
+
 ## Domains
 
 | Domain | Tools | Page |

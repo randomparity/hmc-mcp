@@ -4,7 +4,7 @@
 
 2 tools in the `remote_access` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_configure_remote_access` | `mutate` | `remote_access.configure` | `console` | Set or explicitly clear documented LDAP/Kerberos RemoteAccess fields. |
-| `hmc_get_remote_access` | `read` | `remote_access.get` | `console` | Read the ManagementConsole RemoteAccess property group. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_configure_remote_access` | `mutate` | `remote_access.configure` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set or explicitly clear documented LDAP/Kerberos RemoteAccess fields. |
+| `hmc_get_remote_access` | `read` | `remote_access.get` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Read the ManagementConsole RemoteAccess property group. |

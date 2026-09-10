@@ -10,6 +10,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- Installed CLI, MCP discovery, and generated tool references now publish the same
+  operation-keyed implementation, verification, and runtime-eligibility evidence.
+  Compatibility guidance now describes the POWER10/POWER11 reference corpus and
+  per-operation evidence instead of claiming blanket HMC V8–V11 and POWER support
+  (#624, ADR 0131).
+
 - `scripts/run_tests.py` now preserves an interrupted pytest's `KeyboardInterrupt`
   diagnostic under the host load ADR 0130 measured, where a fixed 3-second grace
   truncated it. The window before `SIGTERM` and the reap before `SIGKILL` are separate

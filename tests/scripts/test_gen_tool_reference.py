@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
 import pytest
 
+import hmc_mcp.operation_maturity as maturity
 from hmc_mcp.server import TOOL_SECURITY
 from hmc_mcp.tool_registry import ToolSecurity
 
@@ -56,6 +58,15 @@ def _records(**overrides):
     return gen_tool_reference.build_records(descriptions, security, exposed)
 
 
+def _install_projection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, document: object
+) -> None:
+    (tmp_path / "_operation_maturity.json").write_text(
+        json.dumps(document), encoding="utf-8"
+    )
+    monkeypatch.setattr(maturity.resources, "files", lambda _package: tmp_path)
+
+
 def test_records_carry_registry_metadata_and_the_docstring_summary() -> None:
     alpha, beta = _records()
 
@@ -69,6 +80,71 @@ def test_records_carry_registry_metadata_and_the_docstring_summary() -> None:
     # the Args block must not reach the table cell.
     assert alpha.summary == "List alphas."
     assert beta.domain == "beta"
+
+
+def test_records_join_shared_maturity_and_render_sparse_absence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_projection(
+        tmp_path,
+        monkeypatch,
+        {
+            "format_version": 1,
+            "runtime_eligibility": "existing-runtime-guards",
+            "operations": [
+                {
+                    "operation": "alpha.list",
+                    "implementation": "partial",
+                    "verification": "stale",
+                    "reason": "closure-changed",
+                    "observed_at": "2026-09-01T12:00:00Z",
+                }
+            ],
+        },
+    )
+
+    alpha, beta = _records()
+
+    assert (
+        alpha.implementation,
+        alpha.verification,
+        alpha.verification_reason,
+        alpha.runtime_eligibility,
+    ) == ("partial", "stale", "closure-changed", "existing-runtime-guards")
+    assert (
+        beta.implementation,
+        beta.verification,
+        beta.verification_reason,
+        beta.runtime_eligibility,
+    ) == ("unrecorded", "unrecorded", None, "existing-runtime-guards")
+
+    pages = gen_tool_reference.render_pages((alpha, beta))
+    assert (
+        "| Tool | Effect | Operation | Target | Implementation | Verification | "
+        "Runtime eligibility | Summary |" in pages["alpha.md"]
+    )
+    assert "| `partial` | `stale (closure-changed)` | `existing-runtime-guards` |" in (
+        pages["alpha.md"]
+    )
+    assert "| `unrecorded` | `unrecorded` | `existing-runtime-guards` |" in (
+        pages["beta.md"]
+    )
+    assert "../capabilities/README.md" in pages["index.md"]
+    for value in ("absent", "partial", "implemented"):
+        assert f"`{value}`" in pages["index.md"]
+    for value in ("unevidenced", "current", "stale", "failed"):
+        assert f"`{value}`" in pages["index.md"]
+    assert "`unrecorded`" in pages["index.md"]
+    assert "`existing-runtime-guards`" in pages["index.md"]
+
+
+def test_records_reject_malformed_projection_grammar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_projection(tmp_path, monkeypatch, {"format_version": 1})
+
+    with pytest.raises(maturity.OperationMaturityError, match="projection root"):
+        _records()
 
 
 def test_a_missing_registered_tool_raises_rather_than_being_omitted() -> None:
@@ -117,7 +193,7 @@ def test_a_pipe_in_a_summary_is_escaped_so_the_row_keeps_its_columns() -> None:
     page = gen_tool_reference.render_pages([alpha])["alpha.md"]
     row = next(line for line in page.splitlines() if line.startswith("| `hmc_alpha`"))
     assert r"\|" in row
-    assert row.replace(r"\|", "").count("|") == 6
+    assert row.replace(r"\|", "").count("|") == 9
 
 
 def test_rendering_is_deterministic_over_an_unordered_registry() -> None:
