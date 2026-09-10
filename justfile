@@ -40,6 +40,10 @@ env-vars:
 nicknames:
     uv run --no-sync python scripts/check_nicknames.py
 
+# reject conftest files that shadow the canonical test configuration
+test-layout:
+    uv run --no-sync python scripts/check_test_layout.py
+
 # verify the capability ledger remains structurally valid and reconciles the registry
 capability-inventory:
     uv run --no-sync python scripts/check_capability_inventory.py
@@ -65,7 +69,7 @@ doc-freshness:
     uv run --no-sync python scripts/check_generated_docs.py
 
 # local and hosted static-analysis gate
-static: lint typecheck secrets workflow-security env-vars nicknames \
+static: lint typecheck secrets workflow-security env-vars nicknames test-layout \
         capability-inventory tool-docs-check adr-numbering doc-freshness
 
 # run the full pytest suite with one semantic summary
