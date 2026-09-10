@@ -20,7 +20,6 @@ from conftest import LOGON_RESPONSE, make_config
 
 from hmc_mcp.client.core import MEDIA_UOM, MEDIA_WEB, HMCClient
 
-_BASE = "https://hmc.test:12443"
 _LOGON_PATH = "/rest/api/web/Logon"
 _LP_PATH = "/rest/api/uom/LogicalPartition"
 
