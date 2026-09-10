@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from hmc_mcp._app import create_mcp
 from hmc_mcp.tool_registry import (
+    EFFECTS,
     TargetSelector,
     ToolSecurity,
     annotations_for,
@@ -398,12 +399,17 @@ def test_tool_requires_the_three_mandatory_fields():
 
 
 def test_annotations_cover_exactly_the_effect_vocabulary():
-    assert annotations_for("read").readOnlyHint is True
-    assert annotations_for("mutate").readOnlyHint is False
-    assert annotations_for("mutate").destructiveHint is None
-    assert annotations_for("destructive").destructiveHint is True
-    assert annotations_for("destructive").readOnlyHint is False
-    assert annotations_for("arbitrary-command").destructiveHint is True
+    expected = {
+        "read": (True, None),
+        "mutate": (False, None),
+        "destructive": (False, True),
+        "arbitrary-command": (False, True),
+    }
+    assert set(expected) == EFFECTS
+    for effect, (read_only, destructive) in expected.items():
+        wire = annotations_for(effect).model_dump(by_alias=True)
+        assert wire["readOnlyHint"] is read_only, effect
+        assert wire["destructiveHint"] is destructive, effect
     with pytest.raises(KeyError):
         annotations_for("invented")  # ty: ignore[invalid-argument-type]
 

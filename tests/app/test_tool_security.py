@@ -206,7 +206,7 @@ def test_available_hmc_ptfs_is_mutating_job_submission():
     tool = _tools_by_name()["hmc_submit_available_hmc_ptfs_query"]
 
     assert security.effect == "mutate"
-    assert tool.annotations.readOnlyHint is False
+    assert tool.annotations.model_dump(by_alias=True)["readOnlyHint"] is False
 
 
 def test_selectors_and_connection_arguments_are_public_parameters():
@@ -543,8 +543,9 @@ def test_annotations_for_hands_out_an_independent_copy():
     assert first == second
     assert first is not second
 
-    first.readOnlyHint = False
-    assert annotations_for("read").readOnlyHint is True
+    first.title = "changed"
+    assert second.title is None
+    assert annotations_for("read").title is None
 
 
 def test_the_classification_index_is_read_only():
