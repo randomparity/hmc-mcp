@@ -114,18 +114,21 @@ def _parse_operation(value: object, policy: str) -> tuple[str, _ProjectedOperati
     )
 
 
-def _load_projection() -> dict[str, _ProjectedOperation]:
+def _read_projection_document() -> object:
     try:
         content = resources.files("hmc_mcp").joinpath(_RESOURCE).read_bytes()
         if len(content) > _MAX_RESOURCE_BYTES:
             raise OperationMaturityError("operation-maturity projection exceeds size limit")
-        document = json.loads(content.decode("utf-8"), object_pairs_hook=_unique_pairs)
+        return json.loads(content.decode("utf-8"), object_pairs_hook=_unique_pairs)
     except OperationMaturityError:
         raise
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise OperationMaturityError(
             f"cannot read packaged operation-maturity projection: {error}"
         ) from error
+
+
+def _parse_projection(document: object) -> dict[str, _ProjectedOperation]:
     if not isinstance(document, dict) or set(document) != _ROOT_KEYS:
         raise OperationMaturityError(
             f"projection root must contain exactly {sorted(_ROOT_KEYS)}"
@@ -186,7 +189,9 @@ def operation_maturity_catalog(
     return MappingProxyType(
         {
             operation: _resolved(projected, resolved_now)
-            for operation, projected in _load_projection().items()
+            for operation, projected in _parse_projection(
+                _read_projection_document()
+            ).items()
         }
     )
 

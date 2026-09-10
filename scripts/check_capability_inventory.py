@@ -938,6 +938,29 @@ def _check_runtime_projection(path: Path, expected: str) -> list[str]:
     return []
 
 
+def _maturity_records(inventory: Path) -> list[dict[str, object]]:
+    operations = load_json(inventory / "maturity.json").get("operations")
+    if not isinstance(operations, list):
+        return []
+    return [record for record in operations if isinstance(record, dict)]
+
+
+def _process_runtime_projection(
+    records: Sequence[Mapping[str, object]],
+    registry: Collection[RegistryTool],
+    output: Path | None,
+) -> list[str]:
+    rendered = render_runtime_projection(records, registry, ROOT, datetime.now(UTC))
+    if output is None:
+        return _check_runtime_projection(DEFAULT_RUNTIME_PROJECTION, rendered)
+    try:
+        write_runtime_projection(output, rendered)
+    except OSError as error:
+        return [f"cannot write runtime projection: {error}"]
+    print(f"wrote runtime projection: {output}")
+    return []
+
+
 def verification_report(
     states: Mapping[str, OperationState], *, fail_on_stale: bool
 ) -> int:
@@ -1171,32 +1194,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             errors.append("duplicate --source corpus ID")
         errors.extend(verify_corpora(args.inventory, sources))
     maturity_records: list[dict[str, object]] = []
-    rendered_projection = ""
     if not errors:
-        maturity = load_json(args.inventory / "maturity.json").get("operations")
-        maturity_records = (
-            [record for record in maturity if isinstance(record, dict)]
-            if isinstance(maturity, list)
-            else []
-        )
-        rendered_projection = render_runtime_projection(
-            maturity_records, registry, ROOT, datetime.now(UTC)
-        )
-        if args.write_runtime_projection is None:
-            errors.extend(
-                _check_runtime_projection(DEFAULT_RUNTIME_PROJECTION, rendered_projection)
+        maturity_records = _maturity_records(args.inventory)
+        errors.extend(
+            _process_runtime_projection(
+                maturity_records, registry, args.write_runtime_projection
             )
+        )
     for error in errors:
         print(f"ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    if args.write_runtime_projection is not None:
-        try:
-            write_runtime_projection(args.write_runtime_projection, rendered_projection)
-        except OSError as error:
-            print(f"ERROR: cannot write runtime projection: {error}", file=sys.stderr)
-            return 1
-        print(f"wrote runtime projection: {args.write_runtime_projection}")
     if args.verification_report:
         # Derived staleness is never a validation error, so the report runs only
         # after validation has passed and reports separately from it.
