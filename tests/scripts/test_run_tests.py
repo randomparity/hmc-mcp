@@ -286,6 +286,37 @@ def test_interruption_replays_captured_output_without_traceback(
     assert temporary_file.closed
 
 
+def test_interrupt_during_replay_returns_interrupted_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_chunk = b"a" * run_tests.CHUNK_SIZE
+    temporary_file = TrackingTemporaryFile()
+    process = InterruptingProcess(1, temporary_file, first_chunk + b"remaining\n")
+
+    class ReplayInterruptingBuffer(RecordingBuffer):
+        def write(self, data: Any) -> int:
+            if self.chunks:
+                raise KeyboardInterrupt
+            return super().write(data)
+
+    stderr = BinaryStderr()
+    stderr.buffer = ReplayInterruptingBuffer()
+    monkeypatch.setattr(run_tests.sys, "stderr", stderr)
+    monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
+    monkeypatch.setattr(
+        run_tests.subprocess, "Popen", lambda _command, **_kwargs: process
+    )
+
+    try:
+        status = run_tests.main()
+    except KeyboardInterrupt:
+        pytest.fail("an interrupt during replay escaped main()")
+
+    assert status == 130
+    assert stderr.buffer.getvalue() == first_chunk
+    assert temporary_file.closed
+
+
 def test_the_reap_is_the_smaller_of_the_two_bounds() -> None:
     """The ladder's invariant: the reap follows the diagnostic window.
 
