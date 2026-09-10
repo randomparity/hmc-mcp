@@ -206,7 +206,7 @@ def test_available_hmc_ptfs_is_mutating_job_submission():
     tool = _tools_by_name()["hmc_submit_available_hmc_ptfs_query"]
 
     assert security.effect == "mutate"
-    assert tool.annotations.model_dump(by_alias=True)["readOnlyHint"] is False
+    assert tool.annotations.read_only_hint is False
 
 
 def test_selectors_and_connection_arguments_are_public_parameters():
