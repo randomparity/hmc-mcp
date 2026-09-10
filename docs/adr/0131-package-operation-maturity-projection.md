@@ -32,11 +32,12 @@ alias can own independent evidence. Sparse absence is a valid `unrecorded` resul
 consumers, not an occasion to repeat the repository join check.
 
 The packaged reader may age a recorded observation from current or failed to stale at
-ADR 0127's boundary. CLI rows resolve it when the command runs. MCP registration records
-the operation identity, and a `tools/list` middleware resolves the value for each request
-so a long-running server does not retain a past verification state. The reader does not
-re-evaluate source closure: the repository freshness gate proves the resource was
-generated against the packaged source before release.
+ADR 0127's boundary. CLI rows resolve it when the command runs. A `tools/list` middleware
+joins each already-filtered tool name through the complete security catalog and resolves
+the value for each request, so a long-running server does not retain a past verification
+state. Tool registration remains unchanged. The reader does not re-evaluate source
+closure: the repository freshness gate proves the resource was generated against the
+packaged source before release.
 
 ## Consequences
 

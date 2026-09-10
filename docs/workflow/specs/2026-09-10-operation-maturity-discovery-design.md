@@ -20,8 +20,8 @@ merged F1/F2/F3 records from issues #621, #622 and #623.
 and freshness-checks `src/hmc_mcp/_operation_maturity.json`, a sparse runtime projection
 defined by [ADR 0131](../../adr/0131-package-operation-maturity-projection.md). An
 internal stdlib-only reader validates that resource and returns immutable
-`OperationMaturity` values. The reader supplies the CLI command, MCP registration and
-tool-reference generator; none reads the documentation catalogs independently.
+`OperationMaturity` values. The reader supplies the CLI command, MCP discovery middleware
+and tool-reference generator; none reads the documentation catalogs independently.
 
 Each value keeps three dimensions separate:
 
@@ -34,11 +34,12 @@ Presentation names join through their `ToolSecurity.operation`. `hmc-mcp capabil
 groups the current registered tool names by operation and renders a table by default or
 a JSON array with `--json`. The command creates no HMC client, reads no profile, and
 performs no network I/O; the existing root callback still parses root options and their
-`HMC_*` environment fallbacks before dispatch. Each MCP tool carries its operation ID
-below one namespaced `_meta` key at registration. A `tools/list` middleware replaces that
-value with the current projection on every discovery request, so a long-running process
-crossing the 90-day boundary reports `stale` without restart. Generated group pages add
-the three dimensions to their operation row and link their meaning from the index.
+`HMC_*` environment fallbacks before dispatch. A `tools/list` middleware joins each
+already-filtered returned tool name through the complete `TOOL_SECURITY` mapping and adds
+the current projection below one namespaced `_meta` key. It runs on every discovery
+request, so a long-running process crossing the 90-day boundary reports `stale` without
+restart. Tool registration remains unchanged. Generated group pages add the three
+dimensions to their operation row and link their meaning from the index.
 
 The projection stores the observation time for a current or failed live result. The
 reader applies ADR 0127's 90-day rule at query time. Repository generation additionally

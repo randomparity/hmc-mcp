@@ -92,11 +92,9 @@ Rollback: revert the task commit; the canonical catalogs are never rewritten.
 ## Task 2: Expose the shared projection through CLI and MCP discovery
 
 Files: create `src/hmc_mcp/cli_commands/capabilities.py`,
-`src/hmc_mcp/server_middleware/operation_maturity.py`, and
+`src/hmc_mcp/operation_maturity_middleware.py`, and
 `tests/app/test_capability_discovery.py`; modify `src/hmc_mcp/cli.py`,
-`src/hmc_mcp/cli_commands/app.py`, `src/hmc_mcp/tool_registry.py`,
-`src/hmc_mcp/server_tools/command.py`, `src/hmc_mcp/server_tools/permissions.py`, and
-`tests/unit/test_tool_registry.py`.
+`src/hmc_mcp/cli_commands/app.py`, and `src/hmc_mcp/server.py`.
 
 Interfaces:
 
@@ -109,11 +107,12 @@ def capability_rows(
 ```
 
 `capability_rows` groups sorted tool names by operation and calls Task 1 once per operation.
-All three MCP registration sites put their operation ID below `MATURITY_META_KEY` while
-preserving existing annotation and authorization arguments. A FastMCP `tools/list`
-middleware replaces that entry with `operation_maturity_meta(operation, now=clock())` on
-every request. The injected clock exists only at the middleware boundary for deterministic
-tests; production uses aware UTC time.
+A FastMCP `tools/list` middleware receives the complete `TOOL_SECURITY` mapping, joins each
+already-filtered returned tool name to its operation, and merges
+`{MATURITY_META_KEY: operation_maturity_meta(operation, now=clock())}` into that tool's
+existing metadata on every request. The injected clock exists only at the middleware
+boundary for deterministic tests; production uses aware UTC time. Registration code is
+unchanged.
 
 Verification:
 
@@ -122,12 +121,11 @@ Verification:
   `HMC_*` option input. Tests: `tests/app/test_capability_discovery.py`. Expected red:
   command is absent. Green: `uv run --no-sync pytest
   tests/app/test_capability_discovery.py --no-cov -q` exits 0.
-- Mode: focused-test. Contract: every registration path adds identical namespaced metadata
-  without changing MCP annotations or ceiling filtering, and one application queried
-  before and after an injected age boundary refreshes current to stale. Tests in the same
-  file and `tests/unit/test_tool_registry.py`. Expected red: `_meta` is absent. Green: the
-  command above plus `uv run --no-sync pytest tests/unit/test_tool_registry.py --no-cov
-  -q` exit 0.
+- Mode: focused-test. Contract: the complete composed application adds identical
+  namespaced metadata after ceiling filtering without changing MCP annotations or existing
+  metadata, and one application queried before and after an injected age boundary refreshes
+  current to stale. Tests: `tests/app/test_capability_discovery.py`. Expected red: `_meta`
+  is absent. Green: the command above exits 0.
 
 Steps:
 
@@ -138,9 +136,9 @@ Steps:
 3. Register the root `capabilities` command without loading a profile or creating an HMC
    client. Test both a clean environment and the existing root callback's rejection of a
    malformed option environment value.
-4. Add the operation identity at the module, arbitrary-command and effective-permissions
-   registration sites. Add one `tools/list` middleware that refreshes the namespaced
-   maturity dictionary per request. Do not alter `ToolAnnotations`.
+4. Install one `tools/list` middleware in `server.py:create_mcp`, passing the complete
+   `TOOL_SECURITY` mapping. Join the returned tool name at request time and merge only the
+   namespaced maturity dictionary. Do not alter registration or `ToolAnnotations`.
 5. Run focused tests green. Temporarily substitute one tool's operation during the test,
    observe the shared-evidence assertion red, restore it, and rerun green.
 6. Run `just smoke`, `just lint`, and `just typecheck`; commit as
@@ -218,4 +216,6 @@ Rollback: revert the task commit and regenerate `docs/tools/` from the reverted 
 - Pass 2 host-portability finding 2: accepted-fixed by the same CLI contract correction.
 - Pass 2 host-portability finding 3: accepted-fixed by extending all eight installed-wheel
   smoke legs and their workflow-shape test.
+- Oathbind finding 1: accepted-cut by joining already-filtered names centrally in one
+  middleware installed by `server.py`, removing all registration-site changes.
 - Open findings, deferrals and follow-up candidates: none.
