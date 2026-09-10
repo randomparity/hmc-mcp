@@ -4,6 +4,12 @@
 
 Accepted
 
+> **Partially superseded by [PR #738](https://github.com/randomparity/hmc-mcp/pull/738)**
+> for the startup stdlib reachability: `csv` is reached on CPython 3.11–3.12 and `json` on
+> 3.13–3.14. **[PR #735](https://github.com/randomparity/hmc-mcp/pull/735) also supersedes**
+> the fifth consequence's enforcement claim: CI now enforces the launch shape, while the runtime
+> fd-2 condition remains unobserved under dash.
+
 ## Context
 
 `tests/app/test_authorization_audit_live.py::test_a_failed_sink_leaves_the_denial_unchanged`

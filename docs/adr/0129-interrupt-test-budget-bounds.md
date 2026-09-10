@@ -4,6 +4,11 @@
 
 Accepted
 
+> **Partially superseded by
+> [ADR 0130](0130-interrupt-diagnostic-window-and-reap.md):** its unclamped measurements
+> correct this record's host-independence finding for interrupt collection; the two test-budget
+> decisions below stand.
+
 ## Context
 
 `tests/scripts/test_run_tests.py::test_real_interrupt_preserves_pytest_diagnostic` is the only
