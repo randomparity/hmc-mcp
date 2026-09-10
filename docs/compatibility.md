@@ -4,24 +4,18 @@
 
 ## HMC version compatibility
 
-`hmc-mcp` targets **HMC V8 through V11** and all the POWER generations they
-manage. All uom XML documents are written with `schemaVersion="V1_0"` — the
-floor every supported HMC understands — so create/modify operations succeed
-regardless of firmware age.
-
-| HMC version | POWER generations managed | uom schema floor |
-|-------------|--------------------------|------------------|
-| HMC V8      | POWER6, POWER7, POWER8   | V1_0             |
-| HMC V9      | POWER7, POWER8, POWER9   | V1_0             |
-| HMC V10     | POWER8, POWER9, POWER10  | V1_0             |
-| HMC V11     | POWER9, POWER10, POWER11 | V1_0             |
+The checked reference corpus covers retained POWER10 and POWER11 command and REST
+documentation snapshots. It is an evidence inventory, not a blanket compatibility
+promise for every operation, HMC release, or managed system. Consult the
+[HMC reference capability ledger](capabilities/README.md) for the corpus scope and
+per-operation evidence, and the [generated tool reference](tools/index.md) for the
+maturity currently published by the installed code.
 
 Three VIOS backup catalog tools have a narrower floor:
 `hmc_list_vios_backups`, `hmc_backup_vios`, and `hmc_restore_vios` require
 **HMC V10 or newer**. Their supported HMC commands do not exist in the V9.1.940
 command inventory, so these tools have no runtime version probe or V8/V9
-fallback. Other tools retain the general HMC V8 through V11 support stated
-above.
+fallback.
 
 **`HMC_SCHEMA_VERSION` — leave this unset for normal operation.**
 `hmc-mcp` omits the `X-HMC-Schema-Version` request header from all write

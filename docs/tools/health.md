@@ -4,6 +4,6 @@
 
 1 tool in the `health` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_fleet_health` | `read` | `health.fleet` | `console` | Return issue-only health across managed systems, partitions, and jobs. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_fleet_health` | `read` | `health.fleet` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return issue-only health across managed systems, partitions, and jobs. |

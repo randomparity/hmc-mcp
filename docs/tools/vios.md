@@ -4,15 +4,15 @@
 
 10 tools in the `vios` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_backup_vios` | `mutate` | `vios.backup` | `vios` | Create a named VIOS backup with the supported ``mkviosbk`` command. |
-| `hmc_create_vios` | `mutate` | `vios.create` | `managed_system` | Create a new Virtual IO Server (VIOS) partition on a managed system. |
-| `hmc_delete_vios` | `destructive` | `vios.delete` | `vios` | Delete (destroy) a VIOS partition by name or UUID. |
-| `hmc_get_vios_storage_detail` | `read` | `vios.get` | `vios` | Get storage-detail mappings for one VIOS by partition name or UUID. |
-| `hmc_install_vios` | `destructive` | `vios.install` | `vios` | Install a VIOS onto an existing partition via the HMC ``installios`` CLI. |
-| `hmc_list_vios` | `read` | `vios.list` | `managed_system` | List Virtual I/O Servers, optionally filtered by system or state. |
-| `hmc_list_vios_backups` | `read` | `vios.list_backups` | `vios` | List a VIOS backup catalog with the supported ``lsviosbk`` command. |
-| `hmc_power_off_vios` | `destructive` | `vios.power_off` | `vios` | Power off a VIOS, optionally scoped by system and waiting for completion. |
-| `hmc_power_on_vios` | `mutate` | `vios.power_on` | `vios` | Power on a VIOS, optionally waiting for a normalized job outcome. |
-| `hmc_restore_vios` | `destructive` | `vios.restore` | `vios` | Restore a catalog entry with the supported ``rstviosbk`` command. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_backup_vios` | `mutate` | `vios.backup` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create a named VIOS backup with the supported ``mkviosbk`` command. |
+| `hmc_create_vios` | `mutate` | `vios.create` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create a new Virtual IO Server (VIOS) partition on a managed system. |
+| `hmc_delete_vios` | `destructive` | `vios.delete` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Delete (destroy) a VIOS partition by name or UUID. |
+| `hmc_get_vios_storage_detail` | `read` | `vios.get` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Get storage-detail mappings for one VIOS by partition name or UUID. |
+| `hmc_install_vios` | `destructive` | `vios.install` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Install a VIOS onto an existing partition via the HMC ``installios`` CLI. |
+| `hmc_list_vios` | `read` | `vios.list` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List Virtual I/O Servers, optionally filtered by system or state. |
+| `hmc_list_vios_backups` | `read` | `vios.list_backups` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List a VIOS backup catalog with the supported ``lsviosbk`` command. |
+| `hmc_power_off_vios` | `destructive` | `vios.power_off` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Power off a VIOS, optionally scoped by system and waiting for completion. |
+| `hmc_power_on_vios` | `mutate` | `vios.power_on` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Power on a VIOS, optionally waiting for a normalized job outcome. |
+| `hmc_restore_vios` | `destructive` | `vios.restore` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Restore a catalog entry with the supported ``rstviosbk`` command. |

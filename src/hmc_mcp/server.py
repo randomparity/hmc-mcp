@@ -75,6 +75,7 @@ from .authorization.access_policy import AccessPolicy, unboundable_effect_tools
 from .authorization.connection_scope import ConnectionScopeError
 from .authorization.dispatch_scope import dispatch_authorizer
 from .authorization.target_scope import TargetScopeError
+from .operation_maturity_middleware import OperationMaturityMiddleware
 from .server_tools.catalog import TOOL_MODULES, TOOL_SECURITY
 from .server_tools.command import (
     configure_arbitrary_command_tool,
@@ -139,6 +140,7 @@ def create_mcp(policy: AccessPolicy) -> FastMCP:
     register_permissions_tool(
         application, policy, TOOL_SECURITY, permits=permits, authorize=authorize
     )
+    application.add_middleware(OperationMaturityMiddleware(TOOL_SECURITY))
     return application
 
 

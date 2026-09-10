@@ -931,3 +931,124 @@ def test_fail_on_stale_requires_the_report(capsys) -> None:
 
     assert raised.value.code == 2
     assert "--fail-on-stale requires --verification-report" in capsys.readouterr().err
+
+
+def test_runtime_projection_renders_only_recorded_operations(tmp_path: Path) -> None:
+    registry = _closure_registry(tmp_path)
+    records = [_operation(), _operation("sriov.set_mode", state="partial")]
+
+    rendered = inventory.render_runtime_projection(records, registry, tmp_path, _NOW)
+
+    assert rendered.endswith("\n")
+    assert json.loads(rendered) == {
+        "format_version": 1,
+        "runtime_eligibility": "existing-runtime-guards",
+        "operations": [
+            {
+                "operation": "system.list",
+                "implementation": "implemented",
+                "verification": "unevidenced",
+                "reason": None,
+                "observed_at": None,
+            }
+        ],
+    }
+
+
+def test_runtime_projection_preserves_latest_live_observation_time(tmp_path: Path) -> None:
+    registry = _closure_registry(tmp_path)
+    fingerprint = inventory.closure_fingerprint(tmp_path, "hmc_mcp.a")
+    record = _operation()
+    record["evidence"] = [
+        _observation(
+            identity="st1-older",
+            fingerprint=fingerprint,
+            observed_at="2026-08-01T12:00:00Z",
+        ),
+        _observation(
+            identity="st1-newer",
+            result="failed",
+            fingerprint=fingerprint,
+            observed_at="2026-09-01T12:00:00Z",
+        ),
+    ]
+
+    rendered = inventory.render_runtime_projection([record], registry, tmp_path, _NOW)
+
+    projected = json.loads(rendered)["operations"][0]
+    assert projected["verification"] == "failed"
+    assert projected["observed_at"] == "2026-09-01T12:00:00Z"
+
+
+def test_runtime_projection_leaves_age_expiry_to_the_packaged_reader(
+    tmp_path: Path,
+) -> None:
+    registry = _closure_registry(tmp_path)
+    fingerprint = inventory.closure_fingerprint(tmp_path, "hmc_mcp.a")
+    record = _operation()
+    record["evidence"] = [
+        _observation(
+            fingerprint=fingerprint,
+            observed_at="2026-01-01T12:00:00Z",
+        )
+    ]
+
+    rendered = inventory.render_runtime_projection([record], registry, tmp_path, _NOW)
+
+    projected = json.loads(rendered)["operations"][0]
+    assert projected["verification"] == "current"
+    assert projected["reason"] is None
+
+
+def test_write_runtime_projection_is_atomic(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "projection.json"
+    path.write_text("old\n", encoding="utf-8")
+
+    def fail_replace(_temporary, _path):
+        raise OSError("replacement failed")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="replacement failed"):
+        inventory.write_runtime_projection(path, "new\n")
+
+    assert path.read_text(encoding="utf-8") == "old\n"
+    assert not list(tmp_path.glob(".projection.json.*.tmp"))
+
+
+@pytest.mark.parametrize("contents", [None, "not json\n", "{}\n"])
+def test_default_gate_rejects_missing_malformed_and_drifted_projection(
+    tmp_path: Path, monkeypatch, capsys, contents: str | None
+) -> None:
+    inventory_root = tmp_path / "inventory"
+    _minimal_inventory(inventory_root)
+    projection = tmp_path / "_operation_maturity.json"
+    if contents is not None:
+        projection.write_text(contents, encoding="utf-8")
+    monkeypatch.setattr(inventory, "DEFAULT_RUNTIME_PROJECTION", projection)
+    monkeypatch.setattr(inventory, "discover_registry", tuple)
+
+    assert inventory.main(["--inventory", str(inventory_root)]) == 1
+    assert "just capability-metadata" in capsys.readouterr().err
+
+
+def test_write_runtime_projection_option_generates_requested_path(
+    tmp_path: Path, monkeypatch
+) -> None:
+    inventory_root = tmp_path / "inventory"
+    _minimal_inventory(inventory_root)
+    projection = tmp_path / "projection.json"
+    monkeypatch.setattr(inventory, "discover_registry", tuple)
+
+    assert inventory.main(
+        [
+            "--inventory",
+            str(inventory_root),
+            "--write-runtime-projection",
+            str(projection),
+        ]
+    ) == 0
+
+    assert projection.read_text(encoding="utf-8") == inventory.render_runtime_projection(
+        [], (), inventory.ROOT, inventory.datetime.now(UTC)
+    )

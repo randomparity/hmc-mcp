@@ -4,10 +4,10 @@
 
 5 tools in the `adapter` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_add_network_adapter` | `mutate` | `adapter.add_network` | `lpar` | Add a virtual Ethernet adapter to an LPAR; active LPARs require RMC. |
-| `hmc_add_vfc_adapter` | `mutate` | `adapter.add_vfc` | `lpar` | Add an NPIV virtual Fibre Channel client adapter to an LPAR. |
-| `hmc_add_vscsi_adapter` | `mutate` | `adapter.add_vscsi` | `lpar` | Add a virtual SCSI client adapter paired to a VIOS server slot. |
-| `hmc_delete_adapter` | `destructive` | `adapter.delete` | `lpar` | Remove an adapter by UUID, detaching its network or storage path. |
-| `hmc_list_adapters` | `read` | `adapter.list` | `lpar` | List one LPAR's virtual adapters of the selected adapter type. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_add_network_adapter` | `mutate` | `adapter.add_network` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Add a virtual Ethernet adapter to an LPAR; active LPARs require RMC. |
+| `hmc_add_vfc_adapter` | `mutate` | `adapter.add_vfc` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Add an NPIV virtual Fibre Channel client adapter to an LPAR. |
+| `hmc_add_vscsi_adapter` | `mutate` | `adapter.add_vscsi` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Add a virtual SCSI client adapter paired to a VIOS server slot. |
+| `hmc_delete_adapter` | `destructive` | `adapter.delete` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Remove an adapter by UUID, detaching its network or storage path. |
+| `hmc_list_adapters` | `read` | `adapter.list` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List one LPAR's virtual adapters of the selected adapter type. |

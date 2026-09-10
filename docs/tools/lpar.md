@@ -4,38 +4,38 @@
 
 33 tools in the `lpar` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_capture_lpar_console` | `mutate` | `lpar.capture_console` | `lpar` | Capture a bounded snapshot of an LPAR's virtual console (mkvterm). |
-| `hmc_create_lpar` | `mutate` | `lpar.create` | `managed_system` | Create a new LPAR on a managed system. |
-| `hmc_decommission_lpar` | `destructive` | `lpar.decommission` | `lpar` | Inventory, authorize, and optionally decommission one LPAR. |
-| `hmc_delete_lpar` | `destructive` | `lpar.delete` | `lpar` | Delete (destroy) an LPAR by name or UUID. |
-| `hmc_dlpar_mem` | `mutate` | `lpar.dlpar_mem` | `lpar` | DLPAR memory hot-plug: change memory resources on a running LPAR. |
-| `hmc_dlpar_proc` | `mutate` | `lpar.dlpar_proc` | `lpar` | DLPAR processor hot-plug: change CPU resources on a running LPAR. |
-| `hmc_get_lpar` | `read` | `lpar.get` | `lpar` | Get one logical partition by partition name or UUID. |
-| `hmc_get_lpar_description` | `read` | `lpar.get_description` | `lpar` | Return an LPAR's CLI-only description, resolving names or UUIDs. |
-| `hmc_get_lpar_memopt_score` | `read` | `lpar.get_memopt_score` | `lpar` | Return an LPAR's current memory-optimization affinity score. |
-| `hmc_get_lpar_msp` | `read` | `lpar.get_msp` | `lpar` | Return an LPAR's CLI-only Migratable Service Partition flag. |
-| `hmc_get_lpar_proc_compat` | `read` | `lpar.get_proc_compat` | `lpar` | Return an LPAR's desired and current processor compatibility modes. |
-| `hmc_get_lpar_state` | `read` | `lpar.get_state` | `lpar` | Return the current state of one LPAR by partition name or UUID. |
-| `hmc_get_minimum_affinity_policy` | `read` | `lpar.get_minimum_affinity_policy` | `lpar` | Return an LPAR's minimum-affinity policy when supported. |
-| `hmc_install_vios_by_lpar_selector` | `destructive` | `lpar.install_os` | `lpar` | Install an OS image onto a partition via the HMC ``installios`` CLI. |
-| `hmc_list_lpar_memopt_scores` | `read` | `lpar.list_memopt_scores` | `managed_system` | List current memory-optimization affinity scores for a system's LPARs. |
-| `hmc_list_lpar_ownership` | `read` | `lpar.list_ownership` | `managed_system` | Read parsed ownership for every LPAR on a system in one REST call. |
-| `hmc_list_lpars` | `read` | `lpar.list` | `managed_system` | List LPARs, optionally filtered by system and state. |
-| `hmc_lpar_summary` | `read` | `lpar.summary` | `lpar` | Return state, resources, OS details, adapters, and description for one LPAR. |
-| `hmc_migrate_abort_lpar` | `destructive` | `lpar.migrate_abort` | `lpar` | Abort an in-progress LPM migration of an LPAR. |
-| `hmc_migrate_lpar` | `mutate` | `lpar.migrate` | `lpar` | Live-migrate (LPM) an LPAR to another managed system. |
-| `hmc_migrate_lpar_with_affinity_preflight` | `mutate` | `lpar.migrate_affinity` | `lpar` | Run explicit affinity preflight before validation-first LPM. |
-| `hmc_migrate_recover_lpar` | `mutate` | `lpar.migrate_recover` | `lpar` | Recover an LPAR after a failed LPM migration. |
-| `hmc_migrate_validate_lpar` | `mutate` | `lpar.migrate_validate` | `lpar` | Validate whether an LPM migration of an LPAR to target_system would succeed. |
-| `hmc_modify_lpar` | `mutate` | `lpar.modify` | `lpar` | Modify an LPAR's memory or CPU resource assignment. |
-| `hmc_plan_lpar_memopt_scores` | `read` | `lpar.plan_memopt_scores` | `managed_system` | Return predicted LPAR affinity scores without applying optimization. |
-| `hmc_power_off_lpar` | `destructive` | `lpar.power_off` | `lpar` | Submit a PowerOff job for a logical partition. |
-| `hmc_power_on_lpar` | `mutate` | `lpar.power_on` | `lpar` | Submit a PowerOn job for a logical partition. |
-| `hmc_remote_restart_lpar` | `destructive` | `lpar.remote_restart` | `lpar` | Remote-restart a failed LPAR on another managed system. |
-| `hmc_rename_lpar` | `mutate` | `lpar.rename` | `lpar` | Rename one LPAR after enforcing its ownership token. |
-| `hmc_set_lpar_description` | `mutate` | `lpar.set_description` | `lpar` | Set an LPAR's CLI-only description after validating printable ASCII. |
-| `hmc_set_lpar_msp` | `mutate` | `lpar.set_msp` | `lpar` | Set a VIOS partition's Migratable Service Partition flag. |
-| `hmc_set_lpar_proc_compat` | `mutate` | `lpar.set_proc_compat` | `lpar` | Set an LPAR's processor compatibility mode. |
-| `hmc_set_minimum_affinity_policy` | `mutate` | `lpar.set_minimum_affinity_policy` | `lpar` | Set an LPAR's POWER11 minimum-affinity policy after authorization. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_capture_lpar_console` | `mutate` | `lpar.capture_console` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Capture a bounded snapshot of an LPAR's virtual console (mkvterm). |
+| `hmc_create_lpar` | `mutate` | `lpar.create` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create a new LPAR on a managed system. |
+| `hmc_decommission_lpar` | `destructive` | `lpar.decommission` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Inventory, authorize, and optionally decommission one LPAR. |
+| `hmc_delete_lpar` | `destructive` | `lpar.delete` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Delete (destroy) an LPAR by name or UUID. |
+| `hmc_dlpar_mem` | `mutate` | `lpar.dlpar_mem` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | DLPAR memory hot-plug: change memory resources on a running LPAR. |
+| `hmc_dlpar_proc` | `mutate` | `lpar.dlpar_proc` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | DLPAR processor hot-plug: change CPU resources on a running LPAR. |
+| `hmc_get_lpar` | `read` | `lpar.get` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Get one logical partition by partition name or UUID. |
+| `hmc_get_lpar_description` | `read` | `lpar.get_description` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's CLI-only description, resolving names or UUIDs. |
+| `hmc_get_lpar_memopt_score` | `read` | `lpar.get_memopt_score` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's current memory-optimization affinity score. |
+| `hmc_get_lpar_msp` | `read` | `lpar.get_msp` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's CLI-only Migratable Service Partition flag. |
+| `hmc_get_lpar_proc_compat` | `read` | `lpar.get_proc_compat` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's desired and current processor compatibility modes. |
+| `hmc_get_lpar_state` | `read` | `lpar.get_state` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return the current state of one LPAR by partition name or UUID. |
+| `hmc_get_minimum_affinity_policy` | `read` | `lpar.get_minimum_affinity_policy` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's minimum-affinity policy when supported. |
+| `hmc_install_vios_by_lpar_selector` | `destructive` | `lpar.install_os` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Install an OS image onto a partition via the HMC ``installios`` CLI. |
+| `hmc_list_lpar_memopt_scores` | `read` | `lpar.list_memopt_scores` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List current memory-optimization affinity scores for a system's LPARs. |
+| `hmc_list_lpar_ownership` | `read` | `lpar.list_ownership` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Read parsed ownership for every LPAR on a system in one REST call. |
+| `hmc_list_lpars` | `read` | `lpar.list` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List LPARs, optionally filtered by system and state. |
+| `hmc_lpar_summary` | `read` | `lpar.summary` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return state, resources, OS details, adapters, and description for one LPAR. |
+| `hmc_migrate_abort_lpar` | `destructive` | `lpar.migrate_abort` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Abort an in-progress LPM migration of an LPAR. |
+| `hmc_migrate_lpar` | `mutate` | `lpar.migrate` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Live-migrate (LPM) an LPAR to another managed system. |
+| `hmc_migrate_lpar_with_affinity_preflight` | `mutate` | `lpar.migrate_affinity` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Run explicit affinity preflight before validation-first LPM. |
+| `hmc_migrate_recover_lpar` | `mutate` | `lpar.migrate_recover` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Recover an LPAR after a failed LPM migration. |
+| `hmc_migrate_validate_lpar` | `mutate` | `lpar.migrate_validate` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Validate whether an LPM migration of an LPAR to target_system would succeed. |
+| `hmc_modify_lpar` | `mutate` | `lpar.modify` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Modify an LPAR's memory or CPU resource assignment. |
+| `hmc_plan_lpar_memopt_scores` | `read` | `lpar.plan_memopt_scores` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return predicted LPAR affinity scores without applying optimization. |
+| `hmc_power_off_lpar` | `destructive` | `lpar.power_off` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit a PowerOff job for a logical partition. |
+| `hmc_power_on_lpar` | `mutate` | `lpar.power_on` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit a PowerOn job for a logical partition. |
+| `hmc_remote_restart_lpar` | `destructive` | `lpar.remote_restart` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Remote-restart a failed LPAR on another managed system. |
+| `hmc_rename_lpar` | `mutate` | `lpar.rename` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Rename one LPAR after enforcing its ownership token. |
+| `hmc_set_lpar_description` | `mutate` | `lpar.set_description` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set an LPAR's CLI-only description after validating printable ASCII. |
+| `hmc_set_lpar_msp` | `mutate` | `lpar.set_msp` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set a VIOS partition's Migratable Service Partition flag. |
+| `hmc_set_lpar_proc_compat` | `mutate` | `lpar.set_proc_compat` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set an LPAR's processor compatibility mode. |
+| `hmc_set_minimum_affinity_policy` | `mutate` | `lpar.set_minimum_affinity_policy` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set an LPAR's POWER11 minimum-affinity policy after authorization. |

@@ -4,6 +4,6 @@
 
 1 tool in the `config` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_list_configured_hosts` | `read` | `config.list_hosts` | `none` | List all configured HMC profiles from the platform-native TOML config. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_list_configured_hosts` | `read` | `config.list_hosts` | `none` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List all configured HMC profiles from the platform-native TOML config. |

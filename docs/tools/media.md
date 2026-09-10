@@ -4,15 +4,15 @@
 
 10 tools in the `media` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_create_media_repository` | `mutate` | `media.create_repository` | `vios` | Create the Virtual Media Repository (named VMLibrary) on a Volume Group. |
-| `hmc_create_optical_media` | `mutate` | `media.create` | `vios` | Create a blank VirtualOpticalMedia (ISO container) in the media repository. |
-| `hmc_delete_media_repository` | `destructive` | `media.delete_repository` | `vios` | Delete the Virtual Media Repository from a Volume Group. |
-| `hmc_delete_optical_media` | `destructive` | `media.delete` | `vios` | Delete a VirtualOpticalMedia (ISO image) from the media repository. |
-| `hmc_get_media_repository` | `read` | `media.get_repository` | `vios` | Get the Virtual Media Repository (VMLibrary) from a Volume Group. |
-| `hmc_list_optical_mappings` | `read` | `media.list_mappings` | `vios` | List VirtualSCSIMappings for optical media on a VIOS, optionally filtered by LPAR. |
-| `hmc_list_optical_media` | `read` | `media.list` | `vios` | List Virtual Optical Media in the Virtual Media Repository. |
-| `hmc_mount_optical_media` | `mutate` | `media.mount` | `vios` | Create a VirtualSCSIMapping for optical media (mount ISO to LPAR). |
-| `hmc_unmount_optical_media` | `destructive` | `media.unmount` | `vios` | Remove a VirtualSCSIMapping for optical media (unmount). |
-| `hmc_upload_iso` | `mutate` | `media.upload_iso` | `vios` | Upload an ISO to a VIOS media repository via the HMC file broker. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_create_media_repository` | `mutate` | `media.create_repository` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create the Virtual Media Repository (named VMLibrary) on a Volume Group. |
+| `hmc_create_optical_media` | `mutate` | `media.create` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create a blank VirtualOpticalMedia (ISO container) in the media repository. |
+| `hmc_delete_media_repository` | `destructive` | `media.delete_repository` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Delete the Virtual Media Repository from a Volume Group. |
+| `hmc_delete_optical_media` | `destructive` | `media.delete` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Delete a VirtualOpticalMedia (ISO image) from the media repository. |
+| `hmc_get_media_repository` | `read` | `media.get_repository` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Get the Virtual Media Repository (VMLibrary) from a Volume Group. |
+| `hmc_list_optical_mappings` | `read` | `media.list_mappings` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List VirtualSCSIMappings for optical media on a VIOS, optionally filtered by LPAR. |
+| `hmc_list_optical_media` | `read` | `media.list` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List Virtual Optical Media in the Virtual Media Repository. |
+| `hmc_mount_optical_media` | `mutate` | `media.mount` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create a VirtualSCSIMapping for optical media (mount ISO to LPAR). |
+| `hmc_unmount_optical_media` | `destructive` | `media.unmount` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Remove a VirtualSCSIMapping for optical media (unmount). |
+| `hmc_upload_iso` | `mutate` | `media.upload_iso` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Upload an ISO to a VIOS media repository via the HMC file broker. |

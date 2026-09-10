@@ -4,6 +4,6 @@
 
 1 tool in the `placement` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_find_placement` | `read` | `placement.find` | `console` | Rank systems able to host an LPAR with the requested capacity. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_find_placement` | `read` | `placement.find` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Rank systems able to host an LPAR with the requested capacity. |

@@ -4,7 +4,7 @@
 
 2 tools in the `memory_pool` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_list_memory_pools` | `read` | `memory_pool.list` | `managed_system` | List shared memory pools and their assigned LPARs. |
-| `hmc_remove_memory_pool` | `destructive` | `memory_pool.remove` | `managed_system` | Remove an empty shared memory pool after server-side validation. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_list_memory_pools` | `read` | `memory_pool.list` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List shared memory pools and their assigned LPARs. |
+| `hmc_remove_memory_pool` | `destructive` | `memory_pool.remove` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Remove an empty shared memory pool after server-side validation. |

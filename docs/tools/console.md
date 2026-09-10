@@ -4,7 +4,7 @@
 
 2 tools in the `console` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_get_console_info` | `read` | `console.info` | `console` | Get HMC version, network configuration and links to managed systems. |
-| `hmc_list_resources` | `read` | `console.list_resources` | `console` | List any uom resource type exposed by the HMC. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_get_console_info` | `read` | `console.info` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Get HMC version, network configuration and links to managed systems. |
+| `hmc_list_resources` | `read` | `console.list_resources` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List any uom resource type exposed by the HMC. |

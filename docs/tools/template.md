@@ -4,8 +4,8 @@
 
 3 tools in the `template` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_deploy_partition_template` | `mutate` | `template.deploy` | `managed_system` | Deploy a partition from a *draft* partition template. |
-| `hmc_get_partition_template` | `read` | `template.get` | `template` | Get one partition template by UUID. |
-| `hmc_list_partition_templates` | `read` | `template.list` | `console` | List all partition templates in the HMC template library. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_deploy_partition_template` | `mutate` | `template.deploy` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Deploy a partition from a *draft* partition template. |
+| `hmc_get_partition_template` | `read` | `template.get` | `template` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Get one partition template by UUID. |
+| `hmc_list_partition_templates` | `read` | `template.list` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List all partition templates in the HMC template library. |

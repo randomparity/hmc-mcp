@@ -4,6 +4,6 @@
 
 1 tool in the `provision` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_provision_lpar` | `mutate` | `provision.lpar` | `managed_system` | Provision an LPAR with virtual adapters, vSCSI storage, and optional power-on. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_provision_lpar` | `mutate` | `provision.lpar` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Provision an LPAR with virtual adapters, vSCSI storage, and optional power-on. |

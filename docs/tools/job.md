@@ -4,8 +4,8 @@
 
 3 tools in the `job` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_get_job` | `read` | `job.get` | `job` | Get one HMC job by UUID or JobID, optionally using its submission SELF link. |
-| `hmc_list_recent_jobs` | `read` | `job.list` | `console` | List recent jobs. |
-| `hmc_wait_for_job` | `read` | `job.wait` | `job` | Poll a job and return its normalized status, timeout, and error outcome. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_get_job` | `read` | `job.get` | `job` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Get one HMC job by UUID or JobID, optionally using its submission SELF link. |
+| `hmc_list_recent_jobs` | `read` | `job.list` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List recent jobs. |
+| `hmc_wait_for_job` | `read` | `job.wait` | `job` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Poll a job and return its normalized status, timeout, and error outcome. |

@@ -606,11 +606,21 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     assert 'HMCClient.__module__ == "hmc_mcp.client.core"' in body
     assert "is_relative_to(environment)" in body
     assert ".wheel-venv/bin/hmc-mcp --help" in body
-    # Group help pages are rendered off the tree the installed wheel builds, so
-    # the job names no subcommand at all: anything after `hmc-mcp` other than
-    # the root `--help` is the hand-maintained mirror growing back.
+    assert (
+        ".wheel-venv/bin/hmc-mcp capabilities --json > capabilities.json" in body
+    )
+    assert 'json.loads(Path("capabilities.json").read_text())' in body
+    assert 'capability["operation"]' in body
+    for field in ("implementation", "verification", "runtime_eligibility"):
+        assert f'capability["{field}"]' in body
+    # Group help pages are rendered off the tree the installed wheel builds. The
+    # capability projection is the sole named subcommand because this job verifies
+    # its installed output; any other name is the hand-maintained mirror growing back.
     assert ".wheel-venv/bin/python scripts/smoke_cli_groups.py" in body
-    assert not re.search(r"\.wheel-venv/bin/hmc-mcp (?!--help)", body)
+    assert re.findall(r"\.wheel-venv/bin/hmc-mcp ([^\n]+)", body) == [
+        "--help >/dev/null",
+        "capabilities --json > capabilities.json",
+    ]
     assert ".wheel-venv/bin/python scripts/smoke_mcp.py" in body
     assert "just setup" not in body
     assert "uv sync" not in body

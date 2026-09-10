@@ -30,6 +30,7 @@ from pathlib import Path
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.operation_maturity import OperationMaturityError, operation_maturity
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 from hmc_mcp.tool_registry import ToolSecurity
@@ -82,6 +83,10 @@ class ToolRecord:
     effect: str
     operation: str
     target_kind: str
+    implementation: str
+    verification: str
+    verification_reason: str | None
+    runtime_eligibility: str
     exposed_by_default: bool
 
     @property
@@ -123,14 +128,23 @@ def build_records(
         )
 
     records = []
+    maturity_by_operation = {}
     for name in sorted(security):
+        operation = _operation(name, security[name].operation)
+        if operation not in maturity_by_operation:
+            maturity_by_operation[operation] = operation_maturity(operation)
+        maturity = maturity_by_operation[operation]
         records.append(
             ToolRecord(
                 name=name,
                 summary=_summary(name, descriptions[name]),
                 effect=security[name].effect,
-                operation=_operation(name, security[name].operation),
+                operation=operation,
                 target_kind=security[name].target_kind,
+                implementation=maturity.implementation,
+                verification=maturity.verification,
+                verification_reason=maturity.reason,
+                runtime_eligibility=maturity.runtime_eligibility,
                 exposed_by_default=exposed_by_default(name),
             )
         )
@@ -243,12 +257,17 @@ def _render_group(group: str, members: list[ToolRecord]) -> str:
         (f"{len(members)} tool{plural} in the `{group}` operation domain. "
          f"{SCOPE_NOTE} See the [tool reference index](index.md) for every domain."),
         "",
-        "| Tool | Effect | Operation | Target | Summary |",
-        "| --- | --- | --- | --- | --- |",
+        (
+            "| Tool | Effect | Operation | Target | Implementation | Verification | "
+            "Runtime eligibility | Summary |"
+        ),
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     lines.extend(
         f"| `{record.name}` | `{record.effect}` | `{record.operation}` "
-        f"| `{record.target_kind}` | {record.summary} |"
+        f"| `{record.target_kind}` | `{record.implementation}` "
+        f"| `{_verification(record)}` | `{record.runtime_eligibility}` "
+        f"| {record.summary} |"
         for record in members
     )
     lines.extend(_enablement_note(members))
@@ -262,6 +281,13 @@ def _enablement_note(members: Iterable[ToolRecord]) -> list[str]:
     if not withheld:
         return []
     return ["", _ENABLEMENT_NOTE.format(tools=f"`{'`, `'.join(withheld)}`")]
+
+
+def _verification(record: ToolRecord) -> str:
+    """Render a bounded stale reason without merging maturity dimensions."""
+    if record.verification_reason is None:
+        return record.verification
+    return f"{record.verification} ({record.verification_reason})"
 
 
 def _render_index(groups: Mapping[str, list[ToolRecord]]) -> str:
@@ -288,6 +314,28 @@ def _render_index(groups: Mapping[str, list[ToolRecord]]) -> str:
         f"| `{effect}` | {count} |" for effect, count in _effect_counts(records)
     )
     lines.extend([
+        "",
+        "## Maturity vocabulary",
+        "",
+        (
+            "The maturity fields come from the [canonical HMC reference capability "
+            "ledger](../capabilities/README.md). They report evidence, not permission "
+            "to run an operation."
+        ),
+        "",
+        (
+            "- **Implementation:** `unrecorded`, `absent`, `partial`, or "
+            "`implemented`."
+        ),
+        (
+            "- **Verification:** `unrecorded`, `unevidenced`, `current`, `stale`, "
+            "or `failed`. A stale value includes `closure-changed` or "
+            "`age-exceeded` in parentheses."
+        ),
+        (
+            "- **Runtime eligibility:** `existing-runtime-guards`; authorization, "
+            "ownership, validation, capability, and safety checks remain authoritative."
+        ),
         "",
         "## Domains",
         "",
@@ -423,7 +471,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         problems = check_pages(pages, args.output)
-    except ToolReferenceError as error:
+    except (ToolReferenceError, OperationMaturityError) as error:
         # The messages are written to be read; a traceback around them is noise.
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

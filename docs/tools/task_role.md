@@ -4,6 +4,6 @@
 
 1 tool in the `task_role` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_list_task_roles` | `read` | `task_role.list` | `console` | List TaskRole children of a management console. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_list_task_roles` | `read` | `task_role.list` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List TaskRole children of a management console. |

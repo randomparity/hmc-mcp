@@ -4,8 +4,8 @@
 
 3 tools in the `lpar_profile` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_backup_lpar_profiles` | `destructive` | `lpar_profile.backup` | `managed_system` | Backup all LPAR profiles on a Power system via the HMC CLI. |
-| `hmc_restore_lpar_profiles` | `destructive` | `lpar_profile.restore` | `managed_system` | Restore LPAR profiles from a backup file via the HMC CLI. |
-| `hmc_sync_lpar_profile` | `destructive` | `lpar_profile.sync` | `lpar` | Sync an LPAR's running configuration back to its current profile. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_backup_lpar_profiles` | `destructive` | `lpar_profile.backup` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Backup all LPAR profiles on a Power system via the HMC CLI. |
+| `hmc_restore_lpar_profiles` | `destructive` | `lpar_profile.restore` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Restore LPAR profiles from a backup file via the HMC CLI. |
+| `hmc_sync_lpar_profile` | `destructive` | `lpar_profile.sync` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Sync an LPAR's running configuration back to its current profile. |
