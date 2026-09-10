@@ -32,16 +32,16 @@ Scope, from ADR 0128 and issue #725:
 
 * the module form only. The console script is not exposed -- it puts its own `bin`
   directory at `sys.path[0]` -- so it has no case here.
-* the package half only. The record's other half is a shadowed *dependency*, reachable
+* the package half and the version-stable subset of the dependency half. A shadowed
+  dependency is reachable
   because `hmc_mcp/__init__.py`'s module-scope `from importlib.metadata import version`
   resolves `csv`, `email`, `zipfile`, `textwrap` -- and `json` on 3.13+ -- against the
   launch directory. Which of those names is reachable *is* version-dependent, but not
   uniformly: measured on 3.11.15, 3.12.13, 3.13.14 and 3.14.7 by launching
   `from importlib.metadata import version` from a directory holding one stub module,
   `email`, `zipfile` and `textwrap` are reached on all four while `csv` stops at 3.12
-  and `json` starts at 3.13. So a version-stable assertion over that half does exist,
-  and covering it here is deferred by an approved non-goal rather than blocked by the
-  matrix. Issue #725 owns the deferral; a follow-up owns the coverage.
+  and `json` starts at 3.13. The dependency cases therefore cover the stable `email`,
+  `zipfile`, and `textwrap` subset; version-variable targets remain outside this module.
 * no `sys.path[0]` guard in `src/hmc_mcp/__main__.py` is proposed or implied. ADR 0128
   rejects that logic in that file: it would arrive after the module-scope imports above
   had already resolved against the launch directory.
@@ -64,6 +64,7 @@ REPO_ROOT = Path(__file__).parents[2]
 #: 0, a startup refusal is 1, a usage error is 2 -- so a match is unambiguous.
 _SHADOW_INIT_STATUS = 97
 _SHADOW_MAIN_STATUS = 98
+_SHADOW_STDLIB_STATUS = 96
 
 #: Every child wait is bounded. `--help` renders and exits, so a child that has not
 #: finished by now is not slow; the bound is what turns that into a named
@@ -173,6 +174,15 @@ def shadowed_cwd(tmp_path: Path) -> Path:
     return tmp_path
 
 
+@pytest.fixture
+def shadowed_stdlib_cwd(tmp_path: Path, stdlib_module: str) -> Path:
+    """A launch directory with one stdlib name that package initialization imports."""
+    (tmp_path / f"{stdlib_module}.py").write_text(
+        f"raise SystemExit({_SHADOW_STDLIB_STATUS})\n"
+    )
+    return tmp_path
+
+
 def _launch(
     cwd: Path,
     *,
@@ -234,6 +244,48 @@ def test_the_documented_remedy_reaches_the_installed_package(
         f"was reached anyway, so the remedy ADR 0128:120-133 and the `python -m "
         f"hmc_mcp` CHANGELOG entry give operators no longer keeps the launch directory "
         f"off sys.path. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    rendered = [_ANSI.sub("", line).lstrip() for line in result.stdout.splitlines()]
+    assert any(line.startswith("Usage:") for line in rendered), (
+        f"exit 0 with no Usage: line, so the child rendered no help and 0 is not "
+        f"evidence it reached the installed package at {installed_package}. "
+        f"stdout={result.stdout!r}"
+    )
+
+
+@pytest.mark.parametrize("stdlib_module", ["email", "zipfile", "textwrap"])
+def test_a_bare_module_launch_imports_the_shadowing_stdlib_module(
+    shadowed_stdlib_cwd, installed_package, stdlib_module
+):
+    """The launch directory wins before package initialization reaches the stdlib."""
+    result = _launch(shadowed_stdlib_cwd)
+
+    assert result.returncode == _SHADOW_STDLIB_STATUS, (
+        f"expected shadowing {stdlib_module}.py to decide ({_SHADOW_STDLIB_STATUS}), "
+        f"got {result.returncode}; stderr={result.stderr!r}"
+    )
+
+
+@pytest.mark.parametrize("stdlib_module", ["email", "zipfile", "textwrap"])
+@pytest.mark.parametrize(
+    ("flags", "overrides"),
+    [(("-P",), {}), ((), {"PYTHONSAFEPATH": "1"})],
+    ids=["-P", "PYTHONSAFEPATH=1"],
+)
+def test_the_documented_remedy_ignores_the_shadowing_stdlib_module(
+    shadowed_stdlib_cwd,
+    installed_package,
+    stdlib_module,
+    flags,
+    overrides,
+):
+    """Both safe-path spellings reach this checkout despite a stdlib shadow."""
+    result = _launch(shadowed_stdlib_cwd, flags=flags, overrides=overrides)
+
+    assert result.returncode == 0, (
+        f"expected the installed CLI to render help (0), got {result.returncode}; "
+        f"{_SHADOW_STDLIB_STATUS} means {stdlib_module}.py was reached anyway. "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
     rendered = [_ANSI.sub("", line).lstrip() for line in result.stdout.splitlines()]
