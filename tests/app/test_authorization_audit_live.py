@@ -62,8 +62,9 @@ targets = { lpar = ["db-01"], managed_system = ["sys-a"] }
 """
 
 #: Every frame read waits at most this long. Without it a child that never answers
-#: hangs `just verify` and every CI leg with no diagnostic — and this is the
-#: suite's only long-lived `hmc-mcp serve` child.
+#: waits until `scripts/run_tests.py` caps pytest at 1020s with exit 124, or CI caps
+#: the job at 20 minutes — and this is the suite's only long-lived `hmc-mcp serve`
+#: child.
 DEADLINE = 30.0
 
 
@@ -108,8 +109,8 @@ def child_env(fixture_home):
     """``os.environ`` copied with the four steering variables removed.
 
     A copy, not a from-scratch mapping: an explicitly built environment carries no
-    ``PATH``, and the child is the ``hmc-mcp`` console script, so it would not be
-    found at all.
+    ``PATH``, and L1-L4 launch the child through the ``hmc-mcp`` console script, so
+    it would not be found at all. L5 instead uses ``server_module_command``.
 
     ``HMC_HOST`` matters as much as the config path and is easier to miss:
     ``selected_connection`` gates its whole TOML branch on it and returns the
