@@ -10,8 +10,11 @@ presentation surface. ADR 0131 and the approved specification define the contrac
 Tech stack: Python 3.11+, stdlib JSON/datetime/importlib resources, Typer/Rich, FastMCP
 4.0.3, MCP 2.2.0, pytest 9.1.1, ruff 0.16.5, and ty 0.0.75.
 
-Expected implementation size: 360–520 changed lines (M) — derived from the three task
-file maps below, excluding this design set and generated tool pages.
+Expected implementation size: 1,100–1,350 changed lines (M) — corrected after the
+completed file map showed 581 production/documentation lines, 655 focused-test and
+artifact-validator lines, and 20 generated projection lines, excluding this design set
+and generated tool pages. The larger line count adds no component or contract beyond the
+frozen M scope.
 
 ## Global Constraints
 
@@ -224,4 +227,8 @@ Rollback: revert the task commit and regenerate `docs/tools/` from the reverted 
   middleware installed by `server.py`, removing all registration-site changes.
 - Forge Task 1 checkpoint: artifact-validator ownership moved from Task 3 to Task 1 because
   the packaged projection makes Task 1's full-suite gate exercise the closed member set.
+- Post-build estimate correction: the completed non-design, non-tool-page diff is 1,256
+  changed lines (581 production/documentation, 655 tests/validator, 20 generated data).
+  The original 360–520 estimate undercounted strict parser/error-path and end-to-end
+  discovery proof; the approved component and contract set did not change.
 - Open findings, deferrals and follow-up candidates: none.
