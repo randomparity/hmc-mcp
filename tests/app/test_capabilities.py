@@ -180,14 +180,14 @@ def test_attach_disk_is_state_changing_not_destructive():
     assert TOOL_SECURITY["hmc_attach_disk_to_lpar"].effect == "mutate"
     annotations = _tools_by_name()["hmc_attach_disk_to_lpar"].annotations
     assert annotations is None or (
-        annotations.readOnlyHint is not True and annotations.destructiveHint is not True
+        annotations.read_only_hint is not True and annotations.destructive_hint is not True
     )
 
 
 def test_fleet_health_is_read_only():
     assert TOOL_SECURITY["hmc_fleet_health"].effect == "read"
     annotations = _tools_by_name()["hmc_fleet_health"].annotations
-    assert annotations is not None and annotations.readOnlyHint is True
+    assert annotations is not None and annotations.read_only_hint is True
 
 
 def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
@@ -234,7 +234,7 @@ def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
         ]
         assert len(tools) == 1
         assert tools[0].annotations is not None
-        assert tools[0].annotations.readOnlyHint is False
+        assert tools[0].annotations.read_only_hint is False
         asyncio.run(
             server_command.configure_arbitrary_command_tool(
                 False,
@@ -470,8 +470,8 @@ def test_decommission_lpar_is_public_destructive_and_schema_stable():
 
     tool = _tools_by_name()["hmc_decommission_lpar"]
     assert TOOL_SECURITY["hmc_decommission_lpar"].effect == "destructive"
-    assert tool.annotations is not None and tool.annotations.destructiveHint is True
-    assert tool.annotations.readOnlyHint is not True
+    assert tool.annotations is not None and tool.annotations.destructive_hint is True
+    assert tool.annotations.read_only_hint is not True
 
     properties = tool.parameters["properties"]
     assert set(properties) == {
@@ -604,7 +604,7 @@ def test_metrics_tools_have_stable_output_schemas():
         "hmc_aggregated_metric_links",
     ):
         tool = by_name[tool_name]
-        assert tool.annotations is not None and tool.annotations.readOnlyHint is True, (
+        assert tool.annotations is not None and tool.annotations.read_only_hint is True, (
             tool_name
         )
         assert "mode" not in tool.parameters.get("properties", {})

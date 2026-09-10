@@ -1154,7 +1154,7 @@ def _initialize(application):
     """The instructions and the tool set one client session actually receives.
 
     Both read from the same session, because the defect ADR 0048 records is a
-    disagreement between two halves of one `initialize` exchange; comparing a
+    disagreement between metadata and tools from one negotiated session; comparing a
     string from one composition against a registry from another could not see it.
     """
     from fastmcp import Client
@@ -1162,7 +1162,7 @@ def _initialize(application):
     async def _go():
         async with Client(application) as client:
             tools = await client.list_tools()
-            return client.initialize_result.instructions, {tool.name for tool in tools}
+            return client.instructions, {tool.name for tool in tools}
 
     return asyncio.run(_go())
 

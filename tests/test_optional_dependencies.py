@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 #: Packages only the ``app`` extra may pull in: the presentation stack plus
 #: the HTTP server stack. Nothing here belongs to the dependency-free core.
-APP_ONLY_PACKAGES = {"fastmcp-slim", "mcp", "rich", "typer", "uvicorn"}
+APP_ONLY_PACKAGES = {"fastmcp-slim", "mcp", "mcp-types", "rich", "typer", "uvicorn"}
 
 
 def _dependency_names(requirements: list[str]) -> set[str]:
@@ -36,7 +36,7 @@ import sys
 
 #: Import names behind the ``app`` extra -- kept in one place so the finder and
 #: the closing ``sys.modules`` sweep cannot drift apart.
-_BLOCKED = {"fastmcp", "mcp", "rich", "typer", "uvicorn"}
+_BLOCKED = {"fastmcp", "mcp", "mcp_types", "rich", "typer", "uvicorn"}
 
 
 class BlockAppOnlyPackages(MetaPathFinder):
