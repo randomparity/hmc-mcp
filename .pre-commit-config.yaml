@@ -33,6 +33,11 @@ repos:
         entry: just nicknames
         language: system
         pass_filenames: false
+      - id: test-layout
+        name: Test layout guard
+        entry: just test-layout
+        language: system
+        pass_filenames: false
       - id: capability-inventory
         name: Capability inventory guard
         entry: just capability-inventory
