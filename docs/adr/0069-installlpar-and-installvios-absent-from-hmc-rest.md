@@ -26,9 +26,9 @@ and firmware level surveyed.
 
 Two HMCs, seven managed systems:
 
-- **HMC V10R3 M1060** (`ltcvhmc1b`; managing P9 and P10): build level
+- **HMC V10R3 M1060** (`<REDACTED-HMC-A>`; managing P9 and P10): build level
   2408210051, MF71689 plus three iFix levels.
-- **HMC V11R2 M1120** (`ltcvhmc11`; managing P9, P10, and P11): build level
+- **HMC V11R2 M1120** (`<REDACTED-HMC-B>`; managing P9, P10, and P11): build level
   2607082225.
 
 | Type-Model | Generation | Firmware |
