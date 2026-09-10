@@ -32,8 +32,12 @@ Each value keeps three dimensions separate:
 
 Presentation names join through their `ToolSecurity.operation`. `hmc-mcp capabilities`
 groups the current registered tool names by operation and renders a table by default or
-a JSON array with `--json`. It reads neither HMC configuration nor the network. Each MCP
-tool carries the same value below one namespaced `_meta` key. Generated group pages add
+a JSON array with `--json`. The command creates no HMC client, reads no profile, and
+performs no network I/O; the existing root callback still parses root options and their
+`HMC_*` environment fallbacks before dispatch. Each MCP tool carries its operation ID
+below one namespaced `_meta` key at registration. A `tools/list` middleware replaces that
+value with the current projection on every discovery request, so a long-running process
+crossing the 90-day boundary reports `stale` without restart. Generated group pages add
 the three dimensions to their operation row and link their meaning from the index.
 
 The projection stores the observation time for a current or failed live result. The
@@ -54,8 +58,9 @@ backup floor and write-path behavior, but removes the universal V8–V11/all-POW
   states, invalid operation-ID grammar and invalid timestamps with an actionable
   `OperationMaturityError`; it never publishes a partial mapping.
 - An operation absent from the sparse projection resolves to explicit `unrecorded`
-  values. Canonical operations absent from the registry are rejected by the repository
-  gate before projection generation.
+  values. Registry/catalog join validity belongs exclusively to
+  `just capability-inventory`; consumers must not mistake legitimate sparse absence for
+  an invalid join.
 - An age-expired observation reports `stale` with reason `age-exceeded`; evidence failure
   never changes runtime eligibility.
 
@@ -98,9 +103,11 @@ backup floor and write-path behavior, but removes the universal V8–V11/all-POW
 
 - Added boundary: a local CLI command reads one bundled, size-bounded JSON resource.
   Strict shape and vocabulary validation control it; failures reveal no file contents.
-- Widened boundary: MCP `tools/list` returns fixed public maturity fields in `_meta`.
-  Values come only from the bundled projection, carry no credentials or HMC identifiers,
-  and existing policy filtering still decides which tool records are returned.
+- Widened boundary: MCP `tools/list` middleware replaces only the namespaced maturity
+  value on returned tool models. Values come only from the bundled projection, carry no
+  credentials or HMC identifiers, and existing policy filtering still decides which tool
+  records are returned. The middleware neither caches time-derived states nor mutates the
+  registered tool schema, annotations, or call path.
 - Trusted parties: the built package and repository generation gate. Untrusted CLI input
   is limited to `--json`; it selects formatting and never a path or operation execution.
 - Out of scope: authenticating the existing HTTP transport, package-signing policy, and
@@ -113,7 +120,10 @@ backup floor and write-path behavior, but removes the universal V8–V11/all-POW
 - Canonical maturity entries occur once in the projection; multiple presentation names
   for one operation consume that value rather than copying evidence.
 - The three maturity dimensions remain separately named in table, JSON, MCP and docs.
-- The CLI command runs from an installed artifact without HMC configuration or I/O.
+- The CLI command runs from an installed artifact with no configured profile and creates
+  no HMC client or I/O. Root-option environment parsing remains existing CLI behavior.
+- A running MCP application recomputes age-derived verification on each `tools/list`,
+  including when the process crosses the current-to-stale boundary.
 - MCP names, schemas, annotations, exposure ceilings, authorization and calls are byte-
   or behavior-equivalent apart from the added namespaced `_meta` value.
 - Catalog and generated-document checks reject missing, invalid or stale derived output.
@@ -125,11 +135,16 @@ backup floor and write-path behavior, but removes the universal V8–V11/all-POW
 - Focused runtime-reader tests cover shape validation, sparse defaults, immutability and
   the current-to-stale time boundary.
 - Focused catalog tests cover generation plus missing, malformed and drifted projections.
-- MCP tests compare every served tool's metadata with its operation projection and retain
-  annotation and ceiling assertions.
-- CLI tests compare table and JSON rows without HMC configuration or network calls.
-- Generator tests cover maturity columns, shared operation values and regeneration drift.
+- MCP tests compare every served tool's metadata with its operation projection, retain
+  annotation and ceiling assertions, and query one application on both sides of an
+  injected current-to-stale boundary.
+- CLI tests compare table and JSON rows with no configured profile or network calls and
+  separately assert the inherited result of malformed root-option environment input.
+- Generator tests cover maturity columns, shared operation values, legitimate sparse
+  absence and malformed projection grammar; the inventory gate alone tests join drift.
 - Project-metadata tests reject the removed blanket compatibility claims and require the
-  evidence-backed replacement. Artifact tests prove the projection ships.
+  evidence-backed replacement. Artifact tests prove the projection ships. The native
+  wheel-smoke matrix invokes installed `hmc-mcp capabilities --json` and validates its
+  operation and maturity fields on Python 3.11–3.14 for amd64 and arm64.
 - New behavioral tests receive a controlled fault before implementation, then the focused
   tests, `just verify`, `uv run --no-sync prek run --all-files`, and hosted CI run bare.

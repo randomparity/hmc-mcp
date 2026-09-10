@@ -24,23 +24,29 @@ age expiry, and the catalog's runtime-eligibility policy. Operations absent from
 sparse catalog remain absent from the resource and resolve to explicit `unrecorded`
 presentation values at runtime.
 
-The existing capability-inventory validator owns generation and exact freshness
-checking. A small internal package reader validates the resource and supplies one
-immutable operation projection to CLI output, namespaced MCP tool `_meta`, and the tool
-reference generator. MCP and CLI presentation names join by operation ID, so no alias
-can own independent evidence.
+The existing capability-inventory validator owns generation, join validation and exact
+freshness checking. A small internal package reader validates the resource and supplies
+one immutable operation projection to CLI output, namespaced MCP tool `_meta`, and the
+tool reference generator. MCP and CLI presentation names join by operation ID, so no
+alias can own independent evidence. Sparse absence is a valid `unrecorded` result for
+consumers, not an occasion to repeat the repository join check.
 
 The packaged reader may age a recorded observation from current or failed to stale at
-ADR 0127's boundary. It does not re-evaluate source closure: the repository freshness
-gate proves the resource was generated against the packaged source before release.
+ADR 0127's boundary. CLI rows resolve it when the command runs. MCP registration records
+the operation identity, and a `tools/list` middleware resolves the value for each request
+so a long-running server does not retain a past verification state. The reader does not
+re-evaluate source closure: the repository freshness gate proves the resource was
+generated against the packaged source before release.
 
 ## Consequences
 
-Installed discovery remains available without the repository checkout, credentials,
-or an HMC connection. The wheel gains one small generated JSON resource and one
-internal reader. A maturity or implementation change must regenerate that resource;
-the existing catalog gate rejects drift. Custom MCP metadata is advisory and clients
-may ignore it, while authorization and runtime capability checks remain authoritative.
+Installed discovery remains available without the repository checkout, configured
+profile, or an HMC connection. The existing CLI root callback still parses root-option
+environment fallbacks before dispatch. The wheel gains one small generated JSON resource,
+one internal reader and one discovery middleware. A maturity or implementation change
+must regenerate that resource; the existing catalog gate rejects drift. Custom MCP
+metadata is advisory and clients may ignore it, while authorization and runtime
+capability checks remain authoritative.
 
 ## Considered & rejected
 
