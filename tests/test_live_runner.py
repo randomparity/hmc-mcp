@@ -1841,7 +1841,10 @@ async def _served_schemas() -> dict[str, dict[str, object]]:
         True, application, permits=permits, authorize=authorize
     )
     async with Client(application) as client:
-        return {tool.name: tool.inputSchema for tool in await client.list_tools()}
+        return {
+            tool.name: tool.model_dump(by_alias=True)["inputSchema"]
+            for tool in await client.list_tools()
+        }
 
 
 def _assert_dispatch_arguments(sources: dict[str, str], schemas) -> None:

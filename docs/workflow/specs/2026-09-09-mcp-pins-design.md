@@ -6,7 +6,7 @@ Issue #753; scope token `q753-83d5ead2`.
 
 FastMCP 3.4.7 constrains MCP below 2.0. Issue #753 requires the server and
 client extras, SDK and standalone types to advance together, after #752.
-The [scope charter](https://github.com/randomparity/hmc-mcp/issues/753#issuecomment-5613454254)
+The [scope charter](https://github.com/randomparity/hmc-mcp/issues/753#issuecomment-5613555924)
 records the operator-approved exclusions and completion criteria.
 
 ## Design
@@ -27,7 +27,18 @@ exactness, declaration coverage and lock agreement without new machinery.
 Retain `from mcp.types import ToolAnnotations` as established by
 [the #752 evidence](../mcp-2-type-import-evidence.md). Existing FastMCP server
 construction and in-memory client composition are the integration path.
+Use canonical `read_only_hint` and `destructive_hint` constructor keywords in
+`annotations_for`: MCP 2 dynamically generates the camelCase aliases, which
+ty 0.0.75 reports as discarded extras despite retaining them at runtime.
+The canonical constructor preserves the same camelCase wire serialization.
+This necessary typecheck compatibility adjustment leaves the import unchanged.
 No new application behavior, registry functions, or import compatibility layer.
+
+Adapt existing composition-test consumers to FastMCP 4: use `client.instructions`
+because modern discovery does not populate `initialize_result`, and use canonical
+annotation fields. The test-only served-schema probe reads serialized
+`model_dump(by_alias=True)["inputSchema"]`, preserving its wire-schema assertions.
+Production live-runner schema capture and its reconciliation remain with #754.
 
 ## Success and validation
 
