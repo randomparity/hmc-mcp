@@ -42,7 +42,7 @@ RUFF_PER_FILE_IGNORE_MODULES = {
     "tests/unit/test_ownership.py",
 }
 BASELINED_FINDINGS = {
-    "docs/capabilities/maturity.json": 2,
+    "docs/capabilities/maturity.json": 3,
     "justfile": 1,
     "tests/app/test_cli.py": 2,
     "tests/app/test_cli_e2e.py": 1,

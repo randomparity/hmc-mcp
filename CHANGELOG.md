@@ -8,6 +8,18 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ## [Unreleased]
 
+### Added
+
+- Transport and inventory contract tests bound to the F1 reference corpus
+  (`rest:logon-and-logoff`, `rest:job-status`): logon PUT endpoint and method,
+  `LogonRequest`/`LogonResponse` media types, X-API-Session token propagation,
+  UOM Accept/Content-Type header behaviour, and complete terminal-status vocabulary
+  including `EXCEPTION` and `COMPLETED_WITH_ERROR`. Eight inventory operations
+  (`system.get`, `lpar.list`, `lpar.get`, `vios.list`, `console.list_resources`,
+  `system.summary`, `lpar.summary`, `console.info`) now emit `record_verified`
+  observations from the live runner, adding maturity evidence for seven operations
+  and recording the firmware-500 gap for `console.info` on this hardware (#625).
+
 ### Fixed
 
 - The live runner's SR-IOV scenarios now dispatch `adapter_id`, `physical_port_id` and
