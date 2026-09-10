@@ -35,7 +35,8 @@ file maps below, excluding this design set and generated tool pages.
 
 Files: create `src/hmc_mcp/operation_maturity.py` and
 `src/hmc_mcp/_operation_maturity.json`; modify `scripts/check_capability_inventory.py`,
-`justfile`, `tests/scripts/test_check_capability_inventory.py`; create
+`justfile`, `tests/scripts/test_check_capability_inventory.py`,
+`tests/validate_release_artifacts.py`, and `tests/test_release_artifacts.py`; create
 `tests/unit/test_operation_maturity.py`.
 
 Interfaces:
@@ -71,10 +72,15 @@ Verification:
   `tests/scripts/test_check_capability_inventory.py`. Expected red: parser rejects the new
   option or stale projection is accepted. Green: `uv run --no-sync pytest
   tests/scripts/test_check_capability_inventory.py --no-cov -q` exits 0.
+- Mode: focused-test. Contract: the wheel and sdist member validator admits exactly the
+  fixed generated projection alongside the existing Python/package markers, and both
+  archives contain it. Test: `tests/test_release_artifacts.py`. Expected red: the clean
+  artifact fixture fails with `wheel member set is not closed`. Green:
+  `uv run --no-sync pytest tests/test_release_artifacts.py --no-cov -q` exits 0.
 
 Steps:
 
-1. Add both focused test groups and run their commands to observe red.
+1. Add the reader and generator focused test groups and run their commands to observe red.
 2. Introduce the frozen dataclass and strict package-resource loader. Return the explicit
    all-`unrecorded` value for a grammar-valid operation absent from the sparse projection;
    raise `OperationMaturityError` for an invalid operation ID or projection.
@@ -82,9 +88,11 @@ Steps:
    latest observation time needed for age checks, and atomically write the requested path.
 4. Add `capability-metadata` to `justfile`, regenerate the resource, and make default
    validation compare exact bytes with an actionable regeneration message.
-5. Run both focused commands green. Remove one schema check and one age check in controlled
-   faults, observe the named tests red, restore them, and rerun green.
-6. Run `just capability-inventory`, `just lint`, and `just typecheck`; commit as
+5. Extend the existing artifact member validator by the one fixed generated-resource path,
+   add archive membership assertions, and run its focused command red then green.
+6. Run all three focused commands green. Remove one schema check and one age check in
+   controlled faults, observe the named tests red, restore them, and rerun green.
+7. Run `just capability-inventory`, `just lint`, and `just typecheck`; commit as
    `feat: package operation maturity projection`.
 
 Rollback: revert the task commit; the canonical catalogs are never rewritten.
@@ -150,8 +158,7 @@ Rollback: revert the task commit; Task 1 remains an unused internal projection.
 
 Files: modify `scripts/gen_tool_reference.py`, `.github/workflows/ci.yml`,
 `tests/scripts/test_gen_tool_reference.py`, `docs/compatibility.md`,
-`tests/test_project_metadata.py`, `tests/test_release_artifacts.py`,
-`tests/test_ci_pipeline.py`, and `CHANGELOG.md`;
+`tests/test_project_metadata.py`, `tests/test_ci_pipeline.py`, and `CHANGELOG.md`;
 regenerate `docs/tools/*.md` with `just tool-docs`.
 
 Interfaces: extend `ToolRecord` with `implementation`, `verification`,
@@ -171,9 +178,6 @@ Verification:
   promise while retaining sourced specific limits. Test:
   `tests/test_project_metadata.py::test_hmc_compatibility_claims_are_evidence_scoped`.
   Expected red: the old universal text remains. Green: run that node with `--no-cov -q`.
-- Mode: focused-test. Contract: wheel and sdist contain the projection resource. Test added
-  to `tests/test_release_artifacts.py`. Expected red: the member is not asserted or absent.
-  Green: `uv run --no-sync pytest tests/test_release_artifacts.py --no-cov -q` exits 0.
 - Mode: focused-test. Contract: every native wheel-smoke leg invokes installed
   `hmc-mcp capabilities --json` and validates operation plus all three maturity fields.
   Test: `tests/test_ci_pipeline.py::test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment`.
@@ -187,8 +191,8 @@ Steps:
    reader; keep registered/exposed counts and enablement notes unchanged.
 3. Run `just tool-docs`; inspect generated diffs rather than editing pages.
 4. Rewrite only unsupported compatibility claims, preserve specific sourced limitations,
-   add the release note, assert the projection archive member, and extend the installed
-   native wheel-smoke step to parse capabilities JSON and assert its fields.
+   add the release note, and extend the installed native wheel-smoke step to parse
+   capabilities JSON and assert its fields.
 5. Run focused tests green. Remove one generated maturity value, observe the generator test
    red, restore it, and rerun green.
 6. Run `just capability-inventory`, `just tool-docs-check`, `just doc-freshness`, and
@@ -218,4 +222,6 @@ Rollback: revert the task commit and regenerate `docs/tools/` from the reverted 
   smoke legs and their workflow-shape test.
 - Oathbind finding 1: accepted-cut by joining already-filtered names centrally in one
   middleware installed by `server.py`, removing all registration-site changes.
+- Forge Task 1 checkpoint: artifact-validator ownership moved from Task 3 to Task 1 because
+  the packaged projection makes Task 1's full-suite gate exercise the closed member set.
 - Open findings, deferrals and follow-up candidates: none.
