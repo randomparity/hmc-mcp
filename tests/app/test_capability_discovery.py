@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -26,6 +27,7 @@ from hmc_mcp.tool_registry import ToolSecurity
 MATURITY_META_KEY = "io.github.randomparity.hmc-mcp/operation-maturity"
 _NOW = datetime(2026, 9, 10, tzinfo=UTC)
 _SOURCE = "test-capability-discovery.toml"
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _policy(*tool_names: str):
@@ -149,7 +151,7 @@ def test_cli_capabilities_preserves_root_rejection_of_malformed_hmc_option(
     result = CliRunner().invoke(cli.app, ["capabilities"])
 
     assert result.exit_code == 2
-    assert "Invalid value for '--verify-ssl'" in result.output
+    assert "Invalid value for '--verify-ssl'" in _ANSI.sub("", result.output)
 
 
 class _ExistingMetadata(Middleware):
