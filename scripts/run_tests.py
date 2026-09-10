@@ -82,7 +82,10 @@ def main() -> int:
         if process.returncode == 0 and not interrupted and not timed_out:
             print("test: passed; configured coverage gate passed")
             return 0
-        _replay(output)
+        try:
+            _replay(output)
+        except KeyboardInterrupt:
+            return 130
         if interrupted:
             return 130
         if timed_out:
