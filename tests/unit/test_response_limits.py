@@ -118,6 +118,16 @@ async def test_empty_response_is_closed(make_client, status):
     assert stream.closed
 
 
+async def test_success_inside_callers_exception_handler_stays_successful(make_client):
+    stream = ObservedStream([b"ok"])
+    client = await make_client(stream)
+    try:
+        raise HMCError("earlier request failed")
+    except HMCError:
+        assert await client._get(PATH) == "ok"
+    assert stream.closed
+
+
 async def test_exact_boundary_json_decodes(make_client):
     stream = ObservedStream([b'{"a": 1}'])
     client = await make_client(stream)
