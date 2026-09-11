@@ -18,14 +18,14 @@ if TYPE_CHECKING:
 # cannot be serialized. Direct-object lookups (get_system, get_lpar) work.
 _FIRMWARE_INVENTORY_500 = ExpectedOutcome(
     reason="HMC firmware cannot serialize a null hardware property (HTTP 500 — known firmware limitation on this hardware; direct-object lookups still work)",
-    error_codes=frozenset({"500"}),
+    error_codes=frozenset({"VirtualPersistentMemoryVolume"}),
 )
 
 # Known HMC version limitation: global Job feed is not supported on older HMC
-# releases (HTTP 400, REST000E). Per-job polling via hmc_get_job still works.
+# releases (REST000E). Per-job polling via hmc_get_job still works.
 _GLOBAL_JOB_LISTING_UNSUPPORTED = ExpectedOutcome(
-    reason="HMC version does not support global Job listing (HTTP 400 REST000E — use hmc_get_job with a submission link instead)",
-    error_codes=frozenset({"400", "REST000E", "Unrecognized root REST type of Job"}),
+    reason="HMC version does not support global Job listing (REST000E — use hmc_get_job with a submission link instead)",
+    error_codes=frozenset({"REST000E"}),
 )
 
 # ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ async def _probe_capacity_and_resources(client: Client, state: RunState) -> None
         assertions=[
             Assertion(
                 "resource-list-non-empty",
-                bool(st == "PASS" and data and (isinstance(data, (list, dict)))),
+                bool(st == "PASS" and entries(data)),
             ),
         ],
         cleanup="not-required",
@@ -262,10 +262,10 @@ async def _record_inventory_summaries(client: Client, state: RunState) -> None:
     st, data = await state.call(
         client, "hmc_system_summary", system_name_or_uuid=config.system_name
     )
-    # SystemSummary is a dataclass, not a dict; check for a uuid attribute instead.
+    # SystemSummary is a dataclass, not a dict; a non-None uuid confirms a real record.
     has_summary = st == "PASS" and data is not None and (
         (isinstance(data, dict) and (data.get("uuid") or data.get("UUID")))
-        or hasattr(data, "uuid")
+        or getattr(data, "uuid", None) is not None
     )
     state.record_verified(
         1,
@@ -282,10 +282,10 @@ async def _record_inventory_summaries(client: Client, state: RunState) -> None:
     st, data = await state.call(
         client, "hmc_lpar_summary", lpar_name_or_uuid=config.lp3_name
     )
-    # LparSummary is a dataclass; check for a uuid attribute rather than isinstance(dict).
+    # LparSummary is a dataclass, not a dict; a non-None uuid confirms a real record.
     has_lpar_summary = st == "PASS" and data is not None and (
         (isinstance(data, dict) and (data.get("uuid") or data.get("UUID")))
-        or hasattr(data, "uuid")
+        or getattr(data, "uuid", None) is not None
     )
     state.record_verified(
         1,

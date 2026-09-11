@@ -147,7 +147,7 @@ async def test_uom_get_with_resource_type_qualifies_accept(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_uom_post_mirrors_accept_as_content_type(mock_hmc):
-    """UOM POST Content-Type equals its Accept header."""
+    """UOM POST Content-Type equals its Accept header and carries the UOM media type."""
     route = mock_hmc.post(_LP_PATH).mock(
         return_value=httpx.Response(201, text=_EMPTY_FEED)
     )
@@ -158,11 +158,14 @@ async def test_uom_post_mirrors_accept_as_content_type(mock_hmc):
     assert sent_accept == sent_ct, (
         f"POST Content-Type ({sent_ct!r}) must equal Accept ({sent_accept!r})"
     )
+    assert sent_ct == f"{MEDIA_UOM}; type=LogicalPartition", (
+        f"POST Content-Type must be UOM with resource type, got: {sent_ct!r}"
+    )
 
 
 @pytest.mark.asyncio
 async def test_uom_put_mirrors_accept_as_content_type(mock_hmc):
-    """UOM PUT Content-Type equals its Accept header."""
+    """UOM PUT Content-Type equals its Accept header and carries the UOM media type."""
     route = mock_hmc.put(f"{_LP_PATH}/uuid1").mock(
         return_value=httpx.Response(200, text=_EMPTY_FEED)
     )
@@ -172,6 +175,9 @@ async def test_uom_put_mirrors_accept_as_content_type(mock_hmc):
     sent_ct = route.calls.last.request.headers.get("content-type", "")
     assert sent_accept == sent_ct, (
         f"PUT Content-Type ({sent_ct!r}) must equal Accept ({sent_accept!r})"
+    )
+    assert sent_ct == f"{MEDIA_UOM}; type=LogicalPartition", (
+        f"PUT Content-Type must be UOM with resource type, got: {sent_ct!r}"
     )
 
 
