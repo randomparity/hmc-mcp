@@ -55,8 +55,8 @@ async def _read_sriov_state(client: Client, state: RunState) -> _SriovState:
         client,
         "hmc_list_sriov_logical_ports",
         system_name_or_uuid=config.system_name,
-        adapter_id=config.sriov_adapter_id,
-        logical_port_id=config.sriov_logical_port_id,
+        adapter_id=str(config.sriov_adapter_id),
+        logical_port_id=str(config.sriov_logical_port_id),
     )
     configured = False
     owner_lpar = None
@@ -66,7 +66,7 @@ async def _read_sriov_state(client: Client, state: RunState) -> _SriovState:
         for item in items:
             if (
                 isinstance(item, dict)
-                and item.get("logical_port_id") == config.sriov_logical_port_id
+                and item.get("logical_port_id") == str(config.sriov_logical_port_id)
                 and item.get("availability") not in ("unconfigured", None, "")
                 and item.get("owner_lpar")
             ):
@@ -105,8 +105,14 @@ def _sriov_state_summary(s: _SriovState) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _adapter_is_healthy(data: object, adapter_id: int) -> bool:
-    """Return whether the selected adapter is in healthy SR-IOV mode."""
+def _adapter_is_healthy(data: object, adapter_id: str) -> bool:
+    """Return whether the selected adapter is in healthy SR-IOV mode.
+
+    `adapter_id` is compared against `hmc_list_sriov_adapters` rows, which project
+    it as `str` (`SriovAdapter.adapter_id`), so the caller converts before calling.
+    Comparing the numeric config value directly makes every row unequal and reports
+    a healthy adapter as absent.
+    """
     items = data.get("items") or [] if isinstance(data, dict) else []
     return any(
         isinstance(item, dict)
@@ -136,8 +142,15 @@ def _available_capacity(data: object) -> float:
     return 100.0 - used
 
 
-def _logical_port_is_configured(data: object, logical_port_id: int) -> bool:
-    """Return whether the selected logical port has an effective assignment."""
+def _logical_port_is_configured(data: object, logical_port_id: str) -> bool:
+    """Return whether the selected logical port has an effective assignment.
+
+    `logical_port_id` is compared against `hmc_list_sriov_logical_ports` rows,
+    which project it as `str` (`SriovLogicalPort.logical_port_id`). Comparing the
+    numeric config value directly is never equal, so a port that is still
+    configured after cleanup reports as unconfigured - a wrong answer in a cleanup
+    assertion rather than a loud failure.
+    """
     items = data.get("items") or [] if isinstance(data, dict) else []
     return any(
         isinstance(item, dict)
@@ -154,13 +167,13 @@ async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
         client,
         "hmc_list_sriov_logical_ports",
         system_name_or_uuid=config.system_name,
-        adapter_id=config.sriov_adapter_id,
-        logical_port_id=config.sriov_logical_port_id,
+        adapter_id=str(config.sriov_adapter_id),
+        logical_port_id=str(config.sriov_logical_port_id),
     )
     state.record(28, "hmc_list_sriov_logical_ports (final)", st, data)
     if st == "PASS":
         still_configured = _logical_port_is_configured(
-            data, config.sriov_logical_port_id
+            data, str(config.sriov_logical_port_id)
         )
         state.record(
             28,
@@ -199,7 +212,7 @@ async def _check_sriov_adapter_health(client: Client, state: RunState) -> bool:
         client,
         "hmc_list_sriov_adapters",
         system_name_or_uuid=config.system_name,
-        adapter_id=config.sriov_adapter_id,
+        adapter_id=str(config.sriov_adapter_id),
     )
     state.record(23, "hmc_list_sriov_adapters (baseline)", st, data)
     if st != "PASS":
@@ -222,7 +235,7 @@ async def _check_sriov_adapter_health(client: Client, state: RunState) -> bool:
         return False
 
     # Confirm adapter is in SR-IOV mode and healthy
-    if not _adapter_is_healthy(data, config.sriov_adapter_id):
+    if not _adapter_is_healthy(data, str(config.sriov_adapter_id)):
         state.skip(
             23,
             "hmc_list_sriov_adapters (health check)",
@@ -245,8 +258,8 @@ async def _check_sriov_physical_port_capacity(client: Client, state: RunState) -
         client,
         "hmc_list_sriov_physical_ports",
         system_name_or_uuid=config.system_name,
-        adapter_id=config.sriov_adapter_id,
-        physical_port_id=config.sriov_physical_port_id,
+        adapter_id=str(config.sriov_adapter_id),
+        physical_port_id=str(config.sriov_physical_port_id),
     )
     state.record(23, "hmc_list_sriov_physical_ports (baseline)", st, data)
     if st != "PASS":
@@ -263,8 +276,8 @@ async def _check_sriov_physical_port_capacity(client: Client, state: RunState) -
         client,
         "hmc_list_sriov_logical_ports",
         system_name_or_uuid=config.system_name,
-        adapter_id=config.sriov_adapter_id,
-        physical_port_id=config.sriov_physical_port_id,
+        adapter_id=str(config.sriov_adapter_id),
+        physical_port_id=str(config.sriov_physical_port_id),
     )
     available = _available_capacity(data_lp) if st_lp == "PASS" else 0.0
     state.record(
@@ -296,8 +309,8 @@ async def _check_sriov_logical_port_clean(client: Client, state: RunState) -> bo
         client,
         "hmc_list_sriov_logical_ports",
         system_name_or_uuid=config.system_name,
-        adapter_id=config.sriov_adapter_id,
-        logical_port_id=config.sriov_logical_port_id,
+        adapter_id=str(config.sriov_adapter_id),
+        logical_port_id=str(config.sriov_logical_port_id),
     )
     state.record(23, "hmc_list_sriov_logical_ports (baseline)", st, data)
     if st != "PASS":
@@ -307,7 +320,7 @@ async def _check_sriov_logical_port_clean(client: Client, state: RunState) -> bo
             "logical port inventory failed: SKIP SR-IOV arm",
         )
         return False
-    if _logical_port_is_configured(data, config.sriov_logical_port_id):
+    if _logical_port_is_configured(data, str(config.sriov_logical_port_id)):
         state.skip(
             23,
             "sriov logical port precondition",
@@ -396,9 +409,9 @@ async def assign_sriov_to_lp3(client: Client, state: RunState) -> bool:
         "hmc_assign_sriov_logical_port",
         system_name_or_uuid=config.system_name,
         lpar_name_or_uuid=config.lp3_name,
-        adapter_id=config.sriov_adapter_id,
-        physical_port_id=config.sriov_physical_port_id,
-        logical_port_id=config.sriov_logical_port_id,
+        adapter_id=str(config.sriov_adapter_id),
+        physical_port_id=str(config.sriov_physical_port_id),
+        logical_port_id=str(config.sriov_logical_port_id),
         capacity_percent=config.sriov_capacity_percent,
         profile_name=config.sriov_profile_name,
         ownership_override=True,
@@ -473,9 +486,9 @@ async def unassign_sriov_from_lp3(client: Client, state: RunState) -> bool:
         "hmc_unassign_sriov_logical_port",
         system_name_or_uuid=config.system_name,
         lpar_name_or_uuid=config.lp3_name,
-        adapter_id=config.sriov_adapter_id,
-        physical_port_id=config.sriov_physical_port_id,
-        logical_port_id=config.sriov_logical_port_id,
+        adapter_id=str(config.sriov_adapter_id),
+        physical_port_id=str(config.sriov_physical_port_id),
+        logical_port_id=str(config.sriov_logical_port_id),
         profile_name=config.sriov_profile_name,
         ownership_override=True,
     )
@@ -520,9 +533,9 @@ async def reassign_sriov_to_lp3(client: Client, state: RunState) -> bool:
         "hmc_assign_sriov_logical_port",
         system_name_or_uuid=config.system_name,
         lpar_name_or_uuid=config.lp3_name,
-        adapter_id=config.sriov_adapter_id,
-        physical_port_id=config.sriov_physical_port_id,
-        logical_port_id=config.sriov_logical_port_id,
+        adapter_id=str(config.sriov_adapter_id),
+        physical_port_id=str(config.sriov_physical_port_id),
+        logical_port_id=str(config.sriov_logical_port_id),
         capacity_percent=config.sriov_capacity_percent,
         profile_name=config.sriov_profile_name,
         ownership_override=True,
@@ -587,9 +600,9 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
             "hmc_unassign_sriov_logical_port",
             system_name_or_uuid=config.system_name,
             lpar_name_or_uuid=config.lp3_name,
-            adapter_id=config.sriov_adapter_id,
-            physical_port_id=config.sriov_physical_port_id,
-            logical_port_id=config.sriov_logical_port_id,
+            adapter_id=str(config.sriov_adapter_id),
+            physical_port_id=str(config.sriov_physical_port_id),
+            logical_port_id=str(config.sriov_logical_port_id),
             profile_name=config.sriov_profile_name,
             ownership_override=True,
         )

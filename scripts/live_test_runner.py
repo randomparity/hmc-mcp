@@ -468,17 +468,86 @@ class LiveTestArtifacts:
     vmedia_orig_boot_order: list[str] = field(default_factory=list)
 
 
+#: Stand-in for an argument whose value is not knowable without running the
+#: scenario. The static dispatch guard checks the types it *can* resolve and
+#: passes over the rest rather than guessing at them.
+UNRESOLVED_ARGUMENT: Any = object()
+
+#: JSON-schema type name to the Python types that satisfy it. `number` admits
+#: `int` under the PEP 484 numeric tower; `bool` is excluded from both numeric
+#: entries because it is an `int` subclass and would otherwise pass as a
+#: quantity.
+_SCHEMA_TYPES: Mapping[str, tuple[type, ...]] = {
+    "string": (str,),
+    "integer": (int,),
+    "number": (int, float),
+    "boolean": (bool,),
+    "array": (list, tuple),
+    "object": (dict,),
+    "null": (type(None),),
+}
+
+
+def _declared_types(schema: Mapping[str, Any]) -> tuple[str, ...]:
+    """The JSON-schema type names one property accepts.
+
+    An optional parameter is served as `anyOf[{type: T}, {type: null}]` rather
+    than a bare `type`, so both spellings have to be read to see `T` at all.
+    """
+    declared = schema.get("type")
+    if isinstance(declared, str):
+        return (declared,)
+    if isinstance(declared, list):
+        return tuple(entry for entry in declared if isinstance(entry, str))
+    return tuple(
+        name
+        for branch in schema.get("anyOf") or ()
+        if isinstance(branch, Mapping)
+        for name in _declared_types(branch)
+    )
+
+
+def _type_problem(tool: str, name: str, value: Any, schema: Mapping[str, Any]) -> str | None:
+    """Report a supplied value whose Python type no declared schema type admits."""
+    if value is UNRESOLVED_ARGUMENT:
+        return None
+    declared = _declared_types(schema)
+    accepted = tuple(
+        accepted_type
+        for declared_name in declared
+        for accepted_type in _SCHEMA_TYPES.get(declared_name, ())
+    )
+    if not accepted:
+        # A property with no readable type constrains nothing, so nothing to check.
+        return None
+    if isinstance(value, bool) and bool not in accepted:
+        # `bool` is an `int` subclass, so a plain isinstance check would admit it
+        # wherever a quantity is declared and report `True` as a capacity of 1.
+        return f"{tool}: {name} expects {' or '.join(declared)}, got bool"
+    if isinstance(value, accepted):
+        return None
+    return f"{tool}: {name} expects {' or '.join(declared)}, got {type(value).__name__}"
+
+
 def _dispatch_problems(
     tool: str,
-    keywords: Iterable[str],
+    arguments: Iterable[str] | Mapping[str, Any],
     schemas: Mapping[str, Mapping[str, Any]],
 ) -> tuple[str, ...]:
-    """Report every way a dispatch disagrees with the tool's served input schema."""
+    """Report every way a dispatch disagrees with the tool's served input schema.
+
+    Passing a mapping also checks each supplied value's type, which is what
+    catches a scenario handing a tool an `int` where it declares a `str`. Names
+    alone are accepted so a caller that has no values can still check those.
+    """
     schema = schemas.get(tool)
     if schema is None:
         return (f"{tool} is not a registered tool",)
     properties = schema.get("properties") or {}
-    supplied = list(keywords)
+    values: Mapping[str, Any] = (
+        arguments if isinstance(arguments, Mapping) else dict.fromkeys(arguments, UNRESOLVED_ARGUMENT)
+    )
+    supplied = list(values)
     problems = [
         f"{tool}: unknown argument {name}"
         for name in supplied
@@ -488,6 +557,12 @@ def _dispatch_problems(
         f"{tool}: missing required argument {name}"
         for name in schema.get("required") or ()
         if name not in supplied
+    ]
+    problems += [
+        problem
+        for name, value in values.items()
+        if name in properties
+        and (problem := _type_problem(tool, name, value, properties[name])) is not None
     ]
     return tuple(problems)
 
