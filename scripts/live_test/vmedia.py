@@ -19,12 +19,18 @@ from .results import entries
 from .results import resource as get_resource
 
 _ALREADY_POWERED_OFF = ExpectedOutcome(
+    operation="lpar.power_off",
+    variant="pre-boot-power-off",
+    transient=True,
     reason="lp3 already powered off (expected)",
     error_codes=frozenset(
         {"already", "not activated", "powered off", "not running"}
     ),
 )
 _REPOSITORY_ALREADY_GONE = ExpectedOutcome(
+    operation="media.delete_repository",
+    variant="repository-removal",
+    transient=True,
     reason="repository already gone (expected on re-run)",
     error_codes=frozenset(
         {"not found", "does not exist", "no repository", "no media"}
@@ -706,6 +712,7 @@ async def _prepare_boot_media(
         lpar_name_or_uuid=config.lp3_name,
         immediate=True,
         wait=True,
+        expected=[_ALREADY_POWERED_OFF],
     )
     state.record_with_expected(
         20, "hmc_power_off_lpar (pre-boot)", status, data, [_ALREADY_POWERED_OFF]
@@ -1072,6 +1079,7 @@ async def _remove_repository_and_audit(
             "hmc_delete_media_repository",
             vios_name_or_uuid=vios,
             vg_uuid=vg,
+            expected=[_REPOSITORY_ALREADY_GONE],
         )
         state.record_with_expected(
             22,

@@ -4,6 +4,10 @@
 
 Accepted
 
+Extended by [ADR 0132](0132-confirmed-live-limitation-gaps.md): maturity format 3 adds
+non-evidentiary confirmations to missing scope. This record's observation shape,
+derived live-evidence staleness and promotion rules remain unchanged.
+
 Supersedes [ADR 0126](0126-operation-keyed-maturity-evidence.md). Its implementation-state
 model — `absent`, `partial`, `implemented`, with explicit implemented and missing scope
 objects — is carried forward unchanged. Its evidence, currency and promotion model is

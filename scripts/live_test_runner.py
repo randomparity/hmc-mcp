@@ -19,7 +19,9 @@ instructions.
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
+import inspect
 import json
 import os
 import re
@@ -49,6 +51,7 @@ from live_test.observation import (
     Assertion,
     CallFailure,
     ExpectedOutcome,
+    KnownGap,
     classify_failure,
 )
 from live_test.pcie import exercise_sriov_assignment
@@ -612,14 +615,25 @@ class RunState:
     artifacts: LiveTestArtifacts = field(default_factory=LiveTestArtifacts)
     results: list[dict[str, Any]] = field(default_factory=list)
     observations: list[dict[str, Any]] = field(default_factory=list)
+    gaps: list[dict[str, Any]] = field(default_factory=list)
+    known_gaps: set[tuple[str, str]] = field(default_factory=set)
     schemas: dict[str, dict[str, Any]] = field(default_factory=dict)
     iso_http_server: IsoHttpServer = field(default_factory=IsoHttpServer)
 
-    async def call(self, client: Client, tool: str, **kwargs: Any) -> tuple[str, Any]:
+    async def call(
+        self,
+        client: Client,
+        tool: str,
+        *,
+        expected: Sequence[ExpectedOutcome] = (),
+        reuse_gaps: bool = True,
+        **kwargs: Any,
+    ) -> tuple[str, Any]:
         """Call a tool and return a PASS or FAIL result without raising."""
         # FastMCP would reject an invalid dispatch anyway; checking here is what
         # gives the failure a stable reason instead of a pydantic rendering, and
         # keeps a harness defect from ever reaching the real HMC.
+        _validate_expected_dispatch(tool, expected)
         problems = (
             _dispatch_problems(tool, kwargs, self.schemas) if self.schemas else ()
         )
@@ -627,6 +641,13 @@ class RunState:
             return "FAIL", CallFailure(
                 "InvalidDispatch", "; ".join(problems), "", None, False
             )
+        if reuse_gaps:
+            for outcome in expected:
+                if (
+                    not outcome.transient
+                    and (outcome.operation, outcome.variant) in self.known_gaps
+                ):
+                    return "SKIP", KnownGap(outcome)
         try:
             result = await client.call_tool(tool, kwargs)
             if hasattr(result, "data") and result.data is not None:
@@ -709,6 +730,9 @@ class RunState:
         recorded before any declaration is consulted — that is the substitution
         the old substring match allowed.
         """
+        if status == "SKIP" and isinstance(data, KnownGap):
+            self.skip(subtask, tool, f"known gap: {data.outcome.reason}")
+            return
         if (
             status == "FAIL"
             and isinstance(data, CallFailure)
@@ -717,6 +741,25 @@ class RunState:
             for outcome in expected:
                 if outcome.matches(data):
                     self.skip(subtask, tool, outcome.reason)
+                    if not outcome.transient and not any(
+                        row["operation"] == outcome.operation
+                        and row["missing_scope"]["variant"] == outcome.variant
+                        for row in self.gaps
+                    ):
+                        self.gaps.append(
+                            {
+                                "operation": outcome.operation,
+                                "missing_scope": {
+                                    "variant": outcome.variant,
+                                    "parameters": [],
+                                    "confirmation": {
+                                        "observed_at": datetime.now(UTC).strftime(
+                                            "%Y-%m-%dT%H:%M:%SZ"
+                                        )
+                                    },
+                                },
+                            }
+                        )
                     return
         self.record(subtask, tool, status, data)
 
@@ -804,6 +847,179 @@ SUBTASKS = {
     22: vmedia_teardown,
     23: exercise_sriov_assignment,
 }
+_SCENARIO_MODULES = frozenset(inspect.getmodule(task) for task in SUBTASKS.values())
+
+
+def _validate_expected_dispatch(tool: str, expected: Sequence[ExpectedOutcome]) -> None:
+    for outcome in expected:
+        security = TOOL_SECURITY.get(tool)
+        if security is None or outcome.operation != security.operation:
+            raise ValueError(f"expected outcome operation does not match tool {tool}")
+
+
+def _declared_names(
+    node: ast.expr, declarations: Mapping[str, ExpectedOutcome]
+) -> list[str]:
+    if not isinstance(node, ast.List) or not all(
+        isinstance(item, ast.Name) and item.id in declarations for item in node.elts
+    ):
+        raise ValueError(
+            "expected outcomes must be a literal list of module declarations"
+        )
+    return [item.id for item in node.elts if isinstance(item, ast.Name)]
+
+
+def _result_names(nodes: Sequence[ast.expr]) -> tuple[str, str]:
+    if len(nodes) != 2 or not all(isinstance(node, ast.Name) for node in nodes):
+        raise ValueError("declared results require a named status/data pair")
+    names = tuple(node.id for node in nodes if isinstance(node, ast.Name))
+    if names[0] == names[1]:
+        raise ValueError("declared status and data names must differ")
+    return names[0], names[1]
+
+
+def _call_result_names(
+    node: ast.Call, parents: Mapping[ast.AST, ast.AST]
+) -> tuple[str, str]:
+    awaiter = parents.get(node)
+    assignment = parents.get(awaiter) if awaiter else None
+    if (
+        not isinstance(awaiter, ast.Await)
+        or not isinstance(assignment, ast.Assign)
+        or len(assignment.targets) != 1
+        or not isinstance(assignment.targets[0], ast.Tuple)
+    ):
+        raise ValueError("declared calls require an assigned awaited status/data pair")
+    return _result_names(assignment.targets[0].elts)
+
+
+def _validate_declared_function(
+    function: ast.AsyncFunctionDef,
+    declarations: Mapping[str, ExpectedOutcome],
+) -> None:
+    parents = {
+        child: node
+        for node in ast.walk(function)
+        for child in ast.iter_child_nodes(node)
+    }
+    events = sorted(
+        (
+            node
+            for node in ast.walk(function)
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute))
+            or (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store))
+        ),
+        key=lambda node: (node.lineno, node.col_offset),
+    )
+    pending: dict[tuple[str, str], list[str]] = {}
+    for node in events:
+        if isinstance(node, ast.Name):
+            if any(node.id in binding for binding in pending):
+                raise ValueError(
+                    f"unrecorded declared result overwritten in {function.name}"
+                )
+            continue
+        if node.func.attr == "record_with_expected":
+            if len(node.args) != 5:
+                raise ValueError(
+                    "expected-outcome recording must use five positional arguments"
+                )
+            names = _declared_names(node.args[4], declarations)
+            if pending.pop(_result_names(node.args[2:4]), None) != names:
+                raise ValueError(
+                    f"expected-outcome result pairing mismatch in {function.name}"
+                )
+        if node.func.attr != "call":
+            continue
+        expected = next(
+            (kw.value for kw in node.keywords if kw.arg == "expected"), None
+        )
+        if expected is None:
+            continue
+        binding = _call_result_names(node, parents)
+        names = _declared_names(expected, declarations)
+        tool = node.args[1] if len(node.args) > 1 else None
+        if not isinstance(tool, ast.Constant) or not isinstance(tool.value, str):
+            raise ValueError(  # noqa: TRY004 - invalid scenario source is a startup configuration error
+                "declared dispatch requires a literal tool name"
+            )
+        _validate_expected_dispatch(tool.value, [declarations[name] for name in names])
+        pending[binding] = names
+    if pending:
+        raise ValueError(f"unrecorded declared results in {function.name}")
+
+
+def _validate_declared_outcomes() -> None:
+    """Validate every registered scenario before any client can reach hardware."""
+    registered = {security.operation for security in TOOL_SECURITY.values()}
+    for module in _SCENARIO_MODULES:
+        if module is None:
+            raise ValueError("cannot resolve a live scenario module")
+        declarations = {
+            name: value
+            for name, value in vars(module).items()
+            if isinstance(value, ExpectedOutcome)
+        }
+        if any(
+            outcome.operation not in registered for outcome in declarations.values()
+        ):
+            raise ValueError(
+                f"unregistered expected outcome operation in {module.__name__}"
+            )
+        for function in ast.walk(ast.parse(inspect.getsource(module))):
+            if isinstance(function, ast.AsyncFunctionDef):
+                _validate_declared_function(function, declarations)
+
+
+def _load_known_gaps(
+    environment: tuple[str, str] | None,
+    repo_root: Path,
+    catalog_path: Path | None = None,
+) -> set[tuple[str, str]]:
+    document = check_capability_inventory.load_json(
+        catalog_path or repo_root / "docs/capabilities/maturity.json"
+    )
+    errors: list[str] = []
+    check_capability_inventory._exact_keys(
+        document,
+        {"format_version", "admission_policy", "operations"},
+        "maturity.json",
+        errors,
+    )
+    if (
+        type(document.get("format_version")) is not int
+        or document.get("format_version")
+        != check_capability_inventory.MATURITY_FORMAT_VERSION
+        or document.get("admission_policy") != "existing-runtime-guards"
+    ):
+        errors.append("maturity.json: invalid format version or admission policy")
+    records = check_capability_inventory._objects(
+        check_capability_inventory._array(document, "operations", errors),
+        "maturity operations",
+        errors,
+    )
+    handlers = {
+        tool.operation: tool.handler
+        for tool in check_capability_inventory.discover_registry()
+    }
+    check_capability_inventory._validate_maturity(records, set(handlers), errors)
+    if errors:
+        raise ValueError("invalid gap catalog: " + "; ".join(errors))
+    known: set[tuple[str, str]] = set()
+    if environment is not None:
+        for record in records:
+            for scope in record["implementation"]["missing_scope"]:
+                if "confirmation" not in scope:
+                    continue
+                fingerprint = check_capability_inventory.closure_fingerprint(
+                    repo_root, handlers[record["operation"]].rsplit(".", 1)[0]
+                )
+                if check_capability_inventory.gap_is_current(
+                    scope["confirmation"], environment, fingerprint
+                ):
+                    known.add((record["operation"], scope["variant"]))
+    return known
+
 
 SUBTASK_GROUPS: dict[str, list[int]] = {
     "round2": list(range(16)),
@@ -1154,8 +1370,8 @@ def _emit_observations(
     if environment is None:
         print("no LIVE_TEST_ENV_* settings — observations not written")
         return False
-    if not state.observations:
-        print("no verified observations — nothing to write")
+    if not state.observations and not state.gaps:
+        print("no verified observations or confirmed gaps — nothing to write")
         return False
     if not _tree_is_clean(repo_root):
         print("src/ or scripts/ is modified — observations not written")
@@ -1205,6 +1421,22 @@ def _emit_observations(
         document.append(
             {"operation": recorded["operation"], "observation": observation}
         )
+    for recorded in state.gaps:
+        handler = handlers.get(recorded["operation"])
+        if handler is None:
+            print(f"unknown operation {recorded['operation']} — gap skipped")
+            continue
+        scope = dict(recorded["missing_scope"])
+        scope["confirmation"] = {
+            **scope["confirmation"],
+            "tested_commit": head.stdout.strip(),
+            "hmc_release": environment[0],
+            "hardware_family": environment[1],
+            "closure_fingerprint": check_capability_inventory.closure_fingerprint(
+                repo_root, handler.rsplit(".", 1)[0]
+            ),
+        }
+        document.append({"operation": recorded["operation"], "missing_scope": scope})
     if not document:
         print("no resolvable observations — nothing written")
         return False
@@ -1227,7 +1459,14 @@ async def main(
         except ValueError as exc:
             print(f"❌ {_redact_failure_text(str(exc))}")
             return 1
-    state = RunState(config=config)
+    try:
+        _validate_declared_outcomes()
+        repo_root = _repository_root()
+        known_gaps = _load_known_gaps(environment, repo_root) if repo_root else set()
+    except (OSError, ValueError) as exc:
+        print(f"❌ {_redact_failure_text(str(exc))}")
+        return 1
+    state = RunState(config=config, known_gaps=known_gaps)
     hmc_config = hmc_config or HMCConfig()
     print(f"Starting live integration tests at {datetime.now(UTC).isoformat()}")
     schema_version = env_var_value("HMC_SCHEMA_VERSION") or "(not set)"

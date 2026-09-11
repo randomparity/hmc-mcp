@@ -15,6 +15,8 @@ CLEANUP = frozenset({"not-run", "not-required", "failed", "passed"})
 
 ASSERTION_ID = re.compile(r"\A[a-z][a-z0-9-]{1,62}[a-z0-9]\Z")
 SCENARIO_ID = re.compile(r"\Ast\d+-[a-z0-9-]+\Z")
+OPERATION_ID = re.compile(r"[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*")
+VARIANT_ID = re.compile(r"[a-z][a-z0-9-]{0,63}")
 
 _HTTP_STATUS_RE = re.compile(r"\bHTTP (\d{3})\b")
 
@@ -51,11 +53,18 @@ class Assertion:
 class ExpectedOutcome:
     """A known HMC limitation a scenario declares in advance, and how to spot it."""
 
+    operation: str
+    variant: str
     reason: str
     error_codes: frozenset[str] = field(default_factory=frozenset)
     denial: bool = False
+    transient: bool = False
 
     def __post_init__(self) -> None:
+        if not OPERATION_ID.fullmatch(self.operation):
+            raise ValueError("expected outcome operation must be a domain.action token")
+        if not VARIANT_ID.fullmatch(self.variant):
+            raise ValueError("expected outcome variant must be a closed slug")
         if not self.error_codes and not self.denial:
             raise ValueError("an expected outcome must name an error code or a denial")
 
@@ -72,6 +81,13 @@ class ExpectedOutcome:
             re.search(rf"\b{re.escape(code)}\b", failure.message, re.IGNORECASE)
             for code in self.error_codes
         ) or (self.denial and failure.denied)
+
+
+@dataclass(frozen=True)
+class KnownGap:
+    """A previous confirmation skipped dispatch; it is not a fresh observation."""
+
+    outcome: ExpectedOutcome
 
 
 def classify_failure(exc: BaseException) -> CallFailure:
