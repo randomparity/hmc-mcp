@@ -2157,8 +2157,8 @@ def test_storage_mount_optical_media_forwards_selectors(fake_hmc, monkeypatch):
             "--target-device",
             "vtopt0",
             "--ownership-override",
-            "--yes",
         ],
+        input="y\n",
     )
 
     assert result.exit_code == 0
@@ -2172,6 +2172,8 @@ def test_storage_mount_optical_media_forwards_selectors(fake_hmc, monkeypatch):
         system_name_or_uuid=SYSTEM_UUID,
     )
     assert "Mounted optical media 'install.iso'" in result.stdout
+    assert SYSTEM_UUID in result.stdout
+    assert "vtopt0" in result.stdout
     assert '"mapping-1"' in result.stdout
 
 

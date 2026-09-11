@@ -39,6 +39,7 @@ EXPECTED_COMMANDS = {
     ("adapters", "add-vscsi"),
     ("adapters", "list"),
     ("config", "show"),
+    ("config", "list"),
     ("console", "info"),
     ("jobs", "show"),
     ("lpars", "capture-console"),

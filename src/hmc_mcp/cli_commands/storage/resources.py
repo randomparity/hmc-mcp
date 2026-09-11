@@ -415,8 +415,11 @@ def storage_mount_optical_media(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
 ) -> None:
     """Mount an ISO from a VIOS media repository to an LPAR."""
+    target = f"; target device {target_device}" if target_device else ""
+    selected_system = f" in managed system {system}" if system else ""
     if not yes and not typer.confirm(
-        f"Mount optical media '{media_name}' from VIOS {vios} to LPAR {lpar}?"
+        f"Mount optical media '{media_name}' from VIOS {vios} to LPAR {lpar}"
+        f"{selected_system}{target}?"
     ):
         raise typer.Abort()
 

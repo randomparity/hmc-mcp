@@ -5,7 +5,9 @@ Run it only against a connection and managed system you own. Keep the transcript
 
 ## Preconditions and placeholders
 
-Configure a profile with the HMC credentials and an `HMC_ISO_URL_ALLOWLIST` entry for the ISO host.
+Select the intended connection explicitly and configure a profile with the HMC credentials. The
+allowlist is a safety boundary, not a comment: set it before discovery and verify the selected
+profile with `config list`.
 Use names or UUIDs consistently within one run; UUIDs are preferred for destructive steps.
 
 | Placeholder | Meaning |
@@ -14,6 +16,9 @@ Use names or UUIDs consistently within one run; UUIDs are preferred for destruct
 | `VLAN` / `VG` / `ISO_URL` | network VLAN, volume group, and allowlisted HTTPS URL |
 
 ```bash
+export HMC_PROFILE=<profile-name>
+export HMC_ISO_URL_ALLOWLIST=<allowlisted-host>
+hmc-mcp config list
 SYSTEM=<system-uuid>
 VIOS=<vios-uuid>
 LPAR_NAME=<new-lpar-name>
@@ -24,6 +29,11 @@ VIOS_SLOT=20
 VG=<volume-group-uuid>
 ISO_URL=https://<allowlisted-host>/images/install.iso
 ```
+
+The CLI has no global dry-run mode. `--dry-run` is available only on commands that advertise it
+(for example `storage attach-disk`); the lifecycle commands below perform mutations after their
+confirmation prompt. For a dry run, stop after discovery and validate selectors and free space
+manually. Never treat `--yes` as a dry run: it skips the final prompt.
 
 ## Discover the environment
 
