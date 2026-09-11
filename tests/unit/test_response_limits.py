@@ -55,7 +55,8 @@ async def make_client(monkeypatch):
 
     async def make(stream, *, headers=None, status=200):
         client = core.HMCClient(HMCConfig.from_mapping({
-            "host": "hmc.test", "user": "test", "password": "test", "verify_ssl": True,
+            "host": "hmc.test", "user": "test", "verify_ssl": True,
+            "password": "test",  # pragma: allowlist secret — MockTransport fixture only.
         }))
         await client._http.aclose()
 
