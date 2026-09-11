@@ -17,13 +17,29 @@ if TYPE_CHECKING:
 # HTTP 500 on hardware where a null VirtualPersistentMemoryVolume/Uuid field
 # cannot be serialized. Direct-object lookups (get_system, get_lpar) work.
 _FIRMWARE_INVENTORY_500 = ExpectedOutcome(
+    operation="system.list",
+    variant="firmware-inventory-serialization",
     reason="HMC firmware cannot serialize a null hardware property (HTTP 500 — known firmware limitation on this hardware; direct-object lookups still work)",
     error_codes=frozenset({"VirtualPersistentMemoryVolume"}),
+)
+_FIRMWARE_CAPACITY_500 = ExpectedOutcome(
+    operation="capacity.report",
+    variant="firmware-inventory-serialization",
+    reason=_FIRMWARE_INVENTORY_500.reason,
+    error_codes=_FIRMWARE_INVENTORY_500.error_codes,
+)
+_FIRMWARE_PLACEMENT_500 = ExpectedOutcome(
+    operation="placement.find",
+    variant="firmware-inventory-serialization",
+    reason=_FIRMWARE_INVENTORY_500.reason,
+    error_codes=_FIRMWARE_INVENTORY_500.error_codes,
 )
 
 # Known HMC version limitation: global Job feed is not supported on older HMC
 # releases (REST000E). Per-job polling via hmc_get_job still works.
 _GLOBAL_JOB_LISTING_UNSUPPORTED = ExpectedOutcome(
+    operation="job.list",
+    variant="global-job-feed",
     reason="HMC version does not support global Job listing (REST000E — use hmc_get_job with a submission link instead)",
     error_codes=frozenset({"REST000E"}),
 )
@@ -59,7 +75,9 @@ async def _discover_system(client: Client, state: RunState) -> None:
     config = state.config
     artifacts = state.artifacts
 
-    st, data = await state.call(client, "hmc_list_systems")
+    st, data = await state.call(
+        client, "hmc_list_systems", expected=[_FIRMWARE_INVENTORY_500]
+    )
     matched_uuid = None
     if st == "PASS":
         for e in entries(data):
@@ -186,18 +204,21 @@ async def _discover_vios(client: Client, state: RunState) -> None:
 async def _probe_capacity_and_resources(client: Client, state: RunState) -> None:
     config = state.config
 
-    st, data = await state.call(client, "hmc_capacity_report")
+    st, data = await state.call(
+        client, "hmc_capacity_report", expected=[_FIRMWARE_CAPACITY_500]
+    )
     # capacity.report uses list_systems internally; same firmware 500 applies.
     state.record_with_expected(
         1,
         "hmc_capacity_report",
         st,
         data,
-        [_FIRMWARE_INVENTORY_500],
+        [_FIRMWARE_CAPACITY_500],
     )
 
     st, data = await state.call(
-        client, "hmc_find_placement", desired_memory_mib=config.placement_memory_mib
+        client, "hmc_find_placement", desired_memory_mib=config.placement_memory_mib,
+        expected=[_FIRMWARE_PLACEMENT_500],
     )
     # find_placement also uses list_systems; firmware 500 applies here too.
     state.record_with_expected(
@@ -205,7 +226,7 @@ async def _probe_capacity_and_resources(client: Client, state: RunState) -> None
         "hmc_find_placement",
         st,
         data,
-        [_FIRMWARE_INVENTORY_500],
+        [_FIRMWARE_PLACEMENT_500],
     )
 
     st, data = await state.call(
@@ -235,7 +256,9 @@ async def _probe_capacity_and_resources(client: Client, state: RunState) -> None
 async def _sample_recent_job(client: Client, state: RunState) -> None:
     artifacts = state.artifacts
 
-    st, data = await state.call(client, "hmc_list_recent_jobs", limit=10)
+    st, data = await state.call(
+        client, "hmc_list_recent_jobs", limit=10, expected=[_GLOBAL_JOB_LISTING_UNSUPPORTED]
+    )
     job_uuid = None
     if st == "PASS":
         for e in entries(data):

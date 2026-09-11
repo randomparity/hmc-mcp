@@ -4,8 +4,9 @@
 
 Declared firmware/license/endpoint failures currently produce SKIP without a durable
 gap. Implement the approved one-PR scope in WORK:SCOPE q769-a18c4e52, using ADR 0132.
-The current declarations are in lpar, network, metrics, provisioning, users and
-vmedia; historical connectivity declarations in the issue were already removed.
+Declarations are in connectivity, lpar, network, metrics, provisioning, users and
+vmedia. PR #760 restored connectivity declarations while this branch was being built;
+they require the same operation-specific migration as the original six modules.
 No hardware API coverage, runtime authorization or eligibility, automatic issue
 creation, historical backfill, or scenario generation is added.
 
@@ -18,6 +19,8 @@ it validates each declared operation against the tool before any call or gap reu
 Declared calls pass the same expectations to call and record_with_expected.
 The user-create and user-list declarations become separate identities.
 PCM preferences, processed links and aggregated links also get separate identities.
+Connectivity's shared firmware matcher splits across system.list, capacity.report
+and placement.find; global-job-feed limitations name job.list.
 Existing idempotent cleanup declarations set transient=True.
 
 The runner collects missing-scope rows in a separate gaps list. A matching real

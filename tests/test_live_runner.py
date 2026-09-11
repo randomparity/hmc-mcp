@@ -131,7 +131,7 @@ class _ScriptedSriovState(runner.RunState):
         self._responses = iter(responses)
         self.calls: list[tuple[str, dict[str, object]]] = []
 
-    async def call(self, _client, tool, **kwargs):
+    async def call(self, _client, tool, *, expected=(), reuse_gaps=True, **kwargs):
         self.calls.append((tool, kwargs))
         expected_tool, status, data = next(self._responses)
         assert tool == expected_tool
@@ -2952,7 +2952,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
 ):
     calls = []
 
-    async def scripted_call(_state, _client, tool, **kwargs):
+    async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
         calls.append((tool, kwargs))
         responses = {
             "hmc_get_console_info": {"uuid": "console-uuid"},
