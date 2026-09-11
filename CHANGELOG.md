@@ -18,8 +18,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   REST call had succeeded. These fields now accept a plain non-negative decimal and
   widen to `float | None`; an integral value is still returned as `int`, so rendered
   output is unchanged for hardware that reports whole numbers. A value that is not a
-  plain decimal — a sign, an exponent, `nan`, `inf`, or any non-numeric text — still
-  raises, and bools are still rejected (#762).
+  plain decimal — a sign, an exponent, `nan`, `inf`, non-ASCII digits, a trailing
+  newline, or any non-numeric text — still raises, and bools are still rejected.
+  Accepted widths are bounded at 20 integer and 10 fractional digits, beyond any real
+  storage quantity, so a digit string long enough to exhaust `int()` or saturate
+  `float()` to `inf` is rejected as malformed rather than parsed (#762).
 
 - The live-test runner no longer rejects `LIVE_TEST_SRIOV_PHYSICAL_PORT_ID=0`. Physical
   port IDs are zero-indexed on Power SR-IOV hardware, so port 0 is the first and most
