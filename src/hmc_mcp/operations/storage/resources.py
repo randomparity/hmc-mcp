@@ -41,8 +41,8 @@ class VolumeGroup:
 
     uuid: str
     name: str
-    capacity_mib: int | None
-    free_space_mib: int | None
+    capacity_mib: float | None
+    free_space_mib: float | None
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,7 @@ class OpticalMedia:
     """Stable inventory projection for one virtual optical medium."""
 
     name: str
-    size_mib: int | None
+    size_mib: float | None
     media_type: str | None
 
 
@@ -78,14 +78,32 @@ def _required_text(resource: Mapping[str, Any], field: str, operation: str) -> s
     raise HMCError(f"{operation} returned no usable {field}")
 
 
-def _optional_int(resource: Mapping[str, Any], field: str, operation: str) -> int | None:
+#: A plain non-negative decimal, optionally with a fractional part. Deliberately
+#: ASCII-only and narrower than `float()`: it admits neither a sign, exponent,
+#: nor the `nan`/`inf` literals, none of which name a storage quantity.
+_DECIMAL_TEXT = re.compile(r"[0-9]+(?:\.[0-9]+)?\Z")
+
+
+def _optional_number(
+    resource: Mapping[str, Any], field: str, operation: str
+) -> float | None:
+    """Read an optional storage quantity the HMC may report with a fraction.
+
+    The HMC reports volume-group capacity as a decimal string, and on some
+    hardware that string carries a fractional part, so a whole-number-only rule
+    rejects a well-formed reply. An integral value is returned as `int` so
+    rendered output gains no `.0` suffix.
+    """
     value = resource.get(field)
     if value is None:
         return None
-    if isinstance(value, int) and not isinstance(value, bool):
+    if isinstance(value, bool):
+        raise HMCError(f"{operation} returned an invalid {field}")
+    if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.isdecimal():
-        return int(value)
+    if isinstance(value, str) and _DECIMAL_TEXT.match(value):
+        number = float(value)
+        return int(number) if number.is_integer() else number
     raise HMCError(f"{operation} returned an invalid {field}")
 
 
@@ -98,8 +116,8 @@ def _volume_group(entry: Mapping[str, Any]) -> VolumeGroup:
     return VolumeGroup(
         uuid=uuid,
         name=_required_text(resource, "GroupName", operation),
-        capacity_mib=_optional_int(resource, "GroupCapacity", operation),
-        free_space_mib=_optional_int(resource, "FreeSpace", operation),
+        capacity_mib=_optional_number(resource, "GroupCapacity", operation),
+        free_space_mib=_optional_number(resource, "FreeSpace", operation),
     )
 
 
@@ -111,7 +129,7 @@ def _optical_media(entry: Mapping[str, Any]) -> OpticalMedia:
         raise HMCError(f"{operation} returned an invalid MediaType")
     return OpticalMedia(
         name=_required_text(resource, "MediaName", operation),
-        size_mib=_optional_int(resource, "MediaSize", operation),
+        size_mib=_optional_number(resource, "MediaSize", operation),
         media_type=media_type,
     )
 

@@ -10,6 +10,17 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `list_volume_groups` and `list_optical_media` no longer fail on a well-formed HMC
+  reply that reports a quantity with a fractional part. `GroupCapacity`, `FreeSpace`
+  and `MediaSize` were admitted only by `str.isdecimal()`, which is false for any
+  string containing `.`, so hardware returning `279.25` raised
+  `HMCError: list_volume_groups returned an invalid GroupCapacity` even though the
+  REST call had succeeded. These fields now accept a plain non-negative decimal and
+  widen to `float | None`; an integral value is still returned as `int`, so rendered
+  output is unchanged for hardware that reports whole numbers. A value that is not a
+  plain decimal — a sign, an exponent, `nan`, `inf`, or any non-numeric text — still
+  raises, and bools are still rejected (#762).
+
 - The live-test runner no longer rejects `LIVE_TEST_SRIOV_PHYSICAL_PORT_ID=0`. Physical
   port IDs are zero-indexed on Power SR-IOV hardware, so port 0 is the first and most
   common port, but it was covered by a strictly-positive check that aborted the run
