@@ -60,4 +60,3 @@ inspect and resume from the first incomplete step.
 - **Document an out-of-band `mkvterm` command.** verified: issue #776 requires every published recipe
   command to exist in the installable CLI, and `hmc-mcp lpars --help` at the recorded commit has no
   console-capture command.
-

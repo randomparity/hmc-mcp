@@ -1,8 +1,8 @@
 # LPAR ISO Installation CLI Recipe — Design Specification
 
-**Issue:** #776  
-**ADR:** [ADR 0135](../../adr/0135-cli-lpar-install-lifecycle-surfaces.md)  
-**Branch:** `feat/lpar-iso-boot-recipe-776`  
+**Issue:** #776
+**ADR:** [ADR 0135](../../adr/0135-cli-lpar-install-lifecycle-surfaces.md)
+**Branch:** `feat/lpar-iso-boot-recipe-776`
 **Status:** Accepted
 
 ## Scope and outcome
@@ -148,4 +148,3 @@ release. Those are existing deployment and operation contracts, not widened by t
 - CI validates Python 3.11–3.14 on amd64 and arm64; ppc64le remains a declared but non-PR-gated target.
 - No live HMC arm is claimed unless suitable configured hardware is available and the tested build is
   confirmed to match the branch HEAD.
-
