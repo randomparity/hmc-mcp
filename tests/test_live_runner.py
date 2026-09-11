@@ -1886,23 +1886,44 @@ _ARGUMENT_SOURCES = {"config": runner.LiveTestConfig()}
 
 _UNRESOLVED = runner.UNRESOLVED_ARGUMENT
 
+#: A dispatch site reading a config field that does not exist. It is not an
+#: unknowable type, it is a typo that would `AttributeError` against live
+#: hardware, so it is reported rather than passed over.
+_NO_SUCH_FIELD = object()
+
+#: A conversion whose result type is known even though its argument is not.
+#: `str(whatever)` is a `str`; that is the whole question the guard asks, and
+#: it is the spelling every converted dispatch site uses.
+_CONVERSIONS: dict[str, object] = {"str": "", "int": 0, "float": 0.0, "bool": False}
+
 
 def _resolved_argument(node: ast.expr) -> object:
     """The value a dispatch site passes, or ``_UNRESOLVED`` when it is dynamic.
 
-    Only two shapes are statically knowable: a literal, and an attribute read off
-    the run's config or artifacts (``config.x`` or ``state.config.x``). Most other
-    arguments are locals discovered mid-run and carry no static type, so they are
-    reported as unresolved rather than guessed at.
+    Four shapes are statically knowable: a literal; an attribute read off the run
+    config (``config.x`` or ``state.config.x``); a builtin conversion such as
+    ``str(...)``, whose result type is fixed regardless of its argument; and an
+    f-string, which is always a ``str``. Anything else is a local discovered
+    mid-run, which carries no static type and is passed over rather than guessed
+    at.
     """
     if isinstance(node, ast.Constant):
         return node.value
+    if isinstance(node, ast.JoinedStr):
+        return ""
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Name) and node.func.id in _CONVERSIONS:
+            return _CONVERSIONS[node.func.id]
+        return _UNRESOLVED
     if isinstance(node, ast.Attribute):
         holder = node.value
         if isinstance(holder, ast.Attribute):  # state.config.x
             holder = ast.Name(id=holder.attr)
         if isinstance(holder, ast.Name) and holder.id in _ARGUMENT_SOURCES:
-            return getattr(_ARGUMENT_SOURCES[holder.id], node.attr, _UNRESOLVED)
+            source = _ARGUMENT_SOURCES[holder.id]
+            if not hasattr(source, node.attr):
+                return _NO_SUCH_FIELD
+            return getattr(source, node.attr)
     return _UNRESOLVED
 
 
@@ -1923,9 +1944,17 @@ async def _served_schemas() -> dict[str, dict[str, object]]:
         }
 
 
-def _assert_dispatch_arguments(sources: dict[str, str], schemas) -> None:
-    """Fail naming every dispatch whose arguments disagree with the served schema."""
+def _dispatch_argument_report(
+    sources: dict[str, str], schemas
+) -> tuple[list[str], int, int]:
+    """Every disagreement with the served schema, plus how much was actually read.
+
+    The counts are the guard's own coverage. Without them a change that stops
+    resolving a whole class of arguments — turning checked dispatches into
+    unchecked ones — reads exactly like a clean run.
+    """
     problems: list[str] = []
+    checked = total = 0
     for path, source in sources.items():
         for lineno, tool, arguments in _dispatched_calls(source):
             if any(name is None for name, _ in arguments):
@@ -1934,15 +1963,31 @@ def _assert_dispatch_arguments(sources: dict[str, str], schemas) -> None:
                     "cannot read — name them"
                 )
                 continue
-            supplied = {
-                name: _resolved_argument(node)
-                for name, node in arguments
-                if name is not None
-            }
+            supplied: dict[str, object] = {}
+            for name, node in arguments:
+                if name is None:
+                    continue
+                total += 1
+                value = _resolved_argument(node)
+                if value is _NO_SUCH_FIELD:
+                    problems.append(
+                        f"{path}:{lineno} {tool}: {name} reads a field that does "
+                        "not exist on the run config"
+                    )
+                    continue
+                if value is not _UNRESOLVED:
+                    checked += 1
+                supplied[name] = value
             problems += [
                 f"{path}:{lineno} {problem}"
                 for problem in runner._dispatch_problems(tool, supplied, schemas)
             ]
+    return problems, checked, total
+
+
+def _assert_dispatch_arguments(sources: dict[str, str], schemas) -> None:
+    """Fail naming every dispatch whose arguments disagree with the served schema."""
+    problems, _, _ = _dispatch_argument_report(sources, schemas)
     assert problems == [], "\n".join(problems)
 
 
@@ -2090,6 +2135,60 @@ def test_static_argument_resolution_reads_config_field_types():
     assert resolved["logical_port_id"] == "917003"
 
 
+@pytest.mark.parametrize(
+    ("expression", "expected_type"),
+    [
+        ("str(config.sriov_adapter_id)", str),
+        ("int(discovered)", int),
+        ("float(discovered)", float),
+        ("bool(discovered)", bool),
+        ('f"{config.sriov_adapter_id}"', str),
+    ],
+)
+def test_static_argument_resolution_reads_conversions_and_f_strings(
+    expression, expected_type
+):
+    """A conversion's result type is known even when its argument is not.
+
+    Every site #763 fixed is spelled `str(config.x)`. Passing over an `ast.Call`
+    would leave all 23 of them unchecked while the guard still reported a clean
+    run — the guard would bite only on a literal revert, never on a wrong
+    conversion such as `int(...)` where the tool declares a string.
+    """
+    source = (
+        "async def workflow(client):\n"
+        f'    await state.call(client, "hmc_list_sriov_adapters", adapter_id={expression})\n'
+    )
+
+    ((_, _, ((_, node),)),) = _dispatched_calls(source)
+
+    assert type(_resolved_argument(node)) is expected_type
+
+
+def test_static_argument_resolution_reports_a_config_field_that_does_not_exist():
+    """A misspelled config field would `AttributeError` live; it must not read as dynamic."""
+    source = (
+        "async def workflow(client):\n"
+        '    await state.call(client, "hmc_list_sriov_adapters",\n'
+        "        adapter_id=config.sriov_adapter_idd)\n"
+    )
+
+    ((_, _, ((_, node),)),) = _dispatched_calls(source)
+
+    assert _resolved_argument(node) is _NO_SUCH_FIELD
+
+    problems, _, _ = _dispatch_argument_report(
+        {"pcie.py": source},
+        {"hmc_list_sriov_adapters": {"properties": {"adapter_id": {"type": "string"}}}},
+    )
+    assert problems == [
+        (
+            "pcie.py:2 hmc_list_sriov_adapters: adapter_id reads a field that "
+            "does not exist on the run config"
+        )
+    ]
+
+
 @pytest.mark.asyncio
 async def test_every_dispatched_argument_matches_the_served_schema():
     """A dispatch the served schema rejects is a defect the harness ships blind."""
@@ -2102,7 +2201,18 @@ async def test_every_dispatched_argument_matches_the_served_schema():
     # added there from being the one the guard never reads.
     sources[_RUNNER_PATH.name] = _RUNNER_PATH.read_text(encoding="utf-8")
 
-    _assert_dispatch_arguments(sources, schemas)
+    problems, checked, total = _dispatch_argument_report(sources, schemas)
+
+    assert problems == [], "\n".join(problems)
+    # A floor, not the live number, so adding an argument the guard cannot read
+    # is allowed while losing a class of arguments it used to read is not. #763
+    # converted 23 checked arguments to unchecked ones and every test stayed
+    # green; that is precisely what this catches.
+    assert checked >= 230, (
+        f"the dispatch guard now type-checks only {checked} of {total} arguments; "
+        "a resolvable argument shape stopped resolving and the guard is quietly "
+        "covering less than it did"
+    )
 
 
 @pytest.mark.asyncio
