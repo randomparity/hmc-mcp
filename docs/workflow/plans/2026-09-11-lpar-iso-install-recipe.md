@@ -28,6 +28,8 @@ selector operation, focused adapter and recipe-contract tests, and one operator 
 - Modify `src/hmc_mcp/cli.py`: register the LPAR console module.
 - Modify `src/hmc_mcp/cli_commands/storage/resources.py`: optical command bodies and registration.
 - Modify `tests/app/test_cli_commands.py`: optical and console body/help tests.
+- Modify `tests/unit/test_console_capture.py`: migrate selector-resolution coverage to the shared
+  operation and retain an MCP payload/profile-routing regression.
 - Create `tests/app/test_lpar_iso_recipe.py`: structural validation of recipe commands.
 - Create `docs/recipes/lpar-iso-install.md`: operator lifecycle.
 - Modify `docs/cli.md` and `docs/index.md`: recipe navigation.
@@ -111,9 +113,17 @@ Task 3 relies on the registered `lpars capture-console` command with `--duration
 
 ### Verification
 
-- Mode: focused-test — shared selector resolution is covered by existing MCP console tests plus a new
-  CLI forwarding test `test_lpars_capture_console_forwards_bounds`; red is command absence; green is
-  `uv run --no-sync pytest tests/app/test_cli_commands.py tests/unit/test_console_capture.py -q -k 'capture_console or capture_lpar_console'`.
+- Mode: focused-test — shared selector resolution is covered directly by
+  `test_capture_lpar_console_by_selector_resolves_names` and
+  `test_capture_lpar_console_by_selector_resolves_uuids`, asserting every resolver and the final
+  bounded capture call; red is the missing shared function or an unmet mock assertion; green is
+  `uv run --no-sync pytest tests/unit/test_console_capture.py -q -k 'by_selector'`.
+- Mode: focused-test — unchanged MCP payload and profile routing are covered by
+  `test_capture_tool_preserves_payload_and_profile`; red is a changed dict/base64 result or profile
+  omission; green is `uv run --no-sync pytest tests/unit/test_console_capture.py -q -k 'preserves_payload'`.
+- Mode: focused-test — CLI adapter bound forwarding is covered by
+  `test_lpars_capture_console_forwards_bounds`; red is command absence; green is
+  `uv run --no-sync pytest tests/app/test_cli_commands.py -q -k capture_console`.
 - Mode: focused-test — JSON base64 shape in `test_lpars_capture_console_json_preserves_bytes`; red is
   command absence; same green command.
 - Mode: focused-test — escaped terminal output and false-release warning in
@@ -126,7 +136,7 @@ Task 3 relies on the registered `lpars capture-console` command with `--duration
 
 1. Add focused CLI tests around a patched `capture_lpar_console_by_selector` returning `ConsoleCapture`
    with control bytes, invalid UTF-8, each stop field, and `released=False`.
-2. Run the focused command and require absence failures.
+2. Run the focused commands and require absence or symbol-migration failures.
 3. Move only selector-to-name resolution from the MCP closure into the shared operation, preserving
    calls to `resolve_system_uuid`, `resolve_lpar_uuid`, `resolve_system_name`,
    `resolve_lpar_cli_name`, and `capture_lpar_console` with their current arguments.
@@ -134,8 +144,11 @@ Task 3 relies on the registered `lpars capture-console` command with `--duration
 5. Add the CLI module. Build the JSON mapping with base64 ASCII. For terminal output, render metadata
    and `ascii(capture.data.decode("utf-8", errors="backslashreplace"))` with markup/highlighting
    disabled; write an explicit warning when `released` is false.
-6. Register the module at the composition root, rerun the focused command, and require all tests green.
-7. Commit as `feat: expose bounded LPAR console capture in the CLI`.
+6. Migrate the existing selector test in `tests/unit/test_console_capture.py` to the shared operation,
+   keep the MCP wrapper regression for its unchanged payload and profile argument, and rerun both
+   focused commands. Require all tests green before registering the module at the composition root.
+7. Register the module at the composition root, rerun the CLI focused command, and require all tests green.
+8. Commit as `feat: expose bounded LPAR console capture in the CLI`.
 
 ## Task 3: Publish and structurally verify the operator recipe
 
@@ -164,7 +177,9 @@ Consumes the commands delivered by Tasks 1 and 2 and existing CLI contracts show
 2. Run its focused command and require a missing-page failure.
 3. Write the recipe in the nine specified sections. Use one placeholder table and shell assignments;
    include discovery, creation, network/vSCSI/disk, repository/ISO/mount, boot/job/state/capture,
-   post-install, recovery, and visibly labelled optional destructive cleanup commands.
+   post-install, recovery, and visibly labelled optional destructive cleanup commands. In the
+   unmount section, require serialized VIOS mapping writers plus fresh pre- and post-unmount
+   `storage list-mappings` checks, with an explicit stop-and-reconcile branch for unexpected output.
 4. Link the page once from the CLI guide and once from the documentation index.
 5. Run every command leaf's installed `--help`, correct the examples to match it, then run the focused
    recipe test green.

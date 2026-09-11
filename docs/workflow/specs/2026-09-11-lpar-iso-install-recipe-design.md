@@ -82,8 +82,13 @@ mapping, adapter, boot-order, or power commands. It directs operators to list/re
 each mutation instead of implying a dry run exists.
 
 The workflow is resumable rather than transactional: after a failure, inspect LPAR state, jobs,
-adapters, mappings, optical media, and boot order, then continue at the first incomplete step. Cleanup
-is opt-in and resource ownership must be checked before deletion.
+adapters, mappings, optical media, and boot order, then continue at the first incomplete step. Before
+`unmount-optical-media`, the operator must serialize mapping writers for the selected VIOS, take a
+fresh `storage list-mappings` inventory, and take a second inventory after the call. The existing
+unmount operation rewrites the parent VIOS mapping document from a GET snapshot; without caller-side
+serialization, another writer's mapping can be lost. If the post-call inventory is unexpected, stop
+and reconcile before any retry. Cleanup is opt-in and resource ownership must be checked before
+deletion.
 
 ## Command verification
 
@@ -101,7 +106,9 @@ escaping, false-release warning, and the new help surfaces.
 
 - Existing CLI runtime handling converts operation exceptions to an actionable stderr error and exit
   status 1.
-- An optical unmount that cannot identify exactly one matching mapping performs no POST.
+- An optical unmount that cannot identify exactly one matching mapping performs no POST. Its caller
+  must serialize other VIOS mapping writers and verify fresh pre- and post-call inventories because
+  the parent-document write has a known lost-update window.
 - A held vterm fails distinctly and never releases another session's console.
 - Capture cleanup remains mandatory; `released=false` tells the operator to recover deliberately via
   the HMC UI or the documented underlying command reference.
