@@ -12,7 +12,7 @@
 | `hmc_delete_lpar` | `destructive` | `lpar.delete` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Delete (destroy) an LPAR by name or UUID. |
 | `hmc_dlpar_mem` | `mutate` | `lpar.dlpar_mem` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | DLPAR memory hot-plug: change memory resources on a running LPAR. |
 | `hmc_dlpar_proc` | `mutate` | `lpar.dlpar_proc` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | DLPAR processor hot-plug: change CPU resources on a running LPAR. |
-| `hmc_get_lpar` | `read` | `lpar.get` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Get one logical partition by partition name or UUID. |
+| `hmc_get_lpar` | `read` | `lpar.get` | `lpar` | `implemented` | `current` | `existing-runtime-guards` | Get one logical partition by partition name or UUID. |
 | `hmc_get_lpar_description` | `read` | `lpar.get_description` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's CLI-only description, resolving names or UUIDs. |
 | `hmc_get_lpar_memopt_score` | `read` | `lpar.get_memopt_score` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's current memory-optimization affinity score. |
 | `hmc_get_lpar_msp` | `read` | `lpar.get_msp` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's CLI-only Migratable Service Partition flag. |
@@ -22,8 +22,8 @@
 | `hmc_install_vios_by_lpar_selector` | `destructive` | `lpar.install_os` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Install an OS image onto a partition via the HMC ``installios`` CLI. |
 | `hmc_list_lpar_memopt_scores` | `read` | `lpar.list_memopt_scores` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List current memory-optimization affinity scores for a system's LPARs. |
 | `hmc_list_lpar_ownership` | `read` | `lpar.list_ownership` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Read parsed ownership for every LPAR on a system in one REST call. |
-| `hmc_list_lpars` | `read` | `lpar.list` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List LPARs, optionally filtered by system and state. |
-| `hmc_lpar_summary` | `read` | `lpar.summary` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return state, resources, OS details, adapters, and description for one LPAR. |
+| `hmc_list_lpars` | `read` | `lpar.list` | `managed_system` | `implemented` | `current` | `existing-runtime-guards` | List LPARs, optionally filtered by system and state. |
+| `hmc_lpar_summary` | `read` | `lpar.summary` | `lpar` | `implemented` | `current` | `existing-runtime-guards` | Return state, resources, OS details, adapters, and description for one LPAR. |
 | `hmc_migrate_abort_lpar` | `destructive` | `lpar.migrate_abort` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Abort an in-progress LPM migration of an LPAR. |
 | `hmc_migrate_lpar` | `mutate` | `lpar.migrate` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Live-migrate (LPM) an LPAR to another managed system. |
 | `hmc_migrate_lpar_with_affinity_preflight` | `mutate` | `lpar.migrate_affinity` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Run explicit affinity preflight before validation-first LPM. |

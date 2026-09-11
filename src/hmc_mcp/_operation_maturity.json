@@ -5,9 +5,37 @@
     {
       "operation": "console.info",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-07T18:42:31Z"
+      "verification": "failed",
+      "reason": null,
+      "observed_at": "2026-09-10T21:53:54Z"
+    },
+    {
+      "operation": "console.list_resources",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-10T21:54:32Z"
+    },
+    {
+      "operation": "lpar.get",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-10T21:54:09Z"
+    },
+    {
+      "operation": "lpar.list",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-10T21:54:06Z"
+    },
+    {
+      "operation": "lpar.summary",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-10T21:54:45Z"
     },
     {
       "operation": "sriov.set_mode",
@@ -17,11 +45,32 @@
       "observed_at": null
     },
     {
+      "operation": "system.get",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-10T21:54:03Z"
+    },
+    {
       "operation": "system.list",
       "implementation": "implemented",
       "verification": "unevidenced",
       "reason": null,
       "observed_at": null
+    },
+    {
+      "operation": "system.summary",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-10T21:54:43Z"
+    },
+    {
+      "operation": "vios.list",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-10T21:54:14Z"
     }
   ]
 }
