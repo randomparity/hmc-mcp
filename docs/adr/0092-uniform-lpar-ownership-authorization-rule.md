@@ -173,10 +173,10 @@ wildcard records the operation's actual scope.
 | `add_vscsi_adapter` | `operations/virtualization/adapters.py:77` | guarded (`:88`) | #372 |
 | `add_vfc_adapter` | `operations/virtualization/adapters.py:108` | guarded (`:119`) | #372 |
 | `delete_adapter` | `operations/virtualization/adapters.py:139` | guarded (`:154`) | #372 |
-| `map_storage` | `operations/storage/resources.py:270` | guarded (`:291`) | #372 |
+| `map_storage` | `operations/storage/resources.py:297` | guarded (`:309`) | #372 |
 | `attach_disk_to_lpar` | `operations/lpar/provision.py:337` | guarded before the storage workflow (`:356`) | #372 |
-| `mount_optical_media` | `operations/storage/resources.py:882` | guarded (`:903`) | — |
-| `unmount_optical_media` | `operations/storage/resources.py:919` | guarded (`:958`) | — |
+| `mount_optical_media` | `operations/storage/resources.py:909` | guarded (`:921`) | — |
+| `unmount_optical_media` | `operations/storage/resources.py:946` | guarded (`:976`) | — |
 | `migrate_lpar` | `operations/lpar/migration.py:355` | guarded after optional validation and before migration submission (`:384`) | #373 |
 | `migrate_lpar_with_affinity_preflight` | `operations/lpar/migration.py:249` | guarded by delegation to `migrate_lpar` | #373 |
 | `abort_lpar_migration` | `operations/lpar/migration.py:420` | guarded (`:420`) | #373 |
@@ -208,7 +208,7 @@ The remaining direct entry points and their guard state are:
 | `configure_lpar_processor_compatibility` | `operations/lpar/configuration.py:71` | guarded (`:80`) | — |
 | `hmc_modify_lpar` | `server_tools/lpar/lifecycle.py:46` | guarded by `operations/lpar/dlpar.py:35` before any write | — |
 | `hmc lpar modify` (CLI) | `cli_commands/lpar/modify.py:16` | guarded by `operations/lpar/dlpar.py:35` before any write | — |
-| `detach_storage_mapping` | `operations/storage/resources.py:369` | resolves the mapping's client LPAR and guards it before deletion (`:411`) | #448 |
+| `detach_storage_mapping` | `operations/storage/resources.py:396` | resolves the mapping's client LPAR and guards it before deletion (`:429`) | #448 |
 
 `hmc_dlpar_proc` and `hmc_dlpar_mem` were rows in this table at `b41e658`. #365
 extracted `set_lpar_processors` and `set_lpar_memory` from those tool bodies and
