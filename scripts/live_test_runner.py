@@ -488,6 +488,14 @@ _SCHEMA_TYPES: Mapping[str, tuple[type, ...]] = {
 }
 
 
+#: Schema keys that carry no constraint on a value's type. A property holding
+#: only these admits anything, so reading no type from it is the right answer
+#: rather than a gap.
+_UNCONSTRAINING_KEYS = frozenset(
+    {"description", "default", "title", "examples", "deprecated", "readOnly"}
+)
+
+
 def _declared_types(schema: Mapping[str, Any]) -> tuple[str, ...]:
     """The JSON-schema type names one property accepts.
 
@@ -518,7 +526,16 @@ def _type_problem(tool: str, name: str, value: Any, schema: Mapping[str, Any]) -
         for accepted_type in _SCHEMA_TYPES.get(declared_name, ())
     )
     if not accepted:
-        # A property with no readable type constrains nothing, so nothing to check.
+        if schema.keys() - _UNCONSTRAINING_KEYS:
+            # The property constrains something this guard cannot read — `$ref`,
+            # `allOf`, `oneOf`, `const`, a bare `enum`. Staying quiet would
+            # disable the check for that argument with nothing to show for it,
+            # which is the failure mode the guard exists to prevent, so say so.
+            return (
+                f"{tool}: {name} has a schema shape this guard cannot read: "
+                f"{sorted(schema.keys() - _UNCONSTRAINING_KEYS)}"
+            )
+        # A property with no constraints at all admits anything, so nothing to check.
         return None
     if isinstance(value, bool) and bool not in accepted:
         # `bool` is an `int` subclass, so a plain isinstance check would admit it

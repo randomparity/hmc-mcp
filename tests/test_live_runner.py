@@ -2106,6 +2106,73 @@ def test_dispatch_guard_accepts_none_for_an_optional_argument():
     )
 
 
+@pytest.mark.parametrize(
+    ("property_schema", "unreadable"),
+    [
+        ({"$ref": "#/$defs/Selector"}, ["$ref"]),
+        ({"allOf": [{"type": "string"}]}, ["allOf"]),
+        ({"oneOf": [{"type": "string"}]}, ["oneOf"]),
+        ({"const": "sriov"}, ["const"]),
+        ({"enum": ["sriov", "ded"], "description": "mode"}, ["enum"]),
+    ],
+)
+def test_dispatch_guard_reports_a_schema_shape_it_cannot_read(
+    property_schema, unreadable
+):
+    """A shape the guard cannot read must be loud, not a silent skip.
+
+    None of these is served today, but FastMCP emits `$ref` as soon as a tool
+    parameter is annotated with a nested model rather than a scalar. Returning
+    "no problem" would drop that argument from type checking with nothing to
+    show for it.
+    """
+    problems = runner._dispatch_problems(
+        "hmc_list_sriov_adapters",
+        {"adapter_id": 17},
+        {"hmc_list_sriov_adapters": {"properties": {"adapter_id": property_schema}}},
+    )
+
+    assert problems == (
+        (
+            "hmc_list_sriov_adapters: adapter_id has a schema shape this guard "
+            f"cannot read: {unreadable}"
+        ),
+    )
+
+
+@pytest.mark.parametrize("property_schema", [{}, {"description": "anything"}])
+def test_dispatch_guard_accepts_a_property_that_constrains_nothing(property_schema):
+    """A property with no type and no constraint admits any value; that is not a gap."""
+    assert (
+        runner._dispatch_problems(
+            "hmc_list_sriov_adapters",
+            {"adapter_id": 17},
+            {
+                "hmc_list_sriov_adapters": {
+                    "properties": {"adapter_id": property_schema}
+                }
+            },
+        )
+        == ()
+    )
+
+
+@pytest.mark.parametrize(
+    "property_schema",
+    [
+        {"type": ["string", "null"]},
+        {"anyOf": [{"anyOf": [{"type": "string"}]}, {"type": "null"}]},
+    ],
+)
+def test_dispatch_guard_reads_type_lists_and_nested_any_of(property_schema):
+    """Neither shape is served today; both are read rather than passed over."""
+    assert runner._dispatch_problems(
+        "hmc_list_sriov_adapters",
+        {"adapter_id": 17},
+        {"hmc_list_sriov_adapters": {"properties": {"adapter_id": property_schema}}},
+    ) == ("hmc_list_sriov_adapters: adapter_id expects string or null, got int",)
+
+
 def test_dispatch_guard_passes_over_a_statically_unknowable_argument():
     """A value discovered mid-run has no static type; the guard must not guess."""
     assert (
