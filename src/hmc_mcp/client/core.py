@@ -43,7 +43,6 @@ from .client_users import UsersMixin
 # Media-type fragments used by the HMC API.
 MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
 MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
-MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 
 
 async def _close_response(response: httpx.Response, primary: BaseException | None) -> None:
@@ -67,7 +66,9 @@ async def _close_response(response: httpx.Response, primary: BaseException | Non
         raise primary
 
 
-async def _read_bounded_response(response: httpx.Response) -> httpx.Response:
+async def _read_bounded_response(
+    response: httpx.Response, max_response_bytes: int,
+) -> httpx.Response:
     """Buffer only identity bytes, checking size before retaining each chunk."""
     primary = None
     try:
@@ -77,7 +78,7 @@ async def _read_bounded_response(response: httpx.Response) -> httpx.Response:
         declared = response.headers.get("Content-Length", "").strip()
         if declared.isascii() and declared.isdecimal():
             normalized = declared.lstrip("0") or "0"
-            limit = str(MAX_RESPONSE_BYTES)
+            limit = str(max_response_bytes)
             if (len(normalized), normalized) > (len(limit), limit):
                 display = normalized[:64] + ("..." if len(normalized) > 64 else "")
                 raise HMCError(
@@ -89,10 +90,10 @@ async def _read_bounded_response(response: httpx.Response) -> httpx.Response:
         # outside our cancellation-shielded cleanup. Non-identity encodings are refused above.
         async for chunk in cast(httpx.AsyncByteStream, response.stream):
             observed = len(body) + len(chunk)
-            if observed > MAX_RESPONSE_BYTES:
+            if observed > max_response_bytes:
                 raise HMCError(
                     f"Response observed size {observed} bytes exceeds limit "
-                    f"{MAX_RESPONSE_BYTES} bytes", response.status_code,
+                    f"{max_response_bytes} bytes", response.status_code,
                 )
             body.extend(chunk)
         return httpx.Response(
@@ -437,7 +438,7 @@ class HMCClient(
             headers["Accept-Encoding"] = "identity"
             request = self._http.build_request(method, path, headers=headers, **kwargs)
             response = await self._http.send(request, stream=True)
-            return await _read_bounded_response(response)
+            return await _read_bounded_response(response, self.config.max_response_bytes)
         except httpx.TimeoutException as exc:
             timeout = f"{self.config.timeout:g}"
             raise HMCTransportError(
