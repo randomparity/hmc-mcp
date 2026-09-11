@@ -103,6 +103,16 @@ async def test_volume_group_keeps_integral_float_strings_as_int() -> None:
 
 
 @pytest.mark.asyncio
+async def test_volume_group_parses_a_long_whole_number_exactly() -> None:
+    """A whole number stays exact at any width; float() would saturate to inf."""
+    digits = "9" * 400
+
+    groups = await list_volume_groups(_vg_client({"GroupCapacity": digits}), VIOS_UUID)
+
+    assert groups[0].capacity_mib == int(digits)
+
+
+@pytest.mark.asyncio
 async def test_volume_group_absent_capacity_stays_none() -> None:
     groups = await list_volume_groups(_vg_client({}), VIOS_UUID)
 

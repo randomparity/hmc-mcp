@@ -102,6 +102,10 @@ def _optional_number(
     if isinstance(value, int):
         return value
     if isinstance(value, str) and _DECIMAL_TEXT.match(value):
+        # Route a whole number through int() rather than float(): int is exact at
+        # any width, where float() saturates a long enough digit string to inf.
+        if "." not in value:
+            return int(value)
         number = float(value)
         return int(number) if number.is_integer() else number
     raise HMCError(f"{operation} returned an invalid {field}")
