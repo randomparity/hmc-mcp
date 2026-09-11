@@ -3,6 +3,13 @@
   "runtime_eligibility": "existing-runtime-guards",
   "operations": [
     {
+      "operation": "console.info",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-09-07T18:42:31Z"
+    },
+    {
       "operation": "sriov.set_mode",
       "implementation": "partial",
       "verification": "unevidenced",

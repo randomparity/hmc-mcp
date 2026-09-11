@@ -6,5 +6,5 @@
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_get_console_info` | `read` | `console.info` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Get HMC version, network configuration and links to managed systems. |
+| `hmc_get_console_info` | `read` | `console.info` | `console` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Get HMC version, network configuration and links to managed systems. |
 | `hmc_list_resources` | `read` | `console.list_resources` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List any uom resource type exposed by the HMC. |
