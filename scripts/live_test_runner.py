@@ -545,7 +545,9 @@ def _dispatch_problems(
         return (f"{tool} is not a registered tool",)
     properties = schema.get("properties") or {}
     values: Mapping[str, Any] = (
-        arguments if isinstance(arguments, Mapping) else dict.fromkeys(arguments, UNRESOLVED_ARGUMENT)
+        arguments
+        if isinstance(arguments, Mapping)
+        else dict.fromkeys(arguments, UNRESOLVED_ARGUMENT)
     )
     supplied = list(values)
     problems = [

@@ -1917,7 +1917,14 @@ def _resolved_argument(node: ast.expr) -> object:
         return _UNRESOLVED
     if isinstance(node, ast.Attribute):
         holder = node.value
-        if isinstance(holder, ast.Attribute):  # state.config.x
+        if (
+            isinstance(holder, ast.Attribute)
+            and isinstance(holder.value, ast.Name)
+            and holder.value.id == "state"
+        ):
+            # `state.config.x`, but not any chain that merely ends in `.config`:
+            # matching those would resolve an unrelated object's field against
+            # LiveTestConfig and report a spurious missing-field problem.
             holder = ast.Name(id=holder.attr)
         if isinstance(holder, ast.Name) and holder.id in _ARGUMENT_SOURCES:
             source = _ARGUMENT_SOURCES[holder.id]
@@ -2163,6 +2170,37 @@ def test_static_argument_resolution_reads_conversions_and_f_strings(
     ((_, _, ((_, node),)),) = _dispatched_calls(source)
 
     assert type(_resolved_argument(node)) is expected_type
+
+
+def test_every_sriov_identifier_argument_is_actually_type_checked():
+    """The 23 arguments #763 fixed must stay resolvable, not just the global budget.
+
+    The coverage floor in the schema test is a whole-tree total, so a later change
+    could stop resolving every SR-IOV identifier and stay under it by resolving
+    something else. These are the arguments the guard was extended for, so they
+    are asserted by name.
+    """
+    source = Path(pcie.__file__).read_text(encoding="utf-8")
+    identifiers = {"adapter_id", "physical_port_id", "logical_port_id"}
+
+    passed_over = [
+        f"pcie.py:{lineno} {tool}: {name}"
+        for lineno, tool, arguments in _dispatched_calls(source)
+        if "sriov" in tool
+        for name, node in arguments
+        if name in identifiers and _resolved_argument(node) is _UNRESOLVED
+    ]
+
+    assert passed_over == [], "\n".join(passed_over)
+    assert (
+        sum(
+            name in identifiers
+            for _, tool, arguments in _dispatched_calls(source)
+            if "sriov" in tool
+            for name, _ in arguments
+        )
+        == 23
+    )
 
 
 def test_static_argument_resolution_reports_a_config_field_that_does_not_exist():

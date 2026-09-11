@@ -21,9 +21,19 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   (#763).
 
 - The live runner's static dispatch guard now checks argument *types* against the
-  served tool schema, not only argument names. It reads the type of every literal and
-  config-backed argument at each dispatch site and fails the build on a mismatch, which
-  is what would have caught the SR-IOV defect above before it reached hardware (#763).
+  served tool schema, not only argument names. It reads the type of every literal,
+  config-backed, converted and f-string argument at each dispatch site and fails the
+  build on a mismatch, which is what would have caught the SR-IOV defect above before
+  it reached hardware. A dispatch naming a config field that does not exist is
+  reported rather than passed over, and the guard asserts a floor on how many
+  arguments it actually type-checks, so a change that quietly stops reading a class
+  of arguments fails instead of reading as a clean run (#763).
+
+  The same check runs at dispatch time in a live run, where it is now stricter than
+  the transport: FastMCP validates in pydantic's lax mode and would coerce `"5"` or
+  `5.0` into an `int` parameter, whereas the runner reports `InvalidDispatch` and
+  never reaches the HMC. That is the intended direction — a harness defect should
+  stop at the harness — and no current dispatch site relies on the coercion (#763).
 
 - `list_volume_groups` and `list_optical_media` no longer fail on a well-formed HMC
   reply that reports a quantity with a fractional part. `GroupCapacity`, `FreeSpace`
