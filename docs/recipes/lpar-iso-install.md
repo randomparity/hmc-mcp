@@ -16,8 +16,11 @@ Use names or UUIDs consistently within one run; UUIDs are preferred for destruct
 ```bash
 SYSTEM=<system-uuid>
 VIOS=<vios-uuid>
-LPAR=<lpar-uuid>
+LPAR_NAME=<new-lpar-name>
+LPAR=<lpar-uuid-after-create>
 VLAN=100
+VIOS_ID=2
+VIOS_SLOT=20
 VG=<volume-group-uuid>
 ISO_URL=https://<allowlisted-host>/images/install.iso
 ```
@@ -29,7 +32,6 @@ hmc-mcp config show
 hmc-mcp systems list --json
 hmc-mcp vios list --json
 hmc-mcp lpars list --system "$SYSTEM" --json
-hmc-mcp lpars get-description "$LPAR" "$SYSTEM"
 hmc-mcp network list-networks "$SYSTEM" --json
 hmc-mcp storage list-vgs "$VIOS" --system "$SYSTEM" --json
 hmc-mcp adapters list "$LPAR" --type VirtualSCSIClientAdapter --json
@@ -40,8 +42,9 @@ Record the VIOS partition ID, available server slot, VLAN/network identity, and 
 ## Create the powered-off partition
 
 ```bash
-hmc-mcp lpars create "$LPAR" --system "$SYSTEM" --mem 8192 --vcpus 2 --yes
+hmc-mcp lpars create "$LPAR_NAME" --system "$SYSTEM" --mem 8192 --vcpus 2 --yes
 hmc-mcp lpars state "$LPAR"
+hmc-mcp lpars get-description "$LPAR" "$SYSTEM"
 ```
 
 Confirm the new partition is powered off before adding devices.
@@ -50,7 +53,7 @@ Confirm the new partition is powered off before adding devices.
 
 ```bash
 hmc-mcp adapters add-network "$LPAR" --vlan 100 --yes
-hmc-mcp adapters add-vscsi "$LPAR" --vios-id 2 --vios-slot 20 --yes
+hmc-mcp adapters add-vscsi "$LPAR" --vios-id "$VIOS_ID" --vios-slot "$VIOS_SLOT" --yes
 hmc-mcp storage create-disk "$VIOS" --vg "$VG" --name install-root --capacity-mib 51200 --system "$SYSTEM" --yes
 hmc-mcp storage map "$VIOS" --lpar "$LPAR" --disk install-root --system "$SYSTEM" --yes
 hmc-mcp storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
