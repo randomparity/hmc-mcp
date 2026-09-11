@@ -21,6 +21,7 @@ import textwrap
 from typing import Self
 from unittest.mock import AsyncMock
 
+import click
 import pytest
 import typer
 from click import unstyle
@@ -2248,16 +2249,18 @@ def test_storage_unmount_optical_media_decline_does_not_mutate(fake_hmc, monkeyp
 def test_storage_optical_media_command_help():
     result = RUNNER.invoke(cli.app, ["storage", "mount-optical-media", "--help"])
     assert result.exit_code == 0
-    assert "--system" in result.stdout
-    assert "--target-device" in result.stdout
-    assert "--ownership-override" in result.stdout
-    assert "--yes" in result.stdout
+    help_text = click.unstyle(result.stdout)
+    assert "--system" in help_text
+    assert "--target-device" in help_text
+    assert "--ownership-override" in help_text
+    assert "--yes" in help_text
 
     result = RUNNER.invoke(cli.app, ["storage", "unmount-optical-media", "--help"])
     assert result.exit_code == 0
-    assert "--system" in result.stdout
-    assert "--ownership-override" in result.stdout
-    assert "--confirm" in result.stdout
+    help_text = click.unstyle(result.stdout)
+    assert "--system" in help_text
+    assert "--ownership-override" in help_text
+    assert "--confirm" in help_text
 
 
 def _patch_lpar_console_capture(monkeypatch, capture: AsyncMock) -> None:
@@ -2350,12 +2353,13 @@ def test_lpars_capture_console_help():
     result = RUNNER.invoke(cli.app, ["lpars", "capture-console", "--help"])
 
     assert result.exit_code == 0
-    assert "LPAR" in result.stdout
-    assert "SYSTEM" in result.stdout
-    assert "--duration" in result.stdout
-    assert "--max-bytes" in result.stdout
-    assert "--idle-timeout" in result.stdout
-    assert "--json" in result.stdout
+    help_text = click.unstyle(result.stdout)
+    assert "LPAR" in help_text
+    assert "SYSTEM" in help_text
+    assert "--duration" in help_text
+    assert "--max-bytes" in help_text
+    assert "--idle-timeout" in help_text
+    assert "--json" in help_text
 
 
 def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
