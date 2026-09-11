@@ -49,13 +49,13 @@ class ObservedStream(httpx.AsyncByteStream):
 
 
 @pytest_asyncio.fixture
-async def make_client(monkeypatch):
-    monkeypatch.setattr(core, "MAX_RESPONSE_BYTES", 8, raising=False)
+async def make_client():
     clients = []
 
-    async def make(stream, *, headers=None, status=200):
+    async def make(stream, *, headers=None, status=200, max_response_bytes=8):
         client = core.HMCClient(HMCConfig.from_mapping({
             "host": "hmc.test", "user": "test", "verify_ssl": True,
+            "max_response_bytes": max_response_bytes,
             "password": "test",  # pragma: allowlist secret — MockTransport fixture only.
         }))
         await client._http.aclose()
@@ -182,15 +182,28 @@ async def test_error_diagnostics_are_independently_bounded(body):
     assert len(str(error).encode("utf-8")) <= 4150
 
 
-async def test_http_error_body_has_separate_cap(make_client, monkeypatch):
-    monkeypatch.setattr(core, "MAX_RESPONSE_BYTES", 20000, raising=False)
+async def test_http_error_body_has_separate_cap(make_client):
     stream = ObservedStream([b"x" * 9000])
-    client = await make_client(stream, status=500)
+    client = await make_client(stream, status=500, max_response_bytes=20000)
     with pytest.raises(HMCError) as error:
         await client._get(PATH)
     assert error.value.status_code == 500
     assert len(error.value.body.encode()) == 4096
     assert stream.closed
+
+
+@pytest.mark.parametrize("declared", [False, True])
+async def test_clients_use_independent_configured_limits(make_client, declared):
+    headers = {"Content-Length": "9"} if declared else {}
+    small_stream = ObservedStream([b"123456789"])
+    small = await make_client(small_stream, headers=headers, max_response_bytes=1)
+    large_stream = ObservedStream([b"123456789"])
+    large = await make_client(large_stream, headers=headers, max_response_bytes=9)
+    with pytest.raises(HMCError, match="size 9 bytes.*limit 1 bytes"):
+        await small._get(PATH)
+    assert await large._get(PATH) == "123456789"
+    assert small_stream.yielded == (0 if declared else 1)
+    assert small_stream.closed and large_stream.closed
 
 
 async def test_oversized_http_error_is_rejected(make_client):

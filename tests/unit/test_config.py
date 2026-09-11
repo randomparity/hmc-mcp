@@ -34,6 +34,76 @@ from hmc_mcp.config import (
 )
 
 # ---------------------------------------------------------------------------
+# Response ceiling
+# ---------------------------------------------------------------------------
+
+
+def test_response_bytes_default():
+    assert HMCConfig().max_response_bytes == 33554432
+    assert HMCConfig.from_mapping({}).max_response_bytes == 33554432
+
+
+@pytest.mark.parametrize("value", [1, 8, 67108864])
+def test_response_bytes_explicit_override(value):
+    assert HMCConfig(max_response_bytes=value).max_response_bytes == value
+    assert HMCConfig.from_mapping({"max_response_bytes": value}).max_response_bytes == value
+
+
+@pytest.mark.parametrize("value", [0, -1, 1.5, "bad", None])
+@pytest.mark.parametrize("source", ["constructor", "mapping"])
+def test_response_bytes_invalid_value(value, source):
+    values = {"max_response_bytes": value}
+    with pytest.raises(ValueError, match="max_response_bytes"):
+        if source == "mapping":
+            HMCConfig.from_mapping(values)
+        else:
+            HMCConfig(**values)
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "1.5", "bad", ""])
+def test_response_bytes_invalid_environment(monkeypatch, value):
+    monkeypatch.setenv("HMC_MAX_RESPONSE_BYTES", value)
+    with pytest.raises(ValueError, match="max_response_bytes"):
+        HMCConfig()
+
+
+def test_response_bytes_constructor_beats_environment(monkeypatch):
+    monkeypatch.setenv("HMC_MAX_RESPONSE_BYTES", "67108864")
+    assert HMCConfig().max_response_bytes == 67108864
+    assert HMCConfig(max_response_bytes=8).max_response_bytes == 8
+
+
+@pytest.mark.parametrize("value", ["67108864", "bad"])
+def test_response_bytes_mapping_ignores_environment(monkeypatch, value):
+    monkeypatch.setenv("HMC_MAX_RESPONSE_BYTES", value)
+    config = HMCConfig.from_mapping({})
+    assert config.max_response_bytes == 33554432
+    assert "max_response_bytes" not in config.model_fields_set
+    explicit = HMCConfig.from_mapping({"max_response_bytes": 8})
+    assert explicit.max_response_bytes == 8
+    assert "max_response_bytes" in explicit.model_fields_set
+
+
+@pytest.mark.parametrize("name", [
+    "HMC_MAX_RESPONSE_BYTES", "hmc_max_response_bytes", "Hmc_Max_Response_Bytes",
+])
+def test_response_bytes_environment_beats_toml(tmp_path, monkeypatch, name):
+    path = _write_toml(tmp_path / "config.toml", MINIMAL_TOML + "max_response_bytes = 8\n")
+    assert load_profile("dev", config_path=path).max_response_bytes == 8
+    monkeypatch.setenv(name, "67108864")
+    assert load_profile("dev", config_path=path).max_response_bytes == 67108864
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "1.5", '"bad"'])
+def test_response_bytes_invalid_toml(tmp_path, value):
+    path = _write_toml(
+        tmp_path / "config.toml", MINIMAL_TOML + f"max_response_bytes = {value}\n",
+    )
+    with pytest.raises(ValueError, match="max_response_bytes"):
+        load_profile("dev", config_path=path)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -1136,6 +1206,7 @@ def test_from_mapping_applies_every_supplied_key():
         "ssh_verify_host_key": False,
         "verify_ssl": True,
         "timeout": 15.0,
+        "max_response_bytes": 67108864,
         "ssh_timeout": 30.0,
         "audit_memento": "hmc-mcp",
         "schema_version": "V1_0",
