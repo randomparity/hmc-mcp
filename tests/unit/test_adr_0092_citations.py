@@ -217,6 +217,25 @@ def _row_symbol_citations() -> list[tuple[str, list[Citation], list[Citation]]]:
             assert not _SYMBOL_CITATION.search(line) or cells[0] in _UNCHECKED_ROWS, (
                 f"§3 row cites a symbol but names no Python definition: {line}"
             )
+            if cells[0] in _UNCHECKED_ROWS:
+                definitions = [
+                    Citation(
+                        match.group("symbol"),
+                        _source_path(match.group("path")),
+                        match.group("path"),
+                    )
+                    for match in _SYMBOL_CITATION.finditer(cells[1])
+                ]
+                guards = [
+                    Citation(
+                        match.group("symbol"),
+                        _source_path(match.group("path")),
+                        match.group("path"),
+                    )
+                    for cell in cells[2:]
+                    for match in _SYMBOL_CITATION.finditer(cell)
+                ]
+                rows.append((cells[0], definitions, guards))
             continue
         definition_matches = [
             match for cell in cells[:2] for match in _SYMBOL_CITATION.finditer(cell)
