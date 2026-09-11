@@ -7,11 +7,11 @@
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_get_proc_compat_modes` | `read` | `system.get_proc_compat_modes` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List processor compatibility modes supported by a managed system. |
-| `hmc_get_system` | `read` | `system.get` | `managed_system` | `implemented` | `current` | `existing-runtime-guards` | Get a managed system by exact SystemName or UUID. |
+| `hmc_get_system` | `read` | `system.get` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Get a managed system by exact SystemName or UUID. |
 | `hmc_get_system_memopt_score` | `read` | `system.get_memopt_score` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return a managed system's current memory-optimization affinity score. |
 | `hmc_list_systems` | `read` | `system.list` | `console` | `implemented` | `unevidenced` | `existing-runtime-guards` | List managed systems, optionally filtered by state. |
 | `hmc_modify_system` | `mutate` | `system.modify` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Modify a managed system's configuration, leaving omitted fields unchanged. |
 | `hmc_plan_system_memopt_score` | `read` | `system.plan_memopt_score` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return a predicted system affinity score without applying optimization. |
 | `hmc_power_off_system` | `destructive` | `system.power_off` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Power off a managed system, optionally waiting for a terminal job state. |
 | `hmc_power_on_system` | `mutate` | `system.power_on` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Power on a managed system, optionally waiting for a terminal job state. |
-| `hmc_system_summary` | `read` | `system.summary` | `managed_system` | `implemented` | `current` | `existing-runtime-guards` | Return state, capacity, partition counts, and VIOS count for one system. |
+| `hmc_system_summary` | `read` | `system.summary` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Return state, capacity, partition counts, and VIOS count for one system. |
