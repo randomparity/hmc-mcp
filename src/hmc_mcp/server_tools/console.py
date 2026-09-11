@@ -6,14 +6,7 @@ import base64
 from typing import Any
 
 from .._app import with_client
-from ..resource_identity import (
-    is_uuid,
-    resolve_lpar_uuid,
-    resolve_system_name,
-    resolve_system_uuid,
-)
-from ..ssh.console import capture_lpar_console
-from ..ssh.lpar import resolve_lpar_cli_name
+from ..operations.lpar.console import capture_lpar_console_by_selector
 from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
@@ -71,24 +64,10 @@ def hmc_capture_lpar_console(
     """
 
     async def capture_console_result(hmc) -> dict[str, Any]:
-        system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-        lpar_uuid = await resolve_lpar_uuid(
-            hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
-        )
-        system_name = (
-            system_name_or_uuid
-            if not is_uuid(system_name_or_uuid)
-            else await resolve_system_name(hmc, system_uuid)
-        )
-        lpar_name = (
-            lpar_name_or_uuid
-            if not is_uuid(lpar_name_or_uuid)
-            else await resolve_lpar_cli_name(hmc.config, lpar_uuid, system_name)
-        )
-        capture = await capture_lpar_console(
+        capture = await capture_lpar_console_by_selector(
             hmc,
-            system_name,
-            lpar_name,
+            lpar_name_or_uuid,
+            system_name_or_uuid,
             duration_seconds=duration_seconds,
             max_bytes=max_bytes,
             idle_timeout_seconds=idle_timeout_seconds,

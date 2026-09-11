@@ -27,6 +27,8 @@ from ...operations.storage.resources import (
     list_storage_mappings,
     list_volume_groups,
     map_storage,
+    mount_optical_media,
+    unmount_optical_media,
     upload_iso,
 )
 from ..output import console, output, print_json, usage_error
@@ -395,6 +397,85 @@ def storage_list_optical_media(
         console.print("[yellow]No optical media found[/yellow]")
 
 
+def storage_mount_optical_media(
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
+    lpar: str = typer.Argument(..., help="Target LPAR name or UUID"),
+    media_name: str = typer.Argument(..., help="ISO image name to mount"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
+    target_device: str | None = typer.Option(
+        None, "--target-device", help="Pin the vtscsi target device name"
+    ),
+    ownership_override: bool = typer.Option(
+        False,
+        "--ownership-override",
+        help="Bypass LPAR ownership protection after operator approval",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+) -> None:
+    """Mount an ISO from a VIOS media repository to an LPAR."""
+    target = f"; target device {target_device}" if target_device else ""
+    selected_system = f" in managed system {system}" if system else ""
+    if not yes and not typer.confirm(
+        f"Mount optical media '{media_name}' from VIOS {vios} to LPAR {lpar}"
+        f"{selected_system}{target}?"
+    ):
+        raise typer.Abort()
+
+    result = with_client(
+        lambda hmc: mount_optical_media(
+            hmc,
+            vios,
+            lpar,
+            media_name=media_name,
+            target_device=target_device,
+            ownership_override=ownership_override,
+            system_name_or_uuid=system,
+        )
+    )
+    console.print(f"[green]Mounted optical media '{media_name}' on LPAR {lpar}[/green]")
+    print_json(result)
+
+
+def storage_unmount_optical_media(
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
+    lpar: str = typer.Argument(..., help="Target LPAR name or UUID"),
+    media_name: str = typer.Argument(..., help="ISO image name to unmount"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
+    ownership_override: bool = typer.Option(
+        False,
+        "--ownership-override",
+        help="Bypass LPAR ownership protection after operator approval",
+    ),
+    confirm: bool = typer.Option(False, "--confirm", "-y", help="Skip confirmation prompt"),
+) -> None:
+    """Unmount an ISO mapping while preserving the backing ISO."""
+    if not confirm and not typer.confirm(
+        f"Unmount optical media '{media_name}' from LPAR {lpar} on VIOS {vios}? "
+        "The backing ISO remains available."
+    ):
+        raise typer.Abort()
+
+    async def _go(hmc: HMCClient) -> None:
+        await unmount_optical_media(
+            hmc,
+            vios,
+            lpar,
+            media_name=media_name,
+            ownership_override=ownership_override,
+            system_name_or_uuid=system,
+        )
+
+    with_client(_go)
+    console.print(
+        f"[green]Unmounted optical media '{media_name}' from LPAR {lpar}; "
+        "backing ISO remains[/green]"
+    )
+
+
 def storage_list_mappings(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     lpar: str | None = typer.Option(
@@ -531,6 +612,8 @@ def register_commands(group: typer.Typer) -> None:
     group.command("delete-media")(storage_delete_media)
     group.command("get-media-repo")(storage_get_media_repo)
     group.command("list-optical-media")(storage_list_optical_media)
+    group.command("mount-optical-media")(storage_mount_optical_media)
+    group.command("unmount-optical-media")(storage_unmount_optical_media)
     group.command("list-mappings")(storage_list_mappings)
     group.command("detach-mapping")(storage_detach_mapping)
     group.command("upload-iso")(storage_upload_iso)

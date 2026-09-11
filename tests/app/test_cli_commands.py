@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import base64
 import inspect
 import json
 import textwrap
 from typing import Self
 from unittest.mock import AsyncMock
 
+import click
 import pytest
 import typer
 from click import unstyle
@@ -32,6 +34,7 @@ from hmc_mcp.cli_commands import metrics as cli_metrics
 from hmc_mcp.cli_commands import runtime as cli_runtime
 from hmc_mcp.cli_commands import snapshot as cli_snapshot
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
+from hmc_mcp.cli_commands.lpar import console as cli_lpar_console
 from hmc_mcp.cli_commands.lpar import decommission as cli_lpar_decommission
 from hmc_mcp.cli_commands.lpar import lifecycle as cli_lpar_lifecycle
 from hmc_mcp.cli_commands.lpar import migration as cli_lpar_migration
@@ -60,6 +63,7 @@ from hmc_mcp.ssh import commands as ssh_commands
 from hmc_mcp.ssh import io_inventory, sriov, vnic
 from hmc_mcp.ssh import lpar as ssh_lpar
 from hmc_mcp.ssh import profiles as ssh_profiles
+from hmc_mcp.ssh.console import ConsoleCapture
 
 LPAR_NAME = "lpar1"
 
@@ -2133,6 +2137,229 @@ def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch
     assert result.exit_code == 1
     assert "Aborted" in result.stderr
     assert called == []
+
+
+def test_storage_mount_optical_media_forwards_selectors(fake_hmc, monkeypatch):
+    mount = AsyncMock(return_value={"UUID": "mapping-1", "MediaName": "install.iso"})
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.resources.mount_optical_media", mount
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "mount-optical-media",
+            VIOS_UUID,
+            LPAR_UUID,
+            "install.iso",
+            "--system",
+            SYSTEM_UUID,
+            "--target-device",
+            "vtopt0",
+            "--ownership-override",
+        ],
+        input="y\n",
+    )
+
+    assert result.exit_code == 0
+    mount.assert_awaited_once_with(
+        fake_hmc,
+        VIOS_UUID,
+        LPAR_UUID,
+        media_name="install.iso",
+        target_device="vtopt0",
+        ownership_override=True,
+        system_name_or_uuid=SYSTEM_UUID,
+    )
+    assert "Mounted optical media 'install.iso'" in result.stdout
+    assert SYSTEM_UUID in result.stdout
+    assert "vtopt0" in result.stdout
+    assert '"mapping-1"' in result.stdout
+
+
+def test_storage_unmount_optical_media_forwards_selectors(fake_hmc, monkeypatch):
+    unmount = AsyncMock()
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.resources.unmount_optical_media", unmount
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "unmount-optical-media",
+            VIOS_UUID,
+            LPAR_UUID,
+            "install.iso",
+            "--system",
+            SYSTEM_UUID,
+            "--ownership-override",
+            "--confirm",
+        ],
+    )
+
+    assert result.exit_code == 0
+    unmount.assert_awaited_once_with(
+        fake_hmc,
+        VIOS_UUID,
+        LPAR_UUID,
+        media_name="install.iso",
+        ownership_override=True,
+        system_name_or_uuid=SYSTEM_UUID,
+    )
+    assert "Unmounted optical media 'install.iso'" in result.stdout
+    assert "backing ISO remains" in result.stdout
+
+
+def test_storage_mount_optical_media_decline_does_not_mutate(fake_hmc, monkeypatch):
+    mount = AsyncMock()
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.resources.mount_optical_media", mount
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["storage", "mount-optical-media", VIOS_UUID, LPAR_UUID, "install.iso"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    mount.assert_not_awaited()
+
+
+def test_storage_unmount_optical_media_decline_does_not_mutate(fake_hmc, monkeypatch):
+    unmount = AsyncMock()
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.resources.unmount_optical_media", unmount
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["storage", "unmount-optical-media", VIOS_UUID, LPAR_UUID, "install.iso"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    unmount.assert_not_awaited()
+
+
+def test_storage_optical_media_command_help():
+    result = RUNNER.invoke(cli.app, ["storage", "mount-optical-media", "--help"])
+    assert result.exit_code == 0
+    help_text = click.unstyle(result.stdout)
+    assert "--system" in help_text
+    assert "--target-device" in help_text
+    assert "--ownership-override" in help_text
+    assert "--yes" in help_text
+
+    result = RUNNER.invoke(cli.app, ["storage", "unmount-optical-media", "--help"])
+    assert result.exit_code == 0
+    help_text = click.unstyle(result.stdout)
+    assert "--system" in help_text
+    assert "--ownership-override" in help_text
+    assert "--confirm" in help_text
+
+
+def _patch_lpar_console_capture(monkeypatch, capture: AsyncMock) -> None:
+    monkeypatch.setattr(cli_lpar_console, "capture_lpar_console_by_selector", capture)
+
+
+def _console_capture() -> ConsoleCapture:
+    return ConsoleCapture(
+        system="system-a",
+        lpar="aix-db",
+        data=b"boot\n\x1b[31m\xff",
+        stop_reason="error",
+        released=False,
+        error="channel reset",
+    )
+
+
+def test_lpars_capture_console_forwards_bounds(fake_hmc, monkeypatch):
+    capture = AsyncMock(return_value=_console_capture())
+    _patch_lpar_console_capture(monkeypatch, capture)
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "capture-console",
+            "aix-db",
+            "system-a",
+            "--duration",
+            "12.5",
+            "--max-bytes",
+            "4096",
+            "--idle-timeout",
+            "3.5",
+        ],
+    )
+
+    assert result.exit_code == 0
+    capture.assert_awaited_once_with(
+        fake_hmc,
+        "aix-db",
+        "system-a",
+        duration_seconds=12.5,
+        max_bytes=4096,
+        idle_timeout_seconds=3.5,
+    )
+
+
+def test_lpars_capture_console_json_preserves_bytes(fake_hmc, monkeypatch):
+    capture = AsyncMock(return_value=_console_capture())
+    _patch_lpar_console_capture(monkeypatch, capture)
+
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "capture-console", "aix-db", "system-a", "--json"]
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "system": "system-a",
+        "partition": "aix-db",
+        "stop_reason": "error",
+        "released": False,
+        "error": "channel reset",
+        "bytes_captured": 11,
+        "data_base64": base64.b64encode(b"boot\n\x1b[31m\xff").decode("ascii"),
+    }
+
+
+def test_lpars_capture_console_text_escapes_controls_and_warns(fake_hmc, monkeypatch):
+    capture = AsyncMock(return_value=_console_capture())
+    _patch_lpar_console_capture(monkeypatch, capture)
+
+    result = RUNNER.invoke(cli.app, ["lpars", "capture-console", "aix-db", "system-a"])
+
+    assert result.exit_code == 0
+    assert "system: system-a" in result.stdout
+    assert "partition: aix-db" in result.stdout
+    assert "stop reason: error" in result.stdout
+    assert "released: False" in result.stdout
+    assert "error: channel reset" in result.stdout
+    assert "bytes captured: 11" in result.stdout
+    assert "\\x1b[31m" in result.stdout
+    assert "\\\\xff" in result.stdout
+    assert "\x1b" not in result.stdout
+    assert "WARNING" in result.stderr
+    assert "vterm may still be held" in result.stderr
+
+
+def test_lpars_capture_console_help():
+    result = RUNNER.invoke(cli.app, ["lpars", "capture-console", "--help"])
+
+    assert result.exit_code == 0
+    help_text = click.unstyle(result.stdout)
+    assert "LPAR" in help_text
+    assert "SYSTEM" in help_text
+    assert "--duration" in help_text
+    assert "--max-bytes" in help_text
+    assert "--idle-timeout" in help_text
+    assert "--json" in help_text
 
 
 def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):

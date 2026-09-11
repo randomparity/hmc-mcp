@@ -53,6 +53,9 @@ from .cli_commands.lpar import (
     config as lpar_config,
 )
 from .cli_commands.lpar import (
+    console as lpar_console,
+)
+from .cli_commands.lpar import (
     create as lpar_create,
 )
 from .cli_commands.lpar import (
@@ -100,6 +103,7 @@ def _register_commands() -> None:
         (console_commands, console_app),
         (jobs, jobs_app),
         (lpar_config, lpars_app),
+        (lpar_console, lpars_app),
         (lpar_create, lpars_app),
         (lpar_decommission, lpars_app),
         (lpar_inventory, lpars_app),
