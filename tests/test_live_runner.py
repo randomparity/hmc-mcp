@@ -143,7 +143,7 @@ def _logical_port_state(
     if owner is not None:
         items.append(
             {
-                "logical_port_id": state.config.sriov_logical_port_id,
+                "logical_port_id": str(state.config.sriov_logical_port_id),
                 "availability": "1",
                 "owner_lpar": owner,
                 "capacity_percent": capacity,
@@ -159,10 +159,10 @@ def _profile_state(value: str = "none") -> tuple[str, str, object]:
 def test_sriov_baseline_helpers_require_healthy_adapter() -> None:
     """Baseline predicates reject wrong mode/availability and accept healthy data."""
     assert pcie._adapter_is_healthy(
-        {"items": [{"adapter_id": 17, "mode": "sriov", "availability": "1"}]}, 17
+        {"items": [{"adapter_id": "17", "mode": "sriov", "availability": "1"}]}, "17"
     )
     assert not pcie._adapter_is_healthy(
-        {"items": [{"adapter_id": 17, "mode": "ded", "availability": "1"}]}, 17
+        {"items": [{"adapter_id": "17", "mode": "ded", "availability": "1"}]}, "17"
     )
 
 
@@ -177,9 +177,15 @@ def test_sriov_baseline_helpers_compute_capacity_and_configuration() -> None:
     }
     with pytest.raises(ValueError, match="row 1.*capacity_percent"):
         pcie._available_capacity(data)
-    assert not pcie._logical_port_is_configured({"items": []}, 917003)
+    assert not pcie._logical_port_is_configured({"items": []}, "917003")
     assert pcie._logical_port_is_configured(
-        {"items": [{"logical_port_id": 917003, "availability": "1"}]},
+        {"items": [{"logical_port_id": "917003", "availability": "1"}]},
+        "917003",
+    )
+    # The rows are projected as str; comparing the numeric config value is the
+    # #763 defect and must not read as "no such port".
+    assert not pcie._logical_port_is_configured(
+        {"items": [{"logical_port_id": "917003", "availability": "1"}]},
         917003,
     )
 
@@ -212,9 +218,9 @@ async def test_sriov_phases_assign_verify_unassign_and_reassign() -> None:
     assert assign_args == {
         "system_name_or_uuid": state.config.system_name,
         "lpar_name_or_uuid": state.config.lp3_name,
-        "adapter_id": state.config.sriov_adapter_id,
-        "physical_port_id": state.config.sriov_physical_port_id,
-        "logical_port_id": state.config.sriov_logical_port_id,
+        "adapter_id": str(state.config.sriov_adapter_id),
+        "physical_port_id": str(state.config.sriov_physical_port_id),
+        "logical_port_id": str(state.config.sriov_logical_port_id),
         "capacity_percent": state.config.sriov_capacity_percent,
         "profile_name": state.config.sriov_profile_name,
         "ownership_override": True,
@@ -1830,8 +1836,13 @@ def test_live_runner_contains_no_executable_optmem_command():
     assert re.search(r"(?<![\w-])optmem(?![\w-])", source) is None
 
 
-def _dispatched_calls(source: str) -> list[tuple[int, str, tuple[str | None, ...]]]:
-    """Every ``call`` dispatch in ``source``: its line, tool name and keywords.
+def _dispatched_calls(
+    source: str,
+) -> list[tuple[int, str, tuple[tuple[str | None, ast.expr], ...]]]:
+    """Every ``call`` dispatch in ``source``: its line, tool name and arguments.
+
+    Each argument is its keyword name paired with the expression node supplying
+    it, so a caller can check the *type* a site passes and not only the name.
 
     A dispatch whose tool argument is not a string literal cannot be read here,
     and skipping it would silently shrink the guard's coverage, so it fails
@@ -1839,7 +1850,7 @@ def _dispatched_calls(source: str) -> list[tuple[int, str, tuple[str | None, ...
     reporting that as one problem, rather than raising on it, is what lets the
     caller finish enumerating every other site in the tree.
     """
-    dispatches: list[tuple[int, str, tuple[str | None, ...]]] = []
+    dispatches: list[tuple[int, str, tuple[tuple[str | None, ast.expr], ...]]] = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.Call):
             continue
@@ -1852,7 +1863,11 @@ def _dispatched_calls(source: str) -> list[tuple[int, str, tuple[str | None, ...
                 "cannot read — pass a string literal"
             )
         dispatches.append(
-            (node.lineno, tool.value, tuple(keyword.arg for keyword in node.keywords))
+            (
+                node.lineno,
+                tool.value,
+                tuple((keyword.arg, keyword.value) for keyword in node.keywords),
+            )
         )
     return dispatches
 
@@ -1860,6 +1875,63 @@ def _dispatched_calls(source: str) -> list[tuple[int, str, tuple[str | None, ...
 def _dispatched_tool_names(source: str) -> set[str]:
     """Every tool name ``source`` hands to the runner's ``call`` dispatcher."""
     return {tool for _, tool, _ in _dispatched_calls(source)}
+
+
+#: The holder a dispatch site reads statically-typed arguments from. A default
+#: instance is enough: the guard compares the *type* a field carries, and a
+#: config field's default has its declared type because the runner validates
+#: every one at startup. Run artifacts are deliberately absent — they default to
+#: None and are filled in mid-run, so their defaults describe no dispatch.
+_ARGUMENT_SOURCES = {"config": runner.LiveTestConfig()}
+
+_UNRESOLVED = runner.UNRESOLVED_ARGUMENT
+
+#: A dispatch site reading a config field that does not exist. It is not an
+#: unknowable type, it is a typo that would `AttributeError` against live
+#: hardware, so it is reported rather than passed over.
+_NO_SUCH_FIELD = object()
+
+#: A conversion whose result type is known even though its argument is not.
+#: `str(whatever)` is a `str`; that is the whole question the guard asks, and
+#: it is the spelling every converted dispatch site uses.
+_CONVERSIONS: dict[str, object] = {"str": "", "int": 0, "float": 0.0, "bool": False}
+
+
+def _resolved_argument(node: ast.expr) -> object:
+    """The value a dispatch site passes, or ``_UNRESOLVED`` when it is dynamic.
+
+    Four shapes are statically knowable: a literal; an attribute read off the run
+    config (``config.x`` or ``state.config.x``); a builtin conversion such as
+    ``str(...)``, whose result type is fixed regardless of its argument; and an
+    f-string, which is always a ``str``. Anything else is a local discovered
+    mid-run, which carries no static type and is passed over rather than guessed
+    at.
+    """
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return ""
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Name) and node.func.id in _CONVERSIONS:
+            return _CONVERSIONS[node.func.id]
+        return _UNRESOLVED
+    if isinstance(node, ast.Attribute):
+        holder = node.value
+        if (
+            isinstance(holder, ast.Attribute)
+            and isinstance(holder.value, ast.Name)
+            and holder.value.id == "state"
+        ):
+            # `state.config.x`, but not any chain that merely ends in `.config`:
+            # matching those would resolve an unrelated object's field against
+            # LiveTestConfig and report a spurious missing-field problem.
+            holder = ast.Name(id=holder.attr)
+        if isinstance(holder, ast.Name) and holder.id in _ARGUMENT_SOURCES:
+            source = _ARGUMENT_SOURCES[holder.id]
+            if not hasattr(source, node.attr):
+                return _NO_SUCH_FIELD
+            return getattr(source, node.attr)
+    return _UNRESOLVED
 
 
 async def _served_schemas() -> dict[str, dict[str, object]]:
@@ -1879,21 +1951,50 @@ async def _served_schemas() -> dict[str, dict[str, object]]:
         }
 
 
-def _assert_dispatch_arguments(sources: dict[str, str], schemas) -> None:
-    """Fail naming every dispatch whose keywords disagree with the served schema."""
+def _dispatch_argument_report(
+    sources: dict[str, str], schemas
+) -> tuple[list[str], int, int]:
+    """Every disagreement with the served schema, plus how much was actually read.
+
+    The counts are the guard's own coverage. Without them a change that stops
+    resolving a whole class of arguments — turning checked dispatches into
+    unchecked ones — reads exactly like a clean run.
+    """
     problems: list[str] = []
+    checked = total = 0
     for path, source in sources.items():
-        for lineno, tool, keywords in _dispatched_calls(source):
-            if None in keywords:
+        for lineno, tool, arguments in _dispatched_calls(source):
+            if any(name is None for name, _ in arguments):
                 problems.append(
                     f"{path}:{lineno} dispatches arguments this guard "
                     "cannot read — name them"
                 )
                 continue
+            supplied: dict[str, object] = {}
+            for name, node in arguments:
+                if name is None:
+                    continue
+                total += 1
+                value = _resolved_argument(node)
+                if value is _NO_SUCH_FIELD:
+                    problems.append(
+                        f"{path}:{lineno} {tool}: {name} reads a field that does "
+                        "not exist on the run config"
+                    )
+                    continue
+                if value is not _UNRESOLVED:
+                    checked += 1
+                supplied[name] = value
             problems += [
                 f"{path}:{lineno} {problem}"
-                for problem in runner._dispatch_problems(tool, keywords, schemas)
+                for problem in runner._dispatch_problems(tool, supplied, schemas)
             ]
+    return problems, checked, total
+
+
+def _assert_dispatch_arguments(sources: dict[str, str], schemas) -> None:
+    """Fail naming every dispatch whose arguments disagree with the served schema."""
+    problems, _, _ = _dispatch_argument_report(sources, schemas)
     assert problems == [], "\n".join(problems)
 
 
@@ -1930,6 +2031,269 @@ def test_dispatch_guard_refuses_a_tool_name_it_cannot_read():
         _dispatched_tool_names(source)
 
 
+_SRIOV_SCHEMA = {
+    "hmc_list_sriov_logical_ports": {
+        "properties": {
+            "system_name_or_uuid": {"type": "string"},
+            "adapter_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "logical_port_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        },
+        "required": ["system_name_or_uuid"],
+    },
+    "hmc_assign_sriov_logical_port": {
+        "properties": {
+            "adapter_id": {"type": "string"},
+            "capacity_percent": {"type": "number"},
+            "ownership_override": {"type": "boolean"},
+        },
+        "required": [],
+    },
+}
+
+
+def test_dispatch_guard_reports_an_argument_of_the_wrong_type():
+    """An int where the tool declares a string is the #763 defect, caught statically.
+
+    The name is right and the tool is registered, so the pre-#763 guard passed it
+    through and the mismatch only surfaced as a pydantic error against a live HMC.
+    """
+    problems = runner._dispatch_problems(
+        "hmc_list_sriov_logical_ports",
+        {"system_name_or_uuid": "sys", "adapter_id": 17, "logical_port_id": 917003},
+        _SRIOV_SCHEMA,
+    )
+
+    assert sorted(problems) == [
+        "hmc_list_sriov_logical_ports: adapter_id expects string or null, got int",
+        "hmc_list_sriov_logical_ports: logical_port_id expects string or null, got int",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("argument", "value"),
+    [
+        ("adapter_id", "17"),
+        ("capacity_percent", 7.5),
+        ("capacity_percent", 7),  # PEP 484 numeric tower: int satisfies number
+        ("ownership_override", True),
+    ],
+)
+def test_dispatch_guard_accepts_an_argument_of_the_declared_type(argument, value):
+    assert (
+        runner._dispatch_problems(
+            "hmc_assign_sriov_logical_port", {argument: value}, _SRIOV_SCHEMA
+        )
+        == ()
+    )
+
+
+def test_dispatch_guard_rejects_a_bool_where_a_number_is_declared():
+    """`bool` is an `int` subclass, so a naive isinstance check would admit it."""
+    assert runner._dispatch_problems(
+        "hmc_assign_sriov_logical_port", {"capacity_percent": True}, _SRIOV_SCHEMA
+    ) == ("hmc_assign_sriov_logical_port: capacity_percent expects number, got bool",)
+
+
+def test_dispatch_guard_accepts_none_for_an_optional_argument():
+    """`str | None` serves as `anyOf[string, null]`; passing None is a valid dispatch."""
+    assert (
+        runner._dispatch_problems(
+            "hmc_list_sriov_logical_ports",
+            {"system_name_or_uuid": "sys", "adapter_id": None},
+            _SRIOV_SCHEMA,
+        )
+        == ()
+    )
+
+
+@pytest.mark.parametrize(
+    ("property_schema", "unreadable"),
+    [
+        ({"$ref": "#/$defs/Selector"}, ["$ref"]),
+        ({"allOf": [{"type": "string"}]}, ["allOf"]),
+        ({"oneOf": [{"type": "string"}]}, ["oneOf"]),
+        ({"const": "sriov"}, ["const"]),
+        ({"enum": ["sriov", "ded"], "description": "mode"}, ["enum"]),
+    ],
+)
+def test_dispatch_guard_reports_a_schema_shape_it_cannot_read(
+    property_schema, unreadable
+):
+    """A shape the guard cannot read must be loud, not a silent skip.
+
+    None of these is served today, but FastMCP emits `$ref` as soon as a tool
+    parameter is annotated with a nested model rather than a scalar. Returning
+    "no problem" would drop that argument from type checking with nothing to
+    show for it.
+    """
+    problems = runner._dispatch_problems(
+        "hmc_list_sriov_adapters",
+        {"adapter_id": 17},
+        {"hmc_list_sriov_adapters": {"properties": {"adapter_id": property_schema}}},
+    )
+
+    assert problems == (
+        (
+            "hmc_list_sriov_adapters: adapter_id has a schema shape this guard "
+            f"cannot read: {unreadable}"
+        ),
+    )
+
+
+@pytest.mark.parametrize("property_schema", [{}, {"description": "anything"}])
+def test_dispatch_guard_accepts_a_property_that_constrains_nothing(property_schema):
+    """A property with no type and no constraint admits any value; that is not a gap."""
+    assert (
+        runner._dispatch_problems(
+            "hmc_list_sriov_adapters",
+            {"adapter_id": 17},
+            {
+                "hmc_list_sriov_adapters": {
+                    "properties": {"adapter_id": property_schema}
+                }
+            },
+        )
+        == ()
+    )
+
+
+@pytest.mark.parametrize(
+    "property_schema",
+    [
+        {"type": ["string", "null"]},
+        {"anyOf": [{"anyOf": [{"type": "string"}]}, {"type": "null"}]},
+    ],
+)
+def test_dispatch_guard_reads_type_lists_and_nested_any_of(property_schema):
+    """Neither shape is served today; both are read rather than passed over."""
+    assert runner._dispatch_problems(
+        "hmc_list_sriov_adapters",
+        {"adapter_id": 17},
+        {"hmc_list_sriov_adapters": {"properties": {"adapter_id": property_schema}}},
+    ) == ("hmc_list_sriov_adapters: adapter_id expects string or null, got int",)
+
+
+def test_dispatch_guard_passes_over_a_statically_unknowable_argument():
+    """A value discovered mid-run has no static type; the guard must not guess."""
+    assert (
+        runner._dispatch_problems(
+            "hmc_list_sriov_logical_ports",
+            {
+                "system_name_or_uuid": "sys",
+                "adapter_id": runner.UNRESOLVED_ARGUMENT,
+            },
+            _SRIOV_SCHEMA,
+        )
+        == ()
+    )
+
+
+def test_static_argument_resolution_reads_config_field_types():
+    """`config.x` and `state.config.x` both resolve, so both spellings are guarded."""
+    source = (
+        "async def workflow(client):\n"
+        '    await state.call(client, "hmc_list_sriov_adapters",\n'
+        "        adapter_id=config.sriov_adapter_id,\n"
+        "        system_name_or_uuid=state.config.system_name,\n"
+        "        physical_port_id=discovered_at_runtime,\n"
+        '        logical_port_id="917003")\n'
+    )
+
+    (_, _, arguments), *rest = _dispatched_calls(source)
+    resolved = {name: _resolved_argument(node) for name, node in arguments}
+
+    assert rest == []
+    assert resolved["adapter_id"] == runner.LiveTestConfig().sriov_adapter_id
+    assert resolved["system_name_or_uuid"] == runner.LiveTestConfig().system_name
+    assert resolved["physical_port_id"] is _UNRESOLVED
+    assert resolved["logical_port_id"] == "917003"
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected_type"),
+    [
+        ("str(config.sriov_adapter_id)", str),
+        ("int(discovered)", int),
+        ("float(discovered)", float),
+        ("bool(discovered)", bool),
+        ('f"{config.sriov_adapter_id}"', str),
+    ],
+)
+def test_static_argument_resolution_reads_conversions_and_f_strings(
+    expression, expected_type
+):
+    """A conversion's result type is known even when its argument is not.
+
+    Every site #763 fixed is spelled `str(config.x)`. Passing over an `ast.Call`
+    would leave all 23 of them unchecked while the guard still reported a clean
+    run — the guard would bite only on a literal revert, never on a wrong
+    conversion such as `int(...)` where the tool declares a string.
+    """
+    source = (
+        "async def workflow(client):\n"
+        f'    await state.call(client, "hmc_list_sriov_adapters", adapter_id={expression})\n'
+    )
+
+    ((_, _, ((_, node),)),) = _dispatched_calls(source)
+
+    assert type(_resolved_argument(node)) is expected_type
+
+
+def test_every_sriov_identifier_argument_is_actually_type_checked():
+    """The 23 arguments #763 fixed must stay resolvable, not just the global budget.
+
+    The coverage floor in the schema test is a whole-tree total, so a later change
+    could stop resolving every SR-IOV identifier and stay under it by resolving
+    something else. These are the arguments the guard was extended for, so they
+    are asserted by name.
+    """
+    source = Path(pcie.__file__).read_text(encoding="utf-8")
+    identifiers = {"adapter_id", "physical_port_id", "logical_port_id"}
+
+    passed_over = [
+        f"pcie.py:{lineno} {tool}: {name}"
+        for lineno, tool, arguments in _dispatched_calls(source)
+        if "sriov" in tool
+        for name, node in arguments
+        if name in identifiers and _resolved_argument(node) is _UNRESOLVED
+    ]
+
+    assert passed_over == [], "\n".join(passed_over)
+    assert (
+        sum(
+            name in identifiers
+            for _, tool, arguments in _dispatched_calls(source)
+            if "sriov" in tool
+            for name, _ in arguments
+        )
+        == 23
+    )
+
+
+def test_static_argument_resolution_reports_a_config_field_that_does_not_exist():
+    """A misspelled config field would `AttributeError` live; it must not read as dynamic."""
+    source = (
+        "async def workflow(client):\n"
+        '    await state.call(client, "hmc_list_sriov_adapters",\n'
+        "        adapter_id=config.sriov_adapter_idd)\n"
+    )
+
+    ((_, _, ((_, node),)),) = _dispatched_calls(source)
+
+    assert _resolved_argument(node) is _NO_SUCH_FIELD
+
+    problems, _, _ = _dispatch_argument_report(
+        {"pcie.py": source},
+        {"hmc_list_sriov_adapters": {"properties": {"adapter_id": {"type": "string"}}}},
+    )
+    assert problems == [
+        (
+            "pcie.py:2 hmc_list_sriov_adapters: adapter_id reads a field that "
+            "does not exist on the run config"
+        )
+    ]
+
+
 @pytest.mark.asyncio
 async def test_every_dispatched_argument_matches_the_served_schema():
     """A dispatch the served schema rejects is a defect the harness ships blind."""
@@ -1942,7 +2306,18 @@ async def test_every_dispatched_argument_matches_the_served_schema():
     # added there from being the one the guard never reads.
     sources[_RUNNER_PATH.name] = _RUNNER_PATH.read_text(encoding="utf-8")
 
-    _assert_dispatch_arguments(sources, schemas)
+    problems, checked, total = _dispatch_argument_report(sources, schemas)
+
+    assert problems == [], "\n".join(problems)
+    # A floor, not the live number, so adding an argument the guard cannot read
+    # is allowed while losing a class of arguments it used to read is not. #763
+    # converted 23 checked arguments to unchecked ones and every test stayed
+    # green; that is precisely what this catches.
+    assert checked >= 230, (
+        f"the dispatch guard now type-checks only {checked} of {total} arguments; "
+        "a resolvable argument shape stopped resolving and the guard is quietly "
+        "covering less than it did"
+    )
 
 
 @pytest.mark.asyncio
