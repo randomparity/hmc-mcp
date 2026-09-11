@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import re
-import sys
 import warnings
 from collections.abc import Mapping
 from threading import Lock
@@ -70,6 +69,7 @@ async def _close_response(response: httpx.Response, primary: BaseException | Non
 
 async def _read_bounded_response(response: httpx.Response) -> httpx.Response:
     """Buffer only identity bytes, checking size before retaining each chunk."""
+    primary = None
     try:
         encoding = response.headers.get("Content-Encoding", "").strip().lower()
         if encoding and encoding != "identity":
@@ -99,8 +99,11 @@ async def _read_bounded_response(response: httpx.Response) -> httpx.Response:
             response.status_code, headers=response.headers, content=bytes(body),
             request=response.request, extensions=response.extensions,
         )
+    except BaseException as exc:
+        primary = exc
+        raise
     finally:
-        await _close_response(response, sys.exception())
+        await _close_response(response, primary)
 
 # The two RFC 3986 dot-segments. Held as a frozenset and compared per path
 # segment rather than with a substring test, so a resource legitimately named
