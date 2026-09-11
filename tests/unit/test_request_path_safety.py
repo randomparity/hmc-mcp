@@ -125,11 +125,11 @@ def test_the_guard_runs_before_anything_leaves_the_process():
     client = _client()
     sent: list[str] = []
 
-    async def _forbidden(*args, **kwargs):
+    def _forbidden(*args, **kwargs):
         sent.append("request")
         raise AssertionError("a refused path reached the transport")
 
-    client._http.request = _forbidden  # type: ignore[method-assign]
+    client._http.build_request = _forbidden  # type: ignore[method-assign]
 
     with pytest.raises(HMCError, match="refused"):
         asyncio.run(
@@ -145,11 +145,11 @@ def test_a_uuid_only_path_argument_is_refused_before_transport():
     client = _client()
     sent: list[str] = []
 
-    async def _forbidden(*args, **kwargs):
+    def _forbidden(*args, **kwargs):
         sent.append("request")
         raise AssertionError("a refused UUID reached the transport")
 
-    client._http.request = _forbidden  # type: ignore[method-assign]
+    client._http.build_request = _forbidden  # type: ignore[method-assign]
 
     with pytest.raises(ValueError, match=r"^vg_uuid must be a UUID$") as error:
         asyncio.run(
@@ -245,11 +245,11 @@ def test_platform_update_rejects_a_non_uuid_system_before_transport():
     client = _client()
     sent: list[str] = []
 
-    async def _forbidden(*args, **kwargs):
+    def _forbidden(*args, **kwargs):
         sent.append("request")
         raise AssertionError("an invalid system UUID reached the transport")
 
-    client._http.request = _forbidden  # type: ignore[method-assign]
+    client._http.build_request = _forbidden  # type: ignore[method-assign]
 
     with pytest.raises(ValueError, match=r"^system_uuid must be a UUID$"):
         asyncio.run(client.submit_platform_update("not-a-uuid", {}))
