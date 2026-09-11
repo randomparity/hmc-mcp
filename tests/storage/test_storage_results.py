@@ -92,24 +92,28 @@ async def test_volume_group_keeps_integral_values_as_int() -> None:
     assert not isinstance(groups[0].free_space_mib, float)
 
 
+@pytest.mark.parametrize("value", ["279.0", "279.000"])
 @pytest.mark.asyncio
-async def test_volume_group_keeps_integral_float_strings_as_int() -> None:
+async def test_volume_group_keeps_integral_float_strings_as_int(value: str) -> None:
     groups = await list_volume_groups(
-        _vg_client({"GroupCapacity": "279.0"}), VIOS_UUID
+        _vg_client({"GroupCapacity": value}), VIOS_UUID
     )
 
     assert groups[0].capacity_mib == 279
     assert not isinstance(groups[0].capacity_mib, float)
 
 
+@pytest.mark.parametrize("value", ["9007199254740993", "9007199254740993.0"])
 @pytest.mark.asyncio
-async def test_volume_group_parses_a_long_whole_number_exactly() -> None:
-    """A whole number stays exact at any width; float() would saturate to inf."""
-    digits = "9" * 400
+async def test_volume_group_parses_an_integral_value_exactly(value: str) -> None:
+    """2**53 + 1 is the smallest integer `float` cannot hold.
 
-    groups = await list_volume_groups(_vg_client({"GroupCapacity": digits}), VIOS_UUID)
+    Both spellings must yield the same number, so the integral path cannot go
+    through `float()` — it would round both to 9007199254740992.
+    """
+    groups = await list_volume_groups(_vg_client({"GroupCapacity": value}), VIOS_UUID)
 
-    assert groups[0].capacity_mib == int(digits)
+    assert groups[0].capacity_mib == 9007199254740993
 
 
 @pytest.mark.asyncio
@@ -122,11 +126,30 @@ async def test_volume_group_absent_capacity_stays_none() -> None:
 
 @pytest.mark.parametrize(
     "value",
-    ["", "abc", "279.25.1", "-5", "1e5", "NaN", "Infinity", "279,25", " 279.25 "],
+    [
+        "",
+        "abc",
+        "279.25.1",
+        "-5",
+        "1e5",
+        "NaN",
+        "Infinity",
+        "279,25",
+        " 279.25 ",
+        "٢٧٩",  # Arabic-Indic digits: `\d` would admit these, `[0-9]` does not.
+        "279.25\n",  # A trailing newline: `$` would admit this, `\Z` does not.
+        "9" * 21,  # Wider than any storage quantity; `int()` past 4300 digits raises.
+        "1" * 21 + ".5",  # Likewise fractional, where `float()` would reach `inf`.
+    ],
 )
 @pytest.mark.asyncio
 async def test_volume_group_rejects_non_decimal_capacity(value: str) -> None:
-    """A value that is not a plain decimal still raises, naming operation and field."""
+    """A value that is not a plain bounded decimal raises, naming operation and field.
+
+    The empty string is a deliberate rejection rather than a synonym for absent:
+    an HMC that sends `<FreeSpace/>` is not reporting "no value", it is sending a
+    malformed one, and `HMCError` names the field so the reply can be diagnosed.
+    """
     with pytest.raises(HMCError, match="list_volume_groups returned an invalid GroupCapacity"):
         await list_volume_groups(_vg_client({"GroupCapacity": value}), VIOS_UUID)
 

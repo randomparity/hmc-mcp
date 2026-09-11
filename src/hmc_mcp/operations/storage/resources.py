@@ -81,7 +81,14 @@ def _required_text(resource: Mapping[str, Any], field: str, operation: str) -> s
 #: A plain non-negative decimal, optionally with a fractional part. Deliberately
 #: ASCII-only and narrower than `float()`: it admits neither a sign, exponent,
 #: nor the `nan`/`inf` literals, none of which name a storage quantity.
-_DECIMAL_TEXT = re.compile(r"[0-9]+(?:\.[0-9]+)?\Z")
+#:
+#: The widths are bounded because every way of parsing an unbounded digit string
+#: is wrong at some length: `int()` raises `ValueError` past CPython's 4300-digit
+#: conversion limit, and `float()` saturates to `inf` past ~309 digits, which
+#: `json.dumps` then emits as bare `Infinity` — not valid JSON. 10**20 MiB is far
+#: beyond any storage quantity, so anything wider is malformed input and takes the
+#: same `HMCError` as any other malformed value.
+_DECIMAL_TEXT = re.compile(r"[0-9]{1,20}(?:\.[0-9]{1,10})?\Z")
 
 
 def _optional_number(
@@ -102,12 +109,13 @@ def _optional_number(
     if isinstance(value, int):
         return value
     if isinstance(value, str) and _DECIMAL_TEXT.match(value):
-        # Route a whole number through int() rather than float(): int is exact at
-        # any width, where float() saturates a long enough digit string to inf.
-        if "." not in value:
-            return int(value)
-        number = float(value)
-        return int(number) if number.is_integer() else number
+        whole, _, fraction = value.partition(".")
+        # Route any integral value through int() rather than float(), in either
+        # spelling: int is exact across the admitted width, where float() starts
+        # losing digits above 2**53 and would make "…93" and "…93.0" differ.
+        if not fraction.strip("0"):
+            return int(whole)
+        return float(value)
     raise HMCError(f"{operation} returned an invalid {field}")
 
 
