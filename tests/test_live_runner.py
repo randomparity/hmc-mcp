@@ -3547,6 +3547,20 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "job-status-successful",
         },
         "st1-console-identity": {"console-uuid-present"},
+        "st1-system-inventory": {
+            "system-uuid-present",
+            "system-summary-returned",
+        },
+        "st1-lpar-inventory": {
+            "lpar-list-non-empty",
+            "lpar-uuid-present",
+            "lpar-summary-returned",
+        },
+        "st1-vios-inventory": {
+            "vios-list-non-empty",
+            "vios-uuid-present",
+        },
+        "st1-resource-inventory": {"resource-list-non-empty"},
     }
 
 

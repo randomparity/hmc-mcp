@@ -7,7 +7,10 @@
       "implementation": {
         "state": "implemented",
         "implemented_scope": [
-          {"variant": "all-systems", "parameters": []}
+          {
+            "variant": "all-systems",
+            "parameters": []
+          }
         ],
         "missing_scope": []
       },
@@ -51,7 +54,10 @@
       "implementation": {
         "state": "implemented",
         "implemented_scope": [
-          {"variant": "console-identity", "parameters": []}
+          {
+            "variant": "management-console-properties",
+            "parameters": []
+          }
         ],
         "missing_scope": []
       },
@@ -61,13 +67,303 @@
           "channel": "live",
           "result": "failed",
           "scenario": "st1-console-identity",
-          "tested_commit": "8a9c8d52056a9853d3e3722a9d54eeff6e9f0f98",
-          "observed_at": "2026-09-07T18:42:31Z",
+          "observed_at": "2026-09-10T21:53:54Z",
+          "cleanup": "not-required",
+          "assertions": [],
+          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
           "hmc_release": "V10R3",
           "hardware_family": "POWER10",
+          "closure_fingerprint": "4717c9b36202ae7c754db57d64859e5063098e3b2f79fa3cf55303c0cdc586dd"
+        }
+      ]
+    },
+    {
+      "operation": "system.get",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-name",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName string"
+              }
+            ]
+          },
+          {
+            "variant": "by-uuid",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "UUID string"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-get-system",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-system-inventory",
+          "observed_at": "2026-09-10T21:54:03Z",
           "cleanup": "not-required",
-          "closure_fingerprint": "66ab1d6a13762a8def7434d0a852c6ce29d7688dbeaed8b7372c726ea7f55f5c",
-          "assertions": []
+          "assertions": [
+            "system-uuid-present"
+          ],
+          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER10",
+          "closure_fingerprint": "4717c9b36202ae7c754db57d64859e5063098e3b2f79fa3cf55303c0cdc586dd"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "all-lpars",
+            "parameters": []
+          },
+          {
+            "variant": "system-scoped",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          },
+          {
+            "variant": "state-filtered",
+            "parameters": [
+              {
+                "name": "state",
+                "constraint": "PartitionState value"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-list-lpars",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-lpar-inventory",
+          "observed_at": "2026-09-10T21:54:06Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "lpar-list-non-empty"
+          ],
+          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER10",
+          "closure_fingerprint": "4717c9b36202ae7c754db57d64859e5063098e3b2f79fa3cf55303c0cdc586dd"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.get",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-name",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName string"
+              }
+            ]
+          },
+          {
+            "variant": "by-uuid",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "UUID string"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-get-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-lpar-inventory",
+          "observed_at": "2026-09-10T21:54:09Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "lpar-uuid-present"
+          ],
+          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER10",
+          "closure_fingerprint": "4717c9b36202ae7c754db57d64859e5063098e3b2f79fa3cf55303c0cdc586dd"
+        }
+      ]
+    },
+    {
+      "operation": "vios.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "all-vios",
+            "parameters": []
+          },
+          {
+            "variant": "system-scoped",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          },
+          {
+            "variant": "state-filtered",
+            "parameters": [
+              {
+                "name": "state",
+                "constraint": "PartitionState value"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-list-vios",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-vios-inventory",
+          "observed_at": "2026-09-10T21:54:14Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "vios-list-non-empty",
+            "vios-uuid-present"
+          ],
+          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER10",
+          "closure_fingerprint": "4717c9b36202ae7c754db57d64859e5063098e3b2f79fa3cf55303c0cdc586dd"
+        }
+      ]
+    },
+    {
+      "operation": "console.list_resources",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-resource-type",
+            "parameters": [
+              {
+                "name": "resource_type",
+                "constraint": "UOM resource type name"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-list-resources",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-resource-inventory",
+          "observed_at": "2026-09-10T21:54:32Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "resource-list-non-empty"
+          ],
+          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER10",
+          "closure_fingerprint": "4717c9b36202ae7c754db57d64859e5063098e3b2f79fa3cf55303c0cdc586dd"
+        }
+      ]
+    },
+    {
+      "operation": "system.summary",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-name-or-uuid",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-system-summary",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-system-inventory",
+          "observed_at": "2026-09-10T21:54:43Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "system-summary-returned"
+          ],
+          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER10",
+          "closure_fingerprint": "af935cc3368e9d8ac173069bb77b3ac4ee741a919b5d462cd90bb7e346a2341d"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.summary",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-name-or-uuid",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-lpar-summary",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-lpar-inventory",
+          "observed_at": "2026-09-10T21:54:45Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "lpar-summary-returned"
+          ],
+          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER10",
+          "closure_fingerprint": "af935cc3368e9d8ac173069bb77b3ac4ee741a919b5d462cd90bb7e346a2341d"
         }
       ]
     }
