@@ -82,12 +82,11 @@ def _required_text(resource: Mapping[str, Any], field: str, operation: str) -> s
 #: ASCII-only and narrower than `float()`: it admits neither a sign, exponent,
 #: nor the `nan`/`inf` literals, none of which name a storage quantity.
 #:
-#: The widths are bounded because every way of parsing an unbounded digit string
-#: is wrong at some length: `int()` raises `ValueError` past CPython's 4300-digit
-#: conversion limit, and `float()` saturates to `inf` past ~309 digits, which
-#: `json.dumps` then emits as bare `Infinity` — not valid JSON. 10**20 MiB is far
-#: beyond any storage quantity, so anything wider is malformed input and takes the
-#: same `HMCError` as any other malformed value.
+#: The widths are bounded because parsing an unbounded digit string goes wrong at
+#: some length either way — `int()` raises past CPython's 4300-digit conversion
+#: limit, `float()` saturates to an `inf` that `json.dumps` emits as invalid JSON.
+#: 10**20 MiB exceeds any real storage quantity, so anything wider is malformed
+#: input and takes the same `HMCError` as any other malformed value.
 _DECIMAL_TEXT = re.compile(r"[0-9]{1,20}(?:\.[0-9]{1,10})?\Z")
 
 
@@ -104,9 +103,7 @@ def _optional_number(
     value = resource.get(field)
     if value is None:
         return None
-    if isinstance(value, bool):
-        raise HMCError(f"{operation} returned an invalid {field}")
-    if isinstance(value, int):
+    if isinstance(value, int) and not isinstance(value, bool):
         return value
     if isinstance(value, str) and _DECIMAL_TEXT.match(value):
         whole, _, fraction = value.partition(".")
