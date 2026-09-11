@@ -48,13 +48,13 @@ approved exclusion, and either it or an unknown blocks a complete-coverage claim
 ## Maturity and evidence catalog
 
 `maturity.json` is a sparse, format-versioned catalog keyed by the stable operation
-IDs in `operations.json`. It is at format 2 ([ADR 0127](../adr/0127-derived-live-verification-staleness.md)),
-which supersedes [ADR 0126](../adr/0126-operation-keyed-maturity-evidence.md)'s evidence,
-currency, and promotion model. The implementation record — `absent`, `partial`, or
-`implemented`, with explicit implemented and missing scope — is carried forward
-unchanged and is recorded independently from evidence.
+IDs in `operations.json`. Format 3 ([ADR 0132](../adr/0132-confirmed-live-limitation-gaps.md))
+adds optional confirmations to missing scope. The evidence, currency, and promotion
+model from [ADR 0127](../adr/0127-derived-live-verification-staleness.md) is unchanged.
+Implementation — `absent`, `partial`, or `implemented`, with explicit implemented
+and missing scope — is recorded independently from evidence.
 
-Format 2 has one observation shape, with an exact key set:
+Evidence retains one observation shape, with an exact key set:
 
 ```json
 {
@@ -80,6 +80,48 @@ only free text and each has a grammar (`V<n>R<n>[M<n>]` and `POWER<n>`) rather t
 permissive character class, so a hostname, serial, or location code cannot be written
 there. An operation carries at most one live observation; re-validating replaces it, and
 the superseded record stays in `git log`.
+
+### Confirmed limitation gaps
+
+A declared, matching HMC limitation records `SKIP` and emits a separate
+`{operation, missing_scope}` row, never an observation or promoting result.
+`InvalidDispatch` remains a failure. Transient cleanup conditions (already absent
+resources or already powered-off partitions) only skip; they do not confirm gaps.
+Every declaration supplies a registered operation and a closed variant token.
+Startup validates declarations and their tool associations before opening a client.
+
+Copy an emitted `missing_scope` object into the operation's implementation record:
+
+```json
+{
+  "variant": "managed-system-pcm",
+  "parameters": [],
+  "confirmation": {
+    "tested_commit": "<40 hex>",
+    "observed_at": "2026-09-10T00:00:00Z",
+    "hmc_release": "V10R3",
+    "hardware_family": "POWER10",
+    "closure_fingerprint": "<64 hex>"
+  }
+}
+```
+
+The placeholders above describe hash lengths, not valid catalog values. Review the
+implementation state and scopes together: `absent` has only missing scope; `partial`
+has both; `implemented` has no missing scope. Confirmations are forbidden on implemented
+scope, require empty parameters and have no evidence fields. Existing unconfirmed,
+parameter-constrained scope entries remain valid. Duplicate scope identities fail validation.
+
+On the next run a validated confirmation skips the matching declared operation/variant
+only when release, hardware family and current handler import-closure fingerprint match,
+and its age is between zero and 90 days inclusive. A cached skip does not refresh the
+timestamp or emit another confirmation. After 90 days, an environment/closure change,
+or removal of the confirmation, the runner attempts the call again. Replace a confirmed
+gap only with a fresh observed limitation; remove/revise missing scope when it is fixed.
+Stale confirmations remain valid historical records; future timestamps are invalid.
+ST11 user listings always run because their UUID discovery enables cleanup after create.
+Coarse environment labels can retain a repaired limitation for up to 90 days; remove
+its confirmation when earlier revalidation is needed. Missing environment labels disable reuse.
 
 ### Derived staleness
 
@@ -114,7 +156,7 @@ promotes it back.
 
 ### Recording an observation
 
-The live runner writes observations to a gitignored file beside its results document,
+The live runner writes observations and confirmed gaps to a gitignored file beside its results document,
 and never into the catalog: a human copies them in, and the pull request that commits
 one is where the record is reviewed. The runner writes nothing unless the tree is clean
 under `src/` and `scripts/`, both environment settings are present in `.env`

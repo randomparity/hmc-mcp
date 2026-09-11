@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from live_test_runner import RunState
 
 _REST_MODIFY_UNSUPPORTED = ExpectedOutcome(
+    operation="lpar.modify",
+    variant="rest-resource-modification",
     reason="HMC firmware returns HTTP 406 for REST LPAR modify (same limitation "
     "as create — REST write path unsupported)",
     error_codes=frozenset({"406", "not acceptable"}),
@@ -80,6 +82,7 @@ async def _modify_and_summarize_scratch_lpar(client: Client, state: RunState) ->
     status, data = await state.call(
         client,
         "hmc_modify_lpar",
+        expected=[_REST_MODIFY_UNSUPPORTED],
         lpar_name_or_uuid=config.scratch_name,
         resources={
             "desired_memory": config.scratch_modify_desired_memory_mib,

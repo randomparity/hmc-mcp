@@ -121,6 +121,106 @@ def _operation(
     }
 
 
+def _confirmed_gap():
+    return {
+        "variant": "managed-system-pcm",
+        "parameters": [],
+        "confirmation": {
+            "tested_commit": "a" * 40,
+            "observed_at": "2026-09-06T12:00:00Z",
+            "hmc_release": "V10R3",
+            "hardware_family": "POWER10",
+            "closure_fingerprint": "b" * 64,
+        },
+    }
+
+
+def test_confirmed_gap_is_valid_missing_scope_without_evidence():
+    record = _operation("system.list", "absent")
+    record["implementation"]["missing_scope"] = [_confirmed_gap()]
+    errors = []
+    inventory._validate_maturity([record], {"system.list"}, errors)
+    assert errors == []
+    assert record["evidence"] == []
+
+
+def test_confirmed_gap_never_promotes_verification(tmp_path):
+    registry = _closure_registry(tmp_path)
+    record = _operation("system.list", "absent")
+    record["implementation"]["missing_scope"] = [_confirmed_gap()]
+    assert inventory.derive_states([record], registry, tmp_path, _NOW)["system.list"].state == "unevidenced"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("tested_commit", "x"),
+        ("closure_fingerprint", "x"),
+        ("observed_at", "invalid"),
+        ("observed_at", "9999-01-01T00:00:00Z"),
+        ("hmc_release", "host.example.test"),
+        ("hardware_family", "machine"),
+        ("result", "passed"),
+    ],
+)
+def test_gap_confirmation_rejects_invalid_or_promoting_fields(field, value):
+    record = _operation("system.list", "absent")
+    gap = _confirmed_gap()
+    gap["confirmation"][field] = value
+    record["implementation"]["missing_scope"] = [gap]
+    errors = []
+    inventory._validate_maturity([record], {"system.list"}, errors)
+    assert errors
+
+
+@pytest.mark.parametrize(
+    "placement,parameters",
+    [
+        ("implemented_scope", []),
+        ("missing_scope", [{"name": "category", "constraint": "ManagedSystem"}]),
+    ],
+)
+def test_confirmation_rejects_unsupported_scope_identity(placement, parameters):
+    record = _operation(
+        "system.list", "absent" if placement == "missing_scope" else "implemented"
+    )
+    gap = _confirmed_gap()
+    gap["parameters"] = parameters
+    record["implementation"][placement] = [gap]
+    errors = []
+    inventory._validate_maturity([record], {"system.list"}, errors)
+    assert errors
+
+
+@pytest.mark.parametrize(
+    "days,current", [(0, True), (90, True), (91, False), (-1, False)]
+)
+def test_gap_currency_has_bounded_revalidation_age(days, current):
+    from datetime import timedelta
+
+    confirmation = _confirmed_gap()["confirmation"]
+    now = datetime.fromisoformat(confirmation["observed_at"]) + timedelta(days=days)
+    assert (
+        inventory.gap_is_current(confirmation, ("V10R3", "POWER10"), "b" * 64, now)
+        is current
+    )
+
+
+@pytest.mark.parametrize(
+    "environment,fingerprint",
+    [
+        (("V10R4", "POWER10"), "b" * 64),
+        (("V10R3", "POWER11"), "b" * 64),
+        (("V10R3", "POWER10"), "c" * 64),
+    ],
+)
+def test_gap_currency_requires_same_environment_and_closure(environment, fingerprint):
+    confirmation = _confirmed_gap()["confirmation"]
+    assert not inventory.gap_is_current(
+        confirmation, environment, fingerprint, datetime(2026, 9, 7, tzinfo=UTC)
+    )
+
+
 def _observation(
     *,
     identity: str = "st1-hmc-get-console-info",
@@ -352,7 +452,7 @@ def test_maturity_rejects_boolean_format_version(tmp_path: Path) -> None:
 
     report = inventory.validate_inventory(tmp_path, (), repo_root=tmp_path)
 
-    assert "maturity.json: format_version must be integer 2" in report.errors
+    assert "maturity.json: format_version must be integer 3" in report.errors
 
 
 def test_maturity_rejects_unknown_and_duplicate_operation_ids(tmp_path: Path) -> None:
@@ -514,7 +614,7 @@ def test_maturity_format_one_is_rejected(
         tmp_path, registered_inventory, repo_root=tmp_path
     )
 
-    assert "maturity.json: format_version must be integer 2" in report.errors
+    assert "maturity.json: format_version must be integer 3" in report.errors
 
 
 @pytest.mark.parametrize(

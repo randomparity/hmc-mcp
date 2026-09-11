@@ -16,10 +16,26 @@ if TYPE_CHECKING:
     from live_test_runner import RunState
 
 _PCM_UNLICENSED = ExpectedOutcome(
+    operation="pcm.get_preferences",
+    variant="managed-system-pcm",
     reason="PCM not licensed on this HMC (expected)",
     error_codes=frozenset({"PCM", "406", "403"}),
 )
+_PROCESSED_UNLICENSED = ExpectedOutcome(
+    operation="metrics.processed_links",
+    variant="managed-system-pcm",
+    reason=_PCM_UNLICENSED.reason,
+    error_codes=_PCM_UNLICENSED.error_codes,
+)
+_AGGREGATED_UNLICENSED = ExpectedOutcome(
+    operation="metrics.aggregated_links",
+    variant="managed-system-pcm",
+    reason=_PCM_UNLICENSED.reason,
+    error_codes=_PCM_UNLICENSED.error_codes,
+)
 _TEMPLATES_UNLICENSED = ExpectedOutcome(
+    operation="template.list",
+    variant="partition-templates",
     reason="Partition templates not licensed on this HMC (expected)",
     # Both numbers, because matching is whole-token now: the substring this
     # replaced matched "template" inside "templates", and a declared literal
@@ -79,6 +95,7 @@ async def inspect_metrics_jobs(client: Client, state: RunState) -> None:
     st, data = await state.call(
         client,
         "hmc_get_pcm_preferences",
+        expected=[_PCM_UNLICENSED],
         category="ManagedSystem",
         resource_name_or_uuid=config.system_name,
     )
@@ -190,6 +207,7 @@ async def inspect_metrics_templates(client: Client, state: RunState) -> None:
         client,
         "hmc_get_pcm_preferences",
         category="ManagedSystem",
+        expected=[_PCM_UNLICENSED],
         resource_name_or_uuid=config.system_name,
     )
     state.record_with_expected(
@@ -205,6 +223,7 @@ async def inspect_metrics_templates(client: Client, state: RunState) -> None:
     st, data = await state.call(
         client,
         "hmc_processed_metric_links",
+        expected=[_PROCESSED_UNLICENSED],
         category="ManagedSystem",
         resource_name_or_uuid=config.system_name,
         start_ts="2026-01-01T00:00:00.000Z",
@@ -214,12 +233,13 @@ async def inspect_metrics_templates(client: Client, state: RunState) -> None:
         "hmc_processed_metrics (links)",
         st,
         data,
-        [_PCM_UNLICENSED],
+        [_PROCESSED_UNLICENSED],
     )
 
     st, data = await state.call(
         client,
         "hmc_aggregated_metric_links",
+        expected=[_AGGREGATED_UNLICENSED],
         category="ManagedSystem",
         resource_name_or_uuid=config.system_name,
         start_ts="2026-01-01T00:00:00.000Z",
@@ -229,10 +249,12 @@ async def inspect_metrics_templates(client: Client, state: RunState) -> None:
         "hmc_aggregated_metrics (links)",
         st,
         data,
-        [_PCM_UNLICENSED],
+        [_AGGREGATED_UNLICENSED],
     )
 
-    st, data = await state.call(client, "hmc_list_partition_templates")
+    st, data = await state.call(
+        client, "hmc_list_partition_templates", expected=[_TEMPLATES_UNLICENSED]
+    )
     state.record_with_expected(
         5,
         "hmc_list_partition_templates",

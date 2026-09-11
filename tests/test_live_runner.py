@@ -99,8 +99,10 @@ class _ScriptedClient:
     def __init__(self, result=None, error=None):
         self.result = result
         self.error = error
+        self.calls = []
 
     async def call_tool(self, _tool, _kwargs):
+        self.calls.append((_tool, _kwargs))
         if self.error is not None:
             raise self.error
         return self.result
@@ -1232,13 +1234,200 @@ def test_expected_hmc_limitation_is_classified_as_skip():
         observation.classify_failure(RuntimeError("HTTP 406 Not Acceptable")),
         [
             observation.ExpectedOutcome(
-                reason="feature unavailable", error_codes=frozenset({"406"})
+                operation="pcm.get_preferences",
+                variant="managed-system-pcm",
+                reason="feature unavailable",
+                error_codes=frozenset({"406"}),
             )
         ],
     )
 
     assert state.results[0]["status"] == "SKIP"
     assert state.results[0]["note"] == "feature unavailable"
+
+
+def test_declared_limitations_have_registered_gap_identities():
+    declarations = [
+        value
+        for module in LIVE_WORKFLOW_MODULES
+        for value in vars(module).values()
+        if isinstance(value, observation.ExpectedOutcome)
+    ]
+    assert declarations
+    registered = {security.operation for security in TOOL_SECURITY.values()}
+    assert all(
+        getattr(value, "operation", None) in registered for value in declarations
+    )
+    assert all(
+        re.fullmatch(r"[a-z][a-z0-9-]{0,63}", value.variant) for value in declarations
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value", [("operation", "bad"), ("variant", ""), ("variant", "x y")]
+)
+def test_gap_identity_rejects_malformed_tokens(field, value):
+    arguments = {
+        "operation": "pcm.get_preferences", "variant": "managed-system-pcm",
+        "reason": "unavailable", "error_codes": frozenset({"406"}),
+    }
+    arguments[field] = value
+    with pytest.raises(ValueError, match="operation|variant"):
+        observation.ExpectedOutcome(**arguments)
+
+
+@pytest.mark.asyncio
+async def test_gap_identity_rejected_before_call():
+    state = runner.RunState()
+    client = _ScriptedClient(result={})
+    with pytest.raises(ValueError, match="operation"):
+        await state.call(client, "hmc_list_users", expected=[metrics._PCM_UNLICENSED])
+    assert client.calls == []
+
+
+@pytest.mark.asyncio
+async def test_later_invalid_declaration_stops_run_before_client(monkeypatch):
+    from dataclasses import replace
+
+    monkeypatch.setattr(
+        metrics,
+        "_PCM_UNLICENSED",
+        replace(metrics._PCM_UNLICENSED, operation="user.list"),
+    )
+    monkeypatch.setattr(runner, "create_mcp", lambda *_a: pytest.fail("created client"))
+    assert (
+        await runner.main(config=runner.LiveTestConfig(), hmc_config=_live_hmc_config())
+        == 1
+    )
+
+
+@pytest.mark.parametrize("transient", [False, True])
+def test_matching_gap_is_separate_from_evidence(transient):
+    from dataclasses import replace
+
+    state = runner.RunState()
+    expected = replace(metrics._PCM_UNLICENSED, transient=transient)
+    for _ in range(2):
+        state.record_with_expected(
+            5,
+            "hmc_get_pcm_preferences",
+            "FAIL",
+            observation.classify_failure(RuntimeError("HTTP 406")),
+            [expected],
+        )
+    assert state.observations == []
+    assert {row["result"] for row in state.results} == {"skipped"}
+    assert len(state.gaps) == (0 if transient else 1)
+    if not transient:
+        assert state.gaps[0]["operation"] == expected.operation
+        assert state.gaps[0]["missing_scope"]["variant"] == expected.variant
+
+
+@pytest.mark.asyncio
+async def test_current_gap_skips_call_without_refreshing_confirmation():
+    expected = metrics._PCM_UNLICENSED
+    state = runner.RunState(known_gaps={(expected.operation, expected.variant)})
+    client = _ScriptedClient(result={})
+    status, data = await state.call(
+        client, "hmc_get_pcm_preferences", expected=[expected]
+    )
+    state.record_with_expected(5, "hmc_get_pcm_preferences", status, data, [expected])
+    assert client.calls == []
+    assert state.results[0]["status"] == "SKIP"
+    assert "known gap" in state.results[0]["note"]
+    assert state.observations == state.gaps == []
+
+
+@pytest.mark.asyncio
+async def test_invalid_dispatch_precedes_known_gap():
+    expected = metrics._PCM_UNLICENSED
+    state = runner.RunState(
+        known_gaps={(expected.operation, expected.variant)},
+        schemas={"hmc_get_pcm_preferences": {"properties": {}}},
+    )
+    status, data = await state.call(
+        _ScriptedClient(result={}),
+        "hmc_get_pcm_preferences",
+        expected=[expected],
+        invalid_argument="406",
+    )
+    state.record_with_expected(5, "hmc_get_pcm_preferences", status, data, [expected])
+    assert state.results[0]["status"] == "FAIL"
+    assert data.exception_type == "InvalidDispatch"
+    assert state.observations == state.gaps == []
+
+
+@pytest.mark.asyncio
+async def test_cached_user_inventory_gap_does_not_skip_cleanup_discovery():
+    expected = users._HMCUSER_ENDPOINT_UNSUPPORTED
+    state = runner.RunState(known_gaps={(expected.operation, expected.variant)})
+    state.artifacts.console_uuid = "console"
+    client = _ScriptedClient(
+        result=json.dumps([{"UserID": state.config.test_user, "uuid": "user-uuid"}])
+    )
+    await users.administer_test_user(client, state)
+    assert any(tool == "hmc_delete_user" for tool, _ in client.calls)
+
+
+def test_gap_output_can_be_copied_and_loaded_for_next_run(tmp_path):
+    repo = _live_repo(tmp_path)
+    expected = metrics._PCM_UNLICENSED
+    state = runner.RunState()
+    state.record_with_expected(
+        5,
+        "hmc_get_pcm_preferences",
+        "FAIL",
+        observation.classify_failure(RuntimeError("HTTP 406")),
+        [expected],
+    )
+    destination = repo / "test-results-gaps-observations.json"
+    assert runner._emit_observations(state, destination, ("V10R3", "POWER10"), repo)
+    emitted = json.loads(destination.read_text())
+    assert len(emitted) == 1 and set(emitted[0]) == {"operation", "missing_scope"}
+    catalog = repo / "maturity.json"
+    catalog.write_text(
+        json.dumps(
+            {
+                "format_version": runner.check_capability_inventory.MATURITY_FORMAT_VERSION,
+                "admission_policy": "existing-runtime-guards",
+                "operations": [
+                    {
+                        "operation": expected.operation,
+                        "implementation": {
+                            "state": "absent",
+                            "implemented_scope": [],
+                            "missing_scope": [emitted[0]["missing_scope"]],
+                        },
+                        "evidence": [],
+                    }
+                ],
+            }
+        )
+    )
+    assert runner._load_known_gaps(("V10R3", "POWER10"), repo, catalog) == {
+        (expected.operation, expected.variant)
+    }
+    assert runner._load_known_gaps(("V10R4", "POWER10"), repo, catalog) == set()
+    assert runner._load_known_gaps(None, repo, catalog) == set()
+    document = json.loads(catalog.read_text())
+    scope = document["operations"][0]["implementation"]["missing_scope"][0]
+    scope["confirmation"]["observed_at"] = "1970-01-01T00:00:00Z"
+    catalog.write_text(json.dumps(document))
+    assert runner._load_known_gaps(("V10R3", "POWER10"), repo, catalog) == set()
+    del scope["confirmation"]
+    catalog.write_text(json.dumps(document))
+    assert runner._load_known_gaps(("V10R3", "POWER10"), repo, catalog) == set()
+
+
+@pytest.mark.parametrize("records", [[None], [{"operation": "unknown.operation"}], "invalid"])
+def test_invalid_gap_catalog_fails_even_without_environment(tmp_path, records):
+    catalog = tmp_path / "maturity.json"
+    catalog.write_text(json.dumps({
+        "format_version": 3, "admission_policy": "existing-runtime-guards",
+        "operations": records,
+    }))
+    with pytest.raises(ValueError, match="invalid gap catalog"):
+        runner._load_known_gaps(None, tmp_path, catalog)
 
 
 def test_classify_failure_reads_the_message_not_the_traceback():
@@ -1282,7 +1471,10 @@ def test_a_target_scope_denial_classifies_as_denied():
 
 def test_expected_outcome_matches_whole_tokens_in_the_message():
     outcome = observation.ExpectedOutcome(
-        reason="job REST type unsupported", error_codes=frozenset({"REST000E"})
+        operation="pcm.get_preferences",
+        variant="managed-system-pcm",
+        reason="job REST type unsupported",
+        error_codes=frozenset({"REST000E"}),
     )
 
     assert outcome.matches(
@@ -1336,7 +1528,11 @@ def test_a_declared_outcome_does_not_match_an_unrelated_failure():
 
 def test_expected_outcome_requires_a_code_or_a_denial():
     with pytest.raises(ValueError, match="error code or a denial"):
-        observation.ExpectedOutcome(reason="nothing to match on")
+        observation.ExpectedOutcome(
+            operation="pcm.get_preferences",
+            variant="managed-system-pcm",
+            reason="nothing to match on",
+        )
 
 
 def test_an_unmatched_failure_is_recorded_as_failed():
@@ -1350,7 +1546,10 @@ def test_an_unmatched_failure_is_recorded_as_failed():
         observation.classify_failure(RuntimeError("HTTP 500 Internal Server Error")),
         [
             observation.ExpectedOutcome(
-                reason="job REST type unsupported", error_codes=frozenset({"REST000E"})
+                operation="pcm.get_preferences",
+                variant="managed-system-pcm",
+                reason="job REST type unsupported",
+                error_codes=frozenset({"REST000E"}),
             )
         ],
     )
@@ -1866,7 +2065,11 @@ def _dispatched_calls(
             (
                 node.lineno,
                 tool.value,
-                tuple((keyword.arg, keyword.value) for keyword in node.keywords),
+                tuple(
+                    (keyword.arg, keyword.value)
+                    for keyword in node.keywords
+                    if keyword.arg not in {"expected", "reuse_gaps"}
+                ),
             )
         )
     return dispatches
@@ -2804,7 +3007,7 @@ async def test_metrics_template_inventory_records_expected_limitation_and_contin
 ):
     calls = []
 
-    async def scripted_call(_state, _client, tool, **kwargs):
+    async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
         calls.append((tool, kwargs))
         if tool == "hmc_get_pcm_preferences":
             return "PASS", {"long_term_monitor": True}
@@ -2836,7 +3039,7 @@ async def test_metrics_template_inventory_records_expected_limitation_and_contin
 async def test_user_inventory_classifies_unsupported_endpoint(monkeypatch):
     calls = []
 
-    async def scripted_call(_state, _client, tool, **kwargs):
+    async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
         calls.append((tool, kwargs))
         return "FAIL", _failure("REST000E: endpoint unavailable")
 
@@ -3694,7 +3897,14 @@ def test_an_invalid_dispatch_is_never_laundered_into_a_skip():
         observation.CallFailure(
             "InvalidDispatch", "hmc_get_job: unknown argument 406", "", None, False
         ),
-        [observation.ExpectedOutcome(reason="not licensed", error_codes=frozenset({"406"}))],
+        [
+            observation.ExpectedOutcome(
+                operation="pcm.get_preferences",
+                variant="managed-system-pcm",
+                reason="not licensed",
+                error_codes=frozenset({"406"}),
+            )
+        ],
     )
 
     assert state.results[0]["status"] == "FAIL"

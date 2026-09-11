@@ -34,9 +34,9 @@ SHA_1 = re.compile(r"[0-9a-f]{40}")
 SHA_256 = re.compile(r"[0-9a-f]{64}")
 TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 
-#: `maturity.json` alone moves to format 2 (ADR 0127); the other three catalogs
+#: `maturity.json` alone moves to format 3 (ADR 0132); the other three catalogs
 #: are unchanged and stay at 1.
-MATURITY_FORMAT_VERSION = 2
+MATURITY_FORMAT_VERSION = 3
 STALE_AFTER_DAYS = 90
 PACKAGE = "hmc_mcp"
 
@@ -59,6 +59,14 @@ CLEANUP = {"not-run", "not-required", "failed", "passed"}
 OBSERVATION_ID = re.compile(r"[a-z0-9][a-z0-9-]*")
 SCENARIO_ID = re.compile(r"st\d+-[a-z0-9-]+")
 ASSERTION_ID = re.compile(r"[a-z][a-z0-9-]{1,62}[a-z0-9]")
+GAP_VARIANT = re.compile(r"[a-z][a-z0-9-]{0,63}")
+CONFIRMATION_KEYS = {
+    "tested_commit",
+    "observed_at",
+    "hmc_release",
+    "hardware_family",
+    "closure_fingerprint",
+}
 
 #: Narrow grammars, not a permissive character class with an address rejection:
 #: `[A-Za-z0-9 ._-]{0,39}` admits a hostname, a serial and a location code
@@ -459,9 +467,19 @@ def _matches(pattern: re.Pattern[str], value: object) -> bool:
 
 
 def _scope_identity(
-    value: object, label: str, errors: list[str]
+    value: object, label: str, errors: list[str], *, missing: bool = False
 ) -> tuple[object, ...] | None:
-    if not _exact_keys(value, {"variant", "parameters"}, label, errors):
+    keys = {"variant", "parameters"}
+    if missing and isinstance(value, dict) and "confirmation" in value:
+        keys.add("confirmation")
+        _validate_confirmation(value["confirmation"], label, errors)
+        if value.get("parameters") != [] or not _matches(
+            GAP_VARIANT, value.get("variant")
+        ):
+            errors.append(
+                f"{label}: confirmed gaps require a closed variant and empty parameters"
+            )
+    if not _exact_keys(value, keys, label, errors):
         return None
     assert isinstance(value, dict)
     variant = value["variant"]
@@ -505,7 +523,9 @@ def _validate_implementation(
         errors.append(f"{label}: invalid implementation state or scope lists")
         return set()
     implemented_ids = {_scope_identity(scope, label, errors) for scope in implemented}
-    missing_ids = {_scope_identity(scope, label, errors) for scope in missing}
+    missing_ids = {
+        _scope_identity(scope, label, errors, missing=True) for scope in missing
+    }
     implemented_ids.discard(None)
     missing_ids.discard(None)
     if len(implemented_ids) != len(implemented) or len(missing_ids) != len(missing):
@@ -528,6 +548,44 @@ def _validate_timestamp(value: object, label: str, errors: list[str]) -> None:
         datetime.fromisoformat(value)
     except ValueError:
         errors.append(f"{label}: observed_at is not a calendar timestamp")
+
+
+def _validate_confirmation(value: object, label: str, errors: list[str]) -> None:
+    if not _exact_keys(value, CONFIRMATION_KEYS, label, errors):
+        return
+    assert isinstance(value, dict)
+    for field, pattern in (
+        ("tested_commit", SHA_1),
+        ("closure_fingerprint", SHA_256),
+        ("hmc_release", HMC_RELEASE),
+        ("hardware_family", HARDWARE_FAMILY),
+    ):
+        if not _matches(pattern, value[field]):
+            errors.append(f"{label}: invalid confirmation {field}")
+    timestamp_errors: list[str] = []
+    _validate_timestamp(value["observed_at"], label, timestamp_errors)
+    errors.extend(timestamp_errors)
+    if not timestamp_errors and datetime.fromisoformat(
+        value["observed_at"]
+    ) > datetime.now(UTC):
+        errors.append(f"{label}: confirmation observed_at must not be in the future")
+
+
+def gap_is_current(
+    confirmation: Mapping[str, Any],
+    environment: tuple[str, str],
+    fingerprint: str,
+    now: datetime | None = None,
+) -> bool:
+    """Reuse a validated confirmation only in its environment, closure and 90-day window."""
+    age = (now or datetime.now(UTC)) - datetime.fromisoformat(
+        confirmation["observed_at"]
+    )
+    return (
+        (confirmation["hmc_release"], confirmation["hardware_family"]) == environment
+        and confirmation["closure_fingerprint"] == fingerprint
+        and timedelta(0) <= age <= timedelta(days=STALE_AFTER_DAYS)
+    )
 
 
 def _validate_observation(
