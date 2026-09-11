@@ -1324,6 +1324,72 @@ def test_matching_gap_is_separate_from_evidence(transient):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("same_operation", [False, True])
+async def test_swapped_declared_results_fail_before_client(monkeypatch, same_operation):
+    from dataclasses import replace
+    from types import ModuleType
+
+    module = ModuleType("swapped_declarations")
+    module.A = metrics._PCM_UNLICENSED
+    module.B = (
+        replace(module.A, variant="other-pcm")
+        if same_operation
+        else metrics._PROCESSED_UNLICENSED
+    )
+    second_tool = (
+        "hmc_get_pcm_preferences" if same_operation else "hmc_processed_metric_links"
+    )
+    source = f'''
+async def scenario(client, state):
+    st_a, data_a = await state.call(client, "hmc_get_pcm_preferences", expected=[A])
+    st_b, data_b = await state.call(client, "{second_tool}", expected=[B])
+    state.record_with_expected(5, "hmc_get_pcm_preferences", st_a, data_a, [B])
+    state.record_with_expected(5, "{second_tool}", st_b, data_b, [A])
+'''
+    monkeypatch.setattr(runner, "_SCENARIO_MODULES", [module])
+    monkeypatch.setattr(runner.inspect, "getsource", lambda _: source)
+    monkeypatch.setattr(runner, "create_mcp", lambda *_a: pytest.fail("created client"))
+    assert (
+        await runner.main(config=runner.LiveTestConfig(), hmc_config=_live_hmc_config())
+        == 1
+    )
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        "",
+        'st, data = await state.call(client, "hmc_list_users")',
+        'state.record_with_expected(5, "pcm", st, None, [A])',
+        'state.record_with_expected(5, "pcm", st, data, [])',
+        'st = "PASS"\n    state.record_with_expected(5, "pcm", st, data, [A])',
+        'data = None\n    state.record_with_expected(5, "pcm", st, data, [A])',
+    ],
+)
+def test_declared_results_require_one_matching_record(tail):
+    source = (
+        "async def scenario(client, state):\n"
+        '    st, data = await state.call(client, "hmc_get_pcm_preferences", expected=[A])\n'
+        f"    {tail}\n"
+    )
+    with pytest.raises(ValueError, match="declared|pair"):
+        runner._validate_declared_function(
+            ast.parse(source).body[0], {"A": metrics._PCM_UNLICENSED}
+        )
+
+
+def test_declared_calls_require_assigned_status_and_data():
+    source = (
+        "async def scenario(client, state):\n"
+        '    await state.call(client, "hmc_get_pcm_preferences", expected=[A])\n'
+    )
+    with pytest.raises(ValueError, match="assigned"):
+        runner._validate_declared_function(
+            ast.parse(source).body[0], {"A": metrics._PCM_UNLICENSED}
+        )
+
+
+@pytest.mark.asyncio
 async def test_current_gap_skips_call_without_refreshing_confirmation():
     expected = metrics._PCM_UNLICENSED
     state = runner.RunState(known_gaps={(expected.operation, expected.variant)})
