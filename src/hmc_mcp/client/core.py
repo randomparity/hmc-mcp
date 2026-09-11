@@ -9,11 +9,13 @@ into :class:`HMCClient` by inheritance.
 
 from __future__ import annotations
 
+import asyncio
 import re
+import sys
 import warnings
 from collections.abc import Mapping
 from threading import Lock
-from typing import Any, Literal, Self, get_args
+from typing import Any, Literal, Self, cast, get_args
 from urllib.parse import quote, unquote, urlparse
 
 import httpx
@@ -42,6 +44,63 @@ from .client_users import UsersMixin
 # Media-type fragments used by the HMC API.
 MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
 MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
+MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+
+
+async def _close_response(response: httpx.Response, primary: BaseException | None) -> None:
+    """Finish owned cleanup even if the caller is cancelled again during close."""
+    close_task = asyncio.create_task(response.aclose())
+    while not close_task.done():
+        try:
+            await asyncio.shield(close_task)
+        except asyncio.CancelledError as exc:
+            if primary is None:
+                primary = exc
+        except Exception:  # noqa: BLE001 — task.result below propagates or records the close failure.
+            break
+    try:
+        close_task.result()
+    except BaseException as exc:
+        if primary is None:
+            raise
+        primary.add_note(f"Response cleanup failed: {str(exc)[:500]}")
+    if primary is not None:
+        raise primary
+
+
+async def _read_bounded_response(response: httpx.Response) -> httpx.Response:
+    """Buffer only identity bytes, checking size before retaining each chunk."""
+    try:
+        encoding = response.headers.get("Content-Encoding", "").strip().lower()
+        if encoding and encoding != "identity":
+            raise HMCError("Response encoding refused: expected identity", response.status_code)
+        declared = response.headers.get("Content-Length", "").strip()
+        if declared.isascii() and declared.isdecimal():
+            normalized = declared.lstrip("0") or "0"
+            limit = str(MAX_RESPONSE_BYTES)
+            if (len(normalized), normalized) > (len(limit), limit):
+                display = normalized[:64] + ("..." if len(normalized) > 64 else "")
+                raise HMCError(
+                    f"Response declared size {display} bytes exceeds limit {limit} bytes",
+                    response.status_code,
+                )
+        body = bytearray()
+        # Iterate the public stream directly: httpx's byte iterators close at EOF,
+        # outside our cancellation-shielded cleanup. Non-identity encodings are refused above.
+        async for chunk in cast(httpx.AsyncByteStream, response.stream):
+            observed = len(body) + len(chunk)
+            if observed > MAX_RESPONSE_BYTES:
+                raise HMCError(
+                    f"Response observed size {observed} bytes exceeds limit "
+                    f"{MAX_RESPONSE_BYTES} bytes", response.status_code,
+                )
+            body.extend(chunk)
+        return httpx.Response(
+            response.status_code, headers=response.headers, content=bytes(body),
+            request=response.request, extensions=response.extensions,
+        )
+    finally:
+        await _close_response(response, sys.exception())
 
 # The two RFC 3986 dot-segments. Held as a frozenset and compared per path
 # segment rather than with a substring test, so a resource legitimately named
@@ -371,7 +430,11 @@ class HMCClient(
         """
         _reject_dot_segments(method, path)
         try:
-            return await self._http.request(method, path, **kwargs)
+            headers = httpx.Headers(kwargs.pop("headers", None))
+            headers["Accept-Encoding"] = "identity"
+            request = self._http.build_request(method, path, headers=headers, **kwargs)
+            response = await self._http.send(request, stream=True)
+            return await _read_bounded_response(response)
         except httpx.TimeoutException as exc:
             timeout = f"{self.config.timeout:g}"
             raise HMCTransportError(

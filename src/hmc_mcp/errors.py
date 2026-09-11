@@ -11,6 +11,8 @@ from defusedxml.common import DefusedXmlException
 
 from .xmlutil import find_text
 
+MAX_ERROR_BODY_BYTES = 4096
+
 
 class HMCError(Exception):
     """Error returned by the HMC REST API or an HMC CLI command.
@@ -23,6 +25,10 @@ class HMCError(Exception):
         self, message: str, status_code: int | None = None, body: str | None = None
     ):
         self.status_code = status_code
+        if body is not None:
+            body = body[:MAX_ERROR_BODY_BYTES].encode("utf-8")[:MAX_ERROR_BODY_BYTES].decode(
+                "utf-8", errors="ignore"
+            )
         self.body = body
         detail = message
         if status_code is not None:
