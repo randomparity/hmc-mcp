@@ -111,7 +111,7 @@ defect; a row with no issue must read `none yet` rather than be left blank, so t
 gap is visible. No row reads `none yet`, and #369 must not close while one does.
 
 The same obligation covers the citations: a PR that moves a definition cited in
-§3, §4 or §5 re-verifies that `file:line` in the same change. §Context above is
+§3, §4 or §5 re-verifies the cited file and symbol in the same change. §Context above is
 exempt — it is the survey as it stood at `b41e658`, and its citations are read
 against that commit rather than maintained forward.
 
@@ -119,12 +119,12 @@ against that commit rather than maintained forward.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `delete_lpar` | `operations/lpar/core.py:403` | guarded (`:405`) | — |
-| `decommission_lpar` | `operations/lpar/decommission.py:629` | guarded (`:283`, `:654`, `:673`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
-| `rename_lpar` | `operations/lpar/core.py:508` | guarded (`:511`) | — |
-| `set_lpar_ownership_description` | `operations/lpar/ownership.py:663` | guarded (`:673`) | — |
-| `synchronize_lpar_profile` | `operations/lpar/configuration.py:36` | guarded (`:44`) | — |
-| `restore_system_lpar_profiles` | `operations/lpar/configuration.py:20` | guarded before SSH by `_authorize_system_lpar_profile_restore` (`operations/lpar/ownership.py:461`) | #449 |
+| `delete_lpar` | `operations/lpar/core.py::delete_lpar` | guarded (`operations/lpar/core.py::delete_lpar`) | — |
+| `decommission_lpar` | `operations/lpar/decommission.py::decommission_lpar` | guarded (`operations/lpar/decommission.py::decommission_lpar`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
+| `rename_lpar` | `operations/lpar/core.py::rename_lpar` | guarded (`operations/lpar/core.py::rename_lpar`) | — |
+| `set_lpar_ownership_description` | `operations/lpar/ownership.py::set_lpar_ownership_description` | guarded (`operations/lpar/ownership.py::set_lpar_ownership_description`) | — |
+| `synchronize_lpar_profile` | `operations/lpar/configuration.py::synchronize_lpar_profile` | guarded (`operations/lpar/configuration.py::synchronize_lpar_profile`) | — |
+| `restore_system_lpar_profiles` | `operations/lpar/configuration.py::restore_system_lpar_profiles` | guarded before SSH by `_authorize_system_lpar_profile_restore` (`operations/lpar/ownership.py::_authorize_system_lpar_profile_restore`) | #449 |
 
 `rename_lpar` is Destructive rather than Reconfiguring because the partition name
 is the identity every consumer addresses, and the ownership token itself is keyed
@@ -157,31 +157,31 @@ wildcard records the operation's actual scope.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `set_lpar_boot_order` | `operations/lpar/boot_order.py:47` | guarded (`:66`) | — |
-| `clear_lpar_boot_order` | `operations/lpar/boot_order.py:92` | guarded (`:102`) | — |
-| `assign_dedicated_pcie_slot` | `operations/virtualization/pcie.py:185` | guarded (`:223`, via `_authorize_pcie_profile_request`) | — |
-| `unassign_dedicated_pcie_slot` | `operations/virtualization/pcie.py:205` | guarded (`:223`) | — |
-| `assign_sriov_logical_port` | `operations/virtualization/pcie.py:517` | guarded (via `resolve_and_authorize_lpar_names`) | — |
-| `unassign_sriov_logical_port` | `operations/virtualization/pcie.py:619` | guarded (via `resolve_and_authorize_lpar_names`) | — |
-| `add_vnic` | `operations/virtualization/vnic.py:600` | guarded (via `_preflight_add:370` → `resolve_and_authorize_lpar_names:377`) | — |
-| `remove_vnic` | `operations/virtualization/vnic.py:683` | guarded (`:696`) | — |
-| `set_minimum_affinity_policy` | `operations/affinity/ssh.py:203` | guarded (`:213`) | — |
-| `set_lpar_processors` | `operations/lpar/dlpar.py:134` | guarded (`:410`, via `_apply_dlpar_document:402` → `_resolve_and_authorize_lpar:333`) | — |
-| `set_lpar_memory` | `operations/lpar/dlpar.py:170` | guarded (`:410`, via `_apply_dlpar_document`) | — |
-| `apply_lpar_pcie_assignments` | `operations/lpar/assignments.py:277` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
-| `add_network_adapter` | `operations/virtualization/adapters.py:39` | guarded (`:52`) | #372 |
-| `add_vscsi_adapter` | `operations/virtualization/adapters.py:77` | guarded (`:88`) | #372 |
-| `add_vfc_adapter` | `operations/virtualization/adapters.py:108` | guarded (`:119`) | #372 |
-| `delete_adapter` | `operations/virtualization/adapters.py:139` | guarded (`:154`) | #372 |
-| `map_storage` | `operations/storage/resources.py:297` | guarded (`:309`) | #372 |
-| `attach_disk_to_lpar` | `operations/lpar/provision.py:337` | guarded before the storage workflow (`:356`) | #372 |
-| `mount_optical_media` | `operations/storage/resources.py:909` | guarded (`:921`) | — |
-| `unmount_optical_media` | `operations/storage/resources.py:946` | guarded (`:976`) | — |
-| `migrate_lpar` | `operations/lpar/migration.py:355` | guarded after optional validation and before migration submission (`:384`) | #373 |
-| `migrate_lpar_with_affinity_preflight` | `operations/lpar/migration.py:249` | guarded by delegation to `migrate_lpar` | #373 |
-| `abort_lpar_migration` | `operations/lpar/migration.py:420` | guarded (`:420`) | #373 |
-| `recover_lpar_migration` | `operations/lpar/migration.py:449` | guarded (`:449`) | #373 |
-| `remote_restart_lpar` | `operations/lpar/migration.py:478` | guarded (`:482`) | #373 |
+| `set_lpar_boot_order` | `operations/lpar/boot_order.py::set_lpar_boot_order` | guarded (`operations/lpar/boot_order.py::set_lpar_boot_order`) | — |
+| `clear_lpar_boot_order` | `operations/lpar/boot_order.py::clear_lpar_boot_order` | guarded (`operations/lpar/boot_order.py::clear_lpar_boot_order`) | — |
+| `assign_dedicated_pcie_slot` | `operations/virtualization/pcie.py::assign_dedicated_pcie_slot` | guarded (`operations/virtualization/pcie.py::assign_dedicated_pcie_slot`, via `_authorize_pcie_profile_request`) | — |
+| `unassign_dedicated_pcie_slot` | `operations/virtualization/pcie.py::unassign_dedicated_pcie_slot` | guarded (`operations/virtualization/pcie.py::unassign_dedicated_pcie_slot`) | — |
+| `assign_sriov_logical_port` | `operations/virtualization/pcie.py::assign_sriov_logical_port` | guarded (`operations/virtualization/pcie.py::assign_sriov_logical_port`, via `resolve_and_authorize_lpar_names`) | — |
+| `unassign_sriov_logical_port` | `operations/virtualization/pcie.py::unassign_sriov_logical_port` | guarded (`operations/virtualization/pcie.py::unassign_sriov_logical_port`, via `resolve_and_authorize_lpar_names`) | — |
+| `add_vnic` | `operations/virtualization/vnic.py::add_vnic` | guarded (`operations/virtualization/vnic.py::add_vnic`, via `_preflight_add` → `resolve_and_authorize_lpar_names`) | — |
+| `remove_vnic` | `operations/virtualization/vnic.py::remove_vnic` | guarded (`operations/virtualization/vnic.py::remove_vnic`) | — |
+| `set_minimum_affinity_policy` | `operations/affinity/ssh.py::set_minimum_affinity_policy` | guarded (`operations/affinity/ssh.py::set_minimum_affinity_policy`) | — |
+| `set_lpar_processors` | `operations/lpar/dlpar.py::set_lpar_processors` | guarded (`operations/lpar/dlpar.py::set_lpar_processors`, via `_apply_dlpar_document` → `_resolve_and_authorize_lpar`) | — |
+| `set_lpar_memory` | `operations/lpar/dlpar.py::set_lpar_memory` | guarded (`operations/lpar/dlpar.py::set_lpar_memory`, via `_apply_dlpar_document`) | — |
+| `apply_lpar_pcie_assignments` | `operations/lpar/assignments.py::apply_lpar_pcie_assignments` | guarded (`operations/lpar/assignments.py::apply_lpar_pcie_assignments`) | — |
+| `add_network_adapter` | `operations/virtualization/adapters.py::add_network_adapter` | guarded (`operations/virtualization/adapters.py::add_network_adapter`) | #372 |
+| `add_vscsi_adapter` | `operations/virtualization/adapters.py::add_vscsi_adapter` | guarded (`operations/virtualization/adapters.py::add_vscsi_adapter`) | #372 |
+| `add_vfc_adapter` | `operations/virtualization/adapters.py::add_vfc_adapter` | guarded (`operations/virtualization/adapters.py::add_vfc_adapter`) | #372 |
+| `delete_adapter` | `operations/virtualization/adapters.py::delete_adapter` | guarded (`operations/virtualization/adapters.py::delete_adapter`) | #372 |
+| `map_storage` | `operations/storage/resources.py::map_storage` | guarded (`operations/storage/resources.py::map_storage`) | #372 |
+| `attach_disk_to_lpar` | `operations/lpar/provision.py::attach_disk_to_lpar` | guarded (`operations/lpar/provision.py::attach_disk_to_lpar`) | #372 |
+| `mount_optical_media` | `operations/storage/resources.py::mount_optical_media` | guarded (`operations/storage/resources.py::mount_optical_media`) | — |
+| `unmount_optical_media` | `operations/storage/resources.py::unmount_optical_media` | guarded (`operations/storage/resources.py::unmount_optical_media`) | — |
+| `migrate_lpar` | `operations/lpar/migration.py::migrate_lpar` | guarded after optional validation and before migration submission (`operations/lpar/migration.py::migrate_lpar`) | #373 |
+| `migrate_lpar_with_affinity_preflight` | `operations/lpar/migration.py::migrate_lpar_with_affinity_preflight` | guarded (`operations/lpar/migration.py::migrate_lpar_with_affinity_preflight`) | #373 |
+| `abort_lpar_migration` | `operations/lpar/migration.py::abort_lpar_migration` | guarded (`operations/lpar/migration.py::abort_lpar_migration`) | #373 |
+| `recover_lpar_migration` | `operations/lpar/migration.py::recover_lpar_migration` | guarded (`operations/lpar/migration.py::recover_lpar_migration`) | #373 |
+| `remote_restart_lpar` | `operations/lpar/migration.py::remote_restart_lpar` | guarded (`operations/lpar/migration.py::remote_restart_lpar`) | #373 |
 
 `mount_optical_media` and `unmount_optical_media` became facade exports in #363,
 so they are Domain A callables (§5) as well as MCP tools — the guard is the only
@@ -196,7 +196,7 @@ separately exempt — the function is classified here, once, as Reconfiguring.
 
 `assign_dedicated_pcie_slot` / `unassign_dedicated_pcie_slot` are guarded but
 currently inert: `_authorize_pcie_profile_request` raises
-`PcieAssignmentUnavailableError` unconditionally at `operations/virtualization/pcie.py:244`, right
+`PcieAssignmentUnavailableError` unconditionally at `operations/virtualization/pcie.py::_authorize_pcie_profile_request`, right
 after the guard, so neither can mutate anything at this commit. They count as
 correctly-shaped coverage, not as protection of a live mutation.
 
@@ -204,11 +204,11 @@ The remaining direct entry points and their guard state are:
 
 | Entry point | Location | Status | Tracking |
 |---|---|---|---|
-| `configure_lpar_msp` | `operations/lpar/configuration.py:53` | guarded (`:62`) | — |
-| `configure_lpar_processor_compatibility` | `operations/lpar/configuration.py:71` | guarded (`:80`) | — |
-| `hmc_modify_lpar` | `server_tools/lpar/lifecycle.py:46` | guarded by `operations/lpar/dlpar.py:35` before any write | — |
-| `hmc lpar modify` (CLI) | `cli_commands/lpar/modify.py:16` | guarded by `operations/lpar/dlpar.py:35` before any write | — |
-| `detach_storage_mapping` | `operations/storage/resources.py:396` | resolves the mapping's client LPAR and guards it before deletion (`:429`) | #448 |
+| `configure_lpar_msp` | `operations/lpar/configuration.py::configure_lpar_msp` | guarded (`operations/lpar/configuration.py::configure_lpar_msp`) | — |
+| `configure_lpar_processor_compatibility` | `operations/lpar/configuration.py::configure_lpar_processor_compatibility` | guarded (`operations/lpar/configuration.py::configure_lpar_processor_compatibility`) | — |
+| `hmc_modify_lpar` | `server_tools/lpar/lifecycle.py::hmc_modify_lpar` | guarded by `operations/lpar/dlpar.py::modify_lpar` before any write | — |
+| `hmc lpar modify` (CLI) | `cli_commands/lpar/modify.py::lpars_modify` | guarded by `operations/lpar/dlpar.py::modify_lpar` before any write | — |
+| `detach_storage_mapping` | `operations/storage/resources.py::detach_storage_mapping` | resolves the mapping's client LPAR and guards it before deletion (`operations/storage/resources.py::detach_storage_mapping`) | #448 |
 
 `hmc_dlpar_proc` and `hmc_dlpar_mem` were rows in this table at `b41e658`. #365
 extracted `set_lpar_processors` and `set_lpar_memory` from those tool bodies and
@@ -219,7 +219,7 @@ managed-system name when the caller omits the optional selector.
 
 `modify_lpar` closes the sharpest gap this ADR identified. The public operation
 resolves and authorizes the partition once before its ordered rename, resource, and
-assignment workflow (`operations/lpar/dlpar.py:35`). Both the MCP tool and CLI command
+assignment workflow (`operations/lpar/dlpar.py::modify_lpar`). Both the MCP tool and CLI command
 delegate their complete workflow to it, so an adapter cannot accidentally place one
 kind of modification on the other side of the authorization boundary. Focused tests
 prove that a foreign-owned resources-only modify is rejected before the HMC write
@@ -229,10 +229,10 @@ through both entry points, and that an approved override skips the ownership rea
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `power_lpar` | `operations/lpar/core.py:431` | guarded when opted in (`:464`, via `resolve_and_authorize_lpar_mutation`); §4 | #371 |
+| `power_lpar` | `operations/lpar/core.py::power_lpar` | guarded when opted in (`operations/lpar/core.py::power_lpar`, via `resolve_and_authorize_lpar_mutation`); §4 | #371 |
 
-`power_lpar` is the whole class. Both `hmc_power_on_lpar` (`server_tools/lpars.py:504`)
-and `hmc_power_off_lpar` (`server_tools/lpars.py:615`) delegate to it, and so does the
+`power_lpar` is the whole class. Both `hmc_power_on_lpar` (`server_tools/lpar/lifecycle.py::hmc_power_on_lpar`)
+and `hmc_power_off_lpar` (`server_tools/lpar/lifecycle.py::hmc_power_off_lpar`) delegate to it, and so does the
 CLI, so one decision covers every entry path.
 
 #### 3.4 Standing exemptions
@@ -246,14 +246,14 @@ LPAR-mutating exemption.
 
 | Operation | Reason |
 |---|---|
-| `create_and_stamp_lpar` (`operations/lpar/core.py:294`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
-| `provision_lpar` (`operations/lpar/provision.py:561`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
-| `deploy_partition_template` (`operations/templates/core.py:98`) | Creates the partition and stamps it per ADR 0014. |
-| `hmc_capture_lpar_console` (`server_tools/console.py:23`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
-| `hmc_backup_lpar_profiles` (`server_tools/lpar/profiles.py:34`) | Reads every profile and writes an HMC-side backup file; it does not mutate a partition or profile. |
-| `hmc_migrate_validate_lpar` (`server_tools/lpar/migration.py:147`) | Calls `validate_lpar_migration`, which submits an LPM validation job and changes nothing. The mutating migration operation has its own guard. |
-| `install_vios_by_lpar_selector` (`operations/vios/install.py:226`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_vios_by_lpar_selector` tool body this operation was extracted from. The operation now reads the resolved `LogicalPartition` resource and rejects a non-VIOS type or any state other than `not activated` before composing or submitting the detached command. |
-| `install_vios` (`operations/vios/install.py:309`) | Added by #366. Same reason and preflight: after resolving through the `VirtualIOServer` feed, both name and UUID selectors are checked through the resolved `LogicalPartition` resource for Virtual I/O Server type and `not activated` state before submission. |
+| `create_and_stamp_lpar` (`operations/lpar/core.py::create_and_stamp_lpar`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
+| `provision_lpar` (`operations/lpar/provision.py::provision_lpar`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
+| `deploy_partition_template` (`operations/templates/core.py::deploy_partition_template`) | Creates the partition and stamps it per ADR 0014. |
+| `hmc_capture_lpar_console` (`server_tools/console.py::hmc_capture_lpar_console`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
+| `hmc_backup_lpar_profiles` (`server_tools/lpar/profiles.py::hmc_backup_lpar_profiles`) | Reads every profile and writes an HMC-side backup file; it does not mutate a partition or profile. |
+| `hmc_migrate_validate_lpar` (`server_tools/lpar/migration.py::hmc_migrate_validate_lpar`) | Calls `validate_lpar_migration`, which submits an LPM validation job and changes nothing. The mutating migration operation has its own guard. |
+| `install_vios_by_lpar_selector` (`operations/vios/install.py::install_vios_by_lpar_selector`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_vios_by_lpar_selector` tool body this operation was extracted from. The operation now reads the resolved `LogicalPartition` resource and rejects a non-VIOS type or any state other than `not activated` before composing or submitting the detached command. |
+| `install_vios` (`operations/vios/install.py::install_vios`) | Added by #366. Same reason and preflight: after resolving through the `VirtualIOServer` feed, both name and UUID selectors are checked through the resolved `LogicalPartition` resource for Virtual I/O Server type and `not activated` state before submission. |
 
 **3.4b — no LPAR-mutating standing exemptions remain.** Issue #449 moved
 `restore_system_lpar_profiles` to §3.1. Because a backup file does not reveal which
@@ -333,13 +333,13 @@ coverage records the required-selector boundary.
 **The cost, stated.** Guarding `power_lpar` costs **one SSH login plus two REST
 GETs** on every call that does not carry `ownership_override=True`.
 
-The SSH login is the chain `authorize_lpar_mutation` (`operations/lpar/ownership.py:152`) →
-`ssh_commands.get_lpar_description` (`ssh_commands.py:1577`) →
-`ssh.run_hmc_command` (`ssh.py:34`) → a fresh `asyncssh.connect` (`ssh.py:38`) per
+The SSH login is the chain `authorize_lpar_mutation` (`operations/lpar/ownership.py::authorize_lpar_mutation`) →
+`ssh.profiles.get_lpar_description` (`ssh/profiles.py::get_lpar_description`) →
+`ssh.transport.run_hmc_command` (`ssh/transport.py::run_hmc_command`) → a fresh `asyncssh.connect` (`ssh/transport.py::run_hmc_command`) per
 invocation. `run_hmc_command` opens and closes its connection inside the call; the
-only long-lived SSH connection in the package is the console path (`ssh.py:80`),
+only long-lived SSH connection in the package is the console path (`ssh/transport.py::open_hmc_connection`),
 which commands do not share. There is no pool and no reuse. (With
-`ownership_override=True` the guard returns at `operations/lpar/ownership.py:161` after
+`ownership_override=True` the guard returns at `operations/lpar/ownership.py::authorize_lpar_mutation` after
 auditing, before the read — so **`authorize_lpar_mutation` itself** pays nothing.
 A caller that resolves the ownership names first still pays the two REST GETs
 below, because the audit record for an approved override names the system and the
@@ -348,14 +348,14 @@ override path to be free end to end; ADR 0094's `_resolve_and_authorize_lpar`
 narrows it further — it skips the fleet walk on an override and pays one name read.)
 
 The two REST GETs come from `resolve_lpar_ownership_names`
-(`operations/lpar/ownership.py:169`), which the guard needs to turn UUIDs into the CLI names
-the SSH command takes. It calls `_system_name` (`:581`) → `hmc.get_managed_system`
-(`:591`) and `hmc.get_logical_partition` (`:582`) **unconditionally** — supplying
-`system_name_or_uuid` does not avoid either, as `rename_lpar` (`:917`) and
-`_authorize_pcie_profile_request` (`operations/virtualization/pcie.py:218`) already demonstrate.
+(`operations/lpar/ownership.py::resolve_lpar_ownership_names`), which the guard needs to turn UUIDs into the CLI names
+the SSH command takes. It calls `_resolve_system_name` (`operations/lpar/ownership.py::_resolve_system_name`) → `hmc.get_managed_system`
+(`operations/lpar/ownership.py::_resolve_system_name`) and `hmc.get_logical_partition` (`operations/lpar/ownership.py::resolve_lpar_ownership_names`) **unconditionally** — supplying
+`system_name_or_uuid` does not avoid either, as `rename_lpar` (`operations/lpar/core.py::rename_lpar`) and
+`_authorize_pcie_profile_request` (`operations/virtualization/pcie.py::_authorize_pcie_profile_request`) already demonstrate.
 
 The two REST reads are the same order of work `power_lpar` already does
-(`resolve_lpar_uuid` at `:904`, and a `get_quick_property` state check on power-on).
+(`resolve_lpar_uuid` and `get_quick_property` inside `operations/lpar/core.py::power_lpar`).
 **The SSH login is the outlier**, and it is the part of the cost this decision turns
 on.
 
@@ -391,7 +391,7 @@ Two distinct mechanisms, deliberately not interchangeable:
 - **Per-call operator override.** Every guarded operation takes
   `ownership_override: bool = False`. When true the guard is bypassed for that one
   call and the bypass is audited by `_audit_lpar_ownership_override`
-  (`operations/lpar/ownership.py:75`). This is an operator-approved exception to a *single*
+  (`operations/lpar/ownership.py::_audit_lpar_ownership_override`). This is an operator-approved exception to a *single*
   mutation. It is not an exemption from this ADR, and an operation that accepts it
   is still classified and still guarded.
 - **Standing exemption.** A row in §3.4b with a recorded reason. This is the only
@@ -411,7 +411,7 @@ different means.
 
 - *Domain A — the facade.* Every **function** exported from `hmc_mcp.api.__all__`
   whose definition lives in `src/hmc_mcp/operations_*.py` — the `inspect.isfunction`
-  filter `tests/unit/test_public_api.py:309` already applies, not "every callable",
+  filter `tests/unit/test_public_api.py::test_public_api_does_not_reexport_domain_operations` already applies, not "every callable",
   which would drag in every exported dataclass and error type. This is the domain
   #369's acceptance criterion names, and the one that matters most, because a
   `hmc_mcp.api` consumer crosses no other authorization boundary (§7).
@@ -454,9 +454,9 @@ target metadata cannot distinguish an LPAR-profile restore from an ordinary
 managed-system mutation.
 
 **What counts as a guard.** Exactly three callables:
-`authorize_lpar_mutation` (`operations/lpar/ownership.py:152`) and
-`authorize_decommission_lpar_ownership_snapshot` (`operations/lpar/ownership.py:211`), plus
-the system-wide `_authorize_system_lpar_profile_restore` (`operations/lpar/ownership.py`).
+`authorize_lpar_mutation` (`operations/lpar/ownership.py::authorize_lpar_mutation`) and
+`authorize_decommission_lpar_ownership_snapshot` (`operations/lpar/ownership.py::authorize_decommission_lpar_ownership_snapshot`), plus
+the system-wide `_authorize_system_lpar_profile_restore` (`operations/lpar/ownership.py::_authorize_system_lpar_profile_restore`).
 Nothing else, and no new one without amending this list. The system-wide guard must
 reach `authorize_lpar_ownership_description` for every complete current-feed row;
 calling that parser on an arbitrary value does not independently count as a guard.
@@ -568,7 +568,7 @@ That asymmetry is why §4 exists at all.
   the ownership check's SSH and REST cost. It is the one Reconfiguring operation a
   caller might invoke in a loop.
 - `provision_lpar` calls `power_lpar` for its activation leg
-  (`operations/provision.py:287`). With the setting on, that leg would authorize a
+  (`operations/lpar/provision.py::provision_lpar`). With the setting on, that leg would authorize a
   partition the same workflow just created and stamped — the check passes but costs
   an SSH login for nothing. #371 owns the case, and the resolution stays inside §5's
   two mechanisms: the internal call passes `ownership_override=True`, which is
