@@ -2135,6 +2135,126 @@ def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch
     assert called == []
 
 
+def test_storage_mount_optical_media_forwards_selectors(fake_hmc, monkeypatch):
+    mount = AsyncMock(return_value={"UUID": "mapping-1", "MediaName": "install.iso"})
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.resources.mount_optical_media", mount
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "mount-optical-media",
+            VIOS_UUID,
+            LPAR_UUID,
+            "install.iso",
+            "--system",
+            SYSTEM_UUID,
+            "--target-device",
+            "vtopt0",
+            "--ownership-override",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0
+    mount.assert_awaited_once_with(
+        fake_hmc,
+        VIOS_UUID,
+        LPAR_UUID,
+        media_name="install.iso",
+        target_device="vtopt0",
+        ownership_override=True,
+        system_name_or_uuid=SYSTEM_UUID,
+    )
+    assert "Mounted optical media 'install.iso'" in result.stdout
+    assert '"mapping-1"' in result.stdout
+
+
+def test_storage_unmount_optical_media_forwards_selectors(fake_hmc, monkeypatch):
+    unmount = AsyncMock()
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.resources.unmount_optical_media", unmount
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "unmount-optical-media",
+            VIOS_UUID,
+            LPAR_UUID,
+            "install.iso",
+            "--system",
+            SYSTEM_UUID,
+            "--ownership-override",
+            "--confirm",
+        ],
+    )
+
+    assert result.exit_code == 0
+    unmount.assert_awaited_once_with(
+        fake_hmc,
+        VIOS_UUID,
+        LPAR_UUID,
+        media_name="install.iso",
+        ownership_override=True,
+        system_name_or_uuid=SYSTEM_UUID,
+    )
+    assert "Unmounted optical media 'install.iso'" in result.stdout
+    assert "backing ISO remains" in result.stdout
+
+
+def test_storage_mount_optical_media_decline_does_not_mutate(fake_hmc, monkeypatch):
+    mount = AsyncMock()
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.resources.mount_optical_media", mount
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["storage", "mount-optical-media", VIOS_UUID, LPAR_UUID, "install.iso"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    mount.assert_not_awaited()
+
+
+def test_storage_unmount_optical_media_decline_does_not_mutate(fake_hmc, monkeypatch):
+    unmount = AsyncMock()
+    monkeypatch.setattr(
+        "hmc_mcp.cli_commands.storage.resources.unmount_optical_media", unmount
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["storage", "unmount-optical-media", VIOS_UUID, LPAR_UUID, "install.iso"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    unmount.assert_not_awaited()
+
+
+def test_storage_optical_media_command_help():
+    result = RUNNER.invoke(cli.app, ["storage", "mount-optical-media", "--help"])
+    assert result.exit_code == 0
+    assert "--system" in result.stdout
+    assert "--target-device" in result.stdout
+    assert "--ownership-override" in result.stdout
+    assert "--yes" in result.stdout
+
+    result = RUNNER.invoke(cli.app, ["storage", "unmount-optical-media", "--help"])
+    assert result.exit_code == 0
+    assert "--system" in result.stdout
+    assert "--ownership-override" in result.stdout
+    assert "--confirm" in result.stdout
+
+
 def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
     async def fake_get(_hmc, vios, vg, *, system_name_or_uuid=None):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
