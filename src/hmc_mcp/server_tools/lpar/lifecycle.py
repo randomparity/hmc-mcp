@@ -24,16 +24,8 @@ from ...operations.lpar.core import (
 from ...operations.lpar.decommission import DecommissionResult, decommission_lpar
 from ...operations.lpar.dlpar import modify_lpar, set_lpar_memory, set_lpar_processors
 from ...tool_registry import tool_module
-from . import lifecycle_boot as _lifecycle_boot
-from . import lifecycle_create as _lifecycle_create
 
 tool, register_tools, tool_security = tool_module()
-
-hmc_create_lpar = _lifecycle_create.hmc_create_lpar
-hmc_clear_lpar_boot_order = _lifecycle_boot.hmc_clear_lpar_boot_order
-hmc_list_lpar_ownership = _lifecycle_boot.hmc_list_lpar_ownership
-hmc_read_lpar_boot_order = _lifecycle_boot.hmc_read_lpar_boot_order
-hmc_set_lpar_boot_order = _lifecycle_boot.hmc_set_lpar_boot_order
 
 
 # Assignment collections can name both a managed system and a nested VIOS.

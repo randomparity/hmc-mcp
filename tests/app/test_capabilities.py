@@ -978,7 +978,7 @@ NEW_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 def test_create_lpar_refuses_name_collision(monkeypatch, mock_hmc):
     """hmc_create_lpar raises ValueError when a partition with the same name exists."""
-    from hmc_mcp.server_tools.lpar.lifecycle import hmc_create_lpar
+    from hmc_mcp.server_tools.lpar.lifecycle_create import hmc_create_lpar
 
     _hmc_env(monkeypatch)
     mock_hmc.get(
@@ -998,7 +998,7 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
     """hmc_create_lpar creates the partition when no LPAR with the same name exists."""
     from unittest.mock import AsyncMock, patch
 
-    from hmc_mcp.server_tools.lpar.lifecycle import hmc_create_lpar
+    from hmc_mcp.server_tools.lpar.lifecycle_create import hmc_create_lpar
 
     _hmc_env(monkeypatch)
     mock_hmc.get(
