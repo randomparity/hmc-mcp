@@ -217,10 +217,11 @@ async def fetch_metric_data(
         no_of_samples=no_of_samples,
         system_name_or_uuid=system_name_or_uuid,
     )
-    if not links:
+    metric_link = newest_metric_link(links)
+    if metric_link is None:
         return {}
     try:
-        return await hmc.fetch_json(newest_metric_link(links)["link"])
+        return await hmc.fetch_json(metric_link["link"])
     except HMCError as exc:
         if exc.status_code == 404:
             return {}
