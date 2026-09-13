@@ -13,6 +13,7 @@ an HMC, and use the CLI or an MCP client.
 | [Python library](python-api.md) | Installation, example usage, typing, and the supported API contract |
 | [HMC compatibility](compatibility.md) | HMC versions and firmware write-path limitations |
 | [Development](development.md) | Stack, setup, testing, source layout, and HMC REST API internals |
+| [Read-only system inventory recipe](recipes/system-inventory.md) | Capture managed-system configuration before later operator decisions |
 
 ## Reference
 
