@@ -15,9 +15,12 @@ unbounded when `limit` is omitted.
 
 ### Public parameter units and selectors
 
-Storage quantities use binary-unit suffixes: `capacity_mib` for virtual disks,
-`size_mib` for media repositories and optical media, and `lu_size_gib` for
-Shared Storage Pool logical units. Numeric virtual-switch selectors are named
+Storage quantities use binary-unit suffixes: virtual-disk create and attach inputs use
+`capacity_mib`, while VolumeGroup inventory returns `capacity_gib` and `free_space_gib`.
+An impossible VolumeGroup free-space reading is returned as null with
+`free_space_diagnostic="free_space_exceeds_capacity"`. `size_mib` names media-repository
+and optical-media quantities, and `lu_size_gib` names Shared Storage Pool logical units.
+Numeric virtual-switch selectors are named
 `virtual_switch_id`. Verified vNIC mutations instead select the backing VIOS,
 SR-IOV adapter, and physical port; they do not accept a virtual-switch selector.
 

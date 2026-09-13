@@ -293,8 +293,9 @@ def test_list_volume_groups(monkeypatch, mock_hmc):
     assert result[0] == {
         "uuid": VG_UUID,
         "name": "vg_rootvg",
-        "capacity_mib": None,
-        "free_space_mib": None,
+        "capacity_gib": None,
+        "free_space_gib": None,
+        "free_space_diagnostic": None,
     }
 
 
@@ -327,7 +328,7 @@ def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "<VirtualDisks" in body
     assert '<DiskName kb="CUD" kxe="false">lv_boot</DiskName>' in body
-    assert '<DiskCapacity kb="CUD" kxe="false">51200</DiskCapacity>' in body
+    assert '<DiskCapacity kb="CUD" kxe="false">50</DiskCapacity>' in body
 
 
 def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):

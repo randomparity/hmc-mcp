@@ -47,14 +47,15 @@ def storage_list_vgs(
     table = None
     if not as_json:
         table = Table(title=f"Volume Groups on {vios}")
-        for col in ("Name", "UUID", "Free (MiB)", "Capacity (MiB)"):
+        for col in ("Name", "UUID", "Free (GiB)", "Capacity (GiB)", "Diagnostic"):
             table.add_column(col)
         for v in vgs:
             table.add_row(
                 v.name,
                 v.uuid,
-                "-" if v.free_space_mib is None else str(v.free_space_mib),
-                "-" if v.capacity_mib is None else str(v.capacity_mib),
+                "-" if v.free_space_gib is None else str(v.free_space_gib),
+                "-" if v.capacity_gib is None else str(v.capacity_gib),
+                "-" if v.free_space_diagnostic is None else v.free_space_diagnostic,
             )
     output([asdict(vg) for vg in vgs], as_json, table, "No volume groups found")
 

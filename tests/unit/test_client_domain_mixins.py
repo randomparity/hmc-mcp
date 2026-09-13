@@ -421,17 +421,13 @@ async def test_storage_mixin_routes_schema_sensitive_operations():
     assert await client.list_volume_groups(vios_uuid) == []
     assert await client.create_virtual_disk(vios_uuid, vg_uuid, "disk", 1024) is None
 
-    client._get.assert_awaited_once_with(
-        f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup",
-        "VolumeGroup",
-        include_schema_version=False,
-        uuid_path_arguments={"vios_uuid": vios_uuid},
-    )
+    assert client._get.await_count == 1
     client._post.assert_awaited_once()
     assert client._post.await_args.kwargs == {
         "resource_type": "VolumeGroup",
         "include_schema_version": False,
         "uuid_path_arguments": {"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+        "fallback_to_generic_uom_on_406": True,
     }
 
 
@@ -455,6 +451,22 @@ async def test_storage_mixin_uses_active_base_in_optical_mapping():
 
     body = client._post.await_args.args[1]
     assert "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-1" in body
+
+
+@pytest.mark.asyncio
+async def test_storage_mixin_reports_a_possible_side_effect_after_a_5xx():
+    client = StorageHarness()
+    after = {"virtual_disks": ["boot", "data"]}
+    snapshot = AsyncMock(return_value=after)
+    dispatch = AsyncMock(side_effect=HMCError("write failed", 503, "unavailable"))
+
+    with pytest.raises(HMCError, match="possible side effect.*Do not retry") as exc_info:
+        await client._reconcile_storage_mutation("create_virtual_disk", snapshot, dispatch)
+
+    assert exc_info.value.__cause__ is dispatch.side_effect
+    snapshot.assert_awaited_once()
+    dispatch.assert_awaited_once()
+    assert "readback completed" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

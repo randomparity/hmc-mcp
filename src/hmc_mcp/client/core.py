@@ -505,19 +505,18 @@ class HMCClient(
         include_schema_version: bool = True,
         *,
         uuid_path_arguments: Mapping[str, str] | None = None,
+        fallback_to_generic_uom_on_406: bool = False,
     ) -> str:
-        headers = self._uom_headers(resource_type, include_schema_version)
-        headers["Content-Type"] = headers["Accept"]
-        resp = await self._request_with_uuid_path_arguments(
+        return await self._write_uom(
             "POST",
             path,
-            uuid_path_arguments=uuid_path_arguments or {},
-            content=body,
-            headers=headers,
+            body,
+            resource_type,
+            include_schema_version,
+            uuid_path_arguments,
+            (200, 201, 202),
+            fallback_to_generic_uom_on_406,
         )
-        if resp.status_code not in (200, 201, 202):
-            raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
-        return resp.text
 
     async def _put(
         self,
@@ -527,18 +526,54 @@ class HMCClient(
         include_schema_version: bool = True,
         *,
         uuid_path_arguments: Mapping[str, str] | None = None,
+        fallback_to_generic_uom_on_406: bool = False,
     ) -> str:
+        return await self._write_uom(
+            "PUT",
+            path,
+            body,
+            resource_type,
+            include_schema_version,
+            uuid_path_arguments,
+            (200, 201, 202, 204),
+            fallback_to_generic_uom_on_406,
+        )
+
+    async def _write_uom(
+        self,
+        method: str,
+        path: str,
+        body: str | bytes,
+        resource_type: str | None,
+        include_schema_version: bool,
+        uuid_path_arguments: Mapping[str, str] | None,
+        success_codes: tuple[int, ...],
+        fallback_to_generic_uom_on_406: bool,
+    ) -> str:
+        """Send a UOM write, retrying 406 negotiation only when requested."""
         headers = self._uom_headers(resource_type, include_schema_version)
         headers["Content-Type"] = headers["Accept"]
         resp = await self._request_with_uuid_path_arguments(
-            "PUT",
+            method,
             path,
             uuid_path_arguments=uuid_path_arguments or {},
             content=body,
             headers=headers,
         )
-        if resp.status_code not in (200, 201, 202, 204):
-            raise HMCError(f"PUT {path} failed", resp.status_code, resp.text)
+        if resp.status_code == 406 and fallback_to_generic_uom_on_406:
+            retry_headers = dict(headers)
+            retry_headers["Accept"] = self._uom_headers(
+                None, include_schema_version
+            )["Accept"]
+            resp = await self._request_with_uuid_path_arguments(
+                method,
+                path,
+                uuid_path_arguments=uuid_path_arguments or {},
+                content=body,
+                headers=retry_headers,
+            )
+        if resp.status_code not in success_codes:
+            raise HMCError(f"{method} {path} failed", resp.status_code, resp.text)
         return resp.text
 
     async def _delete(

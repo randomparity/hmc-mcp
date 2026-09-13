@@ -22,6 +22,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- Virtual-disk create and attach keep their `capacity_mib` inputs, but the HMC
+  VolumeGroup document now emits the integral GiB value V10R3 expects. Invalid,
+  non-integral GiB requests fail before dispatch. VolumeGroup inventory now exposes
+  `capacity_gib` and `free_space_gib`; an impossible free-space reading is null with
+  `free_space_diagnostic="free_space_exceeds_capacity"` (#779).
+
 - The live runner's SR-IOV scenarios now dispatch `adapter_id`, `physical_port_id` and
   `logical_port_id` as the `str` the tools declare. Every SR-IOV call was passing the
   numeric config value, so each failed pydantic validation before reaching the HMC
