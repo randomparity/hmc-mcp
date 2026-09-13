@@ -41,8 +41,9 @@ class VolumeGroup:
 
     uuid: str
     name: str
-    capacity_mib: float | None
-    free_space_mib: float | None
+    capacity_gib: float | None
+    free_space_gib: float | None
+    free_space_diagnostic: str | None
 
 
 @dataclass(frozen=True)
@@ -122,11 +123,22 @@ def _volume_group(entry: Mapping[str, Any]) -> VolumeGroup:
     uuid = entry.get("UUID") or resource.get("VolumeGroupUUID")
     if not isinstance(uuid, str) or not uuid:
         raise HMCError(f"{operation} returned no usable UUID")
+    capacity_gib = _optional_number(resource, "GroupCapacity", operation)
+    free_space_gib = _optional_number(resource, "FreeSpace", operation)
+    diagnostic = None
+    if (
+        capacity_gib is not None
+        and free_space_gib is not None
+        and free_space_gib > capacity_gib
+    ):
+        free_space_gib = None
+        diagnostic = "free_space_exceeds_capacity"
     return VolumeGroup(
         uuid=uuid,
         name=_required_text(resource, "GroupName", operation),
-        capacity_mib=_optional_number(resource, "GroupCapacity", operation),
-        free_space_mib=_optional_number(resource, "FreeSpace", operation),
+        capacity_gib=capacity_gib,
+        free_space_gib=free_space_gib,
+        free_space_diagnostic=diagnostic,
     )
 
 

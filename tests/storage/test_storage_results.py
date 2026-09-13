@@ -36,7 +36,11 @@ async def test_storage_inventory_translates_hmc_resources() -> None:
     mappings = await list_storage_mappings(client, VIOS_UUID)
 
     assert asdict(volume_groups[0]) == {
-        "uuid": "vg-1", "name": "rootvg", "capacity_mib": None, "free_space_mib": 10
+        "uuid": "vg-1",
+        "name": "rootvg",
+        "capacity_gib": None,
+        "free_space_gib": 10,
+        "free_space_diagnostic": None,
     }
     assert asdict(optical_media[0]) == {
         "name": "install.iso", "size_mib": 1024, "media_type": "ISO"
@@ -75,8 +79,9 @@ async def test_volume_group_accepts_fractional_capacity_strings() -> None:
         _vg_client({"GroupCapacity": "279.25", "FreeSpace": "558.9111"}), VIOS_UUID
     )
 
-    assert groups[0].capacity_mib == pytest.approx(279.25)
-    assert groups[0].free_space_mib == pytest.approx(558.9111)
+    assert groups[0].capacity_gib == pytest.approx(279.25)
+    assert groups[0].free_space_gib is None
+    assert groups[0].free_space_diagnostic == "free_space_exceeds_capacity"
 
 
 @pytest.mark.asyncio
@@ -86,10 +91,10 @@ async def test_volume_group_keeps_integral_values_as_int() -> None:
         _vg_client({"GroupCapacity": "102400", "FreeSpace": "0"}), VIOS_UUID
     )
 
-    assert groups[0].capacity_mib == 102400
-    assert not isinstance(groups[0].capacity_mib, float)
-    assert groups[0].free_space_mib == 0
-    assert not isinstance(groups[0].free_space_mib, float)
+    assert groups[0].capacity_gib == 102400
+    assert not isinstance(groups[0].capacity_gib, float)
+    assert groups[0].free_space_gib == 0
+    assert not isinstance(groups[0].free_space_gib, float)
 
 
 @pytest.mark.parametrize("value", ["279.0", "279.000"])
@@ -99,8 +104,8 @@ async def test_volume_group_keeps_integral_float_strings_as_int(value: str) -> N
         _vg_client({"GroupCapacity": value}), VIOS_UUID
     )
 
-    assert groups[0].capacity_mib == 279
-    assert not isinstance(groups[0].capacity_mib, float)
+    assert groups[0].capacity_gib == 279
+    assert not isinstance(groups[0].capacity_gib, float)
 
 
 @pytest.mark.parametrize("value", ["9007199254740993", "9007199254740993.0"])
@@ -113,15 +118,16 @@ async def test_volume_group_parses_an_integral_value_exactly(value: str) -> None
     """
     groups = await list_volume_groups(_vg_client({"GroupCapacity": value}), VIOS_UUID)
 
-    assert groups[0].capacity_mib == 9007199254740993
+    assert groups[0].capacity_gib == 9007199254740993
 
 
 @pytest.mark.asyncio
 async def test_volume_group_absent_capacity_stays_none() -> None:
     groups = await list_volume_groups(_vg_client({}), VIOS_UUID)
 
-    assert groups[0].capacity_mib is None
-    assert groups[0].free_space_mib is None
+    assert groups[0].capacity_gib is None
+    assert groups[0].free_space_gib is None
+    assert groups[0].free_space_diagnostic is None
 
 
 @pytest.mark.parametrize(

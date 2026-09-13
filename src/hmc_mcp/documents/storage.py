@@ -31,13 +31,16 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
 @escapes_string_arguments
 def build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str:
     """A VolumeGroup document carrying a new VirtualDisk (for create POST)."""
+    if capacity_mib <= 0 or capacity_mib % 1024:
+        raise ValueError("capacity_mib must be a positive multiple of 1024")
+    capacity_gib = capacity_mib // 1024
     body = f"""  <Metadata><Atom/></Metadata>
   <VirtualDisks kb="CUD" kxe="false" schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
     <VirtualDisk kb="CUD" kxe="false" schemaVersion="V1_0">
       <Metadata><Atom/></Metadata>
       <DiskName kb="CUD" kxe="false">{disk_name}</DiskName>
-      <DiskCapacity kb="CUD" kxe="false">{capacity_mib}</DiskCapacity>
+      <DiskCapacity kb="CUD" kxe="false">{capacity_gib}</DiskCapacity>
     </VirtualDisk>
   </VirtualDisks>"""
     return document_envelope("VolumeGroup", body)

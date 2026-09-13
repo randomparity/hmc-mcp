@@ -1922,7 +1922,7 @@ def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
         system = system_name_or_uuid
         assert system == "system-a"
         assert vios == VIOS_UUID
-        return [VolumeGroup(VG_UUID, "rootvg", 102400, 5120)]
+        return [VolumeGroup(VG_UUID, "rootvg", 100, 5, None)]
 
     monkeypatch.setattr(
         "hmc_mcp.cli_commands.storage.resources.list_volume_groups", fake_list
@@ -1935,6 +1935,7 @@ def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
     assert result.exit_code == 0
     assert "rootvg" in result.stdout
     assert "Volume Groups" in result.stdout
+    assert "Free (GiB)" in result.stdout
 
 
 def test_storage_delete_disk_deletes_when_confirmed(fake_hmc, monkeypatch):

@@ -57,7 +57,7 @@ def hmc_list_volume_groups(
 ) -> list[dict[str, Any]]:
     """List Volume Groups on a VIOS.
 
-    Each Volume Group shows free space (MiB), the physical volumes backing it
+    Each Volume Group shows capacity and free space (GiB), the physical volumes backing it
     and the virtual disks already carved out.
 
     Args:
