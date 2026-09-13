@@ -15,7 +15,7 @@ system before any later provisioning decision.
 
 ## Design
 
-The recipe creates a private local directory, resolves the system UUID from
+The recipe sets `umask 077`, creates a private local directory, resolves the system UUID from
 `systems list --json`, and captures system details and summary. It then gathers
 system-scoped network resources, LPAR and VIOS lists, and per-resource details.
 For each LPAR it captures the full document, summary, and supported adapter
@@ -23,8 +23,10 @@ types. For each VIOS it captures volume groups and mappings. A small shell
 helper records unavailable or permission-denied command failures in an adjacent
 `.error.txt` file, preserving the category rather than treating it as absent.
 
-Physical I/O and SR-IOV/PCIe details have no required stable projection in this
-scope, so the recipe records raw GET XML captures separately. The selector
+The recipe captures dedicated PCIe slots and SR-IOV adapters, physical ports,
+and logical ports with their existing stable CLI projections. Raw GET XML is
+reserved for physical I/O or other fields that those projections do not expose.
+The selector
 worksheet names values an operator may take from captures for a future workflow,
 but instructs the operator to choose them; it does not name an unmerged recipe.
 
@@ -32,8 +34,8 @@ but instructs the operator to choose them; it does not name an unmerged recipe.
 
 - The recipe resolves a UUID from a managed-system name and captures each
   required category in JSON or labelled raw XML.
-- Every command is a read command; no `raw post`, creation, deletion, mapping,
-  attachment, power, or adapter mutation appears.
+- Every documented `hmc-mcp` invocation matches an exact allowlist of read
+  command forms; raw is limited to `raw get`.
 - Missing optional capabilities and permission failures leave recorded evidence.
 - The worksheet covers system, VIOS, VG, VLAN, VIOS ID/slot, candidate disk,
   and free-space evidence without selecting a value.
