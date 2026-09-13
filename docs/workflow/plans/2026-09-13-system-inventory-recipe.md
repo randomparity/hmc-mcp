@@ -35,8 +35,11 @@ raw XML, and error records for an operator.
 
 1. Write the capture setup, UUID resolution, stable JSON captures, labelled raw
    XML captures, error-recording helper, and operator worksheet.
-2. Capture stable PCIe and SR-IOV JSON before any raw XML fallback.
-3. Confirm the focused test passes after Task 2 adds it.
+2. Capture stable PCIe, SR-IOV, and vFC JSON before any raw XML fallback.
+3. Capture documented full raw GET documents for each VIOS, volume group, and
+   Shared Storage Pool where the stable CLI does not project physical-volume,
+   virtual-disk, logical-unit, or end-to-end vFC mapping detail.
+4. Confirm the focused test passes after Task 2 adds it.
 
 **Acceptance:** every command is read-only and unavailable categories are recorded.
 
