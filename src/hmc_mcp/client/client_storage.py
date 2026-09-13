@@ -11,7 +11,7 @@ import re as _re
 # ElementTree is retained for element construction, traversal, typing, and
 # serialization only. Every inbound HMC response is parsed with defusedxml.
 import xml.etree.ElementTree as ET  # nosec B405
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 from urllib.parse import urlparse
 
@@ -196,13 +196,19 @@ class StorageMixin:
     ) -> str:
         """Import a brokered ISO into a VIOS media repository."""
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        response = await self._post(
-            path,
-            build_linked_optical_media_document(
-                media_name=media_name, broker_uri=broker_uri
+        document = build_linked_optical_media_document(
+            media_name=media_name, broker_uri=broker_uri
+        )
+        response = await self._reconcile_storage_mutation(
+            "broker_iso_import",
+            lambda: self.get_volume_group(vios_uuid, vg_uuid),
+            lambda: self._post(
+                path,
+                document,
+                resource_type="VolumeGroup",
+                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+                fallback_to_generic_uom_on_406=True,
             ),
-            resource_type="VolumeGroup",
-            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
         )
         return response or ""
 
@@ -222,6 +228,32 @@ class StorageMixin:
     def get_lpar_link(self: StorageClient, lpar_uuid: str) -> str:
         """Atom SELF href for an LPAR (used when building mappings)."""
         return f"{self._rest_base_url}/rest/api/uom/LogicalPartition/{lpar_uuid}"
+
+    async def _reconcile_storage_mutation(
+        self: StorageClient,
+        operation: str,
+        snapshot: Callable[[], Awaitable[Any]],
+        dispatch: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        """Read state around a failed storage mutation without retrying it."""
+        before = await snapshot()
+        try:
+            return await dispatch()
+        except HMCError as exc:
+            if exc.status_code is None or not 500 <= exc.status_code <= 599:
+                raise
+            try:
+                after = await snapshot()
+            except HMCError as readback_error:
+                observation = f"readback failed: {readback_error}"
+            else:
+                observation = "readback state changed" if after != before else "readback state matched"
+            raise HMCError(
+                f"{operation} may have a possible side effect. Do not retry until state "
+                f"is verified; {observation}",
+                exc.status_code,
+                exc.body,
+            ) from exc
 
     async def list_volume_groups(
         self: StorageClient, vios_uuid: str
@@ -265,12 +297,17 @@ class StorageMixin:
 
         xml = build_volume_group_document(name, physical_volumes)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup"
-        resp = await self._put(
-            path,
-            xml,
-            resource_type="VolumeGroup",
-            include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid},
+        resp = await self._reconcile_storage_mutation(
+            "create_volume_group",
+            lambda: self.list_volume_groups(vios_uuid),
+            lambda: self._put(
+                path,
+                xml,
+                resource_type="VolumeGroup",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid},
+                fallback_to_generic_uom_on_406=True,
+            ),
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -291,12 +328,17 @@ class StorageMixin:
 
         xml = build_virtual_disk_document(disk_name, capacity_mib)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        resp = await self._post(
-            path,
-            xml,
-            resource_type="VolumeGroup",
-            include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+        resp = await self._reconcile_storage_mutation(
+            "create_virtual_disk",
+            lambda: self.get_volume_group(vios_uuid, vg_uuid),
+            lambda: self._post(
+                path,
+                xml,
+                resource_type="VolumeGroup",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+                fallback_to_generic_uom_on_406=True,
+            ),
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -313,12 +355,17 @@ class StorageMixin:
 
         xml = build_virtual_disk_delete_document(disk_name)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        resp = await self._post(
-            path,
-            xml,
-            resource_type="VolumeGroup",
-            include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+        resp = await self._reconcile_storage_mutation(
+            "delete_virtual_disk",
+            lambda: self.get_volume_group(vios_uuid, vg_uuid),
+            lambda: self._post(
+                path,
+                xml,
+                resource_type="VolumeGroup",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+                fallback_to_generic_uom_on_406=True,
+            ),
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -346,12 +393,17 @@ class StorageMixin:
             storage_kind, storage_name, lpar_link, target_device=target_device
         )
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        resp = await self._post(
-            path,
-            xml,
-            resource_type="VirtualIOServer",
-            include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid},
+        resp = await self._reconcile_storage_mutation(
+            "map_storage_to_lpar",
+            lambda: self.list_storage_mappings(vios_uuid),
+            lambda: self._post(
+                path,
+                xml,
+                resource_type="VirtualIOServer",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid},
+                fallback_to_generic_uom_on_406=True,
+            ),
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -453,23 +505,35 @@ class StorageMixin:
         post_path = (
             f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer/{vios_uuid}"
         )
-        response = await self._request_with_uuid_path_arguments(
-            "POST",
-            post_path,
-            uuid_path_arguments={
-                "system_uuid": system_uuid,
-                "vios_uuid": vios_uuid,
-            },
-            content=ET.tostring(vios_elem, encoding="unicode"),
-            headers={
-                "Accept": "*/*",
-                "Content-Type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
-            },
-        )
-        if response.status_code not in (200, 201, 202):
-            raise HMCError(
-                f"POST {post_path} failed", response.status_code, response.text
+        async def dispatch() -> None:
+            response = await self._request_with_uuid_path_arguments(
+                "POST",
+                post_path,
+                uuid_path_arguments={
+                    "system_uuid": system_uuid,
+                    "vios_uuid": vios_uuid,
+                },
+                content=ET.tostring(vios_elem, encoding="unicode"),
+                headers={
+                    "Accept": "*/*",
+                    "Content-Type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
+                },
             )
+            if response.status_code not in (200, 201, 202):
+                raise HMCError(
+                    f"POST {post_path} failed", response.status_code, response.text
+                )
+
+        await self._reconcile_storage_mutation(
+            "delete_storage_mapping",
+            lambda: self._get(
+                get_path,
+                "VirtualIOServer",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid},
+            ),
+            dispatch,
+        )
 
     # Virtual media repository (VolumeGroup read-modify-write operations)
 
@@ -536,15 +600,28 @@ class StorageMixin:
             "Content-Type": f"{MEDIA_UOM}; type=VolumeGroup",
         }
         body = ET.tostring(vg_elem, encoding="unicode", xml_declaration=False)
-        resp = await self._request_with_uuid_path_arguments(
-            "POST",
-            path,
-            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
-            content=body,
-            headers=headers,
+        async def dispatch() -> Any:
+            resp = await self._request_with_uuid_path_arguments(
+                "POST",
+                path,
+                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+                content=body,
+                headers=headers,
+            )
+            if resp.status_code not in (200, 201, 202):
+                raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
+            return resp
+
+        resp = await self._reconcile_storage_mutation(
+            "update_virtual_media_repository",
+            lambda: self._get(
+                path,
+                "VolumeGroup",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+            ),
+            dispatch,
         )
-        if resp.status_code not in (200, 201, 202):
-            raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
         entries = _parse_feed(resp.text, path) if resp.text else []
         return entries[0] if entries else None
 
@@ -902,12 +979,17 @@ class StorageMixin:
             target_device=target_device,
         )
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        response = await self._post(
-            path,
-            document,
-            resource_type="VirtualIOServer",
-            include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid},
+        response = await self._reconcile_storage_mutation(
+            "create_optical_mapping",
+            lambda: self.list_storage_mappings(vios_uuid),
+            lambda: self._post(
+                path,
+                document,
+                resource_type="VirtualIOServer",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid},
+                fallback_to_generic_uom_on_406=True,
+            ),
         )
         entries = _parse_feed(response, path) if response else []
         return entries[0].get("Resource", entries[0]) if entries else None

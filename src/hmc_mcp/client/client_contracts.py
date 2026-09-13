@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Literal, Protocol, get_args
 
 # Element is a type contract only; client implementations parse inbound XML
@@ -177,6 +177,7 @@ class StorageClient(Protocol):
         include_schema_version: bool = True,
         *,
         uuid_path_arguments: Mapping[str, str] | None = None,
+        fallback_to_generic_uom_on_406: bool = False,
     ) -> str: ...
 
     async def _put(
@@ -187,6 +188,7 @@ class StorageClient(Protocol):
         include_schema_version: bool = True,
         *,
         uuid_path_arguments: Mapping[str, str] | None = None,
+        fallback_to_generic_uom_on_406: bool = False,
     ) -> str: ...
 
     async def _delete(
@@ -197,6 +199,23 @@ class StorageClient(Protocol):
     ) -> None: ...
 
     def get_lpar_link(self, lpar_uuid: str) -> str: ...
+
+    async def _reconcile_storage_mutation(
+        self,
+        operation: str,
+        snapshot: Callable[[], Awaitable[Any]],
+        dispatch: Callable[[], Awaitable[Any]],
+    ) -> Any: ...
+
+    async def list_volume_groups(self, vios_uuid: str) -> list[dict[str, Any]]: ...
+
+    async def get_volume_group(
+        self, vios_uuid: str, vg_uuid: str
+    ) -> dict[str, Any] | None: ...
+
+    async def list_storage_mappings(
+        self, vios_uuid: str, lpar_uuid: str | None = None
+    ) -> list[dict[str, Any]]: ...
 
     async def _get_vg_raw_xml(
         self, vios_uuid: str, vg_uuid: str

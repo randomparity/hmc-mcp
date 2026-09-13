@@ -19,6 +19,7 @@ import respx
 from conftest import LOGON_RESPONSE, make_config
 
 from hmc_mcp.client.core import MEDIA_UOM, MEDIA_WEB, HMCClient
+from hmc_mcp.errors import HMCError
 
 _LOGON_PATH = "/rest/api/web/Logon"
 _LP_PATH = "/rest/api/uom/LogicalPartition"
@@ -179,6 +180,46 @@ async def test_uom_put_mirrors_accept_as_content_type(mock_hmc):
     assert sent_ct == f"{MEDIA_UOM}; type=LogicalPartition", (
         f"PUT Content-Type must be UOM with resource type, got: {sent_ct!r}"
     )
+
+
+@pytest.mark.asyncio
+async def test_uom_post_retries_a_406_with_generic_accept_only(mock_hmc):
+    route = mock_hmc.post(_LP_PATH).mock(
+        side_effect=[
+            httpx.Response(406, text="not acceptable"),
+            httpx.Response(201, text=_EMPTY_FEED),
+        ]
+    )
+    async with HMCClient(make_config()) as hmc:
+        await hmc._post(
+            _LP_PATH,
+            b"<xml/>",
+            resource_type="LogicalPartition",
+            fallback_to_generic_uom_on_406=True,
+        )
+
+    assert route.call_count == 2
+    first, second = (call.request for call in route.calls)
+    assert first.headers["accept"] == f"{MEDIA_UOM}; type=LogicalPartition"
+    assert second.headers["accept"] == MEDIA_UOM
+    assert second.headers["content-type"] == first.headers["content-type"]
+
+
+@pytest.mark.asyncio
+async def test_uom_put_never_retries_a_5xx_with_generic_accept(mock_hmc):
+    route = mock_hmc.put(f"{_LP_PATH}/uuid1").mock(
+        return_value=httpx.Response(503, text="unavailable")
+    )
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="PUT"):
+            await hmc._put(
+                f"{_LP_PATH}/uuid1",
+                b"<xml/>",
+                resource_type="LogicalPartition",
+                fallback_to_generic_uom_on_406=True,
+            )
+
+    assert route.call_count == 1
 
 
 # ── rest:job-status — complete terminal-status vocabulary ────────────────────
