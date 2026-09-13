@@ -35,6 +35,7 @@ from .client_parse import _parse_feed
 _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 _ATOM_NS = "http://www.w3.org/2005/Atom"
 _MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
+_UUID_PATTERN = _re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\Z")
 
 
 def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
@@ -236,18 +237,17 @@ class StorageMixin:
         dispatch: Callable[[], Awaitable[Any]],
     ) -> Any:
         """Read state around a failed storage mutation without retrying it."""
-        before = await snapshot()
         try:
             return await dispatch()
         except HMCError as exc:
             if exc.status_code is None or not 500 <= exc.status_code <= 599:
                 raise
             try:
-                after = await snapshot()
+                await snapshot()
             except HMCError as readback_error:
                 observation = f"readback failed: {readback_error}"
             else:
-                observation = "readback state changed" if after != before else "readback state matched"
+                observation = "readback completed"
             raise HMCError(
                 f"{operation} may have a possible side effect. Do not retry until state "
                 f"is verified; {observation}",
@@ -326,6 +326,9 @@ class StorageMixin:
         the schema-version header here.
         """
 
+        for argument, value in (("vios_uuid", vios_uuid), ("vg_uuid", vg_uuid)):
+            if not _UUID_PATTERN.fullmatch(value):
+                raise ValueError(f"{argument} must be a UUID")
         xml = build_virtual_disk_document(disk_name, capacity_mib)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         resp = await self._reconcile_storage_mutation(

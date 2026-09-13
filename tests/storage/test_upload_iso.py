@@ -399,6 +399,7 @@ async def test_upload_iso_broker_cleanup_on_error(mock_hmc, stage_download):
     )
     mock_hmc.put(broker_uri).mock(return_value=httpx.Response(200, text=""))
     mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
+    mock_hmc.get(VG_PATH).mock(return_value=httpx.Response(200, text=CREATE_RESPONSE))
 
     config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
