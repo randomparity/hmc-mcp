@@ -16,11 +16,11 @@ from hmc_mcp.documents import LparResources
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.lpar.ownership import _resolve_system_name as _system_name
 from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_create_lpar,
     hmc_dlpar_mem,
     hmc_dlpar_proc,
     hmc_modify_lpar,
 )
+from hmc_mcp.server_tools.lpar.lifecycle_create import hmc_create_lpar
 from hmc_mcp.ssh.transport import HMCCLIError
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"

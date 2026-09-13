@@ -231,6 +231,11 @@ def test_newest_metric_link_unparseable_stamp_sorts_oldest():
     assert newest_metric_link(links)["link"] == "/real.json"
 
 
+def test_newest_metric_link_returns_none_for_an_empty_feed():
+    """An empty metric feed has no link to select."""
+    assert newest_metric_link([]) is None
+
+
 # ---------------------------------------------------------------------- #
 # Metrics MCP tools (split link-list vs fetch)
 # ---------------------------------------------------------------------- #

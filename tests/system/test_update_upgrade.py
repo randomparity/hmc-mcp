@@ -537,6 +537,25 @@ def test_platform_update_normalizes_native_singular_result(
     assert job_outcome("job", normalized).error == expected_error
 
 
+@pytest.mark.parametrize(
+    "results",
+    [
+        42,
+        {},
+        {"JobParameter": 42},
+        {"JobParameter": [{"ParameterName": "result", "ParameterValue": 42}]},
+    ],
+)
+def test_platform_update_rejects_malformed_plural_results(results):
+    with pytest.raises(HMCError, match="Malformed PlatformUpdate response"):
+        _normalize_platform_update_response(
+            {
+                "id": "job",
+                "content": {"JobResponse": {"Status": "COMPLETED", "Results": results}},
+            }
+        )
+
+
 @pytest.mark.asyncio
 async def test_submit_platform_update_rejects_non_uuid_path_input(mock_hmc):
     route = mock_hmc.put(

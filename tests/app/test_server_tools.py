@@ -32,13 +32,13 @@ from hmc_mcp.server_tools.jobs import (
     hmc_wait_for_job,
 )
 from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_create_lpar,
     hmc_delete_lpar,
     hmc_modify_lpar,
     hmc_power_off_lpar,
     hmc_power_on_lpar,
     hmc_rename_lpar,
 )
+from hmc_mcp.server_tools.lpar.lifecycle_create import hmc_create_lpar
 from hmc_mcp.server_tools.systems.core import hmc_get_lpar
 from hmc_mcp.server_tools.updates import (
     hmc_submit_available_hmc_ptfs_query,

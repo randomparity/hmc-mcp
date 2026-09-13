@@ -191,7 +191,10 @@ def _bootstrap_config() -> bool:
         print("  Credentials loaded from configured profile")
         return True
     except ConfigError as exc:
-        print(f"  ⚠️  config.toml: {exc} — falling back to .env")
+        print(
+            "  ⚠️  config.toml: "
+            f"{_redact_failure_text(str(exc))} — falling back to .env"
+        )
 
     # Fallback: local .env
     _load_dotenv()

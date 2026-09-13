@@ -49,14 +49,27 @@ def _normalize_platform_update_result(entry: Any) -> PlatformUpdateJobParameter:
 
 def _normalize_platform_update_results(response: dict[str, Any]) -> dict[str, Any]:
     resource = dict(response)
-    if "Result" not in resource:
-        return resource
-    results = resource.pop("Result")
-    if not isinstance(results, list):
-        raise _platform_response_error("Result")
-    resource["Results"] = {
-        "JobParameter": [_normalize_platform_update_result(entry) for entry in results]
-    }
+    if "Result" in resource:
+        results = resource.pop("Result")
+        if not isinstance(results, list):
+            raise _platform_response_error("Result")
+        resource["Results"] = {
+            "JobParameter": [
+                _normalize_platform_update_result(entry) for entry in results
+            ]
+        }
+    elif "Results" in resource:
+        results = resource["Results"]
+        if not isinstance(results, dict):
+            raise _platform_response_error("Results")
+        parameters = results.get("JobParameter")
+        if not isinstance(parameters, list):
+            raise _platform_response_error("Results JobParameter")
+        resource["Results"] = {
+            "JobParameter": [
+                _normalize_platform_update_result(entry) for entry in parameters
+            ]
+        }
     return resource
 
 
