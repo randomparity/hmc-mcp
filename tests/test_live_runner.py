@@ -21,7 +21,7 @@ from fastmcp.exceptions import ToolError
 from hmc_mcp.authorization import target_scope
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.config import HMCConfig
+from hmc_mcp.config import ConfigError, HMCConfig
 from hmc_mcp.jobs import JobOutcome
 from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
 from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
@@ -1097,6 +1097,25 @@ def test_bootstrap_propagates_unexpected_profile_loader_failure(monkeypatch):
 
     with pytest.raises(RuntimeError, match="profile loader defect"):
         runner._bootstrap_config()
+
+
+def test_bootstrap_redacts_config_error_before_dotenv_fallback(monkeypatch, capsys):
+    secret_path = "/home/operator/private/config.toml"
+
+    def fail_to_load_profile():
+        raise ConfigError(f"{secret_path}: password=runner-secret")
+
+    monkeypatch.setattr("hmc_mcp.config.load_profile", fail_to_load_profile)
+    monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
+    monkeypatch.delenv("HMC_PASSWORD", raising=False)
+
+    assert not runner._bootstrap_config()
+
+    output = capsys.readouterr().out
+    assert secret_path not in output
+    assert "runner-secret" not in output
+    assert "<REDACTED-PATH>" in output
+    assert "<REDACTED-SECRET>" in output
 
 
 def test_a_case_variant_of_an_exact_case_reader_does_not_suppress_its_dotenv_line(
