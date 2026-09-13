@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 
@@ -44,3 +45,19 @@ def test_system_inventory_recipe_is_linked_from_documentation_index() -> None:
     assert "[Read-only system inventory recipe](recipes/system-inventory.md)" in (
         ROOT / "docs/index.md"
     ).read_text()
+
+
+def test_system_name_selector_matches_the_system_list_json_shape() -> None:
+    recipe = RECIPE.read_text()
+    systems = json.loads(
+        '[{"UUID": "system-uuid", "Resource": {"SystemName": "example-system"}}]'
+    )
+
+    selected = next(
+        item["UUID"]
+        for item in systems
+        if item["Resource"]["SystemName"] == "example-system"
+    )
+
+    assert selected == "system-uuid"
+    assert 'select(.Resource.SystemName == $name) | .UUID' in recipe

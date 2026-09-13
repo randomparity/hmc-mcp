@@ -30,7 +30,7 @@ capture() {
 
 ```bash
 capture systems.json hmc-mcp systems list --json
-SYSTEM=$(jq -er --arg name "$SYSTEM_NAME" '.[] | select(.SystemName == $name) | .UUID' "$CAPTURE_DIR/systems.json")
+SYSTEM=$(jq -er --arg name "$SYSTEM_NAME" '.[] | select(.Resource.SystemName == $name) | .UUID' "$CAPTURE_DIR/systems.json")
 printf '%s\n' "$SYSTEM" >"$CAPTURE_DIR/system.uuid.txt"
 capture system.json hmc-mcp systems show "$SYSTEM" --json
 capture system-summary.json hmc-mcp systems summary "$SYSTEM" --json
@@ -99,4 +99,3 @@ This is a human decision record for a later workflow. Leave a field blank when e
 | Free-space evidence | volume-group JSON and diagnostic | timestamped value |
 
 Review every error.txt file and verify the capture is current before any later change. Inventory informs an operator; it never authorizes or executes a mutation.
-
