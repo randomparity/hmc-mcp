@@ -16,6 +16,7 @@ READ_COMMANDS = {
     'network list-sriov-adapters "$SYSTEM" --json',
     'network list-sriov-physical-ports "$SYSTEM" --json',
     'network list-sriov-logical-ports "$SYSTEM" --json',
+    'network list-fc-ports "$SYSTEM" --json',
     'lpars list --system "$SYSTEM" --json',
     'lpars show "$lpar" --json',
     'lpars summary "$lpar" --json',
@@ -23,10 +24,15 @@ READ_COMMANDS = {
     'adapters list "$lpar" --type VirtualSCSIClientAdapter --json',
     'adapters list "$lpar" --type ClientFibreChannelAdapter --json',
     'vios list --system "$SYSTEM" --json',
+    'raw get "/rest/api/uom/VirtualIOServer/$vios"',
     'storage list-vgs "$vios" --system "$SYSTEM" --json',
     'storage list-mappings "$vios" --system "$SYSTEM" --json',
     'storage get-media-repo "$vios" "$vg" --system "$SYSTEM" --json',
     'storage list-optical-media "$vios" "$vg" --system "$SYSTEM" --json',
+    'raw get "/rest/api/uom/VirtualIOServer/$vios/VolumeGroup/$vg"',
+    'cluster list --json',
+    'cluster list-ssps --json',
+    'raw get "/rest/api/uom/SharedStoragePool/$ssp"',
 }
 
 
@@ -34,6 +40,9 @@ def test_system_inventory_recipe_has_required_read_only_contract() -> None:
     recipe = RECIPE.read_text()
     for marker in ("Sensitive data", "umask 077", "raw HMC XML", "error.txt",
                    "dedicated-pcie-slots.json", "sriov-logical-ports.json",
+                   "vfc-ports.json", "vios-$vios.raw.xml",
+                   "vg-$vg.raw.xml", "shared-storage-pools.json",
+                   "ssp-$ssp.raw.xml",
                    "VIOS partition ID / server slot", "Candidate disk name",
                    "Free-space evidence"):
         assert marker in recipe

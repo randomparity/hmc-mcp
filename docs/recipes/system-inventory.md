@@ -49,9 +49,12 @@ capture dedicated-pcie-slots.json hmc-mcp network list-dedicated-pcie-slots "$SY
 capture sriov-adapters.json hmc-mcp network list-sriov-adapters "$SYSTEM" --json
 capture sriov-physical-ports.json hmc-mcp network list-sriov-physical-ports "$SYSTEM" --json
 capture sriov-logical-ports.json hmc-mcp network list-sriov-logical-ports "$SYSTEM" --json
+capture vfc-ports.json hmc-mcp network list-fc-ports "$SYSTEM" --json
 ```
 
-These PCIe and SR-IOV files are stable CLI output. Do not replace their normalized capability state with raw XML. Empty JSON lists, unavailable capability, and error.txt files are distinct evidence.
+These PCIe, SR-IOV, and vFC files are stable CLI output. Do not replace their
+normalized capability state with raw XML. Empty JSON lists, unavailable
+capability, and error.txt files are distinct evidence.
 
 ## 4. Capture every LPAR and its adapters
 
@@ -73,18 +76,39 @@ Full documents and summaries retain LPAR state, memory, CPU allocation, and desc
 ```bash
 capture vios.json hmc-mcp vios list --system "$SYSTEM" --json
 jq -r '.[].UUID' "$CAPTURE_DIR/vios.json" | while IFS= read -r vios; do
+  capture "vios-$vios.raw.xml" hmc-mcp raw get "/rest/api/uom/VirtualIOServer/$vios"
   capture "vios-$vios-vgs.json" hmc-mcp storage list-vgs "$vios" --system "$SYSTEM" --json
   capture "vios-$vios-mappings.json" hmc-mcp storage list-mappings "$vios" --system "$SYSTEM" --json
   jq -r '.[].uuid' "$CAPTURE_DIR/vios-$vios-vgs.json" | while IFS= read -r vg; do
+    capture "vios-$vios-vg-$vg.raw.xml" hmc-mcp raw get "/rest/api/uom/VirtualIOServer/$vios/VolumeGroup/$vg"
     capture "vios-$vios-vg-$vg-media-repository.json" hmc-mcp storage get-media-repo "$vios" "$vg" --system "$SYSTEM" --json
     capture "vios-$vios-vg-$vg-optical-media.json" hmc-mcp storage list-optical-media "$vios" "$vg" --system "$SYSTEM" --json
   done
 done
 ```
 
-VIOS files provide identity, partition ID, state, version, volume groups, free-space diagnostics, mappings, and media state. Do not infer a disk name from a mapping.
+The raw VIOS document records physical volumes and end-to-end vFC mappings; the
+raw VG document records physical volumes, virtual disks, and media state. The
+other VIOS files provide identity, partition ID, state, version, free-space
+diagnostics, and stable mapping projections. Do not infer a disk name from a
+mapping.
 
-## 6. Complete the selector worksheet
+## 6. Capture Shared Storage Pool state
+
+```bash
+capture clusters.json hmc-mcp cluster list --json
+capture shared-storage-pools.json hmc-mcp cluster list-ssps --json
+jq -r '.[].UUID' "$CAPTURE_DIR/shared-storage-pools.json" | while IFS= read -r ssp; do
+  capture "ssp-$ssp.raw.xml" hmc-mcp raw get "/rest/api/uom/SharedStoragePool/$ssp"
+done
+```
+
+The list commands are stable CLI output. Each raw SSP document records its
+physical volumes and logical units. SSP inventory is console-wide because the
+existing CLI list has no managed-system selector; review only the pools that
+contain the captured system's VIOSs.
+
+## 7. Complete the selector worksheet
 
 This is a human decision record for a later workflow. Leave a field blank when evidence is missing, denied, stale, or unsuitable.
 
@@ -95,7 +119,7 @@ This is a human decision record for a later workflow. Leave a field blank when e
 | VG | vios-<UUID>-vgs.json | volume-group UUID |
 | VLAN | network JSON files | VLAN and switch ID |
 | VIOS partition ID / server slot | vios.json, vSCSI JSON | paired VIOS ID and slot |
-| Candidate disk name | mappings and storage evidence | approved unused name |
+| Candidate disk name | raw VIOS/VG/SSP XML and mappings | approved unused name |
 | Free-space evidence | volume-group JSON and diagnostic | timestamped value |
 
 Review every error.txt file and verify the capture is current before any later change. Inventory informs an operator; it never authorizes or executes a mutation.
