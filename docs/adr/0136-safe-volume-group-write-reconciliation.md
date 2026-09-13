@@ -13,8 +13,8 @@ without the before/after state needed to decide how to recover.
 
 ## Decision
 
-For the bounded set of VolumeGroup and VIOS storage mutations implemented by
-`StorageClient`, capture the relevant VolumeGroup inventory before dispatch.
+For the bounded VolumeGroup and VIOS mutation inventory in the accompanying
+design, capture the relevant VolumeGroup or VIOS inventory before dispatch.
 On a 5xx, perform one best-effort readback and raise an error that identifies a
 possible side effect, includes the observed comparison or readback failure, and
 explicitly tells the operator not to retry until state is verified. Never retry
@@ -24,7 +24,7 @@ a 5xx. Reconciliation is diagnostic only and makes no rollback attempt.
 
 The failure path performs one additional read and produces an actionable error.
 Successful writes and non-5xx failures keep their current behavior. The policy
-does not extend to storage mutations outside the audited VolumeGroup set.
+does not extend to storage mutations outside the audited inventory.
 
 ## Considered & rejected
 

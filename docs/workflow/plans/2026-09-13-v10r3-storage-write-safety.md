@@ -27,8 +27,9 @@ Files: `src/hmc_mcp/documents/storage.py`,
 
 Interfaces: `build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str`
 continues to accept MiB and emits integral GiB. `VolumeGroup` exposes
-`capacity_gib: int | float | None`, `free_space_gib: int | float | None`, and a
-diagnostic field or equivalent bounded result diagnostic.
+`capacity_gib: int | float | None`, `free_space_gib: int | float | None`, and
+`free_space_diagnostic: str | None`. Its sole new diagnostic value is
+`"free_space_exceeds_capacity"`.
 
 Verification:
 
@@ -36,8 +37,8 @@ Verification:
   fail before XML. Red observation: existing test expects raw MiB XML. Green:
   `uv run --no-sync pytest tests/storage/test_storage.py tests/storage/test_storage_results.py -q`.
 - Mode: focused-test. Contract: GiB fields replace MiB fields and impossible free
-  space is null/diagnostic. Red observation: current projection exposes MiB keys.
-  Green: same command.
+  space is null with `free_space_exceeds_capacity`. Red observation: current projection
+  exposes MiB keys and no diagnostic. Green: same command.
 
 Steps:
 
@@ -50,12 +51,14 @@ Steps:
    ```
 
 2. Use `capacity_gib` for `DiskCapacity`; rename the VolumeGroup fields and make
-   `_volume_group` null the free-space value when both numeric values are present
-   and `free_space_gib > capacity_gib`.
+   `_volume_group` null the free-space value and set
+   `free_space_diagnostic="free_space_exceeds_capacity"` when both numeric values are
+   present and `free_space_gib > capacity_gib`.
 3. Write red tests for conversion, invalid inputs, fractional GiB inventory, and
    impossible free space; implement until the focused command passes.
 
-Acceptance: no conversion rounds a request; all exposed VolumeGroup fields state GiB.
+Acceptance: no conversion rounds a request; VolumeGroup field names state GiB and the
+sole impossible-free-space diagnostic is serialized with the null value.
 
 ## Task 2 — reconcile the bounded mutation set
 
@@ -65,7 +68,16 @@ Files: `src/hmc_mcp/client/core.py`, `src/hmc_mcp/client/client_storage.py`,
 
 Interfaces: add an explicit private typed-UOM fallback argument to `_post`/`_put`;
 add a private `StorageClient` helper that receives snapshot, dispatch, and readback
-callables and returns the dispatch result or raises `HMCError` chained from a 5xx.
+callables and returns the dispatch result or raises `HMCError` chained from a 5xx. The
+following bounded matrix is the complete task inventory:
+
+| Method/path | Snapshot and readback | 406 behavior | 5xx test |
+| --- | --- | --- | --- |
+| `create_volume_group` | `list_volume_groups` | typed → generic UOM once | list before/after |
+| `create_virtual_disk`, `delete_virtual_disk`, `_broker_iso_import` | `get_volume_group` | typed → generic UOM once | group before/after |
+| `create_media_repository`, `create_optical_media`, `delete_media_repository`, `delete_optical_media` via `_post_vg_xml` | raw VolumeGroup GET | already generic `Accept`; no retry | raw group before/after |
+| `map_storage_to_lpar`, `create_optical_mapping` | VIOS mapping inventory | typed → generic UOM once | mapping before/after |
+| `delete_storage_mapping` | its existing VIOS document GET | already generic `Accept`; no retry | VIOS document before/after |
 
 Verification:
 
@@ -73,7 +85,7 @@ Verification:
   retry exactly once with generic UOM `Accept` only after 406. Red observation:
   current helper sends one request. Green:
   `uv run --no-sync pytest tests/unit/test_transport_contracts.py tests/unit/test_client.py tests/unit/test_client_domain_mixins.py -q`.
-- Mode: focused-test. Contract: each audited 5xx performs one readback and says
+- Mode: focused-test. Contract: each matrix row's 5xx performs one readback and says
   possible side effect/do not retry, while no 5xx retries. Red observation:
   current errors omit readback. Green: same command.
 
@@ -82,16 +94,18 @@ Steps:
 1. Add `fallback_to_generic_uom_on_406: bool = False` to `_post` and `_put`.
    Rebuild only `Accept` for the retry; preserve `Content-Type`, body, path,
    schema-version choice, and UUID validation.
-2. Audit each storage POST/PUT call. Pass the flag only to the documented
-   VolumeGroup/VirtualIOServer typed-UOM set and add tests proving job/web calls
-   do not opt in.
-3. Add a reconciliation helper around the VolumeGroup mutation call sites. Capture
-   the named group where available, otherwise the VIOS group list; on status 500–599,
-   read back once and raise a chained actionable error containing normalized before/
-   after state or the readback failure.
-4. Add per-shape 5xx tests, then make their focused command green.
+2. Apply the 406 fallback exactly to the typed rows in the matrix. Assert that
+   `_post_vg_xml`, `delete_storage_mapping`, storage-broker, job, and web paths do not
+   opt in.
+3. Route every matrix row, including `_post_vg_xml` and `delete_storage_mapping` direct
+   requests, through reconciliation. On status 500–599, read back exactly once and
+   raise a chained actionable error containing normalized before/after state or the
+   readback failure.
+4. Add a 5xx request-count/readback test for each matrix row, then make the focused
+   command green.
 
-Acceptance: no code path retries a 5xx or attempts rollback; tests pin the bounded set.
+Acceptance: no matrix row retries a 5xx or attempts rollback; tests pin the complete
+bounded inventory and direct-request paths.
 
 ## Task 3 — migrate consumers and public documentation
 
@@ -102,7 +116,8 @@ Files: `src/hmc_mcp/cli_commands/storage/resources.py`,
 `docs/operations.md`, `CHANGELOG.md`, generated `docs/tools/storage.md` if changed.
 
 Interfaces: create/attach tool and CLI parameters remain `capacity_mib`; list-vgs
-JSON and table fields/labels use `capacity_gib` and `free_space_gib`.
+JSON and table fields/labels use `capacity_gib` and `free_space_gib`; impossible
+inventory also serializes and renders `free_space_diagnostic`.
 
 Verification:
 
@@ -116,8 +131,9 @@ Verification:
 
 Steps:
 
-1. Replace list-vgs presentation references and headings with the GiB result
-   fields; leave create/attach input and attachment-result `capacity_mib` intact.
+1. Replace list-vgs presentation references and headings with the GiB result fields
+   and render `free_space_diagnostic`; leave create/attach input and attachment-result
+   `capacity_mib` intact.
 2. Update direct tests and fixtures for converted XML and result keys.
 3. Update `docs/operations.md` and the unreleased changelog with the conversion,
    replacement result keys, and no-retry safety behavior. Run `just tool-docs`

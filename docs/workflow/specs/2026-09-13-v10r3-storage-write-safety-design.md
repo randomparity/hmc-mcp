@@ -16,19 +16,31 @@ the supported public input. It must be positive and divisible by 1024, then conv
 to the integral GiB XML value at the document boundary. `VolumeGroup` replaces
 `capacity_mib`/`free_space_mib` with `capacity_gib`/`free_space_gib`; no aliases are
 kept on this pre-release result surface. A parsed free-space value greater than a
-present group capacity becomes `None` and carries a diagnostic rather than a false
-capacity claim.
+present group capacity becomes `None` and carries
+`free_space_diagnostic="free_space_exceeds_capacity"` rather than a false capacity
+claim. The diagnostic is serialized in JSON and shown by the CLI beside the null value.
 
-The audited typed-UOM POST/PUT set is the VolumeGroup and VirtualIOServer storage
-write calls in `client_storage.py`. Those calls may make one compatibility retry only
-for HTTP 406 by changing `Accept` to generic UOM while retaining the endpoint's
-required `Content-Type`; all other client writes and web/job APIs retain their
-existing headers after the audit documents why. A 5xx has no retry path.
+The checked-in general IBM reference describes VolumeGroup free space in MBytes,
+but #779's V10R3 live validation observed `GroupCapacity` and `FreeSpace` as GiB.
+For this release, the scoped V10R3 observation governs the public projection. Focused
+fixtures use unambiguous values (for example 100 capacity and 25 free) and assert the
+GiB keys; this discrepancy stays documented rather than becoming a conversion rule.
 
-For each audited VolumeGroup mutation, the client snapshots the relevant group or
-VIOS group list before dispatch. A 5xx triggers one readback, then raises an HMC error
-that says the request may have changed state, records a safe before/after comparison
-or failed readback, and tells the operator not to retry. It never rolls back.
+The audited mutation inventory is: `create_volume_group`, `create_virtual_disk`,
+`delete_virtual_disk`, `_broker_iso_import`, the four media-repository operations through
+`_post_vg_xml`, `map_storage_to_lpar`, `create_optical_mapping`, and
+`delete_storage_mapping`. The typed-UOM matrix rows may retry once only for HTTP
+406 by changing `Accept` to generic UOM while retaining the endpoint-required
+`Content-Type`. `_post_vg_xml` and `delete_storage_mapping` already use generic
+`Accept` and do not retry. Storage-broker operations mutate broker state rather than a
+VolumeGroup or VIOS and are outside this inventory; job/web APIs use their own media
+types and gain no fallback. A 5xx has no retry path.
+
+For each audited mutation, the client snapshots the relevant group, group list, or VIOS
+document before dispatch. A 5xx triggers one readback through the corresponding reader,
+then raises an HMC error that says the request may have changed state, records a safe
+before/after comparison or failed readback, and tells the operator not to retry. It
+never rolls back.
 
 `docs/recipes/lpar-iso-install.md` is excluded: open PR #777 owns its correction,
 with operator approval recorded in #779's `WORK:SCOPE` annotation. Live validation is
@@ -45,8 +57,8 @@ also excluded and remains an operator task in an approved disposable environment
   - Published storage result keys must state their actual GiB units.
 - **Accepted failure classes**
   - Readback can fail after a 5xx; the error reports that failure and still forbids retry.
-  - Non-audited endpoints keep their established header behavior because #779 does not
-    establish their V10R3 compatibility.
+  - Endpoints outside the named mutation inventory keep their established header behavior
+    because #779 does not establish their V10R3 compatibility.
 - **Covered elsewhere**
   - The ISO-install recipe correction is owned by PR #777.
   - Disposable-environment live validation is owned by the operator.
@@ -55,10 +67,10 @@ also excluded and remains an operator task in an approved disposable environment
 
 `client_storage.py` owns HMC-specific snapshot, readback, typed-header fallback, and
 error composition. Its helper accepts an explicit snapshot/readback pair, so the exact
-audited mutation set is visible at each call site. It catches only `HMCError` values
-with status 500–599, performs one readback, and raises a new error chained from the
-original. The comparison is compact: absent/present state and the normalized relevant
-VolumeGroup fields, never raw response bodies.
+audited mutation inventory is visible at each call site, including direct-request paths.
+It catches only `HMCError` values with status 500–599, performs one readback, and raises
+a new error chained from the original. The comparison is compact: absent/present state
+and normalized relevant VolumeGroup or VIOS fields, never raw response bodies.
 
 `documents/storage.py` owns protocol-unit conversion and rejects non-integral-GiB MiB
 inputs before creating XML. `operations/storage/resources.py` owns result naming and
@@ -72,15 +84,16 @@ names without aliases.
 
 ## Success
 
-- For the named VolumeGroup mutation set, an HTTP 5xx produces exactly one readback
+- For every method in the named mutation inventory, an HTTP 5xx produces exactly one readback
   attempt and an error that says possible side effect and do-not-retry; no second write
   occurs.
 - `capacity_mib` values divisible by 1024 produce the corresponding integral GiB
   `DiskCapacity`; zero, negative, and non-divisible inputs fail before HTTP.
 - The named typed-UOM write set retries once only on 406 with generic UOM `Accept`;
   a successful first request, 5xx, or another status does not retry.
-- `list-vgs` publishes GiB-named fields and uses null plus a diagnostic for free space
-  greater than its present capacity.
+- `list-vgs` publishes GiB-named fields and uses null plus
+  `free_space_diagnostic="free_space_exceeds_capacity"` for free space greater than
+  its present capacity.
 - Generated tool documentation, operator documentation, changelog, and focused tests
   describe the delivered contract; the #777 recipe remains excluded.
 
@@ -89,7 +102,7 @@ names without aliases.
 - Focused transport tests assert exact first/fallback headers and request counts for 406,
   5xx, and non-406 failures.
 - Focused storage client tests assert before/after readback and error text for every
-  audited mutation shape.
+  named mutation-inventory method, including direct-request paths.
 - Focused document, operation, CLI, MCP, and LPAR tests assert conversion, validation,
   result-key replacement, null diagnostics, and preserved attachment semantics.
 - `just tool-docs`, `just static`, `just test`, `just smoke`, and `just verify` prove
