@@ -826,13 +826,13 @@ def test_closure_resolves_packages() -> None:
     assert ROOT / "src" / "hmc_mcp" / "jobs" / "core.py" in paths
 
 
-def test_lifecycle_closure_includes_bare_relative_imports() -> None:
-    """`lifecycle.py` imports both siblings as `from . import …` (ADR 0127)."""
+def test_lifecycle_closure_excludes_split_tool_modules() -> None:
+    """LPAR tool modules retain ownership instead of re-exporting siblings."""
     paths = inventory.closure_paths(ROOT, "hmc_mcp.server_tools.lpar.lifecycle")
     lpar = ROOT / "src" / "hmc_mcp" / "server_tools" / "lpar"
 
-    assert lpar / "lifecycle_boot.py" in paths
-    assert lpar / "lifecycle_create.py" in paths
+    assert lpar / "lifecycle_boot.py" not in paths
+    assert lpar / "lifecycle_create.py" not in paths
 
 
 def test_closure_containment(tmp_path: Path) -> None:
