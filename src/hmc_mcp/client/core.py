@@ -729,6 +729,109 @@ class HMCClient(
             return []
         return _parse_feed(xml, path)
 
+    async def list_operations(
+        self,
+        resource_type: str,
+        *,
+        parent_type: str | None = None,
+        parent_uuid: str | None = None,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """GET the job operations a type defines, with the schema version.
+
+        Reads the root anchor ``/rest/api/uom/{R}/operations``, or the child
+        anchor ``/rest/api/uom/{P}/{UUID}/{C}/operations`` when both
+        *parent_type* and *parent_uuid* are given; supplying exactly one of
+        them is a caller error.
+
+        **Returns one entry, not one per operation.** The HMC answers with a
+        single ``OperationSet`` naming the type in ``SetName`` and holding
+        every operation the type defines under ``DefinedOperations``::
+
+            entries, schema_version = await hmc.list_operations("ManagedSystem")
+            operations = entries[0]["Resource"]["DefinedOperations"]["Operation"]
+
+        ``Operation`` is a **list when the type defines several operations and
+        a bare dict when it defines exactly one**, because ``element_to_dict``
+        keys children by tag and only promotes to a list on the second
+        sibling. The same collapse applies to ``OperationParameter`` under
+        ``AllPossibleParameters`` and ``AllPossibleResults``, and to
+        ``NLSStaticMessage`` under ``AllDiscreteStates`` -- within a single
+        response, one operation's results can be a dict while another's are a
+        list. Normalise with ``x if isinstance(x, list) else [x]`` before
+        iterating; iterating without it walks dict *keys* and raises nothing.
+        ``AllPossibleParameters`` is absent for an operation that takes no
+        parameters rather than present and empty, and ``AllDiscreteStates``
+        appears only when ``ProgressType`` is ``DISCRETE``.
+
+        The second element is the response's ``X-HMC-Schema-Version``, or
+        ``None`` when the HMC sends none (ADR 0139). **It is returned verbatim
+        and is not guaranteed to be a version string.** On firmware observed at
+        V1_17_0 this endpoint echoes the request's ``X-Audit-Memento`` value
+        into that response header, so it reads ``hmc-mcp`` rather than a level;
+        the same firmware returns a real level on ordinary uom feeds. Treat it
+        as an opaque provenance tag unless it matches a level you recognise.
+
+        Unlike the reads that go through ``_get``, this method does **not**
+        send a configured ``HMC_SCHEMA_VERSION`` request header: it passes its
+        own headers straight to the transport and never reaches
+        ``_uom_headers``. Pinning a schema version therefore has no effect
+        here. That is deliberate -- the endpoint's negotiation is confirmed
+        working with ``Accept: */*`` alone and nothing establishes that it
+        honours the header -- but it is a real asymmetry with the sibling
+        reads, and a caller relying on a pinned version should know it.
+
+        Sends ``Accept: */*``. The content element is in the ``web/mc``
+        namespace with content type
+        ``application/vnd.ibm.powervm.web+xml; type=OperationSet``, not a uom
+        media type, so a typed uom Accept is the wrong guess rather than a
+        stricter one; ``*/*`` is the one Accept that cannot fail negotiation.
+        A firmware level insisting on a typed Accept answers 406, which
+        surfaces as ``HMCError`` carrying 406.
+
+        An unrecognised *resource_type*, *parent_type* or child type is rejected
+        at the URL with **400 ``INVALID_URL``, not 404** (observed at V1_17_0):
+        the firmware validates the type name before reaching any handler that
+        would look up operations, and names the type it did not recognise --
+        ``REST000E`` for an unknown root type, ``REST000C``/``REST000D`` for an
+        unknown child under a known parent. Either surfaces as ``HMCError``
+        carrying 400 and that message.
+
+        Not available on every level: three HMCs at V1_20_0 answered 500 with
+        ``java.lang.ClassNotFoundException`` naming a firmware-internal
+        operations class, against one working sample at V1_17_0. That is a
+        server-side defect no request header changes; it surfaces as
+        ``HMCError`` carrying 500. Callers that must work across levels should
+        expect it.
+        """
+        uuid_path_arguments: dict[str, str] = {}
+        if parent_type is not None and parent_uuid is not None:
+            path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{resource_type}/operations"
+            uuid_path_arguments["parent_uuid"] = parent_uuid
+        elif parent_type is None and parent_uuid is None:
+            path = f"/rest/api/uom/{resource_type}/operations"
+        else:
+            raise ValueError(
+                "parent_type and parent_uuid must be given together: a "
+                "child-anchored read needs both the parent type and the "
+                "parent instance UUID"
+            )
+        resp = await self._request_with_uuid_path_arguments(
+            "GET",
+            path,
+            uuid_path_arguments=uuid_path_arguments,
+            headers={"Accept": "*/*"},
+        )
+        schema_version: str | None = resp.headers.get("X-HMC-Schema-Version")
+        if resp.status_code == 204:
+            return [], schema_version
+        if resp.status_code != 200:
+            raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
+        # No empty-body guard: the sibling reads carry one because ``_get``
+        # collapses 204 to "", so they cannot tell the two apart. This method
+        # returns on 204 above, and an empty 200 body is a malformed feed --
+        # ``_parse_feed`` reporting it as HMCError is the honest answer.
+        return _parse_feed(resp.text, path), schema_version
+
     # Virtual adapters (children of LogicalPartition)
 
     async def list_child(

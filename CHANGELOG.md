@@ -10,6 +10,17 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `HMCClient.list_operations(resource_type, *, parent_type=None, parent_uuid=None)` reads
+  the job operations an HMC defines for a resource type, at the root anchor
+  `/rest/api/uom/{R}/operations` and the child anchor
+  `/rest/api/uom/{P}/{UUID}/{C}/operations`. It returns the parsed feed paired with the
+  response's `X-HMC-Schema-Version`, or `None` when the HMC sends none (ADR 0139, #787).
+  The feed is one `OperationSet` per anchor holding every operation the type defines, not
+  one entry per operation, and repeated elements within it collapse to a bare dict when the
+  HMC sends exactly one — see the method's docstring before iterating the result. The
+  returned header value is verbatim and is not guaranteed to be a version string. Not
+  available on every firmware level: V1_20_0 HMCs answered 500.
+
 - Transport and inventory contract tests bound to the F1 reference corpus
   (`rest:logon-and-logoff`, `rest:job-status`): logon PUT endpoint and method,
   `LogonRequest`/`LogonResponse` media types, X-API-Session token propagation,
