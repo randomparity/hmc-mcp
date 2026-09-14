@@ -788,6 +788,14 @@ class HMCClient(
         A firmware level insisting on a typed Accept answers 406, which
         surfaces as ``HMCError`` carrying 406.
 
+        An unrecognised *resource_type*, *parent_type* or child type is rejected
+        at the URL with **400 ``INVALID_URL``, not 404** (observed at V1_17_0):
+        the firmware validates the type name before reaching any handler that
+        would look up operations, and names the type it did not recognise --
+        ``REST000E`` for an unknown root type, ``REST000C``/``REST000D`` for an
+        unknown child under a known parent. Either surfaces as ``HMCError``
+        carrying 400 and that message.
+
         Not available on every level: three HMCs at V1_20_0 answered 500 with
         ``java.lang.ClassNotFoundException`` naming a firmware-internal
         operations class, against one working sample at V1_17_0. That is a

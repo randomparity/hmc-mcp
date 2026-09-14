@@ -2247,10 +2247,29 @@ async def test_list_operations_returns_the_response_schema_version(
 
 @pytest.mark.asyncio
 async def test_list_operations_unknown_type_raises_hmc_error_with_status(mock_hmc):
+    """An unknown type is rejected at the URL, with 400, not 404.
+
+    Status and body are a live capture (V1_17_0, #797). The firmware validates
+    the type name before reaching any handler that would look up operations, so
+    it answers 400 ``INVALID_URL`` naming the type it did not recognise. The
+    status is asserted because this method's only error contract is to surface
+    whatever the HMC returned -- a mock inventing 404 would let a regression
+    that swallowed the real status still pass.
+    """
     mock_hmc.get("/rest/api/uom/NoSuchType/operations").mock(
         return_value=httpx.Response(
-            404,
-            text="<HttpErrorResponse><Message>Unknown type</Message></HttpErrorResponse>",
+            400,
+            text=(
+                '<HttpErrorResponse xmlns="http://www.ibm.com/xmlns/systems/power'
+                '/firmware/web/mc/2012_10/">'
+                "<HTTPStatus>400</HTTPStatus>"
+                "<RequestURI>/rest/api/uom/NoSuchType/operations</RequestURI>"
+                "<ReasonCode>INVALID_URL</ReasonCode>"
+                "<Message>REST000B The URL presented to the Management Console REST "
+                "Web Services is not valid.REST000E Unrecognized root REST type of "
+                "NoSuchType.</Message>"
+                "</HttpErrorResponse>"
+            ),
         )
     )
 
@@ -2258,8 +2277,8 @@ async def test_list_operations_unknown_type_raises_hmc_error_with_status(mock_hm
         with pytest.raises(HMCError) as raised:
             await hmc.list_operations("NoSuchType")
 
-    assert raised.value.status_code == 404
-    assert "Unknown type" in str(raised.value)
+    assert raised.value.status_code == 400
+    assert "Unrecognized root REST type of NoSuchType" in str(raised.value)
 
 
 @pytest.mark.asyncio

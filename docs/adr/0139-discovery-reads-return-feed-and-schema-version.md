@@ -50,6 +50,10 @@ Three findings came back with it, none of which changes this decision:
   level, not the version the header's name promises. The tuple stays — a caller cannot obtain
   even that much afterwards without a race — but it is returned verbatim and callers must not
   parse it as a level.
+- **An unknown type is a 400, not a 404.** All three unknown-type shapes — root type, child type
+  under a known parent, and unknown parent type — answered 400 `INVALID_URL` naming the type the
+  firmware did not recognise. #787's "`HMCError` on unknown type" criterion is met, by the
+  generic non-200/204 branch rather than by anything type-specific.
 - **The endpoint is not available at every level.** Three HMCs at V1_20_0 answered 500 with
   `java.lang.ClassNotFoundException` naming a firmware-internal operations class, against the
   one working V1_17_0 sample. No level between the two was reachable, so the boundary is
@@ -88,6 +92,14 @@ a shared helper is theirs to justify once three exist.
   never reaches `_uom_headers`, so a configured `HMC_SCHEMA_VERSION` is silently not applied
   here. That is recorded in the method's docstring so a caller pinning a version is not
   surprised by it.
+- **Route the 400 through the existing `_check_web_rest000e` helper.** verified: live V1_17_0
+  returns 400 with `REST000E` in the body for an unknown uom type, which is the pattern that
+  helper matches — but it is scoped to `/rest/api/web/` (its three callers are `_web_get`,
+  `_web_post` and `_web_delete`) and it replaces the body with "This endpoint is not available on
+  this HMC. The HMC may require a specific configuration, license, or PTF level" (#113). On a
+  uom anchor that message is wrong: the cause is a resource type the caller misspelled, not a
+  missing endpoint, and the HMC's own text already names the offending type. Reusing the helper
+  would trade a precise error for a misleading one.
 - **Do nothing; keep building `do/{Operation}` paths from names hardcoded in Python.**
   verified: `rg -n "/operations" src/` returns no match at 975b0121, and issue #787 names 14
   call sites that construct those paths with nothing able to ask the HMC whether it defines
