@@ -23,38 +23,48 @@ firmware class. `list_managed_systems` resolves every summary entry the same
 way and returns the subset that succeeds, skipping any system that still 500s;
 if none resolve, it raises the original actionable error unchanged.
 
-`quick/All` is not present in this repo's vendored HMC REST API reference
-(`docs/refs/hmc-rest-api-p11/164-managed-system.md` documents only the
-per-UUID `.../quick/{Property}` form). The only evidence it exists is IBM's own
-public `project-pim` repository (`github.com/IBM/project-pim`), which uses it
-extensively (`cli/utils/command_util.py:164`, `examples/hmc-agent/app/hmc.py:70,159`,
+`quick/All` is not present in this repo's vendored HMC REST API reference for
+`ManagedSystem` (`docs/capabilities/corpora.json`, topic `rest-p11:managed-system`,
+captured from `https://www.ibm.com/docs/en/power11/9824-22A?topic=apis-managed-system`
+— it documents only the per-UUID `.../quick/{Property}` form; `quick/All` appears
+in that corpus only under the `Cluster` resource). The only evidence it exists
+for `ManagedSystem` is IBM's own public `project-pim` repository
+(`github.com/IBM/project-pim`), which uses it extensively
+(`cli/utils/command_util.py:164`, `examples/hmc-agent/app/hmc.py:70,159`,
 and the same `.../quick/All` shape for VIOS/LPAR/VirtualNetwork/VirtualSwitch
 collections) without an `Accept` header, decoding the response as JSON directly.
+This repo's own sibling `get_quick_property` (`client/core.py`) independently
+confirms the header constraint: its docstring records that a typed
+`uom+xml` `Accept` header causes HTTP 406 on `quick/` endpoints, so the new
+helper sends no typed `Accept` header either, matching both precedents.
 This fix therefore carries the `verification:live-hmc` label and must be
 confirmed against a live HMC before the fallback can be trusted in the field;
 until then it is exercised only by respx-mocked unit tests.
 
 ## Consequences
-`get_managed_system`/`list_managed_systems` gain one additional request path
-(`_quick_all_system_names`, added to the `SystemsClient` protocol via `_request`)
-that only activates on the specific firmware failure; unaffected firmware sees
-no behavior change. A system whose `SystemName` collides with another's still
-raises `find_system_by_name`'s existing ambiguous-name `ValueError`, which
-`list_managed_systems`'s per-system resolution catches and skips rather than
-propagating, and `get_managed_system` propagates the same as `find_system_by_name`
-does today. The fallback trusts `quick/All`'s JSON shape defensively — an entry
-missing `UUID` or `SystemName` is skipped rather than raised.
+Both methods gain one additional request path (`_quick_all_system_names`,
+added to `SystemsClient` via `_request`) that only activates on the specific
+firmware failure; unaffected firmware sees no behavior change. Unlike
+`find_system_by_name`'s own contract, both fallbacks now catch its
+ambiguous-name `ValueError` rather than propagate it — a `SystemName`
+collision can't disambiguate the target, so it counts as a fallback miss
+(skipped per-system in `list_managed_systems`, folded into the actionable
+error in `get_managed_system`). The fallback trusts `quick/All`'s JSON shape
+defensively — an entry missing `UUID` or `SystemName` is skipped rather than
+raised. `list_managed_systems`'s fallback resolves each entry with its own
+sequential `find_system_by_name` call, so N systems cost 1+N round trips
+instead of one; accepted because it only activates on firmware already
+broken today, with no evidence this firmware class hosts large enough
+inventories to make the added latency material.
 
 ## Considered & rejected
 - Fall back to `search_uom("ManagedSystem", "UUID", uuid)`. judgment: no
-  evidence anywhere in this repo or in `project-pim` that `UUID` is a
-  supported `ManagedSystem` search field; the HMC's search field list is
-  firmware-dependent and undocumented, so this would be speculative behavior
-  shipped without verification.
+  evidence in this repo or `project-pim` that `UUID` is a supported
+  `ManagedSystem` search field — speculative behavior shipped unverified.
 - Only translate to a clearer error message, without attempting resolution.
-  judgment: leaves `systems show <UUID>` and `systems list` broken on affected
-  firmware instead of usable, when a working resolution path is available.
+  judgment: leaves both methods broken on affected firmware instead of
+  usable, when a working resolution path is available.
 - Enumerate `list_managed_systems` via `search_uom("ManagedSystem", "State", s)`
-  over every known `State` value. judgment: depends on an exhaustive, versioned
+  over every known `State` value. judgment: needs an exhaustive, versioned
   state enumeration and still can't cover `get_managed_system`'s single-UUID
-  case; `quick/All` covers both call sites with one mechanism.
+  case; `quick/All` covers both with one mechanism.
