@@ -2107,8 +2107,23 @@ async def test_list_operations_requires_both_parent_arguments(mock_hmc, kwargs):
 
 
 @pytest.mark.asyncio
-async def test_list_operations_rejects_a_dot_segment_type(mock_hmc):
+@pytest.mark.parametrize(
+    ("args", "kwargs"),
+    [
+        # Root anchor: resource_type is the only interpolated segment.
+        (("../web/Logon",), {}),
+        # Child anchor: parent_type is interpolated too, and is refused on the
+        # same guard. Both anchors are covered because each interpolates a
+        # different argument into the path.
+        (
+            ("LogicalPartition",),
+            {"parent_type": "../../web", "parent_uuid": _PARENT_UUID},
+        ),
+        (("../web/Logon",), {"parent_type": "ManagedSystem", "parent_uuid": _PARENT_UUID}),
+    ],
+)
+async def test_list_operations_rejects_a_dot_segment_type(mock_hmc, args, kwargs):
     """Refused before transport: the request is never attempted."""
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match=r"'\.\.' segment"):
-            await hmc.list_operations("../web/Logon")
+            await hmc.list_operations(*args, **kwargs)
