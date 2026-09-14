@@ -122,8 +122,8 @@ because none of their tests can run until the method exists:
    The assertions below read only `title`, which `xmlutil._parse_entry` fills from the Atom
    `<entry><title>` for any feed, so they do not depend on the element vocabulary inside
    `<content>`. That inner `<JobRequest>` element **is** a guess — nothing in this repository
-   documents what `/operations` puts there — so do not assert on it; #793 confirms it against
-   live firmware.
+   documents what `/operations` puts there — so do not assert on it. Confirming it against
+   live firmware is currently unowned; see the spec's *Covered elsewhere*.
 
 2. Append this helper and the eight tests directly after that constant, still at the end of
    the file:
@@ -292,8 +292,8 @@ because none of their tests can run until the method exists:
            documents what media type ``/operations`` answers with, so ``*/*``
            is the one Accept that cannot fail negotiation; a firmware level
            insisting on a typed Accept answers 406, which surfaces as
-           ``HMCError`` carrying 406. Issue #793 confirms it against live
-           firmware.
+           ``HMCError`` carrying 406. No issue yet owns confirming this
+           against live firmware.
            """
            uuid_path_arguments: dict[str, str] = {}
            if parent_type is not None and parent_uuid is not None:

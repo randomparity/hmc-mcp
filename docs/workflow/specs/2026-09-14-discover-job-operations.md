@@ -38,6 +38,13 @@ The method has no callers in this change. Ownership is unchanged: the generic uo
 already live on `HMCClient` in `core.py`, so this is a clean extension of an existing
 responsibility with no caller migration and no obsolete path to remove.
 
+One more file changes: `CHANGELOG.md` gains a single `## [Unreleased]` / `### Added` bullet.
+`HMCClient` is one of ADR 0118's six `hmc_mcp.api` facade names, so a new method on it is
+facade movement, and `CONTRIBUTING.md` (*Changelog*) requires recording it. No gate compels
+that bullet — `tests/unit/test_changelog.py` checks only that the version declared in
+`pyproject.toml` has a matching heading — so it is sourced to the convention, not to the
+guardrail criterion.
+
 Out of scope, with owners: MCP tool and CLI surface (#792); capability-ledger reconciliation
 against a live HMC (#793); changing the 14 hardcoded `do/{Operation}` call sites or wiring
 validation into `submit_job` (epic #785); the sibling discovery reads `/quick`, `/quick/all`,
@@ -72,7 +79,11 @@ from a caller that has already decided what to ask for, never from HMC-facing un
   feed read in this module.
 
 **Covered elsewhere.**
-- Live confirmation of the endpoint against real firmware — #793 (`verification:live-hmc`).
+- Comparing documented job operations against a live HMC's `/operations` output — #793
+  (`verification:live-hmc`). That issue does **not** cover confirming the `Accept` header the
+  endpoint requires or the element shape of its entries: its four acceptance items commit no
+  one to either. That confirmation is unowned, and is carried as a follow-up candidate rather
+  than claimed here.
 - Exposing this read to untrusted MCP/CLI callers, and the access-policy classification that
   would then bind it — #792.
 - Response-size bounding — already held by `_read_bounded_response` and ADR 0133 on every

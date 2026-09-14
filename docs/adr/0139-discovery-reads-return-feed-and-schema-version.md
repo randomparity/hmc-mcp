@@ -31,7 +31,10 @@ so no new public type joins ADR 0118's six-name facade even though `HMCClient` i
 there. `_get` keeps its single-value contract and its 27 callers are untouched.
 
 The `Accept: */*` choice and the feed's element shape are not confirmed against a live HMC
-in this change; #793 (`verification:live-hmc`) owns that reconciliation. A firmware level
+in this change, and **no issue's acceptance criteria require anyone to confirm them**: #793
+(`verification:live-hmc`) compares `/operations` output against retained job-topic snapshots
+and would exercise this transport incidentally, but its four acceptance items commit no one to
+reporting a wrong `Accept` header or a mis-shaped entry. A firmware level
 that insists on a typed `Accept` answers 406, which surfaces as `HMCError` carrying 406 —
 a wrong-header report, not a parse failure.
 
@@ -50,7 +53,8 @@ a shared helper is theirs to justify once three exist.
   verified: it returns `dict(resp.headers)`, and httpx lowercases header names on iteration —
   `dict(httpx.Response(200, headers={"X-HMC-Schema-Version": "V1_0"}).headers)` has the single
   key `x-hmc-schema-version`, so a lookup under the documented capitalization reads `None`
-  (httpx 0.29.2, this checkout). A caller that has to know the casing rule to read the header
+  (httpx 0.28.1, the version `uv.lock` resolves for this checkout). A caller that has to know
+  the casing rule to read the header
   correctly is the trap this decision exists to remove. Keeping the live `httpx.Headers`, which
   is case-insensitive, also keeps `_request_with_uuid_path_arguments` on the path, so the child
   anchor needs no second UUID check beside the one that helper owns (`raw_get` calls `_request`
