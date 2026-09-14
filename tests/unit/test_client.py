@@ -1948,3 +1948,139 @@ async def test_wait_for_job_recognises_completed_ok(mock_hmc):
         )
     assert result is not None
     assert result["Resource"]["Status"] == "COMPLETED_OK"
+
+
+OPERATIONS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:11111111-1111-1111-1111-111111111111</id>
+    <title>PowerOn</title>
+    <content type="application/vnd.ibm.powervm.web+xml">
+      <JobRequest xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">
+        <RequestedOperation>
+          <OperationName>PowerOn</OperationName>
+          <GroupName>ManagedSystem</GroupName>
+        </RequestedOperation>
+      </JobRequest>
+    </content>
+  </entry>
+</feed>
+"""
+
+_PARENT_UUID = "44444444-4444-4444-4444-444444444444"
+
+
+@pytest.mark.asyncio
+async def test_list_operations_reads_the_root_anchor(mock_hmc):
+    path = "/rest/api/uom/ManagedSystem/operations"
+    route = mock_hmc.get(path).mock(
+        return_value=httpx.Response(200, text=OPERATIONS_FEED)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        entries, _ = await hmc.list_operations("ManagedSystem")
+
+    assert route.calls.last.request.url.path == path
+    assert route.calls.last.request.headers["Accept"] == "*/*"
+    assert [entry["title"] for entry in entries] == ["PowerOn"]
+
+
+@pytest.mark.asyncio
+async def test_list_operations_reads_the_child_anchor(mock_hmc):
+    path = (
+        f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}"
+        "/LogicalPartition/operations"
+    )
+    route = mock_hmc.get(path).mock(
+        return_value=httpx.Response(200, text=OPERATIONS_FEED)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        entries, _ = await hmc.list_operations(
+            "LogicalPartition",
+            parent_type="ManagedSystem",
+            parent_uuid=_PARENT_UUID,
+        )
+
+    assert route.calls.last.request.url.path == path
+    assert [entry["title"] for entry in entries] == ["PowerOn"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("headers", "expected"),
+    [({"X-HMC-Schema-Version": "V1_0"}, "V1_0"), ({}, None)],
+)
+async def test_list_operations_returns_the_response_schema_version(
+    mock_hmc, headers, expected
+):
+    mock_hmc.get("/rest/api/uom/ManagedSystem/operations").mock(
+        return_value=httpx.Response(200, text=OPERATIONS_FEED, headers=headers)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        _, schema_version = await hmc.list_operations("ManagedSystem")
+
+    assert schema_version == expected
+
+
+@pytest.mark.asyncio
+async def test_list_operations_unknown_type_raises_hmc_error_with_status(mock_hmc):
+    mock_hmc.get("/rest/api/uom/NoSuchType/operations").mock(
+        return_value=httpx.Response(
+            404,
+            text="<HttpErrorResponse><Message>Unknown type</Message></HttpErrorResponse>",
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.list_operations("NoSuchType")
+
+    assert raised.value.status_code == 404
+    assert "Unknown type" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_list_operations_204_returns_no_entries(mock_hmc):
+    mock_hmc.get("/rest/api/uom/ManagedSystem/operations").mock(
+        return_value=httpx.Response(204, headers={"X-HMC-Schema-Version": "V1_0"})
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.list_operations("ManagedSystem") == ([], "V1_0")
+
+
+@pytest.mark.asyncio
+async def test_list_operations_rejects_a_non_uuid_parent(mock_hmc):
+    """Refused before transport: the request is never attempted."""
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="parent_uuid must be a UUID"):
+            await hmc.list_operations(
+                "LogicalPartition",
+                parent_type="ManagedSystem",
+                parent_uuid="not-a-uuid",
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"parent_type": "ManagedSystem"},
+        {"parent_uuid": _PARENT_UUID},
+    ],
+)
+async def test_list_operations_requires_both_parent_arguments(mock_hmc, kwargs):
+    """Refused before transport: the request is never attempted."""
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="must be given together"):
+            await hmc.list_operations("LogicalPartition", **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_list_operations_rejects_a_dot_segment_type(mock_hmc):
+    """Refused before transport: the request is never attempted."""
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match=r"'\.\.' segment"):
+            await hmc.list_operations("../web/Logon")

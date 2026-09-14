@@ -729,6 +729,62 @@ class HMCClient(
             return []
         return _parse_feed(xml, path)
 
+    async def list_operations(
+        self,
+        resource_type: str,
+        *,
+        parent_type: str | None = None,
+        parent_uuid: str | None = None,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """GET the job operations a type defines, with the schema version.
+
+        Reads the root anchor ``/rest/api/uom/{R}/operations``, or the child
+        anchor ``/rest/api/uom/{P}/{UUID}/{C}/operations`` when both
+        *parent_type* and *parent_uuid* are given; supplying exactly one of
+        them is a caller error. Returns the parsed feed paired with the
+        response's ``X-HMC-Schema-Version`` (``None`` when the HMC sends
+        none), because the operations a firmware level defines are only
+        meaningful for the schema version that reported them (ADR 0139).
+
+        Sends ``Accept: */*``. Nothing in this repository's HMC references
+        documents what media type ``/operations`` answers with, so ``*/*``
+        is the one Accept that cannot fail negotiation; a firmware level
+        insisting on a typed Accept answers 406, which surfaces as
+        ``HMCError`` carrying 406. No issue yet owns confirming this
+        against live firmware.
+        """
+        uuid_path_arguments: dict[str, str] = {}
+        if parent_type is not None and parent_uuid is not None:
+            path = (
+                f"/rest/api/uom/{parent_type}/{parent_uuid}"
+                f"/{resource_type}/operations"
+            )
+            uuid_path_arguments["parent_uuid"] = parent_uuid
+        elif parent_type is None and parent_uuid is None:
+            path = f"/rest/api/uom/{resource_type}/operations"
+        else:
+            raise ValueError(
+                "parent_type and parent_uuid must be given together: a "
+                "child-anchored read needs both the parent type and the "
+                "parent instance UUID"
+            )
+        resp = await self._request_with_uuid_path_arguments(
+            "GET",
+            path,
+            uuid_path_arguments=uuid_path_arguments,
+            headers={"Accept": "*/*"},
+        )
+        schema_version: str | None = resp.headers.get("X-HMC-Schema-Version")
+        if resp.status_code == 204:
+            return [], schema_version
+        if resp.status_code != 200:
+            raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
+        # No empty-body guard: the sibling reads carry one because ``_get``
+        # collapses 204 to "", so they cannot tell the two apart. This method
+        # returns on 204 above, and an empty 200 body is a malformed feed --
+        # ``_parse_feed`` reporting it as HMCError is the honest answer.
+        return _parse_feed(resp.text, path), schema_version
+
     # Virtual adapters (children of LogicalPartition)
 
     async def list_child(
