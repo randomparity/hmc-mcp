@@ -304,6 +304,10 @@ class NetworkClient(Protocol):
 class SystemsClient(JobClient, Protocol):
     """Host operations required by :class:`client_systems.SystemsMixin`."""
 
+    async def _request(
+        self, method: str, path: str, **kwargs: Any
+    ) -> httpx.Response: ...
+
     async def list_uom(
         self, resource_type: str, group: str | None = None
     ) -> list[dict[str, Any]]: ...

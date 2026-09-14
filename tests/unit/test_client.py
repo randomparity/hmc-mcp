@@ -897,6 +897,33 @@ async def test_managed_system_serialization_failure_is_not_empty_inventory(mock_
     assert exc_info.value.__cause__ is firmware_error
 
 
+@pytest.mark.asyncio
+async def test_quick_all_system_names_maps_uuid_to_name(mock_hmc):
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"UUID": "sys-uuid-1", "SystemName": "sys1", "State": "operating"},
+                {"UUID": "sys-uuid-2", "SystemName": "sys2", "State": "operating"},
+                {"State": "operating"},
+            ],
+        )
+    )
+    async with HMCClient(make_config()) as hmc:
+        names = await hmc._quick_all_system_names()
+    assert names == {"sys-uuid-1": "sys1", "sys-uuid-2": "sys2"}
+
+
+@pytest.mark.asyncio
+async def test_quick_all_system_names_raises_on_non_200(mock_hmc):
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(500, text="boom")
+    )
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="quick/All failed"):
+            await hmc._quick_all_system_names()
+
+
 CREATED_LPAR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:new-33333333-3333-3333-3333-333333333333</id>

@@ -49,6 +49,48 @@ class SystemsMixin:
                 ) from exc
             raise
 
+    async def _quick_all_system_names(self: SystemsClient) -> dict[str, str]:
+        """UUID -> SystemName map from GET .../ManagedSystem/quick/All.
+
+        Not documented in this repo's vendored HMC REST API reference (only
+        the per-UUID quick/{Property} form is); evidenced by IBM's public
+        project-pim repository (ADR 0138). No typed Accept header, matching
+        get_quick_property's precedent (core.py) that a uom+xml header 406s
+        on quick/ endpoints, and project-pim's own quick/All calls, which
+        send none either. Used only as a fallback when the direct/unfiltered
+        feed trips the null-property serialization bug, so an unexpected
+        shape here is treated defensively: entries missing UUID or
+        SystemName are skipped rather than raised.
+        """
+        resp = await self._request(
+            "GET",
+            "/rest/api/uom/ManagedSystem/quick/All",
+            headers={"Accept": "*/*"},
+        )
+        if resp.status_code != 200:
+            raise HMCError(
+                "GET /rest/api/uom/ManagedSystem/quick/All failed",
+                resp.status_code,
+                resp.text,
+            )
+        try:
+            summaries = resp.json()
+        except ValueError as exc:
+            raise HMCError(
+                "GET /rest/api/uom/ManagedSystem/quick/All returned invalid "
+                f"JSON: {str(exc)[:500]}"
+            ) from exc
+        if not isinstance(summaries, list):
+            raise HMCError(
+                "GET /rest/api/uom/ManagedSystem/quick/All returned a JSON "
+                f"{type(summaries).__name__}; expected an array"
+            )
+        return {
+            entry["UUID"]: entry["SystemName"]
+            for entry in summaries
+            if isinstance(entry, dict) and "UUID" in entry and "SystemName" in entry
+        }
+
     async def list_managed_systems(self: SystemsClient) -> list[dict[str, Any]]:
         # Some HMC firmware builds return HTTP 500 on the unfiltered
         # ManagedSystem feed due to null property values in hardware-inventory
