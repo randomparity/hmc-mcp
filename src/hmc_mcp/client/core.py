@@ -755,10 +755,7 @@ class HMCClient(
         """
         uuid_path_arguments: dict[str, str] = {}
         if parent_type is not None and parent_uuid is not None:
-            path = (
-                f"/rest/api/uom/{parent_type}/{parent_uuid}"
-                f"/{resource_type}/operations"
-            )
+            path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{resource_type}/operations"
             uuid_path_arguments["parent_uuid"] = parent_uuid
         elif parent_type is None and parent_uuid is None:
             path = f"/rest/api/uom/{resource_type}/operations"

@@ -1996,10 +1996,7 @@ async def test_list_operations_reads_the_root_anchor(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_list_operations_reads_the_child_anchor(mock_hmc):
-    path = (
-        f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}"
-        "/LogicalPartition/operations"
-    )
+    path = f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/operations"
     route = mock_hmc.get(path).mock(
         return_value=httpx.Response(200, text=OPERATIONS_FEED)
     )
