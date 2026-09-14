@@ -741,17 +741,59 @@ class HMCClient(
         Reads the root anchor ``/rest/api/uom/{R}/operations``, or the child
         anchor ``/rest/api/uom/{P}/{UUID}/{C}/operations`` when both
         *parent_type* and *parent_uuid* are given; supplying exactly one of
-        them is a caller error. Returns the parsed feed paired with the
-        response's ``X-HMC-Schema-Version`` (``None`` when the HMC sends
-        none), because the operations a firmware level defines are only
-        meaningful for the schema version that reported them (ADR 0139).
+        them is a caller error.
 
-        Sends ``Accept: */*``. Nothing in this repository's HMC references
-        documents what media type ``/operations`` answers with, so ``*/*``
-        is the one Accept that cannot fail negotiation; a firmware level
-        insisting on a typed Accept answers 406, which surfaces as
-        ``HMCError`` carrying 406. No issue yet owns confirming this
-        against live firmware.
+        **Returns one entry, not one per operation.** The HMC answers with a
+        single ``OperationSet`` naming the type in ``SetName`` and holding
+        every operation the type defines under ``DefinedOperations``::
+
+            entries, schema_version = await hmc.list_operations("ManagedSystem")
+            operations = entries[0]["Resource"]["DefinedOperations"]["Operation"]
+
+        ``Operation`` is a **list when the type defines several operations and
+        a bare dict when it defines exactly one**, because ``element_to_dict``
+        keys children by tag and only promotes to a list on the second
+        sibling. The same collapse applies to ``OperationParameter`` under
+        ``AllPossibleParameters`` and ``AllPossibleResults``, and to
+        ``NLSStaticMessage`` under ``AllDiscreteStates`` -- within a single
+        response, one operation's results can be a dict while another's are a
+        list. Normalise with ``x if isinstance(x, list) else [x]`` before
+        iterating; iterating without it walks dict *keys* and raises nothing.
+        ``AllPossibleParameters`` is absent for an operation that takes no
+        parameters rather than present and empty, and ``AllDiscreteStates``
+        appears only when ``ProgressType`` is ``DISCRETE``.
+
+        The second element is the response's ``X-HMC-Schema-Version``, or
+        ``None`` when the HMC sends none (ADR 0139). **It is returned verbatim
+        and is not guaranteed to be a version string.** On firmware observed at
+        V1_17_0 this endpoint echoes the request's ``X-Audit-Memento`` value
+        into that response header, so it reads ``hmc-mcp`` rather than a level;
+        the same firmware returns a real level on ordinary uom feeds. Treat it
+        as an opaque provenance tag unless it matches a level you recognise.
+
+        Unlike the reads that go through ``_get``, this method does **not**
+        send a configured ``HMC_SCHEMA_VERSION`` request header: it passes its
+        own headers straight to the transport and never reaches
+        ``_uom_headers``. Pinning a schema version therefore has no effect
+        here. That is deliberate -- the endpoint's negotiation is confirmed
+        working with ``Accept: */*`` alone and nothing establishes that it
+        honours the header -- but it is a real asymmetry with the sibling
+        reads, and a caller relying on a pinned version should know it.
+
+        Sends ``Accept: */*``. The content element is in the ``web/mc``
+        namespace with content type
+        ``application/vnd.ibm.powervm.web+xml; type=OperationSet``, not a uom
+        media type, so a typed uom Accept is the wrong guess rather than a
+        stricter one; ``*/*`` is the one Accept that cannot fail negotiation.
+        A firmware level insisting on a typed Accept answers 406, which
+        surfaces as ``HMCError`` carrying 406.
+
+        Not available on every level: three HMCs at V1_20_0 answered 500 with
+        ``java.lang.ClassNotFoundException`` naming a firmware-internal
+        operations class, against one working sample at V1_17_0. That is a
+        server-side defect no request header changes; it surfaces as
+        ``HMCError`` carrying 500. Callers that must work across levels should
+        expect it.
         """
         uuid_path_arguments: dict[str, str] = {}
         if parent_type is not None and parent_uuid is not None:

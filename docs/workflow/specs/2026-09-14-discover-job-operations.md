@@ -70,15 +70,27 @@ from a caller that has already decided what to ask for, never from HMC-facing un
   a different uom GET path. Accepted: identical to the existing `list_uom`, `search_uom` and
   `list_child` contracts, the actors above are in-process, the reach is limited to GET, and
   `_reject_dot_segments` still refuses any path that would resolve upward.
-- The exact `Accept` header `/operations` requires, and the element shape of its feed, are
-  unconfirmed against live firmware: no reference in this repository documents either.
-  Accepted: `*/*` is the one `Accept` that cannot fail negotiation, and a firmware level that
-  insists on a typed `Accept` answers 406, which surfaces as `HMCError` carrying 406. What
-  this entry accepts is unchanged; the consequence is stated here rather than left implied. A
-  200 whose body is well-formed XML but *not* an Atom feed does not raise: `parse_feed`'s
-  fallback branch returns one synthetic entry whose `ResourceType` is the root element's local
-  name, so a caller detects the mismatch by that key rather than by an exception. Only a body
-  that is not well-formed XML at all — including an empty one — raises `HMCError`.
+- The exact `Accept` header `/operations` requires, and the element shape of its feed, were
+  unconfirmed when this was written. Both were checked on PR #797 against an HMC reporting
+  V1_17_0: `*/*` is accepted, and the response is a bare `<entry>` holding one `OperationSet`.
+  A firmware level that insisted on a typed `Accept` would answer 406, which surfaces as
+  `HMCError` carrying 406. A 200 whose body is well-formed XML but *not* an Atom feed still
+  does not raise: `parse_feed`'s fallback branch returns one synthetic entry whose
+  `ResourceType` is the root element's local name, so a caller detects the mismatch by that
+  key rather than by an exception. Only a body that is not well-formed XML at all — including
+  an empty one — raises `HMCError`.
+- Repeated elements in the returned structure are a list or a bare dict depending on how many
+  siblings the HMC sent, at every level: the operations themselves, their parameters, their
+  results, and their discrete states. Accepted: this is `element_to_dict` behaviour shared with
+  every other feed read in this module, and changing it would alter the return shape of all of
+  them. A caller that iterates without normalising walks dict keys and raises nothing, so the
+  method's docstring states the normalisation and the tests pin both directions.
+- `/operations` is unavailable on some firmware levels. Three HMCs at V1_20_0 answered 500 with
+  `java.lang.ClassNotFoundException` naming a firmware-internal operations class, against one
+  working V1_17_0 sample; no intermediate level was reachable, so the boundary is unknown.
+  Accepted: it is a server-side defect that no request header changes, and it surfaces as
+  `HMCError` carrying 500 rather than an empty or partial answer. Nothing in this repository
+  can remedy it; a consumer that must work across levels has to handle the error.
 - An HMC that returns malformed XML with HTTP 200 surfaces as `HMCError` from the existing
   `_tag_parse_errors` wrapper. Accepted: that is the established contract for every other
   feed read in this module.
@@ -87,8 +99,9 @@ from a caller that has already decided what to ask for, never from HMC-facing un
 - Comparing documented job operations against a live HMC's `/operations` output — #793
   (`verification:live-hmc`). That issue does **not** cover confirming the `Accept` header the
   endpoint requires or the element shape of its entries: its four acceptance items commit no
-  one to either. That confirmation is unowned, and is carried as a follow-up candidate rather
-  than claimed here.
+  one to either. That confirmation was unowned; it was performed ad hoc on PR #797 and its
+  results are recorded above and in ADR 0139. Tracking the V1_20_0 failure across firmware
+  levels remains unowned.
 - Exposing this read to untrusted MCP/CLI callers, and the access-policy classification that
   would then bind it — #792.
 - Response-size bounding — already held by `_read_bounded_response` and ADR 0133 on every

@@ -125,6 +125,14 @@ because none of their tests can run until the method exists:
    documents what `/operations` puts there — so do not assert on it. Confirming it against
    live firmware is currently unowned; see the spec's *Covered elsewhere*.
 
+   > **Superseded by the live capture on PR #797.** The guess above was wrong in both shape
+   > and arity: the endpoint answers with a bare `<entry>` holding one `OperationSet`, not a
+   > `<feed>` of one entry per operation, and `title` is `OperationSet` rather than the
+   > operation name — so the assertion this paragraph recommends is one live firmware
+   > contradicts. The fixtures and assertions that shipped are captured from a real response;
+   > this section is retained as the design-time record, not as guidance. See ADR 0139 and the
+   > `list_operations` docstring.
+
 2. Append this helper and the eight tests directly after that constant, still at the end of
    the file:
 

@@ -24,19 +24,39 @@ dot-segment rejection on the one path that already owns them and leaves the live
 header: `/operations` is an endpoint this repository has never spoken, no reference here
 documents its media type, and `*/*` is the choice that cannot fail negotiation.
 
+Live firmware has since confirmed that choice was not merely safe but required: the content
+element arrives in the `web/mc` namespace as
+`application/vnd.ibm.powervm.web+xml; type=OperationSet`, so a typed uom `Accept` would have
+been the wrong media type rather than a stricter one.
+
 ## Consequences
 Callers destructure a 2-tuple; a call site that forgets is a `ty` error rather than a
 silent list-of-one-element bug. The return is built from `list`, `dict`, `str` and `None`,
 so no new public type joins ADR 0118's six-name facade even though `HMCClient` is exported
 there. `_get` keeps its single-value contract and its 27 callers are untouched.
 
-The `Accept: */*` choice and the feed's element shape are not confirmed against a live HMC
-in this change, and **no issue's acceptance criteria require anyone to confirm them**: #793
-(`verification:live-hmc`) compares `/operations` output against retained job-topic snapshots
-and would exercise this transport incidentally, but its four acceptance items commit no one to
-reporting a wrong `Accept` header or a mis-shaped entry. A firmware level
-that insists on a typed `Accept` answers 406, which surfaces as `HMCError` carrying 406 —
-a wrong-header report, not a parse failure.
+Both open assumptions were checked against live firmware on PR #797, at one HMC reporting
+V1_17_0 on its ordinary uom feeds. `Accept: */*` was not refused, and both anchors parsed.
+Three findings came back with it, none of which changes this decision:
+
+- **The response carries one `OperationSet`, not one entry per operation.** `SetName` names
+  the type and `DefinedOperations` holds the operations. Repeated elements at every level
+  parse to a list or to a bare dict depending on how many siblings the HMC sent, so callers
+  must normalise before iterating. The method's docstring is the reference for that shape;
+  the fixtures in `tests/unit/test_client.py` are captured from this response.
+- **`X-HMC-Schema-Version` is not guaranteed to hold a schema version.** That level echoes the
+  request's `X-Audit-Memento` value into it, so it reads `hmc-mcp`. The pairing this record
+  exists to establish therefore delivers an opaque provenance tag on at least one firmware
+  level, not the version the header's name promises. The tuple stays — a caller cannot obtain
+  even that much afterwards without a race — but it is returned verbatim and callers must not
+  parse it as a level.
+- **The endpoint is not available at every level.** Three HMCs at V1_20_0 answered 500 with
+  `java.lang.ClassNotFoundException` naming a firmware-internal operations class, against the
+  one working V1_17_0 sample. No level between the two was reachable, so the boundary is
+  unknown. It surfaces as `HMCError` carrying 500. No issue owns tracking it.
+
+A firmware level that insists on a typed `Accept` would answer 406, which surfaces as
+`HMCError` carrying 406 — a wrong-header report, not a parse failure.
 
 The request-and-parse body is four statements. Repeating it once per discovery read is
 accepted here; #788, #789 and #791 land the second through fourth instances, and extracting
@@ -60,9 +80,14 @@ a shared helper is theirs to justify once three exist.
   anchor needs no second UUID check beside the one that helper owns (`raw_get` calls `_request`
   directly, `src/hmc_mcp/client/core.py:894-907` at 975b0121). The cost is that this method
   repeats `raw_get`'s five-line status block.
-- **Send the configured `X-HMC-Schema-Version` request header.** judgment: a request header
-  that can provoke 406 is the wrong thing to add on the fail-open side of an endpoint this
-  repo has never spoken, and nothing here can test which way the HMC takes it.
+- **Send the configured `X-HMC-Schema-Version` request header.** verified: `Accept: */*` alone
+  negotiates successfully against live V1_17_0 firmware (PR #797), and nothing establishes
+  that the endpoint honours the header, so adding one that can provoke 406 buys nothing on the
+  fail-open side of an endpoint this repo has never spoken. The cost is an asymmetry with the
+  reads that go through `_get`: because this method passes its own headers to the transport it
+  never reaches `_uom_headers`, so a configured `HMC_SCHEMA_VERSION` is silently not applied
+  here. That is recorded in the method's docstring so a caller pinning a version is not
+  surprised by it.
 - **Do nothing; keep building `do/{Operation}` paths from names hardcoded in Python.**
   verified: `rg -n "/operations" src/` returns no match at 975b0121, and issue #787 names 14
   call sites that construct those paths with nothing able to ask the HMC whether it defines
