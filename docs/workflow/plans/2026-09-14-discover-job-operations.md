@@ -64,8 +64,8 @@ reuse the shape this task establishes but are not built here.
 Consumed from the existing codebase (each confirmed present at `975b0121`):
 
 - `HMCClient._request_with_uuid_path_arguments(self, method: str, path: str, *, uuid_path_arguments: Mapping[str, str], **kwargs: Any) -> httpx.Response` — `src/hmc_mcp/client/core.py:453`. Raises `ValueError(f"{argument} must be a UUID")` for a non-UUID value, then delegates to `_request`, which applies `_reject_dot_segments`.
-- `_parse_feed(xml_text: str, context: str) -> list[dict[str, Any]]` — `src/hmc_mcp/client/client_parse.py:40`, already imported into `core.py` at line 36. Raises `HMCError(f"Failed to parse {context} response: ...")` on malformed XML.
-- `HMCError(message: str, status_code: int | None = None, body: str | None = None)` — `src/hmc_mcp/errors.py:17`, already imported into `core.py` at line 28.
+- `_parse_feed(xml_text: str, context: str) -> list[dict[str, Any]]` — `src/hmc_mcp/client/client_parse.py:40`, already imported into `core.py` at line 35. Raises `HMCError(f"Failed to parse {context} response: ...")` on malformed XML.
+- `HMCError(message: str, status_code: int | None = None, body: str | None = None)` — `src/hmc_mcp/errors.py:17`, already imported into `core.py` at line 27.
 
 Exposed to later work (#788, #789, #791, #792):
 
@@ -119,20 +119,17 @@ because none of their tests can run until the method exists:
    """
    ```
 
-   The entry shape is the one `_parse_feed` already flattens: the assertions below read
-   `title` and `ResourceType`, which `_parse_entry` produces for any Atom entry, so they do
-   not depend on an element vocabulary this repo has not confirmed against live firmware.
+   The assertions below read only `title`, which `xmlutil._parse_entry` fills from the Atom
+   `<entry><title>` for any feed, so they do not depend on the element vocabulary inside
+   `<content>`. That inner `<JobRequest>` element **is** a guess — nothing in this repository
+   documents what `/operations` puts there — so do not assert on it; #793 confirms it against
+   live firmware.
 
 2. Append this helper and the eight tests directly after that constant, still at the end of
    the file:
 
    ```python
    _PARENT_UUID = "44444444-4444-4444-4444-444444444444"
-
-
-   def _operations_requests(router):
-       """Every /operations request the router recorded, logon traffic excluded."""
-       return [call for call in router.calls if "operations" in call.request.url.path]
 
 
    @pytest.mark.asyncio
@@ -148,7 +145,6 @@ because none of their tests can run until the method exists:
        assert route.calls.last.request.url.path == path
        assert route.calls.last.request.headers["Accept"] == "*/*"
        assert [entry["title"] for entry in entries] == ["PowerOn"]
-       assert entries[0]["ResourceType"] == "JobRequest"
 
 
    @pytest.mark.asyncio
@@ -218,6 +214,7 @@ because none of their tests can run until the method exists:
 
    @pytest.mark.asyncio
    async def test_list_operations_rejects_a_non_uuid_parent(mock_hmc):
+       """Refused before transport: the request is never attempted."""
        async with HMCClient(make_config()) as hmc:
            with pytest.raises(ValueError, match="parent_uuid must be a UUID"):
                await hmc.list_operations(
@@ -225,8 +222,6 @@ because none of their tests can run until the method exists:
                    parent_type="ManagedSystem",
                    parent_uuid="not-a-uuid",
                )
-
-       assert _operations_requests(mock_hmc) == []
 
 
    @pytest.mark.asyncio
@@ -238,24 +233,29 @@ because none of their tests can run until the method exists:
        ],
    )
    async def test_list_operations_requires_both_parent_arguments(mock_hmc, kwargs):
+       """Refused before transport: the request is never attempted."""
        async with HMCClient(make_config()) as hmc:
            with pytest.raises(ValueError, match="must be given together"):
                await hmc.list_operations("LogicalPartition", **kwargs)
 
-       assert _operations_requests(mock_hmc) == []
-
 
    @pytest.mark.asyncio
    async def test_list_operations_rejects_a_dot_segment_type(mock_hmc):
+       """Refused before transport: the request is never attempted."""
        async with HMCClient(make_config()) as hmc:
            with pytest.raises(HMCError, match=r"'\.\.' segment"):
                await hmc.list_operations("../web/Logon")
 
-       assert _operations_requests(mock_hmc) == []
    ```
 
    `httpx`, `pytest`, `HMCClient`, `HMCError` and `make_config` are already imported at the
    top of `tests/unit/test_client.py`; confirm that before adding an import.
+
+   The last three tests assert only that the call raises. They need no "and sent no request"
+   assertion, and must not be given one: `mock_hmc` leaves respx at its `assert_all_mocked=True`
+   default and registers no `/operations` route, so an attempted request raises
+   `AllMockedAssertionError` and fails the test rather than matching the expected raise. An
+   added assertion there could never fail.
 
 3. Run the focused suite and confirm it is red for the right reason:
 
@@ -288,10 +288,12 @@ because none of their tests can run until the method exists:
            none), because the operations a firmware level defines are only
            meaningful for the schema version that reported them (ADR 0139).
 
-           Sends ``Accept: */*``. An anchor endpoint does not return instances
-           of *resource_type*, so a typed uom Accept header would declare the
-           wrong media type -- the same reason ``get_quick_property`` sends
-           ``*/*``.
+           Sends ``Accept: */*``. Nothing in this repository's HMC references
+           documents what media type ``/operations`` answers with, so ``*/*``
+           is the one Accept that cannot fail negotiation; a firmware level
+           insisting on a typed Accept answers 406, which surfaces as
+           ``HMCError`` carrying 406. Issue #793 confirms it against live
+           firmware.
            """
            uuid_path_arguments: dict[str, str] = {}
            if parent_type is not None and parent_uuid is not None:
@@ -377,12 +379,8 @@ because none of their tests can run until the method exists:
 **Acceptance criteria.**
 
 - `list_operations` exists on `HMCClient` with exactly the signature in the Interfaces block.
-- All eight tests (ten cases) pass, and each was observed red before step 4.
-- The root-anchor request path is `/rest/api/uom/{R}/operations` and the child-anchor request
-  path is `/rest/api/uom/{P}/{UUID}/{C}/operations`, asserted from the recorded request.
-- A non-200, non-204 response raises `HMCError` whose `status_code` is that status.
-- A non-UUID `parent_uuid`, a lone parent argument, and a dot-segment type each raise before
-  any `/operations` request is recorded.
+- Every contract in the Verification table is covered: all eight tests (ten cases) pass, and
+  each was observed red before step 4.
 - `CHANGELOG.md` carries the new `Unreleased / Added` bullet.
 - `just verify` and `uv run --no-sync prek run --all-files` are both green.
 

@@ -64,8 +64,8 @@ from a caller that has already decided what to ask for, never from HMC-facing un
   `list_child` contracts, the actors above are in-process, the reach is limited to GET, and
   `_reject_dot_segments` still refuses any path that would resolve upward.
 - The exact `Accept` header `/operations` requires, and the element shape of its feed, are
-  unconfirmed against live firmware. Accepted: `Accept: */*` is the fail-open choice this
-  module already documents for non-instance anchor endpoints, and a firmware level that
+  unconfirmed against live firmware: no reference in this repository documents either.
+  Accepted: `*/*` is the one `Accept` that cannot fail negotiation, and a firmware level that
   insists on a typed `Accept` answers 406, which surfaces as `HMCError` carrying 406.
 - An HMC that returns malformed XML with HTTP 200 surfaces as `HMCError` from the existing
   `_tag_parse_errors` wrapper. Accepted: that is the established contract for every other
@@ -130,8 +130,10 @@ metadata, identical for every caller of a given HMC.
 
 ## Validation
 
-Every success criterion above is machine-checkable by a respx-mocked case in
-`tests/unit/test_client.py`, the module that already owns `HMCClient` transport contracts.
+Each behavioural success criterion above is machine-checkable by a respx-mocked case in
+`tests/unit/test_client.py`, the module that already owns `HMCClient` transport contracts. The
+last criterion is the guardrail one, discharged by the plan's final two steps rather than by a
+test.
 The per-contract inventory — each contract's mode, test name, expected red failure and exact
 focused green command — is Task 1's `Verification` block in
 `docs/workflow/plans/2026-09-14-discover-job-operations.md`. One contract there is

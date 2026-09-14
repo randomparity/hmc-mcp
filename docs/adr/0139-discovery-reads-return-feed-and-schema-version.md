@@ -18,10 +18,11 @@ chosen here is the shape they inherit.
 `tuple[list[dict[str, Any]], str | None]`: the existing `_parse_feed` output paired with
 the response's `X-HMC-Schema-Version`, `None` when the HMC sends no such header.
 
-The request goes through `_request_with_uuid_path_arguments` with `Accept: */*`, the same
-way `get_quick_property` reaches a non-instance anchor endpoint. That keeps UUID validation
-and dot-segment rejection on the one path that already owns them, and leaves the response
-headers reachable. No `X-HMC-Schema-Version` request header is sent.
+The request goes through `_request_with_uuid_path_arguments`, which keeps UUID validation and
+dot-segment rejection on the one path that already owns them and leaves the live
+`httpx.Headers` reachable. It sends `Accept: */*` and no `X-HMC-Schema-Version` request
+header: `/operations` is an endpoint this repository has never spoken, no reference here
+documents its media type, and `*/*` is the choice that cannot fail negotiation.
 
 ## Consequences
 Callers destructure a 2-tuple; a call site that forgets is a `ty` error rather than a
@@ -46,9 +47,15 @@ a shared helper is theirs to justify once three exist.
   reports 27 call sites at 975b0121, every one of which would have to destructure a tuple it
   does not use, to serve one new caller.
 - **Use the public `raw_get` escape hatch, which already returns `(body, headers)`.**
-  verified: `raw_get` calls `_request`, not `_request_with_uuid_path_arguments`
-  (`src/hmc_mcp/client/core.py:894-907` at 975b0121), so the child anchor's `parent_uuid`
-  would need a second UUID check written beside the one that method already owns.
+  verified: it returns `dict(resp.headers)`, and httpx lowercases header names on iteration —
+  `dict(httpx.Response(200, headers={"X-HMC-Schema-Version": "V1_0"}).headers)` has the single
+  key `x-hmc-schema-version`, so a lookup under the documented capitalization reads `None`
+  (httpx 0.29.2, this checkout). A caller that has to know the casing rule to read the header
+  correctly is the trap this decision exists to remove. Keeping the live `httpx.Headers`, which
+  is case-insensitive, also keeps `_request_with_uuid_path_arguments` on the path, so the child
+  anchor needs no second UUID check beside the one that helper owns (`raw_get` calls `_request`
+  directly, `src/hmc_mcp/client/core.py:894-907` at 975b0121). The cost is that this method
+  repeats `raw_get`'s five-line status block.
 - **Send the configured `X-HMC-Schema-Version` request header.** judgment: a request header
   that can provoke 406 is the wrong thing to add on the fail-open side of an endpoint this
   repo has never spoken, and nothing here can test which way the HMC takes it.
