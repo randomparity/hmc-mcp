@@ -1950,6 +1950,11 @@ async def test_wait_for_job_recognises_completed_ok(mock_hmc):
     assert result["Resource"]["Status"] == "COMPLETED_OK"
 
 
+# An *assumed* /operations feed, not a captured one. Nothing in this repository
+# documents what the HMC actually puts inside <content> for this endpoint, so the
+# <JobRequest> element below is a guess and this fixture is not evidence of the
+# real shape. Assertions here read only <title>, which every Atom entry carries.
+# Confirming the real shape against live firmware is unowned (ADR 0139).
 OPERATIONS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -1981,6 +1986,10 @@ async def test_list_operations_reads_the_root_anchor(mock_hmc):
         entries, _ = await hmc.list_operations("ManagedSystem")
 
     assert route.calls.last.request.url.path == path
+    # Pins against a *wrong* Accept only. httpx's own default is already "*/*",
+    # so this assertion would still hold if the method stopped sending the
+    # header at all; what it catches is a typed uom Accept, which is the failure
+    # this endpoint is actually at risk of.
     assert route.calls.last.request.headers["Accept"] == "*/*"
     assert [entry["title"] for entry in entries] == ["PowerOn"]
 
@@ -2049,6 +2058,25 @@ async def test_list_operations_204_returns_no_entries(mock_hmc):
 
     async with HMCClient(make_config()) as hmc:
         assert await hmc.list_operations("ManagedSystem") == ([], "V1_0")
+
+
+@pytest.mark.asyncio
+async def test_list_operations_empty_200_body_raises_hmc_error(mock_hmc):
+    """An empty 200 body is a malformed feed, not an empty result.
+
+    This method carries no empty-body guard, unlike its sibling uom reads: they
+    need one because ``_get`` collapses 204 to "" and cannot tell the two apart,
+    while this method returns on 204 before parsing. That makes the guard
+    unreachable here, so an empty 200 reaches ``_parse_feed`` and is reported.
+    Without this case the decision lives only in a source comment.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem/operations").mock(
+        return_value=httpx.Response(200, text="")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="Failed to parse"):
+            await hmc.list_operations("ManagedSystem")
 
 
 @pytest.mark.asyncio

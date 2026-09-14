@@ -73,7 +73,12 @@ from a caller that has already decided what to ask for, never from HMC-facing un
 - The exact `Accept` header `/operations` requires, and the element shape of its feed, are
   unconfirmed against live firmware: no reference in this repository documents either.
   Accepted: `*/*` is the one `Accept` that cannot fail negotiation, and a firmware level that
-  insists on a typed `Accept` answers 406, which surfaces as `HMCError` carrying 406.
+  insists on a typed `Accept` answers 406, which surfaces as `HMCError` carrying 406. What
+  this entry accepts is unchanged; the consequence is stated here rather than left implied. A
+  200 whose body is well-formed XML but *not* an Atom feed does not raise: `parse_feed`'s
+  fallback branch returns one synthetic entry whose `ResourceType` is the root element's local
+  name, so a caller detects the mismatch by that key rather than by an exception. Only a body
+  that is not well-formed XML at all — including an empty one — raises `HMCError`.
 - An HMC that returns malformed XML with HTTP 200 surfaces as `HMCError` from the existing
   `_tag_parse_errors` wrapper. Accepted: that is the established contract for every other
   feed read in this module.
