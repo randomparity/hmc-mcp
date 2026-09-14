@@ -92,27 +92,42 @@ class SystemsMixin:
         }
 
     async def list_managed_systems(self: SystemsClient) -> list[dict[str, Any]]:
-        # Some HMC firmware builds return HTTP 500 on the unfiltered
-        # ManagedSystem feed due to null property values in hardware-inventory
-        # sub-elements (e.g. VirtualPersistentMemoryVolume/Uuid,
-        # PersistentMemoryDevice/DynamicReconfigurationConnectorIndex, …).
-        # The HMC serialiser trips on null-valued sub-fields it cannot encode.
-        # Translate that known response into an actionable error rather than
-        # making an unavailable inventory indistinguishable from an empty one.
+        # Some firmware 500s on the unfiltered feed over a null
+        # hardware-inventory property (e.g. VirtualPersistentMemoryVolume/Uuid).
+        # quick/All + find_system_by_name (a different, working path) resolve
+        # what they can; a system that still fails (or resolves ambiguously)
+        # is skipped rather than failing the whole call.
         try:
             return await self.list_uom("ManagedSystem")
         except HMCError as exc:
-            if exc.status_code == 500 and "Nested path contains null property" in str(
-                exc
+            if not (
+                exc.status_code == 500
+                and "Nested path contains null property" in str(exc)
             ):
-                raise HMCError(
-                    "Managed-system inventory is unavailable because this HMC "
-                    "firmware could not serialize a null hardware property; "
-                    "update the HMC firmware or query a managed system directly",
-                    status_code=500,
-                    body=exc.body,
-                ) from exc
-            raise
+                raise
+            quick_all_exc: HMCError | None = None
+            try:
+                names = await self._quick_all_system_names()
+            except HMCError as qa_exc:
+                names = {}
+                quick_all_exc = qa_exc
+            resolved: list[dict[str, Any]] = []
+            for name in names.values():
+                try:
+                    entry = await self.find_system_by_name(name)
+                except (HMCError, ValueError):
+                    continue
+                if entry is not None:
+                    resolved.append(entry)
+            if resolved:
+                return resolved
+            raise HMCError(
+                "Managed-system inventory is unavailable because this HMC "
+                "firmware could not serialize a null hardware property; "
+                "update the HMC firmware or query a managed system directly",
+                status_code=500,
+                body=exc.body,
+            ) from (quick_all_exc or exc)
 
     async def get_managed_system(
         self: SystemsClient, uuid: str

@@ -906,12 +906,80 @@ async def test_managed_system_serialization_failure_is_not_empty_inventory(mock_
         status_code=500,
         body="Nested path contains null property",
     )
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(200, json=[])
+    )
     async with HMCClient(make_config()) as hmc:
         hmc.list_uom = AsyncMock(side_effect=firmware_error)
         with pytest.raises(HMCError, match="firmware could not serialize") as exc_info:
             await hmc.list_managed_systems()
 
     assert exc_info.value.__cause__ is firmware_error
+
+
+@pytest.mark.parametrize(
+    ("sys2_response", "expected_uuids"),
+    [
+        (
+            httpx.Response(500, text="Nested path contains null property"),
+            {"sys-uuid-1"},
+        ),
+        (
+            httpx.Response(200, text=_managed_system_feed("sys-uuid-2", "sys2")),
+            {"sys-uuid-1", "sys-uuid-2"},
+        ),
+    ],
+    ids=["partial", "all-resolve"],
+)
+@pytest.mark.asyncio
+async def test_list_managed_systems_resolves_serializable_systems(
+    mock_hmc, sys2_response, expected_uuids
+):
+    firmware_error = HMCError(
+        "GET failed: Nested path contains null property",
+        status_code=500,
+        body="Nested path contains null property",
+    )
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"UUID": "sys-uuid-1", "SystemName": "sys1"},
+                {"UUID": "sys-uuid-2", "SystemName": "sys2"},
+            ],
+        )
+    )
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
+        return_value=httpx.Response(
+            200, text=_managed_system_feed("sys-uuid-1", "sys1")
+        )
+    )
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys2)").mock(
+        return_value=sys2_response
+    )
+    async with HMCClient(make_config()) as hmc:
+        hmc.list_uom = AsyncMock(side_effect=firmware_error)
+        systems = await hmc.list_managed_systems()
+    assert {s["UUID"] for s in systems} == expected_uuids
+
+
+@pytest.mark.asyncio
+async def test_list_managed_systems_fallback_quick_all_fails_raises_actionable_error(
+    mock_hmc,
+):
+    firmware_error = HMCError(
+        "GET failed: Nested path contains null property",
+        status_code=500,
+        body="Nested path contains null property",
+    )
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(500, text="boom")
+    )
+    async with HMCClient(make_config()) as hmc:
+        hmc.list_uom = AsyncMock(side_effect=firmware_error)
+        with pytest.raises(HMCError, match="firmware could not serialize") as exc_info:
+            await hmc.list_managed_systems()
+    assert "quick/All failed" in str(exc_info.value.__cause__)
 
 
 @pytest.mark.asyncio
