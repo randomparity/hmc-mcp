@@ -51,14 +51,14 @@ dev = [
     "detect-secrets==1.5.0",
     "fastmcp-slim[client]==4.0.3",
     "hatchling==1.32.0",
-    "prek==0.5.0",
+    "prek==0.5.2",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
     "respx==0.23.1",
     "ruff==0.16.5",
-    "ty==0.0.75",
-    "zizmor==1.29.0",
+    "ty==0.0.78",
+    "zizmor==1.30.0",
 ]
 
 [tool.ruff.lint]
