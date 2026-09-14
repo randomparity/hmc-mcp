@@ -117,7 +117,38 @@ class SystemsMixin:
     async def get_managed_system(
         self: SystemsClient, uuid: str
     ) -> dict[str, Any] | None:
-        return await self.get_uom("ManagedSystem", uuid)
+        # Some firmware 500s on a direct UUID fetch over a null hardware
+        # property (see list_managed_systems); quick/All supplies the
+        # missing name so find_system_by_name (a different, working path)
+        # can resolve it.
+        try:
+            return await self.get_uom("ManagedSystem", uuid)
+        except HMCError as exc:
+            if not (
+                exc.status_code == 500
+                and "Nested path contains null property" in str(exc)
+            ):
+                raise
+            entry = None
+            fallback_exc: Exception | None = None
+            try:
+                names = await self._quick_all_system_names()
+                name = names.get(uuid)
+                if name:
+                    entry = await self.find_system_by_name(name)
+            except (HMCError, ValueError) as fb_exc:
+                fallback_exc = fb_exc
+            if entry is None:
+                raise HMCError(
+                    f"Managed system {uuid} is unavailable because this "
+                    "HMC firmware could not serialize a null hardware "
+                    "property, and it could not be resolved from the "
+                    "managed-system summary; update the HMC firmware or "
+                    "query the system by name with systems show",
+                    status_code=500,
+                    body=exc.body,
+                ) from (fallback_exc or exc)
+            return entry
 
     async def find_system_by_name(
         self: SystemsClient, name: str
