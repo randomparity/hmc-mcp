@@ -1950,36 +1950,194 @@ async def test_wait_for_job_recognises_completed_ok(mock_hmc):
     assert result["Resource"]["Status"] == "COMPLETED_OK"
 
 
-# An *assumed* /operations feed, not a captured one. Nothing in this repository
-# documents what the HMC actually puts inside <content> for this endpoint, so the
-# <JobRequest> element below is a guess and this fixture is not evidence of the
-# real shape. Assertions here read only <title>, which every Atom entry carries.
-# Confirming the real shape against live firmware is unowned (ADR 0139).
-OPERATIONS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:uuid:11111111-1111-1111-1111-111111111111</id>
-    <title>PowerOn</title>
-    <content type="application/vnd.ibm.powervm.web+xml">
-      <JobRequest xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">
-        <RequestedOperation>
-          <OperationName>PowerOn</OperationName>
-          <GroupName>ManagedSystem</GroupName>
-        </RequestedOperation>
-      </JobRequest>
+# Captured from an HMC reporting X-HMC-Schema-Version V1_17_0 on its regular uom
+# feeds (#787), trimmed from 57 operations to two. Only the host, the UUIDs and
+# the SELF href were shortened; element names, attributes and nesting are as the
+# firmware sends them.
+#
+# The endpoint answers with a bare <entry>, not a <feed>, and the entry holds one
+# OperationSet carrying every operation the type defines -- not one entry per
+# operation. The two operations below differ deliberately: PowerOn has several
+# parameters and a single result, ResetConnection omits <AllPossibleParameters>
+# altogether. That asymmetry is what
+# test_list_operations_collapses_single_child_elements pins.
+OPERATIONS_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+    <id>11111111-1111-1111-1111-111111111111</id>
+    <title>OperationSet</title>
+    <published>2026-09-14T23:11:30.597Z</published>
+    <link rel="SELF" href="https://hmc.example.com/rest/api/uom/ManagedSystem/operations"/>
+    <content type="application/vnd.ibm.powervm.web+xml; type=OperationSet">
+        <OperationSet:OperationSet
+            xmlns:OperationSet="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
+            xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
+            schemaVersion="V1_0">
+            <Metadata>
+                <Atom/>
+            </Metadata>
+            <SetName kb="ROR" kxe="false">ManagedSystem</SetName>
+            <DefinedOperations kxe="false" kb="ROO" schemaVersion="V1_0">
+                <Metadata>
+                    <Atom/>
+                </Metadata>
+                <Operation schemaVersion="V1_0">
+                    <Metadata>
+                        <Atom/>
+                    </Metadata>
+                    <OperationName kb="ROR" kxe="false">PowerOn</OperationName>
+                    <GroupName kxe="false" kb="ROR">ManagedSystem</GroupName>
+                    <ProgressType kb="ROR" kxe="false">LINEAR</ProgressType>
+                    <AllPossibleParameters kb="ROO" kxe="false" schemaVersion="V1_0">
+                        <Metadata>
+                            <Atom/>
+                        </Metadata>
+                        <OperationParameter schemaVersion="V1_0">
+                            <Metadata>
+                                <Atom/>
+                            </Metadata>
+                            <ParameterName kb="ROR" kxe="false">operation</ParameterName>
+                        </OperationParameter>
+                        <OperationParameter schemaVersion="V1_0">
+                            <Metadata>
+                                <Atom/>
+                            </Metadata>
+                            <ParameterName kb="ROR" kxe="false">keylock</ParameterName>
+                        </OperationParameter>
+                    </AllPossibleParameters>
+                    <AllPossibleResults kb="ROO" kxe="false" schemaVersion="V1_0">
+                        <Metadata>
+                            <Atom/>
+                        </Metadata>
+                        <OperationParameter schemaVersion="V1_0">
+                            <Metadata>
+                                <Atom/>
+                            </Metadata>
+                            <ParameterName kb="ROR" kxe="false">ErrorData</ParameterName>
+                        </OperationParameter>
+                    </AllPossibleResults>
+                </Operation>
+                <Operation schemaVersion="V1_0">
+                    <Metadata>
+                        <Atom/>
+                    </Metadata>
+                    <OperationName kb="ROR" kxe="false">ResetConnection</OperationName>
+                    <GroupName kxe="false" kb="ROR">ManagedSystem</GroupName>
+                    <ProgressType kb="ROR" kxe="false">LINEAR</ProgressType>
+                    <AllPossibleResults kb="ROO" kxe="false" schemaVersion="V1_0">
+                        <Metadata>
+                            <Atom/>
+                        </Metadata>
+                        <OperationParameter schemaVersion="V1_0">
+                            <Metadata>
+                                <Atom/>
+                            </Metadata>
+                            <ParameterName kb="ROR" kxe="false">returnCode</ParameterName>
+                        </OperationParameter>
+                        <OperationParameter schemaVersion="V1_0">
+                            <Metadata>
+                                <Atom/>
+                            </Metadata>
+                            <ParameterName kb="ROR" kxe="false">result</ParameterName>
+                        </OperationParameter>
+                    </AllPossibleResults>
+                </Operation>
+            </DefinedOperations>
+        </OperationSet:OperationSet>
     </content>
-  </entry>
-</feed>
+</entry>
+"""
+
+# The child anchor, same envelope with SetName naming the child type. Trimmed to
+# the one DISCRETE operation, which carries the <AllDiscreteStates> block the
+# LINEAR operations above have no equivalent of -- and, being alone under
+# <DefinedOperations>, parses to a bare dict rather than a list.
+OPERATIONS_ENTRY_CHILD = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+    <id>22222222-2222-2222-2222-222222222222</id>
+    <title>OperationSet</title>
+    <published>2026-09-14T23:11:31.297Z</published>
+    <link rel="SELF" href="https://hmc.example.com/rest/api/uom/LogicalPartition/operations"/>
+    <content type="application/vnd.ibm.powervm.web+xml; type=OperationSet">
+        <OperationSet:OperationSet
+            xmlns:OperationSet="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
+            xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
+            schemaVersion="V1_0">
+            <Metadata>
+                <Atom/>
+            </Metadata>
+            <SetName kb="ROR" kxe="false">LogicalPartition</SetName>
+            <DefinedOperations kxe="false" kb="ROO" schemaVersion="V1_0">
+                <Metadata>
+                    <Atom/>
+                </Metadata>
+                <Operation schemaVersion="V1_0">
+                    <Metadata>
+                        <Atom/>
+                    </Metadata>
+                    <OperationName kb="ROR" kxe="false">ApplyProfile</OperationName>
+                    <GroupName kxe="false" kb="ROR">LogicalPartition</GroupName>
+                    <ProgressType kb="ROR" kxe="false">DISCRETE</ProgressType>
+                    <AllPossibleResults kb="ROO" kxe="false" schemaVersion="V1_0">
+                        <Metadata>
+                            <Atom/>
+                        </Metadata>
+                        <OperationParameter schemaVersion="V1_0">
+                            <Metadata>
+                                <Atom/>
+                            </Metadata>
+                            <ParameterName kb="ROR" kxe="false">returnCode</ParameterName>
+                        </OperationParameter>
+                        <OperationParameter schemaVersion="V1_0">
+                            <Metadata>
+                                <Atom/>
+                            </Metadata>
+                            <ParameterName kb="ROR" kxe="false">result</ParameterName>
+                        </OperationParameter>
+                    </AllPossibleResults>
+                    <AllDiscreteStates kb="ROO" kxe="false" schemaVersion="V1_0">
+                        <Metadata>
+                            <Atom/>
+                        </Metadata>
+                        <NLSStaticMessage schemaVersion="V1_0">
+                            <Metadata>
+                                <Atom/>
+                            </Metadata>
+                            <UntranslatedMessage kxe="false" kb="ROR">ApplyProfile not yet started</UntranslatedMessage>
+                            <MessageKey kb="ROR" kxe="false">NOT STARTED</MessageKey>
+                        </NLSStaticMessage>
+                        <NLSStaticMessage schemaVersion="V1_0">
+                            <Metadata>
+                                <Atom/>
+                            </Metadata>
+                            <UntranslatedMessage kxe="false" kb="ROR">ApplyProfile Completed</UntranslatedMessage>
+                            <MessageKey kb="ROR" kxe="false">APPLYPROFILE COMPLETED</MessageKey>
+                        </NLSStaticMessage>
+                    </AllDiscreteStates>
+                </Operation>
+            </DefinedOperations>
+        </OperationSet:OperationSet>
+    </content>
+</entry>
 """
 
 _PARENT_UUID = "44444444-4444-4444-4444-444444444444"
+
+
+def _operations(entry):
+    """The OperationSet's operations, normalised to a list.
+
+    Every caller of ``list_operations`` needs this, which is the point of
+    test_list_operations_collapses_single_child_elements.
+    """
+    defined = entry["Resource"]["DefinedOperations"]["Operation"]
+    return [defined] if isinstance(defined, dict) else defined
 
 
 @pytest.mark.asyncio
 async def test_list_operations_reads_the_root_anchor(mock_hmc):
     path = "/rest/api/uom/ManagedSystem/operations"
     route = mock_hmc.get(path).mock(
-        return_value=httpx.Response(200, text=OPERATIONS_FEED)
+        return_value=httpx.Response(200, text=OPERATIONS_ENTRY)
     )
 
     async with HMCClient(make_config()) as hmc:
@@ -1989,16 +2147,25 @@ async def test_list_operations_reads_the_root_anchor(mock_hmc):
     # Pins against a *wrong* Accept only. httpx's own default is already "*/*",
     # so this assertion would still hold if the method stopped sending the
     # header at all; what it catches is a typed uom Accept, which is the failure
-    # this endpoint is actually at risk of.
+    # this endpoint is actually at risk of -- the content element is in the
+    # web/mc namespace, so a uom media type is the wrong guess, not a stricter one.
     assert route.calls.last.request.headers["Accept"] == "*/*"
-    assert [entry["title"] for entry in entries] == ["PowerOn"]
+    # One OperationSet, not one entry per operation. A caller that reads this
+    # result as a list of operations is reading the wrong level.
+    assert len(entries) == 1
+    assert entries[0]["ResourceType"] == "OperationSet"
+    assert entries[0]["Resource"]["SetName"] == "ManagedSystem"
+    assert [op["OperationName"] for op in _operations(entries[0])] == [
+        "PowerOn",
+        "ResetConnection",
+    ]
 
 
 @pytest.mark.asyncio
 async def test_list_operations_reads_the_child_anchor(mock_hmc):
     path = f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/operations"
     route = mock_hmc.get(path).mock(
-        return_value=httpx.Response(200, text=OPERATIONS_FEED)
+        return_value=httpx.Response(200, text=OPERATIONS_ENTRY_CHILD)
     )
 
     async with HMCClient(make_config()) as hmc:
@@ -2009,7 +2176,55 @@ async def test_list_operations_reads_the_child_anchor(mock_hmc):
         )
 
     assert route.calls.last.request.url.path == path
-    assert [entry["title"] for entry in entries] == ["PowerOn"]
+    # Same envelope as the root anchor; SetName is what names the child type.
+    assert entries[0]["ResourceType"] == "OperationSet"
+    assert entries[0]["Resource"]["SetName"] == "LogicalPartition"
+    assert [op["OperationName"] for op in _operations(entries[0])] == ["ApplyProfile"]
+
+
+@pytest.mark.asyncio
+async def test_list_operations_collapses_single_child_elements(mock_hmc):
+    """Repeated elements parse to a list, or to a bare dict when there is one.
+
+    ``element_to_dict`` keys children by tag, so an element's arity in the
+    returned structure depends on how many siblings the HMC happened to send --
+    not on the schema. Iterating such a value without normalising walks *dict
+    keys* when the count is one, silently and without raising. This is inherited
+    behaviour shared with every other read in this client, but ``/operations``
+    is where it bites hardest: consumers want to walk the operations, their
+    parameters and their results, and all three collapse.
+
+    Both directions are asserted from one fixture pair so the contrast cannot
+    drift apart. ``_operations`` above is the normalisation callers need.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem/operations").mock(
+        return_value=httpx.Response(200, text=OPERATIONS_ENTRY)
+    )
+    mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/operations"
+    ).mock(return_value=httpx.Response(200, text=OPERATIONS_ENTRY_CHILD))
+
+    async with HMCClient(make_config()) as hmc:
+        root, _ = await hmc.list_operations("ManagedSystem")
+        child, _ = await hmc.list_operations(
+            "LogicalPartition",
+            parent_type="ManagedSystem",
+            parent_uuid=_PARENT_UUID,
+        )
+
+    # Two operations under the root anchor, one under the child anchor.
+    assert isinstance(root[0]["Resource"]["DefinedOperations"]["Operation"], list)
+    assert isinstance(child[0]["Resource"]["DefinedOperations"]["Operation"], dict)
+
+    # And again one level down, on the same field name within one response:
+    # PowerOn declares a single result, ResetConnection declares two.
+    power_on, reset_connection = _operations(root[0])
+    assert isinstance(power_on["AllPossibleResults"]["OperationParameter"], dict)
+    assert isinstance(reset_connection["AllPossibleResults"]["OperationParameter"], list)
+
+    # An operation that takes no parameters omits the element rather than
+    # sending it empty, so callers must use .get() and not index it.
+    assert "AllPossibleParameters" not in reset_connection
 
 
 @pytest.mark.asyncio
@@ -2021,7 +2236,7 @@ async def test_list_operations_returns_the_response_schema_version(
     mock_hmc, headers, expected
 ):
     mock_hmc.get("/rest/api/uom/ManagedSystem/operations").mock(
-        return_value=httpx.Response(200, text=OPERATIONS_FEED, headers=headers)
+        return_value=httpx.Response(200, text=OPERATIONS_ENTRY, headers=headers)
     )
 
     async with HMCClient(make_config()) as hmc:
