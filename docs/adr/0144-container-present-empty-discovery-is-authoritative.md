@@ -1,10 +1,12 @@
-# ADR 0144: A container-present discovery answer with no name element is a fact about the type
+# ADR 0144: A container holding nothing this parse could name is a fact about the type
 
 ## Status
 
 Accepted (2026-09-15). Amends ADR 0141 in part and ADR 0142 in part: the clause each carries
 reading *every* empty discovery answer as "the names are unknown". The opt-in default, the cache
-key and lifetime, the parse, and the degradation on a failed read are unchanged in both.
+key and lifetime, the parse, and the degradation on a failed read are unchanged in both. Amends
+ADR 0140 in part as well, in one respect only: the return type it declares for
+`list_quick_properties` gains `None` in its first position.
 
 ## Context
 
