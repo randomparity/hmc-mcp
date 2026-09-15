@@ -610,6 +610,32 @@ async def test_submit_platform_update_reports_path_for_invalid_json(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_submit_platform_update_reports_path_for_recursion_error(
+    mock_hmc, monkeypatch
+):
+    """A deeply nested body raises RecursionError, not a ValueError subclass,
+
+    so it needs its own clause to reach HMCError instead of escaping the guard.
+    """
+    path = f"/rest/api/uom/ManagedSystem/{SYS_UUID}/do/PlatformUpdate"
+    mock_hmc.put(path).mock(return_value=httpx.Response(202, text="{}"))
+
+    def raise_recursion_error(_response):
+        raise RecursionError
+
+    monkeypatch.setattr(httpx.Response, "json", raise_recursion_error)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.submit_platform_update(SYS_UUID, {"JobRequest": {}})
+
+    assert str(raised.value) == (
+        f"PUT {path}: Malformed PlatformUpdate response: document nesting is too deep"
+    )
+    assert isinstance(raised.value.__cause__, RecursionError)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("payload", "field"),
     [

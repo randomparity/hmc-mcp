@@ -177,6 +177,12 @@ class PcmMixin:
             raise HMCError(
                 f"GET {url} returned invalid JSON: {str(exc)[:500]}"
             ) from exc
+        except RecursionError as exc:
+            # json.loads recurses per nesting level; RecursionError carries
+            # no message, hence the fixed clause.
+            raise HMCError(
+                f"GET {url} returned invalid JSON: document nesting is too deep"
+            ) from exc
         if not isinstance(document, dict):
             raise HMCError(
                 f"GET {url} returned a JSON {type(document).__name__}; expected an object"
