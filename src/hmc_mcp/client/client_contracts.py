@@ -83,8 +83,8 @@ def _reject_unknown_uom_type(argument: str, value: str) -> None:
         detail = f"a value containing {offending!r}"
     raise ValueError(
         f"{argument} must be an HMC resource type name: ASCII letters and "
-        f"digits only, starting with a letter, at most "
-        f"{_MAX_UOM_TYPE_LENGTH} characters. Got {detail}."
+        f"digits only, starting with a letter, at most {_MAX_UOM_TYPE_LENGTH} "
+        f"characters. Got {detail}."
     )
 
 
