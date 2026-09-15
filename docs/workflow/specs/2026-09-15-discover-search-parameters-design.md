@@ -134,9 +134,10 @@ degradation promise rather than any numbered criterion of #789. The six `hmc_mcp
   entry above, stated separately because it is the one the reader will care about: for those six
   types the pre-flight is inert and the search still costs the HMC's 500, on precisely the types
   where a local refusal would be certain rather than probabilistic. Accepted for this change: the
-  direction is fail-open to today's behaviour, no in-repo call site passes `validate=True`, and the
-  API surface discloses it — `search_uom`'s docstring and `CHANGELOG.md` both say a type defining
-  none reads as unknown. Making the check fire there needs a discriminated return separating
+  direction is fail-open to today's behaviour, no in-repo call site passes `validate=True`, and
+  ~~the API surface discloses it — `search_uom`'s docstring and `CHANGELOG.md` both say a type
+  defining none reads as unknown~~ (both now say it is refused locally instead).
+  Making the check fire there needs a discriminated return separating
   "container present, no parameters" from a 204 or a failure, which buys local refusal on six of
   eleven captured types at the cost of a new way for `validate=True` to reject everything if a
   later level nests its parameters differently. Not taken here; it is a behaviour change beyond

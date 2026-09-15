@@ -16,8 +16,13 @@ the read with `frozenset(names) if names else None`, and `None` means "do not va
 pre-flight is inert on exactly the types where a local refusal would be certain rather than
 probabilistic: **six of the eleven types captured at `V1_17_0` and `V1_20_0` define no search
 parameters** (ADR 0142 — `ManagementConsole`, `VirtualSwitch`, `VirtualNetwork`, `NetworkBridge`,
-`LogicalUnit`, `SharedProcessorPool`), and for all six the round trip that pre-flight exists to
-save is captured as an HTTP **500**, not a 400.
+`LogicalUnit`, `SharedProcessorPool`). The round trip that pre-flight exists to save is the one
+captured as an HTTP **500**, not the 400 the design was written against: ADR 0142 records both
+levels answering `ReasonCode: Unknown internal error.` with *The left hand side of the expression
+is not a registered search parameter* for an unsupported property. That capture is of the
+rejection, not a per-type measurement on the six — and the correctness ground stands without it,
+because a type defining no parameters cannot answer *any* property name, so every search against
+one is a round trip that could have been refused here. The 500 says what that round trip costs.
 
 The parse already draws the distinction the cache throws away. `list_search_parameters` (ADR 0142)
 and, since #811, `list_quick_properties` both consult a container element when no name is found:
