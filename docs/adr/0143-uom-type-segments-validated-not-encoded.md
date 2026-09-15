@@ -9,7 +9,8 @@ Accepted
 > alongside its character class, and `_reject_unknown_uom_type` lives in
 > `src/hmc_mcp/client/client_contracts.py` rather than `src/hmc_mcp/client/core.py`, so
 > `client_users._child_path` can call it. The `_child_path` follow-up candidate recorded
-> below is closed by that record.
+> below is closed by that record, whose "Both of its callers" is also wrong: `_child_path` has
+> seven call sites passing three literals.
 
 ## Context
 

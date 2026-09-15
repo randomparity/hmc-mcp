@@ -92,8 +92,8 @@ passing the same value to two different parameters.
   `uv run --no-sync python -c "import hmc_mcp.client.core"` with that import added at `4d823cbb`.
 - **A function-local import inside `_child_path`.** verified: it lints clean —
   `ruff check --config pyproject.toml` exits 0, PLC0415 being neither a ruff 0.16 default nor in
-  this repository's `extend-select`. judgment: it encodes the cycle rather than removing it, runs
-  on every call, and the next mixin needing the predicate repeats it.
+  this repository's `extend-select`. judgment: it encodes the cycle on every call rather than
+  removing it once, and leaves the composition root owning a predicate its mixins need.
 - **Move `_child_path` into `core.py` instead of the predicate.** verified: `UsersClient` declares
   `_child_path` (`client_contracts.py:396`) and every call is `self._child_path(...)`, so the MRO
   would resolve it from `HMCClient`. judgment: it splits `UsersMixin`'s path building from the
