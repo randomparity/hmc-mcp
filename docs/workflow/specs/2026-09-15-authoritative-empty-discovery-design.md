@@ -130,12 +130,20 @@ named by the operator's own configuration.
 
 **Boundary inventory.** No boundary is added. One existing boundary changes meaning: the HMC
 response body parsed by `list_*` now decides whether the client refuses locally, where before it
-could only decide whether the client validated at all. No new element, header, or path is parsed.
+could only decide whether the client validated at all. No header or path is parsed. Two new
+elements are — `SearchParameter` and `QuickProperty` (`core.py:109`, `core.py:121`) — read for
+presence only and never for text, out of the same body, through the same `defusedxml` parser and
+under the same `HMC_MAX_RESPONSE_BYTES` bound as the container and name probes beside them.
 
 **Actor model.** The HMC is trusted for correctness and untrusted for *shape* — this module
-already treats a 200 body as possibly an `HttpErrorResponse` feed. A network position able to
-forge an HMC response is out of the deployment's threat model: the session is TLS with
-`verify_ssl` on by default, and an actor holding that position can already answer any read.
+already treats a 200 body as possibly an `HttpErrorResponse` feed. An on-path actor able to forge
+an HMC response is **not** excluded by transport verification: `verify_ssl` defaults to `False`
+(`src/hmc_mcp/config.py:159`), which `core.py:415` passes to `httpx.AsyncClient` and which
+`TLSVerificationDisabledWarning` and the TLS audit record exist to make visible. What excludes
+that actor from this change's threat model is reach, not transport: it can already answer any read
+this client makes, so it can already return a wrong positive set, an empty feed, or a 500. What
+this change gives it is one more shape with the same effect as those — see *Explicitly out of
+scope*.
 
 **Control per boundary.** The container test is the control, and this change narrows rather than
 widens it: authority now requires the container *and* zero item elements *and* zero name elements,

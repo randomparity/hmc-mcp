@@ -61,8 +61,10 @@ for that is the *item* element — `<SearchParameter>` inside `<SearchParameters
 inside `<QuickProperty_Collection>` — as much as the name element inside it. So both are consulted:
 a body carrying either, with no usable name, has parameters this parse cannot name — the
 parse-artefact shape, not the captured one — and reads as unknown. `xmlutil.find_all_text` returns
-one entry per matching element, so both counts are available beside the count of usable names at no
-parse cost, on a path taken at most once per type per client. Testing only the name element would
+one entry per matching element, so both counts are available beside the count of usable names for
+one more walk of the body — `find_all_text` re-parses per call (`src/hmc_mcp/xmlutil.py:308-318`),
+so the nameless branch costs three walks rather than two, on a path taken at most once per type
+per client. Testing only the name element would
 give two bodies in the identical logical condition opposite verdicts depending on whether the
 unreadable element is still spelled `ParameterName`/`Nickname`.
 
@@ -134,7 +136,10 @@ spec's declared return type.
   of sampled types is worse than no check, because the caller paid a discovery request for it.
 - **Trust any nameless 200 carrying the container, including one whose name elements are all
   empty.** verified: `xmlutil.find_all_text` (`src/hmc_mcp/xmlutil.py:308-318`) returns `""` for a
-  matching element with no text, so the two shapes are already distinguishable at no parse cost.
+  matching element with no text, so the two shapes are already distinguishable for one more
+  `find_all_text` walk — `xmlutil.find_all_text` re-parses the body per call
+  (`src/hmc_mcp/xmlutil.py:308-318`), so the nameless branch costs three walks rather than two,
+  on a path taken at most once per type per client.
   judgment: a container holding unnamed parameters is the parse-artefact shape this decision's
   accepted risk is about; reading it as "defines nothing" would widen that risk for nothing.
 - **Test only the name element: container present with no `ParameterName`/`Nickname` element is
