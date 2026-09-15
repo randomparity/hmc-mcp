@@ -87,13 +87,8 @@ fails (#789 criterion 2 read with criterion 4). The six `hmc_mcp.api` exports.
 
 **Accepted failure classes.**
 
-- **The parsed element name is unverified against firmware.** `_SEARCH_PARAMETER_NAME_ELEMENT` is
-  an inference from the sibling `/quick` anchor, not a capture. Accepted for this branch only, and
-  bounded three ways: the constant is the single point of change; a wrong guess fails loudly as
-  `HMCError` naming the element rather than returning a wrong answer, because a 200 yielding no
-  name raises; and `validate=True` degrades to today's behaviour on that `HMCError`, so a wrong
-  guess cannot break `search_uom`. The exclusion's owner and the closing evidence are named in
-  *Validation*. ADR 0142 records it.
+- **The parsed element name is unverified against firmware.** Accepted for this branch only, on the
+  three bounding properties ADR 0142 records and with the closing evidence named in *Validation*.
 - A stale positive cache wrongly rejects a name a newer level added, for a client held across a
   firmware change. Accepted: unreachable for the per-call CLI and MCP actors, and the remaining
   actor's escape is `validate=False`, the default. Carried from ADR 0141.
