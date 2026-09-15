@@ -103,6 +103,14 @@ def _summarize_names(names: frozenset[str]) -> str:
 _SEARCH_PARAMETER_NAME_ELEMENT = "ParameterName"
 _SEARCH_PARAMETER_CONTAINER_ELEMENT = "SearchParameterSet"
 
+# The container the /quick discovery anchor answers with (ADR 0140). Consulted
+# the same way as _SEARCH_PARAMETER_CONTAINER_ELEMENT, and for the same reason:
+# a 200 carrying it with no QuickProperty child is a type that defines no quick
+# properties, a different answer from a 200 carrying an HttpErrorResponse feed.
+# Without the container test the two are indistinguishable and the legitimate
+# one has to raise.
+_QUICK_PROPERTY_CONTAINER_ELEMENT = "QuickProperty_Collection"
+
 
 async def _close_response(response: httpx.Response, primary: BaseException | None) -> None:
     """Finish owned cleanup even if the caller is cancelled again during close."""
@@ -880,10 +888,12 @@ class HMCClient(
         collapses a repeated element to a bare value when the HMC sends exactly
         one -- the hazard ADR 0139 recorded for ``OperationSet``, and reachable
         here because ``VirtualNetwork`` defines exactly one quick property
-        (ADR 0140). An empty ``Nickname`` is dropped; a 200 yielding no name at all
-        raises ``HMCError``, because the HMC is known to answer 200 with an
-        ``HttpErrorResponse`` feed and that is indistinguishable to a caller from a
-        type defining nothing.
+        (ADR 0140). An empty ``Nickname`` is dropped. When no name is found, the
+        body is checked for the ``QuickProperty_Collection`` container: present
+        with no names, it is a type that defines none, returning ``([], version)``;
+        absent, the 200 is the HMC's known ``HttpErrorResponse``-feed shape and
+        still raises ``HMCError``, because without the container the two are
+        indistinguishable.
 
         Sends ``Accept: */*``: ``quick/`` endpoints answer 406 to a typed uom
         Accept, as ``get_quick_property`` records.
@@ -912,10 +922,16 @@ class HMCClient(
         if resp.status_code != 200:
             raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
         names = [n for n in _find_all_text(resp.text, f"GET {path}", "Nickname") if n]
-        if not names:
+        # The container separates "defines none" from "not this shape at all",
+        # and is only consulted when no name was found. Its presence alone is
+        # tested: it carries no text of its own, so a text filter would reject
+        # the very body this distinguishes.
+        if not names and not _find_all_text(
+            resp.text, f"GET {path}", _QUICK_PROPERTY_CONTAINER_ELEMENT
+        ):
             raise HMCError(
-                f"GET {path} returned no QuickProperty/Nickname element; expected "
-                "the quick-property names the type defines",
+                f"GET {path} returned no {_QUICK_PROPERTY_CONTAINER_ELEMENT} "
+                "element; expected the quick-property names the type defines",
                 resp.status_code,
                 resp.text,
             )

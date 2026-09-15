@@ -2703,58 +2703,70 @@ async def test_list_quick_properties_drops_an_empty_nickname(mock_hmc):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("body", "reason"),
-    [
-        # The hazard this guard exists for: the HMC answering 200 with an error
-        # document. ADR 0139 recorded parse_feed wrapping exactly this shape as
-        # a synthetic entry rather than raising.
-        (
-            (
-                '<HttpErrorResponse xmlns="http://www.ibm.com/xmlns/systems/power'
-                '/firmware/web/mc/2012_10/">'
-                "<HTTPStatus>200</HTTPStatus><ReasonCode>INVALID_URL</ReasonCode>"
-                "</HttpErrorResponse>"
-            ),
-            "error document",
-        ),
-        # A well-formed collection holding no property at all.
-        (
-            (
-                '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
-                "<QuickProperty_Collection/></content></entry></feed>"
-            ),
-            "empty collection",
-        ),
-        # Every Nickname present but empty: nothing usable survives the filter.
-        (
-            (
-                '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
-                "<QuickProperty_Collection>"
-                "<QuickProperty><Nickname/></QuickProperty>"
-                "</QuickProperty_Collection></content></entry></feed>"
-            ),
-            "all names empty",
-        ),
-    ],
-)
-async def test_list_quick_properties_200_without_a_name_raises(mock_hmc, body, reason):
-    """A 200 yielding no name raises instead of returning an empty list.
+async def test_list_quick_properties_200_without_the_container_raises(mock_hmc):
+    """A 200 carrying no QuickProperty_Collection raises rather than returning [].
 
-    A caller cannot tell an empty list meaning "this type defines nothing" from
-    one meaning "the HMC returned a document we did not understand", and only
-    the second has ever been observed.
+    The HMC is known to answer 200 with an HttpErrorResponse feed. Without the
+    container element that body is indistinguishable from a type defining no
+    quick properties, so returning [] would report an error as an answer.
     """
+    body = (
+        '<HttpErrorResponse xmlns="http://www.ibm.com/xmlns/systems/power'
+        '/firmware/web/mc/2012_10/">'
+        "<HTTPStatus>200</HTTPStatus><ReasonCode>INVALID_URL</ReasonCode>"
+        "</HttpErrorResponse>"
+    )
     mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
         return_value=httpx.Response(200, text=body)
     )
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="no QuickProperty/Nickname element") as raised:
+        with pytest.raises(
+            HMCError, match="returned no QuickProperty_Collection element"
+        ) as raised:
             await hmc.list_quick_properties("ManagedSystem")
 
-    assert raised.value.status_code == 200, reason
+    assert raised.value.status_code == 200
     assert raised.value.body == body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "reason"),
+    [
+        (
+            _quick_property_entry("ManagedSystem"),
+            "a well-formed collection holding no property at all",
+        ),
+        # Pins the `if n` filter, which nothing else observes. find_all_text
+        # strips, so both elements arrive as "": without the filter the
+        # comprehension yields ["", ""] rather than [], and the cache stores
+        # frozenset({""}) instead of None -- so every validate=True call on
+        # that client rejects every name for the client's lifetime. The
+        # whitespace element pins the stripping too: a second way to reach the
+        # same empty name.
+        (
+            _quick_property_entry("ManagedSystem", ("", ""), ("   ", "")),
+            "every Nickname present but empty: nothing usable survives the filter",
+        ),
+    ],
+)
+async def test_list_quick_properties_empty_set_returns_no_names(mock_hmc, body, reason):
+    """A type defining no quick properties is an answer, not an error.
+
+    The container is what separates it from the HttpErrorResponse feed above.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
+        return_value=httpx.Response(
+            200, text=body, headers={"X-HMC-Schema-Version": "V1_0"}
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.list_quick_properties("ManagedSystem") == (
+            [],
+            "V1_0",
+        ), reason
 
 
 @pytest.mark.asyncio
