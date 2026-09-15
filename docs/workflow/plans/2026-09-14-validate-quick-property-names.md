@@ -6,8 +6,8 @@ sent, a `property_name` the resource type does not define, using the names
 
 **Architecture.** Everything lands in `src/hmc_mcp/client/core.py`, which already owns both methods
 and the client's per-instance state. `__init__` gains one dict; a new private async helper fills it
-on a cache miss via the existing `list_quick_properties`, storing the failure as well as the success
-so a failing anchor is read at most once; `get_quick_property` gains one keyword-only `validate`
+on a cache miss via the existing `list_quick_properties`, storing an answer carrying no names —
+a failure, or an empty 204 — as a negative entry, so such an anchor is read at most once; `get_quick_property` gains one keyword-only `validate`
 flag that consults the helper and raises `ValueError` before building its path. No existing caller
 changes, because the default is `False`.
 
@@ -24,8 +24,9 @@ Transcribed from the spec and the repository's instructions; every task implicit
 
 - **Design record.** `docs/adr/0141-quick-property-name-validation-is-opt-in.md` governs this
   change. `validate` defaults to `False`; the cache lives on the `HMCClient` instance, is keyed by
-  resource type, is never invalidated or refreshed within a session, and stores a failed discovery
-  read as a negative entry. Do not change any of these without returning to the design.
+  resource type, is never invalidated or refreshed within a session, and stores any read that yields
+  no names — an `HMCError`, or an empty 204 — as a negative entry meaning "unknown", never as a type
+  that defines nothing. Do not change any of these without returning to the design.
 - **Protected contract.** `hmc_mcp.api` exports exactly six names (ADR 0118): `HMCClient`,
   `HMCConfig`, `ConfigError`, `HMCError`, `HMCTransportError`, `TLSVerificationDisabledWarning`. Do
   not add to it; do not edit `tests/unit/test_public_api.py`.
@@ -91,11 +92,13 @@ Published for the tests to bind to:
 
 ### Verification inventory
 
-Every `focused-test` entry below lives in `tests/unit/test_client.py`, is written in step 2, shows
-its red in step 3, and is green in step 7. The async tests share one expected red —
+Every `focused-test` entry below lives in `tests/unit/test_client.py`, is written in step 2, and is
+green in step 7. All but one show a red in step 3: the `validate` tests share one expected red —
 `TypeError: HMCClient.get_quick_property() got an unexpected keyword argument 'validate'` — and the
-signature test's is `KeyError: 'validate'`. The focused green command for any one of them is
-`uv run --no-sync pytest "tests/unit/test_client.py::<name>" -q`.
+signature test's is `KeyError: 'validate'`. The exception is
+`::test_get_quick_property_defaults_to_no_validation`, a characterization test that guards behaviour
+this change must *not* alter; it is green from the start and must stay green at step 7. The focused
+green command for any one of them is `uv run --no-sync pytest "tests/unit/test_client.py::<name>" -q`.
 
 | Contract | Mode | Test / reason | Observable |
 |---|---|---|---|
@@ -103,8 +106,8 @@ signature test's is `KeyError: 'validate'`. The focused green command for any on
 | `validate=True` passes a defined name through | `focused-test` | `::test_get_quick_property_validate_allows_a_defined_name` | the value route is called once and its value returned |
 | At most one discovery request per type per client | `focused-test` | `::test_get_quick_property_validate_reads_the_names_once_per_type` | `discovery.call_count == 1` after two validated calls |
 | A fresh client re-reads | `focused-test` | `::test_get_quick_property_validate_rereads_for_a_new_client` | `discovery.call_count == 2` after one validated call in each of two sessions |
-| A failed discovery degrades, and the failure is cached not retried | `focused-test` | `::test_get_quick_property_validate_degrades_and_caches_the_failure` | discovery answers 500 once; both value requests are still sent and return their value |
-| The default makes no discovery request | `focused-test` | `::test_get_quick_property_defaults_to_no_validation` | an undefined name round-trips and returns the HMC's answer, with `discovery.call_count == 0` |
+| A discovery read yielding no names degrades and is cached not retried | `focused-test` | `::test_get_quick_property_validate_degrades_and_caches_the_failure`, parametrized over a 500, a 400, an `httpx.ConnectError` and a 204 | the discovery route is called once per case; both value requests are still sent and return their value |
+| The default makes no discovery request (characterization; green from the start) | `focused-test` | `::test_get_quick_property_defaults_to_no_validation` | an undefined name round-trips and returns the HMC's answer, with `discovery.call_count == 0` |
 | `validate` is keyword-only, default `False` | `focused-test` | `::test_get_quick_property_validate_is_keyword_only_and_defaults_false` | `inspect.signature` reports `kind is KEYWORD_ONLY` and `default is False` |
 | ADR 0118's six facade exports unchanged | `task-test-not-applicable` | `tests/unit/test_public_api.py` already asserts that exact set and fails on any drift; this task adds no export, so a new test would observe that test's subject rather than anything this task changes | — |
 | The `CHANGELOG.md` entry | `task-test-not-applicable` | `tests/unit/test_changelog.py` asserts only that the version declared in `pyproject.toml` (`0.1.0`) has a `## [0.1.0]` heading; this task changes no version and adds prose under `## [Unreleased]`, which no executable consumer validates | — |
@@ -127,14 +130,22 @@ _VALIDATION_TYPE = "ManagedSystem"
 _VALIDATION_DISCOVERY = f"/rest/api/uom/{_VALIDATION_TYPE}/quick"
 
 
-def _mock_validation_routes(router, *, discovery_status=200, value="running"):
-    """Mock the discovery anchor plus a defined and an undefined value read."""
-    body = _quick_property_entry(_VALIDATION_TYPE, *_MANAGED_SYSTEM_NICKNAMES)
-    discovery = router.get(_VALIDATION_DISCOVERY).mock(
-        return_value=httpx.Response(discovery_status, text=body)
-        if discovery_status == 200
-        else httpx.Response(discovery_status, text="<error/>")
-    )
+def _mock_validation_routes(router, *, discovery=200, value="running"):
+    """Mock the discovery anchor plus a defined and an undefined value read.
+
+    *discovery* is a status code, or an exception to raise as a transport
+    failure. 200 answers with the captured names; 204 answers empty.
+    """
+    if isinstance(discovery, Exception):
+        route_kwargs = {"side_effect": discovery}
+    elif discovery == 200:
+        body = _quick_property_entry(_VALIDATION_TYPE, *_MANAGED_SYSTEM_NICKNAMES)
+        route_kwargs = {"return_value": httpx.Response(200, text=body)}
+    elif discovery == 204:
+        route_kwargs = {"return_value": httpx.Response(204)}
+    else:
+        route_kwargs = {"return_value": httpx.Response(discovery, text="<error/>")}
+    discovery_route = router.get(_VALIDATION_DISCOVERY).mock(**route_kwargs)
     instance = f"/rest/api/uom/{_VALIDATION_TYPE}/{_VALIDATION_UUID}/quick"
     defined = router.get(f"{instance}/SystemType").mock(
         return_value=httpx.Response(200, text=value)
@@ -142,15 +153,14 @@ def _mock_validation_routes(router, *, discovery_status=200, value="running"):
     undefined = router.get(f"{instance}/NoSuchProperty").mock(
         return_value=httpx.Response(200, text="unreachable-when-validating")
     )
-    return discovery, defined, undefined
+    return discovery_route, defined, undefined
 
 
 @pytest.mark.asyncio
 async def test_get_quick_property_validate_refuses_an_undefined_name(mock_hmc):
     """An undefined name raises before the value request is built.
 
-    The point of the feature: the refusal costs no round trip, so the value
-    route must record no call at all rather than a call that failed.
+    The refusal must cost no round trip, so the value route records no call.
     """
     discovery, _, undefined = _mock_validation_routes(mock_hmc)
 
@@ -202,11 +212,7 @@ async def test_get_quick_property_validate_reads_the_names_once_per_type(mock_hm
 
 @pytest.mark.asyncio
 async def test_get_quick_property_validate_rereads_for_a_new_client(mock_hmc):
-    """Cache lifetime is the client's: a fresh HMCClient reads the names again.
-
-    ADR 0141 states this rather than implying it, because it bounds how stale
-    an entry can get -- and in the MCP deployment the client is per call.
-    """
+    """Cache lifetime is the client's: a fresh HMCClient reads the names again."""
     discovery, _, _ = _mock_validation_routes(mock_hmc)
 
     for _ in range(2):
@@ -218,16 +224,29 @@ async def test_get_quick_property_validate_rereads_for_a_new_client(mock_hmc):
     assert discovery.call_count == 2
 
 
+@pytest.mark.parametrize(
+    "discovery",
+    [500, 400, httpx.ConnectError("refused"), 204],
+    ids=["server-error", "unknown-type", "transport-failure", "empty-204"],
+)
 @pytest.mark.asyncio
-async def test_get_quick_property_validate_degrades_and_caches_the_failure(mock_hmc):
-    """A level whose discovery read fails keeps get_quick_property working.
+async def test_get_quick_property_validate_degrades_and_caches_the_failure(
+    mock_hmc, discovery
+):
+    """A discovery read yielding no names leaves get_quick_property working.
 
+    #799's fourth criterion, over the four ways the read can yield nothing.
     ADR 0139 records three V1_20_0 HMCs answering 500 at the sibling
-    /operations anchor; #799's fourth criterion is that this must not become a
-    broken get_quick_property. The second call pins that the failure is cached:
-    retrying per call is the extra request ADR 0141 promises not to make.
+    /operations anchor and ADR 0140 a 400 for NetworkBridge at the root
+    anchor; the 204 is the one that would fail *closed* rather than open,
+    since list_quick_properties returns ([], version) there rather than
+    raising, and an empty positive set rejects every name. The second call
+    pins that the answer is cached: retrying per call is the extra request
+    ADR 0141 promises not to make.
     """
-    discovery, _, undefined = _mock_validation_routes(mock_hmc, discovery_status=500)
+    discovery_route, _, undefined = _mock_validation_routes(
+        mock_hmc, discovery=discovery
+    )
 
     async with HMCClient(make_config()) as hmc:
         for _ in range(2):
@@ -236,17 +255,13 @@ async def test_get_quick_property_validate_degrades_and_caches_the_failure(mock_
             )
 
     assert value == "unreachable-when-validating"
-    assert discovery.call_count == 1
+    assert discovery_route.call_count == 1
     assert undefined.call_count == 2
 
 
 @pytest.mark.asyncio
 async def test_get_quick_property_defaults_to_no_validation(mock_hmc):
-    """The default is unchanged behaviour: no discovery read, name sent as given.
-
-    ADR 0141 turns on this staying true -- it is why the CHANGELOG entry records
-    an addition rather than a change in facade behaviour.
-    """
+    """The default is unchanged behaviour: no discovery read, name sent as given."""
     discovery, _, undefined = _mock_validation_routes(mock_hmc)
 
     async with HMCClient(make_config()) as hmc:
@@ -260,7 +275,7 @@ async def test_get_quick_property_defaults_to_no_validation(mock_hmc):
 
 
 def test_get_quick_property_validate_is_keyword_only_and_defaults_false():
-    """Positional or default-True would both be the facade movement ADR 0141 declined."""
+    """Positional or default-True is the facade movement ADR 0141 declined."""
     parameter = inspect.signature(HMCClient.get_quick_property).parameters["validate"]
 
     assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
@@ -273,7 +288,8 @@ def test_get_quick_property_validate_is_keyword_only_and_defaults_false():
 uv run --no-sync pytest tests/unit/test_client.py -k get_quick_property -q
 ```
 
-Expect the new tests to fail with the two errors named in the inventory above, and the pre-existing
+Expect the `validate` tests to fail with the two errors named in the inventory above,
+`::test_get_quick_property_defaults_to_no_validation` to pass already, and the pre-existing
 `get_quick_property` tests to keep passing. A different failure means the test block is wrong, not
 the source; fix the test before continuing.
 
@@ -309,9 +325,13 @@ the source; fix the test before continuing.
                 # is #799's fourth criterion: ADR 0139 records levels where the
                 # sibling /operations anchor answers 500, and ADR 0140 records
                 # a type answering 400 at the root /quick anchor.
-                self._quick_property_names[resource_type] = None
-            else:
-                self._quick_property_names[resource_type] = frozenset(names)
+                names = []
+            # An empty answer is "unknown", never "defines nothing": a 204
+            # returns ([], version) without raising, and storing that as an
+            # empty positive set would reject every name for this client's
+            # lifetime. ADR 0140 already declined the same inference for a
+            # nameless 200.
+            self._quick_property_names[resource_type] = frozenset(names) if names else None
         return self._quick_property_names[resource_type]
 ```
 
@@ -366,15 +386,11 @@ Expect every test in the block to pass, and the pre-existing `get_quick_property
 insert this as the first bullet, above the `list_quick_properties` entry:
 
 ```markdown
-- `HMCClient.get_quick_property` takes a keyword-only `validate=False`. With `validate=True` the
-  property name is checked against the names `list_quick_properties` reports for the resource type,
-  and an unknown one raises `ValueError` before any request is sent instead of round-tripping to the
-  HMC. The names are read once per resource type and cached for the client's lifetime, so validating
-  costs at most one extra request per type per session; a fresh client reads them again and nothing
-  is invalidated within a session. A firmware level where the discovery read fails validates nothing
-  rather than raising, so `get_quick_property` keeps working there. The default is unchanged
-  behaviour, deliberately: the client is constructed per tool call, so default-on would add that
-  request to nearly every call (ADR 0141, #799).
+- `HMCClient.get_quick_property` takes a keyword-only `validate=False`. With `validate=True` an
+  unknown property name raises `ValueError` before any request is sent, checked against the names
+  `list_quick_properties` reports for the resource type; those are read once per type and cached for
+  the client's lifetime, and a level where the read yields no names validates nothing rather than
+  raising. Off by default, because the client is constructed per tool call (ADR 0141, #799).
 ```
 
 **Step 9 — run the guardrails, bare.** `just lint`, `just typecheck`, `just test`,

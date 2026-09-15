@@ -34,8 +34,9 @@ protected contract and stay as they are; `tests/unit/test_public_api.py` is read
 
 **Changes.** `HMCClient.__init__` gains `self._quick_property_names: dict[str, frozenset[str] |
 None] = {}`. A private `_defined_quick_property_names(resource_type)` reads
-`list_quick_properties(resource_type)` on a cache miss, storing `frozenset(names)` on success and
-`None` on any `HMCError`. `get_quick_property` gains keyword-only `validate: bool = False`; when
+`list_quick_properties(resource_type)` on a cache miss, storing `frozenset(names)` when it yields
+names and `None` otherwise — on any `HMCError`, and on a successful read carrying no names, which
+is what a 204 returns. `get_quick_property` gains keyword-only `validate: bool = False`; when
 true it consults that helper and raises `ValueError` before building the path if the set is
 non-`None` and lacks `property_name`, naming the type, the rejected name and the defined names.
 `CHANGELOG.md` gains one `## [Unreleased] / ### Added` entry.
@@ -65,10 +66,12 @@ discovery read fails (#799 criterion 4). The six `hmc_mcp.api` exports.
 - Concurrent validated calls for one type, before the first read returns, each issue their own read.
   Accepted: bounded by the calls already in flight, idempotent, and costs at most one extra GET in a
   client whose dominant lifetime is one tool call.
-- A discovery read that succeeds with fewer names than the level serves would make `validate=True`
-  reject a working name. Accepted: no level has shown it — ADR 0140 records a 200 with *no* names as
-  the observed bad shape, which `list_quick_properties` raises on and this design degrades from —
-  and the escape is again the `False` default.
+- A discovery read that succeeds with *fewer* names than the level serves would make `validate=True`
+  reject a working name. Accepted: no level has shown a short answer, and the escape is again the
+  `False` default. The *empty* answer is not accepted, because it is reachable — a 204 returns
+  `([], version)` without raising (`core.py:780-781`, pinned by
+  `tests/unit/test_client.py:2623-2629`) — and an empty positive set would reject every name for the
+  client's lifetime. It is degraded from instead, exactly as a failed read is.
 - Cache growth is unbounded in the number of distinct `resource_type` values passed. Accepted:
   entries are one short string keyed to a frozenset of short strings, resource types come from
   literals in this repository, and the dict dies with the client.
@@ -94,8 +97,10 @@ the transport. `$quest` step 6 re-judges this against the actual diff.
    (#799 criterion 2)
 3. A fresh `HMCClient` performs the discovery read again on first validated use, and no entry is
    invalidated or refreshed during a client's lifetime. (#799 criterion 3, ADR 0141)
-4. When the discovery read raises `HMCError` — `HMCTransportError` included — `validate=True` sends
-   the quick-property request anyway and returns its result. (#799 criterion 4)
+4. When the discovery read yields no names — an `HMCError` from a 4xx or 5xx, an
+   `HMCTransportError` from a connection failure, or a 204 returning `([], version)` —
+   `validate=True` sends the quick-property request anyway and returns its result.
+   (#799 criterion 4)
 5. `validate` defaults to `False`; a call omitting it makes no discovery request and behaves exactly
    as at `fac7c19e`. The decision is in ADR 0141 and the parameter in `CHANGELOG.md`.
    (#799 criterion 5)
@@ -111,7 +116,7 @@ All entries are in `tests/unit/test_client.py` unless named otherwise.
 | `validate=True` passes a defined name through and returns its value (Success 1) | `focused-test` | `::test_get_quick_property_validate_allows_a_defined_name` |
 | The names are read once per type per client (Success 2) | `focused-test` | `::test_get_quick_property_validate_reads_the_names_once_per_type` |
 | A fresh client re-reads; nothing is shared between clients (Success 3) | `focused-test` | `::test_get_quick_property_validate_rereads_for_a_new_client` |
-| A failed discovery read degrades, and the failure is cached rather than retried (Success 2, 4) | `focused-test` | `::test_get_quick_property_validate_degrades_and_caches_the_failure` |
+| A discovery read yielding no names degrades, over all four ways it can happen, and is cached rather than retried (Success 2, 4) | `focused-test` | `::test_get_quick_property_validate_degrades_and_caches_the_failure`, parametrized over a 500, a 400, an `httpx.ConnectError` and a 204 |
 | The default makes no discovery request and behaves as today (Success 5) | `focused-test` | `::test_get_quick_property_defaults_to_no_validation` |
 | `validate` is keyword-only with default `False` (Success 5) | `focused-test` | `::test_get_quick_property_validate_is_keyword_only_and_defaults_false` |
 | ADR 0141 is a well-formed numbered record (Success 5) | `focused-test` | `just adr-numbering`, which checks the filename, unique number and H1 agreement |

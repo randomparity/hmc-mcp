@@ -40,10 +40,15 @@ every case — fixed rather than absent.
 first validated use. Nothing expires or refreshes an entry within a session, so a long-lived client
 that outlives a firmware change keeps the names it read at first use until it is closed.
 
-**A failed discovery read degrades to today's behaviour and is cached as such.** Any `HMCError` —
-which covers its subclass `HMCTransportError` — records a negative entry for that type and the call
-proceeds unvalidated. Caching the failure is what holds the cost bound: a retry per call is exactly
-the extra request this design promises not to make.
+**A discovery read that yields no usable names degrades to today's behaviour and is cached as
+such.** That covers any `HMCError` — including its subclass `HMCTransportError` — *and* a read that
+returns successfully with no names, which is what a 204 does: `list_quick_properties` answers
+`([], schema_version)` there rather than raising. Both record a negative entry for that type and the
+call proceeds unvalidated. An empty answer is read as "the names are unknown", never as "the type
+defines nothing": ADR 0140 already declined that inference for a nameless 200, and treating it as an
+empty *positive* set would make `validate=True` reject every name for the client's lifetime.
+Caching the negative entry is what holds the cost bound: a retry per call is exactly the extra
+request this design promises not to make.
 
 ## Consequences
 Validating costs at most one extra request per resource type per client session, failures included,
@@ -51,18 +56,18 @@ and a caller that does not ask for it pays nothing. Because the cache is per cli
 is per tool call, `validate=True` from MCP is effectively one extra request per call — which is why
 it is not the default, and why the caller it serves is one holding a client across several reads.
 
-The five existing call sites are unchanged and unaffected: they pass string literals whose live
-resolution ADR 0140 records, and none opts in. The facade's six exported names are unchanged;
-`bool` adds no public type.
+No code in this repository sets `validate=True`. The consumer this closes ADR 0140's gap for is an
+external Python caller holding a client across several reads; the five in-repo call sites stay
+unvalidated by design, because opting a lifecycle-polling site in would put a discovery request
+inside partition polling, which is the cost this record rejects above.
 
-A stale cache fails only in the direction the default makes opt-in. A stale positive set can wrongly
-reject a name a newer level added, and the escape is the default `validate=False`. A stale negative
-entry only means validation stays off for the session, which is today's behaviour.
+The five existing call sites are unchanged and unaffected: they pass string literals and none opts
+in. The facade's six exported names are unchanged; `bool` adds no public type.
 
-Concurrent validated calls for one type, before the first read returns, each issue their own read.
-The result is identical and the request idempotent, so only the cost bound slips, and only for calls
-already in flight; serializing them would need a per-type lock to save at most one GET in a client
-that lives for one tool call.
+A stale cache fails only in the direction the default makes opt-in, and concurrent validated calls
+for one type can each issue their own read before the first returns. Both are accepted, with their
+reasons, in the design's failure model
+(`docs/workflow/specs/2026-09-14-validate-quick-property-names-design.md`, *Failure model*).
 
 `CHANGELOG.md` records the new parameter, because the method is reachable through ADR 0118's facade.
 What it records is an addition, not a behaviour change — which is the reason the default is `False`.
@@ -74,17 +79,14 @@ What it records is an addition, not a behaviour change — which is the reason t
   and default-on would add a discovery request to nearly every `get_quick_property` call in that
   deployment — which #799's *Expected* excludes ("without adding an HMC round trip to every call").
   verified: all five call sites pass string literals (`operations/vios/core.py:99`,
-  `operations/lpar/core.py:140,417,481`, `operations/lpar/decommission.py:542`) and ADR 0140 records
-  the live run feeding discovered names back through `get_quick_property` successfully, so there is
-  no typo at any current call site for the cost to catch.
-- **Cache process-wide or on the class, so default-on becomes affordable.** judgment: a cache
-  outliving the client outlives the session and host it was read under, and sharing it between
-  clients pointed at different HMCs needs a host-and-level key — rebuilding this record's
-  invalidation problem somewhere harder.
-- **Give the cache a TTL.** verified: the only provenance a discovery read returns is
-  `X-HMC-Schema-Version`, and ADR 0139 (V1_17_0) and ADR 0140 (FW950) both record the HMC filling it
-  with the request's `X-Audit-Memento` echo, so it cannot key an invalidation. judgment: a
-  wall-clock timer on an object whose dominant lifetime is one tool call never fires.
+  `operations/lpar/core.py:140,417,481`, `operations/lpar/decommission.py:542`), three of them
+  inside lifecycle polling, so the cost would be paid on every poll.
+- **Outlive the client — a process-wide or class-level cache, or a TTL — so default-on becomes
+  affordable.** verified: the only provenance a discovery read returns is `X-HMC-Schema-Version`,
+  and ADR 0139 (V1_17_0) and ADR 0140 (FW950) both record the HMC filling it with the request's
+  `X-Audit-Memento` echo, so it cannot key an invalidation. judgment: without that key, a shared
+  cache outlives the session and host it was read under and needs a host-and-level key to be safe,
+  while a wall-clock timer on an object whose dominant lifetime is one tool call never fires.
 - **Raise `HMCError` rather than `ValueError`.** verified: `HMCError.__init__`
   (`src/hmc_mcp/errors.py:17-46`) carries an HTTP status and response body, and no request was sent.
   `_reject_dot_segments` does raise `HMCError` pre-flight, but its subject is a path shape this
@@ -96,12 +98,11 @@ What it records is an addition, not a behaviour change — which is the reason t
   `ManagedSystem`, and the degradation rule already turns that 400 into unvalidated behaviour.
   judgment: `get_quick_property` reads a root-anchored instance path, so parent arguments would
   describe a resource it does not address, for one known type.
-- **Let a failed discovery read raise.** verified: ADR 0139's three V1_20_0 HMCs answering 500 and
-  ADR 0140's 400 for `NetworkBridge` would both become a broken `get_quick_property`. This is #799's
-  fourth acceptance criterion.
-- **Re-read after a failed discovery instead of caching the failure.** judgment: the per-type
-  request bound is this design's only cost promise, and a retry per call is precisely the request it
-  promises not to make.
+- **Let a failed or empty discovery read raise, or re-read it per call.** verified: ADR 0139's three
+  V1_20_0 HMCs answering 500 and ADR 0140's 400 for `NetworkBridge` would both become a broken
+  `get_quick_property`, which #799's fourth acceptance criterion forbids. judgment: re-reading
+  instead of caching the negative entry spends exactly the per-call request this design's only cost
+  promise rules out.
 - **Validate by catching the HMC's own 400 or 404 and reporting it better.** judgment: that is the
   round trip #799 exists to remove, wearing a nicer message.
 - **Do nothing; leave `list_quick_properties` unwired.** verified: `rg -n list_quick_properties
