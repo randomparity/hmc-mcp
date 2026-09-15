@@ -66,7 +66,12 @@ in. The facade's six exported names are unchanged; `bool` adds no public type.
 
 Concurrent validated calls for one type share a single discovery read: the read-through is
 serialized by a per-client `asyncio.Lock` and re-checks the cache after acquiring it, so the
-one-request-per-type bound holds for concurrent callers and not only sequential ones.
+one-request-per-type bound holds for concurrent callers and not only sequential ones. That one lock
+also serializes first-time discovery across *different* types, which costs latency and never a wrong
+answer; per-type locks were declined as a second unbounded per-client dict for a saving the per-call
+deployments cannot realize. The bound covers calls that run to completion: a cancelled discovery
+read caches nothing and is retried on the next validated call, because caching a cancellation would
+disable validation for that type on a caller's timeout.
 
 A stale cache fails only in the direction the default makes opt-in. A transport failure is cached as
 durably as a firmware-level one, so a transient blip leaves validation off for that type until a new

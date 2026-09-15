@@ -50,13 +50,20 @@ parent arguments to `get_quick_property`.
 
 **Actors and deployments.** A local operator running the `hmc-mcp` CLI; an MCP client calling a
 tool, where `_app.with_client` opens and closes one `HMCClient` per call; a Python caller holding an
-`HMCClient` across several reads — the only actor for whom the cache saves a request and the only
-one whose cache can go stale; CI, which exercises this code only against `respx` mocks.
+`HMCClient` across several reads, including one issuing validated calls concurrently on that
+client — the only actor for whom the cache saves a request and the only one whose cache can go
+stale; CI, which exercises this code only against `respx` mocks.
 
 **Invariants and assets at stake.** `get_quick_property`'s default behaviour, which ADR 0118's
 facade exposes. The cost bound stated to callers: at most one discovery request per resource type
-per client session, failures included. `get_quick_property` continuing to work at levels where the
-discovery read fails (#799 criterion 4). The six `hmc_mcp.api` exports.
+per client session, failures included, holding for concurrent callers as well as sequential ones and
+covering calls that run to completion — a cancelled discovery read caches nothing and is retried on
+the next validated call, which is deliberate, since caching a cancellation would disable validation
+for that type on a caller's timeout. First-time discovery for *different* types is serialized by one
+client-wide lock: that costs latency, never a wrong answer, and per-type locks were declined as a
+second unbounded per-client dict for a saving the per-call deployments cannot realize.
+`get_quick_property` continuing to work at levels where the discovery read fails (#799 criterion 4).
+The six `hmc_mcp.api` exports.
 
 **Accepted failure classes.**
 
@@ -70,9 +77,10 @@ discovery read fails (#799 criterion 4). The six `hmc_mcp.api` exports.
   would spend the per-call request the cost bound rules out. Stated in `get_quick_property`'s
   docstring and ADR 0141 so it is a recorded decision rather than silent.
 - A discovery read that succeeds with *fewer* names than the level serves would make `validate=True`
-  reject a working name. Accepted: no level has shown a short answer, and the escape is again the
-  `False` default. The *empty* answer is not accepted, because it is reachable — a 204 returns
-  `([], version)` without raising (`core.py:780-781`, pinned by
+  reject a working name. Accepted: validation is opt-in and the `False` default is the escape. No
+  claim is made here about whether any level answers short — this repository has not checked, and
+  the acceptance does not rest on it. The *empty* answer is not accepted, because it is reachable
+  — a 204 returns `([], version)` without raising (`core.py:780-781`, pinned by
   `tests/unit/test_client.py:2623-2629`) — and an empty positive set would reject every name for the
   client's lifetime. It is degraded from instead, exactly as a failed read is.
 - `validate=True` with a malformed `uuid` spends one discovery request before raising the
@@ -124,6 +132,8 @@ All entries are in `tests/unit/test_client.py` unless named otherwise.
 | `validate=True` refuses an undefined name before transport (Success 1) | `focused-test` | `::test_get_quick_property_validate_refuses_an_undefined_name` |
 | `validate=True` passes a defined name through and returns its value (Success 1) | `focused-test` | `::test_get_quick_property_validate_allows_a_defined_name` |
 | The names are read once per type per client (Success 2) | `focused-test` | `::test_get_quick_property_validate_reads_the_names_once_per_type` |
+| The bound holds under concurrency, not only sequentially (Success 2) | `focused-test` | `::test_get_quick_property_validate_reads_the_names_once_under_concurrency` |
+| The cache is keyed per resource type, not a single slot (Success 2) | `focused-test` | `::test_get_quick_property_validate_caches_per_resource_type` |
 | A fresh client re-reads; nothing is shared between clients (Success 3) | `focused-test` | `::test_get_quick_property_validate_rereads_for_a_new_client` |
 | A discovery read yielding no names degrades, over all four ways it can happen, and is cached rather than retried (Success 2, 4) | `focused-test` | `::test_get_quick_property_validate_degrades_and_caches_the_failure`, parametrized over a 500, a 400, an `httpx.ConnectError` and a 204 |
 | The default makes no discovery request and behaves as today (Success 5) | `focused-test` | `::test_get_quick_property_defaults_to_no_validation` |

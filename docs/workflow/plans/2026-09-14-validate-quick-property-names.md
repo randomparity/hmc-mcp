@@ -6,10 +6,11 @@ sent, a `property_name` the resource type does not define, using the names
 
 **Architecture.** Everything lands in `src/hmc_mcp/client/core.py`, which already owns both methods
 and the client's per-instance state. `__init__` gains one dict; a new private async helper fills it
-on a cache miss via the existing `list_quick_properties`, storing an answer carrying no names —
-a failure, or an empty 204 — as a negative entry, so such an anchor is read at most once; `get_quick_property` gains one keyword-only `validate`
-flag that consults the helper and raises `ValueError` before building its path. No existing caller
-changes, because the default is `False`.
+on a cache miss via the existing `list_quick_properties`, storing an answer carrying no names — a
+failure, or an empty 204 — as a negative entry, so such an anchor is read at most once. One
+per-client `asyncio.Lock` serializes that read-through so concurrent callers share it.
+`get_quick_property` gains one keyword-only `validate` flag that consults the helper and raises
+`ValueError` before building its path. No existing caller changes, because the default is `False`.
 
 **Tech stack.** Python (`>=3.11`, per `pyproject.toml`), `httpx`, `pytest` + `pytest-asyncio` +
 `respx`, `uv`, `just`.
@@ -102,13 +103,16 @@ green in step 7. All but one show a red in step 3: the `validate` tests share on
 signature test's is `KeyError: 'validate'`. The exception is
 `::test_get_quick_property_defaults_to_no_validation`, a characterization test that guards behaviour
 this change must *not* alter; it is green from the start and must stay green at step 7. The focused
-green command for any one of them is `uv run --no-sync pytest "tests/unit/test_client.py::<name>" -q`.
+green command for any one of them is
+`uv run --no-sync pytest "tests/unit/test_client.py::<name>" -q`.
 
 | Contract | Mode | Test / reason | Observable |
 |---|---|---|---|
 | `validate=True` raises `ValueError` before transport for an undefined name | `focused-test` | `::test_get_quick_property_validate_refuses_an_undefined_name` | no request reaches `/rest/api/uom/ManagedSystem/{uuid}/quick/NoSuchProperty`, and `ValueError` is raised |
 | `validate=True` passes a defined name through | `focused-test` | `::test_get_quick_property_validate_allows_a_defined_name` | the value route is called once and its value returned |
 | At most one discovery request per type per client | `focused-test` | `::test_get_quick_property_validate_reads_the_names_once_per_type` | `discovery.call_count == 1` after two validated calls |
+| The bound holds under concurrency, not only sequentially | `focused-test` | `::test_get_quick_property_validate_reads_the_names_once_under_concurrency` | `discovery.call_count == 1` after five gathered validated calls; red before the lock was `assert 5 == 1` |
+| The cache is keyed per resource type, not one slot | `focused-test` | `::test_get_quick_property_validate_caches_per_resource_type` | two types validated on one client, each discovery route called once; a regression guard, green from the start |
 | A fresh client re-reads | `focused-test` | `::test_get_quick_property_validate_rereads_for_a_new_client` | `discovery.call_count == 2` after one validated call in each of two sessions |
 | A discovery read yielding no names degrades and is cached not retried | `focused-test` | `::test_get_quick_property_validate_degrades_and_caches_the_failure`, parametrized over a 500, a 400, an `httpx.ConnectError` and a 204 | the discovery route is called once per case; both value requests are still sent and return their value |
 | The default makes no discovery request (characterization; green from the start) | `focused-test` | `::test_get_quick_property_defaults_to_no_validation` | an undefined name round-trips and returns the HMC's answer, with `discovery.call_count == 0` |
