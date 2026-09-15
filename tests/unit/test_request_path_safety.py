@@ -640,13 +640,24 @@ def _guarded_type_arguments(function_name: str) -> set[str]:
 
 
 def test_every_uom_type_interpolation_is_guarded():
-    """A new site cannot join the module without its own boundary check.
+    """An f-string literally prefixed `/rest/api/uom/` cannot interpolate a type
+    without its own boundary check.
 
-    This is the assertion that bites, and it is site-directed for a reason: an
-    inventory that only checks *which names* are interpolated says nothing about
-    whether the site validates them, so a new method building
-    `f"/rest/api/uom/{resource_type}/count"` with no predicate call would pass
-    it. Here that method fails until it carries the call (ADR 0143).
+    Site-directed for a reason: an inventory that only checks *which names* are
+    interpolated says nothing about whether the site validates them, so a new
+    method building `f"/rest/api/uom/{resource_type}/count"` with no predicate
+    call would pass such a check. Here it fails until it carries the call
+    (ADR 0143).
+
+    **What this does not cover, stated rather than implied.** The walk matches
+    an `ast.JoinedStr` whose first part is a constant beginning
+    `/rest/api/uom/`. Concatenation, `%`, `.format`, a prefix held in a
+    variable, and a path assembled in two steps all build the same request and
+    are invisible here. Closing that would mean an AST guard against every way
+    of building a string -- more machinery than the risk removes, on a module
+    where every existing site is an f-string. This test raises the cost of
+    adding an unguarded site in the idiom the module actually uses; it is not a
+    proof that none can exist.
     """
     unguarded = sorted(
         {

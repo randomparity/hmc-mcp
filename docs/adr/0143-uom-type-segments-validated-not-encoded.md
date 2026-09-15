@@ -109,8 +109,14 @@ caller argument rather than a path this client declines to send; that matches
   be refused locally. No capture enumerates the HMC's complete type namespace, so
   **this is an accepted unknown, stated as one** — the grammar is derived from
   the vendored V10/V11 corpora and this client's own call set, not from an
-  authoritative list. The remedy if it ever bites is to widen the character
-  class in one place, with the refused type name as the evidence.
+  authoritative list. Nor is one published: IBM's own programmer's guides
+  document the `/rest/api/uom/{R}` pattern and name types one at a time, and
+  the enumeration lives in `UOM.xsd` on the HMC itself. Two things follow. The
+  unknown is a property of the documentation rather than of this repository's
+  corpus, so no re-capture discharges it. And a type name is an XML element
+  name from that schema, which is why the alphanumeric grammar is a reasonable
+  bet rather than a guess. The remedy if it ever bites is to widen the
+  character class in one place, with the refused type name as the evidence.
 - An existing refusal identity moves. Three tests, **six** parametrized cases,
   passed a `..` type and asserted `HMCError` with `'..' segment`:
   `test_list_operations_rejects_a_dot_segment_type` (all three of its cases,
