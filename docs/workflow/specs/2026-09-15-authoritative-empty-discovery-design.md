@@ -47,6 +47,9 @@ shape is replaced rather than kept beside the new one.
   **the wrong-set class**; `2026-09-14-validate-quick-property-names-design.md`'s empty-answer tail
   under the *fewer names* entry; and `2026-09-14-discover-quick-properties.md`'s *Scope* line
   declaring `-> tuple[list[str], str | None]`. No other line in any of the three is touched.
+  Only the first is named by completion criterion 6; the other two are its quick-twin equivalents,
+  reached as an unavoidable consequence of criterion 3, and this bullet is where that extension of
+  the charter's declared surface is recorded rather than arriving unannounced in the diff.
 - **`docs/adr/0141-*.md`, `docs/adr/0142-*.md`** → a Status amendment banner each, and nothing else.
 
 Out of scope, with owners: the `validate` default (settled, ADR 0141/0142); retrofitting the
@@ -130,9 +133,9 @@ from all of them. Nothing here changes what the client sends or where it sends i
 | Contract | Mode | Evidence |
 |---|---|---|
 | `list_search_parameters` returns `([], v)` for container + no `ParameterName` element | `focused-test` | `tests/unit/test_client.py::test_list_search_parameters_empty_set_returns_no_names` |
-| `list_search_parameters` returns `(None, v)` for a 204 and for all-empty `ParameterName` elements | `focused-test` | `tests/unit/test_client.py::test_list_search_parameters_unknown_answer_returns_none` |
+| `list_search_parameters` returns `(None, v)` for a 204 and for all-empty `ParameterName` elements | `focused-test` | `tests/unit/test_client.py::test_list_search_parameters_204_returns_an_unknown_answer` (renamed) and `::test_list_search_parameters_all_empty_names_return_an_unknown_answer` |
 | `list_quick_properties` returns `([], v)` for container + no `Nickname` element | `focused-test` | `tests/unit/test_client.py::test_list_quick_properties_empty_set_returns_no_names` |
-| `list_quick_properties` returns `(None, v)` for a 204 and for all-empty `Nickname` elements | `focused-test` | `tests/unit/test_client.py::test_list_quick_properties_unknown_answer_returns_none` |
+| `list_quick_properties` returns `(None, v)` for a 204 and for all-empty `Nickname` elements | `focused-test` | `tests/unit/test_client.py::test_list_quick_properties_204_returns_an_unknown_answer` (renamed) and `::test_list_quick_properties_all_empty_names_return_an_unknown_answer` |
 | Both caches store `frozenset()` for the authoritative empty answer | `focused-test` | `tests/unit/test_client.py::test_search_uom_validate_refuses_a_type_defining_nothing`, `::test_get_quick_property_validate_refuses_a_type_defining_nothing` |
 | Both caches still store `None` for 204, all-empty, and `HMCError` | `focused-test` | the existing `*_validate_degrades_and_caches_the_failure` parametrizations, extended with the all-empty case |
 | The empty-set refusal message carries no bare `"."` and names the condition | `focused-test` | the two `*_refuses_a_type_defining_nothing` cases assert the message tail |

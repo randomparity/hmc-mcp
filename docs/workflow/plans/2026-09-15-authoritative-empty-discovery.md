@@ -15,8 +15,8 @@ lifetime, the `HMCError` degradation, and the opt-in default are untouched.
 `uv`, `just`, `ruff`, `ty`.
 
 Expected implementation size: 180–260 changed lines (M) — derived from the file map below: two
-symmetric ~30-line source edits with their docstrings, four new or reshaped test cases per twin,
-and four prose-record edits.
+symmetric ~30-line source edits with their docstrings, five new or reshaped test cases plus two
+mock-helper branches per twin, and four prose-record edits.
 
 ## Global Constraints
 
@@ -66,9 +66,11 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
 - **`list_search_parameters` discriminates its three empty answers.** Mode: `focused-test`.
   Observable: `([], "V1_0")` for container + no `ParameterName` element; `(None, "V1_0")` for a 204
   and for `ParameterName` elements that are all empty. Cases:
-  `test_list_search_parameters_empty_set_returns_no_names` (kept, one parametrization) and
-  `test_list_search_parameters_unknown_answer_returns_none` (new, two).
-  Red, observed at step 4 before any source edit: `assert ([], 'V1_0') == (None, 'V1_0')`.
+  `test_list_search_parameters_empty_set_returns_no_names` (kept, one parametrization),
+  `test_list_search_parameters_204_returns_an_unknown_answer` (renamed, assertion changed) and
+  `test_list_search_parameters_all_empty_names_return_an_unknown_answer` (new). Each empty answer
+  has exactly one case; the new test does not re-cover the 204.
+  Red, observed at step 4 before any source edit: `assert ([], 'V1_0') == (None, 'V1_0')`, twice.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k list_search_parameters -q`.
 - **The cache stores `frozenset()` for the authoritative empty answer and refuses on it.**
   Mode: `focused-test`. Observable: `search_uom(..., validate=True)` raises `ValueError` ending
@@ -100,10 +102,15 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
    `"empty-elements"` →
    `httpx.Response(200, text=_search_parameter_entry(_SEARCH_VALIDATION_TYPE, "", "   "))`.
 3. Write the tests, all of them before any source edit:
-   - `test_list_search_parameters_unknown_answer_returns_none`, immediately after
-     `test_list_search_parameters_empty_set_returns_no_names`, parametrized over a 204 response and
-     over `_search_parameter_entry(_EMPTY_SET_TYPE, "", "   ")`, asserting
-     `await hmc.list_search_parameters(_EMPTY_SET_TYPE) == (None, "V1_0")`.
+   - `test_list_search_parameters_all_empty_names_return_an_unknown_answer`, immediately after
+     `test_list_search_parameters_empty_set_returns_no_names`, answering with
+     `_search_parameter_entry(_EMPTY_SET_TYPE, "", "   ")` and asserting
+     `await hmc.list_search_parameters(_EMPTY_SET_TYPE) == (None, "V1_0")`. One case, not
+     parametrized: the 204 has its own test below.
+   - Rename `test_list_search_parameters_204_returns_no_names`
+     (`tests/unit/test_client.py:3411-3419`) to
+     `test_list_search_parameters_204_returns_an_unknown_answer` and change its assertion to
+     `(None, "V1_0")`. ADR 0144's Decision table row 4 falsifies the current one.
    - Reduce `test_list_search_parameters_empty_set_returns_no_names` to its first parametrization,
      assertion unchanged at `([], "V1_0")`. Move its `if n`-filter comment to the new test with its
      conclusion corrected: without the filter the comprehension yields `["", ""]`, a *non-empty*
@@ -205,8 +212,8 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
 12. Run `just lint`, `just typecheck`, and `just test`. Expect all three green.
 13. Commit: `fix(client): refuse locally when a type defines no search parameters`.
 
-**Acceptance.** The four Verification entries hold, and every pre-existing `search_uom` test passes
-unmodified except the two named in step 3.
+**Acceptance.** The four Verification entries hold, and every pre-existing `list_search_parameters`
+and `search_uom` test passes unmodified except the three named in step 3.
 
 ## Task 2 — the quick twin
 
@@ -226,9 +233,10 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
   Observable: `([], "V1_0")` for container + no `Nickname` element; `(None, "V1_0")` for a 204 and
   for `Nickname` elements that are all empty. Cases:
   `test_list_quick_properties_empty_set_returns_no_names` (kept, one parametrization),
-  `test_list_quick_properties_unknown_answer_returns_none` (new, two), and
-  `test_list_quick_properties_204_returns_no_names` (assertion updated, renamed).
-  Red, observed at step 4 before any source edit: `assert ([], 'V1_0') == (None, 'V1_0')`.
+  `test_list_quick_properties_204_returns_an_unknown_answer` (renamed, assertion changed) and
+  `test_list_quick_properties_all_empty_names_return_an_unknown_answer` (new). Each empty answer
+  has exactly one case; the new test does not re-cover the 204.
+  Red, observed at step 4 before any source edit: `assert ([], 'V1_0') == (None, 'V1_0')`, twice.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k list_quick_properties -q`.
 - **The cache stores `frozenset()` for the authoritative empty answer and refuses on it.**
   Mode: `focused-test`. Observable: `get_quick_property(..., validate=True)` raises `ValueError`
@@ -239,7 +247,9 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k get_quick_property_validate -q`.
 - **The cache still stores `None` for 204, all-empty and `HMCError`.** Mode: `focused-test`.
   Observable: `test_get_quick_property_validate_degrades_and_caches_the_failure` passes with a
-  fifth parametrization, `empty-elements`; its red is taken at step 9 the same way as Task 1's.
+  fifth parametrization, `empty-elements`. It is a regression guard, so it passes before the
+  change too; its red is taken at step 9 by faulting the all-empty branch to return `[]` instead
+  of `None` and observing the `ValueError` the degradation forbids.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k get_quick_property_validate -q`.
 - **`_summarize_names`' precondition ground, and the two quick-property spec clauses.**
   Mode: `task-test-not-applicable`. Reason: `_summarize_names`' code is unchanged and its edit is
@@ -259,15 +269,18 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
    `httpx.Response(200, text=_quick_property_entry(_VALIDATION_TYPE))`; `"empty-elements"` →
    `httpx.Response(200, text=_quick_property_entry(_VALIDATION_TYPE, ("", ""), ("   ", "")))`.
 3. Write the tests, all of them before any source edit:
-   - `test_list_quick_properties_unknown_answer_returns_none`, immediately after
-     `test_list_quick_properties_empty_set_returns_no_names`, parametrized over a 204 response and
-     over `_quick_property_entry("ManagedSystem", ("", ""), ("   ", ""))`, asserting
-     `await hmc.list_quick_properties("ManagedSystem") == (None, "V1_0")`.
-   - Reduce `test_list_quick_properties_empty_set_returns_no_names` to its first parametrization
-     and move its `if n`-filter comment to the new test with the same correction Task 1 made.
+   - `test_list_quick_properties_all_empty_names_return_an_unknown_answer`, immediately after
+     `test_list_quick_properties_empty_set_returns_no_names`, answering with
+     `_quick_property_entry("ManagedSystem", ("", ""), ("   ", ""))` and asserting
+     `await hmc.list_quick_properties("ManagedSystem") == (None, "V1_0")`. One case, not
+     parametrized: the 204 has its own test below.
    - Rename `test_list_quick_properties_204_returns_no_names` to
      `test_list_quick_properties_204_returns_an_unknown_answer` and change its assertion to
      `(None, "V1_0")`.
+   - Reduce `test_list_quick_properties_empty_set_returns_no_names` to its first parametrization
+     and move its `if n`-filter comment to the new test with its conclusion corrected: without
+     the filter the comprehension yields `["", ""]`, a *non-empty* positive set holding only
+     `""`, which rejects every real name.
    - `test_get_quick_property_validate_refuses_a_type_defining_nothing`: mock with
      `discovery="empty-set"`, call `get_quick_property(_VALIDATION_TYPE, _VALIDATION_UUID,
      "SystemType", validate=True)` inside `pytest.raises(ValueError)`, assert the message ends
@@ -328,7 +341,8 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
            defined = None if names is None else frozenset(names)
    ```
 
-   Update the docstring's second sentence the same way Task 1 updated its twin.
+   Update the docstring's second sentence to say the empty positive set is cached for a type
+   defining nothing.
 8. In `get_quick_property`, replace the `validate` block's `raise ValueError(...)` with:
 
    ```python
@@ -349,9 +363,13 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
    each caller renders its own message for an empty positive set before calling, and that an empty
    set would otherwise render a bare `"."`.
 9. Run `uv run --no-sync pytest tests/unit/test_client.py -q`. Expect every case to pass. Then
-   take the third inventory entry's red the same way Task 1 did, against step 5's last line.
+   take the third inventory entry's red: change step 5's last line to
+   `return [], schema_version`, re-run, observe the `empty-elements` case fail with `ValueError`,
+   and revert that one line.
 10. Rewrite the `CHANGELOG.md` Unreleased entries for `HMCClient.list_quick_properties` and
-    `HMCClient.get_quick_property` the same way Task 1 rewrote the search pair. The
+    `HMCClient.get_quick_property`: the read returns `None` rather than a list when the answer is
+    not a fact about the type, and `validate=True` refuses locally on a type defining none; keep
+    every other claim in both entries. The
     `list_quick_properties` entry additionally still claims a nameless 200 raises `HMCError`,
     which #811 changed and did not record here; correct that claim in the same edit.
 11. In `docs/workflow/specs/2026-09-14-validate-quick-property-names-design.md`, strike through
@@ -364,7 +382,8 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
 13. Commit: `fix(client): refuse locally when a type defines no quick properties`.
 
 **Acceptance.** The four Verification entries hold, `just verify` and the hook run are green, and
-every pre-existing `get_quick_property` test passes unmodified except the two named in step 3.
+every pre-existing `list_quick_properties` and `get_quick_property` test passes unmodified except
+the three named in step 3.
 
 ## Deferrals carried into implementation
 
