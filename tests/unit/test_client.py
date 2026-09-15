@@ -2859,3 +2859,233 @@ async def test_list_quick_properties_refuses_bad_arguments(
             await hmc.list_quick_properties(*args, **kwargs)
 
     assert not [call for call in mock_hmc.calls if "quick" in call.request.url.path]
+
+
+# get_quick_property validation (#799) -- ADR 0141: opt-in, cached per client.
+
+_VALIDATION_UUID = "3f2b1c9d-4e5a-4b6c-8d7e-9f0a1b2c3d4e"
+_VALIDATION_TYPE = "ManagedSystem"
+_VALIDATION_DISCOVERY = f"/rest/api/uom/{_VALIDATION_TYPE}/quick"
+
+
+def _mock_validation_routes(router, *, discovery=200, value="running"):
+    """Mock the discovery anchor plus a defined and an undefined value read.
+
+    *discovery* is a status code, or an exception to raise as a transport
+    failure. 200 answers with the captured names; 204 answers empty.
+    """
+    if isinstance(discovery, Exception):
+        route_kwargs = {"side_effect": discovery}
+    elif discovery == 200:
+        body = _quick_property_entry(_VALIDATION_TYPE, *_MANAGED_SYSTEM_NICKNAMES)
+        route_kwargs = {"return_value": httpx.Response(200, text=body)}
+    elif discovery == 204:
+        route_kwargs = {"return_value": httpx.Response(204)}
+    else:
+        route_kwargs = {"return_value": httpx.Response(discovery, text="<error/>")}
+    discovery_route = router.get(_VALIDATION_DISCOVERY).mock(**route_kwargs)
+    instance = f"/rest/api/uom/{_VALIDATION_TYPE}/{_VALIDATION_UUID}/quick"
+    defined = router.get(f"{instance}/SystemType").mock(
+        return_value=httpx.Response(200, text=value)
+    )
+    undefined = router.get(f"{instance}/NoSuchProperty").mock(
+        return_value=httpx.Response(200, text="unreachable-when-validating")
+    )
+    return discovery_route, defined, undefined
+
+
+@pytest.mark.asyncio
+async def test_get_quick_property_validate_refuses_an_undefined_name(mock_hmc):
+    """An undefined name raises before the value request is built.
+
+    The refusal must cost no round trip, so the value route records no call.
+    """
+    discovery, _, undefined = _mock_validation_routes(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError) as excinfo:
+            await hmc.get_quick_property(
+                _VALIDATION_TYPE, _VALIDATION_UUID, "NoSuchProperty", validate=True
+            )
+
+    assert not undefined.called
+    assert discovery.call_count == 1
+    message = str(excinfo.value)
+    assert "NoSuchProperty" in message
+    assert _VALIDATION_TYPE in message
+    # The defined names are the actionable half: a caller who misspelled one
+    # needs to see the spelling that would have worked.
+    assert "SystemType" in message
+
+
+@pytest.mark.asyncio
+async def test_get_quick_property_validate_allows_a_defined_name(mock_hmc):
+    """A name the type defines is read exactly as it is without validation."""
+    discovery, defined, _ = _mock_validation_routes(mock_hmc, value="Fixed")
+
+    async with HMCClient(make_config()) as hmc:
+        value = await hmc.get_quick_property(
+            _VALIDATION_TYPE, _VALIDATION_UUID, "SystemType", validate=True
+        )
+
+    assert value == "Fixed"
+    assert defined.call_count == 1
+    assert discovery.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_quick_property_validate_reads_the_names_once_per_type(mock_hmc):
+    """The cost bound ADR 0141 states: one discovery read per type per client."""
+    discovery, defined, _ = _mock_validation_routes(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        for _ in range(2):
+            await hmc.get_quick_property(
+                _VALIDATION_TYPE, _VALIDATION_UUID, "SystemType", validate=True
+            )
+
+    assert defined.call_count == 2
+    assert discovery.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_quick_property_validate_rereads_for_a_new_client(mock_hmc):
+    """Cache lifetime is the client's: a fresh HMCClient reads the names again."""
+    discovery, _, _ = _mock_validation_routes(mock_hmc)
+
+    for _ in range(2):
+        async with HMCClient(make_config()) as hmc:
+            await hmc.get_quick_property(
+                _VALIDATION_TYPE, _VALIDATION_UUID, "SystemType", validate=True
+            )
+
+    assert discovery.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "discovery",
+    [500, 400, httpx.ConnectError("refused"), 204],
+    ids=["server-error", "unknown-type", "transport-failure", "empty-204"],
+)
+@pytest.mark.asyncio
+async def test_get_quick_property_validate_degrades_and_caches_the_failure(
+    mock_hmc, discovery
+):
+    """A discovery read yielding no names leaves get_quick_property working.
+
+    #799's fourth criterion, over the four ways the read can yield nothing.
+    ADR 0139 records three V1_20_0 HMCs answering 500 at the sibling
+    /operations anchor and ADR 0140 a 400 for NetworkBridge at the root
+    anchor; the 204 is the one that would fail *closed* rather than open,
+    since list_quick_properties returns ([], version) there rather than
+    raising, and an empty positive set rejects every name. The second call
+    pins that the answer is cached: retrying per call is the extra request
+    ADR 0141 promises not to make.
+    """
+    discovery_route, _, undefined = _mock_validation_routes(
+        mock_hmc, discovery=discovery
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        for _ in range(2):
+            value = await hmc.get_quick_property(
+                _VALIDATION_TYPE, _VALIDATION_UUID, "NoSuchProperty", validate=True
+            )
+
+    assert value == "unreachable-when-validating"
+    assert discovery_route.call_count == 1
+    assert undefined.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_quick_property_defaults_to_no_validation(mock_hmc):
+    """The default is unchanged behaviour: no discovery read, name sent as given."""
+    discovery, _, undefined = _mock_validation_routes(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        value = await hmc.get_quick_property(
+            _VALIDATION_TYPE, _VALIDATION_UUID, "NoSuchProperty"
+        )
+
+    assert value == "unreachable-when-validating"
+    assert undefined.call_count == 1
+    assert discovery.call_count == 0
+
+
+def test_get_quick_property_validate_is_keyword_only_and_defaults_false():
+    """Positional or default-True is the facade movement ADR 0141 declined."""
+    parameter = inspect.signature(HMCClient.get_quick_property).parameters["validate"]
+
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameter.default is False
+
+
+@pytest.mark.asyncio
+async def test_get_quick_property_validate_reads_the_names_once_under_concurrency(
+    mock_hmc,
+):
+    """Concurrent validated calls share one discovery read, not one each.
+
+    ADR 0141 and #799's second criterion state the bound without a sequential
+    qualifier -- at most one extra request per resource type per client
+    session. Without a lock every task in a gather misses the cache before the
+    first read returns, so the bound holds only for sequential callers.
+    """
+    discovery, defined, _ = _mock_validation_routes(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        await asyncio.gather(
+            *(
+                hmc.get_quick_property(
+                    _VALIDATION_TYPE, _VALIDATION_UUID, "SystemType", validate=True
+                )
+                for _ in range(5)
+            )
+        )
+
+    assert defined.call_count == 5
+    assert discovery.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_quick_property_validate_caches_per_resource_type(mock_hmc):
+    """The cache is keyed by resource type, not a single slot.
+
+    Without this, a one-entry cache passes every other test here: they all use
+    one type, so a second type would silently reuse the first type's names and
+    reject its own.
+    """
+    system_route = mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
+        return_value=httpx.Response(
+            200, text=_quick_property_entry("ManagedSystem", *_MANAGED_SYSTEM_NICKNAMES)
+        )
+    )
+    lpar_route = mock_hmc.get("/rest/api/uom/LogicalPartition/quick").mock(
+        return_value=httpx.Response(
+            200,
+            text=_quick_property_entry(
+                "LogicalPartition", *_LOGICAL_PARTITION_NICKNAMES
+            ),
+        )
+    )
+    mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/{_VALIDATION_UUID}/quick/SystemType"
+    ).mock(return_value=httpx.Response(200, text="system-value"))
+    mock_hmc.get(
+        f"/rest/api/uom/LogicalPartition/{_VALIDATION_UUID}/quick/PartitionID"
+    ).mock(return_value=httpx.Response(200, text="7"))
+
+    async with HMCClient(make_config()) as hmc:
+        system = await hmc.get_quick_property(
+            "ManagedSystem", _VALIDATION_UUID, "SystemType", validate=True
+        )
+        # PartitionID is defined by LogicalPartition and not by ManagedSystem,
+        # so a single-slot cache rejects it here.
+        lpar = await hmc.get_quick_property(
+            "LogicalPartition", _VALIDATION_UUID, "PartitionID", validate=True
+        )
+
+    assert system == "system-value"
+    assert lpar == "7"
+    assert system_route.call_count == 1
+    assert lpar_route.call_count == 1
