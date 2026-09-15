@@ -90,7 +90,8 @@ Names are cached on the `HMCClient` instance, keyed by resource type, **for the 
 with no invalidation**, serialized by a per-client `asyncio.Lock` that re-checks the cache after
 acquiring it. **A discovery read that yields no usable names degrades to today's behaviour and is
 cached as such** — any `HMCError`, its subclass `HMCTransportError` included, and a successful read
-carrying no names, which is what a 204 returns. An empty answer is read as "the names are unknown",
+carrying no names, which is what a 204 returns and what the six captured types defining nothing
+return. An empty answer is read as "the names are unknown",
 never as "the type defines nothing". This is ADR 0141's cache decision applied unchanged to a second
 method; see that record for the reasoning, which is not repeated here.
 
@@ -117,7 +118,7 @@ because the raw bodies carry instance data. Nothing in them is invented: round 2
 type captured — and the `XPath` form, a schema path ending in `/Value`. Each reported text matches
 the length statistics round 1 reported independently.
 
-**There is no child-anchored form, and `parent_type`/`parent_uuid` were removed.** #789's first
+**No captured level serves a child-anchored form, and `parent_type`/`parent_uuid` were removed.** #789's first
 acceptance criterion asked that both anchors be reachable. They are not, and the second capture
 round settled it with a control rather than another data point: under **one** `ManagedSystem`
 parent, in one session,
@@ -181,7 +182,7 @@ ADR 0118's facade.
   same unverified guess to every call site instead of removing it.
 - **Return the raw body and let the caller parse.** judgment: #789's stated outcome is the property
   names; returning a string makes every caller solve the problem this method exists to solve, and
-  the HTTP 400 the pre-flight avoids would come back with it.
+  the HMC-side rejection the pre-flight avoids — captured as a 500 — would come back with it.
 - **Make validation default-on.** verified: `src/hmc_mcp/_app.py:199-208` builds a fresh
   `HMCClient` per MCP tool call through the single factory at
   `src/hmc_mcp/client/client_factory.py:9-11`, so the per-client cache is discarded after each call

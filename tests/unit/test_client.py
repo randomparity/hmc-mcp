@@ -3110,7 +3110,7 @@ async def test_get_quick_property_validate_caches_per_resource_type(mock_hmc):
 #   * six of the eleven types captured answering 200 with a SearchParameterSet
 #     and no SearchParameters child at all.
 #
-# What is NOT live, and is constructed here: the Atom scaffolding the helper
+# Constructed here, among what the blanket above excludes: the Atom scaffolding the helper
 # emits (<id>, <title>, <author>, <Metadata>), which no capture round reported
 # because the parse does not read it; and the XPath texts in
 # test_list_search_parameters_reads_the_named_element_not_its_siblings, which
@@ -3122,10 +3122,11 @@ async def test_get_quick_property_validate_caches_per_resource_type(mock_hmc):
 # <SearchParameter_Collection>, mirroring the /quick anchor. The capture found
 # both halves wrong. ADR 0142 records what that cost and what the ground was.
 #
-# There is no child-anchored fixture because there is no child anchor. V1_17_0
-# answers /rest/api/uom/{P}/{UUID}/{C}/search with 400 INVALID_URL for both
-# LogicalPartition and VirtualIOServer, under a parent whose plain child feed
-# and /quick anchor both answered 200 in the same session.
+# There is no child-anchored fixture because no captured level serves a child
+# anchor. V1_17_0 and V1_20_0 both answer /rest/api/uom/{P}/{UUID}/{C}/search
+# with 400 INVALID_URL; at V1_17_0 that holds for both LogicalPartition and
+# VirtualIOServer, under a parent whose plain child feed and /quick anchor both
+# answered 200 in the same session.
 _CAPTURED_COMPARATOR = "Regular Expression or String Match"
 
 # Names as captured. ManagedSystem and LogicalPartition are the two the tests
@@ -3219,7 +3220,7 @@ async def test_list_search_parameters_reads_the_root_anchor(
 ):
     """The root anchor, at the path the corpus documents and the capture served.
 
-    There is no child-anchored row because there is no child anchor: see the
+    There is no child-anchored row because no captured level serves one: see the
     block comment above and ADR 0142. Both of these types were captured
     answering the root anchor, with exactly these names.
     """
@@ -3474,7 +3475,7 @@ def _mock_search_validation_routes(router, *, discovery=200):
     """Mock the discovery anchor plus a defined and an undefined instance search.
 
     *discovery* is a status code, or an exception to raise as a transport
-    failure. 200 answers with the constructed names; 204 answers empty.
+    failure. 200 answers with the captured names; 204 answers empty.
     """
     if isinstance(discovery, Exception):
         route_kwargs = {"side_effect": discovery}

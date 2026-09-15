@@ -14,8 +14,8 @@ read: [ADR 0118](../../adr/0118-core-library-facade.md),
 `HMCClient.search_uom` (`src/hmc_mcp/client/core.py:859`) interpolates `property_name` into
 `/rest/api/uom/{R}/search/({P}=={V})` and sends it, so an unsupported property is discovered only as
 an error status from the HMC — captured as HTTP 500; see Success 3. The type-anchored
-`/rest/api/uom/{R}/search` anchor, which answers what
-properties a search may use, has no reader anywhere under `src/`.
+`/rest/api/uom/{R}/search` anchor, which answers what properties a search may use, has no reader
+anywhere under `src/`.
 
 #789 is the union of two already-merged siblings applied to `/search`: the discovery read #788
 landed for `/quick` (PR #803, ADR 0140) and the opt-in validation wiring #799 landed for
@@ -140,7 +140,8 @@ degradation promise rather than any numbered criterion of #789. The six `hmc_mcp
 - Cache growth is unbounded in the number of distinct `resource_type` values passed. Accepted:
   resource types come from literals in this repository and the dict dies with the client.
   **The per-entry size is bounded by `HMC_MAX_RESPONSE_BYTES`, not by the names being short** —
-  that reason would assume the parse is right, which the first accepted class declines to assume.
+  the parse is captured at two levels, but no other level has been measured, and one answering the
+  query-less root anchor with an instance feed would fill a single entry up to that ceiling.
   A level answering the query-less root anchor with an instance feed would fill one entry with
   per-instance data up to the configured response ceiling (ADR 0133). The entry still dies with the
   client; what is *not* accepted is rendering it unbounded. `search_uom`'s refusal message
@@ -184,8 +185,8 @@ step 6 re-judges this against the actual diff.
 
 ## Success
 
-1. `list_search_parameters(R)` reads `/rest/api/uom/{R}/search`, and there is no child-anchored
-   form. (#789 criterion 1 — **knowingly partial**) The capture's
+1. `list_search_parameters(R)` reads `/rest/api/uom/{R}/search`, and no captured level serves a
+   child-anchored form. (#789 criterion 1 — **knowingly partial**) The capture's
    control round found `/rest/api/uom/{P}/{U}/{C}/search` answering 400 `INVALID_URL` for two child
    types under a parent that served its plain child feed and its `/quick` anchor 200 in the same
    session. The parent arguments were removed on that evidence rather than shipped as surface whose

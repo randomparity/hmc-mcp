@@ -16,7 +16,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   anchor answers with, captured at `V1_17_0` and `V1_20_0` across eleven types. A type that defines
   no search parameters returns an empty list — six of the eleven do; a 200 carrying no
   `SearchParameterSet` at all raises `HMCError`, as does a level that does not serve the anchor,
-  carrying its status. **There is no child-anchored form:** the reference documents
+  carrying its status. **No captured level serves a child-anchored form:** the reference documents
   `/rest/api/uom/{P}/{UUID}/{C}/search` and the HMC answers it 400 `INVALID_URL` while serving the
   plain child feed and `/quick` on the same parent, so no parent arguments are offered
   (ADR 0142, #789).

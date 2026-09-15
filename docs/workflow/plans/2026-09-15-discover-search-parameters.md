@@ -23,11 +23,15 @@
 > The Verification table is also stale in its own terms: it routes contracts through
 > `test_list_search_parameters_reads_both_anchors`, `..._refuses_bad_arguments` and
 > `..._200_without_a_name_raises`, **none of which exist** — they were renamed or split by the
-> capture commits, and `..._empty_set_returns_no_names` and `..._200_without_the_container_raises`
-> have no row at all. Its count is off by one: it says twenty test functions, eight covering
-> `list_search_parameters` and twelve covering `search_uom`; this branch adds twenty-one, nine and
-> twelve (`git show a0d29ac7:tests/unit/test_client.py` has two `test_search_uom*` functions
-> already, against fourteen at head). Read the test block for the real inventory.
+> capture commits. Several shipped tests have no row at all, among them
+> `..._empty_set_returns_no_names`, `..._200_without_the_container_raises`,
+> `..._refuses_a_dot_segment_resource_type` and `test_search_uom_validate_truncates_at_the_length_cap`.
+> Its count is off by two: it says twenty test functions, eight covering `list_search_parameters`
+> and twelve covering `search_uom`; this branch adds **twenty-two**, nine and thirteen. Reproduce
+> with `rg -c 'def test_search_uom' tests/unit/test_client.py` (15 at head, 2 at `a0d29ac7`),
+> `rg -c 'def test_list_search_parameters' tests/unit/test_client.py` (9), or independently with
+> `git diff a0d29ac7...HEAD -- tests/unit/test_client.py | rg -c '^\+(async )?def test_'` (22).
+> Read the test block for the real inventory.
 >
 > **If you are here because ADR 0142 sent you** — as the calibration datum for #790, #791 or #793 —
 > the lesson is the gap between this plan and what shipped, not the plan itself. ADR 0142's
