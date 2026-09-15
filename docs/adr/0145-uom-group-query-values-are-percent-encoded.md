@@ -19,23 +19,14 @@ an accident. ADR 0143 settled the *type segment* on these same paths, and its
 evidence does not transfer: it declined percent-encoding partly because the type
 also reaches the `Accept` media-type parameter, where `%XX` is meaningless. A
 `group` value reaches no media-type parameter — `_uom_headers` takes only
-`resource_type`.
+`resource_type` — so it has one destination, and percent-encoding is the rule
+RFC 3986 defines for one.
 
-Four facts bound the answer. All were established against `4d823cbb` with
-httpx 0.28.1, the version this repository locks.
+Two facts bound the answer, both established against `4d823cbb` with httpx
+0.28.1, the version this repository locks.
 
-**The value has one destination, and encoding is defined there.** It is a query
-parameter value, and percent-encoding is the rule RFC 3986 defines for one —
-unlike the second destination that split ADR 0143's answer.
-
-**Encoding is a no-op on every group name this repository passes.** There are
-three, all literals: `RemoteAccess` (`client_users.py`), `ViosSCSIMapping` and
-`ViosFCMapping` (`client_storage.py`, `client_systems.py`). `quote(g, safe="")`
-returns each unchanged and `build_request` produces a byte-identical URL either
-way, so there is no wire-format change and no firmware question to re-capture.
-
-**Raw interpolation is reachable and does three separable things.** Verified by
-building the request:
+**Raw interpolation does three separable things**, each verified by building the
+request:
 
 - `group="None&foo=bar"` yields `?group=None&foo=bar` — the caller appends a
   query parameter this client did not name.
@@ -47,11 +38,11 @@ building the request:
   `_request`'s two handlers untranslated and reaches the caller as an exception
   outside this client's `HMCError`/`HMCTransportError`/`ValueError` contract.
 
-**No group namespace is available to check a value against.** ADR 0143 derived
-its type grammar from the vendored V10/V11 corpora; this checkout has no corpus
-to derive a group grammar from — `scripts/link_reference_corpus.py` reports
-`reference corpus not available on this host: docs/refs` — and the repository's
-entire evidence is the three literals above.
+**Encoding is a no-op on every group name this repository passes.** There are
+three, all literals: `RemoteAccess` (`client_users.py`), `ViosSCSIMapping` and
+`ViosFCMapping` (`client_storage.py`, `client_systems.py`). `quote(g, safe="")`
+returns each unchanged and `build_request` produces a byte-identical URL either
+way, so there is no wire-format change and no firmware question to re-capture.
 
 ## Decision
 
@@ -67,24 +58,21 @@ encoded_group = quote(group, safe="")
 path += f"?group={encoded_group}"
 ```
 
-That naming is load-bearing twice. It declares at the call site which rule
-governs the value, as ADR 0143's per-site `_reject_unknown_uom_type` call does;
-and it gives `tests/unit/test_request_path_safety.py` a declaration to hold the
-sites to, in a site-directed AST test requiring every `?group=` f-string in
-`core.py` to interpolate a declared encoded name.
-
-ADR 0143's second contract already anticipated this answer: a segment naming a
-schema identifier is validated against that identifier's grammar, and a segment
-carrying data is checked or encoded by its own rule. `group` is data, so it is
-encoded — the rule `search_uom`'s property value already follows and the type
-segment could not. The waist's contract is unchanged.
+The binding is load-bearing, not cosmetic: a site-directed AST walk in
+`tests/unit/test_request_path_safety.py` requires every `?group=` f-string in
+`core.py` to interpolate a name that a literal `quote(<name>, safe="")`
+assignment binds in the same function — the declaration form
+`_is_boundary_check` already uses for the type segment — so a future site
+interpolating an unencoded name fails before review sees it. This is ADR 0143's
+second contract applied to data rather than to a schema identifier.
 
 ## Consequences
 
-- Query-parameter injection, silent `#` truncation, and the unhandled
-  `httpx.InvalidURL` all close, in one line per site, with no new predicate.
+- The three behaviours reproduced above all close for `group`, in one line per
+  site, with no new predicate.
 - **No wire-format change for any group name this repository passes**, so the
-  three literal sites and every test that pins their paths are untouched.
+  five literal `?group=` sites and every test that pins their paths are
+  untouched.
 - `group` stays unvalidated against a group-name namespace, so an unknown name
   reaches the HMC and is answered there. Accepted rather than overlooked: there
   is no list to check against, and an allowlist extrapolated from three samples
@@ -94,17 +82,24 @@ segment could not. The waist's contract is unchanged.
 - **An undocumented multi-group affordance closes.** The HMC takes repeated
   `group=` parameters, and today `list_uom(group="A&group=B")` could reach that
   by exploiting the raw interpolation; afterwards the value names one group
-  called `A&group=B`. Nothing passes it — `group` has **no caller in `src/` or
-  `tests/`**, and `get_vios_storage_detail` serves the package's one multi-group
-  read from its own literal path. The remedy, if it is ever wanted, is a
-  sequence parameter joining encoded names with `&group=`.
-- **An incidental refusal moves.** A `group` containing `/..` today reaches
-  `_reject_dot_segments`, which splits the whole string — query included — on
-  `/` and raises `HMCError`. Afterwards `/` is `%2F` and the value passes as
-  data. Nothing is retargeted: httpx leaves `%2F` encoded, and the value sits
-  after the `?` where no path resolution applies. That guard's contract is path
-  form, so a query value was never its subject; the refusal was a side effect of
-  its not parsing the query off a relative path.
+  called `A&group=B`. Nothing passes it — `rg -n 'list_uom\(|get_uom\(' src/
+  tests/` returns 22 call sites and none supplies `group` — and
+  `get_vios_storage_detail` serves the package's one multi-group read from its
+  own literal path. The remedy, if it is ever wanted, is a sequence parameter
+  joining encoded names with `&group=`.
+- **No refusal moves, and one narrow residual opens.** `_reject_dot_segments`
+  checks the percent-decoded form as well as the raw one (`core.py:253`), so a
+  `group` whose decoded form holds a `.` or `..` segment is refused with
+  `HMCError` both before and after: `quote("a/../b", safe="")` is `a%2F..%2Fb`,
+  which the decode arm still reads as a dot segment. What changes is a value the
+  caller percent-encoded itself — `group="x%2F..%2Fy"` becomes `x%252F..%252Fy`,
+  which one decode resolves to `x%2F..%2Fy` rather than to a dot segment, so it
+  now reaches the HMC as data. Accepted: it sits after the `?`, where no path
+  resolution applies, and httpx leaves it encoded on the wire.
+- A `group` that is not a `str` now raises `TypeError` from `quote` rather than
+  being interpolated through `f"{...}"`, and a `bytes` value is decoded rather
+  than repr'd. Both are inputs the `str | None` signature already forbids, so
+  this is accepted rather than guarded; the signature is the contract.
 - `hmc_list_resources`, the CLI, and every MCP tool are unaffected: none passes
   `group`. The parameter is reachable only through the pre-release `HMCClient`
   module API (ADR 0123) — the reachability class ADR 0143 recorded for
@@ -117,34 +112,49 @@ segment could not. The waist's contract is unchanged.
   available on this host: docs/refs`, and `rg -n '\?group=' src/` returns eight
   lines at `4d823cbb`: two interpolating sites in `core.py`, one docstring
   mention, and five literals naming three distinct group names. Those three
-  names are the repository's whole evidence for what a group name may look
-  like. judgment: ADR 0143's allowlist is defensible
-  because the type namespace is closed, documented, and present in a vendored
-  corpus; the same construction here would extrapolate a character class from
-  three samples, and its failure mode is refusing a real group name the HMC
-  serves.
+  names are the repository's whole evidence for what a group name may look like.
+  judgment: ADR 0143's allowlist is defensible because the type namespace is
+  closed, documented, and present in a vendored corpus; the same construction
+  here would extrapolate a character class from three samples, and its failure
+  mode is refusing a real group name the HMC serves.
+- **Delete `group` from both signatures — the one alternative smaller than this
+  decision.** verified: `rg -n 'list_uom\(|get_uom\(' src/ tests/` returns 22
+  call sites, none supplying `group`, and `rg -n 'group: str \| None'
+  src/hmc_mcp/client/client_contracts.py` returns six protocol declarations of
+  the same parameter. judgment: removing it edits protocol classes outside this
+  issue's surface and drops an extended-group read the HMC documents and five
+  literal sites already use, to save a one-line encode.
 - **Record raw interpolation as intended, as ADR 0143 did for the type's third
-  option.** verified: raw `group="None&foo=bar"` builds
-  `?group=None&foo=bar`, and raw `group="None\r\n..."` raises
-  `httpx.InvalidURL`, which `_request` catches with neither of its
-  `httpx.TimeoutException` and `httpx.TransportError` handlers (httpx 0.28.1).
-  judgment: raw is the right answer where the value already has a control; this
-  one has none, and the encoding that would give it one costs one line and
-  changes no byte for a legitimate name.
+  option.** verified: raw `group="None&foo=bar"` builds `?group=None&foo=bar`,
+  and raw `group="None\r\n..."` raises `httpx.InvalidURL`, which `_request`
+  catches with neither of its `httpx.TimeoutException` and
+  `httpx.TransportError` handlers (httpx 0.28.1). judgment: raw is the right
+  answer where the value already has a control; this one has none, and the
+  encoding that would give it one costs one line and changes no byte for a
+  legitimate name.
+- **Translate `httpx.InvalidURL` into the client's exception contract at
+  `_request`, closing the class rather than one argument.** verified: a
+  `job_href` of `/rest/api/uom/jobs/1\r\nX-Evil: 1` clears both
+  `_reject_non_job_path` and `_reject_dot_segments` and still raises
+  `httpx.InvalidURL` from `build_request` (httpx 0.28.1), so the escape is not
+  specific to `group`. judgment: a transport-waist change, outside this record's
+  surface and outside issue #819. Reported as a follow-up candidate, not a
+  residual this record accepts.
 - **Widen `_reject_dot_segments` to refuse `&`, `=`, `?` or `#`.** verified:
-  `get_vios_storage_detail` passes
-  `/rest/api/uom/VirtualIOServer/{uuid}?group=ViosSCSIMapping&group=ViosFCMapping`
+  `get_vios_storage_detail` passes `?group=ViosSCSIMapping&group=ViosFCMapping`
   through that same waist, so all four characters occur in this client's own
   legitimate requests. ADR 0143 recorded the `?` case; `&` and `=` are this
   issue's.
-- **Build the query with `urllib.parse.urlencode({"group": group})`.**
-  verified: `urlencode` encodes space as `+` via `quote_plus`, where
-  `quote(..., safe="")` emits `%20`; `search_uom`'s two existing query values
-  use the latter. judgment: more machinery for the same result, in a different
-  encoding from the neighbour it would sit beside.
+- **Build the query with `urllib.parse.urlencode({"group": group})`.** verified:
+  `urlencode` encodes space as `+` via `quote_plus`, where `quote(..., safe="")`
+  emits `%20`; `search_uom`'s two existing query values use the latter.
+  judgment: more machinery for the same result, in a different encoding from the
+  neighbour it would sit beside.
 - **Accept a sequence of group names now, so multi-group survives the change.**
-  judgment: speculative. `group` has no caller, and the one multi-group read in
-  the package builds its own path.
-- **Do nothing and close the issue.** judgment: the issue's terms — two sites
-  disagreeing with their neighbour by accident, with no record — make this the
-  one unavailable outcome.
+  verified: those same 22 call sites supply no `group` at all, and
+  `get_vios_storage_detail` builds its own multi-group literal. judgment:
+  speculative — a signature nobody has asked for.
+- **Do nothing and close the issue.** verified: the three behaviours reproduced
+  in Context. judgment: leaving an untrusted value able to append a parameter
+  this client did not name, truncate itself, and raise an exception outside the
+  client's contract is not a decision anyone would write down.
