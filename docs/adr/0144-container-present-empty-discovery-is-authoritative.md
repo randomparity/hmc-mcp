@@ -31,8 +31,8 @@ risk this record decides about rather than resolves.
 
 ## Decision
 
-**An empty answer that carries the container and no name element at all is a fact about the type.
-Every other empty answer stays unknown.**
+**An empty answer that carries the container and nothing under it this parse could have named is a
+fact about the type. Every other empty answer stays unknown.**
 
 Both discovery reads return `tuple[list[str] | None, str | None]`. `None` in the first position
 means the level's answer is not a fact about the type; a list — empty or not — means it is:
@@ -40,19 +40,30 @@ means the level's answer is not a fact about the type; a list — empty or not �
 | Answer | Returned | Cached |
 |---|---|---|
 | 200, one or more non-empty names | `(names, version)` | `frozenset(names)` |
-| 200, container, **no name element** | `([], version)` | `frozenset()` |
-| 200, container, name elements all empty | `(None, version)` | `None` |
+| 200, container, **no item element and no name element** | `([], version)` | `frozenset()` |
+| 200, container, item or name element present, no usable name | `(None, version)` | `None` |
 | 204 | `(None, version)` | `None` |
 | 200, no usable name and no container; other status; transport failure | raises `HMCError` | `None` |
 
 The container is consulted only when no usable name was found, so a body carrying names is
 returned whether or not the container is present — row 1 does not depend on it.
 
-The third row is the narrowing that keeps this from being a blanket trust in emptiness. A body
-carrying `<ParameterName/>` or `<Nickname/>` elements whose texts are all empty has parameters
-this parse cannot name — which is the parse-artefact shape, not the captured one — so it reads as
-unknown. `xmlutil.find_all_text` returns one entry per matching element, so the count of elements
-is already available beside the count of usable names.
+The third row is the narrowing that keeps this from being a blanket trust in emptiness. The
+condition it tests is "the container holds something this parse could not name", and the evidence
+for that is the *item* element — `<SearchParameter>` inside `<SearchParameters>`, `<QuickProperty>`
+inside `<QuickProperty_Collection>` — as much as the name element inside it. So both are consulted:
+a body carrying either, with no usable name, has parameters this parse cannot name — the
+parse-artefact shape, not the captured one — and reads as unknown. `xmlutil.find_all_text` returns
+one entry per matching element, so both counts are available beside the count of usable names at no
+parse cost, on a path taken at most once per type per client. Testing only the name element would
+give two bodies in the identical logical condition opposite verdicts depending on whether the
+unreadable element is still spelled `ParameterName`/`Nickname`.
+
+Both counts are document-wide: `xmlutil.find_all_text` walks `root.iter()`, so a `ParameterName`,
+`SearchParameter`, `Nickname` or `QuickProperty` element anywhere in the body — including inside a
+payload the HMC nests beside the container — makes the answer unknown rather than a fact. The
+direction of that imprecision is fail-open, which is why it is stated here rather than fixed with a
+container-scoped walk.
 
 Both caches then store `None` only for an unknown answer, and `validate=True` refuses locally on a
 type whose positive set is empty. Its message says so instead of rendering `_summarize_names`'
@@ -67,9 +78,12 @@ such an answer is *read*, not that any level produces one.
 ## Consequences
 
 **`validate=True` gains a new way to refuse everything, and it is accepted here.** A firmware
-level that keeps the container and nests its names under a different element is parsed as a type
-defining nothing, cached as an empty positive set, and refuses every name for that client's
-lifetime. Today that level degrades to unvalidated behaviour instead. The acceptance rests on
+level that keeps the container and renames *both* the item element and the name element under it is
+parsed as a type defining nothing, cached as an empty positive set, and refuses every name for that
+client's lifetime. Today that level degrades to unvalidated behaviour instead. The item-element test
+narrows this failure mode without removing it: a level that keeps `<SearchParameter>` or
+`<QuickProperty>` and moves only the name reads as unknown and fails open, which is the likelier
+half of the class, but one that moves both still reaches the empty answer. The acceptance rests on
 three bounds and on no firmware claim:
 
 - **Opt-in.** `validate` defaults to `False`, and no in-repo call site of `search_uom` or
@@ -87,7 +101,7 @@ three bounds and on no firmware claim:
 
 **What is not claimed.** No capture covers a level that nests names differently, and this record
 does not assert that none exists. The unknown is unchanged by this change; only its direction is.
-The remedy if it bites is `validate=False` at the call site, then one parse constant.
+The remedy if it bites is `validate=False` at the call site, then the parse constants.
 
 Both empty-answer clauses this record amends stay correct for the answers they still govern: a
 204 and a failed read are still unknown, and ADR 0142's `ManagementConsole` sentence is the case
@@ -116,6 +130,17 @@ spec's declared return type.
   matching element with no text, so the two shapes are already distinguishable at no parse cost.
   judgment: a container holding unnamed parameters is the parse-artefact shape this decision's
   accepted risk is about; reading it as "defines nothing" would widen that risk for nothing.
+- **Test only the name element: container present with no `ParameterName`/`Nickname` element is
+  "defines nothing", whatever else is under the container.** This was implemented and shipped on
+  this branch before review rejected it. verified: the captured bodies nest one `<SearchParameter>`
+  or `<QuickProperty>` per parameter, `xmlutil.find_all_text` returns one entry per matching
+  element regardless of text, and the item probe costs one more walk on a path already walked twice
+  and taken at most once per type per client — so the item element is available at the same cost as
+  the container probe. judgment: it gives two bodies in the identical logical condition — the
+  container holds items this parse could not name — opposite verdicts, turning on whether the
+  unreadable element is still spelled the way this parse expects. That is an accident of spelling
+  deciding whether `validate=True` refuses every name for the client's lifetime, and the wider rule
+  removes it for the same two `_find_all_text` calls.
 - **Make the search twin authoritative and leave the quick twin failing open**, since no level has
   been seen answering `/quick` with an empty collection. verified: #811 added the quick container
   discrimination for exactly this case, and the issue asks for both surfaces. judgment: the

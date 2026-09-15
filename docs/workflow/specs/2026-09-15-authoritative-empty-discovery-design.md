@@ -27,8 +27,12 @@ shape is replaced rather than kept beside the new one.
 
 - **`list_search_parameters`, `list_quick_properties`** → `tuple[list[str] | None, str | None]`.
   `None` means the level's answer is not a fact about the type. Full mapping in ADR 0144's
-  Decision table. The new third state — container present, name elements present but all empty —
-  reads as `None`, so the parse-artefact shape does not become authoritative.
+  Decision table. The new third state — container present, with an item element
+  (`SearchParameter`, `QuickProperty`) or a name element under it but no usable name — reads as
+  `None`, so the parse-artefact shape does not become authoritative. The item element is consulted
+  beside the name element because it is the evidence that the container holds something at all;
+  testing only the name element was implemented, then rejected in review and recorded in ADR 0144's
+  *Considered & rejected*.
 - **`_defined_search_parameter_names`, `_defined_quick_property_names`** → cache `None` only for
   that unknown answer, `frozenset(names)` otherwise, including `frozenset()`. The lock, the
   re-check under it, the key, the lifetime and the `HMCError` degradation are untouched.
@@ -42,14 +46,27 @@ shape is replaced rather than kept beside the new one.
   `list_quick_properties` entry is additionally stale from #811 and is corrected in the same edit.
 - **Three merged specs carrying empty-answer clauses this change falsifies** → each clause is
   struck through in place with a one-sentence ADR 0144 pointer, matching the entry already struck
-  that way in the first of them: `2026-09-15-discover-search-parameters-design.md`'s *Failure
-  model* entries **performs no check on a type that defines nothing** and the empty-answer tail of
-  **the wrong-set class**; `2026-09-14-validate-quick-property-names-design.md`'s empty-answer tail
-  under the *fewer names* entry; and `2026-09-14-discover-quick-properties.md`'s *Scope* line
-  declaring `-> tuple[list[str], str | None]`. No other line in any of the three is touched.
-  Only the first is named by completion criterion 6; the other two are its quick-twin equivalents,
-  reached as an unavoidable consequence of criterion 3, and this bullet is where that extension of
-  the charter's declared surface is recorded rather than arriving unannounced in the diff.
+  that way in the first of them. The enumeration is the result of grepping the falsified literals
+  `([], version)`, `([], schema_version)` and `tuple[list[str], str | None]` across `docs/adr/` and
+  `docs/workflow/`, not of reading one section per file:
+  - `2026-09-15-discover-search-parameters-design.md` — the *Failure model* entries **performs no
+    check on a type that defines nothing** and the empty-answer tail of **the wrong-set class**;
+    the *Changes* sentence run declaring the 204 and nameless-200 returns; and success criterion 7's
+    204 clause.
+  - `2026-09-14-validate-quick-property-names-design.md` — the empty-answer tail under the *fewer
+    names* entry, and success criterion 4's 204 clause.
+  - `2026-09-14-discover-quick-properties.md` — the *Scope* line declaring
+    `-> tuple[list[str], str | None]`, and the *Success* bullet's 204 clause.
+
+  No other line in any of the three is touched. Occurrences of the same literals elsewhere are
+  deliberately left: in this issue's own ADR, spec and plan they describe the behaviour being
+  replaced; `2026-09-14-discover-job-operations.md` is `list_operations`, which does not change;
+  the merged implementation plans are execution records of a past run, not the durable record; and
+  ADR 0141's and ADR 0142's bodies stay under the merged-ADR rule, amended by Status banner only.
+  Only the first spec is named by completion criterion 6; the other two are its quick-twin
+  equivalents, reached as an unavoidable consequence of criterion 3, and this bullet is where that
+  extension of the charter's declared surface is recorded rather than arriving unannounced in the
+  diff.
 - **`docs/adr/0141-*.md`, `docs/adr/0142-*.md`** → a Status amendment banner each, and nothing else.
 
 Out of scope, with owners: the `validate` default (settled, ADR 0141/0142); retrofitting the
@@ -59,10 +76,10 @@ at an unmeasured firmware level is trustworthy (the next firmware capture — st
 ## Success
 
 1. `list_search_parameters` and `list_quick_properties` each return `([], version)` for a 200
-   carrying the container and no name element, `(None, version)` for a 204 and for a container
-   whose name elements are all empty, and raise `HMCError` for a 200 that yields no usable name
-   and carries no container. A 200 carrying usable names returns them whether or not the container
-   is present, as today.
+   carrying the container with no item element and no name element under it, `(None, version)` for
+   a 204 and for a container carrying either of those elements with no usable name, and raise
+   `HMCError` for a 200 that yields no usable name and carries no container. A 200 carrying usable
+   names returns them whether or not the container is present, as today.
 2. `_defined_search_parameter_names` and `_defined_quick_property_names` each cache `frozenset()`
    for the first of those and `None` for the second and third, and still cache `None` on any
    `HMCError` from the read.
@@ -89,10 +106,12 @@ named by the operator's own configuration.
 - Message disclosure bounds: `_MAX_REPORTED_NAMES` and `_MAX_REPORTED_NAME_LENGTH`.
 
 **Accepted failure classes.**
-- A level keeping the container and nesting names under a different element caches an empty
-  positive set and refuses every name for that client's lifetime. Accepted with its bounds stated
-  in ADR 0144's Consequences: opt-in, one call per client in the CLI and MCP deployments, and a
-  local `ValueError` naming the condition. Unmeasured, and stated as unmeasured.
+- A level keeping the container and renaming both the item element and the name element under it
+  caches an empty positive set and refuses every name for that client's lifetime. A level renaming
+  only the name element reads as unknown and fails open, because the item element is tested too.
+  Accepted with its bounds stated in ADR 0144's Consequences: opt-in, one call per client in the
+  CLI and MCP deployments, and a local `ValueError` naming the condition. Unmeasured, and stated as
+  unmeasured.
 - A transient discovery failure is cached as durably as a firmware-level one. Carried unchanged
   from ADR 0141/0142; this change does not touch the failure path.
 - The wrong-set class — a read that succeeds with the wrong names — carried unchanged from
@@ -119,8 +138,8 @@ forge an HMC response is out of the deployment's threat model: the session is TL
 `verify_ssl` on by default, and an actor holding that position can already answer any read.
 
 **Control per boundary.** The container test is the control, and this change narrows rather than
-widens it: authority now requires the container *and* zero name elements, so a body with unnamed
-parameters cannot make the client refuse. Failure of the control leaks nothing new — the refusal
+widens it: authority now requires the container *and* zero item elements *and* zero name elements,
+so a body holding parameters this parse cannot name cannot make the client refuse. Failure of the control leaks nothing new — the refusal
 message names the type and the caller's own property name, and the non-empty branch keeps the two
 existing disclosure bounds.
 
@@ -132,10 +151,10 @@ from all of them. Nothing here changes what the client sends or where it sends i
 
 | Contract | Mode | Evidence |
 |---|---|---|
-| `list_search_parameters` returns `([], v)` for container + no `ParameterName` element | `focused-test` | `tests/unit/test_client.py::test_list_search_parameters_empty_set_returns_no_names` |
-| `list_search_parameters` returns `(None, v)` for a 204 and for all-empty `ParameterName` elements | `focused-test` | `tests/unit/test_client.py::test_list_search_parameters_204_returns_an_unknown_answer` (renamed) and `::test_list_search_parameters_all_empty_names_return_an_unknown_answer` |
-| `list_quick_properties` returns `([], v)` for container + no `Nickname` element | `focused-test` | `tests/unit/test_client.py::test_list_quick_properties_empty_set_returns_no_names` |
-| `list_quick_properties` returns `(None, v)` for a 204 and for all-empty `Nickname` elements | `focused-test` | `tests/unit/test_client.py::test_list_quick_properties_204_returns_an_unknown_answer` (renamed) and `::test_list_quick_properties_all_empty_names_return_an_unknown_answer` |
+| `list_search_parameters` returns `([], v)` for container + no `SearchParameter` and no `ParameterName` element | `focused-test` | `tests/unit/test_client.py::test_list_search_parameters_empty_set_returns_no_names` |
+| `list_search_parameters` returns `(None, v)` for a 204, for all-empty `ParameterName` elements, and for `SearchParameter` items carrying no `ParameterName` | `focused-test` | `tests/unit/test_client.py::test_list_search_parameters_204_returns_an_unknown_answer` (renamed), `::test_list_search_parameters_all_empty_names_return_an_unknown_answer` and `::test_list_search_parameters_unnamed_items_return_an_unknown_answer` |
+| `list_quick_properties` returns `([], v)` for container + no `QuickProperty` and no `Nickname` element | `focused-test` | `tests/unit/test_client.py::test_list_quick_properties_empty_set_returns_no_names` |
+| `list_quick_properties` returns `(None, v)` for a 204, for all-empty `Nickname` elements, and for `QuickProperty` items carrying no `Nickname` | `focused-test` | `tests/unit/test_client.py::test_list_quick_properties_204_returns_an_unknown_answer` (renamed), `::test_list_quick_properties_all_empty_names_return_an_unknown_answer` and `::test_list_quick_properties_unnamed_items_return_an_unknown_answer` |
 | Both caches store `frozenset()` for the authoritative empty answer | `focused-test` | `tests/unit/test_client.py::test_search_uom_validate_refuses_a_type_defining_nothing`, `::test_get_quick_property_validate_refuses_a_type_defining_nothing` |
 | Both caches still store `None` for 204, all-empty, and `HMCError` | `focused-test` | the existing `*_validate_degrades_and_caches_the_failure` parametrizations, extended with the all-empty case |
 | The empty-set refusal message carries no bare `"."` and names the condition | `focused-test` | the two `*_refuses_a_type_defining_nothing` cases assert the message tail |

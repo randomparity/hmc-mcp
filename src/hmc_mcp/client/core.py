@@ -101,6 +101,12 @@ def _summarize_names(names: frozenset[str]) -> str:
 # VirtualNetwork, NetworkBridge, LogicalUnit and SharedProcessorPool.
 _SEARCH_PARAMETER_NAME_ELEMENT = "ParameterName"
 _SEARCH_PARAMETER_CONTAINER_ELEMENT = "SearchParameterSet"
+# One of these per parameter the container holds, and the direct evidence that
+# the type defines something this parse could not name: an empty ParameterName
+# evidences that only on a level still spelling the name element that way
+# (ADR 0144). find_all_text matches the exact local name, so this matches
+# neither SearchParameters nor SearchParameterSet.
+_SEARCH_PARAMETER_ELEMENT = "SearchParameter"
 
 # The container the /quick discovery anchor answers with (ADR 0140). Consulted
 # the same way as _SEARCH_PARAMETER_CONTAINER_ELEMENT, and for the same reason:
@@ -109,6 +115,10 @@ _SEARCH_PARAMETER_CONTAINER_ELEMENT = "SearchParameterSet"
 # Without the container test the two are indistinguishable and the legitimate
 # one has to raise.
 _QUICK_PROPERTY_CONTAINER_ELEMENT = "QuickProperty_Collection"
+# One of these per property the collection holds; consulted beside the
+# container for the same reason as _SEARCH_PARAMETER_ELEMENT (ADR 0144). Exact
+# local-name matching keeps it from matching QuickProperty_Collection.
+_QUICK_PROPERTY_ELEMENT = "QuickProperty"
 
 
 async def _close_response(response: httpx.Response, primary: BaseException | None) -> None:
@@ -848,7 +858,8 @@ class HMCClient(
         A type defining no quick properties is refused locally, every name of
         it: the anchor answering with the container and no property is a fact
         about the type rather than a failed read (ADR 0144). A 204, a failed
-        read, and a container carrying no usable name still validate nothing.
+        read, and a container holding properties this parse cannot name still
+        validate nothing.
         """
         _reject_unknown_uom_type("resource_type", resource_type)
         if validate:
@@ -908,9 +919,10 @@ class HMCClient(
                 # a type answering 400 at the root /quick anchor.
                 names = None
             # None is the level's answer not being a fact about the type: a 204, a
-            # failed read, or a container whose Nickname elements are all empty. An
-            # empty list is a fact about the type, and caching it as an empty
-            # positive set is what makes validate=True refuse locally (ADR 0144).
+            # failed read, or a container holding properties this parse cannot
+            # name. An empty list is a fact about the type, and caching it as an
+            # empty positive set is what makes validate=True refuse locally
+            # (ADR 0144).
             defined = None if names is None else frozenset(names)
             self._quick_property_names[resource_type] = defined
             return defined
@@ -935,8 +947,9 @@ class HMCClient(
 
         Returns the names paired with the response's ``X-HMC-Schema-Version``,
         with a first element of ``None`` when the level's answer is not a fact
-        about the type -- a 204, or a container with no usable name -- and a
-        list, empty or not, when it is. The version is ``None`` when the HMC
+        about the type -- a 204, or a container holding properties this parse
+        cannot name -- and a list, empty or not, when it is. The version is
+        ``None`` when the HMC
         sends none; that value is verbatim and is not guaranteed to hold a
         version: FW950 echoes the request's ``X-Audit-Memento`` into it, as
         V1_17_0 does for ``/operations`` (ADR 0139), so callers must not parse
@@ -956,11 +969,12 @@ class HMCClient(
         here because ``VirtualNetwork`` defines exactly one quick property
         (ADR 0140). An empty ``Nickname`` is dropped. When no name is found, the
         body is checked for the ``QuickProperty_Collection`` container, and the
-        answer is three-way: present with no ``Nickname`` element at all, it is
-        a type that defines none and returns ``([], version)``, an emptiness
-        that is a fact about the type (ADR 0144); present with ``Nickname``
-        elements whose texts are all empty, it holds properties this parse
-        cannot name and returns ``(None, version)`` as a 204 does; absent, the
+        answer is three-way: present with nothing under it this parse could
+        have named -- no ``QuickProperty`` element and no ``Nickname`` element
+        -- it is a type that defines none and returns ``([], version)``, an
+        emptiness that is a fact about the type (ADR 0144); present with either
+        element there but no usable name, it holds properties this parse cannot
+        name and returns ``(None, version)`` as a 204 does; absent, the
         200 is the HMC's known ``HttpErrorResponse``-feed shape and still raises
         ``HMCError``, because without the container the two are
         indistinguishable.
@@ -1010,12 +1024,16 @@ class HMCClient(
                 resp.status_code,
                 resp.text,
             )
-        # Container and no Nickname element at all: the type defines no quick
-        # properties, and that is a fact about the type (ADR 0144). Elements
-        # present but every text empty is the parse-artefact shape instead --
+        # Container and nothing under it this parse could have named: the type
+        # defines no quick properties, and that is a fact about the type
+        # (ADR 0144). A Nickname whose text is empty, or a QuickProperty
+        # carrying no Nickname at all, is the parse-artefact shape instead --
         # the container holds properties this parse cannot name -- so it reads
         # as unknown, like a 204.
-        return ([] if not found else None), schema_version
+        unnamed = found or _find_all_text(
+            resp.text, f"GET {path}", _QUICK_PROPERTY_ELEMENT
+        )
+        return (None if unnamed else []), schema_version
 
     async def search_uom(
         self,
@@ -1053,8 +1071,8 @@ class HMCClient(
         it: ``ManagementConsole`` answers the anchor with the container and no
         parameter, which is a fact about the type rather than a failed read,
         and six of the eleven captured types answer that way (ADR 0144). A 204,
-        a failed read, and a container carrying no usable name still validate
-        nothing.
+        a failed read, and a container holding parameters this parse cannot
+        name still validate nothing.
         """
         _reject_unknown_uom_type("resource_type", resource_type)
         if validate:
@@ -1119,21 +1137,22 @@ class HMCClient(
 
         **A 200 with no name is not always an error, and the empty answers are
         not all the same answer.** A body carrying ``<SearchParameterSet>`` and
-        no ``ParameterName`` element at all is a type that defines no search
-        parameters, and returns ``([], version)``: ``ManagementConsole``
+        nothing under it this parse could have named -- no ``SearchParameter``
+        element and no ``ParameterName`` element -- is a type that defines no
+        search parameters, and returns ``([], version)``: ``ManagementConsole``
         answers exactly that at both captured levels, and that emptiness is a
-        fact about the type (ADR 0144). A body carrying ``ParameterName``
-        elements whose texts are all empty holds parameters this parse cannot
-        name, so it returns ``(None, version)`` as a 204 does. A 200 carrying
+        fact about the type (ADR 0144). A body carrying either element with no
+        usable name holds parameters this parse cannot name, so it returns
+        ``(None, version)`` as a 204 does. A 200 carrying
         no usable name and no container raises ``HMCError``, because the HMC is
         known to answer 200 with an ``HttpErrorResponse`` feed and without the
         container that is indistinguishable from a type defining nothing.
 
         Returns the names paired with the response's ``X-HMC-Schema-Version``,
         with a first element of ``None`` when the level's answer is not a fact
-        about the type -- a 204, or a container with no usable name -- and a
-        list, empty or not, when it is. The version is ``None`` when the HMC
-        sends none; that value is verbatim and is not
+        about the type -- a 204, or a container holding parameters this parse
+        cannot name -- and a list, empty or not, when it is. The version is
+        ``None`` when the HMC sends none; that value is verbatim and is not
         guaranteed to hold a version: ADR 0139 and ADR 0140 both record the HMC
         echoing the request's ``X-Audit-Memento`` into it, and the capture
         confirms it here -- every 200 came back with this client's own memento
@@ -1179,12 +1198,16 @@ class HMCClient(
                 resp.status_code,
                 resp.text,
             )
-        # Container and no ParameterName element at all: the type defines no
-        # search parameters, and that is a fact about the type (ADR 0144).
-        # Elements present but every text empty is the parse-artefact shape
-        # instead -- the container holds parameters this parse cannot name --
-        # so it reads as unknown, like a 204.
-        return ([] if not found else None), schema_version
+        # Container and nothing under it this parse could have named: the type
+        # defines no search parameters, and that is a fact about the type
+        # (ADR 0144). A ParameterName whose text is empty, or a SearchParameter
+        # carrying no ParameterName at all, is the parse-artefact shape instead
+        # -- the container holds parameters this parse cannot name -- so it
+        # reads as unknown, like a 204.
+        unnamed = found or _find_all_text(
+            resp.text, f"GET {path}", _SEARCH_PARAMETER_ELEMENT
+        )
+        return (None if unnamed else []), schema_version
 
     async def _defined_search_parameter_names(
         self, resource_type: str
@@ -1216,8 +1239,8 @@ class HMCClient(
                 # search_uom, which an opt-in pre-flight must not do.
                 names = None
             # None is the level's answer not being a fact about the type: a 204, a
-            # failed read, or a container whose ParameterName elements are all
-            # empty. An empty list is a fact -- the six captured types defining
+            # failed read, or a container holding parameters this parse cannot
+            # name. An empty list is a fact -- the six captured types defining
             # nothing -- and caching it as an empty positive set is what makes
             # validate=True refuse locally there (ADR 0144).
             defined = None if names is None else frozenset(names)

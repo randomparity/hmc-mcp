@@ -16,7 +16,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   anchor answers with, captured at `V1_17_0` and `V1_20_0` across eleven types. A type that defines
   no search parameters returns an empty list — six of the eleven do; the names are `None` rather
   than a list when the level's answer is not a fact about the type, which is a 204 or a
-  `SearchParameterSet` whose `ParameterName` elements are all empty (ADR 0144). A 200 carrying no
+  `SearchParameterSet` holding parameters this parse cannot name, whether they carry an empty
+  `ParameterName` or no `ParameterName` at all (ADR 0144). A 200 carrying no
   `SearchParameterSet` at all raises `HMCError`, as does a level that does not serve the anchor,
   carrying its status. **No captured level serves a child-anchored form:** the reference documents
   `/rest/api/uom/{P}/{UUID}/{C}/search` and the HMC answers it 400 `INVALID_URL` while serving the
@@ -43,12 +44,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - `HMCClient.list_quick_properties(resource_type, *, parent_type=None, parent_uuid=None)` reads
   the quick-property names an HMC defines for a resource type, at the root anchor
   `/rest/api/uom/{R}/quick` and the child anchor `/rest/api/uom/{P}/{UUID}/{C}/quick`. It returns
-  those names paired with the response's `X-HMC-Schema-Version`, or `None` when the HMC sends none
+  those names paired with the response's `X-HMC-Schema-Version`, that second element being `None`
+  when the HMC sends no such header
   (ADR 0139, ADR 0140, #788). The body is an Atom `<entry>` wrapping a `QuickProperty_Collection`,
   and the names are the `Nickname` texts. A type that defines no quick properties returns an empty
-  list — a 200 carrying the container and no `Nickname` element at all; the names are `None` rather
+  list — a 200 carrying the container with neither a `QuickProperty` nor a `Nickname` element under
+  it; the names are `None` rather
   than a list when the level's answer is not a fact about the type, which is a 204 or a
-  `QuickProperty_Collection` whose `Nickname` elements are all empty (ADR 0144). A 200 carrying no
+  `QuickProperty_Collection` holding properties this parse cannot name, whether they carry an empty
+  `Nickname` or no `Nickname` at all (ADR 0144). A 200 carrying no
   `QuickProperty_Collection` at all raises `HMCError`, because without the container it is
   indistinguishable from the HMC's known `HttpErrorResponse` feed (#811). The returned header value
   is verbatim and is not guaranteed to hold a version. Confirmed against FW950: 39 names for

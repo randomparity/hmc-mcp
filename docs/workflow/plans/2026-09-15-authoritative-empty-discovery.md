@@ -40,9 +40,9 @@ mock-helper branches per twin, and four prose-record edits.
 | `src/hmc_mcp/client/core.py` | both discovery reads, both caches, both refusal messages, `_summarize_names` | the same, with the discriminated return contract |
 | `tests/unit/test_client.py` | the unit contract for all of the above | the same, plus the unknown-answer and defines-nothing cases |
 | `CHANGELOG.md` | Unreleased entries for the four methods | the same, rewritten to the shipped behaviour |
-| `docs/workflow/specs/2026-09-15-discover-search-parameters-design.md` | the #789 failure model, whose *performs no check* and *wrong-set* entries accept this gap | the same, both empty-answer clauses struck through and pointed at ADR 0144 |
-| `docs/workflow/specs/2026-09-14-validate-quick-property-names-design.md` | the #799 failure model, whose *fewer names* entry accepts it for the quick twin | the same, its empty-answer tail struck through the same way |
-| `docs/workflow/specs/2026-09-14-discover-quick-properties.md` | the #788 scope, declaring `-> tuple[list[str], str \| None]` | the same, that type struck through and corrected |
+| `docs/workflow/specs/2026-09-15-discover-search-parameters-design.md` | the #789 failure model, whose *performs no check* and *wrong-set* entries accept this gap, plus its *Changes* and criterion-7 return clauses | the same, all four empty-answer clauses struck through and pointed at ADR 0144 |
+| `docs/workflow/specs/2026-09-14-validate-quick-property-names-design.md` | the #799 failure model, whose *fewer names* entry accepts it for the quick twin, plus criterion 4's 204 clause | the same, both empty-answer clauses struck through the same way |
+| `docs/workflow/specs/2026-09-14-discover-quick-properties.md` | the #788 scope, declaring `-> tuple[list[str], str \| None]`, and its *Success* 204 clause | the same, both struck through and corrected |
 | `docs/adr/0141-*.md`, `docs/adr/0142-*.md` | the amended decisions | the same, plus a Status banner each (already written) |
 
 No file is created, moved, or removed. No caller migrates: neither `list_*` method has a caller in
@@ -53,7 +53,8 @@ path is kept.
 ## Task 1 — the search twin
 
 **Interfaces.** Consumes `_find_all_text`, `_SEARCH_PARAMETER_NAME_ELEMENT`,
-`_SEARCH_PARAMETER_CONTAINER_ELEMENT`, `_summarize_names`, `HMCError` — all already in
+`_SEARCH_PARAMETER_CONTAINER_ELEMENT`, `_SEARCH_PARAMETER_ELEMENT` (added by step 5),
+`_summarize_names`, `HMCError` — the rest already in
 `src/hmc_mcp/client/core.py`. Produces `HMCClient.list_search_parameters(resource_type) ->
 tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_names(resource_type)
 -> frozenset[str] | None`, which Task 2 mirrors but does not import.
@@ -63,14 +64,18 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
 
 ### Verification
 
-- **`list_search_parameters` discriminates its three empty answers.** Mode: `focused-test`.
-  Observable: `([], "V1_0")` for container + no `ParameterName` element; `(None, "V1_0")` for a 204
-  and for `ParameterName` elements that are all empty. Cases:
-  `test_list_search_parameters_empty_set_returns_no_names` (kept, one parametrization),
-  `test_list_search_parameters_204_returns_an_unknown_answer` (renamed, assertion changed) and
-  `test_list_search_parameters_all_empty_names_return_an_unknown_answer` (new). Each empty answer
-  has exactly one case; the new test does not re-cover the 204.
-  Red, observed at step 4 before any source edit: `assert ([], 'V1_0') == (None, 'V1_0')`, twice.
+- **`list_search_parameters` discriminates its empty answers.** Mode: `focused-test`.
+  Observable: `([], "V1_0")` for container + no `SearchParameter` and no `ParameterName` element;
+  `(None, "V1_0")` for a 204, for `ParameterName` elements that are all empty, and for
+  `SearchParameter` items carrying no `ParameterName` at all. Cases:
+  `test_list_search_parameters_empty_set_returns_no_names` (kept, parametrization inlined),
+  `test_list_search_parameters_204_returns_an_unknown_answer` (renamed, assertion changed),
+  `test_list_search_parameters_all_empty_names_return_an_unknown_answer` (new) and
+  `test_list_search_parameters_unnamed_items_return_an_unknown_answer` (new in the review fix wave,
+  with the item-element rule). Each empty answer has exactly one case; neither new test re-covers
+  the 204.
+  Red, observed at step 4 before any source edit: `assert ([], 'V1_0') == (None, 'V1_0')`, twice;
+  the unnamed-items case takes the same red in the review fix wave, before its source edit.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k list_search_parameters -q`.
 - **The cache stores `frozenset()` for the authoritative empty answer and refuses on it.**
   Mode: `focused-test`. Observable: `search_uom(..., validate=True)` raises `ValueError` ending
@@ -111,8 +116,9 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
      (`tests/unit/test_client.py:3411-3419`) to
      `test_list_search_parameters_204_returns_an_unknown_answer` and change its assertion to
      `(None, "V1_0")`. ADR 0144's Decision table row 4 falsifies the current one.
-   - Reduce `test_list_search_parameters_empty_set_returns_no_names` to its first parametrization,
-     assertion unchanged at `([], "V1_0")`. Move its `if n`-filter comment to the new test with its
+   - Reduce `test_list_search_parameters_empty_set_returns_no_names` to its first parametrization
+     and inline it — one tuple is not a parametrization — assertion unchanged at `([], "V1_0")`,
+     the `reason` string folded into the docstring. Move its `if n`-filter comment to the new test with its
      conclusion corrected: without the filter the comprehension yields `["", ""]`, a *non-empty*
      positive set holding only `""`, which rejects every real name.
    - `test_search_uom_validate_refuses_a_type_defining_nothing`: mock with
@@ -152,13 +158,22 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
                    resp.status_code,
                    resp.text,
                )
-           # Container and no ParameterName element at all: the type defines no
-           # search parameters, and that is a fact about the type (ADR 0144).
-           # Elements present but every text empty is the parse-artefact shape
-           # instead -- the container holds parameters this parse cannot name --
-           # so it reads as unknown, like a 204.
-           return ([] if not found else None), schema_version
+           # Container and nothing under it this parse could have named: the type
+           # defines no search parameters, and that is a fact about the type
+           # (ADR 0144). A ParameterName whose text is empty, or a SearchParameter
+           # carrying no ParameterName at all, is the parse-artefact shape instead
+           # -- the container holds parameters this parse cannot name -- so it
+           # reads as unknown, like a 204.
+           unnamed = found or _find_all_text(
+               resp.text, f"GET {path}", _SEARCH_PARAMETER_ELEMENT
+           )
+           return (None if unnamed else []), schema_version
    ```
+
+   `_SEARCH_PARAMETER_ELEMENT = "SearchParameter"` is a new module-level constant beside the
+   container constants. The item element is consulted because it, not the name element, is the
+   evidence that the container holds something this parse could not name; ADR 0144's
+   *Considered & rejected* records the narrower rule this replaces.
 
 6. Update that method's docstring: the paragraph beginning **A 200 with no name is not always an
    error** states the three-way answer, and the `Returns` paragraph states that the first element
@@ -195,7 +210,7 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
 
    Replace the docstring's final paragraph (`A type defining no search parameters reads as
    unknown…`) with one saying such a type is refused locally, and that a 204, a failed read, and a
-   container with no usable name still validate nothing (ADR 0144).
+   container holding parameters this parse cannot name still validate nothing (ADR 0144).
 9. Run `uv run --no-sync pytest tests/unit/test_client.py -k "list_search_parameters or
    search_uom" -q`. Expect every case to pass. Then take the third inventory entry's red: change
    step 5's last line to `return [], schema_version`, re-run, observe the `empty-elements` case
@@ -209,7 +224,11 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
     nothing.**` and, in the *wrong-set class* entry, the sentence beginning `It is still degraded
     from rather than trusted` (one sentence; it runs to the end of that entry). Append to each one
     sentence naming ADR 0144 as where it was taken, matching the entry already struck that way in
-    the same list, which strikes a heading and leaves its body as the historical record.
+    the same list, which strikes a heading and leaves its body as the historical record. Then grep
+    `([], version)`, `([], schema_version)` and `tuple[list[str], str | None]` across `docs/adr/`
+    and `docs/workflow/` and strike every occurrence this change falsifies rather than only those
+    reached from the *Failure model* sections: in this file that also takes the *Changes* sentence
+    run declaring the 204 and nameless-200 returns, and success criterion 7's 204 clause.
 12. Run `just lint`, `just typecheck`, and `just test`. Expect all three green.
 13. Commit: `fix(client): refuse locally when a type defines no search parameters`.
 
@@ -218,8 +237,9 @@ and `search_uom` test passes unmodified except the three named in step 3.
 
 ## Task 2 — the quick twin
 
-**Interfaces.** Consumes `_find_all_text`, `_QUICK_PROPERTY_CONTAINER_ELEMENT`, the literal
-`"Nickname"`, `_summarize_names`, `HMCError` — all already in `src/hmc_mcp/client/core.py`.
+**Interfaces.** Consumes `_find_all_text`, `_QUICK_PROPERTY_CONTAINER_ELEMENT`,
+`_QUICK_PROPERTY_ELEMENT` (added by step 5), the literal
+`"Nickname"`, `_summarize_names`, `HMCError` — the rest already in `src/hmc_mcp/client/core.py`.
 Produces `HMCClient.list_quick_properties(resource_type, *, parent_type=None, parent_uuid=None) ->
 tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_names(resource_type)
 -> frozenset[str] | None`.
@@ -230,14 +250,18 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
 
 ### Verification
 
-- **`list_quick_properties` discriminates its three empty answers.** Mode: `focused-test`.
-  Observable: `([], "V1_0")` for container + no `Nickname` element; `(None, "V1_0")` for a 204 and
-  for `Nickname` elements that are all empty. Cases:
-  `test_list_quick_properties_empty_set_returns_no_names` (kept, one parametrization),
-  `test_list_quick_properties_204_returns_an_unknown_answer` (renamed, assertion changed) and
-  `test_list_quick_properties_all_empty_names_return_an_unknown_answer` (new). Each empty answer
-  has exactly one case; the new test does not re-cover the 204.
-  Red, observed at step 4 before any source edit: `assert ([], 'V1_0') == (None, 'V1_0')`, twice.
+- **`list_quick_properties` discriminates its empty answers.** Mode: `focused-test`.
+  Observable: `([], "V1_0")` for container + no `QuickProperty` and no `Nickname` element;
+  `(None, "V1_0")` for a 204, for `Nickname` elements that are all empty, and for `QuickProperty`
+  items carrying no `Nickname` at all. Cases:
+  `test_list_quick_properties_empty_set_returns_no_names` (kept, parametrization inlined),
+  `test_list_quick_properties_204_returns_an_unknown_answer` (renamed, assertion changed),
+  `test_list_quick_properties_all_empty_names_return_an_unknown_answer` (new) and
+  `test_list_quick_properties_unnamed_items_return_an_unknown_answer` (new in the review fix wave,
+  with the item-element rule). Each empty answer has exactly one case; neither new test re-covers
+  the 204.
+  Red, observed at step 4 before any source edit: `assert ([], 'V1_0') == (None, 'V1_0')`, twice;
+  the unnamed-items case takes the same red in the review fix wave, before its source edit.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k list_quick_properties -q`.
 - **The cache stores `frozenset()` for the authoritative empty answer and refuses on it.**
   Mode: `focused-test`. Observable: `get_quick_property(..., validate=True)` raises `ValueError`
@@ -279,7 +303,8 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
      `test_list_quick_properties_204_returns_an_unknown_answer` and change its assertion to
      `(None, "V1_0")`.
    - Reduce `test_list_quick_properties_empty_set_returns_no_names` to its first parametrization
-     and move its `if n`-filter comment to the new test with its conclusion corrected: without
+     and inline it — one tuple is not a parametrization — folding the `reason` string into the
+     docstring, and move its `if n`-filter comment to the new test with its conclusion corrected: without
      the filter the comprehension yields `["", ""]`, a *non-empty* positive set holding only
      `""`, which rejects every real name.
    - `test_get_quick_property_validate_refuses_a_type_defining_nothing`: mock with
@@ -318,13 +343,20 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
                    resp.status_code,
                    resp.text,
                )
-           # Container and no Nickname element at all: the type defines no quick
-           # properties, and that is a fact about the type (ADR 0144). Elements
-           # present but every text empty is the parse-artefact shape instead --
+           # Container and nothing under it this parse could have named: the type
+           # defines no quick properties, and that is a fact about the type
+           # (ADR 0144). A Nickname whose text is empty, or a QuickProperty
+           # carrying no Nickname at all, is the parse-artefact shape instead --
            # the container holds properties this parse cannot name -- so it reads
            # as unknown, like a 204.
-           return ([] if not found else None), schema_version
+           unnamed = found or _find_all_text(
+               resp.text, f"GET {path}", _QUICK_PROPERTY_ELEMENT
+           )
+           return (None if unnamed else []), schema_version
    ```
+
+   `_QUICK_PROPERTY_ELEMENT = "QuickProperty"` is a new module-level constant beside the container
+   constants, consulted for the same reason as its search twin.
 
 6. Update that method's docstring: the sentence beginning `When no name is found, the body is
    checked for the QuickProperty_Collection container` states the three-way answer, and the
@@ -375,10 +407,12 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
     which #811 changed and did not record here; correct that claim in the same edit.
 11. In `docs/workflow/specs/2026-09-14-validate-quick-property-names-design.md`, strike through
     the sentences beginning `The *empty* answer is not accepted` in the *fewer names* failure-model
-    entry and append the same one-sentence ADR 0144 pointer. In
+    entry and success criterion 4's 204 clause, and append the same one-sentence ADR 0144 pointer to
+    each. In
     `docs/workflow/specs/2026-09-14-discover-quick-properties.md`, strike through the declared
     `-> tuple[list[str], str | None]` in *Scope* and give the corrected type beside it with the
-    same pointer.
+    same pointer, and strike the *Success* bullet's `204 returns ([], schema_version)` clause the
+    same way. The grep from Task 1 step 11 is what reaches the last two.
 12. Run `just verify`, then `uv run --no-sync prek run --all-files`. Expect both green.
 13. Commit: `fix(client): refuse locally when a type defines no quick properties`.
 

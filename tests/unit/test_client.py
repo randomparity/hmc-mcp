@@ -2744,33 +2744,24 @@ async def test_list_quick_properties_200_without_the_container_raises(mock_hmc):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("body", "reason"),
-    [
-        (
-            _quick_property_entry("ManagedSystem"),
-            "a well-formed collection holding no property at all",
-        ),
-    ],
-)
-async def test_list_quick_properties_empty_set_returns_no_names(mock_hmc, body, reason):
+async def test_list_quick_properties_empty_set_returns_no_names(mock_hmc):
     """A type defining no quick properties is an answer, not an error.
 
-    The container is what separates it from the HttpErrorResponse feed above.
-    The empty list is a fact about the type, not an unknown answer (ADR 0144):
-    the test below holds the shape that is not.
+    The body is a well-formed collection holding no property at all. The
+    container is what separates it from the HttpErrorResponse feed above. The
+    empty list is a fact about the type, not an unknown answer (ADR 0144): the
+    two tests below hold the shapes that are not.
     """
     mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
         return_value=httpx.Response(
-            200, text=body, headers={"X-HMC-Schema-Version": "V1_0"}
+            200,
+            text=_quick_property_entry("ManagedSystem"),
+            headers={"X-HMC-Schema-Version": "V1_0"},
         )
     )
 
     async with HMCClient(make_config()) as hmc:
-        assert await hmc.list_quick_properties("ManagedSystem") == (
-            [],
-            "V1_0",
-        ), reason
+        assert await hmc.list_quick_properties("ManagedSystem") == ([], "V1_0")
 
 
 @pytest.mark.asyncio
@@ -2791,6 +2782,45 @@ async def test_list_quick_properties_all_empty_names_return_an_unknown_answer(mo
         return_value=httpx.Response(
             200,
             text=_quick_property_entry("ManagedSystem", ("", ""), ("   ", "")),
+            headers={"X-HMC-Schema-Version": "V1_0"},
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.list_quick_properties("ManagedSystem") == (None, "V1_0")
+
+
+@pytest.mark.asyncio
+async def test_list_quick_properties_unnamed_items_return_an_unknown_answer(
+    mock_hmc,
+):
+    """Items present, no Nickname element at all: properties, still unnamed.
+
+    A level keeping the collection and spelling the name element differently is
+    in the same logical condition as the test above -- the container holds
+    properties this parse cannot name -- so it reads as unknown too, and the
+    QuickProperty element is the evidence for it (ADR 0144). Reading it as the
+    empty fact would cache an empty positive set and refuse every name for the
+    client's lifetime.
+
+    The body is inline rather than from _quick_property_entry: that helper
+    always emits a Nickname inside each QuickProperty, which is the element
+    this shape lacks, and widening it would reach every test using it.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                '<entry xmlns="http://www.w3.org/2005/Atom"><content>'
+                '<QuickProperty_Collection xmlns="http://www.ibm.com/xmlns'
+                '/systems/power/firmware/uom/mc/2012_10/">'
+                "<Metadata><Atom/></Metadata>"
+                "<QuickProperty>"
+                "<RESTElement>ManagedSystem</RESTElement>"
+                "<Description>A property this parse cannot name.</Description>"
+                "</QuickProperty>"
+                "</QuickProperty_Collection></content></entry>"
+            ),
             headers={"X-HMC-Schema-Version": "V1_0"},
         )
     )
@@ -3518,34 +3548,25 @@ async def test_list_search_parameters_200_without_the_container_raises(mock_hmc)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("body", "reason"),
-    [
-        (
-            _search_parameter_entry(_EMPTY_SET_TYPE),
-            "the captured ManagementConsole answer: a set with no parameters",
-        ),
-    ],
-)
-async def test_list_search_parameters_empty_set_returns_no_names(
-    mock_hmc, body, reason
-):
+async def test_list_search_parameters_empty_set_returns_no_names(mock_hmc):
     """A type defining no search parameters is an answer, not an error.
 
-    ManagementConsole was captured answering the anchor 200 with a
+    This is the captured ManagementConsole answer: 200 with a
     SearchParameterSet carrying no SearchParameters child at all. The container
     is what separates it from the HttpErrorResponse feed above. The empty list
-    is a fact about the type, not an unknown answer (ADR 0144): the test below
-    holds the shape that is not.
+    is a fact about the type, not an unknown answer (ADR 0144): the two tests
+    below hold the shapes that are not.
     """
     mock_hmc.get(f"/rest/api/uom/{_EMPTY_SET_TYPE}/search").mock(
         return_value=httpx.Response(
-            200, text=body, headers={"X-HMC-Schema-Version": "V1_0"}
+            200,
+            text=_search_parameter_entry(_EMPTY_SET_TYPE),
+            headers={"X-HMC-Schema-Version": "V1_0"},
         )
     )
 
     async with HMCClient(make_config()) as hmc:
-        assert await hmc.list_search_parameters(_EMPTY_SET_TYPE) == ([], "V1_0"), reason
+        assert await hmc.list_search_parameters(_EMPTY_SET_TYPE) == ([], "V1_0")
 
 
 @pytest.mark.asyncio
@@ -3568,6 +3589,48 @@ async def test_list_search_parameters_all_empty_names_return_an_unknown_answer(
         return_value=httpx.Response(
             200,
             text=_search_parameter_entry(_EMPTY_SET_TYPE, "", "   "),
+            headers={"X-HMC-Schema-Version": "V1_0"},
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.list_search_parameters(_EMPTY_SET_TYPE) == (None, "V1_0")
+
+
+@pytest.mark.asyncio
+async def test_list_search_parameters_unnamed_items_return_an_unknown_answer(
+    mock_hmc,
+):
+    """Items present, no ParameterName element: parameters, still unnamed.
+
+    A level keeping the set and spelling the name element differently is in the
+    same logical condition as the test above -- the container holds parameters
+    this parse cannot name -- so it reads as unknown too, and the
+    SearchParameter element is the evidence for it (ADR 0144). Reading it as
+    the empty fact would cache an empty positive set and refuse every name for
+    the client's lifetime.
+
+    The body is inline rather than from _search_parameter_entry: that helper
+    always emits a ParameterName inside each SearchParameter, which is the
+    element this shape lacks, and widening it would reach every test using it.
+    """
+    mock_hmc.get(f"/rest/api/uom/{_EMPTY_SET_TYPE}/search").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                '<entry xmlns="http://www.w3.org/2005/Atom"><content>'
+                '<SearchParameterSet xmlns="http://www.ibm.com/xmlns/systems'
+                '/power/firmware/web/mc/2012_10/">'
+                "<Metadata><Atom/></Metadata>"
+                f"<ElementName>{_EMPTY_SET_TYPE}</ElementName>"
+                "<SearchParameters>"
+                "<SearchParameter>"
+                f"<Comparator>{_CAPTURED_COMPARATOR}</Comparator>"
+                f"<XPath>{_EMPTY_SET_TYPE}/Unnamed/Value</XPath>"
+                "</SearchParameter>"
+                "</SearchParameters>"
+                "</SearchParameterSet></content></entry>"
+            ),
             headers={"X-HMC-Schema-Version": "V1_0"},
         )
     )
