@@ -2919,6 +2919,36 @@ async def test_get_quick_property_validate_refuses_an_undefined_name(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_get_quick_property_validate_caps_the_names_it_enumerates(mock_hmc):
+    """The refusal message is a diagnostic, not an amplifier.
+
+    Twin of ``test_search_uom_validate_caps_the_names_it_enumerates``: the set
+    rendered here is whatever the discovery read returned, bounded through the
+    same ``_summarize_names`` helper (#808) rather than a raw join.
+    """
+    many = [f"Prop{i:04d}" for i in range(500)]
+    mock_hmc.get(_VALIDATION_DISCOVERY).mock(
+        return_value=httpx.Response(200, text=_quick_property_entry(_VALIDATION_TYPE, *many))
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError) as exc_info:
+            await hmc.get_quick_property(
+                _VALIDATION_TYPE, _VALIDATION_UUID, "NoSuchProperty", validate=True
+            )
+
+    message = str(exc_info.value)
+    assert "Prop0000" in message
+    assert "Prop0019" in message
+    assert "Prop0020" not in message
+    assert "and 480 more." in message
+    # A single trailing period, not the doubled "..": _summarize_names already
+    # appends its own, so the message must not append a second literal ".".
+    assert not message.endswith("..")
+    assert len(message) < 500
+
+
+@pytest.mark.asyncio
 async def test_get_quick_property_validate_allows_a_defined_name(mock_hmc):
     """A name the type defines is read exactly as it is without validation."""
     discovery, defined, _ = _mock_validation_routes(mock_hmc, value="Fixed")
