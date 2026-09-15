@@ -31,8 +31,8 @@ the new home; its drift helpers stay untouched — #818 owns them.
 - Accepted: a real HMC type name over 128 characters is refused locally — ADR 0143 accepts that
   class for the character grammar, the longest type name here is 32 characters, remedied by
   widening one constant. A uom path built without an f-string stays invisible to the drift
-  tests (ADR 0143). `search_uom`'s unbounded `property_value` is the same defect family on the
-  same line, ownerless, and a follow-up candidate, not bounded here.
+  tests (ADR 0143). `search_uom`'s `property_value` and this path's own `console_uuid` are
+  unbounded too — same family, ownerless, follow-up candidates, not bounded here.
 - Covered elsewhere: `property_name` (#818), `group` (#819), dot segments.
 - Threat model: boundaries are `_child_path`'s `child_type`, newly controlled, and the
   predicate's `value`, whose control widens. Untrusted: the MCP client model and, on
