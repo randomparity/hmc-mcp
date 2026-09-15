@@ -32,7 +32,7 @@ from .client_cluster import ClusterMixin
 from .client_lpars import LparsMixin
 from .client_lpm import LpmMixin
 from .client_network import NetworkMixin
-from .client_parse import _find_text, _parse_feed
+from .client_parse import _find_all_text, _find_text, _parse_feed
 from .client_pcm import PcmMixin
 from .client_storage import StorageMixin
 from .client_systems import SystemsMixin
@@ -718,7 +718,6 @@ class HMCClient(
         self,
         resource_type: str,
         *,
-        all_properties: bool = False,
         parent_type: str | None = None,
         parent_uuid: str | None = None,
     ) -> tuple[list[str], str | None]:
@@ -726,22 +725,32 @@ class HMCClient(
 
         Reads ``/rest/api/uom/{R}/quick``, or ``/rest/api/uom/{P}/{UUID}/{C}/quick``
         when both *parent_type* and *parent_uuid* are given; supplying exactly one
-        of them is a caller error. *all_properties* appends ``/all``, a form the
-        reference distinguishes from the bare one only by wording. Whether the HMC
-        distinguishes them -- and whether it distinguishes this lowercase ``/all``
-        from the capitalized ``/quick/All`` this client sends elsewhere -- is
-        unverified (ADR 0140), so prefer the bare form until a live run settles it.
-        On the child anchor the ``/all`` form is not in the reference at all.
+        of them is a caller error.
+
+        There is no ``all_properties`` argument because there is no working
+        ``/quick/all``: FW950 answers 400 on both anchors. The capitalized
+        ``/quick/All`` this client sends from ``client_systems`` is a different
+        endpoint returning per-instance values, not names (ADR 0138, ADR 0140).
 
         Returns the names paired with the response's ``X-HMC-Schema-Version``,
-        ``None`` when the HMC sends none, with the same caveats ``list_operations``
-        documents (ADR 0139).
+        ``None`` when the HMC sends none. That value is verbatim and is not
+        guaranteed to hold a version: FW950 echoes the request's
+        ``X-Audit-Memento`` into it, as V1_17_0 does for ``/operations``
+        (ADR 0139), so callers must not parse it as a level.
 
-        The body is a plain JSON array of names, not an Atom feed, so it is decoded
-        rather than parsed by ``_parse_feed``; one that is not an array of strings
-        raises ``HMCError`` naming the shape observed rather than being coerced
-        (ADR 0140). Sends ``Accept: */*``: ``quick/`` endpoints answer 406 to a
-        typed uom Accept, as ``get_quick_property`` records.
+        The body is an Atom feed wrapping a ``QuickProperty_Collection`` in which
+        each ``QuickProperty`` carries its name in a ``Nickname`` child, and those
+        texts are the result. It is read for those elements rather than through
+        ``_parse_feed``, which flattens an entry to a dict and collapses a repeated
+        element to a bare value when the HMC sends exactly one -- the hazard
+        ADR 0139 recorded for ``OperationSet`` -- so a type defining a single quick
+        property would otherwise need a separate code path (ADR 0140). An empty
+        ``Nickname`` is dropped; a 200 yielding no name at all raises ``HMCError``,
+        because the HMC is known to answer 200 with an ``HttpErrorResponse`` feed
+        and that is indistinguishable to a caller from a type defining nothing.
+
+        Sends ``Accept: */*``: ``quick/`` endpoints answer 406 to a typed uom
+        Accept, as ``get_quick_property`` records.
         """
         uuid_path_arguments: dict[str, str] = {}
         if parent_type is not None and parent_uuid is not None:
@@ -755,8 +764,6 @@ class HMCClient(
                 "child-anchored read needs both the parent type and the "
                 "parent instance UUID"
             )
-        if all_properties:
-            path += "/all"
         resp = await self._request_with_uuid_path_arguments(
             "GET",
             path,
@@ -768,26 +775,11 @@ class HMCClient(
             return [], schema_version
         if resp.status_code != 200:
             raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
-        try:
-            names = resp.json()
-        except ValueError as exc:
+        names = [n for n in _find_all_text(resp.text, f"GET {path}", "Nickname") if n]
+        if not names:
             raise HMCError(
-                f"GET {path} returned invalid JSON: {str(exc)[:500]}",
-                resp.status_code,
-                resp.text,
-            ) from exc
-        if not isinstance(names, list):
-            raise HMCError(
-                f"GET {path} returned a JSON {type(names).__name__}; expected an "
-                "array of quick-property names",
-                resp.status_code,
-                resp.text,
-            )
-        unexpected = sorted({type(n).__name__ for n in names if not isinstance(n, str)})
-        if unexpected:
-            raise HMCError(
-                f"GET {path} returned an array holding {', '.join(unexpected)}; "
-                "expected an array of quick-property names",
+                f"GET {path} returned no QuickProperty/Nickname element; expected "
+                "the quick-property names the type defines",
                 resp.status_code,
                 resp.text,
             )

@@ -1,6 +1,7 @@
 """Tests for HMCClient against a mocked HMC (respx)."""
 
 import asyncio
+import inspect
 import json
 import logging
 import threading
@@ -2361,49 +2362,84 @@ async def test_list_operations_rejects_a_dot_segment_type(mock_hmc, args, kwargs
 
 
 # ---------------------------------------------------------------------------
-# list_quick_properties (#788) -- the /quick and /quick/all discovery anchors.
+# list_quick_properties (#788) -- the /quick discovery anchors.
 #
-# Unlike the OPERATIONS_ENTRY fixtures above, these bodies are not live
-# captures: no HMC was reachable when this landed, and the endpoints' live
-# response shape is the open assumption recorded in ADR 0140 and in the
-# specification's failure model. Each body below is constructed from the
-# vendored reference's description of the endpoint, and the tests pin the
-# contract the method promises rather than a firmware observation.
-QUICK_PROPERTY_NAMES = '["State", "SystemName"]'
+# These bodies are reconstructed from the live run recorded on PR #800, not
+# captured from it: that run reported the container (an Atom feed wrapping a
+# QuickProperty_Collection whose QuickProperty elements each carry a Nickname)
+# and the names, and the names below are its verbatim output for the two types
+# it probed. What it did not report is the exact nesting between <feed> and
+# <QuickProperty_Collection>, so the parse reads Nickname document-wide and
+# test_list_quick_properties_reads_names_at_any_depth pins that independence
+# deliberately rather than by accident. A structural capture is requested on
+# the PR; these fixtures are to be replaced by it.
+#
+# The lowercase /quick/all anchor has no tests because it does not exist:
+# FW950 answered 400 on both the root and the child form, so the method offers
+# no way to build that path (ADR 0140).
+_MANAGED_SYSTEM_NICKNAMES = [
+    "ProcessorThrottling",
+    "BMCVersion",
+    "Description",
+    "ConfigurableSystemMemory",
+    "SystemFirmware",
+    "SystemType",
+    "IsNotPowerVMManagementController",
+    "PermanentSystemProcessors",
+]
+_LOGICAL_PARTITION_NICKNAMES = [
+    "ProgressState",
+    "Description",
+    "MemoryMode",
+    "MigrationState",
+    "PowerManagementMode",
+    "OperatingSystemVersion",
+    "PartitionID",
+    "IsVirtualServiceAttentionLEDOn",
+]
+
+
+def _quick_property_feed(*nicknames: str) -> str:
+    """An Atom feed wrapping a QuickProperty_Collection, as FW950 returns."""
+    properties = "".join(
+        f"<QuickProperty><Nickname>{name}</Nickname></QuickProperty>"
+        for name in nicknames
+    )
+    return (
+        '<feed xmlns="http://www.w3.org/2005/Atom">'
+        "<entry><content>"
+        '<QuickProperty_Collection xmlns="http://www.ibm.com/xmlns/systems/power'
+        '/firmware/uom/mc/2012_10/">'
+        f"{properties}"
+        "</QuickProperty_Collection>"
+        "</content></entry></feed>"
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("resource_type", "kwargs", "path"),
+    ("resource_type", "kwargs", "path", "expected"),
     [
-        ("ManagedSystem", {}, "/rest/api/uom/ManagedSystem/quick"),
         (
             "ManagedSystem",
-            {"all_properties": True},
-            "/rest/api/uom/ManagedSystem/quick/all",
+            {},
+            "/rest/api/uom/ManagedSystem/quick",
+            _MANAGED_SYSTEM_NICKNAMES,
         ),
         (
             "LogicalPartition",
             {"parent_type": "ManagedSystem", "parent_uuid": _PARENT_UUID},
             f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/quick",
-        ),
-        (
-            "LogicalPartition",
-            {
-                "all_properties": True,
-                "parent_type": "ManagedSystem",
-                "parent_uuid": _PARENT_UUID,
-            },
-            f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/quick/all",
+            _LOGICAL_PARTITION_NICKNAMES,
         ),
     ],
 )
-async def test_list_quick_properties_reads_the_documented_anchors(
-    mock_hmc, resource_type, kwargs, path
+async def test_list_quick_properties_reads_the_live_anchors(
+    mock_hmc, resource_type, kwargs, path, expected
 ):
-    """All four anchors: root and child, bare ``/quick`` and ``/quick/all``."""
+    """The two anchors the live run found working: root and child, bare /quick."""
     route = mock_hmc.get(path).mock(
-        return_value=httpx.Response(200, text=QUICK_PROPERTY_NAMES)
+        return_value=httpx.Response(200, text=_quick_property_feed(*expected))
     )
 
     async with HMCClient(make_config()) as hmc:
@@ -2415,19 +2451,99 @@ async def test_list_quick_properties_reads_the_documented_anchors(
     # it catches is a typed uom Accept, which quick/ endpoints answer with 406
     # -- the constraint get_quick_property records beside its own path.
     assert route.calls.last.request.headers["Accept"] == "*/*"
-    assert names == ["State", "SystemName"]
+    assert names == expected
+
+
+def test_list_quick_properties_has_no_all_properties_argument():
+    """The lowercase /quick/all anchor answered 400 live, so it is not offered.
+
+    Pinned as a contract rather than left implicit: the argument shipped in the
+    first draft of this branch, and re-adding it would silently restore a call
+    that cannot work on any level yet observed.
+    """
+    parameters = inspect.signature(HMCClient.list_quick_properties).parameters
+    assert "all_properties" not in parameters
+    assert list(parameters) == ["self", "resource_type", "parent_type", "parent_uuid"]
+
+
+@pytest.mark.asyncio
+async def test_list_quick_properties_returns_a_single_name_as_a_one_element_list(
+    mock_hmc,
+):
+    """A type defining one quick property yields a one-element list.
+
+    This is why the parse does not go through _parse_feed: element_to_dict
+    collapses a repeated element to a bare value when the HMC sends exactly one,
+    the hazard ADR 0139 recorded for OperationSet. Reading Nickname elements
+    directly has no such arity dependence, and this pins that.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
+        return_value=httpx.Response(200, text=_quick_property_feed("SystemName"))
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        names, _ = await hmc.list_quick_properties("ManagedSystem")
+
+    assert names == ["SystemName"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        # Collection at the document root, with no Atom envelope.
+        (
+            '<QuickProperty_Collection xmlns="http://www.ibm.com/xmlns/systems'
+            '/power/firmware/uom/mc/2012_10/">'
+            "<QuickProperty><Nickname>State</Nickname></QuickProperty>"
+            "</QuickProperty_Collection>"
+        ),
+        # Wrapped one level deeper than the feed the live run described.
+        (
+            '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
+            "<Wrapper><QuickProperty_Collection>"
+            "<QuickProperty><Nickname>State</Nickname></QuickProperty>"
+            "</QuickProperty_Collection></Wrapper>"
+            "</content></entry></feed>"
+        ),
+    ],
+)
+async def test_list_quick_properties_reads_names_at_any_depth(mock_hmc, body):
+    """The exact nesting is unconfirmed, so the parse must not depend on it.
+
+    The live run reported the container and the Nickname element but not the
+    path between <feed> and <QuickProperty_Collection>. Reading document-wide
+    makes the open question harmless; this fails if someone later tightens the
+    parse to a fixed element path before a capture settles it.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
+        return_value=httpx.Response(200, text=body)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        names, _ = await hmc.list_quick_properties("ManagedSystem")
+
+    assert names == ["State"]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("headers", "expected"),
-    [({"X-HMC-Schema-Version": "V1_0"}, "V1_0"), ({}, None)],
+    [
+        ({"X-HMC-Schema-Version": "V1_0"}, "V1_0"),
+        # FW950 echoes the request's X-Audit-Memento into this header, so the
+        # value is returned verbatim rather than validated as a level (ADR 0139).
+        ({"X-HMC-Schema-Version": "hmc-mcp"}, "hmc-mcp"),
+        ({}, None),
+    ],
 )
 async def test_list_quick_properties_returns_the_response_schema_version(
     mock_hmc, headers, expected
 ):
     mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
-        return_value=httpx.Response(200, text=QUICK_PROPERTY_NAMES, headers=headers)
+        return_value=httpx.Response(
+            200, text=_quick_property_feed("State"), headers=headers
+        )
     )
 
     async with HMCClient(make_config()) as hmc:
@@ -2447,92 +2563,98 @@ async def test_list_quick_properties_204_returns_no_names(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_list_quick_properties_empty_array_returns_no_names(mock_hmc):
-    """An empty array is a type that defines nothing, not a malformed body."""
+async def test_list_quick_properties_drops_an_empty_nickname(mock_hmc):
+    """An empty Nickname is dropped rather than returned as an empty name."""
     mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
-        return_value=httpx.Response(200, text="[]")
+        return_value=httpx.Response(
+            200,
+            text=(
+                '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
+                "<QuickProperty_Collection>"
+                "<QuickProperty><Nickname>State</Nickname></QuickProperty>"
+                "<QuickProperty><Nickname></Nickname></QuickProperty>"
+                "<QuickProperty><Nickname>SystemName</Nickname></QuickProperty>"
+                "</QuickProperty_Collection>"
+                "</content></entry></feed>"
+            ),
+        )
     )
 
     async with HMCClient(make_config()) as hmc:
-        assert await hmc.list_quick_properties("ManagedSystem") == ([], None)
+        names, _ = await hmc.list_quick_properties("ManagedSystem")
+
+    assert names == ["State", "SystemName"]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("body", "expected"),
+    ("body", "reason"),
     [
-        ('{"State": "operating"}', "returned a JSON dict"),
-        ('"State"', "returned a JSON str"),
+        # The hazard this guard exists for: the HMC answering 200 with an error
+        # document. ADR 0139 recorded parse_feed wrapping exactly this shape as
+        # a synthetic entry rather than raising.
+        (
+            (
+                '<HttpErrorResponse xmlns="http://www.ibm.com/xmlns/systems/power'
+                '/firmware/web/mc/2012_10/">'
+                "<HTTPStatus>200</HTTPStatus><ReasonCode>INVALID_URL</ReasonCode>"
+                "</HttpErrorResponse>"
+            ),
+            "error document",
+        ),
+        # A well-formed collection holding no property at all.
+        (
+            (
+                '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
+                "<QuickProperty_Collection/></content></entry></feed>"
+            ),
+            "empty collection",
+        ),
+        # Every Nickname present but empty: nothing usable survives the filter.
+        (
+            (
+                '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
+                "<QuickProperty_Collection>"
+                "<QuickProperty><Nickname/></QuickProperty>"
+                "</QuickProperty_Collection></content></entry></feed>"
+            ),
+            "all names empty",
+        ),
     ],
 )
-async def test_list_quick_properties_rejects_non_array_json(mock_hmc, body, expected):
-    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
-        return_value=httpx.Response(200, text=body)
-    )
+async def test_list_quick_properties_200_without_a_name_raises(mock_hmc, body, reason):
+    """A 200 yielding no name raises instead of returning an empty list.
 
-    async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match=expected) as raised:
-            await hmc.list_quick_properties("ManagedSystem")
-
-    # The status and body are asserted, not just the message: the threat model
-    # promises every raise carries them, and without this a later edit can strip
-    # them from the 200-with-bad-shape paths and stay green.
-    assert raised.value.status_code == 200
-    assert raised.value.body == body
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("body", "expected"),
-    [
-        ('[{"UUID": "u", "SystemName": "s"}]', "array holding dict"),
-        # Mixed: the offender is not the first element. Without this row, a
-        # check narrowed to names[:1] passes the whole suite while returning a
-        # list with a dict inside it -- which the failure model calls worse
-        # than an error.
-        ('["State", {"UUID": "u"}]', "array holding dict"),
-        # Scalars that are not strings, reported as the set of types seen.
-        # Without this row the predicate can be widened to admit numbers and
-        # the suite stays green.
-        ('["State", 5, true]', "array holding bool, int"),
-    ],
-)
-async def test_list_quick_properties_rejects_non_string_elements(
-    mock_hmc, body, expected
-):
-    """Per-instance objects are not names, and must not be returned as names.
-
-    The first body is the shape ADR 0138 records for ``/quick/All`` -- the
-    differently capitalized sibling path this client already sends. That
-    record's own live confirmation is still owed, so this fixture is
-    constructed from its description and is not a capture. The case exists
-    because returning these objects as names is the one failure a caller
-    would not notice.
+    A caller cannot tell an empty list meaning "this type defines nothing" from
+    one meaning "the HMC returned a document we did not understand", and only
+    the second has ever been observed.
     """
-    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/all").mock(
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
         return_value=httpx.Response(200, text=body)
     )
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match=expected) as raised:
-            await hmc.list_quick_properties("ManagedSystem", all_properties=True)
+        with pytest.raises(HMCError, match="no QuickProperty/Nickname element") as raised:
+            await hmc.list_quick_properties("ManagedSystem")
 
-    assert raised.value.status_code == 200
+    assert raised.value.status_code == 200, reason
     assert raised.value.body == body
 
 
 @pytest.mark.asyncio
-async def test_list_quick_properties_invalid_json_raises_hmc_error(mock_hmc):
+async def test_list_quick_properties_malformed_xml_raises_hmc_error(mock_hmc):
+    """A truncated body raises HMCError naming the call, not a ParseError.
+
+    The tagging wrapper in client_parse owns that conversion; this pins that
+    this method goes through it rather than calling the raw parser.
+    """
     mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
-        return_value=httpx.Response(200, text="not json")
+        return_value=httpx.Response(200, text="<feed><entry>")
     )
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="returned invalid JSON") as raised:
+        with pytest.raises(HMCError, match="GET /rest/api/uom/ManagedSystem/quick"):
             await hmc.list_quick_properties("ManagedSystem")
-
-    assert raised.value.status_code == 200
-    assert raised.value.body == "not json"
 
 
 @pytest.mark.asyncio
