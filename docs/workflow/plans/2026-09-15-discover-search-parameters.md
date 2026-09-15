@@ -15,10 +15,19 @@ usable names. `search_uom` consults it only when its new keyword-only `validate`
 Design: [spec](../specs/2026-09-15-discover-search-parameters-design.md),
 [ADR 0142](../../adr/0142-search-parameter-discovery-parses-one-named-element.md).
 
-Expected implementation size: 310–415 changed lines (M) — derived from the file map below:
+Expected implementation size: 600–720 changed lines (M) — derived from the file map below:
 `core.py` gains one public method with a long docstring, one private helper and four `__init__`
-lines; `tests/unit/test_client.py` gains one fixture block and seventeen test functions;
-`CHANGELOG.md` gains one entry.
+lines (~180); `tests/unit/test_client.py` gains two block-head provenance comments, two constructed-
+body helpers and seventeen test functions, at this repository's observed density of ~26 test lines
+per function (~500); `CHANGELOG.md` gains one entry (~16).
+
+**This line was corrected after the build, and the reason is recorded rather than hidden.** It first
+read 310–415, taken from the twin PR #805's 230 test lines without scaling for a test count nearly
+double that branch's nine. The plan's task coverage was not wrong — every implemented line traces
+to a step below — only the arithmetic was, so no implementation was cut to fit the number, which
+forge's estimate rule forbids. The actual diff is 180 + 499 + 16 = 695 changed lines. The frozen
+design denominator of 250 is unaffected: it is derived from the validated complexity, never from
+this estimate, and this line has never been an input to it.
 
 ## Global Constraints
 
