@@ -20,22 +20,20 @@ Python 3.11, `httpx` transport, `pytest` + `pytest-asyncio` + `respx`, `uv`, `ju
 - Guardrails: `just test`, `just static`, `just verify`, then `uv run --no-sync prek run --all-files`.
   Diff against the merge base: `git --no-pager diff "$(git merge-base HEAD origin/main)"`.
 
-Expected implementation size: 140–180 changed lines (S) — from this plan's file map: a ~40-line
-method plus docstring, ~100 lines of tests, one `CHANGELOG.md` bullet. It exceeds the S band's
-100-line denominator because the tests enumerate nine transport contracts against one small method;
-the frozen complexity is unchanged and this estimate is informational.
+Expected implementation size: 140–180 changed lines (S) — from this plan's file map: ~70 lines of
+method and docstring as quoted in step 2, ~100 lines of tests, one `CHANGELOG.md` bullet.
 
 ## Task 1 — `HMCClient.list_quick_properties`
 
 Creates nothing. Modifies `src/hmc_mcp/client/core.py`, `tests/unit/test_client.py`, `CHANGELOG.md`.
 
-**Interfaces.** Consumes, confirmed present at `70e1bc28` with these signatures:
+**Interfaces.** Consumes, confirmed present at `70e1bc28`:
 `HMCClient._request_with_uuid_path_arguments(method: str, path: str, *, uuid_path_arguments:
-Mapping[str, str], **kwargs) -> httpx.Response` (`core.py:453`), which raises
+Mapping[str, str], **kwargs) -> httpx.Response` (`core.py:453`), raising
 `ValueError(f"{argument} must be a UUID")`; `HMCError(message, status_code=None, body=None)`
 (`src/hmc_mcp/errors.py`), already imported in `core.py`; `_reject_dot_segments`, applied inside
-`_request` (`core.py:435`). Tests consume `mock_hmc` and `make_config()` from `tests/conftest.py`
-and the `_PARENT_UUID` constant already in `tests/unit/test_client.py`. Publishes
+`_request` (`core.py:435`); `mock_hmc` and `make_config()` from `tests/conftest.py` and the
+`_PARENT_UUID` constant in `tests/unit/test_client.py`. Publishes
 `HMCClient.list_quick_properties(resource_type: str, *, all_properties: bool = False, parent_type:
 str | None = None, parent_uuid: str | None = None) -> tuple[list[str], str | None]`; no later task
 depends on it.
@@ -43,9 +41,9 @@ depends on it.
 **Verification.** Nine `focused-test` contracts plus one non-applicable. Each row is the test
 specification: write it in `tests/unit/test_client.py` with the fixture and assertion named. Before
 the method exists every row fails with `AttributeError: 'HMCClient' object has no attribute
-'list_quick_properties'`; each row's own red observation applies once it exists. Every row's focused
-green command is `uv run --no-sync pytest tests/unit/test_client.py -k list_quick_properties -q`,
-expecting every selected case to pass and none deselected by a collection error.
+'list_quick_properties'`. Every row's focused green command is
+`uv run --no-sync pytest tests/unit/test_client.py -k list_quick_properties -q`, expecting every
+selected case to pass and none deselected by a collection error.
 
 | # | Contract | Test name | Fixture / mock | Assertion, and its red observation |
 |---|---|---|---|---|
@@ -54,7 +52,7 @@ expecting every selected case to pass and none deselected by a collection error.
 | 3 | 204 | `test_list_quick_properties_204_returns_no_names` | 204 with `X-HMC-Schema-Version: V1_0` | returns `([], "V1_0")`. Red if 204 falls through to the JSON decode |
 | 4 | Empty array | `test_list_quick_properties_empty_array_returns_no_names` | 200 `'[]'` | returns `([], None)`. Red if an empty array is rejected as a bad shape |
 | 5 | Non-array JSON | `test_list_quick_properties_rejects_non_array_json` | parametrized 200 bodies `'{"State": "operating"}'` and `'"State"'` | raises `HMCError` matching `returned a JSON (dict|str); expected an array`. Red if the body is returned unchecked |
-| 6 | Non-string elements | `test_list_quick_properties_rejects_non_string_elements` | 200 `'[{"UUID": "u", "SystemName": "s"}]'` — the per-instance shape `/quick/All` is live-evidenced to return (ADR 0138) | raises `HMCError` matching `array holding dict`. Red if objects are returned as names or coerced with `str()` |
+| 6 | Non-string elements | `test_list_quick_properties_rejects_non_string_elements` | 200 `'[{"UUID": "u", "SystemName": "s"}]'` — the per-instance shape ADR 0138 records `/quick/All` as returning; that record's own live confirmation is still owed, so this body is constructed from its description and is not a capture, and the test docstring must say so | raises `HMCError` matching `array holding dict`. Red if objects are returned as names or coerced with `str()` |
 | 7 | Invalid JSON | `test_list_quick_properties_invalid_json_raises_hmc_error` | 200 body `'not json'` | raises `HMCError` matching `returned invalid JSON`. Red if `ValueError` escapes to the caller |
 | 8 | Non-200 surfaces | `test_list_quick_properties_unknown_type_raises_hmc_error_with_status` | 400 with the `INVALID_URL` / `REST000E` body shape captured live for `/operations` on PR #797, path changed to `/rest/api/uom/NoSuchType/quick`; its docstring must say it is modelled on that capture and is not itself a `/quick` capture | `raised.value.status_code == 400` and the HMC's message text is preserved. Red if the status is swallowed or remapped |
 | 9 | Pre-transport refusals | `test_list_quick_properties_refuses_bad_arguments` | no mock; parametrized over `parent_uuid="not-a-uuid"`, each parent argument alone, and `..` segments in `resource_type` and in `parent_type` | raises `ValueError` matching `must be a UUID` / `must be given together`, or `HMCError` matching `'\.\.' segment`; `respx` records no request. Red if any reaches transport |
@@ -85,20 +83,18 @@ task-specific observation over it could fail meaningfully.
 
         Reads ``/rest/api/uom/{R}/quick``, or ``/rest/api/uom/{P}/{UUID}/{C}/quick``
         when both *parent_type* and *parent_uuid* are given; supplying exactly one
-        of them is a caller error. *all_properties* appends ``/all`` to either.
+        of them is a caller error. *all_properties* appends ``/all``, a form the
+        reference distinguishes from the bare one only by wording -- treat the two
+        as interchangeable until a live run settles the difference.
 
         Returns the names paired with the response's ``X-HMC-Schema-Version``,
-        ``None`` when the HMC sends none (ADR 0139). As for ``list_operations``
-        that value is verbatim, is not guaranteed to be a version string, and a
-        configured ``HMC_SCHEMA_VERSION`` is not sent: this method passes its own
-        headers to the transport and never reaches ``_uom_headers``.
+        ``None`` when the HMC sends none, with the same caveats ``list_operations``
+        documents (ADR 0139).
 
         The body is a plain JSON array of names, not an Atom feed, so it is decoded
         rather than parsed by ``_parse_feed``; one that is not an array of strings
         raises ``HMCError`` naming the shape observed rather than being coerced
-        (ADR 0140) -- the differently capitalized ``/quick/All`` returns
-        per-instance *value* objects (ADR 0138), and returning those as names would
-        be silent. Sends ``Accept: */*``: ``quick/`` endpoints answer 406 to a
+        (ADR 0140). Sends ``Accept: */*``: ``quick/`` endpoints answer 406 to a
         typed uom Accept, as ``get_quick_property`` records.
         """
         uuid_path_arguments: dict[str, str] = {}
@@ -130,18 +126,24 @@ task-specific observation over it could fail meaningfully.
             names = resp.json()
         except ValueError as exc:
             raise HMCError(
-                f"GET {path} returned invalid JSON: {str(exc)[:500]}"
+                f"GET {path} returned invalid JSON: {str(exc)[:500]}",
+                resp.status_code,
+                resp.text,
             ) from exc
         if not isinstance(names, list):
             raise HMCError(
                 f"GET {path} returned a JSON {type(names).__name__}; expected an "
-                "array of quick-property names"
+                "array of quick-property names",
+                resp.status_code,
+                resp.text,
             )
         unexpected = sorted({type(n).__name__ for n in names if not isinstance(n, str)})
         if unexpected:
             raise HMCError(
                 f"GET {path} returned an array holding {', '.join(unexpected)}; "
-                "expected an array of quick-property names"
+                "expected an array of quick-property names",
+                resp.status_code,
+                resp.text,
             )
         return names, schema_version
 ```
@@ -151,11 +153,13 @@ task-specific observation over it could fail meaningfully.
    bullet: the method and its four anchors, the returned pair, the strict array-of-strings parse,
    and that live confirmation of the response shape is owed (ADR 0140).
 5. Run `just test` (compact summary, no failures, coverage gate met), then `just static` (every
-   sub-recipe passes; `ruff` and `ty` are the two this diff can redden — no generated document
-   covers `core.py`). Commit source, tests and changelog.
+   sub-recipe passes; `ruff` and `ty` are the two this step's diff can redden, and `adr-numbering`
+   also covers the ADR this branch added, which passes because 0140 is unused). Commit source,
+   tests and changelog.
 6. Run `just verify`, then `uv run --no-sync prek run --all-files`. Expect both green. Per
    `AGENTS.md`, a failure during pytest collection is diagnosed with `just smoke` first.
 
 **Acceptance.** Every `Success` criterion in the spec holds; both guardrail commands are green; no
-file outside the three named above changed. **Rollback.** The method has no callers and no persisted
-state; reverting the commit suffices.
+file outside the three named above, and the three design records already committed on this branch,
+changed. **Rollback.** The method has no callers and no persisted state; reverting the commit
+suffices.
