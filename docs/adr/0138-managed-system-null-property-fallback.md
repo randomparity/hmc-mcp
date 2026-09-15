@@ -41,6 +41,20 @@ This fix therefore carries the `verification:live-hmc` label and must be
 confirmed against a live HMC before the fallback can be trusted in the field;
 until then it is exercised only by respx-mocked unit tests.
 
+**Confirmed live on 2026-09-15** (recorded on PR #800, FW950/P10, schema
+`V1_0`), as a by-product of the `/quick` discovery check issue #788 required.
+`GET /rest/api/uom/ManagedSystem/quick/All` answered 200 with
+`Content-Type: application/json` holding one object per managed system with
+property values populated — the per-instance shape assumed above, decoded as
+JSON without a typed `Accept`. No `X-HMC-Schema-Version` was sent on that
+response. The project-pim-derived assumption therefore stands on live evidence
+rather than on a third-party repository alone.
+
+The same run established what `quick/All` is *not*: the lowercase
+`/rest/api/uom/ManagedSystem/quick/all` does not exist on that level (400), and
+the bare `/rest/api/uom/ManagedSystem/quick` is a different endpoint returning
+an Atom feed of defined property *names*. See ADR 0140.
+
 ## Consequences
 Both methods gain one additional request path (`_quick_all_system_names`,
 added to `SystemsClient` via `_request`) that only activates on the specific

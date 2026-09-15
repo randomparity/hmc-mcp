@@ -32,7 +32,7 @@ from .client_cluster import ClusterMixin
 from .client_lpars import LparsMixin
 from .client_lpm import LpmMixin
 from .client_network import NetworkMixin
-from .client_parse import _find_text, _parse_feed
+from .client_parse import _find_all_text, _find_text, _parse_feed
 from .client_pcm import PcmMixin
 from .client_storage import StorageMixin
 from .client_systems import SystemsMixin
@@ -713,6 +713,83 @@ class HMCClient(
         if value.startswith('"') and value.endswith('"') and len(value) > 1:
             value = value[1:-1]
         return value or None
+
+    async def list_quick_properties(
+        self,
+        resource_type: str,
+        *,
+        parent_type: str | None = None,
+        parent_uuid: str | None = None,
+    ) -> tuple[list[str], str | None]:
+        """GET the quick-property names a type defines, with the schema version.
+
+        Reads ``/rest/api/uom/{R}/quick``, or ``/rest/api/uom/{P}/{UUID}/{C}/quick``
+        when both *parent_type* and *parent_uuid* are given; supplying exactly one
+        of them is a caller error.
+
+        There is no ``all_properties`` argument because there is no working
+        ``/quick/all``: FW950 answers 400 on both anchors. The capitalized
+        ``/quick/All`` this client sends from ``client_systems`` is a different
+        endpoint returning per-instance values, not names (ADR 0138, ADR 0140).
+
+        Returns the names paired with the response's ``X-HMC-Schema-Version``,
+        ``None`` when the HMC sends none. That value is verbatim and is not
+        guaranteed to hold a version: FW950 echoes the request's
+        ``X-Audit-Memento`` into it, as V1_17_0 does for ``/operations``
+        (ADR 0139), so callers must not parse it as a level.
+
+        Not every type offers the root anchor: ``NetworkBridge`` answers 400 there
+        and 200 as a child of ``ManagedSystem``. A type that does not serve the
+        anchor asked for surfaces as ``HMCError`` carrying that status.
+
+        The body is an Atom ``<entry>`` whose ``<content>`` holds a
+        ``QuickProperty_Collection``; each ``QuickProperty`` carries its name in a
+        ``Nickname`` child, beside ``RESTElement`` and a prose ``Description``, and
+        the ``Nickname`` texts are the result. They are read document-wide rather
+        than through ``_parse_feed``, which flattens an entry to a dict and
+        collapses a repeated element to a bare value when the HMC sends exactly
+        one -- the hazard ADR 0139 recorded for ``OperationSet``, and reachable
+        here because ``VirtualNetwork`` defines exactly one quick property
+        (ADR 0140). An empty ``Nickname`` is dropped; a 200 yielding no name at all
+        raises ``HMCError``, because the HMC is known to answer 200 with an
+        ``HttpErrorResponse`` feed and that is indistinguishable to a caller from a
+        type defining nothing.
+
+        Sends ``Accept: */*``: ``quick/`` endpoints answer 406 to a typed uom
+        Accept, as ``get_quick_property`` records.
+        """
+        uuid_path_arguments: dict[str, str] = {}
+        if parent_type is not None and parent_uuid is not None:
+            path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{resource_type}/quick"
+            uuid_path_arguments["parent_uuid"] = parent_uuid
+        elif parent_type is None and parent_uuid is None:
+            path = f"/rest/api/uom/{resource_type}/quick"
+        else:
+            raise ValueError(
+                "parent_type and parent_uuid must be given together: a "
+                "child-anchored read needs both the parent type and the "
+                "parent instance UUID"
+            )
+        resp = await self._request_with_uuid_path_arguments(
+            "GET",
+            path,
+            uuid_path_arguments=uuid_path_arguments,
+            headers={"Accept": "*/*"},
+        )
+        schema_version: str | None = resp.headers.get("X-HMC-Schema-Version")
+        if resp.status_code == 204:
+            return [], schema_version
+        if resp.status_code != 200:
+            raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
+        names = [n for n in _find_all_text(resp.text, f"GET {path}", "Nickname") if n]
+        if not names:
+            raise HMCError(
+                f"GET {path} returned no QuickProperty/Nickname element; expected "
+                "the quick-property names the type defines",
+                resp.status_code,
+                resp.text,
+            )
+        return names, schema_version
 
     async def search_uom(
         self, resource_type: str, property_name: str, property_value: str

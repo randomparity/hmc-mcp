@@ -10,7 +10,7 @@ import pytest
 from defusedxml import ElementTree as DET
 from defusedxml.common import DefusedXmlException
 
-from hmc_mcp.client.client_parse import _find_text, _metric_links
+from hmc_mcp.client.client_parse import _find_all_text, _find_text, _metric_links
 from hmc_mcp.errors import HMCError
 
 
@@ -38,3 +38,10 @@ def test_find_text_entity_error_tags_context():
 
     assert "Failed to parse test context response" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, DefusedXmlException)
+
+
+def test_find_all_text_parse_error_tags_context():
+    with pytest.raises(HMCError) as exc_info:
+        _find_all_text("<feed><entry>", "test context", "Nickname")
+    assert "Failed to parse test context response" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, DET.ParseError)

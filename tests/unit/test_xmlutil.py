@@ -1,6 +1,12 @@
 """Tests for the Atom/XML parsing helpers."""
 
-from hmc_mcp.xmlutil import element_to_dict, find_text, localname, parse_feed
+from hmc_mcp.xmlutil import (
+    element_to_dict,
+    find_all_text,
+    find_text,
+    localname,
+    parse_feed,
+)
 
 MANAGED_SYSTEM_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -91,6 +97,27 @@ def test_find_text():
     xml = '<r xmlns="x"><X-API-Session>tok123</X-API-Session></r>'
     assert find_text(xml, "X-API-Session") == "tok123"
     assert find_text(xml, "Nope") is None
+
+
+def test_find_all_text():
+    xml = "<r><Nickname>State</Nickname><other/><Nickname>SystemName</Nickname></r>"
+    assert find_all_text(xml, "Nickname") == ["State", "SystemName"]
+    assert find_all_text(xml, "Nope") == []
+
+
+def test_find_all_text_keeps_arity_at_one():
+    """One match is a one-element list, not the bare value.
+
+    find_text collapses to a scalar by design; this helper must not, or its
+    callers get a different type for a single-element document.
+    """
+    assert find_all_text("<r><Nickname>State</Nickname></r>", "Nickname") == ["State"]
+
+
+def test_find_all_text_keeps_empty_elements_as_empty_strings():
+    """An empty match contributes "" so the length counts elements, not values."""
+    xml = "<r><Nickname>State</Nickname><Nickname/></r>"
+    assert find_all_text(xml, "Nickname") == ["State", ""]
 
 
 def test_repeated_children_become_list():
