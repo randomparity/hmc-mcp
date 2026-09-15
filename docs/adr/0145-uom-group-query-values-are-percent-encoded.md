@@ -100,10 +100,16 @@ second contract applied to data rather than to a schema identifier.
   being interpolated through `f"{...}"`, and a `bytes` value is decoded rather
   than repr'd. Both are inputs the `str | None` signature already forbids, so
   this is accepted rather than guarded; the signature is the contract.
-- `hmc_list_resources`, the CLI, and every MCP tool are unaffected: none passes
-  `group`. The parameter is reachable only through the pre-release `HMCClient`
-  module API (ADR 0123) — the reachability class ADR 0143 recorded for
-  `get_uom_path`.
+- **No supported surface reaches `group`, and one unsupported one does.**
+  `hmc_list_resources` takes `resource_type`, `profile` and `limit` only, and no
+  CLI command or MCP tool passes `group`. It stays reachable by any code that
+  imports `HMCClient` — one of `hmc_mcp.api`'s six stable names — and calls the
+  method directly. ADR 0118 permits exactly that: it keeps `HMCClient`'s
+  lifecycle allowlist and records that *inherited protocol methods are callable
+  but unsupported*, and `list_uom`/`get_uom` sit outside the
+  `_SUPPORTED_CLIENT_LIFECYCLE` set `tests/unit/test_public_api.py` pins. This is
+  the reachability class ADR 0143 recorded for `get_uom_path`, citing the same
+  record.
 
 ## Considered & rejected
 

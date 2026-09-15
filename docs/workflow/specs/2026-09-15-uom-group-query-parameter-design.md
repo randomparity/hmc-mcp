@@ -21,9 +21,10 @@ widening `_reject_dot_segments`, ADR 0143's type segment, #818's `property_name`
 
 ### Failure model
 
-- Actors: a local operator via CLI or MCP server, and a caller of the pre-release
-  `HMCClient` module API (ADR 0123) — the only path reaching `group`, since neither
-  of the others passes it. The HMC is trusted; `group` is untrusted input.
+- Actors: no supported surface reaches `group` — no MCP tool or CLI command passes
+  it — but any code importing `HMCClient` from `hmc_mcp.api` may call `list_uom`
+  directly, which ADR 0118 permits as callable-but-unsupported. The HMC is trusted;
+  `group` is untrusted input.
 - Invariants: a request carries only the query parameters this client names; a
   failure surfaces as `HMCError`, `HMCTransportError`, or `ValueError`.
 - One boundary, `group` entering the query string; its control is destination
