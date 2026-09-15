@@ -714,6 +714,82 @@ class HMCClient(
             value = value[1:-1]
         return value or None
 
+    async def list_quick_properties(
+        self,
+        resource_type: str,
+        *,
+        all_properties: bool = False,
+        parent_type: str | None = None,
+        parent_uuid: str | None = None,
+    ) -> tuple[list[str], str | None]:
+        """GET the quick-property names a type defines, with the schema version.
+
+        Reads ``/rest/api/uom/{R}/quick``, or ``/rest/api/uom/{P}/{UUID}/{C}/quick``
+        when both *parent_type* and *parent_uuid* are given; supplying exactly one
+        of them is a caller error. *all_properties* appends ``/all``, a form the
+        reference distinguishes from the bare one only by wording -- treat the two
+        as interchangeable until a live run settles the difference.
+
+        Returns the names paired with the response's ``X-HMC-Schema-Version``,
+        ``None`` when the HMC sends none, with the same caveats ``list_operations``
+        documents (ADR 0139).
+
+        The body is a plain JSON array of names, not an Atom feed, so it is decoded
+        rather than parsed by ``_parse_feed``; one that is not an array of strings
+        raises ``HMCError`` naming the shape observed rather than being coerced
+        (ADR 0140). Sends ``Accept: */*``: ``quick/`` endpoints answer 406 to a
+        typed uom Accept, as ``get_quick_property`` records.
+        """
+        uuid_path_arguments: dict[str, str] = {}
+        if parent_type is not None and parent_uuid is not None:
+            path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{resource_type}/quick"
+            uuid_path_arguments["parent_uuid"] = parent_uuid
+        elif parent_type is None and parent_uuid is None:
+            path = f"/rest/api/uom/{resource_type}/quick"
+        else:
+            raise ValueError(
+                "parent_type and parent_uuid must be given together: a "
+                "child-anchored read needs both the parent type and the "
+                "parent instance UUID"
+            )
+        if all_properties:
+            path += "/all"
+        resp = await self._request_with_uuid_path_arguments(
+            "GET",
+            path,
+            uuid_path_arguments=uuid_path_arguments,
+            headers={"Accept": "*/*"},
+        )
+        schema_version: str | None = resp.headers.get("X-HMC-Schema-Version")
+        if resp.status_code == 204:
+            return [], schema_version
+        if resp.status_code != 200:
+            raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
+        try:
+            names = resp.json()
+        except ValueError as exc:
+            raise HMCError(
+                f"GET {path} returned invalid JSON: {str(exc)[:500]}",
+                resp.status_code,
+                resp.text,
+            ) from exc
+        if not isinstance(names, list):
+            raise HMCError(
+                f"GET {path} returned a JSON {type(names).__name__}; expected an "
+                "array of quick-property names",
+                resp.status_code,
+                resp.text,
+            )
+        unexpected = sorted({type(n).__name__ for n in names if not isinstance(n, str)})
+        if unexpected:
+            raise HMCError(
+                f"GET {path} returned an array holding {', '.join(unexpected)}; "
+                "expected an array of quick-property names",
+                resp.status_code,
+                resp.text,
+            )
+        return names, schema_version
+
     async def search_uom(
         self, resource_type: str, property_name: str, property_value: str
     ) -> list[dict[str, Any]]:

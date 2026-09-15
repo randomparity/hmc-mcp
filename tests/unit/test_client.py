@@ -2358,3 +2358,237 @@ async def test_list_operations_rejects_a_dot_segment_type(mock_hmc, args, kwargs
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match=r"'\.\.' segment"):
             await hmc.list_operations(*args, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# list_quick_properties (#788) -- the /quick and /quick/all discovery anchors.
+#
+# Unlike the OPERATIONS_ENTRY fixtures above, these bodies are not live
+# captures: no HMC was reachable when this landed, and the endpoints' live
+# response shape is the open assumption recorded in ADR 0140 and in the
+# specification's failure model. Each body below is constructed from the
+# vendored reference's description of the endpoint, and the tests pin the
+# contract the method promises rather than a firmware observation.
+QUICK_PROPERTY_NAMES = '["State", "SystemName"]'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("resource_type", "kwargs", "path"),
+    [
+        ("ManagedSystem", {}, "/rest/api/uom/ManagedSystem/quick"),
+        (
+            "ManagedSystem",
+            {"all_properties": True},
+            "/rest/api/uom/ManagedSystem/quick/all",
+        ),
+        (
+            "LogicalPartition",
+            {"parent_type": "ManagedSystem", "parent_uuid": _PARENT_UUID},
+            f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/quick",
+        ),
+        (
+            "LogicalPartition",
+            {
+                "all_properties": True,
+                "parent_type": "ManagedSystem",
+                "parent_uuid": _PARENT_UUID,
+            },
+            f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/quick/all",
+        ),
+    ],
+)
+async def test_list_quick_properties_reads_the_documented_anchors(
+    mock_hmc, resource_type, kwargs, path
+):
+    """All four anchors: root and child, bare ``/quick`` and ``/quick/all``."""
+    route = mock_hmc.get(path).mock(
+        return_value=httpx.Response(200, text=QUICK_PROPERTY_NAMES)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        names, _ = await hmc.list_quick_properties(resource_type, **kwargs)
+
+    assert route.calls.last.request.url.path == path
+    # Pins against a *wrong* Accept only. httpx's own default is already "*/*",
+    # so this would still hold if the method stopped sending the header; what
+    # it catches is a typed uom Accept, which quick/ endpoints answer with 406
+    # -- the constraint get_quick_property records beside its own path.
+    assert route.calls.last.request.headers["Accept"] == "*/*"
+    assert names == ["State", "SystemName"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("headers", "expected"),
+    [({"X-HMC-Schema-Version": "V1_0"}, "V1_0"), ({}, None)],
+)
+async def test_list_quick_properties_returns_the_response_schema_version(
+    mock_hmc, headers, expected
+):
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
+        return_value=httpx.Response(200, text=QUICK_PROPERTY_NAMES, headers=headers)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        _, schema_version = await hmc.list_quick_properties("ManagedSystem")
+
+    assert schema_version == expected
+
+
+@pytest.mark.asyncio
+async def test_list_quick_properties_204_returns_no_names(mock_hmc):
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
+        return_value=httpx.Response(204, headers={"X-HMC-Schema-Version": "V1_0"})
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.list_quick_properties("ManagedSystem") == ([], "V1_0")
+
+
+@pytest.mark.asyncio
+async def test_list_quick_properties_empty_array_returns_no_names(mock_hmc):
+    """An empty array is a type that defines nothing, not a malformed body."""
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
+        return_value=httpx.Response(200, text="[]")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.list_quick_properties("ManagedSystem") == ([], None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ('{"State": "operating"}', "returned a JSON dict"),
+        ('"State"', "returned a JSON str"),
+    ],
+)
+async def test_list_quick_properties_rejects_non_array_json(mock_hmc, body, expected):
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
+        return_value=httpx.Response(200, text=body)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match=expected):
+            await hmc.list_quick_properties("ManagedSystem")
+
+
+@pytest.mark.asyncio
+async def test_list_quick_properties_rejects_non_string_elements(mock_hmc):
+    """Per-instance objects are not names, and must not be returned as names.
+
+    The body is the shape ADR 0138 records for ``/quick/All`` -- the
+    differently capitalized sibling path this client already sends. That
+    record's own live confirmation is still owed, so this fixture is
+    constructed from its description and is not a capture. The case exists
+    because returning these objects as names is the one failure a caller
+    would not notice.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/all").mock(
+        return_value=httpx.Response(200, text='[{"UUID": "u", "SystemName": "s"}]')
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="array holding dict"):
+            await hmc.list_quick_properties("ManagedSystem", all_properties=True)
+
+
+@pytest.mark.asyncio
+async def test_list_quick_properties_invalid_json_raises_hmc_error(mock_hmc):
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
+        return_value=httpx.Response(200, text="not json")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="returned invalid JSON"):
+            await hmc.list_quick_properties("ManagedSystem")
+
+
+@pytest.mark.asyncio
+async def test_list_quick_properties_unknown_type_raises_hmc_error_with_status(
+    mock_hmc,
+):
+    """An unknown type is rejected at the URL, with 400, not 404.
+
+    The status and body shape are modelled on the live ``/operations`` capture
+    taken against V1_17_0 on PR #797, with the path changed to ``/quick``; it
+    is not itself a ``/quick`` capture. The status is asserted because this
+    method's only contract for a non-200 is to surface what the HMC returned,
+    so a mock inventing 404 would let a regression that swallowed the real
+    status still pass.
+    """
+    mock_hmc.get("/rest/api/uom/NoSuchType/quick").mock(
+        return_value=httpx.Response(
+            400,
+            text=(
+                '<HttpErrorResponse xmlns="http://www.ibm.com/xmlns/systems/power'
+                '/firmware/web/mc/2012_10/">'
+                "<HTTPStatus>400</HTTPStatus>"
+                "<RequestURI>/rest/api/uom/NoSuchType/quick</RequestURI>"
+                "<ReasonCode>INVALID_URL</ReasonCode>"
+                "<Message>REST000B The URL presented to the Management Console REST "
+                "Web Services is not valid.REST000E Unrecognized root REST type of "
+                "NoSuchType.</Message>"
+                "</HttpErrorResponse>"
+            ),
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.list_quick_properties("NoSuchType")
+
+    assert raised.value.status_code == 400
+    assert "Unrecognized root REST type of NoSuchType" in str(raised.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("args", "kwargs", "error", "match"),
+    [
+        (
+            ("LogicalPartition",),
+            {"parent_type": "ManagedSystem", "parent_uuid": "not-a-uuid"},
+            ValueError,
+            "parent_uuid must be a UUID",
+        ),
+        (
+            ("LogicalPartition",),
+            {"parent_type": "ManagedSystem"},
+            ValueError,
+            "must be given together",
+        ),
+        (
+            ("LogicalPartition",),
+            {"parent_uuid": _PARENT_UUID},
+            ValueError,
+            "must be given together",
+        ),
+        # Root anchor: resource_type is the only interpolated segment.
+        (("../web/Logon",), {}, HMCError, r"'\.\.' segment"),
+        # Child anchor: parent_type is interpolated too, and is refused on the
+        # same guard. Each anchor interpolates a different argument.
+        (
+            ("LogicalPartition",),
+            {"parent_type": "../../web", "parent_uuid": _PARENT_UUID},
+            HMCError,
+            r"'\.\.' segment",
+        ),
+    ],
+)
+async def test_list_quick_properties_refuses_bad_arguments(
+    mock_hmc, args, kwargs, error, match
+):
+    """Refused before transport: no request for a quick anchor is recorded.
+
+    The router pre-mocks the logon and logoff the client context manager
+    performs, so the assertion is scoped to the paths this method builds
+    rather than to the router being untouched.
+    """
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(error, match=match):
+            await hmc.list_quick_properties(*args, **kwargs)
+
+    assert not [call for call in mock_hmc.calls if "quick" in call.request.url.path]

@@ -10,6 +10,18 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `HMCClient.list_quick_properties(resource_type, *, all_properties=False, parent_type=None,
+  parent_uuid=None)` reads the quick-property names an HMC defines for a resource type, at the
+  root anchors `/rest/api/uom/{R}/quick` and `/rest/api/uom/{R}/quick/all` and the matching child
+  anchors `/rest/api/uom/{P}/{UUID}/{C}/quick[/all]`. It returns those names paired with the
+  response's `X-HMC-Schema-Version`, or `None` when the HMC sends none (ADR 0139, ADR 0140, #788).
+  The body is decoded as JSON and must be an array of strings: anything else — including the
+  per-instance value objects the differently capitalized `/quick/All` returns — raises `HMCError`
+  naming the observed shape rather than being coerced into plausible-looking names. **The live
+  response shape of both anchors is not yet confirmed against a real HMC**; the endpoints are
+  implemented from the vendored reference's description of them, and the tests exercise the
+  method's own contract rather than a firmware capture.
+
 - `HMCClient.list_operations(resource_type, *, parent_type=None, parent_uuid=None)` reads
   the job operations an HMC defines for a resource type, at the root anchor
   `/rest/api/uom/{R}/operations` and the child anchor
