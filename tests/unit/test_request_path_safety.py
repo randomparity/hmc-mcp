@@ -590,16 +590,39 @@ _KNOWN_UOM_SEGMENT_ARGUMENTS = _TYPE_SEGMENT_ARGUMENTS | {
 }
 
 
-def _uom_interpolations() -> list[tuple[str, str]]:
-    """Every (function, interpolated name) a `/rest/api/uom/` f-string builds."""
+def _is_boundary_check(node: ast.AST) -> bool:
+    """A literal `_reject_unknown_uom_type("x", x)` call — the declaration form."""
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_reject_unknown_uom_type"
+        and len(node.args) == 2
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[1], ast.Name)
+        and node.args[0].value == node.args[1].id
+    )
+
+
+def _uom_path_sites() -> tuple[list[tuple[str, str]], dict[str, set[str]]]:
+    """Every `/rest/api/uom/` f-string interpolation in `core.py`, paired with
+    the type arguments each enclosing function hands the boundary predicate.
+
+    One parse and one walk for both, because the guard test needs them paired:
+    deriving the second per interpolation reparsed the whole module once per
+    site.
+    """
     from hmc_mcp.client import core as client_module
 
     tree = ast.parse(inspect.getsource(client_module))
-    found: list[tuple[str, str]] = []
+    interpolations: list[tuple[str, str]] = []
+    guarded: dict[str, set[str]] = {}
     for owner in ast.walk(tree):
         if not isinstance(owner, ast.AsyncFunctionDef | ast.FunctionDef):
             continue
         for node in ast.walk(owner):
+            if _is_boundary_check(node):
+                guarded.setdefault(owner.name, set()).add(node.args[1].id)
+                continue
             if not isinstance(node, ast.JoinedStr) or not node.values:
                 continue
             head = node.values[0]
@@ -607,39 +630,13 @@ def _uom_interpolations() -> list[tuple[str, str]]:
                 "/rest/api/uom/"
             ):
                 continue
-            found.extend(
+            interpolations.extend(
                 (owner.name, part.value.id)
                 for part in node.values
                 if isinstance(part, ast.FormattedValue)
                 and isinstance(part.value, ast.Name)
             )
-    return found
-
-
-def _guarded_type_arguments(function_name: str) -> set[str]:
-    """The type arguments *function_name* passes to the boundary predicate."""
-    from hmc_mcp.client import core as client_module
-
-    tree = ast.parse(inspect.getsource(client_module))
-    guarded: set[str] = set()
-    for owner in ast.walk(tree):
-        if (
-            not isinstance(owner, ast.AsyncFunctionDef | ast.FunctionDef)
-            or owner.name != function_name
-        ):
-            continue
-        for node in ast.walk(owner):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "_reject_unknown_uom_type"
-                and len(node.args) == 2
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[1], ast.Name)
-                and node.args[0].value == node.args[1].id
-            ):
-                guarded.add(node.args[1].id)
-    return guarded
+    return interpolations, guarded
 
 
 def test_every_uom_type_interpolation_is_guarded():
@@ -662,12 +659,13 @@ def test_every_uom_type_interpolation_is_guarded():
     adding an unguarded site in the idiom the module actually uses; it is not a
     proof that none can exist.
     """
+    interpolations, guarded = _uom_path_sites()
     unguarded = sorted(
         {
             (function, name)
-            for function, name in _uom_interpolations()
+            for function, name in interpolations
             if name in _TYPE_SEGMENT_ARGUMENTS
-            and name not in _guarded_type_arguments(function)
+            and name not in guarded.get(function, set())
         }
     )
     assert not unguarded, f"uom type segments interpolated without a check: {unguarded}"
@@ -680,7 +678,6 @@ def test_every_uom_path_interpolation_is_a_known_argument():
     catches a segment nobody has classified, that one catches a classified
     segment nobody guarded.
     """
-    unknown = sorted(
-        {name for _, name in _uom_interpolations()} - _KNOWN_UOM_SEGMENT_ARGUMENTS
-    )
+    interpolations, _ = _uom_path_sites()
+    unknown = sorted({name for _, name in interpolations} - _KNOWN_UOM_SEGMENT_ARGUMENTS)
     assert not unknown, f"unclassified uom path segment arguments: {unknown}"
