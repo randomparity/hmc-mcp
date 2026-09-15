@@ -20,8 +20,12 @@ Python 3.11, `httpx` transport, `pytest` + `pytest-asyncio` + `respx`, `uv`, `ju
 - Guardrails: `just test`, `just static`, `just verify`, then `uv run --no-sync prek run --all-files`.
   Diff against the merge base: `git --no-pager diff "$(git merge-base HEAD origin/main)"`.
 
-Expected implementation size: 140–180 changed lines (S) — from this plan's file map: ~70 lines of
-method and docstring as quoted in step 2, ~100 lines of tests, one `CHANGELOG.md` bullet.
+Expected implementation size: 300–330 changed lines (S) — from this plan's file map: ~75 lines of
+method and docstring as quoted in step 2, ~235 lines of tests, one `CHANGELOG.md` bullet. An
+earlier estimate of 140–180 assumed roughly 11 lines per inventory contract; the nine contracts
+below cost roughly 26 each once their parametrize tables, their disclaimers about which bodies are
+captures, and the 15-line HTTP 400 body literal are written out. The contracts are unchanged and
+the frozen `S` complexity is unchanged; only this estimate was wrong.
 
 ## Task 1 — `HMCClient.list_quick_properties`
 
@@ -42,8 +46,10 @@ depends on it.
 specification: write it in `tests/unit/test_client.py` with the fixture and assertion named. Before
 the method exists every row fails with `AttributeError: 'HMCClient' object has no attribute
 'list_quick_properties'`. Every row's focused green command is
-`uv run --no-sync pytest tests/unit/test_client.py -k list_quick_properties -q`, expecting every
-selected case to pass and none deselected by a collection error.
+`uv run --no-sync pytest tests/unit/test_client.py -k list_quick_properties -q --no-cov`,
+expecting every selected case to pass and none deselected by a collection error. `--no-cov` is
+load-bearing: without it the repository's `fail-under` gate fires on the partial run and the
+command exits non-zero while every selected case passes.
 
 | # | Contract | Test name | Fixture / mock | Assertion, and its red observation |
 |---|---|---|---|---|
