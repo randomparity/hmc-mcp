@@ -126,8 +126,10 @@ confidentiality of the name list, firmware metadata identical for every caller.
   is sent — including a non-version value such as the observed `hmc-mcp`.
 - A malformed body raises `HMCError` naming the call, not a bare `ParseError`.
 - A 200 carrying no non-empty `Nickname` — an `HttpErrorResponse` feed, an empty collection, or only
-  empty names — raises `HMCError` carrying status 200 and the body. An empty `Nickname` among
-  populated ones is dropped rather than returned.
+  empty names — ~~raises `HMCError` carrying status 200 and the body~~. ADR 0144 is where an empty
+  collection (container present, nothing under it) became `([], schema_version)` and only-empty
+  names became `(None, schema_version)`; only the `HttpErrorResponse`-feed case, with no container
+  at all, still raises. An empty `Nickname` among populated ones is dropped rather than returned.
 - A non-200, non-204 status raises `HMCError` whose `status_code` is that status; ~~204 returns
   `([], schema_version)`~~. ADR 0144 is where a 204 became `(None, schema_version)`, the level's
   answer not being a fact about the type.
