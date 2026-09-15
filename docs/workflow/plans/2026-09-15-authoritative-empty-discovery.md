@@ -79,12 +79,12 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
   Red, observed at step 4 before any source edit: `DID NOT RAISE <class 'ValueError'>`, and that
   route records one call.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k search_uom_validate -q`.
-- **The cache still stores `None` for 204, all-empty and `HMCError`.** Mode: `focused-test`.
-  Observable: `test_search_uom_validate_degrades_and_caches_the_failure` passes with a fifth
-  parametrization, `empty-elements`. It is a regression guard, so it passes before the change too;
-  its red is taken at step 9 by faulting the all-empty branch to return `[]` instead of `None` and
-  observing the `ValueError` the degradation forbids.
-  Green: `uv run --no-sync pytest tests/unit/test_client.py -k search_uom_validate -q`.
+- **Regression guard (not a contract entry).** The `empty-elements` parametrization added to
+  `test_search_uom_validate_degrades_and_caches_the_failure` observes behaviour this change deliberately
+  leaves unchanged, so no revert-red exists for it and it names no material *changed* contract.
+  `verify-red` returns `red-not-reproduced` on it by construction. It is kept as a regression
+  guard, and its bite is demonstrated once by the step-9 fault injection, not offered as this
+  task's contract evidence.
 - **`CHANGELOG.md` and the two #789 spec clauses describe the shipped behaviour.**
   Mode: `task-test-not-applicable`. Reason: both are prose records with no executable consumer —
   `just doc-freshness` reads only a generated document's first-line banner, and neither file
@@ -206,9 +206,10 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
     other claim in both entries.
 11. In `docs/workflow/specs/2026-09-15-discover-search-parameters-design.md`, strike through the
     *Failure model* entry headed `**validate=True performs no check on a type that defines
-    nothing.**` and, in the *wrong-set class* entry, the two sentences beginning `It is still
-    degraded from rather than trusted`. Append to each one sentence naming ADR 0144 as where it
-    was taken, matching the entry already struck that way in the same list.
+    nothing.**` and, in the *wrong-set class* entry, the sentence beginning `It is still degraded
+    from rather than trusted` (one sentence; it runs to the end of that entry). Append to each one
+    sentence naming ADR 0144 as where it was taken, matching the entry already struck that way in
+    the same list, which strikes a heading and leaves its body as the historical record.
 12. Run `just lint`, `just typecheck`, and `just test`. Expect all three green.
 13. Commit: `fix(client): refuse locally when a type defines no search parameters`.
 
@@ -245,12 +246,12 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
   Red, observed at step 4 before any source edit: `DID NOT RAISE <class 'ValueError'>`, and that
   route records one call.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k get_quick_property_validate -q`.
-- **The cache still stores `None` for 204, all-empty and `HMCError`.** Mode: `focused-test`.
-  Observable: `test_get_quick_property_validate_degrades_and_caches_the_failure` passes with a
-  fifth parametrization, `empty-elements`. It is a regression guard, so it passes before the
-  change too; its red is taken at step 9 by faulting the all-empty branch to return `[]` instead
-  of `None` and observing the `ValueError` the degradation forbids.
-  Green: `uv run --no-sync pytest tests/unit/test_client.py -k get_quick_property_validate -q`.
+- **Regression guard (not a contract entry).** The `empty-elements` parametrization added to
+  `test_get_quick_property_validate_degrades_and_caches_the_failure` observes behaviour this change deliberately
+  leaves unchanged, so no revert-red exists for it and it names no material *changed* contract.
+  `verify-red` returns `red-not-reproduced` on it by construction. It is kept as a regression
+  guard, and its bite is demonstrated once by the step-9 fault injection, not offered as this
+  task's contract evidence.
 - **`_summarize_names`' precondition ground, and the two quick-property spec clauses.**
   Mode: `task-test-not-applicable`. Reason: `_summarize_names`' code is unchanged and its edit is
   one docstring sentence explaining why a stated precondition still holds; the spec edits are
