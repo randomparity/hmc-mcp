@@ -303,3 +303,16 @@ def find_text(xml_text: str, *names: str) -> str | None:
         if localname(el.tag) in wanted:
             return (el.text or "").strip()
     return None
+
+
+def find_all_text(xml_text: str, *names: str) -> list[str]:
+    """Return the text of every element whose local name is in `names`.
+
+    The document-order sibling of `find_text`, which stops at the first match.
+    A matching element with no text contributes an empty string rather than
+    being skipped, so the result's length is the number of matching elements;
+    callers that want only populated values filter them out.
+    """
+    root = DET.fromstring(xml_text.encode("utf-8"))
+    wanted = set(names)
+    return [(el.text or "").strip() for el in root.iter() if localname(el.tag) in wanted]
