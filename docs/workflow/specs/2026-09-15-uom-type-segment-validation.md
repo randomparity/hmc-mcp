@@ -20,9 +20,12 @@ is a decision or an accident. ADR 0143 holds the evidence and the decision.
 - A call on every caller-supplied type argument, in `list_uom`, `get_uom`,
   `get_quick_property`, `list_quick_properties`, `search_uom`,
   `list_search_parameters`, `list_operations`, `list_child`, `create_child`,
-  `delete_child`; and one in `_uom_headers` on a non-`None` `resource_type`,
-  covering the `Accept` destination, which no path site reaches for the four
-  `Accept: */*` methods or for `get_uom_path`.
+  `delete_child`; and one in `_uom_headers` inside its existing
+  `if resource_type:` branch, covering the `Accept` destination, which no path
+  site reaches for the four `Accept: */*` methods or for `get_uom_path`. The
+  branch is truthiness, not `is not None`, deliberately: `""` already yields the
+  generic `Accept` with no `type=` parameter, so it reaches no destination and
+  needs no check.
 - The `_reject_dot_segments` docstring, stating its narrow scope as a contract.
 - `tests/unit/test_request_path_safety.py`: the grammar, both destinations, the
   refusal-before-transport property, and a site-directed AST drift test.
@@ -34,9 +37,12 @@ is a decision or an accident. ADR 0143 holds the evidence and the decision.
 - `hmc_list_resources`' own model-controlled exposure — a separate reachability
   question per the issue. Owner: a new issue, if pursued.
 - Retroactive rework of closed #407. Owner: n/a, shipped.
-- `get_quick_property`'s `property_name` segment. Not a type segment; it needs
-  its own grammar and evidence. Owner: a follow-up candidate returned to this
-  campaign, also recorded in ADR 0143's consequences.
+- `get_quick_property`'s `property_name` segment, and `client_users.py`'s
+  private `_child_path`. Neither is a caller-supplied type segment in
+  `core.py`, so both fall **outside** the frozen outcome rather than being
+  excluded from it — this list adds no third approved exclusion. No open issue
+  owns either; this run reports both as follow-up candidates. Also recorded in
+  ADR 0143's consequences.
 - Percent-encoding anything. Rejected by ADR 0143.
 
 **Ownership**: the type-grammar policy is new and has one owner,

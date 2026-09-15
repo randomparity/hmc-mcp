@@ -203,7 +203,9 @@ Provides:
    malformed type never costs a request.
 7. In `_uom_headers`, inside the existing `if resource_type:` branch, call
    `_reject_unknown_uom_type("resource_type", resource_type)` before building
-   the `Accept` value.
+   the `Accept` value. Keep the branch on truthiness rather than changing it to
+   `is not None`: `""` already produces the generic `Accept` with no `type=`
+   parameter, so it reaches no destination.
 8. Add the per-method, header, and drift tests to
    `tests/unit/test_request_path_safety.py`. Both drift assertions walk
    `core.py`'s AST and collect, for every `ast.FormattedValue` inside a
@@ -240,7 +242,12 @@ Provides:
 11. Run `just lint` and `just typecheck`. Expect no output and exit 0.
 12. Run `just test`. Expect the compact success summary and the coverage gate to
     pass.
-13. Commit: `fix(client): validate HMC resource-type path segments at the boundary`.
+13. Run `just verify`. Expect it to end with `verify: all groups load OK`. Then
+    run `uv run --no-sync prek run --all-files`, which CI runs and `just verify`
+    does not; expect every hook to report `Passed`. Both are slow — the managed
+    pre-push hook re-runs the suite in an isolated worktree — so run them in the
+    foreground with a raised timeout rather than re-invoking on an apparent hang.
+14. Commit: `fix(client): validate HMC resource-type path segments at the boundary`.
 
 **Acceptance criteria.** Every test named in the Verification inventory passes;
 each of the ten methods called with a `?`-bearing type raises `ValueError` and

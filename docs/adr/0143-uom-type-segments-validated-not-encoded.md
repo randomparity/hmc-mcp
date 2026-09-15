@@ -55,9 +55,9 @@ refuses any value `re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", value)` does not accept
 with a `ValueError` naming the argument and the first offending character.
 `fullmatch`, not `^...$`: Python's `$` matches before a trailing newline, so the
 anchored form would accept `"LogicalPartition\n"` — which `httpx` 0.28 carries
-into the `Accept` value byte-identical and turns into an `httpx.InvalidURL` on
-the path, an exception `_request` does not catch and whose message carries the
-whole path.
+into the `Accept` value byte-identical, and on the path turns into an
+`httpx.InvalidURL`, which is neither a `TransportError` nor an `HTTPError` and so
+escapes `_request`'s handlers entirely.
 
 It is called from two places, one per destination:
 
@@ -128,11 +128,17 @@ caller argument rather than a path this client declines to send; that matches
   it should expose the parameter at all is a separate reachability question,
   out of scope here per the issue.
 - `get_quick_property` interpolates `property_name` into the same path raw, and
-  this decision does not cover it: a quick-property name is not a type segment,
-  so it needs its own grammar and its own evidence. It carries the issue's `?`/`#`
+  this decision does not cover it — a quick-property name is not a type segment,
+  so it falls outside #809's outcome rather than being excluded from it, and it
+  needs its own grammar and its own evidence. It carries the issue's `?`/`#`
   reproduction on the same line this change hardens, so silence would read as
-  coverage. Owner: a follow-up candidate returned to this campaign, not a
-  residual this record accepts.
+  coverage. **No open issue owns it today.** This run reports it as a follow-up
+  candidate; it is not a residual this record accepts.
+- `client_users.py`'s private `_child_path` interpolates a `child_type` into a
+  uom path outside `core.py`. Both of its callers pass literals and it has no
+  public entry point, so nothing is reachable today, but the drift tests are
+  scoped to `core.py` and do not watch it. Also reported as a follow-up
+  candidate rather than fixed here, which would widen #809's surface.
 
 ## Considered & rejected
 
