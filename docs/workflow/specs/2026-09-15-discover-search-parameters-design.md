@@ -14,7 +14,7 @@ read: [ADR 0118](../../adr/0118-core-library-facade.md),
 `HMCClient.search_uom` (`src/hmc_mcp/client/core.py:859`) interpolates `property_name` into
 `/rest/api/uom/{R}/search/({P}=={V})` and sends it, so an unsupported property is discovered only as
 an HTTP 400 from the HMC. The type-anchored `/rest/api/uom/{R}/search` anchor, which answers what
-properties a search may use, has no reader anywhere under `src/`, and neither does its child form.
+properties a search may use, has no reader anywhere under `src/`.
 
 #789 is the union of two already-merged siblings applied to `/search`: the discovery read #788
 landed for `/quick` (PR #803, ADR 0140) and the opt-in validation wiring #799 landed for
@@ -53,13 +53,12 @@ satisfied. `hmc_mcp.api`'s six exports (ADR 0118) are a protected contract and s
 `_SEARCH_PARAMETER_NAME_ELEMENT = "ParameterName"` and
 `_SEARCH_PARAMETER_CONTAINER_ELEMENT = "SearchParameterSet"`, the second consulted only when no
 name was found, to separate a type defining none from a body of another shape entirely.
-`list_search_parameters(resource_type, *, parent_type=None,
-parent_uuid=None)` reads `/rest/api/uom/{R}/search`, or
-`/rest/api/uom/{P}/{UUID}/{C}/search` when both parent arguments are given, sends `Accept: */*`,
+`list_search_parameters(resource_type)` reads `/rest/api/uom/{R}/search`, sends `Accept: */*`,
 and returns `(names, schema_version)` — the texts of that element read document-wide via
 `_find_all_text`, paired with the response's `X-HMC-Schema-Version`. A 204 returns
 `([], schema_version)`; a non-200 raises `HMCError` carrying the status; a 200 yielding no name
-raises `HMCError` naming the element it looked for. `HMCClient.__init__` gains
+returns `([], schema_version)` when it carries the container and raises `HMCError` when it does
+not. `HMCClient.__init__` gains
 `self._search_parameter_names: dict[str, frozenset[str] | None] = {}` and
 `self._search_parameter_names_lock = asyncio.Lock()`. A private
 `_defined_search_parameter_names(resource_type)` reads the root anchor once per type per client,
@@ -70,8 +69,9 @@ one `## [Unreleased] / ### Added` entry.
 
 **Out of scope, with owners.** MCP and CLI exposure of the discovery calls (#792); capability-ledger
 rows (#794); the XSD anchor (#790) and job feeds (#791); live `/operations` reconciliation (#793).
-Live-firmware confirmation of the response shape is the operator's, on the ppc64le live-test host,
-after this PR is pushed. No parent-anchored validation — `search_uom` reads a root-anchored path,
+Live-firmware confirmation of the response shape was the operator's, on the live-test host, after
+this PR was pushed; it has since run and this design is revised against it. No parent-anchored
+validation — `search_uom` reads a root-anchored path,
 so parent arguments would describe a resource it does not address, the same ground ADR 0141 gave.
 
 ## Failure model
@@ -99,12 +99,10 @@ degradation promise rather than any numbered criterion of #789. The six `hmc_mcp
 
 - ~~**The parsed element name is unverified against firmware.**~~ **Closed by the capture, not
   accepted.** It was accepted for this branch on ADR 0142's bounding properties; the capture then
-  found the name and the container both wrong, and the correction landed before merge. The class
-  that remains is narrower: the **child** anchor is still unverified, and the evidence is against
-  it — both captured levels answered it 400 `INVALID_URL`. Accepted, because the corpus documents
-  the path grammar and ADR 0140 recorded a sibling anchor whose availability is per type, so one
-  type pair on two levels does not prove the form absent. A caller using the parent arguments gets
-  `HMCError`, which is the designed surface for a level that does not serve an anchor.
+  found the name and the container both wrong, and the correction landed before merge. The child
+  anchor is closed too, in the other direction: a control round established the form is not served,
+  and the parent arguments were removed rather than left as an accepted failure class. Neither of
+  these is an accepted class any more — both are settled facts, and the record says which way.
 - A stale positive cache wrongly rejects a name a newer level added, for a client held across a
   firmware change. Accepted: unreachable for the per-call CLI and MCP actors, and the remaining
   actor's escape is `validate=False`, the default. Carried from ADR 0141.
@@ -136,8 +134,7 @@ degradation promise rather than any numbered criterion of #789. The six `hmc_mcp
   instance names: that is less disclosure than the whole set, not none, and the accepted class is
   the residue.
 
-**Covered elsewhere.** **Dot-segment** traversal in `property_name`, `resource_type`, `parent_type`
-or the child type: `_reject_dot_segments` (`core.py:115`), which `_request` (`core.py:436`) applies
+**Covered elsewhere.** **Dot-segment** traversal in `property_name` or `resource_type`: `_reject_dot_segments` (`core.py:115`), which `_request` (`core.py:436`) applies
 to every request, `_request` being the only site that builds or sends one. That guard is specific,
 not general path handling: it refuses `.` and `..` segments in the raw and single-unquoted forms,
 and it does **not** refuse `?` or `#`, so a type string carrying either retargets the GET within
@@ -145,21 +142,19 @@ and it does **not** refuse `?` or `#`, so a type string carrying either retarget
 above that prefix. The type segments are not percent-encoded, unlike `search_uom`'s
 `property_name`/`property_value`. This is pre-existing and identical at every uom path
 interpolation in this module — `rg -c 'f"/rest/api/uom/' src/hmc_mcp/client/core.py` returns 13 at
-`a0d29ac7` (11 interpolating a caller-supplied type segment, 2 a job id) and 15 here. **This change
-extends that class by two sites of the same shape rather than altering it:** both in
-`list_search_parameters` — the child anchor `f"/rest/api/uom/{parent_type}/{parent_uuid}/`
-`{resource_type}/search"` and the root anchor `f"/rest/api/uom/{resource_type}/search"`
-(`core.py:1019` and `:1022` at `3c389712`) — the first a new unencoded `parent_type` reachable
-through a new public method. It is
-unreachable from MCP or the CLI for this method; the shared decision is a follow-up candidate,
-recorded rather than closed in this change.
+`a0d29ac7` (11 interpolating a caller-supplied type segment, 2 a job id). **This change extends
+that class by exactly one site of the same shape rather than altering it:** the root anchor
+`f"/rest/api/uom/{resource_type}/search"` in `list_search_parameters`. It is unreachable from MCP
+or the CLI for this method; the shared decision is a follow-up candidate, recorded rather than
+closed in this change.
 
-  An earlier revision of this entry said "identical at all six interpolation sites in this module,
-  is not widened here". Both halves were wrong — the count by a factor of two, and the direction of
-  change outright — and they are corrected rather than reworded. The deferral itself is unaffected:
-  the guard is specific, the pattern is pre-existing, and the encoding decision is shared.
-`parent_uuid` validation:
-`_request_with_uuid_path_arguments` (`core.py:462`). Percent-encoding of the instance-search
+  This entry has been wrong twice and is recorded rather than quietly reworded. It first said
+  "identical at all six interpolation sites in this module, is not widened here" — the count wrong
+  by a factor of two and the direction of change wrong outright. It then said the change adds
+  **two** sites, which was true until the live capture removed the child anchor; it now adds one.
+  The deferral itself is unaffected: the guard is specific, the pattern is pre-existing, and the
+  encoding decision is shared.
+Percent-encoding of the instance-search
 grammar: `search_uom`'s existing `quote(..., safe="")` calls, pinned by
 `tests/unit/test_client.py:824`. Response-body bounding: ADR 0133. MCP and CLI exposure: #792.
 
@@ -172,11 +167,11 @@ step 6 re-judges this against the actual diff.
 ## Success
 
 1. `list_search_parameters(R)` reads `/rest/api/uom/{R}/search`, and
-   `list_search_parameters(C, parent_type=P, parent_uuid=U)` reads
-   `/rest/api/uom/{P}/{U}/{C}/search`; supplying exactly one parent argument raises `ValueError`.
-   (#789 criterion 1) **This is met as "the client reads both paths", not as "both anchors
-   answer":** the root anchor is captured working, and the child anchor answered 400 `INVALID_URL`
-   at both captured levels, so criterion 1's "reachable" half is met for one of the two forms.
+   and there is no child-anchored form. (#789 criterion 1 — **knowingly partial**) The capture's
+   control round found `/rest/api/uom/{P}/{U}/{C}/search` answering 400 `INVALID_URL` for two child
+   types under a parent that served its plain child feed and its `/quick` anchor 200 in the same
+   session. The parent arguments were removed on that evidence rather than shipped as surface whose
+   only observed behaviour is `HMCError`; see ADR 0142.
 2. `search_uom(..., validate=True)` raises `ValueError` without sending a request to
    `/rest/api/uom/{R}/search/({P}=={V})` when `{P}` is not among the names
    `list_search_parameters` returns for `{R}`. (#789 criterion 2)

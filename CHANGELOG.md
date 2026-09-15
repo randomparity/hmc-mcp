@@ -10,16 +10,16 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
-- `HMCClient.list_search_parameters(resource_type, *, parent_type=None, parent_uuid=None)` reads
-  the search-parameter names an HMC defines for a resource type, at the root anchor
-  `/rest/api/uom/{R}/search` and the child anchor `/rest/api/uom/{P}/{UUID}/{C}/search`, returning
-  them with the response's `X-HMC-Schema-Version`. The names are the `ParameterName` texts of the
-  `SearchParameterSet` the anchor answers with, captured at `V1_17_0` and `V1_20_0`. A type that
-  defines no search parameters returns an empty list; a 200 carrying no `SearchParameterSet` at all
-  raises `HMCError`, as does a level that does not serve the anchor, carrying its status.
-  **The child anchor answered 400 `INVALID_URL` at both captured levels** for
-  `ManagedSystem`/`LogicalPartition`, so `parent_type` and `parent_uuid` address a form no observed
-  firmware serves (ADR 0142, #789).
+- `HMCClient.list_search_parameters(resource_type)` reads the search-parameter names an HMC defines
+  for a resource type, at `/rest/api/uom/{R}/search`, returning them with the response's
+  `X-HMC-Schema-Version`. The names are the `ParameterName` texts of the `SearchParameterSet` the
+  anchor answers with, captured at `V1_17_0` and `V1_20_0` across eleven types. A type that defines
+  no search parameters returns an empty list — six of the eleven do; a 200 carrying no
+  `SearchParameterSet` at all raises `HMCError`, as does a level that does not serve the anchor,
+  carrying its status. **There is no child-anchored form:** the reference documents
+  `/rest/api/uom/{P}/{UUID}/{C}/search` and the HMC answers it 400 `INVALID_URL` while serving the
+  plain child feed and `/quick` on the same parent, so no parent arguments are offered
+  (ADR 0142, #789).
 
 - `HMCClient.search_uom` takes a keyword-only `validate=False`. With `validate=True` a property
   name the resource type does not define raises `ValueError` before any request is sent, checked

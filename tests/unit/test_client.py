@@ -3094,31 +3094,35 @@ async def test_get_quick_property_validate_caches_per_resource_type(mock_hmc):
 # list_search_parameters (#789) -- the /search discovery anchors.
 #
 # THE SHAPE BELOW IS RECONSTRUCTED FROM A LIVE CAPTURE, not invented and not a
-# verbatim body. The capture ran against Power HMCs at V1_17_0 and V1_20_0 and
-# is recorded on PR #807; what it reports is the element tree, per-path element
-# counts, namespaces and text lengths, deliberately not text values, because the
-# raw bodies carry instance data. So these facts are live:
+# verbatim body. Two rounds ran against Power HMCs at V1_17_0 and V1_20_0 and
+# are recorded on PR #807. Round 1 reported the element tree, per-path counts,
+# namespaces and text lengths but no text values, because the raw bodies carry
+# instance data; round 2 added the element texts that are schema strings. So
+# every structural fact and every text below is live:
 #
 #   * the root element <entry> and both namespace URIs;
 #   * the nesting content > SearchParameterSet > SearchParameters >
 #     SearchParameter > ParameterName;
 #   * the ElementName, Comparator and XPath siblings and where they sit;
-#   * the parameter names themselves, which are schema property names;
-#   * ManagementConsole answering 200 with a SearchParameterSet and no
-#     SearchParameters child at all.
-#
-# The text of Comparator and XPath is NOT live -- the capture reports only its
-# length. Those two carry marked placeholder text here. Nothing under test reads
-# them; they exist so a parse reading the wrong neighbour fails, which
-# test_list_search_parameters_reads_the_named_element_not_its_siblings pins.
+#   * the parameter names, which are schema property names;
+#   * the Comparator text -- one string, on every parameter of every type
+#     captured -- and the XPath form, a schema path ending in /Value;
+#   * six of the eleven types captured answering 200 with a SearchParameterSet
+#     and no SearchParameters child at all.
 #
 # This replaces an earlier inference that read <Nickname> from a
 # <SearchParameter_Collection>, mirroring the /quick anchor. The capture found
 # both halves wrong. ADR 0142 records what that cost and what the ground was.
 #
-# Names as captured. ManagedSystem and LogicalPartition are the two anchors the
-# tests drive; the capture also returned VirtualIOServer (identical to
-# LogicalPartition), SharedStoragePool and Event.
+# There is no child-anchored fixture because there is no child anchor. V1_17_0
+# answers /rest/api/uom/{P}/{UUID}/{C}/search with 400 INVALID_URL for both
+# LogicalPartition and VirtualIOServer, under a parent whose plain child feed
+# and /quick anchor both answered 200 in the same session.
+_CAPTURED_COMPARATOR = "Regular Expression or String Match"
+
+# Names as captured. ManagedSystem and LogicalPartition are the two the tests
+# drive; VirtualIOServer returned the same four as LogicalPartition, and
+# SharedStoragePool two.
 _MANAGED_SYSTEM_SEARCH_PARAMETERS = [
     "MachineType",
     "Model",
@@ -3132,7 +3136,10 @@ _LOGICAL_PARTITION_SEARCH_PARAMETERS = [
     "PartitionState",
     "PartitionType",
 ]
-# Captured: the one type that answers the anchor with an empty set.
+# Captured: types answering the anchor with an empty set. Not an edge case --
+# six of the eleven types captured do this, so the container branch below is
+# the common path, not a corner. VirtualSwitch, VirtualNetwork, NetworkBridge,
+# LogicalUnit and SharedProcessorPool answer the same way.
 _EMPTY_SET_TYPE = "ManagementConsole"
 # Captured: the single-parameter type. ADR 0139's element_to_dict collapse is
 # reachable through it, which is why the parse reads _find_all_text.
@@ -3162,12 +3169,14 @@ def _search_parameter_entry(element_name: str, *parameters: str | tuple[str, str
     """
     body = ""
     for item in parameters:
-        name, xpath = item if isinstance(item, tuple) else (item, f"{element_name}/{item}")
+        name, xpath = (
+            item if isinstance(item, tuple) else (item, f"{element_name}/{item}/Value")
+        )
         body += (
             "<SearchParameter>"
             "<Metadata><Atom/></Metadata>"
             f"<ParameterName>{name}</ParameterName>"
-            "<Comparator>PLACEHOLDER-COMPARATOR-TEXT-NOT-CAPTURED</Comparator>"
+            f"<Comparator>{_CAPTURED_COMPARATOR}</Comparator>"
             f"<XPath>{xpath}</XPath>"
             "</SearchParameter>"
         )
@@ -3191,32 +3200,22 @@ def _search_parameter_entry(element_name: str, *parameters: str | tuple[str, str
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("resource_type", "kwargs", "path", "expected"),
+    ("resource_type", "expected"),
     [
-        (
-            "ManagedSystem",
-            {},
-            "/rest/api/uom/ManagedSystem/search",
-            _MANAGED_SYSTEM_SEARCH_PARAMETERS,
-        ),
-        (
-            "LogicalPartition",
-            {"parent_type": "ManagedSystem", "parent_uuid": _PARENT_UUID},
-            f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/search",
-            _LOGICAL_PARTITION_SEARCH_PARAMETERS,
-        ),
+        ("ManagedSystem", _MANAGED_SYSTEM_SEARCH_PARAMETERS),
+        ("LogicalPartition", _LOGICAL_PARTITION_SEARCH_PARAMETERS),
     ],
 )
-async def test_list_search_parameters_reads_both_anchors(
-    mock_hmc, resource_type, kwargs, path, expected
+async def test_list_search_parameters_reads_the_root_anchor(
+    mock_hmc, resource_type, expected
 ):
-    """Root and child anchors, at the paths the corpus documents.
+    """The root anchor, at the path the corpus documents and the capture served.
 
-    The root anchor is captured. **The child anchor is not**: both captured
-    levels answered it 400 INVALID_URL for this exact type pair, so this row
-    pins the path this client builds and nothing about what firmware does with
-    it. See the method docstring for why the parameters are kept anyway.
+    There is no child-anchored row because there is no child anchor: see the
+    block comment above and ADR 0142. Both of these types were captured
+    answering the root anchor, with exactly these names.
     """
+    path = f"/rest/api/uom/{resource_type}/search"
     route = mock_hmc.get(path).mock(
         return_value=httpx.Response(
             200, text=_search_parameter_entry(resource_type, *expected)
@@ -3224,7 +3223,7 @@ async def test_list_search_parameters_reads_both_anchors(
     )
 
     async with HMCClient(make_config()) as hmc:
-        names, _ = await hmc.list_search_parameters(resource_type, **kwargs)
+        names, _ = await hmc.list_search_parameters(resource_type)
 
     assert route.calls.last.request.url.path == path
     assert names == expected
@@ -3236,59 +3235,17 @@ async def test_list_search_parameters_reads_both_anchors(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("args", "kwargs", "error", "match"),
-    [
-        # Carries the non-UUID case its named sibling carries at
-        # test_list_quick_properties_refuses_bad_arguments. Without this row the
-        # `uuid_path_arguments["parent_uuid"] = parent_uuid` line can be deleted
-        # and every other test here still passes -- a survivor the failure
-        # model's `parent_uuid` entry assumes is dead, because that entry closes
-        # the concern by citing `_request_with_uuid_path_arguments` and nothing
-        # else pins that this method reaches it.
-        (
-            ("LogicalPartition",),
-            {"parent_type": "ManagedSystem", "parent_uuid": "not-a-uuid"},
-            ValueError,
-            "parent_uuid must be a UUID",
-        ),
-        (
-            ("LogicalPartition",),
-            {"parent_type": "ManagedSystem"},
-            ValueError,
-            "must be given together",
-        ),
-        (
-            ("LogicalPartition",),
-            {"parent_uuid": _PARENT_UUID},
-            ValueError,
-            "must be given together",
-        ),
-        # Root anchor: resource_type is the only interpolated segment.
-        (("../web/Logon",), {}, HMCError, r"'\.\.' segment"),
-        # Child anchor: parent_type is interpolated too, and is refused on the
-        # same guard. Each anchor interpolates a different argument.
-        (
-            ("LogicalPartition",),
-            {"parent_type": "../../web", "parent_uuid": _PARENT_UUID},
-            HMCError,
-            r"'\.\.' segment",
-        ),
-    ],
-)
-async def test_list_search_parameters_refuses_bad_arguments(
-    mock_hmc, args, kwargs, error, match
-):
-    """Refused before transport: no request for a search anchor is recorded.
+async def test_list_search_parameters_refuses_a_dot_segment_resource_type(mock_hmc):
+    """resource_type is the only interpolated segment, and it is guarded.
 
-    One half of the child anchor is a caller error, not a root-anchor read. The
+    Refused before transport: no request for a search anchor is recorded. The
     router pre-mocks the logon and logoff the client context manager performs,
     so the assertion is scoped to the paths this method builds rather than to
     the router being untouched.
     """
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(error, match=match):
-            await hmc.list_search_parameters(*args, **kwargs)
+        with pytest.raises(HMCError, match=r"'\.\.' segment"):
+            await hmc.list_search_parameters("../web/Logon")
 
     assert not [call for call in mock_hmc.calls if "search" in call.request.url.path]
 

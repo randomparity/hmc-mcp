@@ -89,10 +89,12 @@ def _summarize_names(names: frozenset[str]) -> str:
 # <Nickname> from a <SearchParameter_Collection> and was wrong on both counts.
 #
 # The container matters to the parse, not just to the record: a 200 carrying it
-# with no SearchParameters child is a type that defines no search parameters --
-# ManagementConsole does at both levels -- which is a different answer from a
-# 200 carrying an HttpErrorResponse feed. Without the container test the two
-# are indistinguishable and the legitimate one has to raise.
+# with no SearchParameters child is a type that defines no search parameters,
+# which is a different answer from a 200 carrying an HttpErrorResponse feed.
+# Without the container test the two are indistinguishable and the legitimate
+# one has to raise -- and it is not the edge case it looks like. Of the eleven
+# types captured, SIX define nothing: ManagementConsole, VirtualSwitch,
+# VirtualNetwork, NetworkBridge, LogicalUnit and SharedProcessorPool.
 _SEARCH_PARAMETER_NAME_ELEMENT = "ParameterName"
 _SEARCH_PARAMETER_CONTAINER_ELEMENT = "SearchParameterSet"
 
@@ -970,21 +972,25 @@ class HMCClient(
         return _parse_feed(xml, path)
 
     async def list_search_parameters(
-        self,
-        resource_type: str,
-        *,
-        parent_type: str | None = None,
-        parent_uuid: str | None = None,
+        self, resource_type: str
     ) -> tuple[list[str], str | None]:
         """GET the search-parameter names a type defines, with the schema version.
 
-        Reads ``/rest/api/uom/{R}/search``, or
-        ``/rest/api/uom/{P}/{UUID}/{C}/search`` when both *parent_type* and
-        *parent_uuid* are given; supplying exactly one of them is a caller
-        error. This is the type-anchored anchor, not the instance search
-        ``search_uom`` builds -- the names it returns are what that search's
-        property argument may be, which the HMC otherwise answers with an
-        HTTP 500 (captured; see ``search_uom``).
+        Reads ``/rest/api/uom/{R}/search``. This is the type-anchored anchor,
+        not the instance search ``search_uom`` builds -- the names it returns
+        are what that search's property argument may be, which the HMC
+        otherwise answers with an HTTP 500 (captured; see ``search_uom``).
+
+        **There is no child-anchored form.** The corpus documents
+        ``/rest/api/uom/{P}/{UUID}/{C}/search`` and V1_17_0 answers it 400
+        ``INVALID_URL`` -- "REST000B The URL presented to the Management
+        Console REST Web Services is not valid." -- for both
+        ``LogicalPartition`` and ``VirtualIOServer`` under a parent that
+        answers its plain child feed and its ``/quick`` anchor 200 in the same
+        session. The HMC calls the URL *shape* invalid while serving two other
+        child anchors on that exact parent, so this is the form being absent
+        rather than the parent being wrong. Parent arguments were removed on
+        that evidence; see ADR 0142.
 
         **The response shape is captured, at V1_17_0 and V1_20_0.** The root
         anchor answers 200 ``application/atom+xml`` with an ``<entry>`` whose
@@ -1024,37 +1030,13 @@ class HMCClient(
         an unmeasured level. A level insisting on one answers 406, which
         surfaces as ``HMCError``.
 
-        A type that does not serve the anchor asked for surfaces as
-        ``HMCError`` carrying that status. An unrecognised type is rejected at
-        the URL with **400 ``INVALID_URL``, not 404** -- captured here, not
-        merely predicted from ADR 0139.
-
-        **The child anchor answered 400 ``INVALID_URL`` at both captured
-        levels** for ``ManagedSystem``/``LogicalPartition``, so *parent_type*
-        and *parent_uuid* are unproven surface: the corpus documents the path
-        grammar, and no level yet observed serves it. The parameters are kept
-        because the sibling ``/quick`` anchor has a type answering 400 at the
-        root and 200 under a parent (ADR 0140), so one pair on two levels does
-        not establish the form is absent everywhere. Expect ``HMCError``.
+        A type that does not serve the anchor surfaces as ``HMCError``
+        carrying that status. An unrecognised type is rejected at the URL with
+        **400 ``INVALID_URL``, not 404** -- captured here, not merely predicted
+        from ADR 0139.
         """
-        uuid_path_arguments: dict[str, str] = {}
-        if parent_type is not None and parent_uuid is not None:
-            path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{resource_type}/search"
-            uuid_path_arguments["parent_uuid"] = parent_uuid
-        elif parent_type is None and parent_uuid is None:
-            path = f"/rest/api/uom/{resource_type}/search"
-        else:
-            raise ValueError(
-                "parent_type and parent_uuid must be given together: a "
-                "child-anchored read needs both the parent type and the "
-                "parent instance UUID"
-            )
-        resp = await self._request_with_uuid_path_arguments(
-            "GET",
-            path,
-            uuid_path_arguments=uuid_path_arguments,
-            headers={"Accept": "*/*"},
-        )
+        path = f"/rest/api/uom/{resource_type}/search"
+        resp = await self._request("GET", path, headers={"Accept": "*/*"})
         schema_version: str | None = resp.headers.get("X-HMC-Schema-Version")
         if resp.status_code == 204:
             return [], schema_version

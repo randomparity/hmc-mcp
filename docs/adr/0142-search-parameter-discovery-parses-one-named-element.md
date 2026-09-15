@@ -47,13 +47,17 @@ so that collapse is reachable rather than theoretical. The element name is a mod
 `<ParameterName>`, `<Comparator>` and `<XPath>`. The names are the `ParameterName` texts.
 
 **A second constant, `_SEARCH_PARAMETER_CONTAINER_ELEMENT = "SearchParameterSet"`, is consulted
-only when no name was found.** `ManagementConsole` answers the anchor 200 with a
-`SearchParameterSet` carrying no `SearchParameters` child at all — a type that defines no search
-parameters — and that is a legitimate answer returning `([], version)`, not an error. A 200
-carrying neither the names nor the container still raises `HMCError`, because the HMC is known to
-answer 200 with an `HttpErrorResponse` feed and without the container the two are
-indistinguishable. Before the capture this distinction could not be drawn and every nameless 200
-raised; the empty case was believed unreachable.
+only when no name was found.** A type answering 200 with a `SearchParameterSet` carrying no
+`SearchParameters` child defines no search parameters, and that is a legitimate answer returning
+`([], version)`, not an error. A 200 carrying neither the names nor the container still raises
+`HMCError`, because the HMC is known to answer 200 with an `HttpErrorResponse` feed and without the
+container the two are indistinguishable. Before the capture this distinction could not be drawn and
+every nameless 200 raised; the empty case was believed unreachable.
+
+**It is the common case, not a corner.** Six of the eleven types captured define nothing —
+`ManagementConsole`, `VirtualSwitch`, `VirtualNetwork`, `NetworkBridge`, `LogicalUnit` and
+`SharedProcessorPool`. Had the element name alone been corrected, the pre-capture code would still
+have raised `HMCError` on a majority of the sampled types.
 
 ### What the inference cost, recorded for the next anchor
 
@@ -105,19 +109,36 @@ Because the cache is per client and `_app.with_client` builds one client per MCP
 `validate=True` from MCP is effectively one extra request per call — which is why it is not the
 default, and why the caller it serves is one holding a client across several reads.
 
-**The root anchor's parse is confirmed at `V1_17_0` and `V1_20_0`.** The fixtures are reconstructed
-from the capture's shape report — element tree, per-path counts, namespaces, and the parameter
-names, which are schema property names — and not from a verbatim body, because the raw bodies carry
-instance data. The text of `Comparator` and `XPath` is therefore still not reproduced; nothing in
-the parse reads it.
+**The root anchor's parse is confirmed at `V1_17_0` and `V1_20_0`, across eleven types.** The
+fixtures are reconstructed from the capture's two shape reports rather than from verbatim bodies,
+because the raw bodies carry instance data. Nothing in them is invented: round 2 supplied the
+`Comparator` text — one string, `Regular Expression or String Match`, on every parameter of every
+type captured — and the `XPath` form, a schema path ending in `/Value`. Each reported text matches
+the length statistics round 1 reported independently.
 
-**The child anchor is not confirmed, and the evidence is against it.** Both levels answered
-`/rest/api/uom/ManagedSystem/{UUID}/LogicalPartition/search` with 400 `INVALID_URL`. #789's first
-acceptance criterion asked that both anchors be reachable, and on the firmware measured, one is
-not. `parent_type` and `parent_uuid` are kept: the corpus documents the path grammar, and ADR 0140
-recorded the sibling `/quick` anchor having a type that answers 400 at the root and 200 under a
-parent, so one type pair on two levels does not establish the form is absent everywhere. A caller
-using them should expect `HMCError` until some level is observed serving it.
+**There is no child-anchored form, and `parent_type`/`parent_uuid` were removed.** #789's first
+acceptance criterion asked that both anchors be reachable. They are not, and the second capture
+round settled it with a control rather than another data point: under **one** `ManagedSystem`
+parent, in one session,
+
+| Anchor | Status |
+|---|---|
+| `…/{UUID}/LogicalPartition` (plain child feed) | 200 |
+| `…/{UUID}/LogicalPartition/quick` | 200 |
+| `…/{UUID}/LogicalPartition/search` | 400 `INVALID_URL` |
+| `…/{UUID}/VirtualIOServer/search` | 400 `INVALID_URL` |
+
+with the message *"REST000B The URL presented to the Management Console REST Web Services is not
+valid."* The HMC calls the URL **shape** invalid while serving two other child anchors on that
+exact parent, and it does so for two different child types. That excludes the parent being wrong,
+which is the only other reading a bare 400 would have allowed. The corpus documents a path grammar
+this firmware does not implement.
+
+The parameters were therefore cut rather than shipped as unproven surface: a keyword argument whose
+only observed behaviour is `HMCError` is a worse contract than its absence, and removing it now
+costs nothing, whereas removing it after release would be a breaking change. **This is a knowing
+partial miss of criterion 1, on evidence, recorded rather than worked around.** If a later level
+serves the form, re-adding two keyword-only arguments with defaults is backward-compatible.
 
 **`search_uom`'s unsupported-property status is 500, not the 400 this was designed against.** Both
 levels answer `ReasonCode: Unknown internal error.` with *The left hand side of the expression is
