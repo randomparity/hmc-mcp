@@ -1,171 +1,111 @@
-# Plan: discover defined quick-property names via `/quick` and `/quick/all`
+# Plan: discover defined quick-property names via `/quick`
 
 Issue #788. Spec: `docs/workflow/specs/2026-09-14-discover-quick-properties.md`. Decision:
-`docs/adr/0140-quick-property-discovery-returns-a-json-name-list.md`.
+`docs/adr/0140-quick-property-discovery-reads-atom-nicknames.md`.
+
+> **Rewritten after the live run on PR #800.** The original plan built the method around a JSON
+> array of strings and a lowercase `/quick/all` anchor. The live run found `/quick` answering an
+> Atom feed and `/quick/all` answering 400, so both premises were false and the plan they produced
+> could not be salvaged by annotation. What that plan got right — the path grammar, `Accept: */*`,
+> the schema-version pairing, the pre-transport refusals — survives below unchanged. The design-time
+> record of the superseded version is the branch history at `f22166d3`.
 
 **Goal, architecture, stack.** Add one read-only method to `src/hmc_mcp/client/core.py` beside
 `get_quick_property`, returning the quick-property names an HMC defines for a resource type at the
-root and child anchors for both `/quick` and `/quick/all`. It builds the path from its arguments,
-sends it through the existing `_request_with_uuid_path_arguments` with `Accept: */*`, and decodes
-the body as a JSON array of strings. No new class, module, or dependency; nothing calls it yet.
-Python 3.11, `httpx` transport, `pytest` + `pytest-asyncio` + `respx`, `uv`, `just`.
+root and child `/quick` anchors. It builds the path from its arguments, sends it through the
+existing `_request_with_uuid_path_arguments` with `Accept: */*`, and reads the `Nickname` texts out
+of the Atom body. One new XML primitive, `xmlutil.find_all_text`, and its `client_parse` wrapper.
+No new class, module, or dependency; nothing calls the method yet. Python 3.11, `httpx` transport,
+`pytest` + `pytest-asyncio` + `respx`, `uv`, `just`.
 
 ## Global Constraints
 - Python floor 3.11 (`.python-version`); CI also runs 3.12, 3.13 and 3.14 on amd64 and arm64.
 - Never run a bare `uv sync`, `uv run` or `prek`. Bootstrap with `just setup`; run tools as
-  `uv run --no-sync <tool>`. No new dependency: `httpx.Response.json()` is already used here
-  (`src/hmc_mcp/client/client_systems.py:77`).
+  `uv run --no-sync <tool>`. No new dependency: `defusedxml` already backs every XML read here.
 - `HMCClient` is one of ADR 0118's six `hmc_mcp.api` facade names, so a new method on it is facade
   movement and `CONTRIBUTING.md` requires a `CHANGELOG.md` entry.
 - Guardrails: `just test`, `just static`, `just verify`, then `uv run --no-sync prek run --all-files`.
   Diff against the merge base: `git --no-pager diff "$(git merge-base HEAD origin/main)"`.
 
-Expected implementation size: 300–330 changed lines (S) — from this plan's file map: ~75 lines of
-method and docstring as quoted in step 2, ~235 lines of tests, one `CHANGELOG.md` bullet. An
-earlier estimate of 140–180 assumed roughly 11 lines per inventory contract; the nine contracts
-below cost roughly 26 each once their parametrize tables, their disclaimers about which bodies are
-captures, and the 15-line HTTP 400 body literal are written out. The contracts are unchanged and
-the frozen `S` complexity is unchanged; only this estimate was wrong.
+Expected implementation size: 330–370 changed lines (S). The frozen `S` complexity is unchanged;
+the count grew over the superseded plan's 300–330 because the rewrite adds the `find_all_text`
+primitive with its own three contracts, two contracts covering shapes the live run revealed
+(single-property arity, nesting independence), and the signature guard, while dropping the four
+JSON-shape contracts that no longer describe anything.
 
 ## Task 1 — `HMCClient.list_quick_properties`
 
-Creates nothing. Modifies `src/hmc_mcp/client/core.py`, `tests/unit/test_client.py`, `CHANGELOG.md`.
+Creates nothing. Modifies `src/hmc_mcp/xmlutil.py`, `src/hmc_mcp/client/client_parse.py`,
+`src/hmc_mcp/client/core.py`, `tests/unit/test_xmlutil.py`, `tests/unit/test_client_parse.py`,
+`tests/unit/test_client.py`, `CHANGELOG.md`.
 
 **Interfaces.** Consumes, confirmed present at `70e1bc28`:
 `HMCClient._request_with_uuid_path_arguments(method: str, path: str, *, uuid_path_arguments:
 Mapping[str, str], **kwargs) -> httpx.Response` (`core.py:453`), raising
 `ValueError(f"{argument} must be a UUID")`; `HMCError(message, status_code=None, body=None)`
 (`src/hmc_mcp/errors.py`), already imported in `core.py`; `_reject_dot_segments`, applied inside
-`_request` (`core.py:435`); `mock_hmc` and `make_config()` from `tests/conftest.py` and the
-`_PARENT_UUID` constant in `tests/unit/test_client.py`. Publishes
-`HMCClient.list_quick_properties(resource_type: str, *, all_properties: bool = False, parent_type:
-str | None = None, parent_uuid: str | None = None) -> tuple[list[str], str | None]`; no later task
-depends on it.
+`_request` (`core.py:435`); `client_parse._tag_parse_errors`, which inserts a `context` string as
+the second argument and converts `DET.ParseError` / `DefusedXmlException` into `HMCError`;
+`xmlutil.localname` and `xmlutil.DET`; `mock_hmc` and `make_config()` from `tests/conftest.py` and
+the `_PARENT_UUID` constant in `tests/unit/test_client.py`. Publishes
+`xmlutil.find_all_text(xml_text: str, *names: str) -> list[str]`,
+`client_parse._find_all_text(xml_text, context, *names)`, and
+`HMCClient.list_quick_properties(resource_type: str, *, parent_type: str | None = None,
+parent_uuid: str | None = None) -> tuple[list[str], str | None]`; no later task depends on them.
 
-**Verification.** Nine `focused-test` contracts plus one non-applicable. Each row is the test
-specification: write it in `tests/unit/test_client.py` with the fixture and assertion named. Before
-the method exists every row fails with `AttributeError: 'HMCClient' object has no attribute
-'list_quick_properties'`. Every row's focused green command is
-`uv run --no-sync pytest tests/unit/test_client.py -k list_quick_properties -q --no-cov`,
-expecting every selected case to pass and none deselected by a collection error. `--no-cov` is
-load-bearing: without it the repository's `fail-under` gate fires on the partial run and the
-command exits non-zero while every selected case passes.
+**Verification.** Fourteen `focused-test` contracts plus one non-applicable. Each row is the test
+specification: write it with the fixture and assertion named. Before the method exists every
+`test_client.py` row fails with `AttributeError: 'HMCClient' object has no attribute
+'list_quick_properties'`. Focused green commands:
+`uv run --no-sync pytest tests/unit/test_client.py -k list_quick_properties -q --no-cov` for rows
+1–11, and `uv run --no-sync pytest tests/unit/test_xmlutil.py tests/unit/test_client_parse.py -q
+--no-cov` for rows 12–14. `--no-cov` is load-bearing: without it the repository's `fail-under` gate
+fires on the partial run and the command exits non-zero while every selected case passes.
 
 | # | Contract | Test name | Fixture / mock | Assertion, and its red observation |
 |---|---|---|---|---|
-| 1 | Four anchors, `Accept: */*` | `test_list_quick_properties_reads_the_documented_anchors` | parametrized over the four kwarg sets, each mocked 200 `'["State", "SystemName"]'` | request path equals `/rest/api/uom/ManagedSystem/quick`, `…/quick/all`, `/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/quick`, `…/quick/all` respectively; `Accept` is `*/*`; names equal `["State", "SystemName"]`. Red if a segment or the `/all` suffix is wrong |
-| 2 | Schema-version pairing | `test_list_quick_properties_returns_the_response_schema_version` | parametrized `({"X-HMC-Schema-Version": "V1_0"}, "V1_0")` and `({}, None)` | second tuple element equals the expected value. Red if the header is dropped or defaulted |
-| 3 | 204 | `test_list_quick_properties_204_returns_no_names` | 204 with `X-HMC-Schema-Version: V1_0` | returns `([], "V1_0")`. Red if 204 falls through to the JSON decode |
-| 4 | Empty array | `test_list_quick_properties_empty_array_returns_no_names` | 200 `'[]'` | returns `([], None)`. Red if an empty array is rejected as a bad shape |
-| 5 | Non-array JSON | `test_list_quick_properties_rejects_non_array_json` | parametrized 200 bodies `'{"State": "operating"}'` and `'"State"'` | raises `HMCError` matching `returned a JSON (dict|str); expected an array`. Red if the body is returned unchecked |
-| 6 | Non-string elements | `test_list_quick_properties_rejects_non_string_elements` | 200 `'[{"UUID": "u", "SystemName": "s"}]'` — the per-instance shape ADR 0138 records `/quick/All` as returning; that record's own live confirmation is still owed, so this body is constructed from its description and is not a capture, and the test docstring must say so | raises `HMCError` matching `array holding dict`. Red if objects are returned as names or coerced with `str()` |
-| 7 | Invalid JSON | `test_list_quick_properties_invalid_json_raises_hmc_error` | 200 body `'not json'` | raises `HMCError` matching `returned invalid JSON`. Red if `ValueError` escapes to the caller |
-| 8 | Non-200 surfaces | `test_list_quick_properties_unknown_type_raises_hmc_error_with_status` | 400 with the `INVALID_URL` / `REST000E` body shape captured live for `/operations` on PR #797, path changed to `/rest/api/uom/NoSuchType/quick`; its docstring must say it is modelled on that capture and is not itself a `/quick` capture | `raised.value.status_code == 400` and the HMC's message text is preserved. Red if the status is swallowed or remapped |
-| 9 | Pre-transport refusals | `test_list_quick_properties_refuses_bad_arguments` | no mock; parametrized over `parent_uuid="not-a-uuid"`, each parent argument alone, and `..` segments in `resource_type` and in `parent_type` | raises `ValueError` matching `must be a UUID` / `must be given together`, or `HMCError` matching `'\.\.' segment`; `respx` records no request. Red if any reaches transport |
+| 1 | Two live anchors, `Accept: */*` | `test_list_quick_properties_reads_the_live_anchors` | parametrized over root and child, each mocked 200 with `_quick_property_feed(*names)` carrying the live run's verbatim names | request path equals `/rest/api/uom/ManagedSystem/quick` and `/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/quick`; `Accept` is `*/*`; names equal the fixture's. Red if a segment is wrong or the parse misses |
+| 2 | No `/quick/all` surface | `test_list_quick_properties_has_no_all_properties_argument` | none; reads `inspect.signature` | `all_properties` absent and the parameter list is exactly `self, resource_type, parent_type, parent_uuid`. Red if the argument is re-added |
+| 3 | Single property keeps arity | `test_list_quick_properties_returns_a_single_name_as_a_one_element_list` | 200 feed with one `QuickProperty` | returns `["SystemName"]`. Red if the parse collapses one element to a bare string, the `OperationSet` hazard of ADR 0139 |
+| 4 | Nesting independence | `test_list_quick_properties_reads_names_at_any_depth` | parametrized: collection at document root, and wrapped one level deeper than reported | returns `["State"]` for both. Red if the parse is tightened to a fixed element path |
+| 5 | Schema-version pairing | `test_list_quick_properties_returns_the_response_schema_version` | parametrized `V1_0`, the observed non-version `hmc-mcp`, and absent | second tuple element equals the expected value verbatim. Red if the header is dropped, defaulted, or validated as a level |
+| 6 | 204 | `test_list_quick_properties_204_returns_no_names` | 204 with `X-HMC-Schema-Version: V1_0` | returns `([], "V1_0")`. Red if 204 falls through to the parse |
+| 7 | Empty name dropped | `test_list_quick_properties_drops_an_empty_nickname` | 200 feed with a populated, an empty, and a populated `Nickname` | returns the two populated names. Red if `""` is returned as a property name |
+| 8–10 | Nameless 200 raises | `test_list_quick_properties_200_without_a_name_raises` | parametrized: `HttpErrorResponse` feed, empty collection, all-empty names | raises `HMCError` matching `no QuickProperty/Nickname element`, with `status_code == 200` and the body preserved. Red if any returns `[]` |
+| 11 | Malformed XML tagged | `test_list_quick_properties_malformed_xml_raises_hmc_error` | 200 body `"<feed><entry>"` | raises `HMCError` naming `GET /rest/api/uom/ManagedSystem/quick`. Red if a bare `ParseError` escapes, i.e. the raw parser was called instead of the wrapper |
+| 12 | Non-200 surfaces | `test_list_quick_properties_unknown_type_raises_hmc_error_with_status` | 400 with the `INVALID_URL` / `REST000E` body shape captured live for `/operations` on PR #797, path changed to `/rest/api/uom/NoSuchType/quick`; its docstring must say it is modelled on that capture and is not itself a `/quick` capture | `raised.value.status_code == 400` and the HMC's message text is preserved. Red if the status is swallowed or remapped |
+| 13 | Pre-transport refusals | `test_list_quick_properties_refuses_bad_arguments` | no mock; parametrized over `parent_uuid="not-a-uuid"`, each parent argument alone, and `..` segments in `resource_type` and in `parent_type` | raises `ValueError` matching `must be a UUID` / `must be given together`, or `HMCError` matching `'\.\.' segment`; `respx` records no request for a `quick` path. Red if any reaches transport |
+| 14 | `find_all_text` semantics | `test_find_all_text`, `test_find_all_text_keeps_arity_at_one`, `test_find_all_text_keeps_empty_elements_as_empty_strings` in `tests/unit/test_xmlutil.py`; `test_find_all_text_parse_error_tags_context` in `tests/unit/test_client_parse.py` | plain XML strings, no HTTP | all matches in document order; a single match is a one-element list; an empty match contributes `""`; a truncated body raises `HMCError` naming the context with a `DET.ParseError` cause. Red if the helper returns only the first match, collapses arity, skips empties, or leaks `ParseError` |
 
-`CHANGELOG.md` bullet — `Mode: task-test-not-applicable`. The changed surface is one prose bullet
-under `## [Unreleased]` / `### Added`. `tests/unit/test_changelog.py` checks only that the version in
-`pyproject.toml` has a matching heading, so no executable consumer reads this bullet's content and no
+`CHANGELOG.md` bullets — `Mode: task-test-not-applicable`. The changed surface is prose under
+`## [Unreleased]` / `### Added`. `tests/unit/test_changelog.py` checks only that the version in
+`pyproject.toml` has a matching heading, so no executable consumer reads the content and no
 task-specific observation over it could fail meaningfully.
 
 ### Steps
 
-1. Add the inventory's tests to `tests/unit/test_client.py`, after the `list_operations` block that
-   ends the file. Run the focused command above and expect every case to fail with the
-   `AttributeError`; a different error means the test file is wrong, not the source.
-2. Add the method to `src/hmc_mcp/client/core.py` immediately after `get_quick_property` (ending at
-   line 715 at `70e1bc28`) and before `search_uom`:
-
-```python
-    async def list_quick_properties(
-        self,
-        resource_type: str,
-        *,
-        all_properties: bool = False,
-        parent_type: str | None = None,
-        parent_uuid: str | None = None,
-    ) -> tuple[list[str], str | None]:
-        """GET the quick-property names a type defines, with the schema version.
-
-        Reads ``/rest/api/uom/{R}/quick``, or ``/rest/api/uom/{P}/{UUID}/{C}/quick``
-        when both *parent_type* and *parent_uuid* are given; supplying exactly one
-        of them is a caller error. *all_properties* appends ``/all``, a form the
-        reference distinguishes from the bare one only by wording -- treat the two
-        as interchangeable until a live run settles the difference.
-
-        Returns the names paired with the response's ``X-HMC-Schema-Version``,
-        ``None`` when the HMC sends none, with the same caveats ``list_operations``
-        documents (ADR 0139).
-
-        The body is a plain JSON array of names, not an Atom feed, so it is decoded
-        rather than parsed by ``_parse_feed``; one that is not an array of strings
-        raises ``HMCError`` naming the shape observed rather than being coerced
-        (ADR 0140). Sends ``Accept: */*``: ``quick/`` endpoints answer 406 to a
-        typed uom Accept, as ``get_quick_property`` records.
-        """
-        uuid_path_arguments: dict[str, str] = {}
-        if parent_type is not None and parent_uuid is not None:
-            path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{resource_type}/quick"
-            uuid_path_arguments["parent_uuid"] = parent_uuid
-        elif parent_type is None and parent_uuid is None:
-            path = f"/rest/api/uom/{resource_type}/quick"
-        else:
-            raise ValueError(
-                "parent_type and parent_uuid must be given together: a "
-                "child-anchored read needs both the parent type and the "
-                "parent instance UUID"
-            )
-        if all_properties:
-            path += "/all"
-        resp = await self._request_with_uuid_path_arguments(
-            "GET",
-            path,
-            uuid_path_arguments=uuid_path_arguments,
-            headers={"Accept": "*/*"},
-        )
-        schema_version: str | None = resp.headers.get("X-HMC-Schema-Version")
-        if resp.status_code == 204:
-            return [], schema_version
-        if resp.status_code != 200:
-            raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
-        try:
-            names = resp.json()
-        except ValueError as exc:
-            raise HMCError(
-                f"GET {path} returned invalid JSON: {str(exc)[:500]}",
-                resp.status_code,
-                resp.text,
-            ) from exc
-        if not isinstance(names, list):
-            raise HMCError(
-                f"GET {path} returned a JSON {type(names).__name__}; expected an "
-                "array of quick-property names",
-                resp.status_code,
-                resp.text,
-            )
-        unexpected = sorted({type(n).__name__ for n in names if not isinstance(n, str)})
-        if unexpected:
-            raise HMCError(
-                f"GET {path} returned an array holding {', '.join(unexpected)}; "
-                "expected an array of quick-property names",
-                resp.status_code,
-                resp.text,
-            )
-        return names, schema_version
-```
-
-3. Re-run the focused command. Expect every case to pass.
-4. Add the `CHANGELOG.md` bullet under `## [Unreleased]` / `### Added`, above the `list_operations`
-   bullet: the method and its four anchors, the returned pair, the strict array-of-strings parse,
-   and that live confirmation of the response shape is owed (ADR 0140).
-5. Run `just test` (compact summary, no failures, coverage gate met), then `just static` (every
-   sub-recipe passes; `ruff` and `ty` are the two this step's diff can redden, and `adr-numbering`
-   also covers the ADR this branch added, which passes because 0140 is unused). Commit source,
-   tests and changelog.
-6. Run `just verify`, then `uv run --no-sync prek run --all-files`. Expect both green. Per
+1. Add `find_all_text` to `src/hmc_mcp/xmlutil.py` beside `find_text`, and wrap it as
+   `_find_all_text` in `src/hmc_mcp/client/client_parse.py`. Add the row 14 tests and run their
+   focused command.
+2. Add the row 1–13 tests to `tests/unit/test_client.py`, replacing the `list_quick_properties`
+   block. Run the focused command and expect the `AttributeError`; a different error means the test
+   file is wrong, not the source.
+3. Add the method to `src/hmc_mcp/client/core.py` immediately after `get_quick_property` and before
+   `search_uom`, importing `_find_all_text` alongside `_find_text` and `_parse_feed`. The source is
+   the implementation, not this plan — the superseded version of this file embedded a verbatim copy
+   that went stale the moment the live run landed, so the method is described here by its inventory
+   above and read from `core.py`.
+4. Re-run both focused commands. Expect every case to pass.
+5. Verify the tests bite: mutate the parse back to `resp.json()`, drop the empty-result guard, stop
+   filtering empty `Nickname`s, re-add `all_properties`, and return `[]` on a nameless 200. Each
+   must redden at least one row. Run the mutants against an out-of-tree copy of `src/` so the
+   working tree is never left mutated.
+6. Update the `CHANGELOG.md` bullets under `## [Unreleased]` / `### Added`.
+7. Run `just test`, then `just static`. Commit source, tests, records and changelog.
+8. Run `just verify`, then `uv run --no-sync prek run --all-files`. Expect both green. Per
    `AGENTS.md`, a failure during pytest collection is diagnosed with `just smoke` first.
 
 **Acceptance.** Every `Success` criterion in the spec holds; both guardrail commands are green; no
-file outside the three named above, and the three design records already committed on this branch,
-changed. **Rollback.** The method has no callers and no persisted state; reverting the commit
-suffices.
+file outside those named above, and this branch's design records, changed. **Rollback.** The method
+has no callers and no persisted state; `find_all_text` has no caller outside it. Reverting the
+commits suffices.

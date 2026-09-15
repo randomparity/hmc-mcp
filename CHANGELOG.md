@@ -10,18 +10,20 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
-- `HMCClient.list_quick_properties(resource_type, *, all_properties=False, parent_type=None,
-  parent_uuid=None)` reads the quick-property names an HMC defines for a resource type, at the
-  root anchors `/rest/api/uom/{R}/quick` and `/rest/api/uom/{R}/quick/all` and the matching child
-  anchors `/rest/api/uom/{P}/{UUID}/{C}/quick[/all]`. It returns those names paired with the
-  response's `X-HMC-Schema-Version`, or `None` when the HMC sends none (ADR 0139, ADR 0140, #788).
-  The body is decoded as JSON and must be an array of strings: anything else — including the
-  per-instance value objects the differently capitalized `/quick/All` returns — raises `HMCError`
-  naming the observed shape rather than being coerced into plausible-looking names. That check
-  establishes an array of strings, not that the strings are property names. **The live response
-  shape of both anchors is not yet confirmed against a real HMC**; the endpoints are implemented
-  from the vendored reference's description of them, and the tests exercise the method's own
-  contract rather than a firmware capture.
+- `HMCClient.list_quick_properties(resource_type, *, parent_type=None, parent_uuid=None)` reads
+  the quick-property names an HMC defines for a resource type, at the root anchor
+  `/rest/api/uom/{R}/quick` and the child anchor `/rest/api/uom/{P}/{UUID}/{C}/quick`. It returns
+  those names paired with the response's `X-HMC-Schema-Version`, or `None` when the HMC sends none
+  (ADR 0139, ADR 0140, #788). The body is an Atom feed wrapping a `QuickProperty_Collection`, and
+  the names are the `Nickname` texts; a 200 carrying none of them raises `HMCError` rather than
+  reporting a type that defines nothing. The returned header value is verbatim and is not
+  guaranteed to hold a version. Confirmed against FW950: 39 names for `ManagedSystem`, 28 for
+  `LogicalPartition`. **There is no `/quick/all`** — that anchor answers 400, so no
+  `all_properties` argument is offered; the differently capitalized `/quick/All` is a separate
+  endpoint returning per-instance values, not names.
+
+- `xmlutil.find_all_text(xml_text, *names)`, the all-matches sibling of `find_text`, returning the
+  text of every element whose local name matches instead of only the first.
 
 - `HMCClient.list_operations(resource_type, *, parent_type=None, parent_uuid=None)` reads
   the job operations an HMC defines for a resource type, at the root anchor
