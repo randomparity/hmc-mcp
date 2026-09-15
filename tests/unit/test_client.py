@@ -2471,15 +2471,38 @@ async def test_list_quick_properties_rejects_non_array_json(mock_hmc, body, expe
     )
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match=expected):
+        with pytest.raises(HMCError, match=expected) as raised:
             await hmc.list_quick_properties("ManagedSystem")
+
+    # The status and body are asserted, not just the message: the threat model
+    # promises every raise carries them, and without this a later edit can strip
+    # them from the 200-with-bad-shape paths and stay green.
+    assert raised.value.status_code == 200
+    assert raised.value.body == body
 
 
 @pytest.mark.asyncio
-async def test_list_quick_properties_rejects_non_string_elements(mock_hmc):
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ('[{"UUID": "u", "SystemName": "s"}]', "array holding dict"),
+        # Mixed: the offender is not the first element. Without this row, a
+        # check narrowed to names[:1] passes the whole suite while returning a
+        # list with a dict inside it -- which the failure model calls worse
+        # than an error.
+        ('["State", {"UUID": "u"}]', "array holding dict"),
+        # Scalars that are not strings, reported as the set of types seen.
+        # Without this row the predicate can be widened to admit numbers and
+        # the suite stays green.
+        ('["State", 5, true]', "array holding bool, int"),
+    ],
+)
+async def test_list_quick_properties_rejects_non_string_elements(
+    mock_hmc, body, expected
+):
     """Per-instance objects are not names, and must not be returned as names.
 
-    The body is the shape ADR 0138 records for ``/quick/All`` -- the
+    The first body is the shape ADR 0138 records for ``/quick/All`` -- the
     differently capitalized sibling path this client already sends. That
     record's own live confirmation is still owed, so this fixture is
     constructed from its description and is not a capture. The case exists
@@ -2487,12 +2510,15 @@ async def test_list_quick_properties_rejects_non_string_elements(mock_hmc):
     would not notice.
     """
     mock_hmc.get("/rest/api/uom/ManagedSystem/quick/all").mock(
-        return_value=httpx.Response(200, text='[{"UUID": "u", "SystemName": "s"}]')
+        return_value=httpx.Response(200, text=body)
     )
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="array holding dict"):
+        with pytest.raises(HMCError, match=expected) as raised:
             await hmc.list_quick_properties("ManagedSystem", all_properties=True)
+
+    assert raised.value.status_code == 200
+    assert raised.value.body == body
 
 
 @pytest.mark.asyncio
@@ -2502,8 +2528,11 @@ async def test_list_quick_properties_invalid_json_raises_hmc_error(mock_hmc):
     )
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="returned invalid JSON"):
+        with pytest.raises(HMCError, match="returned invalid JSON") as raised:
             await hmc.list_quick_properties("ManagedSystem")
+
+    assert raised.value.status_code == 200
+    assert raised.value.body == "not json"
 
 
 @pytest.mark.asyncio
