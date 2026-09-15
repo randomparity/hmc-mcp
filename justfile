@@ -14,6 +14,7 @@
 setup:
     uv sync --locked --extra app --link-mode copy
     uv run --no-sync prek install
+    uv run --no-sync python scripts/link_reference_corpus.py
 
 # Python lint
 lint:
