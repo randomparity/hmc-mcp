@@ -45,9 +45,13 @@ MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
 MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
 
 # Bounds on what a rejection message renders. The set it renders is whatever
-# the discovery read returned, and that read's parse is an inference (ADR 0142):
-# a level answering the query-less /search anchor with an instance feed would
-# fill it with per-instance data bounded only by HMC_MAX_RESPONSE_BYTES.
+# the discovery read returned. The parse is captured at V1_17_0 and V1_20_0
+# (ADR 0142), so this is no longer the inference it was written against -- but
+# the caps are kept on the ground that survived: no other level has been
+# measured, and a level answering the query-less /search anchor with an
+# instance feed would fill the set with per-instance data bounded only by
+# HMC_MAX_RESPONSE_BYTES. It is the entry size that is unbounded, not the
+# names' plausibility.
 #
 # Two bounds, because the count alone is not one. Capping the count leaves each
 # name unbounded, and a single element carrying a whole 32 MiB body renders in
@@ -981,13 +985,13 @@ class HMCClient(
         are what that search's property argument may be, which the HMC
         otherwise answers with an HTTP 500 (captured; see ``search_uom``).
 
-        **There is no child-anchored form.** The corpus documents
-        ``/rest/api/uom/{P}/{UUID}/{C}/search`` and V1_17_0 answers it 400
-        ``INVALID_URL`` -- "REST000B The URL presented to the Management
-        Console REST Web Services is not valid." -- for both
-        ``LogicalPartition`` and ``VirtualIOServer`` under a parent that
-        answers its plain child feed and its ``/quick`` anchor 200 in the same
-        session. The HMC calls the URL *shape* invalid while serving two other
+        **No captured level serves a child-anchored form.** The corpus
+        documents ``/rest/api/uom/{P}/{UUID}/{C}/search``; V1_17_0 and V1_20_0
+        both answer it 400 ``INVALID_URL`` -- "REST000B The URL presented to
+        the Management Console REST Web Services is not valid." -- and at
+        V1_17_0 that holds for both ``LogicalPartition`` and
+        ``VirtualIOServer`` under a parent answering its plain child feed and
+        its ``/quick`` anchor 200 in the same session. The HMC calls the URL *shape* invalid while serving two other
         child anchors on that exact parent, so this is the form being absent
         rather than the parent being wrong. Parent arguments were removed on
         that evidence; see ADR 0142.
@@ -1024,11 +1028,12 @@ class HMCClient(
         in that header, never a level. Callers must not parse it as one.
 
         Sends ``Accept: */*``. The captured content type is
-        ``application/atom+xml``, and a typed uom Accept was answered 200 with
-        a byte-identical body, so the choice is no longer load-bearing; it is
-        kept because ``*/*`` is the one Accept that cannot fail negotiation on
-        an unmeasured level. A level insisting on one answers 406, which
-        surfaces as ``HMCError``.
+        ``application/atom+xml``, and the capture also sent
+        ``application/atom+xml; type=feed`` and got 200 with a byte-identical
+        body. A typed *uom* Accept was not probed. So ``*/*`` is kept on the
+        ground that survives: it is the one Accept that cannot fail
+        negotiation on a level nobody has measured. A level insisting on one
+        answers 406, which surfaces as ``HMCError``.
 
         A type that does not serve the anchor surfaces as ``HMCError``
         carrying that status. An unrecognised type is rejected at the URL with

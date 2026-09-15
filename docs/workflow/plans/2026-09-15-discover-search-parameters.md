@@ -1,5 +1,38 @@
 # Discover valid search parameters via /search — implementation plan
 
+> ## ⚠ SUPERSEDED IN PART BY A LIVE CAPTURE (2026-09-15)
+>
+> **Do not copy the parse, the fixture or the signature out of this plan.** Everything below was
+> written before any firmware answered this anchor, and the live capture on PR #807 (`V1_17_0` and
+> `V1_20_0`) disproved the central assumption. The plan is kept as the record of what was built and
+> why; **ADR 0142 and the shipped test block in `tests/unit/test_client.py` are authoritative over
+> it.**
+>
+> What this plan gets wrong, corrected by `70fe71b2` and `3915c8ab`:
+>
+> | This plan says | Firmware says |
+> |---|---|
+> | Names are `<Nickname>` texts | `<ParameterName>` texts |
+> | Container is `<SearchParameter_Collection>` | `<SearchParameterSet>` > `<SearchParameters>` |
+> | Siblings are `<RESTElement>`, `<Description>` | `<ElementName>`, `<Comparator>`, `<XPath>` |
+> | Signature takes `parent_type`/`parent_uuid` | No child-anchored form exists; both were removed |
+> | Unsupported property yields HTTP 400 | HTTP 500 |
+> | A 200 with no names is always an error | Six of eleven types legitimately define none |
+> | CHANGELOG should say the shape is unconfirmed | It is confirmed; the entry says so |
+>
+> The Verification table is also stale in its own terms: it routes contracts through
+> `test_list_search_parameters_reads_both_anchors`, `..._refuses_bad_arguments` and
+> `..._200_without_a_name_raises`, **none of which exist** — they were renamed or split by the
+> capture commits, and `..._empty_set_returns_no_names` and `..._200_without_the_container_raises`
+> have no row at all. Its count is off by one: it says twenty test functions, eight covering
+> `list_search_parameters` and twelve covering `search_uom`; this branch adds twenty-one, nine and
+> twelve (`git show a0d29ac7:tests/unit/test_client.py` has two `test_search_uom*` functions
+> already, against fourteen at head). Read the test block for the real inventory.
+>
+> **If you are here because ADR 0142 sent you** — as the calibration datum for #790, #791 or #793 —
+> the lesson is the gap between this plan and what shipped, not the plan itself. ADR 0142's
+> *"What the inference cost"* section is the part worth reading.
+
 **Goal.** Give `HMCClient` a reader for the HMC's type-anchored `/search` discovery anchor, and wire
 it into `search_uom` as an opt-in pre-flight check so an unsupported search property fails locally
 instead of as an HTTP 400 from the HMC.

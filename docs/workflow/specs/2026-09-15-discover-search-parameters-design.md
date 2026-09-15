@@ -13,7 +13,8 @@ read: [ADR 0118](../../adr/0118-core-library-facade.md),
 
 `HMCClient.search_uom` (`src/hmc_mcp/client/core.py:859`) interpolates `property_name` into
 `/rest/api/uom/{R}/search/({P}=={V})` and sends it, so an unsupported property is discovered only as
-an HTTP 400 from the HMC. The type-anchored `/rest/api/uom/{R}/search` anchor, which answers what
+an error status from the HMC — captured as HTTP 500; see Success 3. The type-anchored
+`/rest/api/uom/{R}/search` anchor, which answers what
 properties a search may use, has no reader anywhere under `src/`.
 
 #789 is the union of two already-merged siblings applied to `/search`: the discovery read #788
@@ -116,9 +117,26 @@ degradation promise rather than any numbered criterion of #789. The six `hmc_mcp
   `validate=True` reject a working property. Accepted: validation is opt-in and the `False` default
   is the escape, so no caller who has not asked for the check can be broken by it. No claim is made
   about whether any level answers short; this repository has not checked, and the acceptance does
-  not rest on it. The *empty* answer is not accepted, because it is reachable: a 204 returns
-  `([], version)` without raising, and an empty positive set would reject every name for the
-  client's lifetime. It is degraded from, exactly as a failed read is.
+  not rest on it. The *empty* answer is not accepted, because it is reachable — and the capture
+  made it far more reachable than this entry originally said. It was written when a 204 was the
+  only route to an empty set and a legitimately empty answer was believed impossible on firmware.
+  **Six of the eleven captured types answer 200 with a `SearchParameterSet` and no parameters**:
+  `ManagementConsole`, `VirtualSwitch`, `VirtualNetwork`, `NetworkBridge`, `LogicalUnit`,
+  `SharedProcessorPool`. So the empty answer is the majority firmware case, not a protocol corner.
+  It is still degraded from rather than trusted, because an empty positive set would reject every
+  name for the client's lifetime, and because on an unmeasured level an empty set may be a parse
+  artefact rather than a fact about the type.
+- **`validate=True` performs no check on a type that defines nothing.** A consequence of the entry
+  above, stated separately because it is the one the reader will care about: for those six types
+  the pre-flight is inert and the search still costs the HMC's 500, on precisely the types where a
+  local refusal would be certain rather than probabilistic. Accepted for this change: the direction
+  is fail-open to today's behaviour, no in-repo call site passes `validate=True`, and the API
+  surface discloses it — `search_uom`'s docstring and `CHANGELOG.md` both say a type defining none
+  reads as unknown. Making the check fire there needs a discriminated return separating
+  "container present, no parameters" from a 204 or a failure, which buys local refusal on six of
+  eleven captured types at the cost of a new way for `validate=True` to reject everything if a
+  later level nests its parameters differently. Not taken here; it is a behaviour change beyond
+  what this change was scoped to.
 - Cache growth is unbounded in the number of distinct `resource_type` values passed. Accepted:
   resource types come from literals in this repository and the dict dies with the client.
   **The per-entry size is bounded by `HMC_MAX_RESPONSE_BYTES`, not by the names being short** —
@@ -166,8 +184,8 @@ step 6 re-judges this against the actual diff.
 
 ## Success
 
-1. `list_search_parameters(R)` reads `/rest/api/uom/{R}/search`, and
-   and there is no child-anchored form. (#789 criterion 1 — **knowingly partial**) The capture's
+1. `list_search_parameters(R)` reads `/rest/api/uom/{R}/search`, and there is no child-anchored
+   form. (#789 criterion 1 — **knowingly partial**) The capture's
    control round found `/rest/api/uom/{P}/{U}/{C}/search` answering 400 `INVALID_URL` for two child
    types under a parent that served its plain child feed and its `/quick` anchor 200 in the same
    session. The parent arguments were removed on that evidence rather than shipped as surface whose
@@ -187,8 +205,10 @@ step 6 re-judges this against the actual diff.
    `/rest/api/uom/{R}/search` number at most one per distinct `{R}`, whether the first read
    succeeded or failed; a fresh client reads again. A read cancelled by `asyncio.CancelledError`
    caches nothing and is retried, as the failure model states.
-6. `list_search_parameters` sends `Accept: */*` on both anchors, exactly, because the anchor's
-   content type is unobserved and a typed uom Accept would be a second guess stacked on the first.
+6. `list_search_parameters` sends `Accept: */*` on the one anchor, exactly. The captured content
+   type is `application/atom+xml` and a second probe with `application/atom+xml; type=feed` also
+   answered 200, but only those two values were ever sent, so `*/*` is kept as the one Accept that
+   cannot fail negotiation on an unmeasured level.
 7. When the discovery read yields no names — an `HMCError` from a 4xx or 5xx, an
    `HMCTransportError` from a connection failure, or a 204 returning `([], version)` —
    `validate=True` sends the search anyway and returns its result.
@@ -201,15 +221,19 @@ step 6 re-judges this against the actual diff.
 Every success criterion above is covered by a `focused-test` entry in the implementation plan's
 Verification table
 ([plan](../plans/2026-09-15-discover-search-parameters.md), *Task 1 — Verification*), which is the
-single inventory: it names each contract, its test, and the red that test shows before the
-behaviour exists. It is not restated here. Every body in the new test block is **constructed, not
-captured**, and the block head says so.
+inventory of record for the build. **It is pre-capture and was not revised**: it still prescribes
+the disproven `<Nickname>`/`<SearchParameter_Collection>` parse and the removed parent arguments,
+and three of its named tests no longer exist. A banner at its head says so, and ADR 0142 plus the
+shipped test block are authoritative over it. Bodies in the test block are **reconstructed from the
+capture's shape report**, with the block head enumerating which facts are live and which are
+constructed.
 
 Three contracts carry `Mode: task-test-not-applicable`, and the reason is a design judgment rather
 than a plan mechanic, so it is recorded here:
 
-- **The HTTP 400 rationale in `search_uom`'s docstring** (Success 3). Prose addressed to a human
-  reader. No executable consumer validates it, and asserting its wording would snapshot prose.
+- **The unsupported-property rationale in `search_uom`'s docstring** (Success 3, captured as 500
+  rather than the 400 this was written against). Prose addressed to a human reader. No executable
+  consumer validates it, and asserting its wording would snapshot prose.
 - **The six facade exports are unchanged** (Success 9). Unchanged by this design, and
   `tests/unit/test_public_api.py` already fails on any drift; a second test would observe that
   test's subject rather than this change.
@@ -217,9 +241,11 @@ than a plan mechanic, so it is recorded here:
   `pyproject.toml` version, which this change does not alter; no executable consumer validates an
   unreleased entry.
 
-One contract is **not observable from this repository at all**: that
+One contract was **not observable from this repository at all**: that
 `_SEARCH_PARAMETER_NAME_ELEMENT` matches firmware (*Failure model*, entry 1). No firmware is
 reachable from CI or a workstation, and a `respx` fixture asserts only against itself — a mutation
 score over these tests measures whether they discriminate between implementations given the
-fixture, and must not be reported as fixture validation. The closing evidence is a live capture from
-the ppc64le host, owned by the operator and named in the charter's exclusions.
+fixture, and must not be reported as fixture validation. **That closing evidence has since
+arrived.** The operator's capture at `V1_17_0` and `V1_20_0` ran during this change, found the
+element name and its container both wrong, and the branch was corrected against it; what remains
+unobservable is every level nobody has measured.

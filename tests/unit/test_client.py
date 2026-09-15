@@ -3097,8 +3097,8 @@ async def test_get_quick_property_validate_caches_per_resource_type(mock_hmc):
 # verbatim body. Two rounds ran against Power HMCs at V1_17_0 and V1_20_0 and
 # are recorded on PR #807. Round 1 reported the element tree, per-path counts,
 # namespaces and text lengths but no text values, because the raw bodies carry
-# instance data; round 2 added the element texts that are schema strings. So
-# every structural fact and every text below is live:
+# instance data; round 2 added the element texts that are schema strings. These
+# facts are live, and nothing outside this list is:
 #
 #   * the root element <entry> and both namespace URIs;
 #   * the nesting content > SearchParameterSet > SearchParameters >
@@ -3109,6 +3109,14 @@ async def test_get_quick_property_validate_caches_per_resource_type(mock_hmc):
 #     captured -- and the XPath form, a schema path ending in /Value;
 #   * six of the eleven types captured answering 200 with a SearchParameterSet
 #     and no SearchParameters child at all.
+#
+# What is NOT live, and is constructed here: the Atom scaffolding the helper
+# emits (<id>, <title>, <author>, <Metadata>), which no capture round reported
+# because the parse does not read it; and the XPath texts in
+# test_list_search_parameters_reads_the_named_element_not_its_siblings, which
+# are invented on purpose -- they end in a name-like segment rather than
+# /Value, precisely so a parse reading XPath instead of ParameterName returns a
+# plausible wrong set and fails.
 #
 # This replaces an earlier inference that read <Nickname> from a
 # <SearchParameter_Collection>, mirroring the /quick anchor. The capture found
@@ -3227,9 +3235,10 @@ async def test_list_search_parameters_reads_the_root_anchor(
 
     assert route.calls.last.request.url.path == path
     assert names == expected
-    # Pinned to the exact value, not merely "not a typed uom Accept": this
-    # anchor's content type is unobserved, so */* is the only Accept that
-    # cannot fail negotiation, and an assertion that only excludes one wrong
+    # Pinned to the exact value, not merely "not a typed uom Accept". The
+    # captured content type is application/atom+xml, but only two Accept values
+    # were ever probed, so */* remains the one that cannot fail negotiation on
+    # an unmeasured level -- and an assertion that only excludes one wrong
     # family would pass for every other wrong value.
     assert route.calls.last.request.headers["Accept"] == "*/*"
 
@@ -3444,10 +3453,12 @@ async def test_list_search_parameters_unknown_type_raises_hmc_error_with_status(
 
 # search_uom validation (#789) -- ADR 0142: opt-in, cached per client.
 #
-# Same provenance as the block above: the discovery bodies are CONSTRUCTED.
-# What these tests prove is the transport, the cache, the degradation rule and
-# the opt-in default, none of which depends on the parse being right. They do
-# not prove the parse.
+# The discovery bodies here come from the same _search_parameter_entry helper
+# as the block above, so they carry the same reconstructed-from-capture
+# provenance; read that block's head for which facts are live and which are
+# constructed. What these tests prove is the transport, the cache, the
+# degradation rule and the opt-in default, none of which depends on the parse
+# being right. They do not prove the parse.
 _SEARCH_VALIDATION_TYPE = "LogicalPartition"
 _SEARCH_DISCOVERY = f"/rest/api/uom/{_SEARCH_VALIDATION_TYPE}/search"
 _SEARCH_DEFINED = f"{_SEARCH_DISCOVERY}/(PartitionName==web)"
@@ -3721,11 +3732,12 @@ async def test_search_uom_validate_caches_nothing_when_the_read_is_cancelled(moc
 async def test_search_uom_validate_caps_the_names_it_enumerates(mock_hmc):
     """The refusal message is a diagnostic, not an amplifier.
 
-    The set rendered here is whatever the discovery read returned, and that
-    parse is an inference (ADR 0142). A level answering the query-less anchor
-    with an instance feed would fill it with per-instance data bounded only by
-    HMC_MAX_RESPONSE_BYTES, so an uncapped join builds a message the size of
-    the response -- and one made of operator instance names.
+    The set rendered here is whatever the discovery read returned. The parse is
+    captured at two levels (ADR 0142), so this is no longer about a wrong
+    guess; it is about the levels nobody has measured. One answering the
+    query-less anchor with an instance feed would fill the set with per-instance
+    data bounded only by HMC_MAX_RESPONSE_BYTES, so an uncapped join builds a
+    message the size of the response -- and one made of operator instance names.
     """
     many = [f"Param{i:04d}" for i in range(500)]
     mock_hmc.get(_SEARCH_DISCOVERY).mock(

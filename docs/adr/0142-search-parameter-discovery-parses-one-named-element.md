@@ -96,8 +96,9 @@ method; see that record for the reasoning, which is not repeated here.
 
 `Accept: */*` is sent, as both sibling discovery reads send. The captured content type is
 `application/atom+xml`, and the capture also sent `application/atom+xml; type=feed` and got 200
-with a byte-identical body — so the choice is no longer load-bearing at these levels. It is kept
-because `*/*` is the one Accept that cannot fail negotiation on a level nobody has measured.
+with a byte-identical body. A typed *uom* Accept (`application/vnd.ibm.powervm.uom+xml; type=R`)
+was **not** probed, so nothing is known about how this anchor negotiates that. `*/*` is kept
+because it is the one Accept that cannot fail negotiation on a level nobody has measured.
 
 ## Consequences
 `search_uom`'s default behaviour is unchanged, so nothing in this repository is affected: the spec's
