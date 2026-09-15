@@ -66,10 +66,7 @@ def test_user_child_path_refuses_a_type_outside_the_grammar(child_type):
 
     The AST drift tests that would catch such a caller walk `core.py` only and
     cannot see this module, so the guarantee is this runtime refusal rather
-    than a test-time observation (ADR 0147). Today every caller passes a
-    literal, and six of the seven are checked only because the same literal
-    also reaches `_uom_headers`; `delete_hmc_user` sends `_uom_headers(None)`
-    and has no such check.
+    than a test-time observation (ADR 0147).
     """
     with pytest.raises(ValueError, match="child_type must be an HMC resource type name"):
         UsersMixin._child_path("console-1", child_type)
