@@ -249,6 +249,12 @@ class HMCClient(
         config.validate_credentials()
         self.config = config
         self._session_token: str | None = None
+        # Quick-property names per resource type, read once and kept for this
+        # client's lifetime (ADR 0141). A None value is a discovery read that
+        # yielded no names: caching that is what holds the one-request-per-type
+        # bound, since retrying per call is the request this design promises
+        # not to make.
+        self._quick_property_names: dict[str, frozenset[str] | None] = {}
         self._legacy_port_fallback = (
             config.port == 443 and "port" not in config.model_fields_set
         )
@@ -690,13 +696,34 @@ class HMCClient(
         return entries[0] if entries else None
 
     async def get_quick_property(
-        self, resource_type: str, uuid: str, property_name: str
+        self,
+        resource_type: str,
+        uuid: str,
+        property_name: str,
+        *,
+        validate: bool = False,
     ) -> str | None:
         """GET a quick property, e.g. LogicalPartition/{uuid}/quick/PartitionState.
 
         quick/ endpoints return a plain-text value and require Accept: */* —
         a typed uom+xml Accept header causes HTTP 406.
+
+        With *validate* the name is checked against the ones the type defines
+        before anything is sent, raising ``ValueError`` on a name the HMC does
+        not know. The names come from ``list_quick_properties`` and are cached
+        for this client's lifetime, so validating costs at most one extra
+        request per resource type per session. It is off by default: the client
+        is constructed per tool call, so the cache would rarely be reused and
+        every call would pay that request (ADR 0141). A level where the
+        discovery read itself fails validates nothing rather than raising.
         """
+        if validate:
+            defined = await self._defined_quick_property_names(resource_type)
+            if defined is not None and property_name not in defined:
+                raise ValueError(
+                    f"{resource_type} defines no quick property named "
+                    f"{property_name!r}. Defined names: {', '.join(sorted(defined))}."
+                )
         path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{property_name}"
         resp = await self._request_with_uuid_path_arguments(
             "GET",
@@ -713,6 +740,31 @@ class HMCClient(
         if value.startswith('"') and value.endswith('"') and len(value) > 1:
             value = value[1:-1]
         return value or None
+
+    async def _defined_quick_property_names(self, resource_type: str) -> frozenset[str] | None:
+        """The quick-property names *resource_type* defines, or None if unknown.
+
+        Reads the root ``/quick`` anchor once per type per client and caches the
+        answer, the failure included: a level where discovery does not work
+        yields None, which callers read as "do not validate" rather than as "no
+        properties" (ADR 0141).
+        """
+        if resource_type not in self._quick_property_names:
+            try:
+                names, _ = await self.list_quick_properties(resource_type)
+            except HMCError:
+                # Covers HMCTransportError too, which subclasses it. Degrading
+                # is #799's fourth criterion: ADR 0139 records levels where the
+                # sibling /operations anchor answers 500, and ADR 0140 records
+                # a type answering 400 at the root /quick anchor.
+                names = []
+            # An empty answer is "unknown", never "defines nothing": a 204
+            # returns ([], version) without raising, and storing that as an
+            # empty positive set would reject every name for this client's
+            # lifetime. ADR 0140 already declined the same inference for a
+            # nameless 200.
+            self._quick_property_names[resource_type] = frozenset(names) if names else None
+        return self._quick_property_names[resource_type]
 
     async def list_quick_properties(
         self,

@@ -14,9 +14,13 @@ changes, because the default is `False`.
 **Tech stack.** Python (`>=3.11`, per `pyproject.toml`), `httpx`, `pytest` + `pytest-asyncio` +
 `respx`, `uv`, `just`.
 
-Expected implementation size: 150–210 changed lines (M) — from the file map and task below: ~45
-lines of source across three edits in `core.py`, ~120 lines of new tests, one CHANGELOG entry. It
-excludes the design artifacts, which are not implementation.
+Expected implementation size: 180–230 changed lines (M) — from the file map and task below: ~55
+lines of source across three edits in `core.py`, ~160 lines of new tests, one CHANGELOG entry. It
+excludes the design artifacts, which are not implementation. The first draft of this line said
+150–210 against ~120 lines of tests; the design review then added the empty-discovery handling and
+parametrized the degradation test over four cases, and the estimate is corrected here to match the
+task content it is derived from. The band stays M, and this number is informational — it is not the
+fixed design denominator and not an implementation budget.
 
 ## Global Constraints
 

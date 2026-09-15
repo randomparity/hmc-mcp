@@ -10,6 +10,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `HMCClient.get_quick_property` takes a keyword-only `validate=False`. With `validate=True` an
+  unknown property name raises `ValueError` before any request is sent, checked against the names
+  `list_quick_properties` reports for the resource type; those are read once per type and cached for
+  the client's lifetime, and a level where the read yields no names validates nothing rather than
+  raising. Off by default, because the client is constructed per tool call (ADR 0141, #799).
+
 - `HMCClient.list_quick_properties(resource_type, *, parent_type=None, parent_uuid=None)` reads
   the quick-property names an HMC defines for a resource type, at the root anchor
   `/rest/api/uom/{R}/quick` and the child anchor `/rest/api/uom/{P}/{UUID}/{C}/quick`. It returns
