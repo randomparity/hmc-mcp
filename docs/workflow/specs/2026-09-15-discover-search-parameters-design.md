@@ -111,8 +111,14 @@ degradation promise rather than any numbered criterion of #789. The six `hmc_mcp
   `([], version)` without raising, and an empty positive set would reject every name for the
   client's lifetime. It is degraded from, exactly as a failed read is.
 - Cache growth is unbounded in the number of distinct `resource_type` values passed. Accepted:
-  entries are one short string keyed to a frozenset of short strings, resource types come from
-  literals in this repository, and the dict dies with the client.
+  resource types come from literals in this repository and the dict dies with the client.
+  **The per-entry size is bounded by `HMC_MAX_RESPONSE_BYTES`, not by the names being short** —
+  that reason would assume the parse is right, which the first accepted class declines to assume.
+  A level answering the query-less root anchor with an instance feed would fill one entry with
+  per-instance data up to the configured response ceiling (ADR 0133). The entry still dies with the
+  client; what is *not* accepted is rendering it: `search_uom`'s refusal message enumerates at most
+  `_MAX_REPORTED_NAMES` names and summarizes the rest, so a wrong parse cannot turn one rejection
+  into a response-sized string, nor put operator instance names in it.
 
 **Covered elsewhere.** Path traversal in `property_name`, `resource_type`, `parent_type` or the
 child type: `_reject_dot_segments` (`core.py:115`), which `_request` (`core.py:436`) applies to

@@ -44,6 +44,26 @@ from .client_users import UsersMixin
 MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
 MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
 
+# How many defined names a rejection message enumerates before summarizing.
+# The set it renders is whatever the discovery read returned, and that read's
+# parse is an inference (ADR 0142): a level answering the query-less /search
+# anchor with an instance feed would fill it with per-instance data bounded
+# only by HMC_MAX_RESPONSE_BYTES, so an uncapped join builds a message the size
+# of the response. Capping keeps the message a diagnostic rather than an
+# amplifier, and keeps operator instance names out of it if the parse is wrong.
+_MAX_REPORTED_NAMES = 20
+
+
+def _summarize_names(names: frozenset[str]) -> str:
+    """Render *names* for an error message, capped at _MAX_REPORTED_NAMES."""
+    ordered = sorted(names)
+    shown = ", ".join(ordered[:_MAX_REPORTED_NAMES])
+    remaining = len(ordered) - _MAX_REPORTED_NAMES
+    if remaining > 0:
+        return f"{shown}, and {remaining} more."
+    return f"{shown}."
+
+
 # The element whose text holds a search-parameter name at the /search discovery
 # anchors. INFERRED from the sibling /quick anchor, never captured from
 # firmware -- ADR 0142 records the inference's one ground and the three
@@ -907,7 +927,7 @@ class HMCClient(
             if defined is not None and property_name not in defined:
                 raise ValueError(
                     f"{resource_type} defines no search parameter named "
-                    f"{property_name!r}. Defined names: {', '.join(sorted(defined))}."
+                    f"{property_name!r}. Defined names: {_summarize_names(defined)}"
                 )
         encoded_property = quote(property_name, safe="")
         encoded_value = quote(property_value, safe="")

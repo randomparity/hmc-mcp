@@ -18,8 +18,8 @@ Design: [spec](../specs/2026-09-15-discover-search-parameters-design.md),
 Expected implementation size: 600–720 changed lines (M) — derived from the file map below:
 `core.py` gains one public method with a long docstring, one private helper and four `__init__`
 lines (~180); `tests/unit/test_client.py` gains two block-head provenance comments, two constructed-
-body helpers and seventeen test functions, at this repository's observed density of ~26 test lines
-per function (~500); `CHANGELOG.md` gains one entry (~16).
+body helpers and nineteen test functions, at this repository's observed density of ~26 test lines
+per function (~570); `CHANGELOG.md` gains one entry (~16).
 
 **This line was corrected after the build, and the reason is recorded rather than hidden.** It first
 read 310–415, taken from the twin PR #805's 230 test lines without scaling for a test count nearly
@@ -99,14 +99,18 @@ between them.
 Produced:
 
 - `_SEARCH_PARAMETER_NAME_ELEMENT: str`
+- `_MAX_REPORTED_NAMES: int` and `_summarize_names(names: frozenset[str]) -> str` — module-level,
+  added after branch review: the refusal message renders whatever the discovery read returned, and
+  that read's parse is an inference, so an uncapped join is bounded only by
+  `HMC_MAX_RESPONSE_BYTES`
 - `async def list_search_parameters(self, resource_type: str, *, parent_type: str | None = None, parent_uuid: str | None = None) -> tuple[list[str], str | None]`
 - `async def _defined_search_parameter_names(self, resource_type: str) -> frozenset[str] | None`
 - `search_uom`'s keyword-only `validate: bool = False`
 
 **Verification.** Every entry's green command is
 `uv run --no-sync pytest tests/unit/test_client.py -k "search_uom or list_search_parameters" --no-cov -q`,
-and every test is in `tests/unit/test_client.py`. Seventeen test functions are named below: eight
-covering `list_search_parameters` and nine covering `search_uom`'s pre-flight. The table has twenty
+and every test is in `tests/unit/test_client.py`. Nineteen test functions are named below: eight
+covering `list_search_parameters` and eleven covering `search_uom`'s pre-flight. The table has twenty-two
 rows because two contracts share `::test_list_search_parameters_reads_both_anchors` and two carry no
 test. The red in each row
 is the one that appears **after** the name under test exists but its behaviour does not — which is
@@ -135,6 +139,8 @@ pre-flight test with `TypeError: search_uom() got an unexpected keyword argument
 | A read yielding no names degrades, and is cached rather than retried | `focused-test` | `::test_search_uom_validate_degrades_and_caches_the_failure`, parametrized over a 500, a 400, `httpx.ConnectError` and a 204 — a propagating error gives `HMCError` instead of a result; a retry gives `assert 2 == 1` |
 | The default makes no discovery request | `focused-test` | `::test_search_uom_defaults_to_no_validation` — a default-on implementation leaves the discovery route at 1 call, not 0 |
 | `validate` is keyword-only, default `False` | `focused-test` | `::test_search_uom_validate_is_keyword_only_and_defaults_false`, via `inspect.signature` — a positional parameter fails the `kind` assertion |
+| A cancelled discovery read caches nothing and is retried | `focused-test` | `::test_search_uom_validate_caches_nothing_when_the_read_is_cancelled` — catching `BaseException`, or adding an explicit `asyncio.CancelledError` handler, caches a negative entry and the attempt count drops to 1 |
+| The refusal message caps how many names it enumerates | `focused-test` | `::test_search_uom_validate_caps_the_names_it_enumerates` — an uncapped join, or a wrong remaining count, fails the length and `and N more.` assertions |
 | The HTTP 400 rationale in `search_uom`'s docstring | `task-test-not-applicable` | Prose addressed to a human reader; no executable consumer validates it, and asserting its wording would snapshot prose, which the Global Constraints forbid |
 | The `CHANGELOG.md` entry | `task-test-not-applicable` | `tests/unit/test_changelog.py` binds only the declared `pyproject.toml` version, which this change does not alter; no executable consumer validates an unreleased entry |
 | ADR 0142 is a well-formed numbered record | `focused-test` | `just adr-numbering`, which checks filename, unique number and H1 agreement; it is already green and must stay so |

@@ -58,8 +58,16 @@ Three properties bound the inference, and together they are why shipping it is a
 - **A wrong guess cannot break a caller who did not opt in.** `validate` defaults to `False`, and
   for an opted-in caller the degradation rule below turns a zero-match `HMCError` into today's
   unvalidated behaviour.
-- **The fix is one constant and the fixtures.** No control flow, no caller, and no signature
-  depends on the element's name.
+- **The fix is one constant and the fixtures — when the difference is only the element name.** No
+  control flow, no caller and no signature depends on that name, so that case really is a one-line
+  correction. It is not the only way the guess can be wrong, and this repository has already lived
+  the others: ADR 0140's first live round killed both of its assumptions and needed a new
+  `xmlutil.find_all_text` helper, and its second found the real document root was `<entry>` rather
+  than the guessed `<feed>`. A different container, a nesting that needs scoping to avoid
+  colliding with instance data, or a non-element-text encoding each cost a parse rewrite rather
+  than a constant edit. The corpus constrains this anchor even less than it constrained `/quick` —
+  it names neither the container nor any element — so that is the honest upper bound on the
+  follow-up.
 
 **Validation is opt-in.** `search_uom` gains one keyword-only parameter, `validate: bool = False`.
 The default is unchanged behaviour. When `validate=True`, the client reads the names once per

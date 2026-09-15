@@ -3588,3 +3588,100 @@ def test_search_uom_validate_is_keyword_only_and_defaults_false():
 
     assert validate.kind is inspect.Parameter.KEYWORD_ONLY
     assert validate.default is False
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_caches_nothing_when_the_read_is_cancelled(mock_hmc):
+    """A cancelled discovery read caches nothing and is retried.
+
+    This is the one carve-out in the cost bound, and it holds only because
+    asyncio.CancelledError is a BaseException that the helper's `except
+    HMCError` does not catch. A later `except Exception` -- or an explicit
+    CancelledError handler added for "robustness" -- would silently cache a
+    negative entry and disable validation for the type on a caller's timeout,
+    which is the opposite of what the failure model promises. Nothing else
+    pins it.
+
+    A timeout is deliberately not this case: _request converts
+    httpx.TimeoutException to HMCTransportError, which the helper does catch
+    and cache. That path is covered by the degradation test above.
+    """
+    started = asyncio.Event()
+    attempts = 0
+
+    async def slow_discovery(request):
+        # respx increments call_count only when a response is returned, and
+        # these attempts are cancelled in flight -- so count them here.
+        nonlocal attempts
+        attempts += 1
+        started.set()
+        await asyncio.sleep(3600)
+        raise AssertionError("unreachable: the call is cancelled first")
+
+    mock_hmc.get(_SEARCH_DISCOVERY).mock(side_effect=slow_discovery)
+    mock_hmc.get(_SEARCH_DEFINED).mock(
+        return_value=httpx.Response(200, text=_SEARCH_RESULT_FEED)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        task = asyncio.create_task(
+            hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+            )
+        )
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert hmc._search_parameter_names == {}
+        assert not hmc._search_parameter_names_lock.locked()
+
+        # The next validated call re-reads rather than inheriting a cached
+        # negative entry; it reaches the same stalled route, so cancel it too
+        # and assert on the attempt count.
+        retry = asyncio.create_task(
+            hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+            )
+        )
+        started.clear()
+        await started.wait()
+        retry.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await retry
+
+    assert attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_caps_the_names_it_enumerates(mock_hmc):
+    """The refusal message is a diagnostic, not an amplifier.
+
+    The set rendered here is whatever the discovery read returned, and that
+    parse is an inference (ADR 0142). A level answering the query-less anchor
+    with an instance feed would fill it with per-instance data bounded only by
+    HMC_MAX_RESPONSE_BYTES, so an uncapped join builds a message the size of
+    the response -- and one made of operator instance names.
+    """
+    many = [f"Param{i:04d}" for i in range(500)]
+    mock_hmc.get(_SEARCH_DISCOVERY).mock(
+        return_value=httpx.Response(
+            200, text=_search_parameter_entry(_SEARCH_VALIDATION_TYPE, *many)
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError) as exc_info:
+            await hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "NoSuchProperty", "web", validate=True
+            )
+
+    message = str(exc_info.value)
+    assert "Param0000" in message
+    assert "Param0019" in message
+    assert "Param0020" not in message
+    assert "and 480 more." in message
+    # The whole set joined would run past 5,000 characters; the cap keeps the
+    # message bounded by _MAX_REPORTED_NAMES rather than by the response size.
+    assert len(message) < 500
