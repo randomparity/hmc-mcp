@@ -20,7 +20,14 @@ import inspect
 import httpx
 import pytest
 
-from hmc_mcp.client.core import HMCClient, _reject_dot_segments, _reject_non_job_path
+from hmc_mcp.client.client_contracts import ADAPTER_TYPES
+from hmc_mcp.client.core import (
+    MEDIA_UOM,
+    HMCClient,
+    _reject_dot_segments,
+    _reject_non_job_path,
+    _reject_unknown_uom_type,
+)
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 
@@ -387,3 +394,279 @@ def test_the_guard_is_reached_by_every_transport_helper():
         if owner != "_request":
             direct.append(ast.unparse(node.func))
     assert not direct, f"a transport call bypassing _request: {direct}"
+
+
+# ---------------------------------------------------------------------------
+# The type-segment grammar (ADR 0143)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "LogicalPartition",
+        "ManagedSystem",
+        "VirtualIOServer",
+        "Cluster",
+        "SharedStoragePool",
+        "UserProfile",
+        "TaskRole",
+        "ResourceRole",
+        "VirtualSwitch",
+        "VirtualNetwork",
+        "NetworkBridge",
+        "VolumeGroup",
+        "Job",
+        # Lowercase and digit-bearing type names the HMC serves. The grammar
+        # constrains the character set, not the casing convention.
+        "jobs",
+        "SRIOVAdapter",
+        *sorted(ADAPTER_TYPES),
+    ],
+)
+def test_a_well_formed_type_is_accepted(value):
+    assert _reject_unknown_uom_type("resource_type", value) is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        # The two characters issue #809 reproduced: each retargets the GET
+        # inside /rest/api/uom/ without tripping the dot-segment guard.
+        "LogicalPartition?group=None",
+        "LogicalPartition#x",
+        # The dot segments the waist guard already refuses, which now fail the
+        # grammar first.
+        "..",
+        ".",
+        "%2e%2e",
+        "../web/Logon",
+        # Separators and whitespace.
+        "Logical Partition",
+        "Logical/Partition",
+        "Logical-Partition",
+        "Logical_Partition",
+        "Logical.Partition",
+        # A leading digit: the HMC's type names are XML element names.
+        "1LogicalPartition",
+        "",
+        # Header-shaped input. httpx carries this into the Accept value and only
+        # h11 refuses it, at send time.
+        "LogicalPartition\r\nEvil: 1",
+        # The pair an `^...$` grammar accepts, because Python's `$` matches
+        # before a trailing newline. This is why the predicate uses fullmatch.
+        "LogicalPartition\n",
+        "LogicalPartition\r",
+        # Non-ASCII that str.isalnum() would call alphanumeric.
+        "LogicalPartitioñ",
+        "Ⅴ",
+    ],
+)
+def test_a_malformed_type_is_refused(value):
+    with pytest.raises(ValueError, match="must be an HMC resource type name") as error:
+        _reject_unknown_uom_type("resource_type", value)
+
+    message = str(error.value)
+    assert message.startswith("resource_type must be")
+    # The leak rule _reject_dot_segments already follows: the message names the
+    # argument and one character, never the caller's whole string or the host.
+    assert value not in message or len(value) <= 1
+    assert "hmc.test" not in message
+    # A CR or LF reaches the message only through !r, so a refusal cannot inject
+    # a line break into a log.
+    assert "\n" not in message and "\r" not in message
+
+
+# Every client method that interpolates a caller-supplied type segment, named by
+# symbol with the argument position under test. `RETARGET` is the reproduction
+# issue #809 carries: `?` splits a query string and `#` truncates the path at a
+# fragment, both retargeting inside /rest/api/uom/ without tripping the
+# dot-segment guard.
+RETARGET = "LogicalPartition?group=None"
+
+_TYPE_SEGMENT_CALLS = (
+    ("list_uom", (RETARGET,), {}),
+    ("get_uom", (RETARGET, UUID_A), {}),
+    ("get_quick_property", (RETARGET, UUID_A, "PartitionState"), {}),
+    ("list_quick_properties", (RETARGET,), {}),
+    (
+        "list_quick_properties",
+        ("LogicalPartition",),
+        {"parent_type": RETARGET, "parent_uuid": UUID_A},
+    ),
+    ("search_uom", (RETARGET, "PartitionName", "prod"), {}),
+    ("list_search_parameters", (RETARGET,), {}),
+    ("list_operations", (RETARGET,), {}),
+    (
+        "list_operations",
+        ("LogicalPartition",),
+        {"parent_type": RETARGET, "parent_uuid": UUID_A},
+    ),
+    ("list_child", (RETARGET, UUID_A, "ClientNetworkAdapter"), {}),
+    ("list_child", ("LogicalPartition", UUID_A, RETARGET), {}),
+    ("create_child", (RETARGET, UUID_A, "ClientNetworkAdapter", "<x/>"), {}),
+    ("create_child", ("LogicalPartition", UUID_A, RETARGET, "<x/>"), {}),
+    ("delete_child", (RETARGET, UUID_A, "ClientNetworkAdapter", UUID_B), {}),
+    ("delete_child", ("LogicalPartition", UUID_A, RETARGET, UUID_B), {}),
+)
+
+
+@pytest.mark.parametrize(
+    "method, args, kwargs",
+    _TYPE_SEGMENT_CALLS,
+    ids=[
+        f"{name}-{index}" for index, (name, _, _) in enumerate(_TYPE_SEGMENT_CALLS)
+    ],
+)
+def test_no_unsafe_type_segment_reaches_transport(method, args, kwargs):
+    """Refused at the boundary, before anything is built (ADR 0143).
+
+    Asserted against the transport rather than against the exception alone: a
+    refusal that still built a request would leave the retargeted path in the
+    HMC's audit log even though the caller saw an error.
+    """
+    client = _client()
+    sent: list[str] = []
+
+    def _forbidden(*call_args, **call_kwargs):
+        sent.append("request")
+        raise AssertionError("a refused type segment reached the transport")
+
+    client._http.build_request = _forbidden  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="must be an HMC resource type name"):
+        asyncio.run(getattr(client, method)(*args, **kwargs))
+    assert sent == []
+
+
+def test_uom_headers_refuses_a_malformed_type():
+    """The second destination: the same value reaches the Accept parameter.
+
+    `_uom_headers` is where `get_uom_path` -- which builds no uom f-string of
+    its own and has no caller inside this package -- puts a caller-supplied
+    type. Without this the Accept destination's only control is h11's send-time
+    header validation, which a trailing newline escapes entirely.
+    """
+    client = _client()
+    with pytest.raises(ValueError, match="must be an HMC resource type name"):
+        client._uom_headers("LogicalPartition\n")
+
+
+@pytest.mark.parametrize(
+    "resource_type, expected",
+    [
+        ("LogicalPartition", f"{MEDIA_UOM}; type=LogicalPartition"),
+        # Falsy values keep the generic Accept they always produced: no type=
+        # parameter is emitted, so nothing reaches the destination to check.
+        ("", MEDIA_UOM),
+        (None, MEDIA_UOM),
+    ],
+)
+def test_uom_headers_passes_a_valid_type_through(resource_type, expected):
+    client = _client()
+    assert client._uom_headers(resource_type)["Accept"] == expected
+
+
+# ---------------------------------------------------------------------------
+# The guard is site-independent, and no site may join without it
+# ---------------------------------------------------------------------------
+
+
+# The arguments a `/rest/api/uom/` f-string in `core.py` may interpolate, and
+# which rule governs each. A name outside this table is a segment nobody has
+# decided a rule for, which is what the second assertion below refuses.
+_TYPE_SEGMENT_ARGUMENTS = frozenset({"resource_type", "parent_type", "child_type"})
+_KNOWN_UOM_SEGMENT_ARGUMENTS = _TYPE_SEGMENT_ARGUMENTS | {
+    "uuid",
+    "parent_uuid",
+    "child_uuid",
+    "property_name",
+    "job_id",
+    "encoded_property",
+    "encoded_value",
+}
+
+
+def _uom_interpolations() -> list[tuple[str, str]]:
+    """Every (function, interpolated name) a `/rest/api/uom/` f-string builds."""
+    from hmc_mcp.client import core as client_module
+
+    tree = ast.parse(inspect.getsource(client_module))
+    found: list[tuple[str, str]] = []
+    for owner in ast.walk(tree):
+        if not isinstance(owner, ast.AsyncFunctionDef | ast.FunctionDef):
+            continue
+        for node in ast.walk(owner):
+            if not isinstance(node, ast.JoinedStr) or not node.values:
+                continue
+            head = node.values[0]
+            if not isinstance(head, ast.Constant) or not str(head.value).startswith(
+                "/rest/api/uom/"
+            ):
+                continue
+            found.extend(
+                (owner.name, part.value.id)
+                for part in node.values
+                if isinstance(part, ast.FormattedValue)
+                and isinstance(part.value, ast.Name)
+            )
+    return found
+
+
+def _guarded_type_arguments(function_name: str) -> set[str]:
+    """The type arguments *function_name* passes to the boundary predicate."""
+    from hmc_mcp.client import core as client_module
+
+    tree = ast.parse(inspect.getsource(client_module))
+    guarded: set[str] = set()
+    for owner in ast.walk(tree):
+        if (
+            not isinstance(owner, ast.AsyncFunctionDef | ast.FunctionDef)
+            or owner.name != function_name
+        ):
+            continue
+        for node in ast.walk(owner):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "_reject_unknown_uom_type"
+                and len(node.args) == 2
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[1], ast.Name)
+                and node.args[0].value == node.args[1].id
+            ):
+                guarded.add(node.args[1].id)
+    return guarded
+
+
+def test_every_uom_type_interpolation_is_guarded():
+    """A new site cannot join the module without its own boundary check.
+
+    This is the assertion that bites, and it is site-directed for a reason: an
+    inventory that only checks *which names* are interpolated says nothing about
+    whether the site validates them, so a new method building
+    `f"/rest/api/uom/{resource_type}/count"` with no predicate call would pass
+    it. Here that method fails until it carries the call (ADR 0143).
+    """
+    unguarded = sorted(
+        {
+            (function, name)
+            for function, name in _uom_interpolations()
+            if name in _TYPE_SEGMENT_ARGUMENTS
+            and name not in _guarded_type_arguments(function)
+        }
+    )
+    assert not unguarded, f"uom type segments interpolated without a check: {unguarded}"
+
+
+def test_every_uom_path_interpolation_is_a_known_argument():
+    """A new *kind* of segment fails until someone decides which rule governs it.
+
+    The companion to the check above, and not a substitute for it: this one
+    catches a segment nobody has classified, that one catches a classified
+    segment nobody guarded.
+    """
+    unknown = sorted(
+        {name for _, name in _uom_interpolations()} - _KNOWN_UOM_SEGMENT_ARGUMENTS
+    )
+    assert not unknown, f"unclassified uom path segment arguments: {unknown}"

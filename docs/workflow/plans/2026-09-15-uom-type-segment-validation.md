@@ -15,11 +15,22 @@ encoding keep their current contracts.
 Spec: `docs/workflow/specs/2026-09-15-uom-type-segment-validation.md`.
 Decision: `docs/adr/0143-uom-type-segments-validated-not-encoded.md`.
 
-Expected implementation size: 150–210 changed lines (M) — derived from the file
-map below: one ~20-line predicate; fifteen one-line calls across ten methods,
-covering the twelve interpolation sites, plus one in `_uom_headers`; one
-docstring edit; three tests and six parametrized cases updated in one existing
-test file; and ~130 lines of new tests.
+Expected implementation size: 300–380 changed lines (M) — derived from the file
+map below: one ~35-line predicate with its grammar comment; fifteen one-line
+calls across ten methods, covering the twelve interpolation sites, plus one in
+`_uom_headers`; one docstring edit; three tests and six parametrized cases
+updated in one existing test file; and ~285 lines of new tests.
+
+> **Corrected during the build, and why.** This line first read 150–210 with
+> ~130 lines of new tests. That estimate was written against a drift test that
+> checked interpolated *names* against an inventory — roughly ten lines. The
+> design review found that such a check cannot observe whether a site validates
+> at all, and the site-directed replacement specified in step 8 needs two
+> AST-walking helpers and two assertions instead. The per-method inventory also
+> resolved to fifteen parametrized cases rather than ten. Nothing here is work
+> the frozen scope or the reviewed design does not require, so the estimate was
+> wrong rather than the diff; it is corrected, not met by deleting tests. The
+> fixed M denominator of 250 is unchanged — this line never sets it.
 
 ## Global Constraints
 
@@ -84,7 +95,7 @@ Provides:
   `test_a_well_formed_type_is_accepted` / `test_a_malformed_type_is_refused` in
   `tests/unit/test_request_path_safety.py`. Red before the predicate exists:
   `ImportError: cannot import name '_reject_unknown_uom_type'`. Green:
-  `uv run --no-sync pytest tests/unit/test_request_path_safety.py -q`.
+  `uv run --no-sync pytest tests/unit/test_request_path_safety.py -q --no-cov`.
 - *Contract: refusal precedes transport, per method.* Mode: `focused-test`.
   `test_no_unsafe_type_segment_reaches_transport`, parametrized over the ten
   methods. Red before the call sites exist: the parametrized cases fail with
@@ -111,8 +122,8 @@ Provides:
   and `test_list_search_parameters_refuses_a_dot_segment_resource_type`. Red
   before the call sites exist, in the already-updated form: each expects
   `ValueError` and gets `HMCError`. Green: `uv run --no-sync pytest
-  tests/unit/test_client.py -q -k "list_operations or list_quick_properties or
-  list_search_parameters"`.
+  tests/unit/test_client.py -q --no-cov -k "list_operations or
+  list_quick_properties or list_search_parameters"`.
 
 **Steps.**
 
@@ -129,7 +140,7 @@ Provides:
    `'LogicalPartition\n'` and `'LogicalPartition\r'`.
    Assert the message names the argument and carries neither the host nor the
    whole offending value.
-2. Run `uv run --no-sync pytest tests/unit/test_request_path_safety.py -q`.
+2. Run `uv run --no-sync pytest tests/unit/test_request_path_safety.py -q --no-cov`.
    Expect a collection error naming `_reject_unknown_uom_type`.
 3. In `src/hmc_mcp/client/core.py`, beside `_DOT_SEGMENTS`, add:
 
@@ -237,7 +248,7 @@ Provides:
      "must be given together" case still wins because `parent_type` is validated
      inside the paired branch)
    - `test_list_search_parameters_refuses_a_dot_segment_resource_type`
-10. Run `uv run --no-sync pytest tests/unit/test_request_path_safety.py tests/unit/test_client.py -q`.
+10. Run `uv run --no-sync pytest tests/unit/test_request_path_safety.py tests/unit/test_client.py -q --no-cov`.
     Expect all tests to pass.
 11. Run `just lint` and `just typecheck`. Expect no output and exit 0.
 12. Run `just test`. Expect the compact success summary and the coverage gate to
