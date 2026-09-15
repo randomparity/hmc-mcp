@@ -56,10 +56,12 @@ satisfied. `hmc_mcp.api`'s six exports (ADR 0118) are a protected contract and s
 name was found, to separate a type defining none from a body of another shape entirely.
 `list_search_parameters(resource_type)` reads `/rest/api/uom/{R}/search`, sends `Accept: */*`,
 and returns `(names, schema_version)` — the texts of that element read document-wide via
-`_find_all_text`, paired with the response's `X-HMC-Schema-Version`. A 204 returns
+`_find_all_text`, paired with the response's `X-HMC-Schema-Version`. ~~A 204 returns
 `([], schema_version)`; a non-200 raises `HMCError` carrying the status; a 200 yielding no name
 returns `([], schema_version)` when it carries the container and raises `HMCError` when it does
-not. `HMCClient.__init__` gains
+not.~~ ADR 0144 is where those empty answers were separated: a 204 returns `(None, schema_version)`,
+and a 200 yielding no name returns `([], schema_version)` only when the container holds nothing this
+parse could have named. The non-200 clause is unchanged. `HMCClient.__init__` gains
 `self._search_parameter_names: dict[str, frozenset[str] | None] = {}` and
 `self._search_parameter_names_lock = asyncio.Lock()`. A private
 `_defined_search_parameter_names(resource_type)` reads the root anchor once per type per client,
@@ -214,8 +216,10 @@ step 6 re-judges this against the actual diff.
    answered 200, but only those two values were ever sent, so `*/*` is kept as the one Accept that
    cannot fail negotiation on an unmeasured level.
 7. When the discovery read yields no names — an `HMCError` from a 4xx or 5xx, an
-   `HMCTransportError` from a connection failure, or a 204 returning `([], version)` —
-   `validate=True` sends the search anyway and returns its result.
+   `HMCTransportError` from a connection failure, or ~~a 204 returning `([], version)`~~ —
+   `validate=True` sends the search anyway and returns its result. ADR 0144 is where a 204 became
+   `(None, version)`; it still validates nothing, and the container-present empty answer is the one
+   that now refuses locally instead.
 8. `validate` defaults to `False`; a call omitting it makes no discovery request and behaves
    exactly as at `a0d29ac7`. The decision is in ADR 0142 and the parameter in `CHANGELOG.md`.
 9. `hmc_mcp.api` still exports exactly the six names ADR 0118 names.

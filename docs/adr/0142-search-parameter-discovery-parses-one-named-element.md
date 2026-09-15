@@ -4,11 +4,13 @@
 Accepted
 
 > **Amended by [ADR 0144](0144-container-present-empty-discovery-is-authoritative.md)**
-> (2026-09-15): an empty answer carrying the `SearchParameterSet` container and no
-> `ParameterName` element is now read as "the type defines nothing" and cached as an empty
-> positive set, so `ManagementConsole` and the five other captured types defining nothing are
-> refused locally. A 204, a failed read, and a container whose `ParameterName` elements are all
-> empty are still read as "the names are unknown".
+> (2026-09-15): an empty answer carrying the `SearchParameterSet` container and neither a
+> `SearchParameter` nor a `ParameterName` element under it is now read as "the type defines
+> nothing" and cached as an empty positive set, so `ManagementConsole` and the five other captured
+> types defining nothing are refused locally. A 204, a failed read, and a container holding
+> parameters this parse cannot name are still read as "the names are unknown" — but the value
+> carrying that reading changed: `list_search_parameters` returns `(None, version)` for them, not
+> the `([], version)` this record's body states.
 
 ## Context
 #789 asks for `HMCClient.list_search_parameters`, reading the type-anchored

@@ -128,8 +128,9 @@ confidentiality of the name list, firmware metadata identical for every caller.
 - A 200 carrying no non-empty `Nickname` — an `HttpErrorResponse` feed, an empty collection, or only
   empty names — raises `HMCError` carrying status 200 and the body. An empty `Nickname` among
   populated ones is dropped rather than returned.
-- A non-200, non-204 status raises `HMCError` whose `status_code` is that status; 204 returns
-  `([], schema_version)`.
+- A non-200, non-204 status raises `HMCError` whose `status_code` is that status; ~~204 returns
+  `([], schema_version)`~~. ADR 0144 is where a 204 became `(None, schema_version)`, the level's
+  answer not being a fact about the type.
 - A non-UUID `parent_uuid`, exactly one of the two parent arguments, or a `..` segment in
   `resource_type` or `parent_type` each raise before transport — `ValueError` for the first two,
   `HMCError` for the third — and send no request.

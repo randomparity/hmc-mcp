@@ -4,10 +4,12 @@
 Accepted
 
 > **Amended by [ADR 0144](0144-container-present-empty-discovery-is-authoritative.md)**
-> (2026-09-15): an empty answer carrying the `QuickProperty_Collection` container and no
-> `Nickname` element is now read as "the type defines nothing" and cached as an empty positive
-> set. A 204, a failed read, and a container whose `Nickname` elements are all empty are still
-> read as "the names are unknown".
+> (2026-09-15): an empty answer carrying the `QuickProperty_Collection` container and neither a
+> `QuickProperty` nor a `Nickname` element under it is now read as "the type defines nothing" and
+> cached as an empty positive set. A 204, a failed read, and a container holding properties this
+> parse cannot name are still read as "the names are unknown" — but the value carrying that
+> reading changed: `list_quick_properties` returns `(None, schema_version)` for them, not the
+> `([], schema_version)` this record's body states.
 
 ## Context
 ADR 0140 landed `HMCClient.list_quick_properties`, which answers what quick-property names a

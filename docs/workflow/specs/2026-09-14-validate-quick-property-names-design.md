@@ -117,8 +117,10 @@ the transport. `$quest` step 6 re-judges this against the actual diff.
 3. A fresh `HMCClient` performs the discovery read again on first validated use, and no entry is
    invalidated or refreshed during a client's lifetime. (#799 criterion 3, ADR 0141)
 4. When the discovery read yields no names — an `HMCError` from a 4xx or 5xx, an
-   `HMCTransportError` from a connection failure, or a 204 returning `([], version)` —
-   `validate=True` sends the quick-property request anyway and returns its result.
+   `HMCTransportError` from a connection failure, or ~~a 204 returning `([], version)`~~ —
+   `validate=True` sends the quick-property request anyway and returns its result. ADR 0144 is where
+   a 204 became `(None, version)`; it still validates nothing, and the container-present empty
+   answer is the one that now refuses locally instead.
    (#799 criterion 4)
 5. `validate` defaults to `False`; a call omitting it makes no discovery request and behaves exactly
    as at `fac7c19e`. The decision is in ADR 0141 and the parameter in `CHANGELOG.md`.
