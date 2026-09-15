@@ -115,7 +115,8 @@ you have already confirmed the file is syntax-clean.
 repo's only sync recipe (`justfile`):
 
 ```sh
-just setup   # uv sync --locked --extra app --link-mode copy; then prek install
+just setup   # uv sync --locked --extra app --link-mode copy; prek install;
+             # then link the local reference corpus into the worktree
 ```
 
 **Never run a bare `uv sync`.** `pyproject.toml` declares no `[tool.uv]` table
@@ -169,6 +170,14 @@ error surfaces at a `src/` path — that one is yours to fix in source. A
 `SyntaxError` at a `.venv/lib/…/site-packages/` path is third-party code, so it
 means the extras or lock state is wrong, or the interpreter does not match what
 the environment was built for; `just setup` is the fix for that one.
+
+**A local-only reference corpus may exist beside this repo.** A companion file
+this repository does not track can name a vendored API reference corpus kept
+on one operator host only; `just setup` symlinks it into a linked worktree
+when the main checkout has it, and otherwise prints that it is unavailable —
+so its absence is discoverable rather than silent. When it is present, cite
+it as `docs/refs/<path>:<line>` and report what a search over it returns;
+never reproduce its prose into a tracked file.
 
 ## Pre-existing test failures
 
