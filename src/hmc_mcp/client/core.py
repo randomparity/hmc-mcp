@@ -250,10 +250,8 @@ class HMCClient(
         self.config = config
         self._session_token: str | None = None
         # Quick-property names per resource type, read once and kept for this
-        # client's lifetime (ADR 0141). A None value is a discovery read that
-        # yielded no names: caching that is what holds the one-request-per-type
-        # bound, since retrying per call is the request this design promises
-        # not to make.
+        # client's lifetime; None means a discovery read that yielded no names,
+        # cached like any other answer (ADR 0141).
         self._quick_property_names: dict[str, frozenset[str] | None] = {}
         # Serializes the read-through so concurrent validated calls share one
         # discovery request instead of each issuing its own. Constructed here
@@ -777,8 +775,9 @@ class HMCClient(
             # empty positive set would reject every name for this client's
             # lifetime. ADR 0140 already declined the same inference for a
             # nameless 200.
-            self._quick_property_names[resource_type] = frozenset(names) if names else None
-            return self._quick_property_names[resource_type]
+            defined = frozenset(names) if names else None
+            self._quick_property_names[resource_type] = defined
+            return defined
 
     async def list_quick_properties(
         self,
