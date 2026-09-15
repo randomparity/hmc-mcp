@@ -59,6 +59,10 @@ def test_parse_feed_recursion_error_tags_context():
 
     recursion; RecursionError is not a ValueError or ParseError subclass, so
     it needs its own clause to reach HMCError instead of escaping the guard.
+    The recursion limit is lowered only so a modest nesting depth reproduces
+    the failure quickly and deterministically; the same guard also fires at
+    the default limit against a deeper body (verified manually, not asserted
+    here to keep the test fast).
     """
     old_limit = sys.getrecursionlimit()
     sys.setrecursionlimit(200)
