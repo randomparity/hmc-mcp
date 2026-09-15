@@ -13,8 +13,10 @@ for a child type. Neither anchor occurs under `src/`.
 
 One new read-only method on `HMCClient` in `src/hmc_mcp/client/core.py`, beside
 `get_quick_property`: `list_quick_properties(resource_type, *, parent_type=None, parent_uuid=None)
--> tuple[list[str], str | None]`, whose signature, path grammar and parse ADR 0140 decides. Both
-parent arguments together select the child anchor and neither selects the root anchor. The tuple's
+->` ~~`tuple[list[str], str | None]`~~ `tuple[list[str] | None, str | None]`, whose signature, path
+grammar and parse ADR 0140 decides. ADR 0144 is where the first element gained `None`, for a level
+whose answer is not a fact about the type. Both parent arguments together select the child anchor
+and neither selects the root anchor. The tuple's
 **first element is the plain list of names** the issue's outcome asks for; the second is the
 response's `X-HMC-Schema-Version`, the pairing ADR 0139 established and named this read as
 inheriting. It reuses `_request_with_uuid_path_arguments`, which owns UUID validation and reaches

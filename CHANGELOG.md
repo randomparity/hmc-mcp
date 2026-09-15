@@ -36,18 +36,25 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   unknown property name raises `ValueError` before any request is sent, checked against the names
   `list_quick_properties` reports for the resource type; those are read once per type and cached for
   the client's lifetime, and a level where the read yields no names validates nothing rather than
-  raising. Off by default, because the client is constructed per tool call (ADR 0141, #799).
+  raising. A type that defines none is refused locally instead — every name of it, with a message
+  saying so (ADR 0144). Off by default, because the client is constructed per tool call
+  (ADR 0141, #799).
 
 - `HMCClient.list_quick_properties(resource_type, *, parent_type=None, parent_uuid=None)` reads
   the quick-property names an HMC defines for a resource type, at the root anchor
   `/rest/api/uom/{R}/quick` and the child anchor `/rest/api/uom/{P}/{UUID}/{C}/quick`. It returns
   those names paired with the response's `X-HMC-Schema-Version`, or `None` when the HMC sends none
   (ADR 0139, ADR 0140, #788). The body is an Atom `<entry>` wrapping a `QuickProperty_Collection`,
-  and the names are the `Nickname` texts; a 200 carrying none of them raises `HMCError` rather than
-  reporting a type that defines nothing. The returned header value is verbatim and is not
-  guaranteed to hold a version. Confirmed against FW950: 39 names for `ManagedSystem`, 28 for
-  `LogicalPartition`, and the returned names resolve when fed back to `get_quick_property`. Anchor
-  availability is per type — `NetworkBridge` answers 400 at the root and 200 as a child.
+  and the names are the `Nickname` texts. A type that defines no quick properties returns an empty
+  list — a 200 carrying the container and no `Nickname` element at all; the names are `None` rather
+  than a list when the level's answer is not a fact about the type, which is a 204 or a
+  `QuickProperty_Collection` whose `Nickname` elements are all empty (ADR 0144). A 200 carrying no
+  `QuickProperty_Collection` at all raises `HMCError`, because without the container it is
+  indistinguishable from the HMC's known `HttpErrorResponse` feed (#811). The returned header value
+  is verbatim and is not guaranteed to hold a version. Confirmed against FW950: 39 names for
+  `ManagedSystem`, 28 for `LogicalPartition`, and the returned names resolve when fed back to
+  `get_quick_property`. Anchor availability is per type — `NetworkBridge` answers 400 at the root
+  and 200 as a child.
   **There is no `/quick/all`** — that anchor answers 400, so no `all_properties` argument is
   offered; the differently capitalized `/quick/All` is a separate endpoint returning per-instance
   values, not names.

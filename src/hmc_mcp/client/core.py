@@ -69,11 +69,10 @@ _MAX_REPORTED_NAME_LENGTH = 64
 def _summarize_names(names: frozenset[str]) -> str:
     """Render *names* for an error message, bounded in count and in length.
 
-    *names* is expected non-empty: an empty set renders a bare ".". Neither
-    caller (``search_uom``, ``get_quick_property``) can produce one, because
-    an empty discovery answer is cached as None and each call is guarded on
-    ``defined is not None`` -- so this is a stated precondition rather than a
-    branch.
+    *names* is expected non-empty: an empty set renders a bare ".". Each caller
+    (``search_uom``, ``get_quick_property``) renders its own message for an
+    empty positive set -- the type defining nothing (ADR 0144) -- before
+    reaching here, so this is a stated precondition rather than a branch.
     """
     ordered = sorted(names)
     shown = ", ".join(
@@ -845,14 +844,24 @@ class HMCClient(
         is constructed per tool call, so the cache would rarely be reused and
         every call would pay that request (ADR 0141). A level where the
         discovery read itself fails validates nothing rather than raising.
+
+        A type defining no quick properties is refused locally, every name of
+        it: the anchor answering with the container and no property is a fact
+        about the type rather than a failed read (ADR 0144). A 204, a failed
+        read, and a container carrying no usable name still validate nothing.
         """
         _reject_unknown_uom_type("resource_type", resource_type)
         if validate:
             defined = await self._defined_quick_property_names(resource_type)
             if defined is not None and property_name not in defined:
+                detail = (
+                    f"Defined names: {_summarize_names(defined)}"
+                    if defined
+                    else "The type defines none at all."
+                )
                 raise ValueError(
                     f"{resource_type} defines no quick property named "
-                    f"{property_name!r}. Defined names: {_summarize_names(defined)}"
+                    f"{property_name!r}. {detail}"
                 )
         path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{property_name}"
         resp = await self._request_with_uuid_path_arguments(
@@ -876,10 +885,11 @@ class HMCClient(
 
         Reads the root ``/quick`` anchor once per type per client and caches the
         answer, the failure included: a level where discovery does not work
-        yields None, which callers read as "do not validate" rather than as "no
-        properties" (ADR 0141). A transport failure is cached as durably as a
-        firmware-level one, so a transient one leaves validation off for this
-        type until a new client is constructed.
+        yields None, which callers read as "do not validate", while a type that
+        defines no quick properties yields the empty positive set, which they
+        read as "refuses every name" (ADR 0144). A transport failure is cached
+        as durably as a firmware-level one, so a transient one leaves validation
+        off for this type until a new client is constructed.
         """
         if resource_type in self._quick_property_names:
             return self._quick_property_names[resource_type]
@@ -896,13 +906,12 @@ class HMCClient(
                 # is #799's fourth criterion: ADR 0139 records levels where the
                 # sibling /operations anchor answers 500, and ADR 0140 records
                 # a type answering 400 at the root /quick anchor.
-                names = []
-            # An empty answer is "unknown", never "defines nothing": a 204
-            # returns ([], version) without raising, and storing that as an
-            # empty positive set would reject every name for this client's
-            # lifetime. ADR 0140 already declined the same inference for a
-            # nameless 200.
-            defined = frozenset(names) if names else None
+                names = None
+            # None is the level's answer not being a fact about the type: a 204, a
+            # failed read, or a container whose Nickname elements are all empty. An
+            # empty list is a fact about the type, and caching it as an empty
+            # positive set is what makes validate=True refuse locally (ADR 0144).
+            defined = None if names is None else frozenset(names)
             self._quick_property_names[resource_type] = defined
             return defined
 
@@ -912,7 +921,7 @@ class HMCClient(
         *,
         parent_type: str | None = None,
         parent_uuid: str | None = None,
-    ) -> tuple[list[str], str | None]:
+    ) -> tuple[list[str] | None, str | None]:
         """GET the quick-property names a type defines, with the schema version.
 
         Reads ``/rest/api/uom/{R}/quick``, or ``/rest/api/uom/{P}/{UUID}/{C}/quick``
@@ -925,10 +934,13 @@ class HMCClient(
         endpoint returning per-instance values, not names (ADR 0138, ADR 0140).
 
         Returns the names paired with the response's ``X-HMC-Schema-Version``,
-        ``None`` when the HMC sends none. That value is verbatim and is not
-        guaranteed to hold a version: FW950 echoes the request's
-        ``X-Audit-Memento`` into it, as V1_17_0 does for ``/operations``
-        (ADR 0139), so callers must not parse it as a level.
+        with a first element of ``None`` when the level's answer is not a fact
+        about the type -- a 204, or a container with no usable name -- and a
+        list, empty or not, when it is. The version is ``None`` when the HMC
+        sends none; that value is verbatim and is not guaranteed to hold a
+        version: FW950 echoes the request's ``X-Audit-Memento`` into it, as
+        V1_17_0 does for ``/operations`` (ADR 0139), so callers must not parse
+        it as a level.
 
         Not every type offers the root anchor: ``NetworkBridge`` answers 400 there
         and 200 as a child of ``ManagedSystem``. A type that does not serve the
@@ -943,10 +955,14 @@ class HMCClient(
         one -- the hazard ADR 0139 recorded for ``OperationSet``, and reachable
         here because ``VirtualNetwork`` defines exactly one quick property
         (ADR 0140). An empty ``Nickname`` is dropped. When no name is found, the
-        body is checked for the ``QuickProperty_Collection`` container: present
-        with no names, it is a type that defines none, returning ``([], version)``;
-        absent, the 200 is the HMC's known ``HttpErrorResponse``-feed shape and
-        still raises ``HMCError``, because without the container the two are
+        body is checked for the ``QuickProperty_Collection`` container, and the
+        answer is three-way: present with no ``Nickname`` element at all, it is
+        a type that defines none and returns ``([], version)``, an emptiness
+        that is a fact about the type (ADR 0144); present with ``Nickname``
+        elements whose texts are all empty, it holds properties this parse
+        cannot name and returns ``(None, version)`` as a 204 does; absent, the
+        200 is the HMC's known ``HttpErrorResponse``-feed shape and still raises
+        ``HMCError``, because without the container the two are
         indistinguishable.
 
         Sends ``Accept: */*``: ``quick/`` endpoints answer 406 to a typed uom
@@ -974,15 +990,18 @@ class HMCClient(
         )
         schema_version: str | None = resp.headers.get("X-HMC-Schema-Version")
         if resp.status_code == 204:
-            return [], schema_version
+            return None, schema_version
         if resp.status_code != 200:
             raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
-        names = [n for n in _find_all_text(resp.text, f"GET {path}", "Nickname") if n]
+        found = _find_all_text(resp.text, f"GET {path}", "Nickname")
+        names = [n for n in found if n]
+        if names:
+            return names, schema_version
         # The container separates "defines none" from "not this shape at all",
         # and is only consulted when no name was found. Its presence alone is
         # tested: it carries no text of its own, so a text filter would reject
         # the very body this distinguishes.
-        if not names and not _find_all_text(
+        if not _find_all_text(
             resp.text, f"GET {path}", _QUICK_PROPERTY_CONTAINER_ELEMENT
         ):
             raise HMCError(
@@ -991,7 +1010,12 @@ class HMCClient(
                 resp.status_code,
                 resp.text,
             )
-        return names, schema_version
+        # Container and no Nickname element at all: the type defines no quick
+        # properties, and that is a fact about the type (ADR 0144). Elements
+        # present but every text empty is the parse-artefact shape instead --
+        # the container holds properties this parse cannot name -- so it reads
+        # as unknown, like a 204.
+        return ([] if not found else None), schema_version
 
     async def search_uom(
         self,

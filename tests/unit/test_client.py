@@ -2676,13 +2676,19 @@ async def test_list_quick_properties_returns_the_response_schema_version(
 
 
 @pytest.mark.asyncio
-async def test_list_quick_properties_204_returns_no_names(mock_hmc):
+async def test_list_quick_properties_204_returns_an_unknown_answer(mock_hmc):
+    """204 is an empty answer, not an error -- and not a fact about the type.
+
+    A 204 carries no container, so nothing in it says the type defines no quick
+    properties; it says only that the HMC sent no body. ADR 0144 returns None
+    there, which the cache reads as "do not validate".
+    """
     mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
         return_value=httpx.Response(204, headers={"X-HMC-Schema-Version": "V1_0"})
     )
 
     async with HMCClient(make_config()) as hmc:
-        assert await hmc.list_quick_properties("ManagedSystem") == ([], "V1_0")
+        assert await hmc.list_quick_properties("ManagedSystem") == (None, "V1_0")
 
 
 @pytest.mark.asyncio
@@ -2745,23 +2751,14 @@ async def test_list_quick_properties_200_without_the_container_raises(mock_hmc):
             _quick_property_entry("ManagedSystem"),
             "a well-formed collection holding no property at all",
         ),
-        # Pins the `if n` filter, which nothing else observes. find_all_text
-        # strips, so both elements arrive as "": without the filter the
-        # comprehension yields ["", ""] rather than [], and the cache stores
-        # frozenset({""}) instead of None -- so every validate=True call on
-        # that client rejects every name for the client's lifetime. The
-        # whitespace element pins the stripping too: a second way to reach the
-        # same empty name.
-        (
-            _quick_property_entry("ManagedSystem", ("", ""), ("   ", "")),
-            "every Nickname present but empty: nothing usable survives the filter",
-        ),
     ],
 )
 async def test_list_quick_properties_empty_set_returns_no_names(mock_hmc, body, reason):
     """A type defining no quick properties is an answer, not an error.
 
     The container is what separates it from the HttpErrorResponse feed above.
+    The empty list is a fact about the type, not an unknown answer (ADR 0144):
+    the test below holds the shape that is not.
     """
     mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
         return_value=httpx.Response(
@@ -2774,6 +2771,32 @@ async def test_list_quick_properties_empty_set_returns_no_names(mock_hmc, body, 
             [],
             "V1_0",
         ), reason
+
+
+@pytest.mark.asyncio
+async def test_list_quick_properties_all_empty_names_return_an_unknown_answer(mock_hmc):
+    """Elements present, every text empty: properties this parse cannot name.
+
+    That is the parse-artefact shape rather than the captured one -- a container
+    holding QuickProperty elements whose names this parse does not read -- so it
+    is unknown, like a 204, and not the empty fact above (ADR 0144).
+
+    Pins the `if n` filter, which nothing else observes. find_all_text strips,
+    so both elements arrive as "": without the filter the comprehension yields
+    ["", ""], a *non-empty* positive set holding only "", which rejects every
+    real name for the client's lifetime. The whitespace element pins the
+    stripping too: a second way to reach the same empty name.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
+        return_value=httpx.Response(
+            200,
+            text=_quick_property_entry("ManagedSystem", ("", ""), ("   ", "")),
+            headers={"X-HMC-Schema-Version": "V1_0"},
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.list_quick_properties("ManagedSystem") == (None, "V1_0")
 
 
 @pytest.mark.asyncio
@@ -2892,11 +2915,28 @@ _VALIDATION_DISCOVERY = f"/rest/api/uom/{_VALIDATION_TYPE}/quick"
 def _mock_validation_routes(router, *, discovery=200, value="running"):
     """Mock the discovery anchor plus a defined and an undefined value read.
 
-    *discovery* is a status code, or an exception to raise as a transport
-    failure. 200 answers with the captured names; 204 answers empty.
+    *discovery* is a status code, an exception to raise as a transport failure,
+    or one of two named empty 200 bodies. 200 answers with the captured names;
+    204 answers empty; ``"empty-set"`` answers with the container and no
+    Nickname element, the shape of a type defining none; ``"empty-elements"``
+    answers with Nickname elements whose texts are all empty, which is the
+    parse-artefact shape rather than a captured one.
     """
     if isinstance(discovery, Exception):
         route_kwargs = {"side_effect": discovery}
+    elif discovery == "empty-set":
+        route_kwargs = {
+            "return_value": httpx.Response(
+                200, text=_quick_property_entry(_VALIDATION_TYPE)
+            )
+        }
+    elif discovery == "empty-elements":
+        route_kwargs = {
+            "return_value": httpx.Response(
+                200,
+                text=_quick_property_entry(_VALIDATION_TYPE, ("", ""), ("   ", "")),
+            )
+        }
     elif discovery == 200:
         body = _quick_property_entry(_VALIDATION_TYPE, *_MANAGED_SYSTEM_NICKNAMES)
         route_kwargs = {"return_value": httpx.Response(200, text=body)}
@@ -2937,6 +2977,31 @@ async def test_get_quick_property_validate_refuses_an_undefined_name(mock_hmc):
     # The defined names are the actionable half: a caller who misspelled one
     # needs to see the spelling that would have worked.
     assert "SystemType" in message
+
+
+@pytest.mark.asyncio
+async def test_get_quick_property_validate_refuses_a_type_defining_nothing(mock_hmc):
+    """A type defining no quick properties refuses every name, locally.
+
+    The container-present empty answer is a fact about the type (ADR 0144), so
+    it is cached as an empty positive set and SystemType -- a name this type
+    really does define at the captured levels -- is refused here too. The value
+    read is mocked and asserted unused: the refusal costs no round trip.
+
+    The message says the type defines none rather than rendering an empty set,
+    which _summarize_names would print as a bare ".".
+    """
+    _, defined, _ = _mock_validation_routes(mock_hmc, discovery="empty-set")
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError) as exc_info:
+            await hmc.get_quick_property(
+                _VALIDATION_TYPE, _VALIDATION_UUID, "SystemType", validate=True
+            )
+
+    assert str(exc_info.value).endswith("The type defines none at all.")
+    assert ": ." not in str(exc_info.value)
+    assert defined.call_count == 0
 
 
 @pytest.mark.asyncio
@@ -3015,8 +3080,14 @@ async def test_get_quick_property_validate_rereads_for_a_new_client(mock_hmc):
 
 @pytest.mark.parametrize(
     "discovery",
-    [500, 400, httpx.ConnectError("refused"), 204],
-    ids=["server-error", "unknown-type", "transport-failure", "empty-204"],
+    [500, 400, httpx.ConnectError("refused"), 204, "empty-elements"],
+    ids=[
+        "server-error",
+        "unknown-type",
+        "transport-failure",
+        "empty-204",
+        "empty-elements",
+    ],
 )
 @pytest.mark.asyncio
 async def test_get_quick_property_validate_degrades_and_caches_the_failure(
@@ -3024,13 +3095,14 @@ async def test_get_quick_property_validate_degrades_and_caches_the_failure(
 ):
     """A discovery read yielding no names leaves get_quick_property working.
 
-    #799's fourth criterion, over the four ways the read can yield nothing.
+    #799's fourth criterion, over the five ways the read can yield nothing.
     ADR 0139 records three V1_20_0 HMCs answering 500 at the sibling
     /operations anchor and ADR 0140 a 400 for NetworkBridge at the root
-    anchor; the 204 is the one that would fail *closed* rather than open,
-    since list_quick_properties returns ([], version) there rather than
-    raising, and an empty positive set rejects every name. The second call
-    pins that the answer is cached: retrying per call is the extra request
+    anchor; a 204 and a container whose Nickname elements are all empty both
+    return (None, version) rather than raising. The all-empty body is the one
+    that would fail *closed* rather than open if the parse read it as
+    authoritative, since an empty positive set rejects every name. The second
+    call pins that the answer is cached: retrying per call is the extra request
     ADR 0141 promises not to make.
     """
     discovery_route, _, undefined = _mock_validation_routes(

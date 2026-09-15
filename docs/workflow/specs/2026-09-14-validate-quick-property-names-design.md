@@ -79,10 +79,12 @@ The six `hmc_mcp.api` exports.
 - A discovery read that succeeds with *fewer* names than the level serves would make `validate=True`
   reject a working name. Accepted: validation is opt-in and the `False` default is the escape. No
   claim is made here about whether any level answers short — this repository has not checked, and
-  the acceptance does not rest on it. The *empty* answer is not accepted, because it is reachable
+  the acceptance does not rest on it. ~~The *empty* answer is not accepted, because it is reachable
   — a 204 returns `([], version)` without raising (`core.py:780-781`, pinned by
   `tests/unit/test_client.py:2623-2629`) — and an empty positive set would reject every name for the
-  client's lifetime. It is degraded from instead, exactly as a failed read is.
+  client's lifetime. It is degraded from instead, exactly as a failed read is.~~ ADR 0144 is where
+  that was taken the other way: an empty answer carrying the container and no name element at all is
+  trusted as a fact about the type, and every other empty answer stays degraded from.
 - `validate=True` with a malformed `uuid` spends one discovery request before raising the
   `ValueError` that `_request_with_uuid_path_arguments` (`core.py:461-464`) raises today at no cost,
   because the name check sits above the path build and the UUID check is downstream of it. Accepted
