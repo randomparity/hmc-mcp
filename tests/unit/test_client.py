@@ -3682,6 +3682,40 @@ async def test_search_uom_validate_caps_the_names_it_enumerates(mock_hmc):
     assert "Param0019" in message
     assert "Param0020" not in message
     assert "and 480 more." in message
-    # The whole set joined would run past 5,000 characters; the cap keeps the
-    # message bounded by _MAX_REPORTED_NAMES rather than by the response size.
+    # The whole set joined would run past 5,000 characters; the count cap keeps
+    # the message bounded by _MAX_REPORTED_NAMES rather than by the set size.
     assert len(message) < 500
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_truncates_a_single_oversized_name(mock_hmc):
+    """The count cap is not a byte bound, so the length cap carries this case.
+
+    One name is never twenty-one, so capping the count alone never engages
+    here: a single element carrying a whole response body renders in full. The
+    element's text is bounded only by HMC_MAX_RESPONSE_BYTES (32 MiB by
+    default), so without a per-name truncation this message is the size of the
+    response. A name this long is already evidence the parse is wrong, which is
+    the premise ADR 0142 records.
+
+    The sibling test above cannot discriminate this: its 500 names are 9
+    characters each, so a byte budget and a count budget behave identically
+    against it.
+    """
+    oversized = "N" * 100_000
+    mock_hmc.get(_SEARCH_DISCOVERY).mock(
+        return_value=httpx.Response(
+            200, text=_search_parameter_entry(_SEARCH_VALIDATION_TYPE, oversized)
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError) as exc_info:
+            await hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+            )
+
+    message = str(exc_info.value)
+    assert "..." in message
+    assert len(message) < 1_000
+    assert oversized not in message

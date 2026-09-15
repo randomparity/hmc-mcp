@@ -18,8 +18,8 @@ Design: [spec](../specs/2026-09-15-discover-search-parameters-design.md),
 Expected implementation size: 600–720 changed lines (M) — derived from the file map below:
 `core.py` gains one public method with a long docstring, one private helper and four `__init__`
 lines (~180); `tests/unit/test_client.py` gains two block-head provenance comments, two constructed-
-body helpers and nineteen test functions, at this repository's observed density of ~26 test lines
-per function (~570); `CHANGELOG.md` gains one entry (~16).
+body helpers and twenty test functions, at this repository's observed density of ~26 test lines
+per function (~600); `CHANGELOG.md` gains one entry (~16).
 
 **This line was corrected after the build, and the reason is recorded rather than hidden.** It first
 read 310–415, taken from the twin PR #805's 230 test lines without scaling for a test count nearly
@@ -99,7 +99,8 @@ between them.
 Produced:
 
 - `_SEARCH_PARAMETER_NAME_ELEMENT: str`
-- `_MAX_REPORTED_NAMES: int` and `_summarize_names(names: frozenset[str]) -> str` — module-level,
+- `_MAX_REPORTED_NAMES: int`, `_MAX_REPORTED_NAME_LENGTH: int` and
+  `_summarize_names(names: frozenset[str]) -> str` — module-level,
   added after branch review: the refusal message renders whatever the discovery read returned, and
   that read's parse is an inference, so an uncapped join is bounded only by
   `HMC_MAX_RESPONSE_BYTES`
@@ -109,8 +110,8 @@ Produced:
 
 **Verification.** Every entry's green command is
 `uv run --no-sync pytest tests/unit/test_client.py -k "search_uom or list_search_parameters" --no-cov -q`,
-and every test is in `tests/unit/test_client.py`. Nineteen test functions are named below: eight
-covering `list_search_parameters` and eleven covering `search_uom`'s pre-flight. The table has twenty-two
+and every test is in `tests/unit/test_client.py`. Twenty test functions are named below: eight
+covering `list_search_parameters` and twelve covering `search_uom`'s pre-flight. The table has twenty-three
 rows because two contracts share `::test_list_search_parameters_reads_both_anchors` and two carry no
 test. The red in each row
 is the one that appears **after** the name under test exists but its behaviour does not — which is
@@ -141,6 +142,7 @@ pre-flight test with `TypeError: search_uom() got an unexpected keyword argument
 | `validate` is keyword-only, default `False` | `focused-test` | `::test_search_uom_validate_is_keyword_only_and_defaults_false`, via `inspect.signature` — a positional parameter fails the `kind` assertion |
 | A cancelled discovery read caches nothing and is retried | `focused-test` | `::test_search_uom_validate_caches_nothing_when_the_read_is_cancelled` — catching `BaseException`, or adding an explicit `asyncio.CancelledError` handler, caches a negative entry and the attempt count drops to 1 |
 | The refusal message caps how many names it enumerates | `focused-test` | `::test_search_uom_validate_caps_the_names_it_enumerates` — an uncapped join, or a wrong remaining count, fails the length and `and N more.` assertions |
+| The refusal message also bounds each name's length | `focused-test` | `::test_search_uom_validate_truncates_a_single_oversized_name` — a count cap alone, a missing ellipsis marker, or a length cap set high enough to be no cap each fail it; the count-cap test above cannot discriminate this, because its names are 9 characters |
 | The HTTP 400 rationale in `search_uom`'s docstring | `task-test-not-applicable` | Prose addressed to a human reader; no executable consumer validates it, and asserting its wording would snapshot prose, which the Global Constraints forbid |
 | The `CHANGELOG.md` entry | `task-test-not-applicable` | `tests/unit/test_changelog.py` binds only the declared `pyproject.toml` version, which this change does not alter; no executable consumer validates an unreleased entry |
 | ADR 0142 is a well-formed numbered record | `focused-test` | `just adr-numbering`, which checks filename, unique number and H1 agreement; it is already green and must stay so |

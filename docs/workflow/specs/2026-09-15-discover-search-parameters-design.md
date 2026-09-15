@@ -116,13 +116,26 @@ degradation promise rather than any numbered criterion of #789. The six `hmc_mcp
   that reason would assume the parse is right, which the first accepted class declines to assume.
   A level answering the query-less root anchor with an instance feed would fill one entry with
   per-instance data up to the configured response ceiling (ADR 0133). The entry still dies with the
-  client; what is *not* accepted is rendering it: `search_uom`'s refusal message enumerates at most
-  `_MAX_REPORTED_NAMES` names and summarizes the rest, so a wrong parse cannot turn one rejection
-  into a response-sized string, nor put operator instance names in it.
+  client; what is *not* accepted is rendering it unbounded. `search_uom`'s refusal message
+  enumerates at most `_MAX_REPORTED_NAMES` names, each truncated to `_MAX_REPORTED_NAME_LENGTH`
+  characters, and summarizes the rest as a count. **Both bounds are needed and neither makes the
+  message private.** A count cap alone is not a byte bound — one element carrying a whole 32 MiB
+  body renders in full, because one name is never twenty-one — which is why the length bound is
+  there. And under a wrong parse the message still discloses up to twenty truncated operator
+  instance names: that is less disclosure than the whole set, not none, and the accepted class is
+  the residue.
 
-**Covered elsewhere.** Path traversal in `property_name`, `resource_type`, `parent_type` or the
-child type: `_reject_dot_segments` (`core.py:115`), which `_request` (`core.py:436`) applies to
-every request, `_request` being the only site that builds or sends one. `parent_uuid` validation:
+**Covered elsewhere.** **Dot-segment** traversal in `property_name`, `resource_type`, `parent_type`
+or the child type: `_reject_dot_segments` (`core.py:115`), which `_request` (`core.py:436`) applies
+to every request, `_request` being the only site that builds or sends one. That guard is specific,
+not general path handling: it refuses `.` and `..` segments in the raw and single-unquoted forms,
+and it does **not** refuse `?` or `#`, so a type string carrying either retargets the GET within
+`/rest/api/uom/` — verified not to permit SSRF, header injection, a different method, or an escape
+above that prefix. The type segments are not percent-encoded, unlike `search_uom`'s
+`property_name`/`property_value`. This is pre-existing and identical at all six interpolation sites
+in this module, is not widened here, and is unreachable from MCP or the CLI for this method; the
+shared decision is a follow-up candidate, recorded rather than closed in this change.
+`parent_uuid` validation:
 `_request_with_uuid_path_arguments` (`core.py:462`). Percent-encoding of the instance-search
 grammar: `search_uom`'s existing `quote(..., safe="")` calls, pinned by
 `tests/unit/test_client.py:824`. Response-body bounding: ADR 0133. MCP and CLI exposure: #792.

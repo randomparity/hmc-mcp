@@ -44,20 +44,33 @@ from .client_users import UsersMixin
 MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
 MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
 
-# How many defined names a rejection message enumerates before summarizing.
-# The set it renders is whatever the discovery read returned, and that read's
-# parse is an inference (ADR 0142): a level answering the query-less /search
-# anchor with an instance feed would fill it with per-instance data bounded
-# only by HMC_MAX_RESPONSE_BYTES, so an uncapped join builds a message the size
-# of the response. Capping keeps the message a diagnostic rather than an
-# amplifier, and keeps operator instance names out of it if the parse is wrong.
+# Bounds on what a rejection message renders. The set it renders is whatever
+# the discovery read returned, and that read's parse is an inference (ADR 0142):
+# a level answering the query-less /search anchor with an instance feed would
+# fill it with per-instance data bounded only by HMC_MAX_RESPONSE_BYTES.
+#
+# Two bounds, because the count alone is not one. Capping the count leaves each
+# name unbounded, and a single element carrying a whole 32 MiB body renders in
+# full without the count cap ever engaging -- one name is not twenty-one. So a
+# name is also truncated: past this many characters it is already evidence the
+# parse is wrong, and no legitimate property name is lost.
+#
+# What the pair buys is a bounded message, not a private one. If the parse is
+# wrong, up to _MAX_REPORTED_NAMES truncated operator instance names still
+# reach the message. That is less disclosure, not none.
 _MAX_REPORTED_NAMES = 20
+_MAX_REPORTED_NAME_LENGTH = 64
 
 
 def _summarize_names(names: frozenset[str]) -> str:
-    """Render *names* for an error message, capped at _MAX_REPORTED_NAMES."""
+    """Render *names* for an error message, bounded in count and in length."""
     ordered = sorted(names)
-    shown = ", ".join(ordered[:_MAX_REPORTED_NAMES])
+    shown = ", ".join(
+        name
+        if len(name) <= _MAX_REPORTED_NAME_LENGTH
+        else f"{name[:_MAX_REPORTED_NAME_LENGTH]}..."
+        for name in ordered[:_MAX_REPORTED_NAMES]
+    )
     remaining = len(ordered) - _MAX_REPORTED_NAMES
     if remaining > 0:
         return f"{shown}, and {remaining} more."
