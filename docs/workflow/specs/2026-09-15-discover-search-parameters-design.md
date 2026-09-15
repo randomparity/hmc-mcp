@@ -123,20 +123,23 @@ degradation promise rather than any numbered criterion of #789. The six `hmc_mcp
   **Six of the eleven captured types answer 200 with a `SearchParameterSet` and no parameters**:
   `ManagementConsole`, `VirtualSwitch`, `VirtualNetwork`, `NetworkBridge`, `LogicalUnit`,
   `SharedProcessorPool`. So the empty answer is the majority firmware case, not a protocol corner.
-  It is still degraded from rather than trusted, because an empty positive set would reject every
+  ~~It is still degraded from rather than trusted, because an empty positive set would reject every
   name for the client's lifetime, and because on an unmeasured level an empty set may be a parse
-  artefact rather than a fact about the type.
-- **`validate=True` performs no check on a type that defines nothing.** A consequence of the entry
-  above, stated separately because it is the one the reader will care about: for those six types
-  the pre-flight is inert and the search still costs the HMC's 500, on precisely the types where a
-  local refusal would be certain rather than probabilistic. Accepted for this change: the direction
-  is fail-open to today's behaviour, no in-repo call site passes `validate=True`, and the API
-  surface discloses it — `search_uom`'s docstring and `CHANGELOG.md` both say a type defining none
-  reads as unknown. Making the check fire there needs a discriminated return separating
+  artefact rather than a fact about the type.~~ ADR 0144 is where that was taken the other way: an
+  empty answer carrying the container and no name element at all is trusted as a fact about the
+  type, and every other empty answer stays degraded from.
+- ~~**`validate=True` performs no check on a type that defines nothing.**~~ A consequence of the
+  entry above, stated separately because it is the one the reader will care about: for those six
+  types the pre-flight is inert and the search still costs the HMC's 500, on precisely the types
+  where a local refusal would be certain rather than probabilistic. Accepted for this change: the
+  direction is fail-open to today's behaviour, no in-repo call site passes `validate=True`, and the
+  API surface discloses it — `search_uom`'s docstring and `CHANGELOG.md` both say a type defining
+  none reads as unknown. Making the check fire there needs a discriminated return separating
   "container present, no parameters" from a 204 or a failure, which buys local refusal on six of
   eleven captured types at the cost of a new way for `validate=True` to reject everything if a
   later level nests its parameters differently. Not taken here; it is a behaviour change beyond
-  what this change was scoped to.
+  what this change was scoped to. **Taken in ADR 0144, not accepted:** that discriminated return
+  is where the check was made to fire, at the cost this entry names.
 - Cache growth is unbounded in the number of distinct `resource_type` values passed. Accepted:
   resource types come from literals in this repository and the dict dies with the client.
   **The per-entry size is bounded by `HMC_MAX_RESPONSE_BYTES`, not by the names being short** —

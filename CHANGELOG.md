@@ -14,7 +14,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   for a resource type, at `/rest/api/uom/{R}/search`, returning them with the response's
   `X-HMC-Schema-Version`. The names are the `ParameterName` texts of the `SearchParameterSet` the
   anchor answers with, captured at `V1_17_0` and `V1_20_0` across eleven types. A type that defines
-  no search parameters returns an empty list — six of the eleven do; a 200 carrying no
+  no search parameters returns an empty list — six of the eleven do; the names are `None` rather
+  than a list when the level's answer is not a fact about the type, which is a 204 or a
+  `SearchParameterSet` whose `ParameterName` elements are all empty (ADR 0144). A 200 carrying no
   `SearchParameterSet` at all raises `HMCError`, as does a level that does not serve the anchor,
   carrying its status. **No captured level serves a child-anchored form:** the reference documents
   `/rest/api/uom/{P}/{UUID}/{C}/search` and the HMC answers it 400 `INVALID_URL` while serving the
@@ -25,9 +27,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   name the resource type does not define raises `ValueError` before any request is sent, checked
   against the names `list_search_parameters` reports; those are read once per type and cached for
   the client's lifetime, and a level where the read yields no names validates nothing rather than
-  raising — as does a type that defines none. Off by default, because the client is constructed per
-  tool call, so the cache would rarely be reused. The round trip it saves is a 500, not the 400 the
-  design was written against (ADR 0142, #789).
+  raising. A type that defines none is refused locally instead — every name of it, with a message
+  saying so (ADR 0144). Off by default, because the client is constructed per tool call, so the
+  cache would rarely be reused. The round trip it saves is a 500, not the 400 the design was
+  written against (ADR 0142, #789).
 
 - `HMCClient.get_quick_property` takes a keyword-only `validate=False`. With `validate=True` an
   unknown property name raises `ValueError` before any request is sent, checked against the names

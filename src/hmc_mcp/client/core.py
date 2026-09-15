@@ -1025,18 +1025,25 @@ class HMCClient(
         transient one therefore leaves validation off for that type until a new
         client is constructed.
 
-        A type defining no search parameters reads as unknown, not as "rejects
-        everything": ``ManagementConsole`` answers the anchor with an empty
-        set, and validating against an empty positive set would refuse every
-        property name for the client's lifetime (ADR 0142).
+        A type defining no search parameters is refused locally, every name of
+        it: ``ManagementConsole`` answers the anchor with the container and no
+        parameter, which is a fact about the type rather than a failed read,
+        and six of the eleven captured types answer that way (ADR 0144). A 204,
+        a failed read, and a container carrying no usable name still validate
+        nothing.
         """
         _reject_unknown_uom_type("resource_type", resource_type)
         if validate:
             defined = await self._defined_search_parameter_names(resource_type)
             if defined is not None and property_name not in defined:
+                detail = (
+                    f"Defined names: {_summarize_names(defined)}"
+                    if defined
+                    else "The type defines none at all."
+                )
                 raise ValueError(
                     f"{resource_type} defines no search parameter named "
-                    f"{property_name!r}. Defined names: {_summarize_names(defined)}"
+                    f"{property_name!r}. {detail}"
                 )
         encoded_property = quote(property_name, safe="")
         encoded_value = quote(property_value, safe="")
@@ -1051,7 +1058,7 @@ class HMCClient(
 
     async def list_search_parameters(
         self, resource_type: str
-    ) -> tuple[list[str], str | None]:
+    ) -> tuple[list[str] | None, str | None]:
         """GET the search-parameter names a type defines, with the schema version.
 
         Reads ``/rest/api/uom/{R}/search``. This is the type-anchored anchor,
@@ -1086,16 +1093,23 @@ class HMCClient(
         search parameter -- ``Cluster`` defines exactly one, so that collapse
         is reachable, not theoretical. An empty name is dropped.
 
-        **A 200 with no name is not always an error.** A body carrying
-        ``<SearchParameterSet>`` and no ``ParameterName`` is a type that
-        defines no search parameters, and returns ``([], version)``:
-        ``ManagementConsole`` answers exactly that at both captured levels. A
-        200 carrying neither raises ``HMCError``, because the HMC is known to
-        answer 200 with an ``HttpErrorResponse`` feed and without the container
-        that is indistinguishable from a type defining nothing.
+        **A 200 with no name is not always an error, and the empty answers are
+        not all the same answer.** A body carrying ``<SearchParameterSet>`` and
+        no ``ParameterName`` element at all is a type that defines no search
+        parameters, and returns ``([], version)``: ``ManagementConsole``
+        answers exactly that at both captured levels, and that emptiness is a
+        fact about the type (ADR 0144). A body carrying ``ParameterName``
+        elements whose texts are all empty holds parameters this parse cannot
+        name, so it returns ``(None, version)`` as a 204 does. A 200 carrying
+        no usable name and no container raises ``HMCError``, because the HMC is
+        known to answer 200 with an ``HttpErrorResponse`` feed and without the
+        container that is indistinguishable from a type defining nothing.
 
         Returns the names paired with the response's ``X-HMC-Schema-Version``,
-        ``None`` when the HMC sends none. That value is verbatim and is not
+        with a first element of ``None`` when the level's answer is not a fact
+        about the type -- a 204, or a container with no usable name -- and a
+        list, empty or not, when it is. The version is ``None`` when the HMC
+        sends none; that value is verbatim and is not
         guaranteed to hold a version: ADR 0139 and ADR 0140 both record the HMC
         echoing the request's ``X-Audit-Memento`` into it, and the capture
         confirms it here -- every 200 came back with this client's own memento
@@ -1119,21 +1133,20 @@ class HMCClient(
         resp = await self._request("GET", path, headers={"Accept": "*/*"})
         schema_version: str | None = resp.headers.get("X-HMC-Schema-Version")
         if resp.status_code == 204:
-            return [], schema_version
+            return None, schema_version
         if resp.status_code != 200:
             raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
-        names = [
-            n
-            for n in _find_all_text(
-                resp.text, f"GET {path}", _SEARCH_PARAMETER_NAME_ELEMENT
-            )
-            if n
-        ]
+        found = _find_all_text(
+            resp.text, f"GET {path}", _SEARCH_PARAMETER_NAME_ELEMENT
+        )
+        names = [n for n in found if n]
+        if names:
+            return names, schema_version
         # The container separates "defines none" from "not this shape at all",
         # and is only consulted when no name was found. Its presence alone is
         # tested: it carries no text of its own, so a text filter would reject
         # the very body this distinguishes.
-        if not names and not _find_all_text(
+        if not _find_all_text(
             resp.text, f"GET {path}", _SEARCH_PARAMETER_CONTAINER_ELEMENT
         ):
             raise HMCError(
@@ -1142,7 +1155,12 @@ class HMCClient(
                 resp.status_code,
                 resp.text,
             )
-        return names, schema_version
+        # Container and no ParameterName element at all: the type defines no
+        # search parameters, and that is a fact about the type (ADR 0144).
+        # Elements present but every text empty is the parse-artefact shape
+        # instead -- the container holds parameters this parse cannot name --
+        # so it reads as unknown, like a 204.
+        return ([] if not found else None), schema_version
 
     async def _defined_search_parameter_names(
         self, resource_type: str
@@ -1151,10 +1169,11 @@ class HMCClient(
 
         Reads the root ``/search`` anchor once per type per client and caches
         the answer, the failure included: a level where discovery does not work
-        yields None, which callers read as "do not validate" rather than as "no
-        parameters" (ADR 0142). A transport failure is cached as durably as a
-        firmware-level one, so a transient one leaves validation off for this
-        type until a new client is constructed.
+        yields None, which callers read as "do not validate", while a type that
+        defines no search parameters yields the empty positive set, which they
+        read as "refuses every name" (ADR 0144). A transport failure is cached
+        as durably as a firmware-level one, so a transient one leaves validation
+        off for this type until a new client is constructed.
         """
         if resource_type in self._search_parameter_names:
             return self._search_parameter_names[resource_type]
@@ -1171,13 +1190,13 @@ class HMCClient(
                 # degrades rather than raising so a level that does not serve
                 # the anchor -- or a wrong parsed element -- cannot break
                 # search_uom, which an opt-in pre-flight must not do.
-                names = []
-            # An empty answer is "unknown", never "defines nothing": a 204 and
-            # a captured empty SearchParameterSet both return ([], version)
-            # without raising, and an empty positive set would reject every
-            # property for this client's lifetime. ManagementConsole makes this
-            # reachable on real firmware rather than only through a 204.
-            defined = frozenset(names) if names else None
+                names = None
+            # None is the level's answer not being a fact about the type: a 204, a
+            # failed read, or a container whose ParameterName elements are all
+            # empty. An empty list is a fact -- the six captured types defining
+            # nothing -- and caching it as an empty positive set is what makes
+            # validate=True refuse locally there (ADR 0144).
+            defined = None if names is None else frozenset(names)
             self._search_parameter_names[resource_type] = defined
             return defined
 

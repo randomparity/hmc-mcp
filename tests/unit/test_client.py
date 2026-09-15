@@ -3409,14 +3409,19 @@ async def test_list_search_parameters_returns_the_response_schema_version(
 
 
 @pytest.mark.asyncio
-async def test_list_search_parameters_204_returns_no_names(mock_hmc):
-    """204 is an empty answer, not an error."""
+async def test_list_search_parameters_204_returns_an_unknown_answer(mock_hmc):
+    """204 is an empty answer, not an error -- and not a fact about the type.
+
+    A 204 carries no container, so nothing in it says the type defines no search
+    parameters; it says only that the HMC sent no body. ADR 0144 returns None
+    there, which the cache reads as "do not validate".
+    """
     mock_hmc.get("/rest/api/uom/ManagedSystem/search").mock(
         return_value=httpx.Response(204, headers={"X-HMC-Schema-Version": "V1_0"})
     )
 
     async with HMCClient(make_config()) as hmc:
-        assert await hmc.list_search_parameters("ManagedSystem") == ([], "V1_0")
+        assert await hmc.list_search_parameters("ManagedSystem") == (None, "V1_0")
 
 
 @pytest.mark.asyncio
@@ -3448,18 +3453,6 @@ async def test_list_search_parameters_200_without_the_container_raises(mock_hmc)
             _search_parameter_entry(_EMPTY_SET_TYPE),
             "the captured ManagementConsole answer: a set with no parameters",
         ),
-        # Pins the `if n` filter, which nothing else observes. find_all_text
-        # strips, so both elements arrive as "": without the filter the
-        # comprehension yields ["", ""] rather than [], and the cache stores
-        # frozenset({""}) instead of None -- so every validate=True call on
-        # that client rejects every property for the client's lifetime. That is
-        # the one failure class the design's failure model refuses to accept.
-        # The whitespace element pins the stripping too: a second way to reach
-        # the same empty name.
-        (
-            _search_parameter_entry(_EMPTY_SET_TYPE, "", "   "),
-            "a 200 whose matched elements are all empty",
-        ),
     ],
 )
 async def test_list_search_parameters_empty_set_returns_no_names(
@@ -3469,7 +3462,9 @@ async def test_list_search_parameters_empty_set_returns_no_names(
 
     ManagementConsole was captured answering the anchor 200 with a
     SearchParameterSet carrying no SearchParameters child at all. The container
-    is what separates it from the HttpErrorResponse feed above.
+    is what separates it from the HttpErrorResponse feed above. The empty list
+    is a fact about the type, not an unknown answer (ADR 0144): the test below
+    holds the shape that is not.
     """
     mock_hmc.get(f"/rest/api/uom/{_EMPTY_SET_TYPE}/search").mock(
         return_value=httpx.Response(
@@ -3479,6 +3474,34 @@ async def test_list_search_parameters_empty_set_returns_no_names(
 
     async with HMCClient(make_config()) as hmc:
         assert await hmc.list_search_parameters(_EMPTY_SET_TYPE) == ([], "V1_0"), reason
+
+
+@pytest.mark.asyncio
+async def test_list_search_parameters_all_empty_names_return_an_unknown_answer(
+    mock_hmc,
+):
+    """Elements present, every text empty: parameters this parse cannot name.
+
+    That is the parse-artefact shape rather than the captured one -- a container
+    holding SearchParameters whose names this parse does not read -- so it is
+    unknown, like a 204, and not the empty fact above (ADR 0144).
+
+    Pins the `if n` filter, which nothing else observes. find_all_text strips,
+    so both elements arrive as "": without the filter the comprehension yields
+    ["", ""], a *non-empty* positive set holding only "", which rejects every
+    real name for the client's lifetime. The whitespace element pins the
+    stripping too: a second way to reach the same empty name.
+    """
+    mock_hmc.get(f"/rest/api/uom/{_EMPTY_SET_TYPE}/search").mock(
+        return_value=httpx.Response(
+            200,
+            text=_search_parameter_entry(_EMPTY_SET_TYPE, "", "   "),
+            headers={"X-HMC-Schema-Version": "V1_0"},
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.list_search_parameters(_EMPTY_SET_TYPE) == (None, "V1_0")
 
 
 @pytest.mark.asyncio
@@ -3528,11 +3551,27 @@ _SEARCH_RESULT_FEED = (
 def _mock_search_validation_routes(router, *, discovery=200):
     """Mock the discovery anchor plus a defined and an undefined instance search.
 
-    *discovery* is a status code, or an exception to raise as a transport
-    failure. 200 answers with the captured names; 204 answers empty.
+    *discovery* is a status code, an exception to raise as a transport failure,
+    or one of two named empty 200 bodies. 200 answers with the captured names;
+    204 answers empty; ``"empty-set"`` answers with the container and no
+    ParameterName element, the captured shape of a type defining none;
+    ``"empty-elements"`` answers with ParameterName elements whose texts are all
+    empty, which is the parse-artefact shape rather than a captured one.
     """
     if isinstance(discovery, Exception):
         route_kwargs = {"side_effect": discovery}
+    elif discovery == "empty-set":
+        route_kwargs = {
+            "return_value": httpx.Response(
+                200, text=_search_parameter_entry(_SEARCH_VALIDATION_TYPE)
+            )
+        }
+    elif discovery == "empty-elements":
+        route_kwargs = {
+            "return_value": httpx.Response(
+                200, text=_search_parameter_entry(_SEARCH_VALIDATION_TYPE, "", "   ")
+            )
+        }
     elif discovery == 200:
         body = _search_parameter_entry(
             _SEARCH_VALIDATION_TYPE, *_LOGICAL_PARTITION_SEARCH_PARAMETERS
@@ -3568,6 +3607,32 @@ async def test_search_uom_validate_refuses_an_undefined_property(mock_hmc):
             )
 
     assert undefined.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_refuses_a_type_defining_nothing(mock_hmc):
+    """A type defining no search parameters refuses every name, locally.
+
+    The container-present empty answer is a fact about the type (ADR 0144), so
+    it is cached as an empty positive set and PartitionName -- a name this type
+    really does define at the captured levels -- is refused here too. The
+    instance search is mocked and asserted unused: the round trip this
+    pre-flight exists to save is captured as an HTTP 500.
+
+    The message says the type defines none rather than rendering an empty set,
+    which _summarize_names would print as a bare ".".
+    """
+    _, defined, _ = _mock_search_validation_routes(mock_hmc, discovery="empty-set")
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError) as exc_info:
+            await hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+            )
+
+    assert str(exc_info.value).endswith("The type defines none at all.")
+    assert ": ." not in str(exc_info.value)
+    assert defined.call_count == 0
 
 
 @pytest.mark.asyncio
@@ -3669,15 +3734,16 @@ async def test_search_uom_validate_rereads_for_a_new_client(mock_hmc):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "discovery",
-    [500, 400, httpx.ConnectError("connection refused"), 204],
-    ids=["500", "400", "transport", "204"],
+    [500, 400, httpx.ConnectError("connection refused"), 204, "empty-elements"],
+    ids=["500", "400", "transport", "204", "empty-elements"],
 )
 async def test_search_uom_validate_degrades_and_caches_the_failure(mock_hmc, discovery):
     """A read yielding no names validates nothing, and is cached, not retried.
 
-    All four ways it can happen: a 5xx and a 4xx raise HMCError, a connection
-    failure raises HMCTransportError which subclasses it, and a 204 returns
-    ([], version) without raising at all. Each degrades to today's unvalidated
+    All five ways it can happen: a 5xx and a 4xx raise HMCError, a connection
+    failure raises HMCTransportError which subclasses it, and a 204 and a
+    container whose ParameterName elements are all empty both return
+    (None, version) without raising. Each degrades to today's unvalidated
     behaviour -- so the search runs, including for a property the type does not
     define -- and each is cached, so the second call issues no second read.
     """
