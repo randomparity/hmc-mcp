@@ -727,8 +727,11 @@ class HMCClient(
         Reads ``/rest/api/uom/{R}/quick``, or ``/rest/api/uom/{P}/{UUID}/{C}/quick``
         when both *parent_type* and *parent_uuid* are given; supplying exactly one
         of them is a caller error. *all_properties* appends ``/all``, a form the
-        reference distinguishes from the bare one only by wording -- treat the two
-        as interchangeable until a live run settles the difference.
+        reference distinguishes from the bare one only by wording. Whether the HMC
+        distinguishes them -- and whether it distinguishes this lowercase ``/all``
+        from the capitalized ``/quick/All`` this client sends elsewhere -- is
+        unverified (ADR 0140), so prefer the bare form until a live run settles it.
+        On the child anchor the ``/all`` form is not in the reference at all.
 
         Returns the names paired with the response's ``X-HMC-Schema-Version``,
         ``None`` when the HMC sends none, with the same caveats ``list_operations``

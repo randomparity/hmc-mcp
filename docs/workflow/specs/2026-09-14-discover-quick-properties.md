@@ -50,7 +50,10 @@ and `parent_type` arrive from program text, never from HMC-facing untrusted inpu
   documents them as returning defined names; ADR 0140's Context records the case asymmetry behind
   that. Accepted because the strict parse makes the branch loud — a non-string element raises
   `HMCError` carrying the status, body and observed shape, so no caller receives objects labelled as
-  names. Confirmation is owed; see *Covered elsewhere*.
+  names. **What the parse guarantees is array-of-strings, not that the strings are names:** a body
+  of instance identifiers or `SystemName` values would satisfy it and be returned. That residue is
+  what the live confirmation below has to close, and it is why that confirmation records values
+  rather than shape. Confirmation is owed; see *Covered elsewhere*.
 - A `resource_type` or `parent_type` containing extra path separators reaches a different uom GET
   path. Accepted: identical to the existing `list_uom`, `search_uom`, `list_child` and
   `list_operations` contracts, the actors above are in-process, the reach is limited to GET, and
@@ -67,7 +70,10 @@ and `parent_type` arrive from program text, never from HMC-facing untrusted inpu
 - Response-size bounding — `_read_bounded_response` and ADR 0133, on every request this makes.
 - Live confirmation of both anchors against a real HMC: **owned by no issue**. It is performed on
   this PR by the operator on a separate host, as `/operations` was confirmed on PR #797, and the
-  findings are recorded on the PR and in ADR 0140.
+  findings are recorded on the PR and in ADR 0140. It must record the **first few returned values**
+  from each anchor, not merely that a list of strings came back: a list of instance identifiers
+  passes the parse, so a run reporting only shape would record this assumption as settled while
+  confirming the wrong thing.
 
 ## Threat model
 
