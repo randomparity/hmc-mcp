@@ -84,11 +84,17 @@ def _summarize_names(names: frozenset[str]) -> str:
 
 
 # The element whose text holds a search-parameter name at the /search discovery
-# anchors. INFERRED from the sibling /quick anchor, never captured from
-# firmware -- ADR 0142 records the inference's one ground and the three
-# properties that bound it. This constant is the single point of change when a
-# live round settles the shape.
-_SEARCH_PARAMETER_NAME_ELEMENT = "Nickname"
+# anchors, and the container the anchor answers with. CAPTURED at V1_17_0 and
+# V1_20_0 (PR #807); both replace the pre-capture inference, which read
+# <Nickname> from a <SearchParameter_Collection> and was wrong on both counts.
+#
+# The container matters to the parse, not just to the record: a 200 carrying it
+# with no SearchParameters child is a type that defines no search parameters --
+# ManagementConsole does at both levels -- which is a different answer from a
+# 200 carrying an HttpErrorResponse feed. Without the container test the two
+# are indistinguishable and the legitimate one has to raise.
+_SEARCH_PARAMETER_NAME_ELEMENT = "ParameterName"
+_SEARCH_PARAMETER_CONTAINER_ELEMENT = "SearchParameterSet"
 
 
 async def _close_response(response: httpx.Response, primary: BaseException | None) -> None:
@@ -918,12 +924,15 @@ class HMCClient(
     ) -> list[dict[str, Any]]:
         """GET /rest/api/uom/{ResourceType}/search/({Property}=={Value}).
 
-        The HMC answers an unsupported search property with **HTTP 400**: the
-        property names a search may use are per type, published at the
-        ``/search`` discovery anchor, and a name the type does not define is
-        rejected at the URL rather than returning an empty feed. That round
-        trip is the cost this method's pre-flight exists to remove, and it is
-        recorded here so the reason survives the code.
+        The HMC rejects an unsupported search property rather than returning an
+        empty feed: the property names a search may use are per type and
+        published at the ``/search`` discovery anchor. **The captured status is
+        500, not the 400 this was written against** -- V1_17_0 and V1_20_0 both
+        answer ``ReasonCode: Unknown internal error.`` with the message *The
+        left hand side of the expression is not a registered search parameter*.
+        A 500 is a worse round trip than a 400, not a better one, which is the
+        cost this method's pre-flight exists to remove; both statuses surface
+        as ``HMCError``, so only the reason recorded here changes.
 
         With *validate* the name is checked against the ones the type defines
         before anything is sent, raising ``ValueError`` on a name the HMC does
@@ -937,9 +946,10 @@ class HMCClient(
         transient one therefore leaves validation off for that type until a new
         client is constructed.
 
-        **The discovery read's parse is not yet confirmed against firmware.**
-        ``_SEARCH_PARAMETER_NAME_ELEMENT`` is an inference; ADR 0142 records
-        what that costs. Validation is opt-in partly because of it.
+        A type defining no search parameters reads as unknown, not as "rejects
+        everything": ``ManagementConsole`` answers the anchor with an empty
+        set, and validating against an empty positive set would refuse every
+        property name for the client's lifetime (ADR 0142).
         """
         if validate:
             defined = await self._defined_search_parameter_names(resource_type)
@@ -974,45 +984,58 @@ class HMCClient(
         error. This is the type-anchored anchor, not the instance search
         ``search_uom`` builds -- the names it returns are what that search's
         property argument may be, which the HMC otherwise answers with an
-        HTTP 400.
+        HTTP 500 (captured; see ``search_uom``).
 
-        **The response shape is inferred, not observed.** No firmware has been
-        seen answering this anchor, and the vendored reference corpus documents
-        the path and never the body -- no content type, no example, no element
-        vocabulary. This reads the texts of
-        ``_SEARCH_PARAMETER_NAME_ELEMENT``, document-wide, on the strength of
-        the sibling ``/quick`` anchor returning its names that way and the
-        corpus tabling a type's searchable properties under a quick-property
-        heading. ADR 0142 records that inference and bounds it; until a live
-        round confirms it, treat a working call as unproven rather than as
-        evidence the parse is right.
+        **The response shape is captured, at V1_17_0 and V1_20_0.** The root
+        anchor answers 200 ``application/atom+xml`` with an ``<entry>`` whose
+        content is a ``<SearchParameterSet>``: an ``<ElementName>`` naming the
+        type, then a ``<SearchParameters>`` holding one ``<SearchParameter>``
+        per property, each with ``<ParameterName>``, ``<Comparator>`` and
+        ``<XPath>``. The names are the ``ParameterName`` texts. The vendored
+        corpus documents the path and never the body, so this shape comes from
+        the capture on PR #807 and nowhere else.
 
         They are read document-wide rather than through ``_parse_feed``, which
         flattens an entry to a dict and collapses a repeated element to a bare
         value when the HMC sends exactly one -- the hazard ADR 0139 recorded
         for ``OperationSet``, and reachable here for any type defining a single
-        search parameter. An empty name is dropped; a 200 yielding no name at
-        all raises ``HMCError``, because the HMC is known to answer 200 with an
-        ``HttpErrorResponse`` feed and that is indistinguishable to a caller
-        from a type defining nothing.
+        search parameter -- ``Cluster`` defines exactly one, so that collapse
+        is reachable, not theoretical. An empty name is dropped.
+
+        **A 200 with no name is not always an error.** A body carrying
+        ``<SearchParameterSet>`` and no ``ParameterName`` is a type that
+        defines no search parameters, and returns ``([], version)``:
+        ``ManagementConsole`` answers exactly that at both captured levels. A
+        200 carrying neither raises ``HMCError``, because the HMC is known to
+        answer 200 with an ``HttpErrorResponse`` feed and without the container
+        that is indistinguishable from a type defining nothing.
 
         Returns the names paired with the response's ``X-HMC-Schema-Version``,
         ``None`` when the HMC sends none. That value is verbatim and is not
         guaranteed to hold a version: ADR 0139 and ADR 0140 both record the HMC
-        echoing the request's ``X-Audit-Memento`` into it, so callers must not
-        parse it as a level.
+        echoing the request's ``X-Audit-Memento`` into it, and the capture
+        confirms it here -- every 200 came back with this client's own memento
+        in that header, never a level. Callers must not parse it as one.
 
-        Sends ``Accept: */*``. With no observed content type for this anchor,
-        it is the one Accept that cannot fail negotiation; a typed uom Accept
-        would be a second guess stacked on the first. A firmware level
-        insisting on one answers 406, which surfaces as ``HMCError``.
+        Sends ``Accept: */*``. The captured content type is
+        ``application/atom+xml``, and a typed uom Accept was answered 200 with
+        a byte-identical body, so the choice is no longer load-bearing; it is
+        kept because ``*/*`` is the one Accept that cannot fail negotiation on
+        an unmeasured level. A level insisting on one answers 406, which
+        surfaces as ``HMCError``.
 
         A type that does not serve the anchor asked for surfaces as
         ``HMCError`` carrying that status. An unrecognised type is rejected at
-        the URL with **400 ``INVALID_URL``, not 404** (ADR 0139, observed at
-        V1_17_0 for the sibling anchor), and the sibling ``/quick`` anchor has
-        a type answering 400 at the root and 200 under a parent (ADR 0140), so
-        neither status implies the anchor is missing everywhere.
+        the URL with **400 ``INVALID_URL``, not 404** -- captured here, not
+        merely predicted from ADR 0139.
+
+        **The child anchor answered 400 ``INVALID_URL`` at both captured
+        levels** for ``ManagedSystem``/``LogicalPartition``, so *parent_type*
+        and *parent_uuid* are unproven surface: the corpus documents the path
+        grammar, and no level yet observed serves it. The parameters are kept
+        because the sibling ``/quick`` anchor has a type answering 400 at the
+        root and 200 under a parent (ADR 0140), so one pair on two levels does
+        not establish the form is absent everywhere. Expect ``HMCError``.
         """
         uuid_path_arguments: dict[str, str] = {}
         if parent_type is not None and parent_uuid is not None:
@@ -1044,10 +1067,16 @@ class HMCClient(
             )
             if n
         ]
-        if not names:
+        # The container separates "defines none" from "not this shape at all",
+        # and is only consulted when no name was found. Its presence alone is
+        # tested: it carries no text of its own, so a text filter would reject
+        # the very body this distinguishes.
+        if not names and not _find_all_text(
+            resp.text, f"GET {path}", _SEARCH_PARAMETER_CONTAINER_ELEMENT
+        ):
             raise HMCError(
-                f"GET {path} returned no {_SEARCH_PARAMETER_NAME_ELEMENT} element; "
-                "expected the search-parameter names the type defines",
+                f"GET {path} returned no {_SEARCH_PARAMETER_CONTAINER_ELEMENT} "
+                "element; expected the search parameters the type defines",
                 resp.status_code,
                 resp.text,
             )
@@ -1081,9 +1110,11 @@ class HMCClient(
                 # the anchor -- or a wrong parsed element -- cannot break
                 # search_uom, which an opt-in pre-flight must not do.
                 names = []
-            # An empty answer is "unknown", never "defines nothing": a 204
-            # returns ([], version) without raising, and an empty positive set
-            # would reject every property for this client's lifetime.
+            # An empty answer is "unknown", never "defines nothing": a 204 and
+            # a captured empty SearchParameterSet both return ([], version)
+            # without raising, and an empty positive set would reject every
+            # property for this client's lifetime. ManagementConsole makes this
+            # reachable on real firmware rather than only through a 204.
             defined = frozenset(names) if names else None
             self._search_parameter_names[resource_type] = defined
             return defined

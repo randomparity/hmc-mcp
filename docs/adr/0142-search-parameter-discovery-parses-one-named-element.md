@@ -12,8 +12,8 @@ PR #800, which was closed unmerged) and #799 landed the opt-in validation wiring
 ADR 0141). Those two
 records settle most of the shape. Two questions are this one's.
 
-**The response body is unknown, and this repository has never spoken this endpoint.** The vendored
-reference corpus carries the path grammar for the root and child anchors at
+**The response body was unknown when this was written, and the corpus still does not carry it.**
+The vendored reference corpus carries the path grammar for the root and child anchors at
 `docs/refs/hmc-rest-api-p10/000-hmc-rest-apis.md:67-68` and
 `docs/refs/hmc-rest-api-p11/000-hmc-rest-apis.md:67-68,84-85`, and per-type prose pointing at the
 anchor at `docs/refs/hmc-rest-api-p11/164-managed-system.md:100` and
@@ -25,6 +25,11 @@ the last time a discovery read was written against that gap — a green, mutatio
 five-times-reviewed method that could not work on any firmware ever observed — and names #789 as
 one of three siblings queued to hit the same wall.
 
+**A live capture then settled it, and this record was revised against that capture.** The operator
+ran the protocol on PR #807 against Power HMCs at `V1_17_0` and `V1_20_0`. The decision below is
+what the capture supports; the inference it replaces is retained where it explains a cost, because
+the gap between the two is the only calibration datum this repository has for the next anchor.
+
 **Whether validating is the default.** `search_uom` is reachable through `HMCClient`, one of
 ADR 0118's six `hmc_mcp.api` facade names, and has six in-repo call sites.
 
@@ -32,42 +37,43 @@ ADR 0118's six `hmc_mcp.api` facade names, and has six in-repo call sites.
 **One named element, isolated.** `list_search_parameters` reads the texts of a single element,
 document-wide, through the existing `client_parse._find_all_text` — the same parse ADR 0140 chose
 for `/quick`, for the same reason: `_parse_feed`'s `element_to_dict` collapses a repeated element to
-a bare value when the HMC sends exactly one. The element name is a module-level constant,
-`_SEARCH_PARAMETER_NAME_ELEMENT = "Nickname"`, and that constant is the design's single point of
-change when firmware settles the question.
+a bare value when the HMC sends exactly one — and `Cluster` defines exactly one search parameter,
+so that collapse is reachable rather than theoretical. The element name is a module-level constant,
+`_SEARCH_PARAMETER_NAME_ELEMENT = "ParameterName"`.
 
-`Nickname` is an **inference, not a capture**, resting on one checkable ground: it is the
-name-bearing element FW950 returns from the sibling `/quick` discovery anchor, and the corpus puts
-a type's searchable properties and its quick properties under one heading —
-`docs/refs/hmc-rest-api-p11/managed-system/165-logical-partition.md:85-98` points at the `/search`
-anchor and then tables the properties under the heading `Quick property`, as does its P10 twin
-`.../managed-system/145-logical-partition.md`. That is prose, not a response body. It is recorded
-here as unverified so that no later reader mistakes it for observed behaviour.
+**The captured shape.** Both levels answer the root anchor 200 `application/atom+xml` with an
+`<entry>` whose content is a `<SearchParameterSet>`: an `<ElementName>` naming the type, then a
+`<SearchParameters>` holding one `<SearchParameter>` per property, each carrying
+`<ParameterName>`, `<Comparator>` and `<XPath>`. The names are the `ParameterName` texts.
 
-Three properties bound the inference, and together they are why shipping it is acceptable:
+**A second constant, `_SEARCH_PARAMETER_CONTAINER_ELEMENT = "SearchParameterSet"`, is consulted
+only when no name was found.** `ManagementConsole` answers the anchor 200 with a
+`SearchParameterSet` carrying no `SearchParameters` child at all — a type that defines no search
+parameters — and that is a legitimate answer returning `([], version)`, not an error. A 200
+carrying neither the names nor the container still raises `HMCError`, because the HMC is known to
+answer 200 with an `HttpErrorResponse` feed and without the container the two are
+indistinguishable. Before the capture this distinction could not be drawn and every nameless 200
+raised; the empty case was believed unreachable.
 
-- **A wrong guess that matches nothing fails loudly.** A 200 yielding no name raises `HMCError`
-  naming the element that was looked for, exactly as `list_quick_properties` does and for the same
-  stated reason — the HMC is known to answer 200 with an `HttpErrorResponse` feed, which is
-  indistinguishable to a caller from a type defining nothing. That failure is a diagnostic naming
-  its own fix. **This property is bounded and does not cover every wrong guess:** an element name
-  that matches *something else* in the body returns a plausible wrong set, which reaches an
-  opted-in caller as a `ValueError` rejecting a legitimate property, not through the degradation
-  path below. The spec's failure model accepts that case on its own grounds — validation is opt-in
-  — and only the live capture detects it.
-- **A wrong guess cannot break a caller who did not opt in.** `validate` defaults to `False`, and
-  for an opted-in caller the degradation rule below turns a zero-match `HMCError` into today's
-  unvalidated behaviour.
-- **The fix is one constant and the fixtures — when the difference is only the element name.** No
-  control flow, no caller and no signature depends on that name, so that case really is a one-line
-  correction. It is not the only way the guess can be wrong, and this repository has already lived
-  the others: ADR 0140's first live round killed both of its assumptions and needed a new
-  `xmlutil.find_all_text` helper, and its second found the real document root was `<entry>` rather
-  than the guessed `<feed>`. A different container, a nesting that needs scoping to avoid
-  colliding with instance data, or a non-element-text encoding each cost a parse rewrite rather
-  than a constant edit. The corpus constrains this anchor even less than it constrained `/quick` —
-  it names neither the container nor any element — so that is the honest upper bound on the
-  follow-up.
+### What the inference cost, recorded for the next anchor
+
+The pre-capture decision read `<Nickname>` from a `<SearchParameter_Collection>`, inferred from the
+sibling `/quick` anchor and from the corpus tabling a type's searchable properties under a
+`Quick property` heading. **Both halves were wrong**, and the three properties this record gave for
+why shipping the inference was acceptable held unevenly:
+
+- **"A wrong guess that matches nothing fails loudly"** — held exactly. `Nickname` appears nowhere
+  in the captured body, so every call would have raised `HMCError` naming the element it looked
+  for. The designed loud failure is what the capture would have produced in the field.
+- **"A wrong guess cannot break a caller who did not opt in"** — held. `validate` defaults to
+  `False` and the degradation rule turns the zero-match `HMCError` into unvalidated behaviour.
+- **"The fix is one constant and the fixtures"** — **did not hold.** That property was explicitly
+  conditioned on the difference being only the element name, and it was not: the container differed
+  too, which this record named as the case costing "a parse rewrite rather than a constant edit".
+  The correction was the two constants, a new container branch with its own error message, and
+  every fixture — not a one-line edit. The pessimistic branch of the stated upper bound is the one
+  that happened, on the anchor the corpus constrained least. Treat that as the expected outcome for
+  the remaining unspoken anchors, not the unlucky one.
 
 **Validation is opt-in.** `search_uom` gains one keyword-only parameter, `validate: bool = False`.
 The default is unchanged behaviour. When `validate=True`, the client reads the names once per
@@ -84,9 +90,10 @@ carrying no names, which is what a 204 returns. An empty answer is read as "the 
 never as "the type defines nothing". This is ADR 0141's cache decision applied unchanged to a second
 method; see that record for the reasoning, which is not repeated here.
 
-`Accept: */*` is sent, as both sibling discovery reads send. With no known content type for this
-anchor, it is the one Accept that cannot fail negotiation; a typed uom Accept would be a second
-guess stacked on the first.
+`Accept: */*` is sent, as both sibling discovery reads send. The captured content type is
+`application/atom+xml`, and the capture also sent `application/atom+xml; type=feed` and got 200
+with a byte-identical body — so the choice is no longer load-bearing at these levels. It is kept
+because `*/*` is the one Accept that cannot fail negotiation on a level nobody has measured.
 
 ## Consequences
 `search_uom`'s default behaviour is unchanged, so nothing in this repository is affected: the spec's
@@ -98,20 +105,36 @@ Because the cache is per client and `_app.with_client` builds one client per MCP
 `validate=True` from MCP is effectively one extra request per call — which is why it is not the
 default, and why the caller it serves is one holding a client across several reads.
 
-**This branch ships an unverified response shape, and the PR says so.** The tests prove the parse
-discriminates between implementations given the fixture; they cannot prove the fixture matches
-firmware, and the solution record above is the account of a branch where every other gate read as
-green on exactly that gap. A mutation score over these tests would measure the same thing and must
-not be reported as fixture validation. The closing evidence is a live capture against the operator's
-ppc64le host, which this PR exists to make reachable from that system; the follow-up is the
-second step of the two-step the `/operations` read established — `test: replace the assumed fixture
-with a live capture`. Until it lands, `list_search_parameters` is a method whose transport,
-argument handling, caching and degradation are proven and whose parse is not.
+**The root anchor's parse is confirmed at `V1_17_0` and `V1_20_0`.** The fixtures are reconstructed
+from the capture's shape report — element tree, per-path counts, namespaces, and the parameter
+names, which are schema property names — and not from a verbatim body, because the raw bodies carry
+instance data. The text of `Comparator` and `XPath` is therefore still not reproduced; nothing in
+the parse reads it.
 
-A second consequence of shipping it anyway: a caller who passes `validate=True` against a level
-where the guess is wrong pays one discovery request per resource type and gets no validation. That
-is the degradation path working as designed, and it is indistinguishable at the call site from a
-level that does not serve the anchor.
+**The child anchor is not confirmed, and the evidence is against it.** Both levels answered
+`/rest/api/uom/ManagedSystem/{UUID}/LogicalPartition/search` with 400 `INVALID_URL`. #789's first
+acceptance criterion asked that both anchors be reachable, and on the firmware measured, one is
+not. `parent_type` and `parent_uuid` are kept: the corpus documents the path grammar, and ADR 0140
+recorded the sibling `/quick` anchor having a type that answers 400 at the root and 200 under a
+parent, so one type pair on two levels does not establish the form is absent everywhere. A caller
+using them should expect `HMCError` until some level is observed serving it.
+
+**`search_uom`'s unsupported-property status is 500, not the 400 this was designed against.** Both
+levels answer `ReasonCode: Unknown internal error.` with *The left hand side of the expression is
+not a registered search parameter*. Nothing in the design depends on which it is — both surface as
+`HMCError` — but a 500 is a worse round trip to spend than a 400, which strengthens rather than
+weakens the case for the pre-flight.
+
+The `X-HMC-Schema-Version` warning is confirmed rather than merely inherited: every captured 200
+returned this client's own `X-Audit-Memento` in that header, never a firmware level. Callers must
+not parse it as one.
+
+A caller who passes `validate=True` against a level where the anchor is absent or answers
+differently pays one discovery request per resource type and gets no validation. That is the
+degradation path working as designed, and it is indistinguishable at the call site from a level
+that does not serve the anchor. A type defining no parameters reads the same way, deliberately:
+`ManagementConsole` caches as "unknown" rather than as an empty positive set, which would otherwise
+reject every property name for the client's lifetime.
 
 `CHANGELOG.md` records the new method and the new parameter, because both are reachable through
 ADR 0118's facade.
@@ -122,7 +145,9 @@ ADR 0118's facade.
   this PR in place and reachable from that system first, and froze that ordering into the charter's
   exclusions on issue #789. judgment: the transport, argument pairing, caching, degradation and
   opt-in default are all verifiable without firmware and are most of the change; blocking them on
-  the one part that is not would deliver nothing to test against.
+  the one part that is not would deliver nothing to test against. verified in hindsight: the
+  ordering worked — the capture ran against this branch and corrected it before merge — and the
+  parts predicted to survive firmware did survive it. Only the parse and its fixtures changed.
 - **Try several candidate element names in order.** judgment: it defeats the discriminator that
   makes a wrong parse detectable. The solution record's sharpest finding is that a fixture carrying
   realistic wrong siblings kills mutants an element-only fixture structurally cannot; a parse that

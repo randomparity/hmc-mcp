@@ -3093,43 +3093,58 @@ async def test_get_quick_property_validate_caches_per_resource_type(mock_hmc):
 
 # list_search_parameters (#789) -- the /search discovery anchors.
 #
-# EVERY BODY BELOW IS CONSTRUCTED, NOT CAPTURED. No firmware has been observed
-# answering this anchor. The vendored reference corpus describes the anchor and
-# never its response: the path grammar for both forms is at
-# docs/refs/hmc-rest-api-p10/000-hmc-rest-apis.md:67-68,84-85 and its p11 twin,
-# and per-type prose points at it from 164-managed-system.md:100 and
-# managed-system/165-logical-partition.md:85 -- but a case-insensitive search of
-# the whole corpus for SearchParameter, Search_Collection, SearchElement and
-# searchable returns nothing. No content type, no body example, no element
-# vocabulary.
+# THE SHAPE BELOW IS RECONSTRUCTED FROM A LIVE CAPTURE, not invented and not a
+# verbatim body. The capture ran against Power HMCs at V1_17_0 and V1_20_0 and
+# is recorded on PR #807; what it reports is the element tree, per-path element
+# counts, namespaces and text lengths, deliberately not text values, because the
+# raw bodies carry instance data. So these facts are live:
 #
-# The shape here mirrors the /quick collection ADR 0140 captured, and reading
-# <Nickname> is the inference ADR 0142 records and bounds. The corpus tables a
-# type's searchable properties under the heading "Quick property", which is that
-# inference's one checkable ground. The live round on the operator's ppc64le
-# host is what settles it; until then this parse is unproven, and a mutation
-# score over these tests measures only that they discriminate between
-# implementations given the fixture.
+#   * the root element <entry> and both namespace URIs;
+#   * the nesting content > SearchParameterSet > SearchParameters >
+#     SearchParameter > ParameterName;
+#   * the ElementName, Comparator and XPath siblings and where they sit;
+#   * the parameter names themselves, which are schema property names;
+#   * ManagementConsole answering 200 with a SearchParameterSet and no
+#     SearchParameters child at all.
 #
-# RESTElement and Description are carried deliberately. A fixture trimmed to the
-# element under test cannot detect a parse reading the wrong neighbour --
-# test_list_search_parameters_reads_the_named_element_not_its_siblings pins it.
+# The text of Comparator and XPath is NOT live -- the capture reports only its
+# length. Those two carry marked placeholder text here. Nothing under test reads
+# them; they exist so a parse reading the wrong neighbour fails, which
+# test_list_search_parameters_reads_the_named_element_not_its_siblings pins.
+#
+# This replaces an earlier inference that read <Nickname> from a
+# <SearchParameter_Collection>, mirroring the /quick anchor. The capture found
+# both halves wrong. ADR 0142 records what that cost and what the ground was.
+#
+# Names as captured. ManagedSystem and LogicalPartition are the two anchors the
+# tests drive; the capture also returned VirtualIOServer (identical to
+# LogicalPartition), SharedStoragePool and Event.
 _MANAGED_SYSTEM_SEARCH_PARAMETERS = [
-    "SystemName",
-    "State",
     "MachineType",
+    "Model",
     "SerialNumber",
+    "State",
+    "SystemName",
 ]
 _LOGICAL_PARTITION_SEARCH_PARAMETERS = [
-    "PartitionName",
     "PartitionID",
+    "PartitionName",
     "PartitionState",
+    "PartitionType",
 ]
+# Captured: the one type that answers the anchor with an empty set.
+_EMPTY_SET_TYPE = "ManagementConsole"
+# Captured: the single-parameter type. ADR 0139's element_to_dict collapse is
+# reachable through it, which is why the parse reads _find_all_text.
+_SINGLE_PARAMETER_TYPE = "Cluster"
+_SINGLE_PARAMETER_NAMES = ["ClusterName"]
 
 
 # What the HMC is known to answer with a 200 instead of an error status: a feed
-# carrying an HttpErrorResponse and no names at all. Indistinguishable to a
-# caller from a type defining nothing, which is why the parse raises on it.
+# carrying an HttpErrorResponse and no names at all. The capture's own error
+# bodies came back at 400 and 500 rather than 200, so this remains the ADR 0139
+# hazard rather than a captured one -- but it is what makes the container test
+# necessary, because a type defining nothing is now known to be real.
 _HTTP_ERROR_RESPONSE_FEED = (
     '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
     "<HttpErrorResponse><Message>Internal error</Message>"
@@ -3137,34 +3152,39 @@ _HTTP_ERROR_RESPONSE_FEED = (
 )
 
 
-def _search_parameter_entry(rest_element: str, *parameters: str | tuple[str, str]) -> str:
-    """A CONSTRUCTED <entry> for a /search discovery anchor.
+def _search_parameter_entry(element_name: str, *parameters: str | tuple[str, str]) -> str:
+    """An <entry> in the shape the /search anchor was captured answering.
 
-    Each entry in *parameters* is a name, or a (name, description) pair when the
-    test cares about the Description sibling.
+    Each entry in *parameters* is a name, or a (name, xpath) pair when the test
+    cares about the XPath sibling. Passing no parameter produces the empty set
+    ManagementConsole was captured returning: a SearchParameterSet with no
+    SearchParameters child, which is a type defining none rather than an error.
     """
     body = ""
     for item in parameters:
-        name, description = item if isinstance(item, tuple) else (item, f"About {item}.")
+        name, xpath = item if isinstance(item, tuple) else (item, f"{element_name}/{item}")
         body += (
             "<SearchParameter>"
             "<Metadata><Atom/></Metadata>"
-            f"<RESTElement>{rest_element}</RESTElement>"
-            f"<Nickname>{name}</Nickname>"
-            f"<Description>{description}</Description>"
+            f"<ParameterName>{name}</ParameterName>"
+            "<Comparator>PLACEHOLDER-COMPARATOR-TEXT-NOT-CAPTURED</Comparator>"
+            f"<XPath>{xpath}</XPath>"
             "</SearchParameter>"
         )
+    if body:
+        body = f"<SearchParameters><Metadata><Atom/></Metadata>{body}</SearchParameters>"
     return (
         '<entry xmlns="http://www.w3.org/2005/Atom">'
         "<id>00000000-0000-0000-0000-000000000000</id>"
-        "<title>SearchParameterCollection</title>"
+        "<title>SearchParameterSet</title>"
         "<author><name>IBM Power Systems Management Console</name></author>"
         "<content>"
-        '<SearchParameter_Collection xmlns="http://www.ibm.com/xmlns/systems/power'
-        '/firmware/uom/mc/2012_10/">'
+        '<SearchParameterSet xmlns="http://www.ibm.com/xmlns/systems/power'
+        '/firmware/web/mc/2012_10/">'
         "<Metadata><Atom/></Metadata>"
+        f"<ElementName>{element_name}</ElementName>"
         f"{body}"
-        "</SearchParameter_Collection>"
+        "</SearchParameterSet>"
         "</content></entry>"
     )
 
@@ -3190,7 +3210,13 @@ def _search_parameter_entry(rest_element: str, *parameters: str | tuple[str, str
 async def test_list_search_parameters_reads_both_anchors(
     mock_hmc, resource_type, kwargs, path, expected
 ):
-    """Root and child anchors, at the paths the corpus documents."""
+    """Root and child anchors, at the paths the corpus documents.
+
+    The root anchor is captured. **The child anchor is not**: both captured
+    levels answered it 400 INVALID_URL for this exact type pair, so this row
+    pins the path this client builds and nothing about what firmware does with
+    it. See the method docstring for why the parameters are kept anyway.
+    """
     route = mock_hmc.get(path).mock(
         return_value=httpx.Response(
             200, text=_search_parameter_entry(resource_type, *expected)
@@ -3271,19 +3297,22 @@ async def test_list_search_parameters_refuses_bad_arguments(
 async def test_list_search_parameters_reads_the_named_element_not_its_siblings(
     mock_hmc,
 ):
-    """The names come from Nickname, not from a plausible neighbour.
+    """The names come from ParameterName, not from a plausible neighbour.
 
-    Every SearchParameter carries RESTElement and Description too, and both
-    hold strings that would pass for parameter names. A parse reading either
-    returns a plausible wrong set rather than failing, which is the defect
-    class docs/solutions/2026-09-14-fixtures-invented-for-an-endpoint-never-spoken.md
-    records; the fixture carries the wrong siblings so the parse can be caught.
+    Every SearchParameter carries Comparator and XPath, and the set carries
+    ElementName; XPath ends in a string that would pass for a parameter name,
+    and ElementName holds the type. A parse reading any of them returns a
+    plausible wrong set rather than failing, which is the defect class
+    docs/solutions/2026-09-14-fixtures-invented-for-an-endpoint-never-spoken.md
+    records -- and is what the capture caught the shipped <Nickname> parse
+    doing in reverse. The fixture carries the real siblings so it can be caught
+    here instead.
     """
     body = _search_parameter_entry(
         "LogicalPartition",
-        ("PartitionName", "PartitionLabel"),
-        ("PartitionID", "PartitionIndex"),
-        ("PartitionState", "PartitionStatus"),
+        ("PartitionName", "LogicalPartition/PartitionLabel"),
+        ("PartitionID", "LogicalPartition/PartitionIndex"),
+        ("PartitionState", "LogicalPartition/PartitionStatus"),
     )
     mock_hmc.get("/rest/api/uom/LogicalPartition/search").mock(
         return_value=httpx.Response(200, text=body)
@@ -3293,11 +3322,9 @@ async def test_list_search_parameters_reads_the_named_element_not_its_siblings(
         names, _ = await hmc.list_search_parameters("LogicalPartition")
 
     assert names == ["PartitionName", "PartitionID", "PartitionState"]
-    assert "PartitionLabel" not in names
-    assert "PartitionIndex" not in names
-    assert "PartitionStatus" not in names
-    # RESTElement repeats the type name on every parameter, so a parse reading
-    # it returns the type three times over.
+    assert not [n for n in names if "/" in n], "an XPath text reached the names"
+    # ElementName holds the type once per response, so a parse reading it
+    # returns the type instead of its properties.
     assert "LogicalPartition" not in names
 
 
@@ -3309,18 +3336,23 @@ async def test_list_search_parameters_returns_a_single_name_as_a_one_element_lis
 
     element_to_dict keys children by tag and promotes to a list only on the
     second sibling, so a _parse_feed-based parse collapses the single case
-    (ADR 0139). Reading element texts directly is what avoids it.
+    (ADR 0139). Reading element texts directly is what avoids it. The type and
+    name here are the captured ones: Cluster really does define exactly one, so
+    this is a reachable body rather than a constructed edge case.
     """
-    mock_hmc.get("/rest/api/uom/VirtualNetwork/search").mock(
+    mock_hmc.get(f"/rest/api/uom/{_SINGLE_PARAMETER_TYPE}/search").mock(
         return_value=httpx.Response(
-            200, text=_search_parameter_entry("VirtualNetwork", "NetworkName")
+            200,
+            text=_search_parameter_entry(
+                _SINGLE_PARAMETER_TYPE, *_SINGLE_PARAMETER_NAMES
+            ),
         )
     )
 
     async with HMCClient(make_config()) as hmc:
-        names, _ = await hmc.list_search_parameters("VirtualNetwork")
+        names, _ = await hmc.list_search_parameters(_SINGLE_PARAMETER_TYPE)
 
-    assert names == ["NetworkName"]
+    assert names == _SINGLE_PARAMETER_NAMES
 
 
 @pytest.mark.asyncio
@@ -3367,47 +3399,65 @@ async def test_list_search_parameters_204_returns_no_names(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_list_search_parameters_200_without_the_container_raises(mock_hmc):
+    """A 200 carrying no SearchParameterSet raises rather than returning [].
+
+    The HMC is known to answer 200 with an HttpErrorResponse feed. Without the
+    container element that body is indistinguishable from a type defining no
+    search parameters, so returning [] would report an error as an answer.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search").mock(
+        return_value=httpx.Response(200, text=_HTTP_ERROR_RESPONSE_FEED)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(
+            HMCError, match="returned no SearchParameterSet element"
+        ) as exc_info:
+            await hmc.list_search_parameters("ManagedSystem")
+
+    assert exc_info.value.status_code == 200
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("body", "reason"),
     [
         (
-            _search_parameter_entry("ManagedSystem"),
-            "an empty collection",
+            _search_parameter_entry(_EMPTY_SET_TYPE),
+            "the captured ManagementConsole answer: a set with no parameters",
         ),
-        (_HTTP_ERROR_RESPONSE_FEED, "a 200 carrying an HttpErrorResponse"),
         # Pins the `if n` filter, which nothing else observes. find_all_text
         # strips, so both elements arrive as "": without the filter the
-        # comprehension yields ["", ""] rather than [], `if not names` never
-        # fires, and the cache stores frozenset({""}) instead of None -- so
-        # every validate=True call on that client rejects every property for
-        # the client's lifetime. That is the one failure class the design's
-        # failure model refuses to accept, under exactly the wrong-parse
-        # premise ADR 0142 accepts. The whitespace element is carried to pin
-        # the stripping too: it is a second way to reach the same empty name.
+        # comprehension yields ["", ""] rather than [], and the cache stores
+        # frozenset({""}) instead of None -- so every validate=True call on
+        # that client rejects every property for the client's lifetime. That is
+        # the one failure class the design's failure model refuses to accept.
+        # The whitespace element pins the stripping too: a second way to reach
+        # the same empty name.
         (
-            _search_parameter_entry("ManagedSystem", "", "   "),
+            _search_parameter_entry(_EMPTY_SET_TYPE, "", "   "),
             "a 200 whose matched elements are all empty",
         ),
     ],
 )
-async def test_list_search_parameters_200_without_a_name_raises(
+async def test_list_search_parameters_empty_set_returns_no_names(
     mock_hmc, body, reason
 ):
-    """A 200 with no name raises rather than reporting "defines nothing".
+    """A type defining no search parameters is an answer, not an error.
 
-    The HMC is known to answer 200 with an HttpErrorResponse feed, which is
-    indistinguishable to a caller from a type that defines no search
-    parameters -- so returning [] would report an error as an empty answer.
+    ManagementConsole was captured answering the anchor 200 with a
+    SearchParameterSet carrying no SearchParameters child at all. The container
+    is what separates it from the HttpErrorResponse feed above.
     """
-    mock_hmc.get("/rest/api/uom/ManagedSystem/search").mock(
-        return_value=httpx.Response(200, text=body)
+    mock_hmc.get(f"/rest/api/uom/{_EMPTY_SET_TYPE}/search").mock(
+        return_value=httpx.Response(
+            200, text=body, headers={"X-HMC-Schema-Version": "V1_0"}
+        )
     )
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="returned no Nickname element") as exc_info:
-            await hmc.list_search_parameters("ManagedSystem")
-
-    assert exc_info.value.status_code == 200, reason
+        assert await hmc.list_search_parameters(_EMPTY_SET_TYPE) == ([], "V1_0"), reason
 
 
 @pytest.mark.asyncio

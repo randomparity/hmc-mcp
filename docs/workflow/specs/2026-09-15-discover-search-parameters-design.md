@@ -20,12 +20,18 @@ properties a search may use, has no reader anywhere under `src/`, and neither do
 landed for `/quick` (PR #803, ADR 0140) and the opt-in validation wiring #799 landed for
 `get_quick_property` (PR #805, ADR 0141). Both shapes are reused rather than re-decided.
 
-**The response shape is unknown and this design says so.** The vendored reference corpus describes
-the anchor — path grammar for both forms, and per-type prose pointing at it — but never its
-response: no content type, no body example, no element vocabulary. ADR 0142 carries the citations
-and the searches that establish those three absences. The solution record above names #789 as one of
-three sibling reads that will hit exactly this wall. The fixtures here are therefore **constructed,
-not captured**, and ADR 0142 records what that costs and how the design bounds it.
+**The response shape was unknown when this was designed, and a live capture has since settled it.**
+The vendored reference corpus describes the anchor — path grammar for both forms, and per-type
+prose pointing at it — but never its response: no content type, no body example, no element
+vocabulary. ADR 0142 carries the citations and the searches that establish those three absences.
+The design was therefore built on an inferred element name, the fixtures were constructed, and the
+solution record above named #789 as one of three sibling reads that would hit exactly this wall.
+
+It did hit it. The operator's capture at `V1_17_0` and `V1_20_0` (PR #807) found both halves of the
+inference wrong — the container and the name-bearing element — and the design was corrected against
+it before merge. The fixtures are now **reconstructed from that capture's shape report**. ADR 0142
+records the correction and what the inference cost; the entries below are revised against the
+capture and mark what it changed.
 
 ## Scope
 
@@ -43,8 +49,11 @@ declarations in `client_contracts.py` (lines 89, 319) are also untouched: a keyw
 with a default widens the implementation without narrowing the protocol, so both declarations stay
 satisfied. `hmc_mcp.api`'s six exports (ADR 0118) are a protected contract and stay as they are.
 
-**Changes.** A module-level `_SEARCH_PARAMETER_NAME_ELEMENT = "Nickname"` isolates the one
-unverified assumption. `list_search_parameters(resource_type, *, parent_type=None,
+**Changes.** Two module-level constants carry the captured shape:
+`_SEARCH_PARAMETER_NAME_ELEMENT = "ParameterName"` and
+`_SEARCH_PARAMETER_CONTAINER_ELEMENT = "SearchParameterSet"`, the second consulted only when no
+name was found, to separate a type defining none from a body of another shape entirely.
+`list_search_parameters(resource_type, *, parent_type=None,
 parent_uuid=None)` reads `/rest/api/uom/{R}/search`, or
 `/rest/api/uom/{P}/{UUID}/{C}/search` when both parent arguments are given, sends `Accept: */*`,
 and returns `(names, schema_version)` — the texts of that element read document-wide via
@@ -88,12 +97,14 @@ degradation promise rather than any numbered criterion of #789. The six `hmc_mcp
 
 **Accepted failure classes.**
 
-- **The parsed element name is unverified against firmware.** Accepted for this branch only, on the
-  bounding properties ADR 0142 records and with the closing evidence named in *Validation*. One of
-  those properties is bounded, not absolute: a wrong guess matching *nothing* fails loudly, but a
-  wrong guess matching some other element returns a plausible wrong set, which reaches an opted-in
-  caller as `ValueError` on a legitimate property rather than through the degradation path. That
-  consequence is the *wrong-set* class below, whose acceptance holds on its own grounds.
+- ~~**The parsed element name is unverified against firmware.**~~ **Closed by the capture, not
+  accepted.** It was accepted for this branch on ADR 0142's bounding properties; the capture then
+  found the name and the container both wrong, and the correction landed before merge. The class
+  that remains is narrower: the **child** anchor is still unverified, and the evidence is against
+  it — both captured levels answered it 400 `INVALID_URL`. Accepted, because the corpus documents
+  the path grammar and ADR 0140 recorded a sibling anchor whose availability is per type, so one
+  type pair on two levels does not prove the form absent. A caller using the parent arguments gets
+  `HMCError`, which is the designed surface for a level that does not serve an anchor.
 - A stale positive cache wrongly rejects a name a newer level added, for a client held across a
   firmware change. Accepted: unreachable for the per-call CLI and MCP actors, and the remaining
   actor's escape is `validate=False`, the default. Carried from ADR 0141.
@@ -163,12 +174,17 @@ step 6 re-judges this against the actual diff.
 1. `list_search_parameters(R)` reads `/rest/api/uom/{R}/search`, and
    `list_search_parameters(C, parent_type=P, parent_uuid=U)` reads
    `/rest/api/uom/{P}/{U}/{C}/search`; supplying exactly one parent argument raises `ValueError`.
-   (#789 criterion 1)
+   (#789 criterion 1) **This is met as "the client reads both paths", not as "both anchors
+   answer":** the root anchor is captured working, and the child anchor answered 400 `INVALID_URL`
+   at both captured levels, so criterion 1's "reachable" half is met for one of the two forms.
 2. `search_uom(..., validate=True)` raises `ValueError` without sending a request to
    `/rest/api/uom/{R}/search/({P}=={V})` when `{P}` is not among the names
    `list_search_parameters` returns for `{R}`. (#789 criterion 2)
-3. `search_uom`'s docstring records that an unsupported search property yields HTTP 400 from the
-   HMC, so the reason the pre-flight exists survives. (#789 criterion 3)
+3. `search_uom`'s docstring records what an unsupported search property yields from the HMC, so the
+   reason the pre-flight exists survives. #789's criterion 3 named HTTP 400; **the captured status
+   is 500** (`ReasonCode: Unknown internal error.`), and the docstring records the captured value
+   and the correction. Both surface as `HMCError`, so only the recorded reason changes.
+   (#789 criterion 3, amended by capture)
 4. A resource type the HMC does not recognise surfaces `HMCError` carrying the HMC's status — from
    `list_search_parameters`' own non-200 raise, and on the `validate=True` path from `_get`'s
    non-200 raise for the instance search (`core.py:505-506`). (#789 criterion 4)
