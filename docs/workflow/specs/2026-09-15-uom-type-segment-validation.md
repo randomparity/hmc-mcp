@@ -107,8 +107,10 @@ assumes.
 the path sites and inside `_uom_headers` for the header. Fails with `ValueError`
 naming the argument and the offending character — no path, no host, no full
 caller string, matching `_reject_dot_segments`' leak rule. On the header it
-replaces `h11`'s send-time CRLF check, which the trailing-newline case escapes
-and which this repository neither owns nor tests (ADR 0143).
+replaces `h11`'s send-time header-value check — which does refuse a bare
+trailing `\n` or `\r` as well as a CRLF (h11 0.16.0, reproduced), but is a
+transitive dependency this repository neither owns, pins for this property, nor
+tests (ADR 0143).
 
 **Explicitly out of scope.** Whether `hmc_list_resources` should accept a
 free-form type at all; response-body trust; authorization, which ADR 0038 and

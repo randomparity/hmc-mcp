@@ -544,8 +544,11 @@ def test_uom_headers_refuses_a_malformed_type():
 
     `_uom_headers` is where `get_uom_path` -- which builds no uom f-string of
     its own and has no caller inside this package -- puts a caller-supplied
-    type. Without this the Accept destination's only control is h11's send-time
-    header validation, which a trailing newline escapes entirely.
+    type. Without this, the Accept destination's only control is h11's
+    send-time header validation: it does refuse this value, but it belongs to a
+    transitive dependency this repository neither owns, pins for that property,
+    nor tests, and it refuses at send time rather than at the boundary
+    (ADR 0143).
     """
     client = _client()
     with pytest.raises(ValueError, match="must be an HMC resource type name"):
