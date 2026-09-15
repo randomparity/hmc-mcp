@@ -10,6 +10,25 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `HMCClient.list_search_parameters(resource_type)` reads the search-parameter names an HMC defines
+  for a resource type, at `/rest/api/uom/{R}/search`, returning them with the response's
+  `X-HMC-Schema-Version`. The names are the `ParameterName` texts of the `SearchParameterSet` the
+  anchor answers with, captured at `V1_17_0` and `V1_20_0` across eleven types. A type that defines
+  no search parameters returns an empty list — six of the eleven do; a 200 carrying no
+  `SearchParameterSet` at all raises `HMCError`, as does a level that does not serve the anchor,
+  carrying its status. **No captured level serves a child-anchored form:** the reference documents
+  `/rest/api/uom/{P}/{UUID}/{C}/search` and the HMC answers it 400 `INVALID_URL` while serving the
+  plain child feed and `/quick` on the same parent, so no parent arguments are offered
+  (ADR 0142, #789).
+
+- `HMCClient.search_uom` takes a keyword-only `validate=False`. With `validate=True` a property
+  name the resource type does not define raises `ValueError` before any request is sent, checked
+  against the names `list_search_parameters` reports; those are read once per type and cached for
+  the client's lifetime, and a level where the read yields no names validates nothing rather than
+  raising — as does a type that defines none. Off by default, because the client is constructed per
+  tool call, so the cache would rarely be reused. The round trip it saves is a 500, not the 400 the
+  design was written against (ADR 0142, #789).
+
 - `HMCClient.get_quick_property` takes a keyword-only `validate=False`. With `validate=True` an
   unknown property name raises `ValueError` before any request is sent, checked against the names
   `list_quick_properties` reports for the resource type; those are read once per type and cached for

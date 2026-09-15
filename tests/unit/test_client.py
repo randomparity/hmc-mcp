@@ -3089,3 +3089,743 @@ async def test_get_quick_property_validate_caches_per_resource_type(mock_hmc):
     assert lpar == "7"
     assert system_route.call_count == 1
     assert lpar_route.call_count == 1
+
+
+# list_search_parameters (#789) -- the /search discovery anchors.
+#
+# THE SHAPE BELOW IS RECONSTRUCTED FROM A LIVE CAPTURE, not invented and not a
+# verbatim body. Two rounds ran against Power HMCs at V1_17_0 and V1_20_0 and
+# are recorded on PR #807. Round 1 reported the element tree, per-path counts,
+# namespaces and text lengths but no text values, because the raw bodies carry
+# instance data; round 2 added the element texts that are schema strings. These
+# facts are live, and nothing outside this list is:
+#
+#   * the root element <entry> and both namespace URIs;
+#   * the nesting content > SearchParameterSet > SearchParameters >
+#     SearchParameter > ParameterName;
+#   * the ElementName, Comparator and XPath siblings and where they sit;
+#   * the parameter names, which are schema property names;
+#   * the Comparator text -- one string, on every parameter of every type
+#     captured -- and the XPath form, a schema path ending in /Value;
+#   * six of the eleven types captured answering 200 with a SearchParameterSet
+#     and no SearchParameters child at all.
+#
+# Constructed here, among what the blanket above excludes: the Atom scaffolding the helper
+# emits (<id>, <title>, <author>, <Metadata>), which no capture round reported
+# because the parse does not read it; and the XPath texts in
+# test_list_search_parameters_reads_the_named_element_not_its_siblings, which
+# are invented on purpose -- they end in a name-like segment rather than
+# /Value, precisely so a parse reading XPath instead of ParameterName returns a
+# plausible wrong set and fails.
+#
+# This replaces an earlier inference that read <Nickname> from a
+# <SearchParameter_Collection>, mirroring the /quick anchor. The capture found
+# both halves wrong. ADR 0142 records what that cost and what the ground was.
+#
+# There is no child-anchored fixture because no captured level serves a child
+# anchor. V1_17_0 and V1_20_0 both answer /rest/api/uom/{P}/{UUID}/{C}/search
+# with 400 INVALID_URL; at V1_17_0 that holds for both LogicalPartition and
+# VirtualIOServer, under a parent whose plain child feed and /quick anchor both
+# answered 200 in the same session.
+_CAPTURED_COMPARATOR = "Regular Expression or String Match"
+
+# Names as captured. ManagedSystem and LogicalPartition are the two the tests
+# drive; VirtualIOServer returned the same four as LogicalPartition, and
+# SharedStoragePool two.
+_MANAGED_SYSTEM_SEARCH_PARAMETERS = [
+    "MachineType",
+    "Model",
+    "SerialNumber",
+    "State",
+    "SystemName",
+]
+_LOGICAL_PARTITION_SEARCH_PARAMETERS = [
+    "PartitionID",
+    "PartitionName",
+    "PartitionState",
+    "PartitionType",
+]
+# Captured: types answering the anchor with an empty set. Not an edge case --
+# six of the eleven types captured do this, so the container branch below is
+# the common path, not a corner. VirtualSwitch, VirtualNetwork, NetworkBridge,
+# LogicalUnit and SharedProcessorPool answer the same way.
+_EMPTY_SET_TYPE = "ManagementConsole"
+# Captured: the single-parameter type. ADR 0139's element_to_dict collapse is
+# reachable through it, which is why the parse reads _find_all_text.
+_SINGLE_PARAMETER_TYPE = "Cluster"
+_SINGLE_PARAMETER_NAMES = ["ClusterName"]
+
+
+# What the HMC is known to answer with a 200 instead of an error status: a feed
+# carrying an HttpErrorResponse and no names at all. The capture's own error
+# bodies came back at 400 and 500 rather than 200, so this remains the ADR 0139
+# hazard rather than a captured one -- but it is what makes the container test
+# necessary, because a type defining nothing is now known to be real.
+_HTTP_ERROR_RESPONSE_FEED = (
+    '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
+    "<HttpErrorResponse><Message>Internal error</Message>"
+    "</HttpErrorResponse></content></entry></feed>"
+)
+
+
+def _search_parameter_entry(element_name: str, *parameters: str | tuple[str, str]) -> str:
+    """An <entry> in the shape the /search anchor was captured answering.
+
+    Each entry in *parameters* is a name, or a (name, xpath) pair when the test
+    cares about the XPath sibling. Passing no parameter produces the empty set
+    ManagementConsole was captured returning: a SearchParameterSet with no
+    SearchParameters child, which is a type defining none rather than an error.
+    """
+    body = ""
+    for item in parameters:
+        name, xpath = (
+            item if isinstance(item, tuple) else (item, f"{element_name}/{item}/Value")
+        )
+        body += (
+            "<SearchParameter>"
+            "<Metadata><Atom/></Metadata>"
+            f"<ParameterName>{name}</ParameterName>"
+            f"<Comparator>{_CAPTURED_COMPARATOR}</Comparator>"
+            f"<XPath>{xpath}</XPath>"
+            "</SearchParameter>"
+        )
+    if body:
+        body = f"<SearchParameters><Metadata><Atom/></Metadata>{body}</SearchParameters>"
+    return (
+        '<entry xmlns="http://www.w3.org/2005/Atom">'
+        "<id>00000000-0000-0000-0000-000000000000</id>"
+        "<title>SearchParameterSet</title>"
+        "<author><name>IBM Power Systems Management Console</name></author>"
+        "<content>"
+        '<SearchParameterSet xmlns="http://www.ibm.com/xmlns/systems/power'
+        '/firmware/web/mc/2012_10/">'
+        "<Metadata><Atom/></Metadata>"
+        f"<ElementName>{element_name}</ElementName>"
+        f"{body}"
+        "</SearchParameterSet>"
+        "</content></entry>"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("resource_type", "expected"),
+    [
+        ("ManagedSystem", _MANAGED_SYSTEM_SEARCH_PARAMETERS),
+        ("LogicalPartition", _LOGICAL_PARTITION_SEARCH_PARAMETERS),
+    ],
+)
+async def test_list_search_parameters_reads_the_root_anchor(
+    mock_hmc, resource_type, expected
+):
+    """The root anchor, at the path the corpus documents and the capture served.
+
+    There is no child-anchored row because no captured level serves one: see the
+    block comment above and ADR 0142. Both of these types were captured
+    answering the root anchor, with exactly these names.
+    """
+    path = f"/rest/api/uom/{resource_type}/search"
+    route = mock_hmc.get(path).mock(
+        return_value=httpx.Response(
+            200, text=_search_parameter_entry(resource_type, *expected)
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        names, _ = await hmc.list_search_parameters(resource_type)
+
+    assert route.calls.last.request.url.path == path
+    assert names == expected
+    # Pinned to the exact value, not merely "not a typed uom Accept". The
+    # captured content type is application/atom+xml, but only two Accept values
+    # were ever probed, so */* remains the one that cannot fail negotiation on
+    # an unmeasured level -- and an assertion that only excludes one wrong
+    # family would pass for every other wrong value.
+    assert route.calls.last.request.headers["Accept"] == "*/*"
+
+
+@pytest.mark.asyncio
+async def test_list_search_parameters_refuses_a_dot_segment_resource_type(mock_hmc):
+    """resource_type is the only interpolated segment, and it is guarded.
+
+    Refused before transport: no request for a search anchor is recorded. The
+    router pre-mocks the logon and logoff the client context manager performs,
+    so the assertion is scoped to the paths this method builds rather than to
+    the router being untouched.
+    """
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match=r"'\.\.' segment"):
+            await hmc.list_search_parameters("../web/Logon")
+
+    assert not [call for call in mock_hmc.calls if "search" in call.request.url.path]
+
+
+@pytest.mark.asyncio
+async def test_list_search_parameters_reads_the_named_element_not_its_siblings(
+    mock_hmc,
+):
+    """The names come from ParameterName, not from a plausible neighbour.
+
+    Every SearchParameter carries Comparator and XPath, and the set carries
+    ElementName; XPath ends in a string that would pass for a parameter name,
+    and ElementName holds the type. A parse reading any of them returns a
+    plausible wrong set rather than failing, which is the defect class
+    docs/solutions/2026-09-14-fixtures-invented-for-an-endpoint-never-spoken.md
+    records -- and is what the capture caught the shipped <Nickname> parse
+    doing in reverse. The fixture carries the real siblings so it can be caught
+    here instead.
+    """
+    body = _search_parameter_entry(
+        "LogicalPartition",
+        ("PartitionName", "LogicalPartition/PartitionLabel"),
+        ("PartitionID", "LogicalPartition/PartitionIndex"),
+        ("PartitionState", "LogicalPartition/PartitionStatus"),
+    )
+    mock_hmc.get("/rest/api/uom/LogicalPartition/search").mock(
+        return_value=httpx.Response(200, text=body)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        names, _ = await hmc.list_search_parameters("LogicalPartition")
+
+    assert names == ["PartitionName", "PartitionID", "PartitionState"]
+    assert not [n for n in names if "/" in n], "an XPath text reached the names"
+    # ElementName holds the type once per response, so a parse reading it
+    # returns the type instead of its properties.
+    assert "LogicalPartition" not in names
+
+
+@pytest.mark.asyncio
+async def test_list_search_parameters_returns_a_single_name_as_a_one_element_list(
+    mock_hmc,
+):
+    """One defined parameter is a list of one, not a bare string.
+
+    element_to_dict keys children by tag and promotes to a list only on the
+    second sibling, so a _parse_feed-based parse collapses the single case
+    (ADR 0139). Reading element texts directly is what avoids it. The type and
+    name here are the captured ones: Cluster really does define exactly one, so
+    this is a reachable body rather than a constructed edge case.
+    """
+    mock_hmc.get(f"/rest/api/uom/{_SINGLE_PARAMETER_TYPE}/search").mock(
+        return_value=httpx.Response(
+            200,
+            text=_search_parameter_entry(
+                _SINGLE_PARAMETER_TYPE, *_SINGLE_PARAMETER_NAMES
+            ),
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        names, _ = await hmc.list_search_parameters(_SINGLE_PARAMETER_TYPE)
+
+    assert names == _SINGLE_PARAMETER_NAMES
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("headers", "expected"),
+    [
+        ({"X-HMC-Schema-Version": "V1_0"}, "V1_0"),
+        ({}, None),
+    ],
+)
+async def test_list_search_parameters_returns_the_response_schema_version(
+    mock_hmc, headers, expected
+):
+    """The header is returned verbatim, and its absence is None.
+
+    Verbatim because it is not guaranteed to hold a version: ADR 0139 and
+    ADR 0140 both record the HMC echoing X-Audit-Memento into it.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search").mock(
+        return_value=httpx.Response(
+            200,
+            headers=headers,
+            text=_search_parameter_entry(
+                "ManagedSystem", *_MANAGED_SYSTEM_SEARCH_PARAMETERS
+            ),
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        _, schema_version = await hmc.list_search_parameters("ManagedSystem")
+
+    assert schema_version == expected
+
+
+@pytest.mark.asyncio
+async def test_list_search_parameters_204_returns_no_names(mock_hmc):
+    """204 is an empty answer, not an error."""
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search").mock(
+        return_value=httpx.Response(204, headers={"X-HMC-Schema-Version": "V1_0"})
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.list_search_parameters("ManagedSystem") == ([], "V1_0")
+
+
+@pytest.mark.asyncio
+async def test_list_search_parameters_200_without_the_container_raises(mock_hmc):
+    """A 200 carrying no SearchParameterSet raises rather than returning [].
+
+    The HMC is known to answer 200 with an HttpErrorResponse feed. Without the
+    container element that body is indistinguishable from a type defining no
+    search parameters, so returning [] would report an error as an answer.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search").mock(
+        return_value=httpx.Response(200, text=_HTTP_ERROR_RESPONSE_FEED)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(
+            HMCError, match="returned no SearchParameterSet element"
+        ) as exc_info:
+            await hmc.list_search_parameters("ManagedSystem")
+
+    assert exc_info.value.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "reason"),
+    [
+        (
+            _search_parameter_entry(_EMPTY_SET_TYPE),
+            "the captured ManagementConsole answer: a set with no parameters",
+        ),
+        # Pins the `if n` filter, which nothing else observes. find_all_text
+        # strips, so both elements arrive as "": without the filter the
+        # comprehension yields ["", ""] rather than [], and the cache stores
+        # frozenset({""}) instead of None -- so every validate=True call on
+        # that client rejects every property for the client's lifetime. That is
+        # the one failure class the design's failure model refuses to accept.
+        # The whitespace element pins the stripping too: a second way to reach
+        # the same empty name.
+        (
+            _search_parameter_entry(_EMPTY_SET_TYPE, "", "   "),
+            "a 200 whose matched elements are all empty",
+        ),
+    ],
+)
+async def test_list_search_parameters_empty_set_returns_no_names(
+    mock_hmc, body, reason
+):
+    """A type defining no search parameters is an answer, not an error.
+
+    ManagementConsole was captured answering the anchor 200 with a
+    SearchParameterSet carrying no SearchParameters child at all. The container
+    is what separates it from the HttpErrorResponse feed above.
+    """
+    mock_hmc.get(f"/rest/api/uom/{_EMPTY_SET_TYPE}/search").mock(
+        return_value=httpx.Response(
+            200, text=body, headers={"X-HMC-Schema-Version": "V1_0"}
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.list_search_parameters(_EMPTY_SET_TYPE) == ([], "V1_0"), reason
+
+
+@pytest.mark.asyncio
+async def test_list_search_parameters_unknown_type_raises_hmc_error_with_status(
+    mock_hmc,
+):
+    """An unrecognised type surfaces HMCError carrying the HMC's status.
+
+    400 INVALID_URL rather than 404: ADR 0139 records the firmware validating
+    the type name at the URL before reaching a handler.
+    """
+    mock_hmc.get("/rest/api/uom/NoSuchType/search").mock(
+        return_value=httpx.Response(
+            400,
+            text="<HttpErrorResponse><Message>REST000E: Unknown resource type"
+            "</Message></HttpErrorResponse>",
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as exc_info:
+            await hmc.list_search_parameters("NoSuchType")
+
+    assert exc_info.value.status_code == 400
+    assert "REST000E" in (exc_info.value.body or "")
+
+
+# search_uom validation (#789) -- ADR 0142: opt-in, cached per client.
+#
+# The discovery bodies here come from the same _search_parameter_entry helper
+# as the block above, so they carry the same reconstructed-from-capture
+# provenance; read that block's head for which facts are live and which are
+# constructed. What these tests prove is the transport, the cache, the
+# degradation rule and the opt-in default, none of which depends on the parse
+# being right. They do not prove the parse.
+_SEARCH_VALIDATION_TYPE = "LogicalPartition"
+_SEARCH_DISCOVERY = f"/rest/api/uom/{_SEARCH_VALIDATION_TYPE}/search"
+_SEARCH_DEFINED = f"{_SEARCH_DISCOVERY}/(PartitionName==web)"
+_SEARCH_UNDEFINED = f"{_SEARCH_DISCOVERY}/(NoSuchProperty==web)"
+_SEARCH_RESULT_FEED = (
+    '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
+    "<LogicalPartition><PartitionName>web</PartitionName></LogicalPartition>"
+    "</content></entry></feed>"
+)
+
+
+def _mock_search_validation_routes(router, *, discovery=200):
+    """Mock the discovery anchor plus a defined and an undefined instance search.
+
+    *discovery* is a status code, or an exception to raise as a transport
+    failure. 200 answers with the captured names; 204 answers empty.
+    """
+    if isinstance(discovery, Exception):
+        route_kwargs = {"side_effect": discovery}
+    elif discovery == 200:
+        body = _search_parameter_entry(
+            _SEARCH_VALIDATION_TYPE, *_LOGICAL_PARTITION_SEARCH_PARAMETERS
+        )
+        route_kwargs = {"return_value": httpx.Response(200, text=body)}
+    elif discovery == 204:
+        route_kwargs = {"return_value": httpx.Response(204)}
+    else:
+        route_kwargs = {"return_value": httpx.Response(discovery, text="<error/>")}
+    discovery_route = router.get(_SEARCH_DISCOVERY).mock(**route_kwargs)
+    defined = router.get(_SEARCH_DEFINED).mock(
+        return_value=httpx.Response(200, text=_SEARCH_RESULT_FEED)
+    )
+    undefined = router.get(_SEARCH_UNDEFINED).mock(
+        return_value=httpx.Response(200, text=_SEARCH_RESULT_FEED)
+    )
+    return discovery_route, defined, undefined
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_refuses_an_undefined_property(mock_hmc):
+    """An undefined property raises before the instance search is built.
+
+    The undefined route is mocked and asserted unused: the contract is that
+    nothing reaches the transport, not merely that the call fails.
+    """
+    _, _, undefined = _mock_search_validation_routes(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="defines no search parameter named"):
+            await hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "NoSuchProperty", "web", validate=True
+            )
+
+    assert undefined.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_allows_a_defined_property(mock_hmc):
+    """A defined property passes the check and the search runs normally."""
+    _, defined, _ = _mock_search_validation_routes(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        results = await hmc.search_uom(
+            _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+        )
+
+    assert defined.call_count == 1
+    assert results[0]["Resource"]["PartitionName"] == "web"
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_reads_the_names_once_per_type(mock_hmc):
+    """Three validated calls, one discovery request."""
+    discovery, _, _ = _mock_search_validation_routes(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        for _ in range(3):
+            await hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+            )
+
+    assert discovery.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_reads_the_names_once_under_concurrency(mock_hmc):
+    """The bound holds for concurrent callers, not only sequential ones.
+
+    Asserted on call_count after gather, never on timing: without the lock's
+    re-check the count is five, and that is a deterministic observation.
+    """
+    discovery, _, _ = _mock_search_validation_routes(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        await asyncio.gather(
+            *(
+                hmc.search_uom(
+                    _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+                )
+                for _ in range(5)
+            )
+        )
+
+    assert discovery.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_caches_per_resource_type(mock_hmc):
+    """The cache is keyed by resource type, not a single slot.
+
+    Without this, a one-entry cache passes every other test here: they all use
+    one type, so a second type would reuse the first type's names and reject
+    its own. SystemName is defined by ManagedSystem and not by
+    LogicalPartition, so a single-slot cache rejects it.
+    """
+    lpar_discovery, _, _ = _mock_search_validation_routes(mock_hmc)
+    system_discovery = mock_hmc.get("/rest/api/uom/ManagedSystem/search").mock(
+        return_value=httpx.Response(
+            200,
+            text=_search_parameter_entry(
+                "ManagedSystem", *_MANAGED_SYSTEM_SEARCH_PARAMETERS
+            ),
+        )
+    )
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==prod)").mock(
+        return_value=httpx.Response(204)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc.search_uom(
+            _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+        )
+        await hmc.search_uom("ManagedSystem", "SystemName", "prod", validate=True)
+
+    assert lpar_discovery.call_count == 1
+    assert system_discovery.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_rereads_for_a_new_client(mock_hmc):
+    """The cache is per client; nothing is shared between two of them."""
+    discovery, _, _ = _mock_search_validation_routes(mock_hmc)
+
+    for _ in range(2):
+        async with HMCClient(make_config()) as hmc:
+            await hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+            )
+
+    assert discovery.call_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "discovery",
+    [500, 400, httpx.ConnectError("connection refused"), 204],
+    ids=["500", "400", "transport", "204"],
+)
+async def test_search_uom_validate_degrades_and_caches_the_failure(mock_hmc, discovery):
+    """A read yielding no names validates nothing, and is cached, not retried.
+
+    All four ways it can happen: a 5xx and a 4xx raise HMCError, a connection
+    failure raises HMCTransportError which subclasses it, and a 204 returns
+    ([], version) without raising at all. Each degrades to today's unvalidated
+    behaviour -- so the search runs, including for a property the type does not
+    define -- and each is cached, so the second call issues no second read.
+    """
+    discovery_route, _, undefined = _mock_search_validation_routes(
+        mock_hmc, discovery=discovery
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        first = await hmc.search_uom(
+            _SEARCH_VALIDATION_TYPE, "NoSuchProperty", "web", validate=True
+        )
+        second = await hmc.search_uom(
+            _SEARCH_VALIDATION_TYPE, "NoSuchProperty", "web", validate=True
+        )
+
+    assert first[0]["Resource"]["PartitionName"] == "web"
+    assert second == first
+    assert undefined.call_count == 2
+    assert discovery_route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_search_uom_defaults_to_no_validation(mock_hmc):
+    """Omitting validate makes no discovery request and sends the search."""
+    discovery, _, undefined = _mock_search_validation_routes(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc.search_uom(_SEARCH_VALIDATION_TYPE, "NoSuchProperty", "web")
+
+    assert discovery.call_count == 0
+    assert undefined.call_count == 1
+
+
+def test_search_uom_validate_is_keyword_only_and_defaults_false():
+    """validate cannot be passed positionally, and is off unless asked for."""
+    validate = inspect.signature(HMCClient.search_uom).parameters["validate"]
+
+    assert validate.kind is inspect.Parameter.KEYWORD_ONLY
+    assert validate.default is False
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_caches_nothing_when_the_read_is_cancelled(mock_hmc):
+    """A cancelled discovery read caches nothing and is retried.
+
+    This is the one carve-out in the cost bound, and it holds only because
+    asyncio.CancelledError is a BaseException that the helper's `except
+    HMCError` does not catch. A later `except Exception` -- or an explicit
+    CancelledError handler added for "robustness" -- would silently cache a
+    negative entry and disable validation for the type on a caller's timeout,
+    which is the opposite of what the failure model promises. Nothing else
+    pins it.
+
+    A timeout is deliberately not this case: _request converts
+    httpx.TimeoutException to HMCTransportError, which the helper does catch
+    and cache. That path is covered by the degradation test above.
+    """
+    started = asyncio.Event()
+    attempts = 0
+
+    async def slow_discovery(request):
+        # respx increments call_count only when a response is returned, and
+        # these attempts are cancelled in flight -- so count them here.
+        nonlocal attempts
+        attempts += 1
+        started.set()
+        await asyncio.sleep(3600)
+        raise AssertionError("unreachable: the call is cancelled first")
+
+    mock_hmc.get(_SEARCH_DISCOVERY).mock(side_effect=slow_discovery)
+    mock_hmc.get(_SEARCH_DEFINED).mock(
+        return_value=httpx.Response(200, text=_SEARCH_RESULT_FEED)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        task = asyncio.create_task(
+            hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+            )
+        )
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert hmc._search_parameter_names == {}
+        assert not hmc._search_parameter_names_lock.locked()
+
+        # The next validated call re-reads rather than inheriting a cached
+        # negative entry; it reaches the same stalled route, so cancel it too
+        # and assert on the attempt count.
+        retry = asyncio.create_task(
+            hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+            )
+        )
+        started.clear()
+        await started.wait()
+        retry.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await retry
+
+    assert attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_caps_the_names_it_enumerates(mock_hmc):
+    """The refusal message is a diagnostic, not an amplifier.
+
+    The set rendered here is whatever the discovery read returned. The parse is
+    captured at two levels (ADR 0142), so this is no longer about a wrong
+    guess; it is about the levels nobody has measured. One answering the
+    query-less anchor with an instance feed would fill the set with per-instance
+    data bounded only by HMC_MAX_RESPONSE_BYTES, so an uncapped join builds a
+    message the size of the response -- and one made of operator instance names.
+    """
+    many = [f"Param{i:04d}" for i in range(500)]
+    mock_hmc.get(_SEARCH_DISCOVERY).mock(
+        return_value=httpx.Response(
+            200, text=_search_parameter_entry(_SEARCH_VALIDATION_TYPE, *many)
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError) as exc_info:
+            await hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "NoSuchProperty", "web", validate=True
+            )
+
+    message = str(exc_info.value)
+    assert "Param0000" in message
+    assert "Param0019" in message
+    assert "Param0020" not in message
+    assert "and 480 more." in message
+    # The whole set joined would run past 5,000 characters; the count cap keeps
+    # the message bounded by _MAX_REPORTED_NAMES rather than by the set size.
+    assert len(message) < 500
+
+
+@pytest.mark.asyncio
+async def test_search_uom_validate_truncates_a_single_oversized_name(mock_hmc):
+    """The count cap is not a byte bound, so the length cap carries this case.
+
+    One name is never twenty-one, so capping the count alone never engages
+    here: a single element carrying a whole response body renders in full. The
+    element's text is bounded only by HMC_MAX_RESPONSE_BYTES (32 MiB by
+    default), so without a per-name truncation this message is the size of the
+    response. A name this long is already evidence the parse is wrong, which is
+    the premise ADR 0142 records.
+
+    The sibling test above cannot discriminate this: its 500 names are 9
+    characters each, so a byte budget and a count budget behave identically
+    against it.
+    """
+    oversized = "N" * 100_000
+    mock_hmc.get(_SEARCH_DISCOVERY).mock(
+        return_value=httpx.Response(
+            200, text=_search_parameter_entry(_SEARCH_VALIDATION_TYPE, oversized)
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError) as exc_info:
+            await hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+            )
+
+    message = str(exc_info.value)
+    assert "..." in message
+    assert len(message) < 1_000
+    assert oversized not in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("over", [False, True])
+async def test_search_uom_validate_truncates_at_the_length_cap(mock_hmc, over):
+    """The cap is pinned where it sits, not merely as "a cap exists".
+
+    The 100,000-character name above discriminates only whether truncation
+    happens at all -- raising the constant to 4,096 still kills it. These two
+    rows sit either side of the boundary, so an off-by-one in the comparison or
+    in the slice fails one of them. The constant is read rather than written as
+    a literal: the boundary is the cap's, wherever it is set.
+    """
+    cap = client_core._MAX_REPORTED_NAME_LENGTH
+    name = "N" * (cap + 1 if over else cap)
+    mock_hmc.get(_SEARCH_DISCOVERY).mock(
+        return_value=httpx.Response(
+            200, text=_search_parameter_entry(_SEARCH_VALIDATION_TYPE, name)
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError) as exc_info:
+            await hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+            )
+
+    message = str(exc_info.value)
+    if over:
+        assert f"{'N' * cap}..." in message
+        assert name not in message
+    else:
+        assert name in message
+        assert "..." not in message
