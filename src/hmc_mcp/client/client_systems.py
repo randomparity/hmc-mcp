@@ -80,6 +80,13 @@ class SystemsMixin:
                 "GET /rest/api/uom/ManagedSystem/quick/All returned invalid "
                 f"JSON: {str(exc)[:500]}"
             ) from exc
+        except RecursionError as exc:
+            # json.loads recurses per nesting level; RecursionError carries
+            # no message, hence the fixed clause.
+            raise HMCError(
+                "GET /rest/api/uom/ManagedSystem/quick/All returned invalid "
+                "JSON: document nesting is too deep"
+            ) from exc
         if not isinstance(summaries, list):
             raise HMCError(
                 "GET /rest/api/uom/ManagedSystem/quick/All returned a JSON "
