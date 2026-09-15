@@ -129,3 +129,10 @@ class UpdatesMixin:
             raise HMCError(
                 f"PUT {path}: Malformed PlatformUpdate response: body is not valid JSON"
             ) from exc
+        except RecursionError as exc:
+            # json.loads recurses per nesting level; RecursionError carries
+            # no message, hence the fixed clause.
+            raise HMCError(
+                f"PUT {path}: Malformed PlatformUpdate response: "
+                "document nesting is too deep"
+            ) from exc

@@ -33,6 +33,13 @@ def _tag_parse_errors(fn: Callable[..., _T]) -> Callable[..., _T]:
             raise HMCError(
                 f"Failed to parse {context} response: {str(exc)[:500]}"
             ) from exc
+        except RecursionError as exc:
+            # element_to_dict recurses per nesting level of the parsed
+            # document, so a deeply nested response exhausts the stack;
+            # RecursionError carries no message, hence the fixed clause.
+            raise HMCError(
+                f"Failed to parse {context} response: document nesting is too deep"
+            ) from exc
 
     return wrapper
 
