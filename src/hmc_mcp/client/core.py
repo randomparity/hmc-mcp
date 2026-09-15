@@ -63,7 +63,13 @@ _MAX_REPORTED_NAME_LENGTH = 64
 
 
 def _summarize_names(names: frozenset[str]) -> str:
-    """Render *names* for an error message, bounded in count and in length."""
+    """Render *names* for an error message, bounded in count and in length.
+
+    *names* is expected non-empty: an empty set renders a bare ".". The only
+    caller cannot produce one, because an empty discovery answer is cached as
+    None and the call is guarded on ``defined is not None`` -- so this is a
+    stated precondition rather than a branch.
+    """
     ordered = sorted(names)
     shown = ", ".join(
         name

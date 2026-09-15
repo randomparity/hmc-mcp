@@ -25,7 +25,11 @@ per function (~600); `CHANGELOG.md` gains one entry (~16).
 read 310–415, taken from the twin PR #805's 230 test lines without scaling for a test count nearly
 double that branch's nine. The plan's task coverage was not wrong — every implemented line traces
 to a step below — only the arithmetic was, so no implementation was cut to fit the number, which
-forge's estimate rule forbids. The actual diff is 180 + 499 + 16 = 695 changed lines. The frozen
+forge's estimate rule forbids. The actual diff was 180 + 499 + 16 = 695 changed lines when this
+correction was written at `3a2e27f5`; the two review-driven fix commits that followed
+(`5c525c10`, `9f26f28f`) added the message-bounding code and its tests, carrying it to
+213 + 630 + 16 = 859 added lines and past the band above. The band is left as written: it records
+what was estimated before the build, and review-driven fixes are not estimated work. The frozen
 design denominator of 250 is unaffected: it is derived from the validated complexity, never from
 this estimate, and this line has never been an input to it.
 

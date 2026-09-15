@@ -132,9 +132,18 @@ not general path handling: it refuses `.` and `..` segments in the raw and singl
 and it does **not** refuse `?` or `#`, so a type string carrying either retargets the GET within
 `/rest/api/uom/` — verified not to permit SSRF, header injection, a different method, or an escape
 above that prefix. The type segments are not percent-encoded, unlike `search_uom`'s
-`property_name`/`property_value`. This is pre-existing and identical at all six interpolation sites
-in this module, is not widened here, and is unreachable from MCP or the CLI for this method; the
-shared decision is a follow-up candidate, recorded rather than closed in this change.
+`property_name`/`property_value`. This is pre-existing and identical at every uom path
+interpolation in this module — `rg -c 'f"/rest/api/uom/' src/hmc_mcp/client/core.py` returns 13 at
+`a0d29ac7` (11 interpolating a caller-supplied type segment, 2 a job id) and 15 here. **This change
+extends that class by two sites of the same shape rather than altering it:** `core.py:1013` and
+`core.py:1016`, the first a new unencoded `parent_type` reachable through a new public method. It is
+unreachable from MCP or the CLI for this method; the shared decision is a follow-up candidate,
+recorded rather than closed in this change.
+
+  An earlier revision of this entry said "identical at all six interpolation sites in this module,
+  is not widened here". Both halves were wrong — the count by a factor of two, and the direction of
+  change outright — and they are corrected rather than reworded. The deferral itself is unaffected:
+  the guard is specific, the pattern is pre-existing, and the encoding decision is shared.
 `parent_uuid` validation:
 `_request_with_uuid_path_arguments` (`core.py:462`). Percent-encoding of the instance-search
 grammar: `search_uom`'s existing `quote(..., safe="")` calls, pinned by

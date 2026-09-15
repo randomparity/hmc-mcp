@@ -3211,17 +3211,60 @@ async def test_list_search_parameters_reads_both_anchors(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "kwargs",
+    ("args", "kwargs", "error", "match"),
     [
-        {"parent_type": "ManagedSystem"},
-        {"parent_uuid": _PARENT_UUID},
+        # Carries the non-UUID case its named sibling carries at
+        # test_list_quick_properties_refuses_bad_arguments. Without this row the
+        # `uuid_path_arguments["parent_uuid"] = parent_uuid` line can be deleted
+        # and every other test here still passes -- a survivor the failure
+        # model's `parent_uuid` entry assumes is dead, because that entry closes
+        # the concern by citing `_request_with_uuid_path_arguments` and nothing
+        # else pins that this method reaches it.
+        (
+            ("LogicalPartition",),
+            {"parent_type": "ManagedSystem", "parent_uuid": "not-a-uuid"},
+            ValueError,
+            "parent_uuid must be a UUID",
+        ),
+        (
+            ("LogicalPartition",),
+            {"parent_type": "ManagedSystem"},
+            ValueError,
+            "must be given together",
+        ),
+        (
+            ("LogicalPartition",),
+            {"parent_uuid": _PARENT_UUID},
+            ValueError,
+            "must be given together",
+        ),
+        # Root anchor: resource_type is the only interpolated segment.
+        (("../web/Logon",), {}, HMCError, r"'\.\.' segment"),
+        # Child anchor: parent_type is interpolated too, and is refused on the
+        # same guard. Each anchor interpolates a different argument.
+        (
+            ("LogicalPartition",),
+            {"parent_type": "../../web", "parent_uuid": _PARENT_UUID},
+            HMCError,
+            r"'\.\.' segment",
+        ),
     ],
 )
-async def test_list_search_parameters_refuses_bad_arguments(mock_hmc, kwargs):
-    """One half of the child anchor is a caller error, not a root-anchor read."""
+async def test_list_search_parameters_refuses_bad_arguments(
+    mock_hmc, args, kwargs, error, match
+):
+    """Refused before transport: no request for a search anchor is recorded.
+
+    One half of the child anchor is a caller error, not a root-anchor read. The
+    router pre-mocks the logon and logoff the client context manager performs,
+    so the assertion is scoped to the paths this method builds rather than to
+    the router being untouched.
+    """
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(ValueError, match="must be given together"):
-            await hmc.list_search_parameters("LogicalPartition", **kwargs)
+        with pytest.raises(error, match=match):
+            await hmc.list_search_parameters(*args, **kwargs)
+
+    assert not [call for call in mock_hmc.calls if "search" in call.request.url.path]
 
 
 @pytest.mark.asyncio
@@ -3332,6 +3375,18 @@ async def test_list_search_parameters_204_returns_no_names(mock_hmc):
             "an empty collection",
         ),
         (_HTTP_ERROR_RESPONSE_FEED, "a 200 carrying an HttpErrorResponse"),
+        # Pins the `if n` filter, which nothing else observes: without it these
+        # elements yield ["", "   "] rather than [], `if not names` never fires,
+        # and the cache stores frozenset({"", "   "}) instead of None -- so
+        # every validate=True call on that client rejects every property for
+        # the client's lifetime. That is the one failure class the design's
+        # failure model refuses to accept, under exactly the wrong-parse
+        # premise ADR 0142 accepts. The whitespace half rides on
+        # xmlutil.find_all_text stripping.
+        (
+            _search_parameter_entry("ManagedSystem", "", "   "),
+            "a 200 whose matched elements are all empty",
+        ),
     ],
 )
 async def test_list_search_parameters_200_without_a_name_raises(
@@ -3719,3 +3774,37 @@ async def test_search_uom_validate_truncates_a_single_oversized_name(mock_hmc):
     assert "..." in message
     assert len(message) < 1_000
     assert oversized not in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("over", [False, True])
+async def test_search_uom_validate_truncates_at_the_length_cap(mock_hmc, over):
+    """The cap is pinned where it sits, not merely as "a cap exists".
+
+    The 100,000-character name above discriminates only whether truncation
+    happens at all -- raising the constant to 4,096 still kills it. These two
+    rows sit either side of the boundary, so an off-by-one in the comparison or
+    in the slice fails one of them. The constant is read rather than written as
+    a literal: the boundary is the cap's, wherever it is set.
+    """
+    cap = client_core._MAX_REPORTED_NAME_LENGTH
+    name = "N" * (cap + 1 if over else cap)
+    mock_hmc.get(_SEARCH_DISCOVERY).mock(
+        return_value=httpx.Response(
+            200, text=_search_parameter_entry(_SEARCH_VALIDATION_TYPE, name)
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError) as exc_info:
+            await hmc.search_uom(
+                _SEARCH_VALIDATION_TYPE, "PartitionName", "web", validate=True
+            )
+
+    message = str(exc_info.value)
+    if over:
+        assert f"{'N' * cap}..." in message
+        assert name not in message
+    else:
+        assert name in message
+        assert "..." not in message
