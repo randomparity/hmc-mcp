@@ -2404,9 +2404,16 @@ async def test_list_operations_requires_both_parent_arguments(mock_hmc, kwargs):
     ],
 )
 async def test_list_operations_rejects_a_dot_segment_type(mock_hmc, args, kwargs):
-    """Refused before transport: the request is never attempted."""
+    """Refused before transport: the request is never attempted.
+
+    ``ValueError``, not ``HMCError``: a ``..`` type fails the resource-type
+    grammar, so the boundary check fires before the path ever reaches the waist
+    guard (ADR 0143). The property this test exists for is unchanged -- nothing
+    is built -- and ``_reject_dot_segments`` still owns a ``..`` *instance*
+    segment, which no boundary check sees.
+    """
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match=r"'\.\.' segment"):
+        with pytest.raises(ValueError, match="must be an HMC resource type name"):
             await hmc.list_operations(*args, **kwargs)
 
 
@@ -2845,15 +2852,17 @@ async def test_list_quick_properties_unknown_type_raises_hmc_error_with_status(
             ValueError,
             "must be given together",
         ),
-        # Root anchor: resource_type is the only interpolated segment.
-        (("../web/Logon",), {}, HMCError, r"'\.\.' segment"),
-        # Child anchor: parent_type is interpolated too, and is refused on the
-        # same guard. Each anchor interpolates a different argument.
+        # Root anchor: resource_type is the only interpolated segment. A ".."
+        # type fails the resource-type grammar, so this is refused at the
+        # boundary with ValueError rather than at the waist (ADR 0143).
+        (("../web/Logon",), {}, ValueError, "must be an HMC resource type name"),
+        # Child anchor: parent_type is interpolated too, and is refused by the
+        # same predicate. Each anchor interpolates a different argument.
         (
             ("LogicalPartition",),
             {"parent_type": "../../web", "parent_uuid": _PARENT_UUID},
-            HMCError,
-            r"'\.\.' segment",
+            ValueError,
+            "must be an HMC resource type name",
         ),
     ],
 )
@@ -3294,9 +3303,12 @@ async def test_list_search_parameters_refuses_a_dot_segment_resource_type(mock_h
     router pre-mocks the logon and logoff the client context manager performs,
     so the assertion is scoped to the paths this method builds rather than to
     the router being untouched.
+
+    ``ValueError``, not ``HMCError``: a ".." type fails the resource-type
+    grammar, so the boundary check fires before the waist guard (ADR 0143).
     """
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match=r"'\.\.' segment"):
+        with pytest.raises(ValueError, match="must be an HMC resource type name"):
             await hmc.list_search_parameters("../web/Logon")
 
     assert not [call for call in mock_hmc.calls if "search" in call.request.url.path]

@@ -178,6 +178,44 @@ async def _read_bounded_response(
 # "..log" or "a..b" is not refused for containing the characters.
 _DOT_SEGMENTS: frozenset[str] = frozenset({".", ".."})
 
+# The HMC's own type-name grammar. Every `/rest/api/uom/` type segment in the
+# vendored V10 and V11 corpora, and every type name this client passes, matches
+# it. Deliberately an allowlist: a denylist over a URL path segment has to
+# discover `?`, `#`, `%`, `;`, `@`, `:`, and CRLF one incident at a time, while
+# the type namespace is closed and documented (ADR 0143).
+#
+# Unanchored, because it is used with `fullmatch`. An `^...$` pattern with
+# `.match` would accept "LogicalPartition\n" -- Python's `$` matches before a
+# trailing newline -- which httpx puts straight into the Accept header.
+_UOM_TYPE = re.compile(r"[A-Za-z][A-Za-z0-9]*")
+
+
+def _reject_unknown_uom_type(argument: str, value: str) -> None:
+    """Refuse a type segment outside the HMC's own type-name grammar.
+
+    Raised as ``ValueError`` because it reports a malformed caller argument,
+    not a path this client declines to send -- the same family as
+    ``_request_with_uuid_path_arguments``' UUID check and
+    ``validate_adapter_type`` (ADR 0143). The message names the argument and the
+    first offending character only, never the whole value, which on the CLI and
+    API paths can carry an operator's own strings.
+    """
+    if _UOM_TYPE.fullmatch(value):
+        return
+    if not value:
+        detail = "an empty value"
+    elif not (value[0].isascii() and value[0].isalpha()):
+        detail = f"a value starting with {value[0]!r}"
+    else:
+        offending = next(
+            (c for c in value if not (c.isascii() and c.isalnum())), value[0]
+        )
+        detail = f"a value containing {offending!r}"
+    raise ValueError(
+        f"{argument} must be an HMC resource type name: ASCII letters and "
+        f"digits only, starting with a letter. Got {detail}."
+    )
+
 
 def _reject_dot_segments(method: str, path: str) -> None:
     """Refuse a request path that could resolve away from the resource it names.
@@ -186,6 +224,15 @@ def _reject_dot_segments(method: str, path: str) -> None:
     which is what every other pre-flight refusal here is. The message names the
     method and the offending segment only — never the full path, which on the
     CLI and API paths can carry an operator's own filesystem-derived values.
+
+    **Its scope is path form, and only dot segments — that is a contract, not an
+    omission** (ADR 0143). ``?``, ``#`` and every other character are legitimate
+    at this waist: ``list_uom`` appends ``?group=`` to the path it passes here
+    and ``search_uom`` passes an instance grammar of ``(``, ``)`` and ``==``, so
+    a character rule here would refuse this client's own requests. A path
+    segment's own character grammar is checked where the segment is built
+    instead — see ``_reject_unknown_uom_type`` for a type segment and
+    ``_request_with_uuid_path_arguments`` for a UUID.
     """
     candidate = urlparse(path).path if "://" in path else path
     # Raw *and* percent-decoded. httpx resolves only the raw form, so an earlier
@@ -553,6 +600,10 @@ class HMCClient(
     ) -> dict[str, str]:
         accept = MEDIA_UOM
         if resource_type:
+            # The Accept destination for the same value the path sites validate.
+            # Truthiness, not `is not None`: "" already yields the generic
+            # Accept with no type= parameter, so it reaches no destination.
+            _reject_unknown_uom_type("resource_type", resource_type)
             accept = f"{MEDIA_UOM}; type={resource_type}"
         headers: dict[str, str] = {"Accept": accept}
         if include_schema_version and self.config.schema_version:
@@ -750,6 +801,7 @@ class HMCClient(
         self, resource_type: str, group: str | None = None
     ) -> list[dict[str, Any]]:
         """GET /rest/api/uom/{ResourceType} and parse the Atom feed."""
+        _reject_unknown_uom_type("resource_type", resource_type)
         path = f"/rest/api/uom/{resource_type}"
         if group:
             path += f"?group={group}"
@@ -762,6 +814,7 @@ class HMCClient(
         self, resource_type: str, uuid: str, group: str | None = None
     ) -> dict[str, Any] | None:
         """GET /rest/api/uom/{ResourceType}/{uuid} and parse the entry."""
+        _reject_unknown_uom_type("resource_type", resource_type)
         path = f"/rest/api/uom/{resource_type}/{uuid}"
         if group:
             path += f"?group={group}"
@@ -793,6 +846,7 @@ class HMCClient(
         every call would pay that request (ADR 0141). A level where the
         discovery read itself fails validates nothing rather than raising.
         """
+        _reject_unknown_uom_type("resource_type", resource_type)
         if validate:
             defined = await self._defined_quick_property_names(resource_type)
             if defined is not None and property_name not in defined:
@@ -898,8 +952,10 @@ class HMCClient(
         Sends ``Accept: */*``: ``quick/`` endpoints answer 406 to a typed uom
         Accept, as ``get_quick_property`` records.
         """
+        _reject_unknown_uom_type("resource_type", resource_type)
         uuid_path_arguments: dict[str, str] = {}
         if parent_type is not None and parent_uuid is not None:
+            _reject_unknown_uom_type("parent_type", parent_type)
             path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{resource_type}/quick"
             uuid_path_arguments["parent_uuid"] = parent_uuid
         elif parent_type is None and parent_uuid is None:
@@ -974,6 +1030,7 @@ class HMCClient(
         set, and validating against an empty positive set would refuse every
         property name for the client's lifetime (ADR 0142).
         """
+        _reject_unknown_uom_type("resource_type", resource_type)
         if validate:
             defined = await self._defined_search_parameter_names(resource_type)
             if defined is not None and property_name not in defined:
@@ -1057,6 +1114,7 @@ class HMCClient(
         **400 ``INVALID_URL``, not 404** -- captured here, not merely predicted
         from ADR 0139.
         """
+        _reject_unknown_uom_type("resource_type", resource_type)
         path = f"/rest/api/uom/{resource_type}/search"
         resp = await self._request("GET", path, headers={"Accept": "*/*"})
         schema_version: str | None = resp.headers.get("X-HMC-Schema-Version")
@@ -1197,8 +1255,10 @@ class HMCClient(
         ``HMCError`` carrying 500. Callers that must work across levels should
         expect it.
         """
+        _reject_unknown_uom_type("resource_type", resource_type)
         uuid_path_arguments: dict[str, str] = {}
         if parent_type is not None and parent_uuid is not None:
+            _reject_unknown_uom_type("parent_type", parent_type)
             path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{resource_type}/operations"
             uuid_path_arguments["parent_uuid"] = parent_uuid
         elif parent_type is None and parent_uuid is None:
@@ -1232,6 +1292,8 @@ class HMCClient(
         self, parent_type: str, parent_uuid: str, child_type: str
     ) -> list[dict[str, Any]]:
         """GET /rest/api/uom/{parent}/{uuid}/{child} and parse the feed."""
+        _reject_unknown_uom_type("parent_type", parent_type)
+        _reject_unknown_uom_type("child_type", child_type)
         path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}"
         xml = await self._get(
             path,
@@ -1248,6 +1310,8 @@ class HMCClient(
         Omits X-HMC-Schema-Version header — the HMC returns HTTP 406 on adapter
         PUT endpoints when this header is present (same as VolumeGroup and LPAR).
         """
+        _reject_unknown_uom_type("parent_type", parent_type)
+        _reject_unknown_uom_type("child_type", child_type)
         path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}"
         xml = await self._put(
             path,
@@ -1263,6 +1327,8 @@ class HMCClient(
         self, parent_type: str, parent_uuid: str, child_type: str, child_uuid: str
     ) -> None:
         """DELETE a child resource instance."""
+        _reject_unknown_uom_type("parent_type", parent_type)
+        _reject_unknown_uom_type("child_type", child_type)
         await self._delete(
             f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}/{child_uuid}",
             uuid_path_arguments={
