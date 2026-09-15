@@ -72,6 +72,12 @@ discovery read fails (#799 criterion 4). The six `hmc_mcp.api` exports.
   `([], version)` without raising (`core.py:780-781`, pinned by
   `tests/unit/test_client.py:2623-2629`) — and an empty positive set would reject every name for the
   client's lifetime. It is degraded from instead, exactly as a failed read is.
+- `validate=True` with a malformed `uuid` spends one discovery request before raising the
+  `ValueError` that `_request_with_uuid_path_arguments` (`core.py:461-464`) raises today at no cost,
+  because the name check sits above the path build and the UUID check is downstream of it. Accepted
+  knowingly: one idempotent GET on a caller-error path, cached so it happens at most once per type
+  per client and only under the opt-in flag, and the stated cost bound still holds. Hoisting a
+  second UUID check into `get_quick_property` would duplicate policy the transport helper owns.
 - Cache growth is unbounded in the number of distinct `resource_type` values passed. Accepted:
   entries are one short string keyed to a frozenset of short strings, resource types come from
   literals in this repository, and the dict dies with the client.
