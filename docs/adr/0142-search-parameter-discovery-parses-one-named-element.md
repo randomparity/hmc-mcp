@@ -7,7 +7,9 @@ Accepted
 #789 asks for `HMCClient.list_search_parameters`, reading the type-anchored
 `/rest/api/uom/{R}/search` anchor, and asks that it feed `search_uom` as a pre-flight check. It is
 the union of two merged siblings applied to a third anchor: #788 landed the `/quick` discovery read
-(PR #800, ADR 0140) and #799 landed the opt-in validation wiring (PR #805, ADR 0141). Those two
+(PR #803, ADR 0140 — the live rounds that settled its response shape are recorded on the earlier
+PR #800, which was closed unmerged) and #799 landed the opt-in validation wiring (PR #805,
+ADR 0141). Those two
 records settle most of the shape. Two questions are this one's.
 
 **The response body is unknown, and this repository has never spoken this endpoint.** The vendored

@@ -17,7 +17,7 @@ an HTTP 400 from the HMC. The type-anchored `/rest/api/uom/{R}/search` anchor, w
 properties a search may use, has no reader anywhere under `src/`, and neither does its child form.
 
 #789 is the union of two already-merged siblings applied to `/search`: the discovery read #788
-landed for `/quick` (PR #800, ADR 0140) and the opt-in validation wiring #799 landed for
+landed for `/quick` (PR #803, ADR 0140) and the opt-in validation wiring #799 landed for
 `get_quick_property` (PR #805, ADR 0141). Both shapes are reused rather than re-decided.
 
 **The response shape is unknown and this design says so.** The vendored reference corpus describes
