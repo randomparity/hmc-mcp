@@ -5,12 +5,10 @@ outside the HMC's own type-name grammar, before the client builds a request
 path or an `Accept` header from it.
 
 **Architecture.** One module-level predicate in `src/hmc_mcp/client/core.py`,
-`_reject_unknown_uom_type`, beside the existing `_reject_dot_segments`. Ten
-public client methods call it on each caller-supplied type argument before
-interpolating one into a path; `_uom_headers` calls it on the `resource_type` it
-interpolates into the `Accept` media-type parameter. Nothing else changes: the
-transport waist, the UUID check, and the search-term encoding all keep their
-current contracts.
+`_reject_unknown_uom_type`, beside `_reject_dot_segments`, called by the ten
+public methods that interpolate a type into a path and by `_uom_headers` for the
+`Accept` parameter. The transport waist, the UUID check, and the search-term
+encoding keep their current contracts.
 
 **Tech stack.** Python 3.11+, `httpx`, `pytest`, `respx`. No new dependency.
 
@@ -18,9 +16,10 @@ Spec: `docs/workflow/specs/2026-09-15-uom-type-segment-validation.md`.
 Decision: `docs/adr/0143-uom-type-segments-validated-not-encoded.md`.
 
 Expected implementation size: 150–210 changed lines (M) — derived from the file
-map below: one ~20-line predicate, twelve one-line calls across ten methods plus
-`_uom_headers`, one docstring edit, one test-file edit, and ~130 lines of new
-tests.
+map below: one ~20-line predicate; fifteen one-line calls across ten methods,
+covering the twelve interpolation sites, plus one in `_uom_headers`; one
+docstring edit; three tests and six parametrized cases updated in one existing
+test file; and ~130 lines of new tests.
 
 ## Global Constraints
 
@@ -35,7 +34,9 @@ tests.
   the full path, the host, or the caller's whole string. This is
   `_reject_dot_segments`' existing rule (`core.py`, its docstring) and the new
   predicate inherits it.
-- The type grammar is exactly `^[A-Za-z][A-Za-z0-9]*$`.
+- The type grammar is exactly `re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", value)`.
+  Never `^...$` with `.match`: Python's `$` matches before a trailing newline,
+  so the anchored form accepts `"LogicalPartition\n"`.
 - `ValueError` is the refusal type, matching `_request_with_uuid_path_arguments`,
   `validate_adapter_type`, and ADR 0065.
 - Do not add an ADR index; this repository has none (`AGENTS.md`).
@@ -46,13 +47,17 @@ tests.
 |---|---|---|
 | `src/hmc_mcp/client/core.py` | path construction, the dot-segment and UUID guards | the same, plus the type-grammar predicate and its call sites |
 | `tests/unit/test_request_path_safety.py` | the path-safety contracts | the same, plus the type-grammar contracts and the AST drift test |
-| `tests/unit/test_client.py` | per-method client behaviour | the same, with one refusal identity updated |
+| `tests/unit/test_client.py` | per-method client behaviour | the same, with three tests' refusal identity updated |
 
-No file is created, moved, or removed. No caller outside `core.py` changes: every
-`resource_type` reaching the uom helpers from `client_lpars.py`,
-`client_network.py`, `client_storage.py`, `client_systems.py`, and
-`client_users.py` is already a PascalCase literal inside the grammar (verified at
-`b269bbb6`). No compatibility path is retained, because no contract is removed.
+No file is created, moved, or removed, and no caller outside `core.py` changes.
+The property that makes that true, verified at `b269bbb6` by walking every
+`_get`/`_put`/`_post`/`_uom_headers` call in `src/`: every `resource_type`
+reaching those helpers from outside `core.py` is a PascalCase string literal
+inside the grammar. The only non-literal type arguments anywhere are
+`server_tools/systems/core.py:256` (`hmc_list_resources`, reaching `list_uom`)
+and `client_adapters.py`'s `adapter_type` (already constrained to four literals
+by `validate_adapter_type`) — both path sites this change validates. No
+compatibility path is retained, because no contract is removed.
 
 ## Task 1 — the predicate, its call sites, and its tests
 
@@ -70,7 +75,7 @@ Consumes, from the existing module:
 
 Provides:
 
-- `_UOM_TYPE = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")`
+- `_UOM_TYPE = re.compile(r"[A-Za-z][A-Za-z0-9]*")`, used with `fullmatch`
 - `_reject_unknown_uom_type(argument: str, value: str) -> None`
 
 **Verification inventory.**
@@ -88,18 +93,26 @@ Provides:
   `test_uom_headers_refuses_a_malformed_type` and
   `test_uom_headers_passes_a_valid_type_through`. Red before the
   `_uom_headers` call: `DID NOT RAISE ValueError`. Green: the same command.
-- *Contract: no site drifts.* Mode: `focused-test`.
-  `test_every_uom_path_interpolation_is_a_known_argument`. Red when seeded with
-  an unknown name: the assertion lists it. Green: the same command.
+- *Contract: no site drifts.* Mode: `focused-test`. Two assertions, because
+  name membership alone proves nothing about whether a site validates:
+  `test_every_uom_type_interpolation_is_guarded` (red before the call sites
+  exist: it lists all ten unguarded functions) and
+  `test_every_uom_path_interpolation_is_a_known_argument` (red when seeded with
+  an unknown name: the assertion lists it). Green: the same command.
 - *Contract: `_reject_dot_segments` unchanged.* Mode:
   `task-test-not-applicable`. Its existing parametrized accept/refuse cases in
   the same file are the observation and this task does not modify them; a second
   test asserting the identical behaviour would observe nothing new.
-- *Contract: the moved refusal identity.* Mode: `focused-test`.
-  `test_list_search_parameters_refuses_a_dot_segment_resource_type` in
-  `tests/unit/test_client.py`. Red before the call sites exist, in the
-  already-updated form: it expects `ValueError` and gets `HMCError`. Green:
-  `uv run --no-sync pytest tests/unit/test_client.py -q -k list_search_parameters`.
+- *Contract: the moved refusal identity.* Mode: `focused-test`. All three tests
+  in `tests/unit/test_client.py`, six parametrized cases:
+  `test_list_operations_rejects_a_dot_segment_type` (three cases, one of which
+  pairs a bad `resource_type` with a valid `parent_type`/`parent_uuid`),
+  `test_list_quick_properties_refuses_bad_arguments` (its two `HMCError` cases),
+  and `test_list_search_parameters_refuses_a_dot_segment_resource_type`. Red
+  before the call sites exist, in the already-updated form: each expects
+  `ValueError` and gets `HMCError`. Green: `uv run --no-sync pytest
+  tests/unit/test_client.py -q -k "list_operations or list_quick_properties or
+  list_search_parameters"`.
 
 **Steps.**
 
@@ -111,7 +124,9 @@ Provides:
    `VolumeGroup`, and every member of `client_contracts.ADAPTER_TYPES`. Refuse:
    `LogicalPartition?group=None`, `LogicalPartition#x`, `..`, `%2e%2e`,
    `Logical Partition`, `Logical/Partition`, `Logical-Partition`,
-   `Logical_Partition`, `1LogicalPartition`, `""`, `'LogicalPartition\r\nEvil: 1'`.
+   `Logical_Partition`, `1LogicalPartition`, `""`, `'LogicalPartition\r\nEvil: 1'`,
+   and — the case an `^...$` grammar would wrongly accept —
+   `'LogicalPartition\n'` and `'LogicalPartition\r'`.
    Assert the message names the argument and carries neither the host nor the
    whole offending value.
 2. Run `uv run --no-sync pytest tests/unit/test_request_path_safety.py -q`.
@@ -124,7 +139,9 @@ Provides:
    # allowlist: a denylist over a URL path segment has to discover `?`, `#`, `%`,
    # `;`, `@`, `:`, and CRLF one incident at a time, while the type namespace is
    # closed and documented (ADR 0143).
-   _UOM_TYPE = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")
+   # Unanchored, because it is used with `fullmatch`: `^...$` with `.match` would
+   # accept a trailing newline, which httpx puts straight into the Accept header.
+   _UOM_TYPE = re.compile(r"[A-Za-z][A-Za-z0-9]*")
    ```
 
 4. Below `_reject_dot_segments`, add:
@@ -140,7 +157,7 @@ Provides:
        the first offending character only, never the whole value, which on the
        CLI and API paths can carry an operator's own strings.
        """
-       if _UOM_TYPE.match(value):
+       if _UOM_TYPE.fullmatch(value):
            return
        if not value:
            detail = "an empty value"
@@ -181,27 +198,38 @@ Provides:
    | `create_child` | `("parent_type", parent_type)`, `("child_type", child_type)` |
    | `delete_child` | `("parent_type", parent_type)`, `("child_type", child_type)` |
 
-   In `get_quick_property`, `list_quick_properties`, `list_operations`, and
-   `search_uom`, the call goes **before** the optional `validate` discovery read
-   — a malformed type must not cost a request.
+   In `get_quick_property` and `search_uom` — the only two with a `validate`
+   parameter — the call goes **before** that optional discovery read, so a
+   malformed type never costs a request.
 7. In `_uom_headers`, inside the existing `if resource_type:` branch, call
    `_reject_unknown_uom_type("resource_type", resource_type)` before building
    the `Accept` value.
 8. Add the per-method, header, and drift tests to
-   `tests/unit/test_request_path_safety.py`. The drift test walks `core.py`'s
-   AST, collects every `ast.FormattedValue` name inside a `JoinedStr` whose
-   first constant part starts with `/rest/api/uom/`, and asserts the set is a
-   subset of `{"resource_type", "parent_type", "child_type", "uuid",
-   "parent_uuid", "child_uuid", "property_name", "job_id", "encoded_property",
-   "encoded_value"}` — so a new kind of segment fails until someone decides
-   which rule governs it.
+   `tests/unit/test_request_path_safety.py`. Both drift assertions walk
+   `core.py`'s AST and collect, for every `ast.FormattedValue` inside a
+   `JoinedStr` whose first constant part starts with `/rest/api/uom/`, the
+   interpolated name and the enclosing function:
+
+   - `test_every_uom_type_interpolation_is_guarded` — for each (function, name)
+     pair whose name is in `{"resource_type", "parent_type", "child_type"}`,
+     require that same function body to contain a call to
+     `_reject_unknown_uom_type` whose first argument is the string literal
+     `name` and whose second is `ast.Name(id=name)`. Assert the unguarded list
+     is empty, naming any pair it finds. This is the assertion that bites: a new
+     method building `f"/rest/api/uom/{resource_type}/count"` with no predicate
+     call fails here, which a membership check alone would not catch.
+   - `test_every_uom_path_interpolation_is_a_known_argument` — assert the name
+     set is a subset of `{"resource_type", "parent_type", "child_type", "uuid",
+     "parent_uuid", "child_uuid", "property_name", "job_id",
+     "encoded_property", "encoded_value"}`, so a new *kind* of segment fails
+     until someone decides which rule governs it.
 9. In `tests/unit/test_client.py`, update the three tests that pass a `..` type
    and assert `HMCError` with `'..' segment` — a `..` type fails the grammar, so
    the boundary check now fires before the waist guard. Change the expected
    exception to `ValueError` and the match to `must be an HMC resource type
    name`, keep every "no request recorded" assertion, and note ADR 0143 in each
    docstring:
-   - `test_list_operations_rejects_a_dot_segment_type` (both parametrized cases)
+   - `test_list_operations_rejects_a_dot_segment_type` (all three cases)
    - `test_list_quick_properties_refuses_bad_arguments` (the two cases whose
      `error` is `HMCError`; the three `ValueError` cases are unchanged, and the
      "must be given together" case still wins because `parent_type` is validated
