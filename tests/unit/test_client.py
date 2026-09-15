@@ -2364,15 +2364,17 @@ async def test_list_operations_rejects_a_dot_segment_type(mock_hmc, args, kwargs
 # ---------------------------------------------------------------------------
 # list_quick_properties (#788) -- the /quick discovery anchors.
 #
-# These bodies are reconstructed from the live run recorded on PR #800, not
-# captured from it: that run reported the container (an Atom feed wrapping a
-# QuickProperty_Collection whose QuickProperty elements each carry a Nickname)
-# and the names, and the names below are its verbatim output for the two types
-# it probed. What it did not report is the exact nesting between <feed> and
-# <QuickProperty_Collection>, so the parse reads Nickname document-wide and
-# test_list_quick_properties_reads_names_at_any_depth pins that independence
-# deliberately rather than by accident. A structural capture is requested on
-# the PR; these fixtures are to be replaced by it.
+# These bodies follow the structural capture taken against FW950/P10 and
+# recorded on PR #800. The document root is <entry>, not <feed>; the collection
+# sits under <content>; and each <QuickProperty> carries <Metadata><Atom>,
+# <RESTElement>, <Nickname> and <Description>. The nicknames below are that
+# run's verbatim output. Descriptions are placeholders except where a test
+# needs the captured text, which it quotes inline and says so.
+#
+# The sibling that matters is <Description>: every QuickProperty has one, and
+# LogicalPartition defines a property whose *name* is also "Description", so a
+# parse that read the wrong element would still return plausible strings.
+# test_list_quick_properties_returns_nicknames_not_descriptions pins it.
 #
 # The lowercase /quick/all anchor has no tests because it does not exist:
 # FW950 answered 400 on both the root and the child form, so the method offers
@@ -2399,20 +2401,35 @@ _LOGICAL_PARTITION_NICKNAMES = [
 ]
 
 
-def _quick_property_feed(*nicknames: str) -> str:
-    """An Atom feed wrapping a QuickProperty_Collection, as FW950 returns."""
-    properties = "".join(
-        f"<QuickProperty><Nickname>{name}</Nickname></QuickProperty>"
-        for name in nicknames
-    )
+def _quick_property_entry(rest_element: str, *properties: str | tuple[str, str]) -> str:
+    """The <entry> FW950 returns for a /quick anchor, as captured on PR #800.
+
+    Each entry in *properties* is a nickname, or a (nickname, description) pair
+    when the test cares about the Description sibling.
+    """
+    body = ""
+    for item in properties:
+        name, description = item if isinstance(item, tuple) else (item, f"About {item}.")
+        body += (
+            "<QuickProperty>"
+            "<Metadata><Atom/></Metadata>"
+            f"<RESTElement>{rest_element}</RESTElement>"
+            f"<Nickname>{name}</Nickname>"
+            f"<Description>{description}</Description>"
+            "</QuickProperty>"
+        )
     return (
-        '<feed xmlns="http://www.w3.org/2005/Atom">'
-        "<entry><content>"
+        '<entry xmlns="http://www.w3.org/2005/Atom">'
+        "<id>00000000-0000-0000-0000-000000000000</id>"
+        "<title>QuickPropertyCollection</title>"
+        "<author><name>IBM Power Systems Management Console</name></author>"
+        "<content>"
         '<QuickProperty_Collection xmlns="http://www.ibm.com/xmlns/systems/power'
         '/firmware/uom/mc/2012_10/">'
-        f"{properties}"
+        "<Metadata><Atom/></Metadata>"
+        f"{body}"
         "</QuickProperty_Collection>"
-        "</content></entry></feed>"
+        "</content></entry>"
     )
 
 
@@ -2439,7 +2456,9 @@ async def test_list_quick_properties_reads_the_live_anchors(
 ):
     """The two anchors the live run found working: root and child, bare /quick."""
     route = mock_hmc.get(path).mock(
-        return_value=httpx.Response(200, text=_quick_property_feed(*expected))
+        return_value=httpx.Response(
+            200, text=_quick_property_entry(resource_type, *expected)
+        )
     )
 
     async with HMCClient(make_config()) as hmc:
@@ -2475,16 +2494,61 @@ async def test_list_quick_properties_returns_a_single_name_as_a_one_element_list
     This is why the parse does not go through _parse_feed: element_to_dict
     collapses a repeated element to a bare value when the HMC sends exactly one,
     the hazard ADR 0139 recorded for OperationSet. Reading Nickname elements
-    directly has no such arity dependence, and this pins that.
+    directly has no such arity dependence.
+
+    VirtualNetwork is the real single-property case: the live run on PR #800
+    probed for one and found this type defines exactly NetworkName, and
+    confirmed the method returns ["NetworkName"] against it.
     """
-    mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
-        return_value=httpx.Response(200, text=_quick_property_feed("SystemName"))
+    path = f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/VirtualNetwork/quick"
+    mock_hmc.get(path).mock(
+        return_value=httpx.Response(
+            200,
+            text=_quick_property_entry(
+                "VirtualNetwork",
+                ("NetworkName", "The name of the Virtual Network."),
+            ),
+        )
     )
 
     async with HMCClient(make_config()) as hmc:
-        names, _ = await hmc.list_quick_properties("ManagedSystem")
+        names, _ = await hmc.list_quick_properties(
+            "VirtualNetwork", parent_type="ManagedSystem", parent_uuid=_PARENT_UUID
+        )
 
-    assert names == ["SystemName"]
+    assert names == ["NetworkName"]
+
+
+@pytest.mark.asyncio
+async def test_list_quick_properties_returns_nicknames_not_descriptions(mock_hmc):
+    """Nickname is the name; the Description sibling must not leak into it.
+
+    Both elements hold prose-looking text, and LogicalPartition defines a
+    property whose name is itself "Description", so a parse reading the wrong
+    element still returns plausible strings. The pairs below are the live
+    capture's verbatim text for that type's first two properties.
+    """
+    path = f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/quick"
+    mock_hmc.get(path).mock(
+        return_value=httpx.Response(
+            200,
+            text=_quick_property_entry(
+                "LogicalPartition",
+                (
+                    "ProgressState",
+                    "The progress state of the partition's hibernation operation.",
+                ),
+                ("Description", "The description of the partition."),
+            ),
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        names, _ = await hmc.list_quick_properties(
+            "LogicalPartition", parent_type="ManagedSystem", parent_uuid=_PARENT_UUID
+        )
+
+    assert names == ["ProgressState", "Description"]
 
 
 @pytest.mark.asyncio
@@ -2509,12 +2573,13 @@ async def test_list_quick_properties_returns_a_single_name_as_a_one_element_list
     ],
 )
 async def test_list_quick_properties_reads_names_at_any_depth(mock_hmc, body):
-    """The exact nesting is unconfirmed, so the parse must not depend on it.
+    """The parse does not depend on where the collection sits.
 
-    The live run reported the container and the Nickname element but not the
-    path between <feed> and <QuickProperty_Collection>. Reading document-wide
-    makes the open question harmless; this fails if someone later tightens the
-    parse to a fixed element path before a capture settles it.
+    The nesting is no longer an open question -- the capture on PR #800 settled
+    it -- but the first draft of this branch guessed a <feed> root and the real
+    one is <entry>, so the depth independence that absorbed that error is worth
+    keeping. This fails if someone later tightens the parse to a fixed element
+    path, which would make the next such surprise a bug instead of a non-event.
     """
     mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
         return_value=httpx.Response(200, text=body)
@@ -2542,7 +2607,9 @@ async def test_list_quick_properties_returns_the_response_schema_version(
 ):
     mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
         return_value=httpx.Response(
-            200, text=_quick_property_feed("State"), headers=headers
+            200,
+            text=_quick_property_entry("ManagedSystem", "State"),
+            headers=headers,
         )
     )
 

@@ -738,16 +738,22 @@ class HMCClient(
         ``X-Audit-Memento`` into it, as V1_17_0 does for ``/operations``
         (ADR 0139), so callers must not parse it as a level.
 
-        The body is an Atom feed wrapping a ``QuickProperty_Collection`` in which
-        each ``QuickProperty`` carries its name in a ``Nickname`` child, and those
-        texts are the result. It is read for those elements rather than through
-        ``_parse_feed``, which flattens an entry to a dict and collapses a repeated
-        element to a bare value when the HMC sends exactly one -- the hazard
-        ADR 0139 recorded for ``OperationSet`` -- so a type defining a single quick
-        property would otherwise need a separate code path (ADR 0140). An empty
-        ``Nickname`` is dropped; a 200 yielding no name at all raises ``HMCError``,
-        because the HMC is known to answer 200 with an ``HttpErrorResponse`` feed
-        and that is indistinguishable to a caller from a type defining nothing.
+        Not every type offers the root anchor: ``NetworkBridge`` answers 400 there
+        and 200 as a child of ``ManagedSystem``. A type that does not serve the
+        anchor asked for surfaces as ``HMCError`` carrying that status.
+
+        The body is an Atom ``<entry>`` whose ``<content>`` holds a
+        ``QuickProperty_Collection``; each ``QuickProperty`` carries its name in a
+        ``Nickname`` child, beside ``RESTElement`` and a prose ``Description``, and
+        the ``Nickname`` texts are the result. They are read document-wide rather
+        than through ``_parse_feed``, which flattens an entry to a dict and
+        collapses a repeated element to a bare value when the HMC sends exactly
+        one -- the hazard ADR 0139 recorded for ``OperationSet``, and reachable
+        here because ``VirtualNetwork`` defines exactly one quick property
+        (ADR 0140). An empty ``Nickname`` is dropped; a 200 yielding no name at all
+        raises ``HMCError``, because the HMC is known to answer 200 with an
+        ``HttpErrorResponse`` feed and that is indistinguishable to a caller from a
+        type defining nothing.
 
         Sends ``Accept: */*``: ``quick/`` endpoints answer 406 to a typed uom
         Accept, as ``get_quick_property`` records.
