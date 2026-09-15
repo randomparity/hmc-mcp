@@ -15,9 +15,10 @@ quick properties for type {R}" (`docs/refs/hmc-rest-api-p11/000-hmc-rest-apis.md
 that reasoning were wrong about the endpoint this method actually reads. A live run on PR #800
 settled it:
 
-- **`/quick` answers `application/atom+xml`**, not JSON — an Atom feed wrapping a
+- **`/quick` answers `application/atom+xml`**, not JSON — an Atom document wrapping a
   `QuickProperty_Collection` whose `QuickProperty` elements each carry the name in a `Nickname`
-  child. `ManagedSystem` returned 39 names and `LogicalPartition` 28.
+  child. `ManagedSystem` returned 39 names and `LogicalPartition` 28. (That run reported the
+  container but not the element path; the second run below captured it.)
 - **The lowercase `/quick/all` does not exist.** It answered 400 on both the root and the child
   anchor. The case asymmetry this record was built around is not that the two spellings collide;
   the lowercase one is simply absent.
@@ -26,6 +27,18 @@ settled it:
 
 `Accept: */*` and the `X-HMC-Schema-Version` pairing both held. The header came back `hmc-mcp`,
 the `X-Audit-Memento` echo ADR 0139 recorded at V1_17_0, now seen again at FW950.
+
+A second run against the rewritten parse confirmed it end-to-end and settled the rest:
+
+- **The document root is `<entry>`, not `<feed>`**, with the collection under `<content>`. Each
+  `QuickProperty` holds `Metadata`/`Atom`, `RESTElement`, `Nickname` and a prose `Description`.
+- **The names are usable**, not merely string-shaped: the first five fed back through
+  `get_quick_property` all resolved. `Description` resolved to an empty string, so an empty value is
+  not a missing property.
+- **The single-property case is real.** `VirtualNetwork` defines exactly one quick property, and the
+  method returns `["NetworkName"]` for it. The arity decision below is load-bearing, not defensive.
+- **Anchor availability is per type, not only per level.** `NetworkBridge` answers 400 at the root
+  anchor and 200 as a child of `ManagedSystem`.
 
 ## Decision
 `HMCClient.list_quick_properties(resource_type, *, parent_type=None, parent_uuid=None) ->
@@ -45,9 +58,8 @@ and body rather than returning an empty list. The second tuple element is the re
 Reading `Nickname` elements directly, rather than through `_parse_feed`, avoids the arity hazard
 ADR 0139 recorded for `OperationSet`: `element_to_dict` collapses a repeated element to a bare value
 when the HMC sends exactly one, so a type defining a single quick property would otherwise need a
-separate code path. It also costs nothing to be independent of the nesting between `<feed>` and
-`<QuickProperty_Collection>`, which the live run did not report and a structural capture is still
-owed to confirm.
+separate code path. It also costs nothing to be independent of where the collection sits, which is
+what absorbed the first draft's wrong guess at the root element; the capture has since settled it.
 
 Raising on a nameless 200 trades a hypothetical loss for an observed one. A type genuinely defining
 zero quick properties is not something any level has shown; an HMC answering 200 with an
@@ -75,9 +87,10 @@ its five call sites are untouched — #799 owns wiring validation in.
 - **Use `/quick/All`, the spelling this repository already sends.** verified: the live run returned
   `application/json` holding one object per managed system with values populated — per-instance
   values, not names (PR #800). This is the confirmation ADR 0138 was owed.
-- **Scope the search to `QuickProperty/Nickname` rather than document-wide.** judgment: the live
-  report named the container and the element but not the path between them, so a fixed element path
-  would encode a guess. The Atom envelope has no `Nickname`, so the wider search costs no precision.
+- **Scope the search to `QuickProperty/Nickname` rather than document-wide.** verified: the capture
+  shows the only `Nickname` elements in the document are the ones wanted — the Atom envelope's
+  nearest element is `author/name`, a different local name — so the wider search costs no precision,
+  and it is what kept the first draft's wrong guess at the root element from mattering.
 - **Return an empty list for a 200 with no names.** verified: `parse_feed` wraps a non-feed body as
   one synthetic entry keyed by its root tag rather than raising (`src/hmc_mcp/xmlutil.py:287-295`),
   and ADR 0139 records the HMC answering 200 with `HttpErrorResponse`. An empty list would report

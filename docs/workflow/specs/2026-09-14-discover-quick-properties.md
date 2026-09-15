@@ -53,20 +53,21 @@ and `parent_type` arrive from program text, never from HMC-facing untrusted inpu
   the HMC defined is worse than an error.
 
 **Accepted failure classes.**
-- **The nesting between `<feed>` and `<QuickProperty_Collection>` is unconfirmed.** The live run
-  reported the container and the `Nickname` element but not the path between them. Accepted because
-  the parse reads `Nickname` document-wide and so does not depend on that path;
-  `test_list_quick_properties_reads_names_at_any_depth` pins the independence. A structural capture
-  is requested on PR #800 and will replace the reconstructed fixtures; it can confirm the shape but
-  cannot invalidate the parse.
+- **The result is the names the HMC published, not a check that they address anything.** The parse
+  returns `Nickname` texts; it does not confirm the HMC will serve each one. Accepted because the
+  round trip was measured instead: the live run fed the first five back through
+  `get_quick_property` and all five resolved, so the names are usable, and #799 owns the wiring that
+  would depend on it. Note `Description` resolved to an empty string rather than an error — an empty
+  value is not a missing property.
 - A `resource_type` or `parent_type` containing extra path separators reaches a different uom GET
   path. Accepted: identical to the existing `list_uom`, `search_uom`, `list_child` and
   `list_operations` contracts, the actors above are in-process, the reach is limited to GET, and
   `_reject_dot_segments` still refuses a path that would resolve upward.
-- A firmware level offering no `/quick` anchor, or insisting on a typed `Accept`, leaves this method
-  with no working call there. Accepted: such a level answers non-200, surfacing as `HMCError`
-  carrying that status and the HMC's message. `/operations` behaved that way at V1_20_0 (ADR 0139)
-  and nothing here remedies a server-side gap.
+- A type or level offering no `/quick` anchor leaves this method with no working call there.
+  Accepted: it answers non-200, surfacing as `HMCError` carrying that status and the HMC's message.
+  Observed live rather than hypothetical — `NetworkBridge` answers 400 at the root anchor and 200 as
+  a child of `ManagedSystem`, so anchor availability is per type, not only per level. `/operations`
+  behaved the same way at V1_20_0 (ADR 0139) and nothing here remedies a server-side gap.
 - **A type defining genuinely zero quick properties raises instead of returning `[]`.** Accepted
   deliberately: no level has shown such a type, whereas an HMC answering 200 with an
   `HttpErrorResponse` feed is documented (ADR 0139), and an empty list cannot distinguish them.
@@ -80,8 +81,10 @@ and `parent_type` arrive from program text, never from HMC-facing untrusted inpu
   recorded on PR #800 (FW950/P10, schema `V1_0`): both `/quick` anchors answered 200 with an Atom
   `QuickProperty_Collection`, returning 39 names for `ManagedSystem` and 28 for `LogicalPartition`;
   both `/quick/all` anchors answered 400; `/quick/All` answered 200 with per-instance JSON value
-  objects, which also retires the confirmation ADR 0138 had been owed since PR #795. What that run
-  did not capture is the exact element nesting, the first accepted failure class above.
+  objects, which also retires the confirmation ADR 0138 had been owed since PR #795. A second run
+  against the rewritten parse confirmed it end-to-end, captured the document structure, measured the
+  `get_quick_property` round trip, and found the single-property case (`VirtualNetwork`, one
+  property) that the arity decision exists for.
 
 ## Threat model
 
@@ -115,6 +118,8 @@ confidentiality of the name list, firmware metadata identical for every caller.
 - The method has no `all_properties` parameter and builds no `/quick/all` path.
 - A response carrying one `QuickProperty` returns a one-element list, not a bare string.
 - The names are found regardless of how deeply `QuickProperty_Collection` is nested.
+- `Nickname` is returned, not its `RESTElement` or `Description` siblings — including for a property
+  whose own name is `Description`.
 - The second tuple element equals the response's `X-HMC-Schema-Version` verbatim, `None` when none
   is sent — including a non-version value such as the observed `hmc-mcp`.
 - A malformed body raises `HMCError` naming the call, not a bare `ParseError`.
@@ -139,8 +144,10 @@ test name, red failure, focused green command — and its one `task-test-not-app
 the `CHANGELOG.md` bullet. The last criterion is the guardrail one, discharged by the plan's final
 steps.
 
-**Fixture provenance.** The bodies in the `list_quick_properties` block are *reconstructed* from the
-live run's report, not captured from it: the container shape and the property names are the run's,
-the element nesting is this repository's reading of it. The block says so at its head. A structural
-capture is requested on PR #800 and replaces them when it arrives — the same two-step PR #797 took
-for `/operations`.
+**Fixture provenance.** The bodies in the `list_quick_properties` block follow the structural
+capture recorded on PR #800: the document root is `<entry>`, the collection sits under `<content>`,
+and each `QuickProperty` carries `Metadata`/`Atom`, `RESTElement`, `Nickname` and `Description`. The
+nicknames are that run's verbatim output; descriptions are placeholders except where a test quotes
+the captured text inline. The first draft of this branch guessed a `<feed>` root and a bare
+`QuickProperty`, which is why the block states its provenance at its head — the same two-step PR
+#797 took for `/operations`.

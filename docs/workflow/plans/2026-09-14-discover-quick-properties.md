@@ -53,7 +53,7 @@ the `_PARENT_UUID` constant in `tests/unit/test_client.py`. Publishes
 `HMCClient.list_quick_properties(resource_type: str, *, parent_type: str | None = None,
 parent_uuid: str | None = None) -> tuple[list[str], str | None]`; no later task depends on them.
 
-**Verification.** Fourteen `focused-test` contracts plus one non-applicable. Each row is the test
+**Verification.** Fifteen `focused-test` contracts plus one non-applicable. Each row is the test
 specification: write it with the fixture and assertion named. Before the method exists every
 `test_client.py` row fails with `AttributeError: 'HMCClient' object has no attribute
 'list_quick_properties'`. Focused green commands:
@@ -66,8 +66,9 @@ fires on the partial run and the command exits non-zero while every selected cas
 |---|---|---|---|---|
 | 1 | Two live anchors, `Accept: */*` | `test_list_quick_properties_reads_the_live_anchors` | parametrized over root and child, each mocked 200 with `_quick_property_feed(*names)` carrying the live run's verbatim names | request path equals `/rest/api/uom/ManagedSystem/quick` and `/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/quick`; `Accept` is `*/*`; names equal the fixture's. Red if a segment is wrong or the parse misses |
 | 2 | No `/quick/all` surface | `test_list_quick_properties_has_no_all_properties_argument` | none; reads `inspect.signature` | `all_properties` absent and the parameter list is exactly `self, resource_type, parent_type, parent_uuid`. Red if the argument is re-added |
-| 3 | Single property keeps arity | `test_list_quick_properties_returns_a_single_name_as_a_one_element_list` | 200 feed with one `QuickProperty` | returns `["SystemName"]`. Red if the parse collapses one element to a bare string, the `OperationSet` hazard of ADR 0139 |
-| 4 | Nesting independence | `test_list_quick_properties_reads_names_at_any_depth` | parametrized: collection at document root, and wrapped one level deeper than reported | returns `["State"]` for both. Red if the parse is tightened to a fixed element path |
+| 3 | Single property keeps arity | `test_list_quick_properties_returns_a_single_name_as_a_one_element_list` | the captured `VirtualNetwork` child anchor, the real single-property type | returns `["SystemName"]`. Red if the parse collapses one element to a bare string, the `OperationSet` hazard of ADR 0139 |
+| 4 | Nesting independence | `test_list_quick_properties_reads_names_at_any_depth` | parametrized: collection at document root, and wrapped one level deeper | returns `["State"]` for both. Red if the parse is tightened to a fixed element path |
+| 4b | Nickname, not its siblings | `test_list_quick_properties_returns_nicknames_not_descriptions` | the capture's verbatim first two `LogicalPartition` properties, one of which is *named* `Description` | returns the nicknames. Red if the parse reads `Description` or `RESTElement`, which also hold plausible strings |
 | 5 | Schema-version pairing | `test_list_quick_properties_returns_the_response_schema_version` | parametrized `V1_0`, the observed non-version `hmc-mcp`, and absent | second tuple element equals the expected value verbatim. Red if the header is dropped, defaulted, or validated as a level |
 | 6 | 204 | `test_list_quick_properties_204_returns_no_names` | 204 with `X-HMC-Schema-Version: V1_0` | returns `([], "V1_0")`. Red if 204 falls through to the parse |
 | 7 | Empty name dropped | `test_list_quick_properties_drops_an_empty_nickname` | 200 feed with a populated, an empty, and a populated `Nickname` | returns the two populated names. Red if `""` is returned as a property name |
@@ -96,10 +97,12 @@ task-specific observation over it could fail meaningfully.
    that went stale the moment the live run landed, so the method is described here by its inventory
    above and read from `core.py`.
 4. Re-run both focused commands. Expect every case to pass.
-5. Verify the tests bite: mutate the parse back to `resp.json()`, drop the empty-result guard, stop
-   filtering empty `Nickname`s, re-add `all_properties`, and return `[]` on a nameless 200. Each
-   must redden at least one row. Run the mutants against an out-of-tree copy of `src/` so the
-   working tree is never left mutated.
+5. Verify the tests bite: mutate the parse back to `resp.json()`, read `Description` instead of
+   `Nickname`, read `RESTElement` instead, drop the empty-result guard, stop filtering empty
+   `Nickname`s, re-add `all_properties`, and return `[]` on a nameless 200. Each must redden at
+   least one row. Run the mutants against an out-of-tree copy of `src/` so the working tree is
+   never left mutated. The two wrong-sibling mutants are only detectable against capture-derived
+   fixtures: a body carrying `Nickname` alone cannot tell them from the real parse.
 6. Update the `CHANGELOG.md` bullets under `## [Unreleased]` / `### Added`.
 7. Run `just test`, then `just static`. Commit source, tests, records and changelog.
 8. Run `just verify`, then `uv run --no-sync prek run --all-files`. Expect both green. Per
