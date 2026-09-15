@@ -118,6 +118,37 @@ def test_skips_existing_real_path(tmp_path: Path) -> None:
     assert (real_dir / "placeholder.md").read_text() == "worktree-local\n"
 
 
+def test_gitignore_ignores_a_docs_refs_symlink(tmp_path: Path) -> None:
+    """The repo's `.gitignore` pattern for `docs/refs` must match a symlink.
+
+    A trailing-slash pattern (`docs/refs/`) matches a real directory but not
+    a symlink of the same name (git's documented behavior), so a
+    worktree-linked `docs/refs` (a symlink, per ``sync_reference_corpus``
+    above) would show as untracked and break issue #801's acceptance
+    criterion 5. This guards the no-slash pattern the repo's `.gitignore`
+    now uses; re-adding the trailing slash would silently reintroduce the
+    break, so it must fail this test rather than only surface in a live
+    worktree.
+    """
+    repo_root = Path(__file__).parents[2]
+    gitignore_text = (repo_root / ".gitignore").read_text()
+
+    scratch = tmp_path / "scratch-repo"
+    scratch.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=scratch, check=True)
+    (scratch / ".gitignore").write_text(gitignore_text)
+    real_target = tmp_path / "elsewhere"
+    real_target.mkdir()
+    (scratch / "docs").mkdir()
+    (scratch / "docs" / "refs").symlink_to(real_target)
+
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", "docs/refs"], cwd=scratch, check=False
+    )
+
+    assert result.returncode == 0
+
+
 def test_git_resolution_failure_is_announced(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

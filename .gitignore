@@ -28,5 +28,9 @@ scorecard.png
 .claude/settings.local.json
 
 # More resources
-docs/refs/
+# No trailing slash: a trailing-slash pattern only matches a real directory,
+# not a symlink of the same name, so a worktree-linked docs/refs (see
+# scripts/link_reference_corpus.py) would show as untracked. No file named
+# docs/refs exists, so the widened match is harmless.
+docs/refs
 AGENTS.local.md
