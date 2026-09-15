@@ -20,14 +20,12 @@ properties a search may use, has no reader anywhere under `src/`, and neither do
 landed for `/quick` (PR #800, ADR 0140) and the opt-in validation wiring #799 landed for
 `get_quick_property` (PR #805, ADR 0141). Both shapes are reused rather than re-decided.
 
-**The response shape is unknown and this design says so.** The vendored reference corpus carries the
-path grammar for both anchors at `docs/refs/hmc-rest-api-p10/000-hmc-rest-apis.md:67-68` and
-`docs/refs/hmc-rest-api-p11/000-hmc-rest-apis.md:67-68,84-85`, and nothing else: case-insensitive
-searches over the whole corpus for `SearchParameter`, `Search_Collection`, `SearchElement` and
-`searchable` return zero hits — no content type, no body example, no element vocabulary. The
-solution record above names #789 as one of three sibling reads that will hit exactly this wall. The
-fixtures here are therefore **constructed, not captured**, and ADR 0142 records what that costs and
-how the design bounds it.
+**The response shape is unknown and this design says so.** The vendored reference corpus describes
+the anchor — path grammar for both forms, and per-type prose pointing at it — but never its
+response: no content type, no body example, no element vocabulary. ADR 0142 carries the citations
+and the searches that establish those three absences. The solution record above names #789 as one of
+three sibling reads that will hit exactly this wall. The fixtures here are therefore **constructed,
+not captured**, and ADR 0142 records what that costs and how the design bounds it.
 
 ## Scope
 
@@ -79,16 +77,23 @@ which exercises this code only against `respx` mocks and never against firmware.
 exposes through `HMCClient`, and which six in-repo call sites depend on. The cost bound stated to
 callers: at most one discovery request per resource type per client session, failures included,
 holding for concurrent callers as well as sequential ones, and covering calls that run to
-completion — a cancelled discovery read caches nothing and is retried on the next validated call,
-since caching a cancellation would disable validation for that type on a caller's timeout.
-First-time discovery for *different* types is serialized by one client-wide lock: that costs
-latency, never a wrong answer. `search_uom` continuing to work at levels where the discovery read
-fails (#789 criterion 2 read with criterion 4). The six `hmc_mcp.api` exports.
+completion — a discovery read cancelled by `asyncio.CancelledError` caches nothing and is retried on
+the next validated call, because `CancelledError` is a `BaseException` that the helper's
+`except HMCError` does not catch. A *timeout* is not that case: `_request` converts
+`httpx.TimeoutException` to `HMCTransportError` (`core.py:451-456`), which the helper does catch and
+cache, exactly as accepted class 3 below states. First-time discovery for *different* types is
+serialized by one client-wide lock: that costs latency, never a wrong answer. `search_uom`
+continuing to work at levels where the discovery read fails, which is the pre-flight's own
+degradation promise rather than any numbered criterion of #789. The six `hmc_mcp.api` exports.
 
 **Accepted failure classes.**
 
 - **The parsed element name is unverified against firmware.** Accepted for this branch only, on the
-  three bounding properties ADR 0142 records and with the closing evidence named in *Validation*.
+  bounding properties ADR 0142 records and with the closing evidence named in *Validation*. One of
+  those properties is bounded, not absolute: a wrong guess matching *nothing* fails loudly, but a
+  wrong guess matching some other element returns a plausible wrong set, which reaches an opted-in
+  caller as `ValueError` on a legitimate property rather than through the degradation path. That
+  consequence is the *wrong-set* class below, whose acceptance holds on its own grounds.
 - A stale positive cache wrongly rejects a name a newer level added, for a client held across a
   firmware change. Accepted: unreachable for the per-call CLI and MCP actors, and the remaining
   actor's escape is `validate=False`, the default. Carried from ADR 0141.
@@ -97,20 +102,22 @@ fails (#789 criterion 2 read with criterion 4). The six `hmc_mcp.api` exports.
   Accepted: the degraded state is today's unvalidated behaviour rather than an error, the client is
   per tool call in the CLI and MCP deployments so the window is one call, and re-reading instead
   would spend the per-call request the cost bound rules out. Stated in `search_uom`'s docstring.
-- A discovery read that succeeds with *fewer* names than the level serves would make `validate=True`
-  reject a working name. Accepted: validation is opt-in and the `False` default is the escape. No
-  claim is made about whether any level answers short — this repository has not checked, and the
-  acceptance does not rest on it. The *empty* answer is not accepted, because it is reachable: a
-  204 returns `([], version)` without raising, and an empty positive set would reject every name
-  for the client's lifetime. It is degraded from, exactly as a failed read is.
+- **The wrong-set class.** A discovery read that succeeds with the *wrong* names — fewer than the
+  level serves, or the texts of an element that is not the one holding parameter names — makes
+  `validate=True` reject a working property. Accepted: validation is opt-in and the `False` default
+  is the escape, so no caller who has not asked for the check can be broken by it. No claim is made
+  about whether any level answers short; this repository has not checked, and the acceptance does
+  not rest on it. The *empty* answer is not accepted, because it is reachable: a 204 returns
+  `([], version)` without raising, and an empty positive set would reject every name for the
+  client's lifetime. It is degraded from, exactly as a failed read is.
 - Cache growth is unbounded in the number of distinct `resource_type` values passed. Accepted:
   entries are one short string keyed to a frozenset of short strings, resource types come from
   literals in this repository, and the dict dies with the client.
 
 **Covered elsewhere.** Path traversal in `property_name`, `resource_type`, `parent_type` or the
-child type: `_reject_dot_segments` (`core.py:115`), which `_request` (`core.py:435`) applies to
+child type: `_reject_dot_segments` (`core.py:115`), which `_request` (`core.py:436`) applies to
 every request, `_request` being the only site that builds or sends one. `parent_uuid` validation:
-`_request_with_uuid_path_arguments` (`core.py:453`). Percent-encoding of the instance-search
+`_request_with_uuid_path_arguments` (`core.py:462`). Percent-encoding of the instance-search
 grammar: `search_uom`'s existing `quote(..., safe="")` calls, pinned by
 `tests/unit/test_client.py:824`. Response-body bounding: ADR 0133. MCP and CLI exposure: #792.
 
@@ -131,42 +138,46 @@ step 6 re-judges this against the actual diff.
    `list_search_parameters` returns for `{R}`. (#789 criterion 2)
 3. `search_uom`'s docstring records that an unsupported search property yields HTTP 400 from the
    HMC, so the reason the pre-flight exists survives. (#789 criterion 3)
-4. A resource type the HMC does not recognise surfaces `HMCError` carrying the HMC's status.
-   (#789 criterion 4)
-5. Across repeated `validate=True` calls on one `HMCClient`, requests to `/rest/api/uom/{R}/search`
-   number at most one per distinct `{R}`, whether the first read succeeded or failed; a fresh
-   client reads again.
-6. When the discovery read yields no names — an `HMCError` from a 4xx or 5xx, an
+4. A resource type the HMC does not recognise surfaces `HMCError` carrying the HMC's status — from
+   `list_search_parameters`' own non-200 raise, and on the `validate=True` path from `_get`'s
+   non-200 raise for the instance search (`core.py:505-506`). (#789 criterion 4)
+5. Across repeated `validate=True` calls on one `HMCClient` **that run to completion**, requests to
+   `/rest/api/uom/{R}/search` number at most one per distinct `{R}`, whether the first read
+   succeeded or failed; a fresh client reads again. A read cancelled by `asyncio.CancelledError`
+   caches nothing and is retried, as the failure model states.
+6. `list_search_parameters` sends `Accept: */*` on both anchors, exactly, because the anchor's
+   content type is unobserved and a typed uom Accept would be a second guess stacked on the first.
+7. When the discovery read yields no names — an `HMCError` from a 4xx or 5xx, an
    `HMCTransportError` from a connection failure, or a 204 returning `([], version)` —
    `validate=True` sends the search anyway and returns its result.
-7. `validate` defaults to `False`; a call omitting it makes no discovery request and behaves
+8. `validate` defaults to `False`; a call omitting it makes no discovery request and behaves
    exactly as at `a0d29ac7`. The decision is in ADR 0142 and the parameter in `CHANGELOG.md`.
-8. `hmc_mcp.api` still exports exactly the six names ADR 0118 names.
+9. `hmc_mcp.api` still exports exactly the six names ADR 0118 names.
 
 ## Validation
 
-All entries are in `tests/unit/test_client.py` unless named otherwise. Every body in the new block
-is **constructed, not captured**, and the block head says so.
+Every success criterion above is covered by a `focused-test` entry in the implementation plan's
+Verification table
+([plan](../plans/2026-09-15-discover-search-parameters.md), *Task 1 — Verification*), which is the
+single inventory: it names each contract, its test, and the red that test shows before the
+behaviour exists. It is not restated here. Every body in the new test block is **constructed, not
+captured**, and the block head says so.
 
-| Contract | Mode | Evidence |
-|---|---|---|
-| Both anchors are reached at the documented paths (Success 1) | `focused-test` | `::test_list_search_parameters_reads_both_anchors`, parametrized over the root and child forms |
-| Exactly one parent argument is a caller error (Success 1) | `focused-test` | `::test_list_search_parameters_refuses_bad_arguments`, parametrized over each half |
-| The names come from the named element and not its siblings (Success 1) | `focused-test` | `::test_list_search_parameters_reads_the_named_element_not_its_siblings` — the fixture carries `RESTElement` and `Description` siblings holding plausible-but-wrong strings, the discriminator the solution record's item 5 requires |
-| A single defined parameter returns as a one-element list (Success 1) | `focused-test` | `::test_list_search_parameters_returns_a_single_name_as_a_one_element_list` — the `element_to_dict` collapse ADR 0139 recorded |
-| The response's `X-HMC-Schema-Version` is returned verbatim (Success 1) | `focused-test` | `::test_list_search_parameters_returns_the_response_schema_version` |
-| A 204 returns no names rather than raising (Success 1, 6) | `focused-test` | `::test_list_search_parameters_204_returns_no_names` |
-| A 200 yielding no name raises rather than reporting "defines nothing" (Success 1) | `focused-test` | `::test_list_search_parameters_200_without_a_name_raises`, parametrized over an `HttpErrorResponse` feed and an empty collection |
-| An unknown resource type surfaces `HMCError` carrying the status (Success 4) | `focused-test` | `::test_list_search_parameters_unknown_type_raises_hmc_error_with_status` |
-| `validate=True` refuses an undefined property before transport (Success 2) | `focused-test` | `::test_search_uom_validate_refuses_an_undefined_property` |
-| `validate=True` passes a defined property through and returns its results (Success 2) | `focused-test` | `::test_search_uom_validate_allows_a_defined_property` |
-| The names are read once per type per client, sequentially and concurrently (Success 5) | `focused-test` | `::test_search_uom_validate_reads_the_names_once_per_type`, `::test_search_uom_validate_reads_the_names_once_under_concurrency` |
-| The cache is keyed per resource type and not shared between clients (Success 5) | `focused-test` | `::test_search_uom_validate_caches_per_resource_type`, `::test_search_uom_validate_rereads_for_a_new_client` |
-| A discovery read yielding no names degrades and is cached rather than retried (Success 5, 6) | `focused-test` | `::test_search_uom_validate_degrades_and_caches_the_failure`, parametrized over a 500, a 400, an `httpx.ConnectError` and a 204 |
-| The default makes no discovery request and behaves as today (Success 7) | `focused-test` | `::test_search_uom_defaults_to_no_validation` |
-| `validate` is keyword-only with default `False` (Success 7) | `focused-test` | `::test_search_uom_validate_is_keyword_only_and_defaults_false` |
-| ADR 0142 is a well-formed numbered record (Success 7) | `focused-test` | `just adr-numbering`, which checks the filename, unique number and H1 agreement |
-| The HTTP 400 rationale in `search_uom`'s docstring (Success 3) | `task-test-not-applicable` | The contract is prose addressed to a human reader; no executable consumer validates it, and asserting its wording would snapshot prose — the practice the plan's conventions forbid |
-| The six facade exports are unchanged (Success 8) | `task-test-not-applicable` | Unchanged by this design, and `tests/unit/test_public_api.py` already fails on any drift; a second test would observe that test's subject, not this change |
-| The `CHANGELOG.md` entry (Success 7) | `task-test-not-applicable` | `tests/unit/test_changelog.py` binds only the declared `pyproject.toml` version, which this change does not alter; no executable consumer validates an unreleased entry |
-| `_SEARCH_PARAMETER_NAME_ELEMENT` matches firmware (Failure model, entry 1) | `task-test-not-applicable` | Not observable from this repository: no firmware is reachable from CI or a workstation, and a `respx` fixture asserts only against itself. Closing evidence is a live capture from the ppc64le host, owned by the operator and named in the charter's exclusions |
+Three contracts carry `Mode: task-test-not-applicable`, and the reason is a design judgment rather
+than a plan mechanic, so it is recorded here:
+
+- **The HTTP 400 rationale in `search_uom`'s docstring** (Success 3). Prose addressed to a human
+  reader. No executable consumer validates it, and asserting its wording would snapshot prose.
+- **The six facade exports are unchanged** (Success 9). Unchanged by this design, and
+  `tests/unit/test_public_api.py` already fails on any drift; a second test would observe that
+  test's subject rather than this change.
+- **The `CHANGELOG.md` entry** (Success 8). `tests/unit/test_changelog.py` binds only the declared
+  `pyproject.toml` version, which this change does not alter; no executable consumer validates an
+  unreleased entry.
+
+One contract is **not observable from this repository at all**: that
+`_SEARCH_PARAMETER_NAME_ELEMENT` matches firmware (*Failure model*, entry 1). No firmware is
+reachable from CI or a workstation, and a `respx` fixture asserts only against itself — a mutation
+score over these tests measures whether they discriminate between implementations given the
+fixture, and must not be reported as fixture validation. The closing evidence is a live capture from
+the ppc64le host, owned by the operator and named in the charter's exclusions.

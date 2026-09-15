@@ -17,7 +17,7 @@ Design: [spec](../specs/2026-09-15-discover-search-parameters-design.md),
 
 Expected implementation size: 310–415 changed lines (M) — derived from the file map below:
 `core.py` gains one public method with a long docstring, one private helper and four `__init__`
-lines; `tests/unit/test_client.py` gains one fixture block and sixteen test functions;
+lines; `tests/unit/test_client.py` gains one fixture block and seventeen test functions;
 `CHANGELOG.md` gains one entry.
 
 ## Global Constraints
@@ -96,15 +96,20 @@ Produced:
 
 **Verification.** Every entry's green command is
 `uv run --no-sync pytest tests/unit/test_client.py -k "search_uom or list_search_parameters" --no-cov -q`,
-and every test is in `tests/unit/test_client.py`. Before the method exists, each of the first eight
-reds is `AttributeError: 'HMCClient' object has no attribute 'list_search_parameters'`; before the
-parameter exists, each of the last eight is
-`TypeError: search_uom() got an unexpected keyword argument 'validate'`. The per-contract red below
-is the one that appears **after** the name exists but the behaviour does not.
+and every test is in `tests/unit/test_client.py`. Seventeen test functions are named below: eight
+covering `list_search_parameters` and nine covering `search_uom`'s pre-flight. The table has twenty
+rows because two contracts share `::test_list_search_parameters_reads_both_anchors` and two carry no
+test. The red in each row
+is the one that appears **after** the name under test exists but its behaviour does not — which is
+the observation worth confirming. Before the name exists at all, a
+`list_search_parameters` test fails with
+`AttributeError: 'HMCClient' object has no attribute 'list_search_parameters'` and a `search_uom`
+pre-flight test with `TypeError: search_uom() got an unexpected keyword argument 'validate'`.
 
 | Contract | Mode | Test, and the red it shows once the name exists |
 |---|---|---|
 | Both anchors are reached at the documented paths | `focused-test` | `::test_list_search_parameters_reads_both_anchors`, parametrized root/child — `respx` raises `AllMockedAssertionError` for the unrouted path |
+| `Accept: */*` is sent on both anchors, exactly | `focused-test` | `::test_list_search_parameters_reads_both_anchors`, same parametrization — a typed uom Accept, or any other value, fails the equality assertion |
 | Exactly one parent argument is a caller error | `focused-test` | `::test_list_search_parameters_refuses_bad_arguments`, parametrized over each half — `Failed: DID NOT RAISE <class 'ValueError'>` |
 | Names come from the named element, not its siblings | `focused-test` | `::test_list_search_parameters_reads_the_named_element_not_its_siblings` — a parse reading `Description` returns the description strings and the name assertion fails |
 | A single parameter returns as a one-element list | `focused-test` | `::test_list_search_parameters_returns_a_single_name_as_a_one_element_list` — a `_parse_feed` parse collapses it to a bare value and the list assertion fails |
@@ -185,7 +190,8 @@ is the one that appears **after** the name exists but the behaviour does not.
    and `("LogicalPartition", {"parent_type": "ManagedSystem", "parent_uuid": _PARENT_UUID},
    f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition/search",
    _LOGICAL_PARTITION_SEARCH_PARAMETERS)`. Assert the request path, the returned names, and that the
-   request's `Accept` header is not a typed uom media type.
+   request's `Accept` header equals `*/*` exactly. Asserting only that it is *not* a typed uom
+   media type would pass for any other wrong value, which is not the contract.
 
 4. Run the Verification green command. Expect
    `AttributeError: 'HMCClient' object has no attribute 'list_search_parameters'`.
@@ -295,7 +301,7 @@ is the one that appears **after** the name exists but the behaviour does not.
                 # Covers HMCTransportError too, which subclasses it. ADR 0142
                 # degrades rather than raising so a level that does not serve
                 # the anchor -- or a wrong parsed element -- cannot break
-                # search_uom. That is #789's fourth criterion.
+                # search_uom, which an opt-in pre-flight must not do.
                 names = []
             # An empty answer is "unknown", never "defines nothing": a 204
             # returns ([], version) without raising, and an empty positive set

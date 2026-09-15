@@ -34,20 +34,28 @@ a bare value when the HMC sends exactly one. The element name is a module-level 
 `_SEARCH_PARAMETER_NAME_ELEMENT = "Nickname"`, and that constant is the design's single point of
 change when firmware settles the question.
 
-`Nickname` is an **inference, not a capture**: it is the name-bearing element FW950 returns from
-the sibling `/quick` discovery anchor, and the reference prose ties a type's searchable properties
-to its quick properties. It is recorded here as unverified so that no later reader mistakes it for
-observed behaviour.
+`Nickname` is an **inference, not a capture**, resting on one checkable ground: it is the
+name-bearing element FW950 returns from the sibling `/quick` discovery anchor, and the corpus puts
+a type's searchable properties and its quick properties under one heading —
+`docs/refs/hmc-rest-api-p11/managed-system/165-logical-partition.md:85-98` points at the `/search`
+anchor and then tables the properties under the heading `Quick property`, as does its P10 twin
+`.../managed-system/145-logical-partition.md`. That is prose, not a response body. It is recorded
+here as unverified so that no later reader mistakes it for observed behaviour.
 
 Three properties bound the inference, and together they are why shipping it is acceptable:
 
-- **A wrong guess fails loudly, not silently.** A 200 yielding no name raises `HMCError` naming the
-  element that was looked for, exactly as `list_quick_properties` does and for the same stated
-  reason — the HMC is known to answer 200 with an `HttpErrorResponse` feed, which is
-  indistinguishable to a caller from a type defining nothing. The failure mode is therefore a
-  diagnostic that names its own fix, not a plausible wrong answer.
-- **A wrong guess cannot break `search_uom`.** The degradation rule below turns that `HMCError`
-  into today's unvalidated behaviour.
+- **A wrong guess that matches nothing fails loudly.** A 200 yielding no name raises `HMCError`
+  naming the element that was looked for, exactly as `list_quick_properties` does and for the same
+  stated reason — the HMC is known to answer 200 with an `HttpErrorResponse` feed, which is
+  indistinguishable to a caller from a type defining nothing. That failure is a diagnostic naming
+  its own fix. **This property is bounded and does not cover every wrong guess:** an element name
+  that matches *something else* in the body returns a plausible wrong set, which reaches an
+  opted-in caller as a `ValueError` rejecting a legitimate property, not through the degradation
+  path below. The spec's failure model accepts that case on its own grounds — validation is opt-in
+  — and only the live capture detects it.
+- **A wrong guess cannot break a caller who did not opt in.** `validate` defaults to `False`, and
+  for an opted-in caller the degradation rule below turns a zero-match `HMCError` into today's
+  unvalidated behaviour.
 - **The fix is one constant and the fixtures.** No control flow, no caller, and no signature
   depends on the element's name.
 
@@ -63,21 +71,17 @@ with no invalidation**, serialized by a per-client `asyncio.Lock` that re-checks
 acquiring it. **A discovery read that yields no usable names degrades to today's behaviour and is
 cached as such** — any `HMCError`, its subclass `HMCTransportError` included, and a successful read
 carrying no names, which is what a 204 returns. An empty answer is read as "the names are unknown",
-never as "the type defines nothing". These four paragraphs are ADR 0141's decision applied
-unchanged to a second method; they are restated rather than cross-referenced because a reader of
-`search_uom` should not have to find `get_quick_property`'s record to learn what its cache does.
+never as "the type defines nothing". This is ADR 0141's cache decision applied unchanged to a second
+method; see that record for the reasoning, which is not repeated here.
 
 `Accept: */*` is sent, as both sibling discovery reads send. With no known content type for this
 anchor, it is the one Accept that cannot fail negotiation; a typed uom Accept would be a second
 guess stacked on the first.
 
 ## Consequences
-`search_uom`'s default behaviour is unchanged, so the six in-repo call sites
-(`client_lpars.py:60`, `client_systems.py:179,251`, `operations/vios/core.py:42`,
-`operations/systems/core.py:44`, `operations/lpar/core.py:96`) are unaffected; all six pass string
-literals and none opts in. The two `search_uom` declarations in `client_contracts.py` (lines 89,
-319) are unchanged and stay satisfied: a keyword-only parameter with a default widens the
-implementation without narrowing the protocol. The facade's six exported names are unchanged.
+`search_uom`'s default behaviour is unchanged, so nothing in this repository is affected: the spec's
+*Ownership* paragraph enumerates the six call sites, the two `client_contracts.py` declarations and
+the facade exports, and none of them moves.
 
 Validating costs at most one extra request per resource type per client session, failures included.
 Because the cache is per client and `_app.with_client` builds one client per MCP tool call,
@@ -138,9 +142,15 @@ ADR 0118's facade.
   module already answers with `ValueError`.
 - **Let a failed or empty discovery read raise, or re-read it per call.** verified: ADR 0139's
   three V1_20_0 HMCs answering 500 at the sibling `/operations` anchor and ADR 0140's
-  `NetworkBridge` answering 400 at the root `/quick` anchor would both become a broken `search_uom`,
-  which #789's fourth acceptance criterion forbids. judgment: re-reading instead of caching the
-  negative entry spends exactly the per-call request the cost bound rules out.
+  `NetworkBridge` answering 400 at the root `/quick` anchor would both become a broken `search_uom`
+  on levels where the anchor is simply absent. verified: the operator selected the opt-in shape in
+  the invoking session (2026-09-15), and an opt-in pre-flight that can break the call it guards is
+  not the pre-flight that was chosen. judgment: re-reading instead of caching the negative entry
+  spends exactly the per-call request the cost bound rules out.
+
+  This bullet previously cited "#789's fourth acceptance criterion" as its ground. That citation
+  was wrong — #789's fourth criterion is that an unknown resource type surfaces `HMCError` carrying
+  the HMC status, which the design meets separately — and it is withdrawn rather than reworded.
 - **Do nothing; leave the anchor unread.** verified: `rg -n '/search"' src/` at `a0d29ac7` returns
   no type-anchored discovery path, and `docs/capabilities/rows.json` (381 rows) contains no
   occurrence of `search` — the gap #789 is filed against.
