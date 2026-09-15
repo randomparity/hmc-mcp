@@ -44,20 +44,11 @@ async def test_list_users_filters_authentication_type_and_rejects_unknown_values
 @pytest.mark.parametrize(
     "child_type",
     [
-        # The retargeting reproduction issue #809 carried, on the builder
-        # issue #820 covers: `?` splits a query string and `#` truncates the
-        # path, both retargeting inside /rest/api/uom/.
+        # One grammar case and one length case: enough to prove `_child_path`
+        # routes through the predicate. The grammar's own table lives with the
+        # predicate, in tests/unit/test_request_path_safety.py, and restating it
+        # here would give one rule two owners.
         "UserProfile?group=x",
-        "UserProfile#x",
-        "../../web/Logon",
-        "..",
-        "User Profile",
-        "",
-        # httpx carries a trailing newline into the Accept header untouched,
-        # which is why the grammar uses fullmatch rather than an anchor.
-        "UserProfile\n",
-        # Grammar-valid but past the acceptance bound (ADR 0147). The builder
-        # inherits the length rule with the grammar rather than restating it.
         "A" * (_MAX_UOM_TYPE_LENGTH + 1),
     ],
 )

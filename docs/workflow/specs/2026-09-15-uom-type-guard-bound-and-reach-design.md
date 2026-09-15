@@ -7,7 +7,7 @@ Issue #820. Decisions: ADR 0147, amending 0143.
 `_reject_unknown_uom_type` (`src/hmc_mcp/client/core.py`) bounds a uom type segment's character
 set but not its length, so a megabyte of `A` reaches the URL and `Accept` header. Separately,
 `client_users._child_path` builds a type segment where the `core.py`-scoped drift tests cannot
-see it; six of its seven call sites are validated only because the same literal also reaches
+see it; six of its seven sites are validated only because the same literal also reaches
 `_get`/`_put`/`_post`.
 
 ## Scope
@@ -31,9 +31,9 @@ the new home; its drift helpers stay untouched — #818 owns them.
 - Accepted: a real HMC type name over 128 characters is refused locally — ADR 0143 accepts that
   class for the character grammar, the longest type name here is 32 characters, remedied by
   widening one constant. A uom path built without an f-string stays invisible to the drift
-  tests (ADR 0143).
-- Covered elsewhere: `property_name` (#818), `group` (#819), dot segments. `search_uom`'s
-  unbounded `property_value` has no owner and is a follow-up candidate, not fixed here.
+  tests (ADR 0143). `search_uom`'s unbounded `property_value` is the same defect family on the
+  same line, ownerless, and a follow-up candidate, not bounded here.
+- Covered elsewhere: `property_name` (#818), `group` (#819), dot segments.
 - Threat model: boundaries are `_child_path`'s `child_type`, newly controlled, and the
   predicate's `value`, whose control widens. Untrusted: the MCP client model and, on
   `--http`, an unauthenticated caller. Control is refusal before interpolation, a `ValueError`
@@ -51,7 +51,7 @@ the new home; its drift helpers stay untouched — #818 owns them.
 - Length bound and criterion 2's message — Mode: focused-test.
   `tests/unit/test_request_path_safety.py`, parametrized at 128, 129 and 1 MiB, asserting the
   message names the argument, the length and the maximum. Red: 129 and 1 MiB accepted, no such
-  message; 128 passes either way, pinning the boundary. Green:
+  message; 128 passes either way. Green:
   `uv run --no-sync pytest tests/unit/test_request_path_safety.py`.
 - `_child_path` type refusal — Mode: focused-test. `tests/unit/test_client_users.py`. Red: it
   returns a path for `"UserProfile?group=x"`. Green:
