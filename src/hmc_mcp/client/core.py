@@ -949,11 +949,10 @@ class HMCClient(
         with a first element of ``None`` when the level's answer is not a fact
         about the type -- a 204, or a container holding properties this parse
         cannot name -- and a list, empty or not, when it is. The version is
-        ``None`` when the HMC
-        sends none; that value is verbatim and is not guaranteed to hold a
-        version: FW950 echoes the request's ``X-Audit-Memento`` into it, as
-        V1_17_0 does for ``/operations`` (ADR 0139), so callers must not parse
-        it as a level.
+        ``None`` when the HMC sends none; that value is verbatim and is not
+        guaranteed to hold a version: FW950 echoes the request's
+        ``X-Audit-Memento`` into it, as V1_17_0 does for ``/operations``
+        (ADR 0139), so callers must not parse it as a level.
 
         Not every type offers the root anchor: ``NetworkBridge`` answers 400 there
         and 200 as a child of ``ManagedSystem``. A type that does not serve the
