@@ -2969,3 +2969,74 @@ def test_get_quick_property_validate_is_keyword_only_and_defaults_false():
 
     assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
     assert parameter.default is False
+
+
+@pytest.mark.asyncio
+async def test_get_quick_property_validate_reads_the_names_once_under_concurrency(
+    mock_hmc,
+):
+    """Concurrent validated calls share one discovery read, not one each.
+
+    ADR 0141 and #799's second criterion state the bound without a sequential
+    qualifier -- at most one extra request per resource type per client
+    session. Without a lock every task in a gather misses the cache before the
+    first read returns, so the bound holds only for sequential callers.
+    """
+    discovery, defined, _ = _mock_validation_routes(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        await asyncio.gather(
+            *(
+                hmc.get_quick_property(
+                    _VALIDATION_TYPE, _VALIDATION_UUID, "SystemType", validate=True
+                )
+                for _ in range(5)
+            )
+        )
+
+    assert defined.call_count == 5
+    assert discovery.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_quick_property_validate_caches_per_resource_type(mock_hmc):
+    """The cache is keyed by resource type, not a single slot.
+
+    Without this, a one-entry cache passes every other test here: they all use
+    one type, so a second type would silently reuse the first type's names and
+    reject its own.
+    """
+    system_route = mock_hmc.get("/rest/api/uom/ManagedSystem/quick").mock(
+        return_value=httpx.Response(
+            200, text=_quick_property_entry("ManagedSystem", *_MANAGED_SYSTEM_NICKNAMES)
+        )
+    )
+    lpar_route = mock_hmc.get("/rest/api/uom/LogicalPartition/quick").mock(
+        return_value=httpx.Response(
+            200,
+            text=_quick_property_entry(
+                "LogicalPartition", *_LOGICAL_PARTITION_NICKNAMES
+            ),
+        )
+    )
+    mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/{_VALIDATION_UUID}/quick/SystemType"
+    ).mock(return_value=httpx.Response(200, text="system-value"))
+    mock_hmc.get(
+        f"/rest/api/uom/LogicalPartition/{_VALIDATION_UUID}/quick/PartitionID"
+    ).mock(return_value=httpx.Response(200, text="7"))
+
+    async with HMCClient(make_config()) as hmc:
+        system = await hmc.get_quick_property(
+            "ManagedSystem", _VALIDATION_UUID, "SystemType", validate=True
+        )
+        # PartitionID is defined by LogicalPartition and not by ManagedSystem,
+        # so a single-slot cache rejects it here.
+        lpar = await hmc.get_quick_property(
+            "LogicalPartition", _VALIDATION_UUID, "PartitionID", validate=True
+        )
+
+    assert system == "system-value"
+    assert lpar == "7"
+    assert system_route.call_count == 1
+    assert lpar_route.call_count == 1

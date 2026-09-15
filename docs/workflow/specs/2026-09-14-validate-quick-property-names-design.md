@@ -63,9 +63,12 @@ discovery read fails (#799 criterion 4). The six `hmc_mcp.api` exports.
 - A stale positive cache wrongly rejects a name a newer level added, for a client held across a
   firmware change. Accepted: unreachable for the per-call CLI and MCP actors, and the remaining
   actor's escape is `validate=False`, the default. ADR 0141 records it.
-- Concurrent validated calls for one type, before the first read returns, each issue their own read.
-  Accepted: bounded by the calls already in flight, idempotent, and costs at most one extra GET in a
-  client whose dominant lifetime is one tool call.
+- A transient discovery failure is cached as durably as a firmware-level one, so one connection
+  blip leaves validation off for that type until a new client is constructed, with no signal.
+  Accepted: the degraded state is today's unvalidated behaviour rather than an error, the client is
+  per tool call in the CLI and MCP deployments so the window is one call, and re-reading instead
+  would spend the per-call request the cost bound rules out. Stated in `get_quick_property`'s
+  docstring and ADR 0141 so it is a recorded decision rather than silent.
 - A discovery read that succeeds with *fewer* names than the level serves would make `validate=True`
   reject a working name. Accepted: no level has shown a short answer, and the escape is again the
   `False` default. The *empty* answer is not accepted, because it is reachable — a 204 returns

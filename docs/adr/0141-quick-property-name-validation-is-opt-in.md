@@ -64,9 +64,15 @@ inside partition polling, which is the cost this record rejects above.
 The five existing call sites are unchanged and unaffected: they pass string literals and none opts
 in. The facade's six exported names are unchanged; `bool` adds no public type.
 
-A stale cache fails only in the direction the default makes opt-in, and concurrent validated calls
-for one type can each issue their own read before the first returns. Both are accepted, with their
-reasons, in the design's failure model
+Concurrent validated calls for one type share a single discovery read: the read-through is
+serialized by a per-client `asyncio.Lock` and re-checks the cache after acquiring it, so the
+one-request-per-type bound holds for concurrent callers and not only sequential ones.
+
+A stale cache fails only in the direction the default makes opt-in. A transport failure is cached as
+durably as a firmware-level one, so a transient blip leaves validation off for that type until a new
+client is constructed — the degraded state is today's unvalidated behaviour rather than an error,
+and re-reading would spend the per-call request this record's cost bound rules out. Both are
+recorded, with their reasons, in the design's failure model
 (`docs/workflow/specs/2026-09-14-validate-quick-property-names-design.md`, *Failure model*).
 
 `CHANGELOG.md` records the new parameter, because the method is reachable through ADR 0118's facade.

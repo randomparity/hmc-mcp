@@ -255,6 +255,11 @@ class HMCClient(
         # bound, since retrying per call is the request this design promises
         # not to make.
         self._quick_property_names: dict[str, frozenset[str] | None] = {}
+        # Serializes the read-through so concurrent validated calls share one
+        # discovery request instead of each issuing its own. Constructed here
+        # rather than lazily: asyncio.Lock binds to the running loop on first
+        # await, not at construction, so a client built outside a loop is fine.
+        self._quick_property_names_lock = asyncio.Lock()
         self._legacy_port_fallback = (
             config.port == 443 and "port" not in config.model_fields_set
         )
@@ -747,9 +752,18 @@ class HMCClient(
         Reads the root ``/quick`` anchor once per type per client and caches the
         answer, the failure included: a level where discovery does not work
         yields None, which callers read as "do not validate" rather than as "no
-        properties" (ADR 0141).
+        properties" (ADR 0141). A transport failure is cached as durably as a
+        firmware-level one, so a transient one leaves validation off for this
+        type until a new client is constructed.
         """
-        if resource_type not in self._quick_property_names:
+        if resource_type in self._quick_property_names:
+            return self._quick_property_names[resource_type]
+        async with self._quick_property_names_lock:
+            # Re-check under the lock: a task that waited here may have been
+            # waiting on the very read that populates this entry, and the cost
+            # bound is per type per client, not per caller.
+            if resource_type in self._quick_property_names:
+                return self._quick_property_names[resource_type]
             try:
                 names, _ = await self.list_quick_properties(resource_type)
             except HMCError:
@@ -764,7 +778,7 @@ class HMCClient(
             # lifetime. ADR 0140 already declined the same inference for a
             # nameless 200.
             self._quick_property_names[resource_type] = frozenset(names) if names else None
-        return self._quick_property_names[resource_type]
+            return self._quick_property_names[resource_type]
 
     async def list_quick_properties(
         self,
