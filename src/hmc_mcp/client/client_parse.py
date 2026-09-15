@@ -10,7 +10,7 @@ from defusedxml import ElementTree as DET
 from defusedxml.common import DefusedXmlException
 
 from ..errors import HMCError
-from ..xmlutil import find_text, parse_feed
+from ..xmlutil import find_all_text, find_text, parse_feed
 from .pcm_payloads import metric_links, pcm_preferences_to_dict
 
 _T = TypeVar("_T")
@@ -39,5 +39,6 @@ def _tag_parse_errors(fn: Callable[..., _T]) -> Callable[..., _T]:
 
 _parse_feed = _tag_parse_errors(parse_feed)
 _find_text = _tag_parse_errors(find_text)
+_find_all_text = _tag_parse_errors(find_all_text)
 _metric_links = _tag_parse_errors(metric_links)
 _pcm_preferences = _tag_parse_errors(pcm_preferences_to_dict)
