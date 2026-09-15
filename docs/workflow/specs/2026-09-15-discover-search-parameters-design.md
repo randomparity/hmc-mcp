@@ -135,8 +135,11 @@ above that prefix. The type segments are not percent-encoded, unlike `search_uom
 `property_name`/`property_value`. This is pre-existing and identical at every uom path
 interpolation in this module — `rg -c 'f"/rest/api/uom/' src/hmc_mcp/client/core.py` returns 13 at
 `a0d29ac7` (11 interpolating a caller-supplied type segment, 2 a job id) and 15 here. **This change
-extends that class by two sites of the same shape rather than altering it:** `core.py:1013` and
-`core.py:1016`, the first a new unencoded `parent_type` reachable through a new public method. It is
+extends that class by two sites of the same shape rather than altering it:** both in
+`list_search_parameters` — the child anchor `f"/rest/api/uom/{parent_type}/{parent_uuid}/`
+`{resource_type}/search"` and the root anchor `f"/rest/api/uom/{resource_type}/search"`
+(`core.py:1019` and `:1022` at `3c389712`) — the first a new unencoded `parent_type` reachable
+through a new public method. It is
 unreachable from MCP or the CLI for this method; the shared decision is a follow-up candidate,
 recorded rather than closed in this change.
 

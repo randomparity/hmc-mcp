@@ -28,8 +28,10 @@ to a step below — only the arithmetic was, so no implementation was cut to fit
 forge's estimate rule forbids. The actual diff was 180 + 499 + 16 = 695 changed lines when this
 correction was written at `3a2e27f5`; the two review-driven fix commits that followed
 (`5c525c10`, `9f26f28f`) added the message-bounding code and its tests, carrying it to
-213 + 630 + 16 = 859 added lines and past the band above. The band is left as written: it records
-what was estimated before the build, and review-driven fixes are not estimated work. The frozen
+213 + 630 + 16 = 859 added lines and past the band above. Two further review rounds then took it to
+**219 + 719 + 16 = 954 added lines at `3c389712`**. The band is left as written: it records what was
+estimated before the build, and review-driven fixes are not estimated work — every line above the
+band is a test or a correction a review asked for, none of it new scope. The frozen
 design denominator of 250 is unaffected: it is derived from the validated complexity, never from
 this estimate, and this line has never been an input to it.
 

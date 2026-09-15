@@ -3375,14 +3375,15 @@ async def test_list_search_parameters_204_returns_no_names(mock_hmc):
             "an empty collection",
         ),
         (_HTTP_ERROR_RESPONSE_FEED, "a 200 carrying an HttpErrorResponse"),
-        # Pins the `if n` filter, which nothing else observes: without it these
-        # elements yield ["", "   "] rather than [], `if not names` never fires,
-        # and the cache stores frozenset({"", "   "}) instead of None -- so
+        # Pins the `if n` filter, which nothing else observes. find_all_text
+        # strips, so both elements arrive as "": without the filter the
+        # comprehension yields ["", ""] rather than [], `if not names` never
+        # fires, and the cache stores frozenset({""}) instead of None -- so
         # every validate=True call on that client rejects every property for
         # the client's lifetime. That is the one failure class the design's
         # failure model refuses to accept, under exactly the wrong-parse
-        # premise ADR 0142 accepts. The whitespace half rides on
-        # xmlutil.find_all_text stripping.
+        # premise ADR 0142 accepts. The whitespace element is carried to pin
+        # the stripping too: it is a second way to reach the same empty name.
         (
             _search_parameter_entry("ManagedSystem", "", "   "),
             "a 200 whose matched elements are all empty",
