@@ -69,10 +69,11 @@ _MAX_REPORTED_NAME_LENGTH = 64
 def _summarize_names(names: frozenset[str]) -> str:
     """Render *names* for an error message, bounded in count and in length.
 
-    *names* is expected non-empty: an empty set renders a bare ".". The only
-    caller cannot produce one, because an empty discovery answer is cached as
-    None and the call is guarded on ``defined is not None`` -- so this is a
-    stated precondition rather than a branch.
+    *names* is expected non-empty: an empty set renders a bare ".". Neither
+    caller (``search_uom``, ``get_quick_property``) can produce one, because
+    an empty discovery answer is cached as None and each call is guarded on
+    ``defined is not None`` -- so this is a stated precondition rather than a
+    branch.
     """
     ordered = sorted(names)
     shown = ", ".join(
@@ -789,7 +790,7 @@ class HMCClient(
             if defined is not None and property_name not in defined:
                 raise ValueError(
                     f"{resource_type} defines no quick property named "
-                    f"{property_name!r}. Defined names: {', '.join(sorted(defined))}."
+                    f"{property_name!r}. Defined names: {_summarize_names(defined)}"
                 )
         path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{property_name}"
         resp = await self._request_with_uuid_path_arguments(
