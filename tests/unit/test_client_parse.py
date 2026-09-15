@@ -6,11 +6,18 @@ behavior covered end-to-end in tests/unit/test_client.py for the feed and PCM
 preferences paths); these unit tests pin the tagging contract directly.
 """
 
+import sys
+
 import pytest
 from defusedxml import ElementTree as DET
 from defusedxml.common import DefusedXmlException
 
-from hmc_mcp.client.client_parse import _find_all_text, _find_text, _metric_links
+from hmc_mcp.client.client_parse import (
+    _find_all_text,
+    _find_text,
+    _metric_links,
+    _parse_feed,
+)
 from hmc_mcp.errors import HMCError
 
 
@@ -45,3 +52,23 @@ def test_find_all_text_parse_error_tags_context():
         _find_all_text("<feed><entry>", "test context", "Nickname")
     assert "Failed to parse test context response" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, DET.ParseError)
+
+
+def test_parse_feed_recursion_error_tags_context():
+    """A deeply nested wrapped resource overflows element_to_dict's per-level
+
+    recursion; RecursionError is not a ValueError or ParseError subclass, so
+    it needs its own clause to reach HMCError instead of escaping the guard.
+    """
+    old_limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(200)
+    try:
+        nested = "<a>" * 500 + "leaf" + "</a>" * 500
+        body = f"<feed><entry><content><Resource>{nested}</Resource></content></entry></feed>"
+        with pytest.raises(HMCError) as exc_info:
+            _parse_feed(body, "test context")
+    finally:
+        sys.setrecursionlimit(old_limit)
+    assert "Failed to parse test context response" in str(exc_info.value)
+    assert "nesting is too deep" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, RecursionError)

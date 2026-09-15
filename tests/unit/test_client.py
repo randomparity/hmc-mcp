@@ -1085,6 +1085,32 @@ async def test_quick_all_system_names_raises_on_non_200(mock_hmc):
             await hmc._quick_all_system_names()
 
 
+@pytest.mark.asyncio
+async def test_quick_all_system_names_recursion_error_raises_hmc_error(
+    mock_hmc, monkeypatch
+):
+    """A deeply nested body raises RecursionError, not a ValueError subclass,
+
+    so it needs its own clause to reach HMCError instead of escaping the guard.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(200, text="[]")
+    )
+
+    def raise_recursion_error(_response):
+        raise RecursionError
+
+    monkeypatch.setattr(httpx.Response, "json", raise_recursion_error)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as exc_info:
+            await hmc._quick_all_system_names()
+
+    message = str(exc_info.value)
+    assert "quick/All returned invalid JSON: document nesting is too deep" in message
+    assert isinstance(exc_info.value.__cause__, RecursionError)
+
+
 CREATED_LPAR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:new-33333333-3333-3333-3333-333333333333</id>
@@ -1486,6 +1512,29 @@ async def test_fetch_json_invalid_body_raises_contextual_hmc_error(
     assert "x" * 500 in message
     assert "excluded detail" not in message
     assert exc_info.value.__cause__ is parse_error
+
+
+@pytest.mark.asyncio
+async def test_fetch_json_recursion_error_tags_context(mock_hmc, monkeypatch):
+    """A deeply nested body raises RecursionError, not a ValueError subclass,
+
+    so it needs its own clause to reach HMCError instead of escaping the guard.
+    """
+    path = "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    mock_hmc.get(path).mock(return_value=httpx.Response(200, text="{}"))
+
+    def raise_recursion_error(_response):
+        raise RecursionError
+
+    monkeypatch.setattr(httpx.Response, "json", raise_recursion_error)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as exc_info:
+            await hmc.fetch_json(path)
+
+    message = str(exc_info.value)
+    assert f"GET {BASE}{path} returned invalid JSON: document nesting is too deep" in message
+    assert isinstance(exc_info.value.__cause__, RecursionError)
 
 
 @pytest.mark.asyncio
