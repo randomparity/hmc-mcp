@@ -44,8 +44,8 @@ Excluded: the five literal `?group=` sites elsewhere in `client/`, widening
    request with exactly one `group` parameter and no `httpx.InvalidURL` — unless its
    decoded form holds a dot segment, which `_reject_dot_segments` refuses as `HMCError`.
 3. Each of the three group names this repository passes builds today's URL.
-4. A `?group=` f-string in `core.py` fails the test set unless the name it
-   interpolates is bound by a literal `quote(<name>, safe="")` in the same function.
+4. A `path += f"?group={name}"` site in `core.py` fails the test set unless `name`
+   is bound by a literal `quote(name, safe="")` in the same function.
 5. `just verify` and `uv run --no-sync prek run --all-files` are green.
 
 ## Validation

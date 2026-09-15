@@ -681,6 +681,35 @@ def test_a_group_whose_decoded_form_holds_a_dot_segment_is_still_refused():
     assert sent == []
 
 
+def test_a_caller_percent_encoded_group_now_reaches_the_transport_as_data():
+    """The one refusal this change does move, pinned rather than left to the record.
+
+    A `group` the caller already percent-encoded is double-encoded here, so the
+    waist's single decode resolves `x%252F..%252Fy` to `x%2F..%2Fy` rather than
+    to a dot segment. At `4d823cbb` the raw value decoded straight to `x/../y`
+    and was refused, so this is red against the unfixed code. Nothing is
+    retargeted: the value sits after the `?`, where no path resolution applies
+    (ADR 0145, "one narrow residual opens").
+    """
+    client = _client()
+    requested: list[str] = []
+
+    def _record(method, path, **kwargs):
+        requested.append(path)
+        return httpx.Request(method, f"https://hmc.test:12443{path}")
+
+    client._http.build_request = _record  # type: ignore[method-assign]
+
+    async def _send(request, **kwargs):
+        return httpx.Response(204, request=request)
+
+    client._http.send = _send  # type: ignore[method-assign]
+
+    asyncio.run(client.list_uom("LogicalPartition", group="x%2F..%2Fy"))
+
+    assert requested == ["/rest/api/uom/LogicalPartition?group=x%252F..%252Fy"]
+
+
 def _is_quote_binding(node: ast.AST) -> str | None:
     """The name a literal `x = quote(x, safe="")` statement binds, or `None`.
 
@@ -717,11 +746,13 @@ def test_every_group_query_interpolation_is_encoded():
 
     **What this does not cover, stated rather than implied.** It matches the
     `path += f"?group={name}"` idiom and the literal `quote(name, safe="")`
-    assignment. Concatenation, `.format`, a differently-spelled encoder, and a
-    name rebound between the assignment and the f-string are all invisible here,
-    exactly as they are to the type-segment walk. This raises the cost of adding
-    an unencoded site in the idiom the module uses; it is not a proof that none
-    can exist.
+    assignment, and only where the f-string interpolates a bare name.
+    Concatenation, `.format`, an interpolated attribute or subscript
+    (`f"?group={self.g}"`), a differently-spelled encoder, and a name rebound
+    between the assignment and the f-string are all invisible here, exactly as
+    concatenation and `.format` are to the type-segment walk. This raises the
+    cost of adding an unencoded site in the idiom the module uses; it is not a
+    proof that none can exist.
     """
     from hmc_mcp.client import core as client_module
 
