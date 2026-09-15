@@ -3,6 +3,12 @@
 ## Status
 Accepted
 
+> **Amended by [ADR 0144](0144-container-present-empty-discovery-is-authoritative.md)**
+> (2026-09-15): an empty answer carrying the `QuickProperty_Collection` container and no
+> `Nickname` element is now read as "the type defines nothing" and cached as an empty positive
+> set. A 204, a failed read, and a container whose `Nickname` elements are all empty are still
+> read as "the names are unknown".
+
 ## Context
 ADR 0140 landed `HMCClient.list_quick_properties`, which answers what quick-property names a
 resource type defines, and left it with no caller; its *Consequences* names #799 as the owner of

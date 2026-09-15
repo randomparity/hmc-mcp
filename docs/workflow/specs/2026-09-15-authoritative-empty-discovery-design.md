@@ -1,0 +1,134 @@
+# Authoritative empty discovery answers — design
+
+Issue #812. Decision record: [ADR 0144](../../adr/0144-container-present-empty-discovery-is-authoritative.md).
+
+## Problem
+
+`HMCClient`'s two opt-in pre-flights cache their discovery read with
+`frozenset(names) if names else None`, and `None` means "do not validate". The parse below them
+already separates *container present, no names* from *204 or not this shape*; the cache discards
+that at the return boundary, where both arrive as `([], version)`.
+
+So `validate=True` checks nothing on a type that defines nothing — six of the eleven types
+captured at `V1_17_0` and `V1_20_0` (ADR 0142), where the round trip the pre-flight exists to save
+is a captured HTTP 500. The #789 design spec records this as an accepted failure class rather than
+a fix, because taking it trades today's fail-open for a new fail-closed mode and "needs a decision,
+not just an implementation".
+
+## Scope
+
+`src/hmc_mcp/client/core.py` keeps every responsibility it has. Two discovery reads change their
+return contract, two caches stop collapsing it, two refusal messages gain an empty branch, and one
+helper's stated precondition changes its ground. No responsibility moves between files, no caller
+migrates, and no compatibility path is retained: neither `list_search_parameters` nor
+`list_quick_properties` is an ADR 0118 facade name and neither has a caller in `src/` outside
+`core.py`, so the old shape is replaced rather than kept beside the new one.
+
+- **`list_search_parameters`, `list_quick_properties`** → `tuple[list[str] | None, str | None]`.
+  `None` means the level's answer is not a fact about the type. Full mapping in ADR 0144's
+  Decision table. The new third state — container present, name elements present but all empty —
+  reads as `None`, so the parse-artefact shape does not become authoritative.
+- **`_defined_search_parameter_names`, `_defined_quick_property_names`** → cache `None` only for
+  that unknown answer, `frozenset(names)` otherwise, including `frozenset()`. The lock, the
+  re-check under it, the key, the lifetime and the `HMCError` degradation are untouched.
+- **`search_uom`, `get_quick_property`** → the refusal message branches on an empty positive set:
+  `<Type> defines no search parameter named 'X'. The type defines none at all.` The non-empty
+  message is byte-identical to today's.
+- **`_summarize_names`** → unchanged code; its docstring records that the non-empty precondition
+  now holds because each caller branches on the empty set first.
+- **`CHANGELOG.md`** → the Unreleased entries for all four methods are rewritten in place. They
+  describe unreleased APIs, so this is a correction, not a `Changed` note. The
+  `list_quick_properties` entry is additionally stale from #811 and is corrected in the same edit.
+- **`docs/workflow/specs/2026-09-15-discover-search-parameters-design.md`** → the *Failure model*
+  entry naming this gap is struck through and pointed at ADR 0144, matching the entry above it
+  that was closed by the capture.
+- **`docs/adr/0141-*.md`, `docs/adr/0142-*.md`** → a Status amendment banner each, and nothing else.
+
+Out of scope, with owners: the `validate` default (settled, ADR 0141/0142); retrofitting the
+discrimination onto the child-anchored validation forms (a future issue); whether an empty answer
+at an unmeasured firmware level is trustworthy (the next firmware capture — stated, not resolved).
+
+## Success
+
+1. `list_search_parameters` and `list_quick_properties` each return `([], version)` for a 200
+   carrying the container and no name element, `(None, version)` for a 204 and for a container
+   whose name elements are all empty, and raise `HMCError` for a 200 without the container.
+2. `_defined_search_parameter_names` and `_defined_quick_property_names` each cache `frozenset()`
+   for the first of those and `None` for the second and third, and still cache `None` on any
+   `HMCError` from the read.
+3. `search_uom(..., validate=True)` and `get_quick_property(..., validate=True)` raise `ValueError`
+   before any request is sent when the cached positive set is empty, with a message ending
+   `The type defines none at all.` and no bare `"."`.
+4. Every call with `validate` left at its default sends exactly the requests it sends today, and
+   every existing non-empty refusal message is unchanged.
+5. `just verify` and `uv run --no-sync prek run --all-files` are green.
+
+## Failure model
+
+**Actors and deployments.** A local operator through the CLI and an MCP client through
+`_app.with_client`, both of which build one `HMCClient` per call; a library caller importing
+`hmc_mcp.api` and holding one client across several reads; CI, which exercises this only against
+`respx` fixtures. No anonymous or multi-tenant deployment exists — the client speaks to one HMC
+named by the operator's own configuration.
+
+**Invariants and assets at stake.**
+- Default-path behaviour: a caller who did not pass `validate=True` must reach the HMC exactly as
+  before.
+- Availability of the opt-in path: a wrong positive set refuses work the HMC would have done.
+- The cost bound ADR 0141/0142 published: at most one discovery request per type per client.
+- Message disclosure bounds: `_MAX_REPORTED_NAMES` and `_MAX_REPORTED_NAME_LENGTH`.
+
+**Accepted failure classes.**
+- A level keeping the container and nesting names under a different element caches an empty
+  positive set and refuses every name for that client's lifetime. Accepted with its bounds stated
+  in ADR 0144's Consequences: opt-in, one call per client in the CLI and MCP deployments, and a
+  local `ValueError` naming the condition. Unmeasured, and stated as unmeasured.
+- A transient discovery failure is cached as durably as a firmware-level one. Carried unchanged
+  from ADR 0141/0142; this change does not touch the failure path.
+- The wrong-set class — a read that succeeds with the wrong names — carried unchanged from
+  ADR 0142. The empty answer leaves that class by this change; nothing else does.
+- No firmware level has been observed answering the `/quick` anchor with the container and no
+  `QuickProperty`. Accepted: the decision governs how such an answer is read, and asserts nothing
+  about whether one occurs.
+
+**Covered elsewhere.**
+- Type-segment grammar at the URL and `Accept` boundaries: `_reject_unknown_uom_type`, ADR 0143.
+- Response body size: `_read_bounded_response` and `HMC_MAX_RESPONSE_BYTES`, ADR 0133/0134.
+- `get_quick_property`'s raw `property_name` interpolation: a follow-up candidate on ADR 0143, not
+  this change.
+
+## Threat model
+
+**Boundary inventory.** No boundary is added. One existing boundary changes meaning: the HMC
+response body parsed by `list_*` now decides whether the client refuses locally, where before it
+could only decide whether the client validated at all. No new element, header, or path is parsed.
+
+**Actor model.** The HMC is trusted for correctness and untrusted for *shape* — this module
+already treats a 200 body as possibly an `HttpErrorResponse` feed. A network position able to
+forge an HMC response is out of the deployment's threat model: the session is TLS with
+`verify_ssl` on by default, and an actor holding that position can already answer any read.
+
+**Control per boundary.** The container test is the control, and this change narrows rather than
+widens it: authority now requires the container *and* zero name elements, so a body with unnamed
+parameters cannot make the client refuse. Failure of the control leaks nothing new — the refusal
+message names the type and the caller's own property name, and the non-empty branch keeps the two
+existing disclosure bounds.
+
+**Explicitly out of scope.** Denial of function by a compromised or misbehaving HMC: it can
+already return an empty feed, a 500, or a wrong positive set, and `validate=False` is the escape
+from all of them. Nothing here changes what the client sends or where it sends it.
+
+## Validation
+
+| Contract | Mode | Evidence |
+|---|---|---|
+| `list_search_parameters` returns `([], v)` for container + no `ParameterName` element | `focused-test` | `tests/unit/test_client.py::test_list_search_parameters_empty_set_returns_no_names` |
+| `list_search_parameters` returns `(None, v)` for a 204 and for all-empty `ParameterName` elements | `focused-test` | `tests/unit/test_client.py::test_list_search_parameters_unknown_answer_returns_none` |
+| `list_quick_properties` returns `([], v)` for container + no `Nickname` element | `focused-test` | `tests/unit/test_client.py::test_list_quick_properties_empty_set_returns_no_names` |
+| `list_quick_properties` returns `(None, v)` for a 204 and for all-empty `Nickname` elements | `focused-test` | `tests/unit/test_client.py::test_list_quick_properties_unknown_answer_returns_none` |
+| Both caches store `frozenset()` for the authoritative empty answer | `focused-test` | `tests/unit/test_client.py::test_search_uom_validate_refuses_a_type_defining_nothing`, `::test_get_quick_property_validate_refuses_a_type_defining_nothing` |
+| Both caches still store `None` for 204, all-empty, and `HMCError` | `focused-test` | the existing `*_validate_degrades_and_caches_the_failure` parametrizations, extended with the all-empty case |
+| The empty-set refusal message carries no bare `"."` and names the condition | `focused-test` | the two `*_refuses_a_type_defining_nothing` cases assert the message tail |
+| Non-empty refusal messages and every default-path request are unchanged | `focused-test` | the existing `search_uom` / `get_quick_property` validation suites, unmodified |
+| `_summarize_names` docstring ground | `task-test-not-applicable` | The code is unchanged and the edit is a docstring sentence about why a stated precondition holds; no executable or structural observation of it could fail. |
+| ADR 0141/0142 Status banners, ADR 0144, CHANGELOG, #789 spec strike-through | `task-test-not-applicable` | Prose edits to records. `just adr-numbering` checks filename and H1 only, and no consumer validates record prose; a test searching for wording would assert nothing about behaviour. |

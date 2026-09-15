@@ -3,6 +3,13 @@
 ## Status
 Accepted
 
+> **Amended by [ADR 0144](0144-container-present-empty-discovery-is-authoritative.md)**
+> (2026-09-15): an empty answer carrying the `SearchParameterSet` container and no
+> `ParameterName` element is now read as "the type defines nothing" and cached as an empty
+> positive set, so `ManagementConsole` and the five other captured types defining nothing are
+> refused locally. A 204, a failed read, and a container whose `ParameterName` elements are all
+> empty are still read as "the names are unknown".
+
 ## Context
 #789 asks for `HMCClient.list_search_parameters`, reading the type-anchored
 `/rest/api/uom/{R}/search` anchor, and asks that it feed `search_uom` as a pre-flight check. It is
