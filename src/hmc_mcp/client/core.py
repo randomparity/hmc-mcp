@@ -29,6 +29,7 @@ from ..jobs import TERMINAL_JOB_STATUSES
 from ..resource_identity import is_uuid
 from .client_adapters import AdaptersMixin
 from .client_cluster import ClusterMixin
+from .client_contracts import _reject_unknown_uom_type
 from .client_lpars import LparsMixin
 from .client_lpm import LpmMixin
 from .client_network import NetworkMixin
@@ -186,45 +187,6 @@ async def _read_bounded_response(
 # segment rather than with a substring test, so a resource legitimately named
 # "..log" or "a..b" is not refused for containing the characters.
 _DOT_SEGMENTS: frozenset[str] = frozenset({".", ".."})
-
-# The HMC's own type-name grammar. Every `/rest/api/uom/` type segment in the
-# vendored V10 and V11 corpora, and every type name this client passes, matches
-# it. Deliberately an allowlist: a denylist over a URL path segment has to
-# discover `?`, `#`, `%`, `;`, `@`, `:`, and CRLF one incident at a time, while
-# the type namespace is closed and documented (ADR 0143).
-#
-# Unanchored, because it is used with `fullmatch`. An `^...$` pattern with
-# `.match` would accept "LogicalPartition\n" -- Python's `$` matches before a
-# trailing newline -- which httpx puts straight into the Accept header.
-_UOM_TYPE = re.compile(r"[A-Za-z][A-Za-z0-9]*")
-
-
-def _reject_unknown_uom_type(argument: str, value: str) -> None:
-    """Refuse a type segment outside the HMC's own type-name grammar.
-
-    Raised as ``ValueError`` because it reports a malformed caller argument,
-    not a path this client declines to send -- the same family as
-    ``_request_with_uuid_path_arguments``' UUID check and
-    ``validate_adapter_type`` (ADR 0143). The message names the argument and the
-    first offending character only, never the whole value, which on the CLI and
-    API paths can carry an operator's own strings.
-    """
-    if _UOM_TYPE.fullmatch(value):
-        return
-    if not value:
-        detail = "an empty value"
-    elif not (value[0].isascii() and value[0].isalpha()):
-        detail = f"a value starting with {value[0]!r}"
-    else:
-        offending = next(
-            (c for c in value if not (c.isascii() and c.isalnum())), value[0]
-        )
-        detail = f"a value containing {offending!r}"
-    raise ValueError(
-        f"{argument} must be an HMC resource type name: ASCII letters and "
-        f"digits only, starting with a letter. Got {detail}."
-    )
-
 
 def _reject_dot_segments(method: str, path: str) -> None:
     """Refuse a request path that could resolve away from the resource it names.

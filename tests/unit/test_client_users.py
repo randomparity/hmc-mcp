@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from hmc_mcp.client.client_contracts import _MAX_UOM_TYPE_LENGTH
 from hmc_mcp.client.client_users import UsersMixin
 
 
@@ -38,3 +39,37 @@ async def test_list_users_filters_authentication_type_and_rejects_unknown_values
     )
     with pytest.raises(ValueError, match="Invalid authentication_type"):
         await UsersMixin.list_hmc_users(client, "console", "radius")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "child_type",
+    [
+        # The retargeting reproduction issue #809 carried, on the builder
+        # issue #820 covers: `?` splits a query string and `#` truncates the
+        # path, both retargeting inside /rest/api/uom/.
+        "UserProfile?group=x",
+        "UserProfile#x",
+        "../../web/Logon",
+        "..",
+        "User Profile",
+        "",
+        # httpx carries a trailing newline into the Accept header untouched,
+        # which is why the grammar uses fullmatch rather than an anchor.
+        "UserProfile\n",
+        # Grammar-valid but past the acceptance bound (ADR 0147). The builder
+        # inherits the length rule with the grammar rather than restating it.
+        "A" * (_MAX_UOM_TYPE_LENGTH + 1),
+    ],
+)
+def test_user_child_path_refuses_a_type_outside_the_grammar(child_type):
+    """A future non-literal caller cannot reach the HMC with an unvalidated type.
+
+    The AST drift tests that would catch such a caller walk `core.py` only and
+    cannot see this module, so the guarantee is this runtime refusal rather
+    than a test-time observation (ADR 0147). Today every caller passes a
+    literal, and six of the seven are checked only because the same literal
+    also reaches `_uom_headers`; `delete_hmc_user` sends `_uom_headers(None)`
+    and has no such check.
+    """
+    with pytest.raises(ValueError, match="child_type must be an HMC resource type name"):
+        UsersMixin._child_path("console-1", child_type)

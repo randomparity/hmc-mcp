@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Literal, Protocol, get_args
 
@@ -24,6 +25,67 @@ AdapterType = Literal[
     "VirtualNICDedicated",
 ]
 ADAPTER_TYPES = frozenset(get_args(AdapterType))
+
+
+# The HMC's own type-name grammar. Every `/rest/api/uom/` type segment in the
+# vendored V10 and V11 corpora, and every type name this client passes, matches
+# it. Deliberately an allowlist: a denylist over a URL path segment has to
+# discover `?`, `#`, `%`, `;`, `@`, `:`, and CRLF one incident at a time, while
+# the type namespace is closed and documented (ADR 0143).
+#
+# Unanchored, because it is used with `fullmatch`. An `^...$` pattern with
+# `.match` would accept "LogicalPartition\n" -- Python's `$` matches before a
+# trailing newline -- which httpx puts straight into the Accept header.
+_UOM_TYPE = re.compile(r"[A-Za-z][A-Za-z0-9]*")
+
+# The grammar bounds the character set; without this it bounds nothing else, so
+# a megabyte of "A" is grammar-valid and gets built into a URL and an Accept
+# header (ADR 0147). An *acceptance* bound, which is why it is not
+# `_MAX_REPORTED_NAME_LENGTH`: that one truncates a name for display, where
+# being wrong costs a shortened message, and this one refuses an operation.
+# Too low is the expensive direction -- ADR 0143 accepts that no authoritative
+# list of HMC type names exists -- so this is four times the longest type name
+# in this repository (32, `VirtualFibreChannelClientAdapter`) rather than a
+# tight fit. Against a megabyte every candidate performs the same.
+_MAX_UOM_TYPE_LENGTH = 128
+
+
+def _reject_unknown_uom_type(argument: str, value: str) -> None:
+    """Refuse a type segment outside the HMC's own type-name grammar.
+
+    Raised as ``ValueError`` because it reports a malformed caller argument,
+    not a path this client declines to send -- the same family as
+    ``_request_with_uuid_path_arguments``' UUID check and
+    ``validate_adapter_type`` (ADR 0143). The message names the argument and the
+    first offending character or the length only, never the whole value, which
+    on the CLI and API paths can carry an operator's own strings.
+
+    Length is checked before the character class: an over-long value that is
+    otherwise grammar-valid has no offending character to name, so the
+    character-class branch would report the first character and describe a rule
+    the value did not break.
+    """
+    if len(value) > _MAX_UOM_TYPE_LENGTH:
+        detail = (
+            f"a value of {len(value)} characters, over the "
+            f"{_MAX_UOM_TYPE_LENGTH}-character maximum"
+        )
+    elif _UOM_TYPE.fullmatch(value):
+        return
+    elif not value:
+        detail = "an empty value"
+    elif not (value[0].isascii() and value[0].isalpha()):
+        detail = f"a value starting with {value[0]!r}"
+    else:
+        offending = next(
+            (c for c in value if not (c.isascii() and c.isalnum())), value[0]
+        )
+        detail = f"a value containing {offending!r}"
+    raise ValueError(
+        f"{argument} must be an HMC resource type name: ASCII letters and "
+        f"digits only, starting with a letter, at most "
+        f"{_MAX_UOM_TYPE_LENGTH} characters. Got {detail}."
+    )
 
 
 def validate_adapter_type(adapter_type: AdapterType) -> AdapterType:

@@ -12,6 +12,7 @@ from .client_contracts import (
     VALID_AUTHENTICATION_FILTERS,
     AuthenticationFilter,
     UsersClient,
+    _reject_unknown_uom_type,
 )
 from .client_parse import _parse_feed
 
@@ -31,6 +32,16 @@ class UsersMixin:
 
     @staticmethod
     def _child_path(console_uuid: str, child_type: str) -> str:
+        """Build a documented ``ManagementConsole`` child path.
+
+        The type segment is validated here rather than relied on from the
+        callers: all seven pass a literal, and six of those are checked only
+        because the same literal also reaches ``_uom_headers`` through
+        ``_get``/``_put``/``_post``. ``delete_hmc_user`` sends
+        ``_uom_headers(None)`` and has no such check, and neither coupling
+        survives a caller that stops passing a literal (ADR 0147).
+        """
+        _reject_unknown_uom_type("child_type", child_type)
         console_path_id = quote(console_uuid, safe="")
         return f"/rest/api/uom/ManagementConsole/{console_path_id}/{child_type}"
 
