@@ -133,13 +133,15 @@ second contract applied to data rather than to a schema identifier.
   encoding that would give it one costs one line and changes no byte for a
   legitimate name.
 - **Translate `httpx.InvalidURL` into the client's exception contract at
-  `_request`, closing the class rather than one argument.** verified: a
-  `job_href` of `/rest/api/uom/jobs/1\r\nX-Evil: 1` clears both
-  `_reject_non_job_path` and `_reject_dot_segments` and still raises
-  `httpx.InvalidURL` from `build_request` (httpx 0.28.1), so the escape is not
-  specific to `group`. judgment: a transport-waist change, outside this record's
-  surface and outside issue #819. Reported as a follow-up candidate, not a
-  residual this record accepts.
+  `_request`, closing the class rather than one argument.** verified:
+  `get_uom_path` hands its caller-supplied `path` to `_get` unchanged, so
+  `/rest/api/uom/LogicalPartition/x\r\nX-Evil: 1` reaches `build_request` and
+  raises `httpx.InvalidURL` (httpx 0.28.1) — the escape is not specific to
+  `group`. `get_job_entry` is not that route: it applies
+  `urlparse(job_href).path` first, which strips CR and LF, so the same value
+  goes out as `/rest/api/uom/jobs/1X-Evil: 1` instead. judgment: a
+  transport-waist change, outside this record's surface and outside issue #819.
+  Reported as a follow-up candidate, not a residual this record accepts.
 - **Widen `_reject_dot_segments` to refuse `&`, `=`, `?` or `#`.** verified:
   `get_vios_storage_detail` passes `?group=ViosSCSIMapping&group=ViosFCMapping`
   through that same waist, so all four characters occur in this client's own
