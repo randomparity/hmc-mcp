@@ -13,8 +13,10 @@ for a child type. Neither anchor occurs under `src/`.
 
 One new read-only method on `HMCClient` in `src/hmc_mcp/client/core.py`, beside
 `get_quick_property`: `list_quick_properties(resource_type, *, parent_type=None, parent_uuid=None)
--> tuple[list[str], str | None]`, whose signature, path grammar and parse ADR 0140 decides. Both
-parent arguments together select the child anchor and neither selects the root anchor. The tuple's
+->` ~~`tuple[list[str], str | None]`~~ `tuple[list[str] | None, str | None]`, whose signature, path
+grammar and parse ADR 0140 decides. ADR 0144 is where the first element gained `None`, for a level
+whose answer is not a fact about the type. Both parent arguments together select the child anchor
+and neither selects the root anchor. The tuple's
 **first element is the plain list of names** the issue's outcome asks for; the second is the
 response's `X-HMC-Schema-Version`, the pairing ADR 0139 established and named this read as
 inheriting. It reuses `_request_with_uuid_path_arguments`, which owns UUID validation and reaches
@@ -126,8 +128,9 @@ confidentiality of the name list, firmware metadata identical for every caller.
 - A 200 carrying no non-empty `Nickname` — an `HttpErrorResponse` feed, an empty collection, or only
   empty names — raises `HMCError` carrying status 200 and the body. An empty `Nickname` among
   populated ones is dropped rather than returned.
-- A non-200, non-204 status raises `HMCError` whose `status_code` is that status; 204 returns
-  `([], schema_version)`.
+- A non-200, non-204 status raises `HMCError` whose `status_code` is that status; ~~204 returns
+  `([], schema_version)`~~. ADR 0144 is where a 204 became `(None, schema_version)`, the level's
+  answer not being a fact about the type.
 - A non-UUID `parent_uuid`, exactly one of the two parent arguments, or a `..` segment in
   `resource_type` or `parent_type` each raise before transport — `ValueError` for the first two,
   `HMCError` for the third — and send no request.

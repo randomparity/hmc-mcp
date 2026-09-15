@@ -79,10 +79,12 @@ The six `hmc_mcp.api` exports.
 - A discovery read that succeeds with *fewer* names than the level serves would make `validate=True`
   reject a working name. Accepted: validation is opt-in and the `False` default is the escape. No
   claim is made here about whether any level answers short — this repository has not checked, and
-  the acceptance does not rest on it. The *empty* answer is not accepted, because it is reachable
+  the acceptance does not rest on it. ~~The *empty* answer is not accepted, because it is reachable
   — a 204 returns `([], version)` without raising (`core.py:780-781`, pinned by
   `tests/unit/test_client.py:2623-2629`) — and an empty positive set would reject every name for the
-  client's lifetime. It is degraded from instead, exactly as a failed read is.
+  client's lifetime. It is degraded from instead, exactly as a failed read is.~~ ADR 0144 is where
+  that was taken the other way: an empty answer carrying the container and no name element at all is
+  trusted as a fact about the type, and every other empty answer stays degraded from.
 - `validate=True` with a malformed `uuid` spends one discovery request before raising the
   `ValueError` that `_request_with_uuid_path_arguments` (`core.py:461-464`) raises today at no cost,
   because the name check sits above the path build and the UUID check is downstream of it. Accepted
@@ -115,8 +117,10 @@ the transport. `$quest` step 6 re-judges this against the actual diff.
 3. A fresh `HMCClient` performs the discovery read again on first validated use, and no entry is
    invalidated or refreshed during a client's lifetime. (#799 criterion 3, ADR 0141)
 4. When the discovery read yields no names — an `HMCError` from a 4xx or 5xx, an
-   `HMCTransportError` from a connection failure, or a 204 returning `([], version)` —
-   `validate=True` sends the quick-property request anyway and returns its result.
+   `HMCTransportError` from a connection failure, or ~~a 204 returning `([], version)`~~ —
+   `validate=True` sends the quick-property request anyway and returns its result. ADR 0144 is where
+   a 204 became `(None, version)`; it still validates nothing, and the container-present empty
+   answer is the one that now refuses locally instead.
    (#799 criterion 4)
 5. `validate` defaults to `False`; a call omitting it makes no discovery request and behaves exactly
    as at `fac7c19e`. The decision is in ADR 0141 and the parameter in `CHANGELOG.md`.

@@ -3,6 +3,12 @@
 ## Status
 Accepted
 
+> **Amended by [ADR 0144](0144-container-present-empty-discovery-is-authoritative.md)**
+> (2026-09-15): the signature this record declares is now
+> `-> tuple[list[str] | None, str | None]`. The first element is `None` when the level's answer is
+> not a fact about the type — a 204, or a container holding properties this parse cannot name —
+> and a list, empty or not, when it is.
+
 ## Context
 Issue #788, under epic #785, adds the second HMC discovery read: `/rest/api/uom/{R}/quick`. ADR 0139
 fixed the shape these reads share — the parsed answer paired with the response's

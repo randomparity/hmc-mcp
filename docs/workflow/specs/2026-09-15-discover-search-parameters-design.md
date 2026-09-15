@@ -56,10 +56,12 @@ satisfied. `hmc_mcp.api`'s six exports (ADR 0118) are a protected contract and s
 name was found, to separate a type defining none from a body of another shape entirely.
 `list_search_parameters(resource_type)` reads `/rest/api/uom/{R}/search`, sends `Accept: */*`,
 and returns `(names, schema_version)` — the texts of that element read document-wide via
-`_find_all_text`, paired with the response's `X-HMC-Schema-Version`. A 204 returns
+`_find_all_text`, paired with the response's `X-HMC-Schema-Version`. ~~A 204 returns
 `([], schema_version)`; a non-200 raises `HMCError` carrying the status; a 200 yielding no name
 returns `([], schema_version)` when it carries the container and raises `HMCError` when it does
-not. `HMCClient.__init__` gains
+not.~~ ADR 0144 is where those empty answers were separated: a 204 returns `(None, schema_version)`,
+and a 200 yielding no name returns `([], schema_version)` only when the container holds nothing this
+parse could have named. The non-200 clause is unchanged. `HMCClient.__init__` gains
 `self._search_parameter_names: dict[str, frozenset[str] | None] = {}` and
 `self._search_parameter_names_lock = asyncio.Lock()`. A private
 `_defined_search_parameter_names(resource_type)` reads the root anchor once per type per client,
@@ -123,20 +125,24 @@ degradation promise rather than any numbered criterion of #789. The six `hmc_mcp
   **Six of the eleven captured types answer 200 with a `SearchParameterSet` and no parameters**:
   `ManagementConsole`, `VirtualSwitch`, `VirtualNetwork`, `NetworkBridge`, `LogicalUnit`,
   `SharedProcessorPool`. So the empty answer is the majority firmware case, not a protocol corner.
-  It is still degraded from rather than trusted, because an empty positive set would reject every
+  ~~It is still degraded from rather than trusted, because an empty positive set would reject every
   name for the client's lifetime, and because on an unmeasured level an empty set may be a parse
-  artefact rather than a fact about the type.
-- **`validate=True` performs no check on a type that defines nothing.** A consequence of the entry
-  above, stated separately because it is the one the reader will care about: for those six types
-  the pre-flight is inert and the search still costs the HMC's 500, on precisely the types where a
-  local refusal would be certain rather than probabilistic. Accepted for this change: the direction
-  is fail-open to today's behaviour, no in-repo call site passes `validate=True`, and the API
-  surface discloses it — `search_uom`'s docstring and `CHANGELOG.md` both say a type defining none
-  reads as unknown. Making the check fire there needs a discriminated return separating
+  artefact rather than a fact about the type.~~ ADR 0144 is where that was taken the other way: an
+  empty answer carrying the container and no name element at all is trusted as a fact about the
+  type, and every other empty answer stays degraded from.
+- ~~**`validate=True` performs no check on a type that defines nothing.**~~ A consequence of the
+  entry above, stated separately because it is the one the reader will care about: for those six
+  types the pre-flight is inert and the search still costs the HMC's 500, on precisely the types
+  where a local refusal would be certain rather than probabilistic. Accepted for this change: the
+  direction is fail-open to today's behaviour, no in-repo call site passes `validate=True`, and
+  ~~the API surface discloses it — `search_uom`'s docstring and `CHANGELOG.md` both say a type
+  defining none reads as unknown~~ (both now say it is refused locally instead).
+  Making the check fire there needs a discriminated return separating
   "container present, no parameters" from a 204 or a failure, which buys local refusal on six of
   eleven captured types at the cost of a new way for `validate=True` to reject everything if a
   later level nests its parameters differently. Not taken here; it is a behaviour change beyond
-  what this change was scoped to.
+  what this change was scoped to. **Taken in ADR 0144, not accepted:** that discriminated return
+  is where the check was made to fire, at the cost this entry names.
 - Cache growth is unbounded in the number of distinct `resource_type` values passed. Accepted:
   resource types come from literals in this repository and the dict dies with the client.
   **The per-entry size is bounded by `HMC_MAX_RESPONSE_BYTES`, not by the names being short** —
@@ -211,8 +217,10 @@ step 6 re-judges this against the actual diff.
    answered 200, but only those two values were ever sent, so `*/*` is kept as the one Accept that
    cannot fail negotiation on an unmeasured level.
 7. When the discovery read yields no names — an `HMCError` from a 4xx or 5xx, an
-   `HMCTransportError` from a connection failure, or a 204 returning `([], version)` —
-   `validate=True` sends the search anyway and returns its result.
+   `HMCTransportError` from a connection failure, or ~~a 204 returning `([], version)`~~ —
+   `validate=True` sends the search anyway and returns its result. ADR 0144 is where a 204 became
+   `(None, version)`; it still validates nothing, and the container-present empty answer is the one
+   that now refuses locally instead.
 8. `validate` defaults to `False`; a call omitting it makes no discovery request and behaves
    exactly as at `a0d29ac7`. The decision is in ADR 0142 and the parameter in `CHANGELOG.md`.
 9. `hmc_mcp.api` still exports exactly the six names ADR 0118 names.
