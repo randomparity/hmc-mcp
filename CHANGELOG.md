@@ -10,6 +10,22 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `HMCClient.list_search_parameters(resource_type, *, parent_type=None, parent_uuid=None)` reads
+  the search-parameter names an HMC defines for a resource type, at the root anchor
+  `/rest/api/uom/{R}/search` and the child anchor `/rest/api/uom/{P}/{UUID}/{C}/search`, returning
+  them with the response's `X-HMC-Schema-Version`. **The parsed response shape is not yet confirmed
+  against firmware**: no HMC has been observed answering this anchor and the vendored reference
+  documents the path but not the body, so the element the names are read from is an inference
+  recorded in ADR 0142 and isolated in one constant. A level that does not serve the anchor
+  surfaces as `HMCError` carrying its status (ADR 0142, #789).
+
+- `HMCClient.search_uom` takes a keyword-only `validate=False`. With `validate=True` a property
+  name the resource type does not define raises `ValueError` before any request is sent, checked
+  against the names `list_search_parameters` reports; those are read once per type and cached for
+  the client's lifetime, and a level where the read yields no names validates nothing rather than
+  raising. Off by default, because the client is constructed per tool call and because the parse
+  above is unconfirmed (ADR 0142, #789).
+
 - `HMCClient.get_quick_property` takes a keyword-only `validate=False`. With `validate=True` an
   unknown property name raises `ValueError` before any request is sent, checked against the names
   `list_quick_properties` reports for the resource type; those are read once per type and cached for

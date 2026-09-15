@@ -44,6 +44,13 @@ from .client_users import UsersMixin
 MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
 MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
 
+# The element whose text holds a search-parameter name at the /search discovery
+# anchors. INFERRED from the sibling /quick anchor, never captured from
+# firmware -- ADR 0142 records the inference's one ground and the three
+# properties that bound it. This constant is the single point of change when a
+# live round settles the shape.
+_SEARCH_PARAMETER_NAME_ELEMENT = "Nickname"
+
 
 async def _close_response(response: httpx.Response, primary: BaseException | None) -> None:
     """Finish owned cleanup even if the caller is cancelled again during close."""
@@ -258,6 +265,12 @@ class HMCClient(
         # rather than lazily: asyncio.Lock binds to the running loop on first
         # await, not at construction, so a client built outside a loop is fine.
         self._quick_property_names_lock = asyncio.Lock()
+        # Search-parameter names per resource type, on the same terms as the
+        # quick-property cache above: read once, kept for this client's
+        # lifetime, None meaning a discovery read that yielded no names
+        # (ADR 0142).
+        self._search_parameter_names: dict[str, frozenset[str] | None] = {}
+        self._search_parameter_names_lock = asyncio.Lock()
         self._legacy_port_fallback = (
             config.port == 443 and "port" not in config.model_fields_set
         )
@@ -857,9 +870,45 @@ class HMCClient(
         return names, schema_version
 
     async def search_uom(
-        self, resource_type: str, property_name: str, property_value: str
+        self,
+        resource_type: str,
+        property_name: str,
+        property_value: str,
+        *,
+        validate: bool = False,
     ) -> list[dict[str, Any]]:
-        """GET /rest/api/uom/{ResourceType}/search/({Property}=={Value})."""
+        """GET /rest/api/uom/{ResourceType}/search/({Property}=={Value}).
+
+        The HMC answers an unsupported search property with **HTTP 400**: the
+        property names a search may use are per type, published at the
+        ``/search`` discovery anchor, and a name the type does not define is
+        rejected at the URL rather than returning an empty feed. That round
+        trip is the cost this method's pre-flight exists to remove, and it is
+        recorded here so the reason survives the code.
+
+        With *validate* the name is checked against the ones the type defines
+        before anything is sent, raising ``ValueError`` on a name the HMC does
+        not know. The names come from ``list_search_parameters`` and are cached
+        for this client's lifetime, so validating costs at most one extra
+        request per resource type per session. It is off by default: the client
+        is constructed per tool call, so the cache would rarely be reused and
+        every call would pay that request (ADR 0142). A level where the
+        discovery read itself fails validates nothing rather than raising, and
+        a transport failure is cached as durably as a firmware-level one -- a
+        transient one therefore leaves validation off for that type until a new
+        client is constructed.
+
+        **The discovery read's parse is not yet confirmed against firmware.**
+        ``_SEARCH_PARAMETER_NAME_ELEMENT`` is an inference; ADR 0142 records
+        what that costs. Validation is opt-in partly because of it.
+        """
+        if validate:
+            defined = await self._defined_search_parameter_names(resource_type)
+            if defined is not None and property_name not in defined:
+                raise ValueError(
+                    f"{resource_type} defines no search parameter named "
+                    f"{property_name!r}. Defined names: {', '.join(sorted(defined))}."
+                )
         encoded_property = quote(property_name, safe="")
         encoded_value = quote(property_value, safe="")
         path = (
@@ -870,6 +919,135 @@ class HMCClient(
         if not xml:
             return []
         return _parse_feed(xml, path)
+
+    async def list_search_parameters(
+        self,
+        resource_type: str,
+        *,
+        parent_type: str | None = None,
+        parent_uuid: str | None = None,
+    ) -> tuple[list[str], str | None]:
+        """GET the search-parameter names a type defines, with the schema version.
+
+        Reads ``/rest/api/uom/{R}/search``, or
+        ``/rest/api/uom/{P}/{UUID}/{C}/search`` when both *parent_type* and
+        *parent_uuid* are given; supplying exactly one of them is a caller
+        error. This is the type-anchored anchor, not the instance search
+        ``search_uom`` builds -- the names it returns are what that search's
+        property argument may be, which the HMC otherwise answers with an
+        HTTP 400.
+
+        **The response shape is inferred, not observed.** No firmware has been
+        seen answering this anchor, and the vendored reference corpus documents
+        the path and never the body -- no content type, no example, no element
+        vocabulary. This reads the texts of
+        ``_SEARCH_PARAMETER_NAME_ELEMENT``, document-wide, on the strength of
+        the sibling ``/quick`` anchor returning its names that way and the
+        corpus tabling a type's searchable properties under a quick-property
+        heading. ADR 0142 records that inference and bounds it; until a live
+        round confirms it, treat a working call as unproven rather than as
+        evidence the parse is right.
+
+        They are read document-wide rather than through ``_parse_feed``, which
+        flattens an entry to a dict and collapses a repeated element to a bare
+        value when the HMC sends exactly one -- the hazard ADR 0139 recorded
+        for ``OperationSet``, and reachable here for any type defining a single
+        search parameter. An empty name is dropped; a 200 yielding no name at
+        all raises ``HMCError``, because the HMC is known to answer 200 with an
+        ``HttpErrorResponse`` feed and that is indistinguishable to a caller
+        from a type defining nothing.
+
+        Returns the names paired with the response's ``X-HMC-Schema-Version``,
+        ``None`` when the HMC sends none. That value is verbatim and is not
+        guaranteed to hold a version: ADR 0139 and ADR 0140 both record the HMC
+        echoing the request's ``X-Audit-Memento`` into it, so callers must not
+        parse it as a level.
+
+        Sends ``Accept: */*``. With no observed content type for this anchor,
+        it is the one Accept that cannot fail negotiation; a typed uom Accept
+        would be a second guess stacked on the first. A firmware level
+        insisting on one answers 406, which surfaces as ``HMCError``.
+
+        A type that does not serve the anchor asked for surfaces as
+        ``HMCError`` carrying that status. An unrecognised type is rejected at
+        the URL with **400 ``INVALID_URL``, not 404** (ADR 0139, observed at
+        V1_17_0 for the sibling anchor), and the sibling ``/quick`` anchor has
+        a type answering 400 at the root and 200 under a parent (ADR 0140), so
+        neither status implies the anchor is missing everywhere.
+        """
+        uuid_path_arguments: dict[str, str] = {}
+        if parent_type is not None and parent_uuid is not None:
+            path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{resource_type}/search"
+            uuid_path_arguments["parent_uuid"] = parent_uuid
+        elif parent_type is None and parent_uuid is None:
+            path = f"/rest/api/uom/{resource_type}/search"
+        else:
+            raise ValueError(
+                "parent_type and parent_uuid must be given together: a "
+                "child-anchored read needs both the parent type and the "
+                "parent instance UUID"
+            )
+        resp = await self._request_with_uuid_path_arguments(
+            "GET",
+            path,
+            uuid_path_arguments=uuid_path_arguments,
+            headers={"Accept": "*/*"},
+        )
+        schema_version: str | None = resp.headers.get("X-HMC-Schema-Version")
+        if resp.status_code == 204:
+            return [], schema_version
+        if resp.status_code != 200:
+            raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
+        names = [
+            n
+            for n in _find_all_text(
+                resp.text, f"GET {path}", _SEARCH_PARAMETER_NAME_ELEMENT
+            )
+            if n
+        ]
+        if not names:
+            raise HMCError(
+                f"GET {path} returned no {_SEARCH_PARAMETER_NAME_ELEMENT} element; "
+                "expected the search-parameter names the type defines",
+                resp.status_code,
+                resp.text,
+            )
+        return names, schema_version
+
+    async def _defined_search_parameter_names(
+        self, resource_type: str
+    ) -> frozenset[str] | None:
+        """The search-parameter names *resource_type* defines, or None if unknown.
+
+        Reads the root ``/search`` anchor once per type per client and caches
+        the answer, the failure included: a level where discovery does not work
+        yields None, which callers read as "do not validate" rather than as "no
+        parameters" (ADR 0142). A transport failure is cached as durably as a
+        firmware-level one, so a transient one leaves validation off for this
+        type until a new client is constructed.
+        """
+        if resource_type in self._search_parameter_names:
+            return self._search_parameter_names[resource_type]
+        async with self._search_parameter_names_lock:
+            # Re-check under the lock: a task that waited here may have been
+            # waiting on the very read that populates this entry, and the cost
+            # bound is per type per client, not per caller.
+            if resource_type in self._search_parameter_names:
+                return self._search_parameter_names[resource_type]
+            try:
+                names, _ = await self.list_search_parameters(resource_type)
+            except HMCError:
+                # Covers HMCTransportError too, which subclasses it. ADR 0142
+                # degrades rather than raising so a level that does not serve
+                # the anchor -- or a wrong parsed element -- cannot break
+                # search_uom, which an opt-in pre-flight must not do.
+                names = []
+            # An empty answer is "unknown", never "defines nothing": a 204
+            # returns ([], version) without raising, and an empty positive set
+            # would reject every property for this client's lifetime.
+            defined = frozenset(names) if names else None
+            self._search_parameter_names[resource_type] = defined
+            return defined
 
     async def list_operations(
         self,
