@@ -4,6 +4,13 @@
 
 Accepted
 
+> **Amended by [ADR 0147](0147-uom-type-guard-bounded-and-shared.md)**
+> (2026-09-15): the grammar this record states now carries a length bound of 128 characters
+> alongside its character class, and `_reject_unknown_uom_type` lives in
+> `src/hmc_mcp/client/client_contracts.py` rather than `src/hmc_mcp/client/core.py`, so
+> `client_users._child_path` can call it. The `_child_path` follow-up candidate recorded
+> below is closed by that record.
+
 ## Context
 
 Issue #809 asks a question the code answers only by repetition: twelve of the
