@@ -39,11 +39,14 @@ means the level's answer is not a fact about the type; a list — empty or not �
 
 | Answer | Returned | Cached |
 |---|---|---|
-| 200, container, one or more non-empty names | `(names, version)` | `frozenset(names)` |
+| 200, one or more non-empty names | `(names, version)` | `frozenset(names)` |
 | 200, container, **no name element** | `([], version)` | `frozenset()` |
 | 200, container, name elements all empty | `(None, version)` | `None` |
 | 204 | `(None, version)` | `None` |
-| 200 without the container, other status, transport failure | raises `HMCError` | `None` |
+| 200, no usable name and no container; other status; transport failure | raises `HMCError` | `None` |
+
+The container is consulted only when no usable name was found, so a body carrying names is
+returned whether or not the container is present — row 1 does not depend on it.
 
 The third row is the narrowing that keeps this from being a blanket trust in emptiness. A body
 carrying `<ParameterName/>` or `<Nickname/>` elements whose texts are all empty has parameters
@@ -90,10 +93,17 @@ Both empty-answer clauses this record amends stay correct for the answers they s
 204 and a failed read are still unknown, and ADR 0142's `ManagementConsole` sentence is the case
 that moves.
 
-`list_search_parameters` and `list_quick_properties` change return type. Neither is one of
-ADR 0118's six facade names and neither has a caller in `src/` outside `core.py`, so no
-compatibility path is retained; `CHANGELOG.md`'s Unreleased entries for both are rewritten in
-place rather than given a `Changed` note, because the methods have never shipped.
+`list_search_parameters` and `list_quick_properties` change return type. Neither is on ADR 0029's
+lifecycle allowlist that ADR 0118 retains — `__init__`, `__aenter__`, `__aexit__`,
+`is_logged_on`, `logon`, `logoff` — so both are unsupported generic UOM helpers, and neither has a
+caller in `src/` outside `core.py`. No compatibility path is retained, and `CHANGELOG.md`'s
+Unreleased entries for both are rewritten in place rather than given a `Changed` note, because the
+methods have never shipped.
+
+Three merged records carry empty-answer clauses this decision falsifies, and each is struck
+through in place with a pointer here rather than left standing: the #789 spec's *wrong-set* and
+*performs no check* failure-model entries, the #799 spec's *fewer names* entry, and the #788
+spec's declared return type.
 
 ## Considered & rejected
 
@@ -119,8 +129,9 @@ place rather than given a `Changed` note, because the methods have never shipped
   the caller's own traffic, to make a wrong answer eventually right — more machinery than the flag
   that turns the check off, and it makes the refusal non-deterministic.
 - **Keep `list_*` returning `([], version)` and add a private discriminated read for the caches
-  only.** verified: neither method is an ADR 0118 facade name and neither has a caller in `src/`
-  outside `core.py`, so nothing needs the old shape. judgment: it keeps a public method that
+  only.** verified: neither method is on ADR 0029's lifecycle allowlist that ADR 0118 retains, and
+  neither has a caller in `src/` outside `core.py`, so nothing needs the old shape. judgment: it
+  keeps a public method that
   discards the distinction at the return boundary — the defect the issue names — and pays a
   wrapper per twin to do it.
 - **Return a small result type or a third tuple element instead of `None`.** judgment: a third

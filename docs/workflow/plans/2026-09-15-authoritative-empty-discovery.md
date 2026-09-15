@@ -5,18 +5,18 @@ nothing" into "the names are unknown", so `validate=True` refuses locally on a t
 nothing and says so.
 
 **Architecture.** Both discovery reads (`list_search_parameters`, `list_quick_properties`) already
-consult a container element when they find no name; they then return `([], version)` for that and
-for a 204 alike. Each read instead returns `None` in place of the list when the level's answer is
-not a fact about the type, and each cache (`_defined_search_parameter_names`,
-`_defined_quick_property_names`) stores `None` only for that. Everything else — the locks, the
-cache key and lifetime, the `HMCError` degradation, the opt-in default — is untouched.
+consult a container element when they find no usable name; they then return `([], version)` for
+that and for a 204 alike. Each read instead returns `None` in place of the list when the level's
+answer is not a fact about the type, and each cache (`_defined_search_parameter_names`,
+`_defined_quick_property_names`) stores `None` only for that. The locks, the cache key and
+lifetime, the `HMCError` degradation, and the opt-in default are untouched.
 
 **Tech stack.** Python 3.11 (`.python-version`), `httpx` + `respx`, `pytest`/`pytest-asyncio`,
 `uv`, `just`, `ruff`, `ty`.
 
 Expected implementation size: 180–260 changed lines (M) — derived from the file map below: two
 symmetric ~30-line source edits with their docstrings, four new or reshaped test cases per twin,
-and three prose-record edits.
+and four prose-record edits.
 
 ## Global Constraints
 
@@ -31,6 +31,7 @@ and three prose-record edits.
 - Diff against the merge base: `git --no-pager diff "$(git merge-base HEAD origin/main)"`.
 - Decision record: `docs/adr/0144-container-present-empty-discovery-is-authoritative.md`.
   Specification: `docs/workflow/specs/2026-09-15-authoritative-empty-discovery-design.md`.
+  ADR 0144's Decision table is the authority for every return value below.
 
 ## File map
 
@@ -39,11 +40,15 @@ and three prose-record edits.
 | `src/hmc_mcp/client/core.py` | both discovery reads, both caches, both refusal messages, `_summarize_names` | the same, with the discriminated return contract |
 | `tests/unit/test_client.py` | the unit contract for all of the above | the same, plus the unknown-answer and defines-nothing cases |
 | `CHANGELOG.md` | Unreleased entries for the four methods | the same, rewritten to the shipped behaviour |
-| `docs/workflow/specs/2026-09-15-discover-search-parameters-design.md` | the #789 failure model, which accepts this gap | the same, with that entry struck through and pointed at ADR 0144 |
+| `docs/workflow/specs/2026-09-15-discover-search-parameters-design.md` | the #789 failure model, whose *performs no check* and *wrong-set* entries accept this gap | the same, both empty-answer clauses struck through and pointed at ADR 0144 |
+| `docs/workflow/specs/2026-09-14-validate-quick-property-names-design.md` | the #799 failure model, whose *fewer names* entry accepts it for the quick twin | the same, its empty-answer tail struck through the same way |
+| `docs/workflow/specs/2026-09-14-discover-quick-properties.md` | the #788 scope, declaring `-> tuple[list[str], str \| None]` | the same, that type struck through and corrected |
 | `docs/adr/0141-*.md`, `docs/adr/0142-*.md` | the amended decisions | the same, plus a Status banner each (already written) |
 
 No file is created, moved, or removed. No caller migrates: neither `list_*` method has a caller in
-`src/` outside `core.py`, and neither is an ADR 0118 facade name, so no compatibility path is kept.
+`src/` outside `core.py`, and neither is on ADR 0029's lifecycle allowlist that ADR 0118 retains
+(`__init__`, `__aenter__`, `__aexit__`, `is_logged_on`, `logon`, `logoff`), so no compatibility
+path is kept.
 
 ## Task 1 — the search twin
 
@@ -63,40 +68,57 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
   and for `ParameterName` elements that are all empty. Cases:
   `test_list_search_parameters_empty_set_returns_no_names` (kept, one parametrization) and
   `test_list_search_parameters_unknown_answer_returns_none` (new, two).
-  Red: `assert ([], 'V1_0') == (None, 'V1_0')`.
+  Red, observed at step 4 before any source edit: `assert ([], 'V1_0') == (None, 'V1_0')`.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k list_search_parameters -q`.
 - **The cache stores `frozenset()` for the authoritative empty answer and refuses on it.**
   Mode: `focused-test`. Observable: `search_uom(..., validate=True)` raises `ValueError` ending
   `The type defines none at all.` with the instance-search route unused. Case:
   `test_search_uom_validate_refuses_a_type_defining_nothing` (new).
-  Red: no exception, and that route records one call.
+  Red, observed at step 4 before any source edit: `DID NOT RAISE <class 'ValueError'>`, and that
+  route records one call.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k search_uom_validate -q`.
 - **The cache still stores `None` for 204, all-empty and `HMCError`.** Mode: `focused-test`.
   Observable: `test_search_uom_validate_degrades_and_caches_the_failure` passes with a fifth
   parametrization, `empty-elements`. It is a regression guard, so it passes before the change too;
-  its red is taken by faulting the all-empty branch to return `[]` and observing `ValueError`.
+  its red is taken at step 9 by faulting the all-empty branch to return `[]` instead of `None` and
+  observing the `ValueError` the degradation forbids.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k search_uom_validate -q`.
-- **`CHANGELOG.md` and the #789 spec entry describe the shipped behaviour.**
+- **`CHANGELOG.md` and the two #789 spec clauses describe the shipped behaviour.**
   Mode: `task-test-not-applicable`. Reason: both are prose records with no executable consumer —
   `just doc-freshness` reads only a generated document's first-line banner, and neither file
   carries one — so the only possible test would search for wording.
 
 ### Steps
 
-1. Read `src/hmc_mcp/client/core.py:1116-1182` and `1033-1040` so the edits below land on the
-   current text.
-2. Write `test_list_search_parameters_unknown_answer_returns_none` in
-   `tests/unit/test_client.py`, immediately after
-   `test_list_search_parameters_empty_set_returns_no_names`, parametrized over a 204 response and
-   over `_search_parameter_entry(_EMPTY_SET_TYPE, "", "   ")`, asserting
-   `await hmc.list_search_parameters(_EMPTY_SET_TYPE) == (None, "V1_0")`. Reduce
-   `test_list_search_parameters_empty_set_returns_no_names` to its first parametrization, whose
-   assertion stays `([], "V1_0")`, and move its `if n`-filter comment to the new test with its
-   conclusion corrected: without the filter the comprehension yields `["", ""]`, a *non-empty*
-   positive set holding only `""`, which rejects every real name.
-3. Run `uv run --no-sync pytest tests/unit/test_client.py -k list_search_parameters -q`.
-   Expect the new test to fail with `assert ([], 'V1_0') == (None, 'V1_0')`.
-4. In `list_search_parameters`, replace the body from `if resp.status_code == 204:` to the final
+1. Read `src/hmc_mcp/client/core.py:1116-1182` and `1033-1040`, and
+   `tests/unit/test_client.py`'s `_mock_search_validation_routes`,
+   `test_list_search_parameters_empty_set_returns_no_names` and
+   `test_search_uom_validate_degrades_and_caches_the_failure`, so the edits land on current text.
+2. Add two branches to `_mock_search_validation_routes`' `discovery` argument, beside the existing
+   `200`/`204`/status/exception handling, and name them in its docstring:
+   `"empty-set"` → `httpx.Response(200, text=_search_parameter_entry(_SEARCH_VALIDATION_TYPE))`;
+   `"empty-elements"` →
+   `httpx.Response(200, text=_search_parameter_entry(_SEARCH_VALIDATION_TYPE, "", "   "))`.
+3. Write the tests, all of them before any source edit:
+   - `test_list_search_parameters_unknown_answer_returns_none`, immediately after
+     `test_list_search_parameters_empty_set_returns_no_names`, parametrized over a 204 response and
+     over `_search_parameter_entry(_EMPTY_SET_TYPE, "", "   ")`, asserting
+     `await hmc.list_search_parameters(_EMPTY_SET_TYPE) == (None, "V1_0")`.
+   - Reduce `test_list_search_parameters_empty_set_returns_no_names` to its first parametrization,
+     assertion unchanged at `([], "V1_0")`. Move its `if n`-filter comment to the new test with its
+     conclusion corrected: without the filter the comprehension yields `["", ""]`, a *non-empty*
+     positive set holding only `""`, which rejects every real name.
+   - `test_search_uom_validate_refuses_a_type_defining_nothing`: mock with
+     `discovery="empty-set"`, call `search_uom(_SEARCH_VALIDATION_TYPE, "PartitionName", "web",
+     validate=True)` inside `pytest.raises(ValueError)`, assert the message ends
+     `The type defines none at all.` and contains no `": ."`, and assert `defined.call_count == 0`.
+   - Add the `empty-elements` id to `test_search_uom_validate_degrades_and_caches_the_failure`'s
+     parametrization, and correct its docstring: "All four ways" becomes "All five ways", and
+     "a 204 returns ([], version) without raising at all" becomes "a 204 and a container whose
+     `ParameterName` elements are all empty both return `(None, version)` without raising".
+4. Run `uv run --no-sync pytest tests/unit/test_client.py -k "list_search_parameters or
+   search_uom" -q`. Expect exactly the two reds named in the Verification inventory.
+5. In `list_search_parameters`, replace the body from `if resp.status_code == 204:` to the final
    `return` with:
 
    ```python
@@ -131,10 +153,10 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
            return ([] if not found else None), schema_version
    ```
 
-5. Update that method's docstring: the paragraph beginning **A 200 with no name is not always an
-   error** now states the three-way answer, and the `Returns` paragraph states that the first
-   element is `None` when the answer is not a fact about the type.
-6. In `_defined_search_parameter_names`, replace the `except HMCError:` body's `names = []` with
+6. Update that method's docstring: the paragraph beginning **A 200 with no name is not always an
+   error** states the three-way answer, and the `Returns` paragraph states that the first element
+   is `None` when the answer is not a fact about the type.
+7. In `_defined_search_parameter_names`, replace the `except HMCError:` body's `names = []` with
    `names = None`, and the `defined = frozenset(names) if names else None` line and its comment
    with:
 
@@ -149,7 +171,7 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
 
    Update the docstring's second sentence to say the empty positive set is cached for a type
    defining nothing.
-7. In `search_uom`, replace the `validate` block's `raise ValueError(...)` with:
+8. In `search_uom`, replace the `validate` block's `raise ValueError(...)` with:
 
    ```python
                if defined is not None and property_name not in defined:
@@ -167,36 +189,24 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_search_parameter_na
    Replace the docstring's final paragraph (`A type defining no search parameters reads as
    unknown…`) with one saying such a type is refused locally, and that a 204, a failed read, and a
    container with no usable name still validate nothing (ADR 0144).
-8. Add an `"empty-set"` branch to `_mock_search_validation_routes`' `discovery` argument,
-   answering `httpx.Response(200, text=_search_parameter_entry(_SEARCH_VALIDATION_TYPE))`, and
-   note it in the helper's docstring beside the existing `200`/`204` sentence.
-9. Write `test_search_uom_validate_refuses_a_type_defining_nothing`: mock with
-   `discovery="empty-set"`, call `search_uom(_SEARCH_VALIDATION_TYPE, "PartitionName", "web",
-   validate=True)` inside `pytest.raises(ValueError)`, assert the message ends
-   `The type defines none at all.` and contains no `": ."`, and assert `defined.call_count == 0`.
-10. Add the `empty-elements` parametrization to
-    `test_search_uom_validate_degrades_and_caches_the_failure`, answering the discovery route with
-    `_search_parameter_entry(_SEARCH_VALIDATION_TYPE, "", "   ")`, and correct that test's
-    docstring sentence about the 204 being "the one that would fail *closed*": a 204 now returns
-    `(None, version)`, and the all-empty body is the case that would fail closed if the parse
-    treated it as authoritative.
-11. Run `uv run --no-sync pytest tests/unit/test_client.py -k "list_search_parameters or
-    search_uom" -q`. Expect every case to pass.
-12. Rewrite the `CHANGELOG.md` Unreleased entries for `HMCClient.list_search_parameters` and
+9. Run `uv run --no-sync pytest tests/unit/test_client.py -k "list_search_parameters or
+   search_uom" -q`. Expect every case to pass. Then take the third inventory entry's red: change
+   step 5's last line to `return [], schema_version`, re-run, observe the `empty-elements` case
+   fail with `ValueError`, and revert that one line.
+10. Rewrite the `CHANGELOG.md` Unreleased entries for `HMCClient.list_search_parameters` and
     `HMCClient.search_uom`: the read returns `None` rather than a list when the answer is not a
     fact about the type, and `validate=True` refuses locally on a type defining none. Keep every
     other claim in both entries.
-13. In `docs/workflow/specs/2026-09-15-discover-search-parameters-design.md`, strike through the
+11. In `docs/workflow/specs/2026-09-15-discover-search-parameters-design.md`, strike through the
     *Failure model* entry headed `**validate=True performs no check on a type that defines
-    nothing.**` and append one sentence naming ADR 0144 as where it was taken, matching the
-    struck-through entry above it in the same list.
-14. Run `just lint`, `just typecheck`, and `just test`. Expect all three green.
-15. Commit: `fix(client): refuse locally when a type defines no search parameters`.
+    nothing.**` and, in the *wrong-set class* entry, the two sentences beginning `It is still
+    degraded from rather than trusted`. Append to each one sentence naming ADR 0144 as where it
+    was taken, matching the entry already struck that way in the same list.
+12. Run `just lint`, `just typecheck`, and `just test`. Expect all three green.
+13. Commit: `fix(client): refuse locally when a type defines no search parameters`.
 
-**Acceptance.** `list_search_parameters` returns `([], v)`, `(None, v)` and `HMCError` per
-ADR 0144's table; `search_uom(..., validate=True)` raises `ValueError` ending `The type defines
-none at all.` on `_EMPTY_SET_TYPE` without a transport call; every pre-existing `search_uom` test
-passes unmodified except the two named above.
+**Acceptance.** The four Verification entries hold, and every pre-existing `search_uom` test passes
+unmodified except the two named in step 3.
 
 ## Task 2 — the quick twin
 
@@ -206,7 +216,9 @@ Produces `HMCClient.list_quick_properties(resource_type, *, parent_type=None, pa
 tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_names(resource_type)
 -> frozenset[str] | None`.
 
-**Files.** Modifies `src/hmc_mcp/client/core.py`, `tests/unit/test_client.py`, `CHANGELOG.md`.
+**Files.** Modifies `src/hmc_mcp/client/core.py`, `tests/unit/test_client.py`, `CHANGELOG.md`,
+`docs/workflow/specs/2026-09-14-validate-quick-property-names-design.md`,
+`docs/workflow/specs/2026-09-14-discover-quick-properties.md`.
 
 ### Verification
 
@@ -215,38 +227,59 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
   for `Nickname` elements that are all empty. Cases:
   `test_list_quick_properties_empty_set_returns_no_names` (kept, one parametrization),
   `test_list_quick_properties_unknown_answer_returns_none` (new, two), and
-  `test_list_quick_properties_204_returns_no_names` (assertion updated).
-  Red: `assert ([], 'V1_0') == (None, 'V1_0')`.
+  `test_list_quick_properties_204_returns_no_names` (assertion updated, renamed).
+  Red, observed at step 4 before any source edit: `assert ([], 'V1_0') == (None, 'V1_0')`.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k list_quick_properties -q`.
 - **The cache stores `frozenset()` for the authoritative empty answer and refuses on it.**
   Mode: `focused-test`. Observable: `get_quick_property(..., validate=True)` raises `ValueError`
   ending `The type defines none at all.` with the value route unused. Case:
   `test_get_quick_property_validate_refuses_a_type_defining_nothing` (new).
-  Red: no exception, and that route records one call.
+  Red, observed at step 4 before any source edit: `DID NOT RAISE <class 'ValueError'>`, and that
+  route records one call.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k get_quick_property_validate -q`.
 - **The cache still stores `None` for 204, all-empty and `HMCError`.** Mode: `focused-test`.
   Observable: `test_get_quick_property_validate_degrades_and_caches_the_failure` passes with a
-  fifth parametrization, `empty-elements`; its red is taken the same way as Task 1's.
+  fifth parametrization, `empty-elements`; its red is taken at step 9 the same way as Task 1's.
   Green: `uv run --no-sync pytest tests/unit/test_client.py -k get_quick_property_validate -q`.
-- **`_summarize_names`' precondition ground.** Mode: `task-test-not-applicable`.
-  Reason: the code is unchanged and the edit is one docstring sentence explaining why a stated
-  precondition still holds; no executable or structural observation of it could fail.
+- **`_summarize_names`' precondition ground, and the two quick-property spec clauses.**
+  Mode: `task-test-not-applicable`. Reason: `_summarize_names`' code is unchanged and its edit is
+  one docstring sentence explaining why a stated precondition still holds; the spec edits are
+  prose in records with no executable consumer. No executable or structural observation of either
+  could fail.
 
 ### Steps
 
-1. Read `src/hmc_mcp/client/core.py:954-994`, `874-907`, `848-856` and `69-77` so the edits below
-   land on the current text.
-2. Write `test_list_quick_properties_unknown_answer_returns_none` immediately after
-   `test_list_quick_properties_empty_set_returns_no_names`, parametrized over a 204 response and
-   over `_quick_property_entry("ManagedSystem", ("", ""), ("   ", ""))`, asserting
-   `await hmc.list_quick_properties("ManagedSystem") == (None, "V1_0")`. Reduce
-   `test_list_quick_properties_empty_set_returns_no_names` to its first parametrization and move
-   its `if n`-filter comment to the new test with the same correction Task 1 made. Change
-   `test_list_quick_properties_204_returns_no_names` to assert `(None, "V1_0")` and rename it
-   `test_list_quick_properties_204_returns_an_unknown_answer`.
-3. Run `uv run --no-sync pytest tests/unit/test_client.py -k list_quick_properties -q`.
-   Expect failures asserting `([], 'V1_0') == (None, 'V1_0')`.
-4. In `list_quick_properties`, replace the body from `if resp.status_code == 204:` to the final
+1. Read `src/hmc_mcp/client/core.py:954-994`, `874-907`, `848-856` and `69-77`, and
+   `tests/unit/test_client.py`'s `_mock_validation_routes`,
+   `test_list_quick_properties_empty_set_returns_no_names`,
+   `test_list_quick_properties_204_returns_no_names` and
+   `test_get_quick_property_validate_degrades_and_caches_the_failure`.
+2. Add two branches to `_mock_validation_routes`' `discovery` argument, and name them in its
+   docstring: `"empty-set"` →
+   `httpx.Response(200, text=_quick_property_entry(_VALIDATION_TYPE))`; `"empty-elements"` →
+   `httpx.Response(200, text=_quick_property_entry(_VALIDATION_TYPE, ("", ""), ("   ", "")))`.
+3. Write the tests, all of them before any source edit:
+   - `test_list_quick_properties_unknown_answer_returns_none`, immediately after
+     `test_list_quick_properties_empty_set_returns_no_names`, parametrized over a 204 response and
+     over `_quick_property_entry("ManagedSystem", ("", ""), ("   ", ""))`, asserting
+     `await hmc.list_quick_properties("ManagedSystem") == (None, "V1_0")`.
+   - Reduce `test_list_quick_properties_empty_set_returns_no_names` to its first parametrization
+     and move its `if n`-filter comment to the new test with the same correction Task 1 made.
+   - Rename `test_list_quick_properties_204_returns_no_names` to
+     `test_list_quick_properties_204_returns_an_unknown_answer` and change its assertion to
+     `(None, "V1_0")`.
+   - `test_get_quick_property_validate_refuses_a_type_defining_nothing`: mock with
+     `discovery="empty-set"`, call `get_quick_property(_VALIDATION_TYPE, _VALIDATION_UUID,
+     "SystemType", validate=True)` inside `pytest.raises(ValueError)`, assert the message ends
+     `The type defines none at all.` and contains no `": ."`, and assert `defined.call_count == 0`.
+   - Add the `empty-elements` id to
+     `test_get_quick_property_validate_degrades_and_caches_the_failure`'s parametrization and
+     correct its docstring sentence about the 204 being "the one that would fail *closed*": a 204
+     now returns `(None, version)`, and the all-empty body is the case that would fail closed if
+     the parse treated it as authoritative.
+4. Run `uv run --no-sync pytest tests/unit/test_client.py -k "list_quick_properties or
+   get_quick_property" -q`. Expect exactly the two reds named in the Verification inventory.
+5. In `list_quick_properties`, replace the body from `if resp.status_code == 204:` to the final
    `return` with:
 
    ```python
@@ -279,11 +312,11 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
            return ([] if not found else None), schema_version
    ```
 
-5. Update that method's docstring: the sentence beginning `When no name is found, the body is
+6. Update that method's docstring: the sentence beginning `When no name is found, the body is
    checked for the QuickProperty_Collection container` states the three-way answer, and the
    `Returns` paragraph states that the first element is `None` when the answer is not a fact about
    the type.
-6. In `_defined_quick_property_names`, replace the `except HMCError:` body's `names = []` with
+7. In `_defined_quick_property_names`, replace the `except HMCError:` body's `names = []` with
    `names = None`, and the `defined = frozenset(names) if names else None` line and its comment
    with:
 
@@ -296,7 +329,7 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
    ```
 
    Update the docstring's second sentence the same way Task 1 updated its twin.
-7. In `get_quick_property`, replace the `validate` block's `raise ValueError(...)` with:
+8. In `get_quick_property`, replace the `validate` block's `raise ValueError(...)` with:
 
    ```python
                if defined is not None and property_name not in defined:
@@ -311,35 +344,29 @@ tuple[list[str] | None, str | None]` and `HMCClient._defined_quick_property_name
                    )
    ```
 
-   Add to the docstring that a type defining nothing is refused locally.
-8. In `_summarize_names`, replace the docstring's second paragraph with one stating that *names*
-   is non-empty because each caller renders its own message for an empty positive set before
-   calling, and that an empty set would otherwise render a bare `"."`.
-9. Add an `"empty-set"` branch to `_mock_validation_routes`' `discovery` argument, answering
-   `httpx.Response(200, text=_quick_property_entry(_VALIDATION_TYPE))`, and note it in the
-   helper's docstring.
-10. Write `test_get_quick_property_validate_refuses_a_type_defining_nothing`: mock with
-    `discovery="empty-set"`, call `get_quick_property(_VALIDATION_TYPE, _VALIDATION_UUID,
-    "SystemType", validate=True)` inside `pytest.raises(ValueError)`, assert the message ends
-    `The type defines none at all.` and contains no `": ."`, and assert `defined.call_count == 0`.
-11. Add the `empty-elements` parametrization to
-    `test_get_quick_property_validate_degrades_and_caches_the_failure`, answering the discovery
-    route with `_quick_property_entry(_VALIDATION_TYPE, ("", ""), ("   ", ""))`, and correct that
-    test's docstring sentence about the 204 being the one that would fail closed, the same way
-    Task 1 did.
-12. Run `uv run --no-sync pytest tests/unit/test_client.py -q`. Expect every case to pass.
-13. Rewrite the `CHANGELOG.md` Unreleased entries for `HMCClient.list_quick_properties` and
+   Add to the docstring that a type defining nothing is refused locally. In `_summarize_names`,
+   replace the docstring's second paragraph with one stating that *names* is non-empty because
+   each caller renders its own message for an empty positive set before calling, and that an empty
+   set would otherwise render a bare `"."`.
+9. Run `uv run --no-sync pytest tests/unit/test_client.py -q`. Expect every case to pass. Then
+   take the third inventory entry's red the same way Task 1 did, against step 5's last line.
+10. Rewrite the `CHANGELOG.md` Unreleased entries for `HMCClient.list_quick_properties` and
     `HMCClient.get_quick_property` the same way Task 1 rewrote the search pair. The
     `list_quick_properties` entry additionally still claims a nameless 200 raises `HMCError`,
     which #811 changed and did not record here; correct that claim in the same edit.
-14. Run `just verify`, then `uv run --no-sync prek run --all-files`. Expect both green.
-15. Commit: `fix(client): refuse locally when a type defines no quick properties`.
+11. In `docs/workflow/specs/2026-09-14-validate-quick-property-names-design.md`, strike through
+    the sentences beginning `The *empty* answer is not accepted` in the *fewer names* failure-model
+    entry and append the same one-sentence ADR 0144 pointer. In
+    `docs/workflow/specs/2026-09-14-discover-quick-properties.md`, strike through the declared
+    `-> tuple[list[str], str | None]` in *Scope* and give the corrected type beside it with the
+    same pointer.
+12. Run `just verify`, then `uv run --no-sync prek run --all-files`. Expect both green.
+13. Commit: `fix(client): refuse locally when a type defines no quick properties`.
 
-**Acceptance.** `list_quick_properties` returns `([], v)`, `(None, v)` and `HMCError` per
-ADR 0144's table; `get_quick_property(..., validate=True)` raises `ValueError` ending `The type
-defines none at all.` without a transport call; `just verify` and the hook run are green.
+**Acceptance.** The four Verification entries hold, `just verify` and the hook run are green, and
+every pre-existing `get_quick_property` test passes unmodified except the two named in step 3.
 
 ## Deferrals carried into implementation
 
-None recorded by the design review at the time of writing; any recorded later is appended here
-with its owning record path or tracker issue.
+None recorded by the design review; any recorded later is appended here with its owning record
+path or tracker issue.

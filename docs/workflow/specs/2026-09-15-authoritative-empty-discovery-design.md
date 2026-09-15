@@ -21,8 +21,9 @@ not just an implementation".
 return contract, two caches stop collapsing it, two refusal messages gain an empty branch, and one
 helper's stated precondition changes its ground. No responsibility moves between files, no caller
 migrates, and no compatibility path is retained: neither `list_search_parameters` nor
-`list_quick_properties` is an ADR 0118 facade name and neither has a caller in `src/` outside
-`core.py`, so the old shape is replaced rather than kept beside the new one.
+`list_quick_properties` is on ADR 0029's lifecycle allowlist that ADR 0118 retains — both are
+unsupported generic UOM helpers — and neither has a caller in `src/` outside `core.py`, so the old
+shape is replaced rather than kept beside the new one.
 
 - **`list_search_parameters`, `list_quick_properties`** → `tuple[list[str] | None, str | None]`.
   `None` means the level's answer is not a fact about the type. Full mapping in ADR 0144's
@@ -39,9 +40,13 @@ migrates, and no compatibility path is retained: neither `list_search_parameters
 - **`CHANGELOG.md`** → the Unreleased entries for all four methods are rewritten in place. They
   describe unreleased APIs, so this is a correction, not a `Changed` note. The
   `list_quick_properties` entry is additionally stale from #811 and is corrected in the same edit.
-- **`docs/workflow/specs/2026-09-15-discover-search-parameters-design.md`** → the *Failure model*
-  entry naming this gap is struck through and pointed at ADR 0144, matching the entry above it
-  that was closed by the capture.
+- **Three merged specs carrying empty-answer clauses this change falsifies** → each clause is
+  struck through in place with a one-sentence ADR 0144 pointer, matching the entry already struck
+  that way in the first of them: `2026-09-15-discover-search-parameters-design.md`'s *Failure
+  model* entries **performs no check on a type that defines nothing** and the empty-answer tail of
+  **the wrong-set class**; `2026-09-14-validate-quick-property-names-design.md`'s empty-answer tail
+  under the *fewer names* entry; and `2026-09-14-discover-quick-properties.md`'s *Scope* line
+  declaring `-> tuple[list[str], str | None]`. No other line in any of the three is touched.
 - **`docs/adr/0141-*.md`, `docs/adr/0142-*.md`** → a Status amendment banner each, and nothing else.
 
 Out of scope, with owners: the `validate` default (settled, ADR 0141/0142); retrofitting the
@@ -52,7 +57,9 @@ at an unmeasured firmware level is trustworthy (the next firmware capture — st
 
 1. `list_search_parameters` and `list_quick_properties` each return `([], version)` for a 200
    carrying the container and no name element, `(None, version)` for a 204 and for a container
-   whose name elements are all empty, and raise `HMCError` for a 200 without the container.
+   whose name elements are all empty, and raise `HMCError` for a 200 that yields no usable name
+   and carries no container. A 200 carrying usable names returns them whether or not the container
+   is present, as today.
 2. `_defined_search_parameter_names` and `_defined_quick_property_names` each cache `frozenset()`
    for the first of those and `None` for the second and third, and still cache `None` on any
    `HMCError` from the read.
@@ -131,4 +138,4 @@ from all of them. Nothing here changes what the client sends or where it sends i
 | The empty-set refusal message carries no bare `"."` and names the condition | `focused-test` | the two `*_refuses_a_type_defining_nothing` cases assert the message tail |
 | Non-empty refusal messages and every default-path request are unchanged | `focused-test` | the existing `search_uom` / `get_quick_property` validation suites, unmodified |
 | `_summarize_names` docstring ground | `task-test-not-applicable` | The code is unchanged and the edit is a docstring sentence about why a stated precondition holds; no executable or structural observation of it could fail. |
-| ADR 0141/0142 Status banners, ADR 0144, CHANGELOG, #789 spec strike-through | `task-test-not-applicable` | Prose edits to records. `just adr-numbering` checks filename and H1 only, and no consumer validates record prose; a test searching for wording would assert nothing about behaviour. |
+| ADR 0141/0142 Status banners, ADR 0144, CHANGELOG, the three spec strike-throughs | `task-test-not-applicable` | Prose edits to records. `just adr-numbering` checks filename and H1 only, and no consumer validates record prose; a test searching for wording would assert nothing about behaviour. |
