@@ -57,7 +57,10 @@ class).
   held by ADR 0141's opt-in `validate=True` check against the HMC's own list.
 - An empty `property_name` addresses the `/quick/` container anchor; same
   resource, and refusing it is a grammar fragment, the option ADR 0146 declines.
-- A non-`str` raises `TypeError` from `quote`; the `str` signature forbids it.
+- A non-`str`, `bytes` excepted, raises `TypeError` from `quote`. `bytes` is the
+  exception `quote` accepts: the site guard reads its `repr` through the f-string
+  while the encoder decodes it, so the two see different values. The `str`
+  signature forbids both, and no in-repository caller passes either.
 
 **Covered elsewhere.**
 - The type segment's grammar and length bound — ADR 0143, ADR 0147.
