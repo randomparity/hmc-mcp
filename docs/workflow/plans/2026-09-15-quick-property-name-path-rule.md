@@ -42,7 +42,7 @@ segment, a `quote(..., safe="")` binding for data — and AST walks in
   the character, no-op and dot-segment cases.
 - `docs/adr/0146-quick-property-names-are-percent-encoded.md` (created, written).
 
-No caller migration: the signature and return are unchanged and all four `src/`
+No caller migration: the signature and return are unchanged and all five `src/`
 call sites pass the literal `"PartitionState"`. No obsolete path to remove, no
 compatibility path retained.
 
@@ -79,10 +79,9 @@ makes the test suite able to see that it is present.
   `test_encoding_is_a_no_op_on_the_quick_property_names_this_client_passes`,
   asserting the built URL for `"PartitionState"` ends exactly
   `/rest/api/uom/LogicalPartition/<UUID_A>/quick/PartitionState`, and that
-  `quote(n, safe="") == n` for each of
-  `PartitionState`, `PartitionID`, `PartitionName`, `SystemType`, `RMCState`,
-  `NoSuchProperty`, `all`, `All`. Expected red only if the encoding altered a
-  legitimate name. Same green command.
+  `quote(n, safe="") == n` for each of the six names the repository passes —
+  `PartitionState`, `PartitionID`, `SystemType`, `NoSuchProperty`, `all`, `All`.
+  Expected red only if the encoding altered a legitimate name. Same green command.
 - Contract: *the dot-segment refusal identity*. Mode: `focused-test`. Test
   `test_a_dot_segment_quick_property_name_is_still_refused`, asserting `HMCError`
   for `".."`, `"."` and `"../../x"` and that no request is built. Expected red if

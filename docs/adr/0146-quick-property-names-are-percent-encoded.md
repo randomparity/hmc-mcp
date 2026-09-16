@@ -47,16 +47,18 @@ where `%XX` is meaningless — has no counterpart here.
   `HMCError`/`HMCTransportError`/`ValueError` contract. A bare trailing `"\n"`
   does the same.
 
-**Encoding is a no-op on every name this repository passes.** The names occurring
-in `src/`, `tests/` and `docs/` are `PartitionState`, `PartitionID`,
-`PartitionName`, `SystemType`, `RMCState`, `NoSuchProperty`, `all` and `All`;
-`quote(n, safe="")` returns each unchanged, so no byte on the wire moves. All four
-`src/` call sites pass the literal `"PartitionState"`.
+**Encoding is a no-op on every name this repository passes.** At `856e3aec`,
+`rg -n -o "quick/[A-Za-z0-9_.%-]*" src/ tests/ docs/` returns six names —
+`PartitionState`, `PartitionID`, `SystemType`, `NoSuchProperty`, `all`, `All` —
+beside a bare `quick/` and two prose artifacts (`quick/All.`,
+`quick/PartitionState.`). `quote(n, safe="")` returns each of the six unchanged,
+so no byte on the wire moves. All five `src/` call sites pass the literal
+`"PartitionState"`.
 
 **A local grammar has no evidence base here, and a better local check already
 exists.** `just setup` on this host reports `reference corpus not available on
 this host: docs/refs`, so a character class would be extrapolated from those
-eight names — where ADR 0143's type grammar could be checked against a vendored
+six names — where ADR 0143's type grammar could be checked against a vendored
 corpus and a closed, documented namespace. More decisively, this repository has
 already decided how a quick-property *name* is checked locally: ADR 0141 checks
 it against the HMC's own per-type list via `list_quick_properties`, opt-in under
@@ -102,8 +104,9 @@ called. The walk also reaches `search_uom`'s existing `encoded_property` and
 - **One refusal moves, and the protection it stood for tightens.** Literal `..`,
   `.` and `../../x` names are still refused by `_reject_dot_segments` with
   `HMCError`: `quote` leaves `.` alone, and `"../../x"` becomes `"..%2F..%2Fx"`,
-  which the guard's percent-decoding arm still reads as dot segments. Only a
-  caller-pre-encoded name changes — `"..%2f..%2fweb%2fHmcUser%2froot"` becomes
+  which the guard's percent-decoding arm still reads as dot segments. Only a name
+  the caller pre-encoded changes, in any of its forms (`%2e%2e` as well as
+  `..%2f`) — `"..%2f..%2fweb%2fHmcUser%2froot"` becomes
   `"..%252f..%252fweb%252fHmcUser%252froot"`, which neither arm reads as a dot
   segment, so it is sent rather than refused. It goes as one inert segment: a
   single decode now yields `..%2f..%2f…` rather than dot segments, so the
@@ -115,12 +118,17 @@ called. The walk also reaches `search_uom`'s existing `encoded_property` and
   unknown name still reaches the HMC and is answered there.
 - **An empty `property_name` still addresses the `/quick/` container anchor**
   rather than a property — `quote("")` is `""`, so the path ends `.../quick/`.
-  This record does not close it: it addresses the same resource, that anchor is
-  one `list_quick_properties` reads deliberately (ADR 0140, ADR 0144), and
-  refusing it is a grammar fragment, the option this record declines.
+  This record does not close it: it addresses the same resource, and refusing it
+  is a grammar fragment, the option this record declines. It is not the anchor
+  `list_quick_properties` reads: both of that method's paths end at `/quick`,
+  where this one ends at `/quick/` with an empty final segment.
 - A `property_name` that is not a `str` now raises `TypeError` from `quote`
   rather than being interpolated through `f"{...}"`, and `bytes` is decoded
-  rather than repr'd. The `str` signature already forbids both.
+  rather than repr'd. The `str` signature already forbids both; the annotation is
+  unenforced at runtime, so this is an accepted escape from the
+  `HMCError`/`HMCTransportError`/`ValueError` contract rather than an overlooked
+  one, on the same terms ADR 0145 accepted for `group`. A `str` raises at most
+  `UnicodeEncodeError`, which subclasses `ValueError` and stays inside it.
 - **Reachability is unchanged.** No CLI command or MCP tool exposes
   `property_name`, and `get_quick_property` sits outside the
   `_SUPPORTED_CLIENT_LIFECYCLE` set `tests/unit/test_public_api.py` pins — so it
@@ -132,10 +140,10 @@ called. The walk also reaches `search_uom`'s existing `encoded_property` and
 - **Give `property_name` its own grammar, as ADR 0143 gave the type segment.**
   verified: `just setup` at `856e3aec` reports `reference corpus not available on
   this host: docs/refs`, and `rg -n -o "quick/[A-Za-z0-9_.%-]*" src/ tests/ docs/`
-  returns eight distinct names, the repository's whole evidence for what a quick
+  returns six distinct names, the repository's whole evidence for what a quick
   property name may look like. judgment: ADR 0143's allowlist is defensible
   because the type namespace is closed, documented and vendored; the same
-  construction here extrapolates a character class from eight samples, and it
+  construction here extrapolates a character class from six samples, and it
   would duplicate — less accurately — the per-type check ADR 0141 already makes
   against the HMC's own list.
 - **Bound the length as ADR 0147 bounds the type segment.** verified: that bound
@@ -162,6 +170,8 @@ called. The walk also reaches `search_uom`'s existing `encoded_property` and
   unchanged, so the escape is not specific to `property_name`. judgment: a
   transport-waist change outside this issue's surface, already reported as a
   follow-up candidate by ADR 0145 and not claimed here.
-- **Do nothing and close the issue.** verified: the three behaviours above.
-  judgment: the issue's own terms — a segment whose classification made the test
-  that would catch it pass — make this the one unavailable outcome.
+- **Do nothing and close the issue.** verified: the three behaviours above, and
+  `_KNOWN_UOM_SEGMENT_ARGUMENTS` still listing `property_name`. judgment: distinct
+  from recording raw as intended, which at least leaves a record; doing nothing
+  leaves the unclassified-segment assertion passing vacuously for this argument,
+  which is the outcome issue #818's third criterion forecloses.

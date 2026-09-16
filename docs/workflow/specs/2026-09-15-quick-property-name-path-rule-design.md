@@ -4,12 +4,10 @@
 
 `HMCClient.get_quick_property` interpolates the caller's `property_name` into
 `/rest/api/uom/{resource_type}/{uuid}/quick/{property_name}` with no grammar and
-no encoding, on the line ADR 0143 hardened for the type segment. Verified against
-`856e3aec` with httpx 0.28.1 by building the request: a `?` appends a query string
-this client did not name, a `#` silently truncates the value so a different
-property is read, and a CRLF raises `httpx.InvalidURL` — MRO
-`(InvalidURL, Exception, BaseException, object)`, so it escapes `_request`'s
-handlers and this client's exception contract.
+no encoding, on the line ADR 0143 hardened for the type segment. ADR 0146's
+Context carries the reproduction: at `856e3aec` with httpx 0.28.1, a `?` appends
+a query string this client did not name, a `#` silently truncates the value so a
+different property is read, and a CRLF escapes the client's exception contract.
 
 `tests/unit/test_request_path_safety.py` lists `property_name` in
 `_KNOWN_UOM_SEGMENT_ARGUMENTS`, so `test_every_uom_path_interpolation_is_a_known_argument`
@@ -27,12 +25,10 @@ make the classification non-vacuous rather than merely renamed.
   segment inventory shrinks by one entry and gains none.
 - `tests/unit/test_request_path_safety.py` — drop `property_name` from
   `_KNOWN_UOM_SEGMENT_ARGUMENTS`; add `_ENCODED_SEGMENT_ARGUMENTS`
-  (`encoded_property`, `encoded_value`) and a site-directed assertion that every
-  such name interpolated into a `/rest/api/uom/` f-string in `core.py` is bound by
-  a literal `quote(<name>, safe="")` in the same function. `_uom_path_sites()`
-  gains that third collection in its existing single walk, reusing
-  `_is_quote_binding`. Without this the reclassification would be vacuous in a new
-  way — a name trusted for what it is called.
+  (`encoded_property`, `encoded_value`) and the site-directed assertion ADR 0146's
+  Decision specifies, collecting quote bindings in `_uom_path_sites()`' existing
+  single walk via `_is_quote_binding`. Without it the reclassification would be
+  vacuous in a new way — a name trusted for what it is called.
 - `docs/adr/0146-*.md` — new record.
 
 No transition of ownership: `get_quick_property` keeps the responsibility, and the
@@ -43,7 +39,7 @@ guard stays a local binding rather than a new predicate. No production file outs
 
 **Actors and deployments.** A local operator running the CLI; an MCP client
 driving the tool surface; code importing `HMCClient` from `hmc_mcp.api`. Only the
-third reaches `property_name`: no CLI command or MCP tool exposes it, all four
+third reaches `property_name`: no CLI command or MCP tool exposes it, all five
 `src/` call sites pass the literal `"PartitionState"`, and `get_quick_property`
 sits outside `_SUPPORTED_CLIENT_LIFECYCLE` (ADR 0118's callable-but-unsupported
 class).
@@ -52,17 +48,17 @@ class).
 - The request path addresses the property the caller named, inside the resource
   the selector named (ADR 0039 target scope).
 - The client's exception contract: `HMCError`, `HMCTransportError`, `ValueError`.
-- The wire format for the eight quick-property names this repository passes.
+- The wire format for the six quick-property names this repository passes.
 
 **Accepted failure classes.**
 - An unknown-but-well-formed name still reaches the HMC and is answered there —
   held by ADR 0141's opt-in `validate=True` check against the HMC's own list.
 - An empty `property_name` addresses the `/quick/` container anchor; same
-  resource, and that anchor is one `list_quick_properties` reads deliberately
-  (ADR 0140, ADR 0144).
-- A caller-pre-encoded `..%2f..%2f…` stops being refused by `_reject_dot_segments`
-  and is sent double-encoded as one inert segment; a single decode no longer
-  yields a dot segment, so the retargeting is closed rather than opened.
+  resource, and refusing it is a grammar fragment, the option ADR 0146 declines.
+- A caller-pre-encoded dot segment in any form — `..%2f..%2f…` or `%2e%2e` —
+  stops being refused by `_reject_dot_segments` and is sent double-encoded as one
+  inert segment; a single decode no longer yields a dot segment, so the
+  retargeting is closed rather than opened.
 - A non-`str` raises `TypeError` from `quote`; the `str` signature forbids it.
 
 **Covered elsewhere.**
@@ -84,9 +80,11 @@ trusts `resource_type` and `uuid` to their existing guards and trusts the HMC to
 answer an unknown name; it does not trust `property_name`.
 
 **Control per boundary.** `quote(property_name, safe="")` — destination encoding,
-which is the RFC 3986 control for a value with one destination. It leaks nothing
-on failure: it does not raise for any `str`. `_reject_dot_segments` at the
-transport waist keeps refusing literal dot segments, unchanged.
+which is the RFC 3986 control for a value with one destination. On a `str` it
+raises at most `UnicodeEncodeError` (a lone surrogate), which subclasses
+`ValueError` and so is already inside the client's exception contract; it leaks
+no value either way. `_reject_dot_segments` at the transport waist keeps refusing
+literal dot segments, unchanged.
 
 **Explicitly out of scope.** Name-namespace validation (ADR 0141 owns it); a
 length bound (no reproduction, and no second destination — see ADR 0146's
@@ -98,7 +96,7 @@ client's own legitimate paths).
 1. `get_quick_property` sends the whole of `property_name` inside the last path
    segment, percent-encoded, for each of `?`, `#`, `/`, space, a non-ASCII
    character, and CRLF — no query string, no truncation, no `httpx.InvalidURL`.
-2. `quote(n, safe="")` is the identity on each of the eight quick-property names
+2. `quote(n, safe="")` is the identity on each of the six quick-property names
    this repository passes, so no pinned path changes.
 3. `property_name` is absent from `_KNOWN_UOM_SEGMENT_ARGUMENTS`, and every
    encoded-class segment interpolated into a `/rest/api/uom/` f-string in
