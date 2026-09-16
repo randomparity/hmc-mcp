@@ -855,20 +855,12 @@ class HMCClient(
                     f"{resource_type} defines no quick property named "
                     f"{property_name!r}. {detail}"
                 )
-        # Before encoding, not after: encoding hides a dot segment from the
-        # waist guard, and `_reject_dot_segments` refuses the raw form and one
-        # percent-decoding of it. Running it here keeps that refusal exactly
-        # where it was rather than trading it for an assumption about how many
-        # times the HMC decodes a path — the assumption the guard's own body
-        # records having removed (ADR 0146).
-        #
-        # As the path the segment occupies, not as a bare segment. The guard
-        # takes a *path* and opens with `urlparse(path).path if "://" in path
-        # else path`, so a value carrying `://` has to reach it inside a path
-        # component or the parse throws the value away before either arm scans
-        # it: bare, `x://%2e%2e` reads as scheme `x` and netloc `%2e%2e`, and
-        # behind a lone `/`, a name starting with `/` makes `//…` whose first
-        # component reads as a netloc. A non-empty leading segment closes both.
+        # Before encoding, and as the path the segment occupies rather than as a
+        # bare one. Encoding hides a dot segment from the waist guard, and
+        # `_reject_dot_segments` parses what it is handed as a path: a value
+        # carrying `://` escapes through `urlparse`'s scheme branch when passed
+        # bare, and through its netloc branch when passed behind a lone `/`. A
+        # non-empty leading segment closes both (ADR 0146).
         _reject_dot_segments("GET", f"/quick/{property_name}")
         encoded_property = quote(property_name, safe="")
         path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{encoded_property}"
