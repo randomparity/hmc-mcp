@@ -16,6 +16,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import inspect
+from urllib.parse import quote
 
 import httpx
 import pytest
@@ -568,6 +569,219 @@ def test_uom_headers_refuses_a_malformed_type():
 def test_uom_headers_passes_a_valid_type_through(resource_type, expected):
     client = _client()
     assert client._uom_headers(resource_type)["Accept"] == expected
+
+
+# ---------------------------------------------------------------------------
+# The group query value (ADR 0145)
+# ---------------------------------------------------------------------------
+
+
+# The values `list_uom` and `get_uom` may put after `?group=`. The first three
+# are every group name this repository passes, and `quote(g, safe="")` is the
+# identity function on each — so for those rows the expected path below pins the
+# wire form as unchanged. The rest are the characters ADR 0145 governs: `&` and
+# `=` append a parameter this client did not name, `#` truncates the value, and
+# CR/LF raise `httpx.InvalidURL`, which is neither a `TransportError` nor an
+# `HTTPError` and so escapes `_request`'s handlers entirely.
+_GROUP_VALUES = (
+    "RemoteAccess",
+    "ViosSCSIMapping",
+    "ViosFCMapping",
+    "None&foo=bar",
+    "None=x",
+    "None?x=1",
+    "None#/rest/api/web/HmcUser/root",
+    "a/b",
+    "a b",
+    "None\rX-Evil: 1",
+    "None\nX-Evil: 1",
+)
+
+_GROUP_CALLS = (
+    ("list_uom", ("LogicalPartition",), "/rest/api/uom/LogicalPartition"),
+    ("get_uom", ("LogicalPartition", UUID_A), f"/rest/api/uom/LogicalPartition/{UUID_A}"),
+)
+
+
+@pytest.mark.parametrize(
+    "method, args, prefix", _GROUP_CALLS, ids=[name for name, _, _ in _GROUP_CALLS]
+)
+@pytest.mark.parametrize("group", _GROUP_VALUES)
+def test_a_group_value_reaches_the_query_string_percent_encoded(
+    method, args, prefix, group
+):
+    """One `group` parameter, holding exactly what the caller passed (ADR 0145).
+
+    Asserted twice over, because the two halves fail differently. The path
+    equality pins the encoding itself — and for the three names this repository
+    passes, `quote` is the identity function, so the same assertion pins that
+    their wire form did not change. The parsed-query assertion is what the
+    injection characters trip: raw, `None&foo=bar` reaches the HMC as two
+    parameters and `None#...` reaches it truncated, and neither shows up as a
+    difference in the *number* of characters this client sent.
+    """
+    client = _client()
+    requested: list[str] = []
+
+    async def _record(method_name, path, **kwargs):
+        requested.append(path)
+        return httpx.Response(204)
+
+    client._request = _record  # type: ignore[method-assign]
+
+    asyncio.run(getattr(client, method)(*args, group=group))
+
+    assert requested == [f"{prefix}?group={quote(group, safe='')}"]
+    # Raw, a CR or LF here raises httpx.InvalidURL rather than returning a URL.
+    params = httpx.URL(f"https://hmc.test:12443{requested[0]}").params
+    assert params.get_list("group") == [group]
+    assert len(params) == 1
+
+
+def test_a_falsy_group_appends_no_query_string():
+    """The `if group:` guard is unchanged: nothing is encoded and nothing is sent."""
+    client = _client()
+    requested: list[str] = []
+
+    async def _record(method_name, path, **kwargs):
+        requested.append(path)
+        return httpx.Response(204)
+
+    client._request = _record  # type: ignore[method-assign]
+
+    asyncio.run(client.list_uom("LogicalPartition", group=""))
+    asyncio.run(client.list_uom("LogicalPartition", group=None))
+
+    assert requested == ["/rest/api/uom/LogicalPartition"] * 2
+
+
+def test_a_group_whose_decoded_form_holds_a_dot_segment_is_still_refused():
+    """Encoding does not smuggle a dot segment past the waist.
+
+    `_reject_dot_segments` checks `unquote(candidate)` as well as the raw form,
+    so `quote("a/../../x", safe="")` — `a%2F..%2F..%2Fx` — is still read as
+    carrying `..` segments and still refused before transport. This is a pin,
+    not a red test: the raw path was refused too, and what ADR 0145 records is
+    that the refusal does *not* move. A `group` the caller percent-encoded
+    itself is the one value that stops tripping it, which that record accepts.
+    """
+    client = _client()
+    sent: list[str] = []
+
+    def _forbidden(*args, **kwargs):
+        sent.append("request")
+        raise AssertionError("a refused group value reached the transport")
+
+    client._http.build_request = _forbidden  # type: ignore[method-assign]
+
+    with pytest.raises(HMCError, match="refused"):
+        asyncio.run(
+            client.list_uom("LogicalPartition", group="a/../../web/HmcUser/root")
+        )
+    assert sent == []
+
+
+def test_a_caller_percent_encoded_group_now_reaches_the_transport_as_data():
+    """The one refusal this change does move, pinned rather than left to the record.
+
+    A `group` the caller already percent-encoded is double-encoded here, so the
+    waist's single decode resolves `x%252F..%252Fy` to `x%2F..%2Fy` rather than
+    to a dot segment. At `4d823cbb` the raw value decoded straight to `x/../y`
+    and was refused, so this is red against the unfixed code. Nothing is
+    retargeted: the value sits after the `?`, where no path resolution applies
+    (ADR 0145, "one narrow residual opens").
+    """
+    client = _client()
+    requested: list[str] = []
+
+    def _record(method, path, **kwargs):
+        requested.append(path)
+        return httpx.Request(method, f"https://hmc.test:12443{path}")
+
+    client._http.build_request = _record  # type: ignore[method-assign]
+
+    async def _send(request, **kwargs):
+        return httpx.Response(204, request=request)
+
+    client._http.send = _send  # type: ignore[method-assign]
+
+    asyncio.run(client.list_uom("LogicalPartition", group="x%2F..%2Fy"))
+
+    assert requested == ["/rest/api/uom/LogicalPartition?group=x%252F..%252Fy"]
+
+
+def _is_quote_binding(node: ast.AST) -> str | None:
+    """The name a literal `x = quote(x, safe="")` statement binds, or `None`.
+
+    The declaration form for a query value, as `_is_boundary_check` is the
+    declaration form for a type segment: the assignment says at the call site
+    which rule governs the name the f-string below it interpolates.
+    """
+    if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+        return None
+    target = node.targets[0]
+    call = node.value
+    if not isinstance(target, ast.Name) or not isinstance(call, ast.Call):
+        return None
+    if not isinstance(call.func, ast.Name) or call.func.id != "quote":
+        return None
+    if len(call.args) != 1 or not isinstance(call.args[0], ast.Name):
+        return None
+    safe = [k for k in call.keywords if k.arg == "safe"]
+    if len(safe) != 1 or not isinstance(safe[0].value, ast.Constant):
+        return None
+    if safe[0].value.value != "":
+        return None
+    return target.id
+
+
+def test_every_group_query_interpolation_is_encoded():
+    """A `?group=` f-string in `core.py` may only interpolate an encoded name.
+
+    The companion the existing uom inventory cannot be: `_uom_path_sites` matches
+    an f-string whose *first* part begins `/rest/api/uom/`, and these sites build
+    `f"?group={...}"` onto a path already assembled — so `group` is invisible to
+    both checks above, which is how it stayed unexamined while the type segment
+    beside it was decided twice (ADR 0145).
+
+    **What this does not cover, stated rather than implied.** It matches the
+    `path += f"?group={name}"` idiom and the literal `quote(name, safe="")`
+    assignment, and only where the f-string interpolates a bare name.
+    Concatenation, `.format`, an interpolated attribute or subscript
+    (`f"?group={self.g}"`), a differently-spelled encoder, and a name rebound
+    between the assignment and the f-string are all invisible here, exactly as
+    concatenation and `.format` are to the type-segment walk. This raises the
+    cost of adding an unencoded site in the idiom the module uses; it is not a
+    proof that none can exist.
+    """
+    from hmc_mcp.client import core as client_module
+
+    tree = ast.parse(inspect.getsource(client_module))
+    unencoded: list[tuple[str, str]] = []
+    for owner in ast.walk(tree):
+        if not isinstance(owner, ast.AsyncFunctionDef | ast.FunctionDef):
+            continue
+        encoded = {
+            name
+            for node in ast.walk(owner)
+            if (name := _is_quote_binding(node)) is not None
+        }
+        for node in ast.walk(owner):
+            if not isinstance(node, ast.JoinedStr) or not node.values:
+                continue
+            head = node.values[0]
+            if not isinstance(head, ast.Constant) or not str(head.value).startswith(
+                "?group="
+            ):
+                continue
+            unencoded.extend(
+                (owner.name, part.value.id)
+                for part in node.values
+                if isinstance(part, ast.FormattedValue)
+                and isinstance(part.value, ast.Name)
+                and part.value.id not in encoded
+            )
+    assert not unencoded, f"group query values interpolated unencoded: {unencoded}"
 
 
 # ---------------------------------------------------------------------------
