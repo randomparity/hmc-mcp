@@ -64,7 +64,9 @@ subclasses `Exception`, not `ValueError` (`src/hmc_mcp/errors.py:17`).
     [
         # The `?`/`#` retargeting pair issue #809 carries, a second segment, a
         # traversal, the case a character grammar would have accepted (`PowerOff`
-        # is real and not submitted here), casing, empty, and a header injection.
+        # is real and not submitted here), casing, empty, and a CRLF value httpx
+        # will not build a URL from (ADR 0148) -- refused here first, and so as a
+        # `ValueError` rather than the waist's `HMCError`.
         "Migrate?group=None",
         "Migrate#/rest/api/web/HmcUser/root",
         "Migrate/extra",

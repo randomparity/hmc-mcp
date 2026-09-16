@@ -56,6 +56,14 @@ in-repo precedent for the qualifier. The set lives in `client_lpm.py` rather tha
 - **The drift walker still cannot see this site.** The guarantee is a runtime refusal rather than
   a test-time observation, so it does not depend on the walk — but any future uom path built
   outside `core.py` keeps the same exemption. Issue #828's second half, unowned.
+- **This governs one of the two expressions of that path.** `operations/lpar/core.py:500` builds
+  the same f-string and reaches `submit_job` without passing through `_lpar_job`; its `operation`
+  is a local `"PowerOn" if power_on else "PowerOff"`, both names outside the set, so nothing
+  caller-supplied reaches it and routing it here would take an edit. Unowned residual.
+- **The contract is `str` membership.** Any `str` outside the five raises `ValueError` before a
+  request is built; a non-`str` is a type error the signature forbids. A `str` subclass
+  overriding `__format__` satisfies the check and interpolates something else — outside the
+  failure model's actor model, where every caller is in-module and passes a literal.
 - ADR 0147's follow-up candidate for `operation` is closed; its seven other ungoverned segment
   arguments stay open and unowned.
 
