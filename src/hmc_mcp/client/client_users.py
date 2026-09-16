@@ -12,6 +12,7 @@ from .client_contracts import (
     VALID_AUTHENTICATION_FILTERS,
     AuthenticationFilter,
     UsersClient,
+    _reject_unknown_uom_type,
 )
 from .client_parse import _parse_feed
 
@@ -31,6 +32,15 @@ class UsersMixin:
 
     @staticmethod
     def _child_path(console_uuid: str, child_type: str) -> str:
+        """Build a documented ``ManagementConsole`` child path.
+
+        The type segment is validated here rather than relied on from the
+        callers. Every caller passes a literal today, and most are checked only
+        because that same literal also reaches ``_uom_headers``; neither
+        coupling survives a caller that stops passing one. ADR 0147 carries the
+        call-site census, with the date and evidence that make it checkable.
+        """
+        _reject_unknown_uom_type("child_type", child_type)
         console_path_id = quote(console_uuid, safe="")
         return f"/rest/api/uom/ManagementConsole/{console_path_id}/{child_type}"
 

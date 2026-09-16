@@ -21,13 +21,16 @@ from urllib.parse import quote
 import httpx
 import pytest
 
-from hmc_mcp.client.client_contracts import ADAPTER_TYPES
+from hmc_mcp.client.client_contracts import (
+    _MAX_UOM_TYPE_LENGTH,
+    ADAPTER_TYPES,
+    _reject_unknown_uom_type,
+)
 from hmc_mcp.client.core import (
     MEDIA_UOM,
     HMCClient,
     _reject_dot_segments,
     _reject_non_job_path,
-    _reject_unknown_uom_type,
 )
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
@@ -895,3 +898,55 @@ def test_every_uom_path_interpolation_is_a_known_argument():
     interpolations, _ = _uom_path_sites()
     unknown = sorted({name for _, name in interpolations} - _KNOWN_UOM_SEGMENT_ARGUMENTS)
     assert not unknown, f"unclassified uom path segment arguments: {unknown}"
+
+
+# ---------------------------------------------------------------------------
+# The type-segment length bound (ADR 0147)
+# ---------------------------------------------------------------------------
+
+
+def test_a_type_at_the_length_bound_is_accepted():
+    """The bound is inclusive: exactly `_MAX_UOM_TYPE_LENGTH` is still a type."""
+    value = "A" + "b" * (_MAX_UOM_TYPE_LENGTH - 1)
+    assert len(value) == _MAX_UOM_TYPE_LENGTH
+    assert _reject_unknown_uom_type("resource_type", value) is None
+
+
+@pytest.mark.parametrize(
+    "length",
+    [
+        _MAX_UOM_TYPE_LENGTH + 1,
+        # The reproduction issue #820 carries: a megabyte of grammar-valid
+        # characters built a megabyte-long URL and Accept header and sent them.
+        1024 * 1024,
+    ],
+)
+def test_a_grammar_valid_type_over_the_bound_is_refused(length):
+    value = "A" * length
+    with pytest.raises(ValueError, match="must be an HMC resource type name") as error:
+        _reject_unknown_uom_type("resource_type", value)
+
+    message = str(error.value)
+    assert message.startswith("resource_type must be")
+    # The length branch, not the character branch: an all-alphanumeric value has
+    # no offending character, so naming one would describe a rule it did not
+    # break.
+    assert f"a value of {length} characters" in message
+    assert f"{_MAX_UOM_TYPE_LENGTH}-character maximum" in message
+    # The same leak rule the character branch follows: the length, never the
+    # value, which on the CLI and API paths carries an operator's own strings.
+    assert value not in message
+
+
+def test_the_length_branch_precedes_the_character_branch():
+    """An over-long value that also breaks the character class reports length.
+
+    Checking length first is what keeps a megabyte from being scanned character
+    by character before it is refused, and it is the ordering the message's
+    detail depends on.
+    """
+    value = "A" * (_MAX_UOM_TYPE_LENGTH + 1) + "?group=None"
+    with pytest.raises(ValueError) as error:
+        _reject_unknown_uom_type("resource_type", value)
+
+    assert f"a value of {len(value)} characters" in str(error.value)
