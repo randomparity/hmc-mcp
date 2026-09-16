@@ -1,16 +1,15 @@
 # Plan: guard the job request path wherever it is built
 
 **Goal.** `HMCClient.get_job_entry` and `HMCClient.delete_job` build one job path
-expression and refuse it the same way, and that refusal inspects the path httpx
-will actually send.
+expression and refuse it the same way, and that refusal no longer admits `?` or
+`#` in the identifier segment.
 
 **Architecture.** `src/hmc_mcp/client/core.py` holds the pattern `_JOB_PATH` and
 the guard `_reject_non_job_path(path)`, which raises `HMCError` when the path does
 not address a job; two client methods call it. This plan tightens the identifier
-segment, makes the guard require a match on the raw path as well as the decoded
-one, names the refused argument in its message, and makes `get_job_entry` call it
-on the finished path the way `delete_job` does. One task; nothing is created,
-moved or removed; no caller migrates.
+segment, names the refused argument in the guard's message, and makes
+`get_job_entry` call it on the finished path the way `delete_job` does. One task;
+nothing is created, moved or removed; no caller migrates.
 
 **Tech stack.** Python 3.11+, httpx, pytest + pytest-asyncio + respx, `just`.
 
@@ -23,13 +22,15 @@ moved or removed; no caller migrates.
   `tests/unit/test_operations_jobs_disappearance.py` must keep passing
   **unedited**: the first calls `_reject_non_job_path(path)` with one argument and
   matches `does not address a job`, the second matches `job_href refused`.
+- `_JOB_PATH` keeps matching `unquote(path)` only. The decode residual ADR 0149
+  records is deliberately left open; do not add a raw-form match here.
 - Guardrails: `just verify` and `uv run --no-sync prek run --all-files`, both bare,
   both exit 0. A focused `pytest -k` run needs `--no-cov` to report a meaningful
   exit status; the 90.5% `fail-under` gate otherwise exits 1 on a green selection.
 - No deferrals are carried into this plan.
 
-Expected implementation size: 55-75 changed lines (S) — ~18 changed lines in
-`src/hmc_mcp/client/core.py` and ~45 added lines in `tests/unit/test_client.py`.
+Expected implementation size: 45-65 changed lines (S) — ~10 changed lines in
+`src/hmc_mcp/client/core.py` and ~40 added lines in `tests/unit/test_client.py`.
 
 ## Task 1 — one guarded job path expression
 
@@ -38,26 +39,25 @@ is `_reject_non_job_path(path: str, argument: str = "job_href") -> None`;
 `get_job_entry` and `delete_job` keep `(self, job_id: str, *, job_href: str | None
 = None)`.
 
-**Verification.** The green command for the first three entries is
+**Verification.** The green command for the first two entries is
 `uv run --no-sync pytest tests/unit/test_client.py -k "job_path or job_href" --no-cov`,
 expecting `passed` and exit 0.
 
 - *A `job_id` that leaves the job path class, or carries `?`/`#`, is refused by
-  both methods before any request.* Mode: `focused-test` — new
-  `test_a_job_id_that_leaves_the_job_path_is_refused`, parametrized over
-  `get_job_entry` and `delete_job` and over `""`, `a/b`, `a%2Fb`, `j?x=1`, `j#f`,
-  `j%3Fx=1`, `j%23f`. Expected red: `Failed: DID NOT RAISE <class
-  'hmc_mcp.errors.HMCError'>` for `get_job_entry` on every value and for
-  `delete_job` on the `?`/`#` values. The same case asserts `match=r"^job_id
-  refused"`, so a guard that does not thread the argument through fails with
-  `Regex pattern did not match`.
-- *A `job_href` that is a job path only after decoding is refused, and the
-  refusal names `job_href`.* Mode: `focused-test` — new
-  `test_a_job_href_that_only_decodes_to_a_job_path_is_refused`, over
-  `get_job_entry` and `delete_job` with
-  `job_href="/rest/api/uom/HmcUser/root%2FJob%2Fx"`, asserting `^job_href
-  refused`. Expected red: `DID NOT RAISE`, because `_JOB_PATH` matches the
-  decoded form today.
+  both methods before any request, and the refusal names `job_id`.* Mode:
+  `focused-test` — new `test_a_job_id_that_leaves_the_job_path_is_refused`,
+  parametrized over `get_job_entry` and `delete_job` and over `""`, `a/b`,
+  `a%2Fb`, `j?x=1`, `j#f`, `j%3Fx=1`, `j%23f`, asserting `match=r"^job_id
+  refused"` and that no request was sent. Expected red: `Failed: DID NOT RAISE
+  <class 'hmc_mcp.errors.HMCError'>` for `get_job_entry` on every value and for
+  `delete_job` on the `?`/`#` values; a guard that does not thread the argument
+  through instead fails with `Regex pattern did not match`.
+- *A `job_href` that addresses another resource is refused, naming `job_href`.*
+  Mode: `focused-test` — new `test_a_non_job_href_is_refused_naming_job_href`,
+  over `get_job_entry` and `delete_job` with
+  `job_href="/rest/api/uom/HmcUser/root"`, asserting `^job_href refused` and that
+  no request was sent. Expected red: none for the refusal itself, which holds
+  today; it turns red if the argument name regresses to a hard-coded string.
 - *Every job path accepted today still reaches the wire.* Mode: `focused-test` —
   the existing `test_get_job_*`, `test_delete_job_*` and `test_wait_for_job_*`
   cases in `tests/unit/test_client.py` plus `test_a_job_link_is_accepted` in
@@ -81,23 +81,24 @@ expecting `passed` and exit 0.
    _JOB_PATH = re.compile(r"^(?:/[^/]+)*/(?:Job|jobs)/[^/?#]+$")
    ```
 
-4. Make `_reject_non_job_path` require both forms and name the argument:
+4. Name the argument in `_reject_non_job_path`, leaving the `if` condition as it
+   is:
 
    ```python
    def _reject_non_job_path(path: str, argument: str = "job_href") -> None:
-       for form in (path, unquote(path)):
-           if not _JOB_PATH.match(form):
-               raise HMCError(
-                   f"{argument} refused: it does not address a job resource. "
-                   "Pass the UUID or JobID as job_id, or the SELF link returned "
-                   "when the job was submitted as job_href."
-               )
+       ...
+       if not _JOB_PATH.match(unquote(path)):
+           raise HMCError(
+               f"{argument} refused: it does not address a job resource. Pass "
+               "the UUID or JobID as job_id, or the SELF link returned when the "
+               "job was submitted as job_href."
+           )
    ```
 
-   Keep the docstring's existing ADR 0039 residual paragraph, and extend it to
-   say the guard covers the `job_id` branch too, that a decode can manufacture a
-   `/Job/{id}` tail the raw path does not have, and why only the identifier
-   segment excludes `?` and `#`.
+   Keep the docstring's existing ADR 0039 residual paragraph, and extend it to say
+   the guard covers the `job_id` branch too, why only the identifier segment
+   excludes `?` and `#`, and that matching the decoded form alone leaves the
+   residual ADR 0149 records open.
 5. Replace `get_job_entry`'s five-line `if job_href:` block, and `delete_job`'s two
    guard lines, with the identical pair, and name the refusal in one added
    sentence of `get_job_entry`'s docstring:
@@ -114,7 +115,7 @@ expecting `passed` and exit 0.
    exit 0.
 9. Commit as `fix(client): guard the job request path on both branches`.
 
-**Acceptance criteria.** All six Success criteria of the spec hold;
+**Acceptance criteria.** All five Success criteria of the spec hold;
 `src/hmc_mcp/client/core.py` and `tests/unit/test_client.py` are the only source
 files in the diff; both guardrail commands exit 0.
 

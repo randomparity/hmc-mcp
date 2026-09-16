@@ -19,25 +19,18 @@ classified `read` on target kind `job`. A `job_id` reaches that same path, and
 `job_id = "a/b"` yields `/rest/api/uom/jobs/a/b`, which leaves the job class
 outright — not the residual ADR 0039 accepts, which is reaching a *different job*.
 
-Two gaps sat inside the pattern. Its identifier segment was `[^/]+`, and `?` and
-`#` are both `[^/]`: on httpx 0.28.1 `build_request("GET", ".../jobs/j?x=1")`
+A second gap sat inside the pattern. Its identifier segment was `[^/]+`, and `?`
+and `#` are both `[^/]`: on httpx 0.28.1 `build_request("GET", ".../jobs/j?x=1")`
 sends `.../jobs/j` with query `x=1`, and `.../jobs/j#f` sends `.../jobs/j` with
-the fragment dropped, so `delete_job("j#f")` silently deleted job `j`. And it was
-matched against `unquote(path)` alone, which is not the more refusing form:
-`unquote` introduces `/`, so a decode can *manufacture* the trailing `/Job/{id}`
-the pattern looks for. `/rest/api/uom/HmcUser/root%2FJob%2Fx` decodes to a job
-path and passed, while httpx put the undecoded raw path on the wire.
+the fragment dropped, so `delete_job("j#f")` silently deleted job `j`.
 
 ## Decision
 
 **Both methods build the job path in one expression and refuse it through
-`_reject_non_job_path`; `_JOB_PATH` must match the raw path *and* its
-percent-decoded form; and its identifier segment excludes `?` and `#`.**
+`_reject_non_job_path`, and `_JOB_PATH`'s identifier segment excludes `?` and
+`#`.**
 
-Matching both forms is what `_reject_dot_segments` already does in this module,
-for the reason its own comment gives: checking one form is an assumption about
-how the HMC decodes a path, and the wrong way round for a fail-closed check. Only
-the identifier segment is tightened, because `urlparse` strips a query and a
+Only the identifier segment is tightened, because `urlparse` strips a query and a
 fragment and the `job_id` branch's prefix is a literal, so no other segment can
 carry a raw `?` or `#`. The guard also takes the name of the argument the path
 came from, and its message says what each argument takes.
@@ -47,15 +40,23 @@ came from, and its message says what each argument takes.
 - `get_job_entry` now refuses, before any request, a `job_id` that is empty or
   carries `/`, `?`, `#`, or a percent-encoding of one. It sent those before;
   `delete_job` already refused all but `?` and `#`.
-- A `job_href` is newly refused when its path becomes a job path only after
-  decoding (`/rest/api/uom/HmcUser/root%2FJob%2Fx`), when it spells the class
-  segment with an escape (`/rest/api/uom/job%73/abc`), or when its identifier
-  segment carries `?`, `#` or an encoding of one. The HMC emits none of these,
-  and the shapes pinned by `test_a_job_link_is_accepted` are unaffected.
+- A `job_href` is newly refused only when its identifier segment decodes to
+  contain `?` or `#` — `/rest/api/uom/Job/a%3Fb`. Otherwise nothing about that
+  branch moves: `_JOB_PATH` is still matched against `unquote(path)` alone, and
+  every shape `test_a_job_link_is_accepted` pins is still accepted.
 - `hmc_get_job`, `hmc_wait_for_job` and the CLI never reach this guard with an
   unfiltered `job_id`: `src/hmc_mcp/operations/jobs.py:38` refuses `/?#%` first,
   and `src/hmc_mcp/jobs/core.py:184` reaches `wait_for_job_entry` only with an
   HMC-minted identifier and href.
+- **Residual, open and unowned.** Matching the decoded form alone is not the more
+  refusing choice it looks like: `unquote` introduces `/`, so a decode can
+  *manufacture* the trailing `/Job/{id}` the pattern looks for.
+  `/rest/api/uom/HmcUser/root%2FJob%2Fx` matches after decoding and is accepted,
+  while httpx puts the raw string on the wire. The bound is that neither
+  decoding behaviour reaches the `HmcUser` record — a server that decodes `%2F`
+  routes to `/rest/api/uom/HmcUser/root/Job/x`, one that does not sees a single
+  unknown segment — and the caller already holds the `all-targets` grant ADR 0039
+  requires. Closing it belongs to its own change, not this one.
 - Residual, unchanged: an `all-targets` grant still reaches a *different* job.
   ADR 0039 accepts that, and this does not revisit it.
 
@@ -65,12 +66,13 @@ came from, and its message says what each argument takes.
   `_reject_non_job_path`'s stated reason is about the path the request will use,
   which the `job_id` branch builds too, so the record would disagree with the
   guard it describes.
-- **Keep matching the percent-decoded form only.** verified: on the installed
-  Python, `_JOB_PATH` matches `unquote('/rest/api/uom/HmcUser/root%2FJob%2Fx')`
-  but not the raw string, and `httpx.Client(base_url=...).build_request('GET',
-  path).url.raw_path` is the raw string — so the guard would approve a path the
-  client does not send. judgment: a class guard that inspects a different string
-  than the wire carries.
+- **Also require `_JOB_PATH` to match the raw path, as `_reject_dot_segments`
+  does.** verified: it would close the residual above, and it is the fail-closed
+  reading. verified: no completion criterion of issue #825 sources it, and it
+  would newly refuse `job_href` paths accepted today — any percent-escape in a
+  segment, such as `/rest/api/uom/job%73/abc`, which decodes to a job path.
+  judgment: a change to what two public methods accept, arrived at while editing
+  the guard rather than asked for; recorded as an open residual instead.
 - **Add a character check for `job_id` beside the path check, mirroring
   `_ILLEGAL_JOB_ID_CHARACTERS`.** verified: `src/hmc_mcp/operations/jobs.py:38`
   holds that rule at the operations boundary already. judgment: `_JOB_PATH`
