@@ -6,6 +6,7 @@ domain mixin; this module only defines methods for systems.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ..errors import HMCError
@@ -21,6 +22,8 @@ from .client_resolution import (
     ambiguity_candidate_ids,
     ambiguous_parent_details,
 )
+
+_logger = logging.getLogger(__name__)
 
 
 class SystemsMixin:
@@ -103,7 +106,7 @@ class SystemsMixin:
         # hardware-inventory property (e.g. VirtualPersistentMemoryVolume/Uuid).
         # quick/All + find_system_by_name (a different, working path) resolve
         # what they can; a system that still fails (or resolves ambiguously)
-        # is skipped rather than failing the whole call.
+        # is skipped with a warning rather than failing the whole call.
         try:
             return await self.list_uom("ManagedSystem")
         except HMCError as exc:
@@ -122,10 +125,20 @@ class SystemsMixin:
             for name in names.values():
                 try:
                     entry = await self.find_system_by_name(name)
-                except (HMCError, ValueError):
+                except (HMCError, ValueError) as resolution_exc:
+                    _logger.warning(
+                        "Skipping managed system %r during inventory fallback: %s",
+                        name,
+                        resolution_exc,
+                    )
                     continue
                 if entry is not None:
                     resolved.append(entry)
+                else:
+                    _logger.warning(
+                        "Skipping managed system %r during inventory fallback: not found",
+                        name,
+                    )
             if resolved:
                 return resolved
             raise HMCError(
