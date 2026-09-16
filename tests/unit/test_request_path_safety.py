@@ -1369,3 +1369,66 @@ def test_the_bound_is_its_wire_budget_divided_by_the_worst_case_expansion():
     second `== 256` beside it could never fail on its own.
     """
     assert _MAX_UOM_PATH_VALUE_LENGTH * 12 == 3 * 1024
+
+
+# ---------------------------------------------------------------------------
+# The LPM job operation segment (ADR 0151)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        # The `?`/`#` retargeting pair issue #809 carries, a second segment, a
+        # traversal, the case a character grammar would have accepted (`PowerOff`
+        # is real and not submitted here), casing, empty, and a CRLF value httpx
+        # will not build a URL from (ADR 0148) -- refused here first, and so as a
+        # `ValueError` rather than the waist's `HMCError`.
+        "Migrate?group=None",
+        "Migrate#/rest/api/web/HmcUser/root",
+        "Migrate/extra",
+        "../../web/HmcUser/root",
+        "PowerOff",
+        "migrate",
+        "",
+        "Migrate\r\nX-Evil: 1",
+    ],
+)
+def test_an_unlisted_lpm_operation_is_refused_before_any_request(operation):
+    """Refused by membership, before `submit_job` builds anything. Asserted
+    against the transport too: a refusal that still built a request would leave
+    the retargeted path in the HMC's audit log."""
+    client = _client()
+    sent: list[str] = []
+
+    def _forbidden(*args, **kwargs):
+        sent.append("request")
+        raise AssertionError("a refused LPM operation reached the transport")
+
+    client._http.build_request = _forbidden  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="^LPM job operation must be one of: "):
+        asyncio.run(client._lpar_job(UUID_A, operation, "<JobRequest/>"))
+    assert sent == []
+
+
+def test_the_lpm_operation_refusal_names_the_permitted_set_not_the_value():
+    """Equality, not a substring: dropping an operation from the set without
+    dropping its call site cannot pass here. The transport is patched because
+    unfixed this call would otherwise attempt a real request (ADR 0151)."""
+    client = _client()
+
+    def _forbidden(*args, **kwargs):
+        raise AssertionError("a refused LPM operation reached the transport")
+
+    client._http.build_request = _forbidden  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError) as error:
+        asyncio.run(client._lpar_job(UUID_A, "secret-partition-name", "<x/>"))
+
+    message = str(error.value)
+    assert message == (
+        "LPM job operation must be one of: Migrate, MigrateAbort, "
+        "MigrateRecover, MigrateValidate, RemoteRestart"
+    )
+    assert "secret-partition-name" not in message
