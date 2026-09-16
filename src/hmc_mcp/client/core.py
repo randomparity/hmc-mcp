@@ -29,7 +29,7 @@ from ..jobs import TERMINAL_JOB_STATUSES
 from ..resource_identity import is_uuid
 from .client_adapters import AdaptersMixin
 from .client_cluster import ClusterMixin
-from .client_contracts import _reject_unknown_uom_type
+from .client_contracts import _reject_over_long_path_value, _reject_unknown_uom_type
 from .client_lpars import LparsMixin
 from .client_lpm import LpmMixin
 from .client_network import NetworkMixin
@@ -1094,6 +1094,10 @@ class HMCClient(
         name still validate nothing.
         """
         _reject_unknown_uom_type("resource_type", resource_type)
+        # Ahead of the `validate` read, not beside the encoding below it: an
+        # over-long value would otherwise pay a discovery request before being
+        # refused. Cheap local argument checks go together (ADR 0150).
+        _reject_over_long_path_value("property_value", property_value)
         if validate:
             defined = await self._defined_search_parameter_names(resource_type)
             if defined is not None and property_name not in defined:
