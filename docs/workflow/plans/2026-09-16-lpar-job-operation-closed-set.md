@@ -138,10 +138,8 @@ _LPAR_JOB_OPERATIONS = frozenset(
         self: LpmClient, lpar_uuid: str, operation: str, job_xml: str
     ) -> dict[str, Any] | None:
         if operation not in _LPAR_JOB_OPERATIONS:
-            raise ValueError(
-                "LPM job operation must be one of: "
-                + ", ".join(sorted(_LPAR_JOB_OPERATIONS))
-            )
+            allowed = ", ".join(sorted(_LPAR_JOB_OPERATIONS))
+            raise ValueError(f"LPM job operation must be one of: {allowed}")
         return await self.submit_job(
             f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", job_xml
         )
