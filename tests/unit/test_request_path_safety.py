@@ -16,7 +16,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import inspect
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import httpx
 import pytest
@@ -796,15 +796,27 @@ def test_every_group_query_interpolation_is_encoded():
 # which rule governs each. A name outside this table is a segment nobody has
 # decided a rule for, which is what the second assertion below refuses.
 _TYPE_SEGMENT_ARGUMENTS = frozenset({"resource_type", "parent_type", "child_type"})
-_KNOWN_UOM_SEGMENT_ARGUMENTS = _TYPE_SEGMENT_ARGUMENTS | {
-    "uuid",
-    "parent_uuid",
-    "child_uuid",
-    "property_name",
-    "job_id",
-    "encoded_property",
-    "encoded_value",
-}
+
+# Segments carrying *data* rather than a schema identifier, governed by
+# percent-encoding at the site that builds them: `search_uom`'s two search values
+# and `get_quick_property`'s name (ADR 0146). Membership is not self-certifying —
+# `test_every_encoded_uom_segment_is_quote_bound` holds each of these to a literal
+# `quote(..., safe="")` binding in its own function, so a name is in this class
+# because of what its site does and not because of what it is called. That is the
+# defect issue #818 found: `property_name` sat in the inventory below with no rule
+# behind it, which made the unclassified-segment assertion pass for it.
+_ENCODED_SEGMENT_ARGUMENTS = frozenset({"encoded_property", "encoded_value"})
+
+_KNOWN_UOM_SEGMENT_ARGUMENTS = (
+    _TYPE_SEGMENT_ARGUMENTS
+    | _ENCODED_SEGMENT_ARGUMENTS
+    | {
+        "uuid",
+        "parent_uuid",
+        "child_uuid",
+        "job_id",
+    }
+)
 
 
 def _is_boundary_check(node: ast.AST) -> bool:
@@ -820,25 +832,32 @@ def _is_boundary_check(node: ast.AST) -> bool:
     )
 
 
-def _uom_path_sites() -> tuple[list[tuple[str, str]], dict[str, set[str]]]:
+def _uom_path_sites() -> tuple[
+    list[tuple[str, str]], dict[str, set[str]], dict[str, set[str]]
+]:
     """Every `/rest/api/uom/` f-string interpolation in `core.py`, paired with
-    the type arguments each enclosing function hands the boundary predicate.
+    the type arguments each enclosing function hands the boundary predicate and
+    the names each binds through a literal `quote(..., safe="")`.
 
-    One parse and one walk for both, because the guard test needs them paired:
-    deriving the second per interpolation reparsed the whole module once per
-    site.
+    One parse and one walk for all three, because the guard tests need them
+    paired: deriving the others per interpolation reparsed the whole module once
+    per site.
     """
     from hmc_mcp.client import core as client_module
 
     tree = ast.parse(inspect.getsource(client_module))
     interpolations: list[tuple[str, str]] = []
     guarded: dict[str, set[str]] = {}
+    quote_bound: dict[str, set[str]] = {}
     for owner in ast.walk(tree):
         if not isinstance(owner, ast.AsyncFunctionDef | ast.FunctionDef):
             continue
         for node in ast.walk(owner):
             if _is_boundary_check(node):
                 guarded.setdefault(owner.name, set()).add(node.args[1].id)
+                continue
+            if (bound := _is_quote_binding(node)) is not None:
+                quote_bound.setdefault(owner.name, set()).add(bound)
                 continue
             if not isinstance(node, ast.JoinedStr) or not node.values:
                 continue
@@ -853,7 +872,7 @@ def _uom_path_sites() -> tuple[list[tuple[str, str]], dict[str, set[str]]]:
                 if isinstance(part, ast.FormattedValue)
                 and isinstance(part.value, ast.Name)
             )
-    return interpolations, guarded
+    return interpolations, guarded, quote_bound
 
 
 def test_every_uom_type_interpolation_is_guarded():
@@ -876,7 +895,7 @@ def test_every_uom_type_interpolation_is_guarded():
     adding an unguarded site in the idiom the module actually uses; it is not a
     proof that none can exist.
     """
-    interpolations, guarded = _uom_path_sites()
+    interpolations, guarded, _ = _uom_path_sites()
     unguarded = sorted(
         {
             (function, name)
@@ -895,9 +914,44 @@ def test_every_uom_path_interpolation_is_a_known_argument():
     catches a segment nobody has classified, that one catches a classified
     segment nobody guarded.
     """
-    interpolations, _ = _uom_path_sites()
+    interpolations, _, _ = _uom_path_sites()
     unknown = sorted({name for _, name in interpolations} - _KNOWN_UOM_SEGMENT_ARGUMENTS)
     assert not unknown, f"unclassified uom path segment arguments: {unknown}"
+
+
+def test_every_encoded_uom_segment_is_quote_bound():
+    """A segment classed as encoded must be encoded at its own site.
+
+    The third companion, and the one that stops the classification above from
+    certifying itself. `_KNOWN_UOM_SEGMENT_ARGUMENTS` says a name has a rule;
+    this says the rule is present in the function that interpolates it, so
+    `_ENCODED_SEGMENT_ARGUMENTS` cannot be satisfied by naming a local
+    `encoded_anything`. Issue #818 is what that costs: `property_name` sat in
+    the inventory with no rule behind it, and the unclassified-segment assertion
+    passed for exactly the case its docstring describes catching (ADR 0146).
+
+    **What this does not cover, stated rather than implied.** It matches a
+    literal `<local> = quote(<some name>, safe="")` assignment in the same
+    function — the argument is not tied to the enclosing function's parameter, so
+    `encoded = quote(unrelated, safe="")` would satisfy it — and only where the
+    `/rest/api/uom/` f-string interpolates a bare name.
+    Concatenation, `.format`, an interpolated attribute or subscript, a
+    differently-spelled encoder, a qualified `module.quote(...)` call, and a name
+    rebound between the assignment and the f-string are all invisible here — the
+    same stated limits the type-segment and `?group=` walks carry. This raises
+    the cost of adding an unencoded site in the idiom the module uses; it is not
+    a proof that none can exist.
+    """
+    interpolations, _, quote_bound = _uom_path_sites()
+    unbound = sorted(
+        {
+            (function, name)
+            for function, name in interpolations
+            if name in _ENCODED_SEGMENT_ARGUMENTS
+            and name not in quote_bound.get(function, set())
+        }
+    )
+    assert not unbound, f"encoded uom segments interpolated unbound: {unbound}"
 
 
 # ---------------------------------------------------------------------------
@@ -950,3 +1004,174 @@ def test_the_length_branch_precedes_the_character_branch():
         _reject_unknown_uom_type("resource_type", value)
 
     assert f"a value of {len(value)} characters" in str(error.value)
+
+
+# ---------------------------------------------------------------------------
+# The quick-property name segment (ADR 0146)
+# ---------------------------------------------------------------------------
+
+# The six quick-property names this repository passes. `rg -n -o
+# "quick/[A-Za-z0-9_.%-]*" src/ tests/ docs/` returns exactly these, beside a
+# bare `quick/` and two prose artifacts (`quick/All.`, `quick/PartitionState.`).
+_QUICK_PROPERTY_NAMES = (
+    "PartitionState",
+    "PartitionID",
+    "SystemType",
+    "NoSuchProperty",
+    "all",
+    "All",
+)
+
+_QUICK_PREFIX = f"/rest/api/uom/LogicalPartition/{UUID_A}/quick/"
+
+
+def _quick_property_path(client: HMCClient, property_name: str) -> str:
+    """The path `get_quick_property` hands the transport for *property_name*.
+
+    Records at `build_request` rather than after `send`, because a value that
+    re-points the request does so while the URL is being built.
+    """
+    requested: list[str] = []
+
+    def _record(method, path, **kwargs):
+        requested.append(path)
+        return httpx.Request(method, f"https://hmc.test:12443{path}")
+
+    client._http.build_request = _record  # type: ignore[method-assign]
+
+    async def _send(request, **kwargs):
+        return httpx.Response(204, request=request)
+
+    client._http.send = _send  # type: ignore[method-assign]
+
+    assert (
+        asyncio.run(client.get_quick_property("LogicalPartition", UUID_A, property_name))
+        is None
+    )
+    assert len(requested) == 1
+    return requested[0]
+
+
+@pytest.mark.parametrize(
+    "property_name",
+    [
+        # The `?` and `#` reproduction issue #818 carries, on the same line
+        # ADR 0143 hardened for the type segment beside it.
+        "PartitionState?group=None",
+        "PartitionState#/rest/api/web/HmcUser/root",
+        # A second path segment: not a retarget out of the resource, but not the
+        # property the caller named either.
+        "PartitionState/extra",
+        "Partition State",
+        "Partitioñ",
+        # Raw, this raises httpx.InvalidURL, which is neither httpx.TransportError
+        # nor httpx.HTTPError and so escapes `_request`'s two handlers entirely.
+        "PartitionState\r\nX-Evil: 1",
+    ],
+)
+def test_a_quick_property_name_cannot_re_point_the_request(property_name):
+    """The whole name stays inside the last path segment (ADR 0146).
+
+    Not asserted by comparing against `quote(...)` alone, which would only say
+    the client called the function this test expects. The two assertions below
+    are the property itself: nothing structural survives into the segment, and
+    the segment still decodes to exactly what the caller passed — so neither a
+    truncation nor an addition can pass.
+    """
+    path = _quick_property_path(_client(), property_name)
+
+    assert path.startswith(_QUICK_PREFIX)
+    segment = path[len(_QUICK_PREFIX) :]
+    assert not set(segment) & set("?#/\r\n")
+    assert unquote(segment) == property_name
+    # Every case here holds a character outside RFC 3986's unreserved set, so
+    # each must actually be rewritten. Without this the space and non-ASCII
+    # cases assert nothing that can fail: httpx encodes both while building the
+    # URL, so their two assertions above hold whether or not the client encoded
+    # anything, and dropping the binding would leave them green.
+    assert segment != property_name
+
+
+@pytest.mark.parametrize("property_name", _QUICK_PROPERTY_NAMES)
+def test_encoding_is_a_no_op_on_the_quick_property_names_this_client_passes(
+    property_name,
+):
+    """No wire-format change for any name this repository passes (ADR 0146).
+
+    Asserted against the built path rather than `quote(n, safe="") == n`, which
+    imports no client code at all. What the built-path form adds is coverage of
+    the path *template* — a segment reordered or a literal changed reddens this.
+    It is deliberately blind to the binding's removal, because `quote` is the
+    identity on all six names; `test_a_quick_property_name_cannot_re_point_the_request`
+    is what fails when the binding goes.
+    """
+    assert _quick_property_path(_client(), property_name) == _QUICK_PREFIX + property_name
+
+
+@pytest.mark.parametrize("property_name", ["..", ".", "../../x"])
+def test_a_dot_segment_quick_property_name_is_still_refused(property_name):
+    """The refusal identity that does *not* move (ADR 0146).
+
+    `quote` leaves `.` alone and turns `../../x` into `..%2F..%2Fx`, which the
+    waist guard's percent-decoding arm still reads as dot segments. Asserted
+    against the transport as well as the exception: a refusal that still built a
+    request would leave the path in the HMC's audit log.
+    """
+    client = _client()
+
+    def _forbidden(*args, **kwargs):
+        raise AssertionError("a refused quick-property name reached the transport")
+
+    client._http.build_request = _forbidden  # type: ignore[method-assign]
+
+    with pytest.raises(HMCError, match="refused"):
+        asyncio.run(client.get_quick_property("LogicalPartition", UUID_A, property_name))
+
+
+@pytest.mark.parametrize(
+    "property_name",
+    [
+        "..%2f..%2fweb%2fHmcUser%2froot",
+        "%2e%2e",
+        "%2E%2E",
+        "..%2F..%2Fx",
+        # Shaped like a URL. `_reject_dot_segments` takes a *path*, and its first
+        # statement is `urlparse(path).path if "://" in path else path` — handed a
+        # bare segment carrying `://`, that branch parses `x` as a scheme and
+        # `%2e%2e` as a netloc, leaving an empty path for both arms to scan. The
+        # segment is therefore handed to the predicate as the path it forms.
+        "x://%2e%2e",
+        "x://%2E%2E",
+        "x://%2e%2e/y",
+        # And the other half of the same hazard: a name starting with `/` makes
+        # the prefixed value start `//`, which `urlparse` reads as a netloc
+        # rather than a path. Both halves are why the value is handed over as
+        # the path it actually occupies, with a non-empty first segment.
+        "/..%2f://",
+        "/..%2fx://",
+        "/..%2F://",
+    ],
+)
+def test_a_caller_percent_encoded_dot_segment_name_is_refused_too(property_name):
+    """Encoding must not buy a dot segment passage past the waist (ADR 0146).
+
+    This is the case the site guard exists for. Percent-encoding a name the
+    caller had already encoded double-encodes it, so `..%2f..` reaches the wire
+    as `..%252f..` and neither of the waist guard's two arms reads it as a dot
+    segment — it would be sent. Calling `_reject_dot_segments` on the *argument*,
+    before encoding, is what keeps it refused.
+
+    Reasoning that the double-encoded form "addresses nothing" is exactly the
+    argument `_reject_dot_segments`' own body records having removed: how many
+    times the HMC's web stack decodes a path is untestable from here, and
+    guessing low is the wrong direction for a fail-closed check.
+    """
+    client = _client()
+
+    def _forbidden(*args, **kwargs):
+        raise AssertionError("a pre-encoded dot segment reached the transport")
+
+    client._http.build_request = _forbidden  # type: ignore[method-assign]
+
+    with pytest.raises(HMCError, match="refused"):
+        asyncio.run(client.get_quick_property("LogicalPartition", UUID_A, property_name))

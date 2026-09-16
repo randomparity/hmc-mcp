@@ -833,6 +833,14 @@ class HMCClient(
         about the type rather than a failed read (ADR 0144). A 204, a failed
         read, and a container holding properties this parse cannot name still
         validate nothing.
+
+        The name is percent-encoded before it is interpolated, not checked
+        against a grammar (ADR 0146). The path is its only destination — this
+        method sends ``Accept: */*`` and never reaches ``_uom_headers`` — so
+        encoding is the rule RFC 3986 defines for it, where the type segment
+        beside it also lands in an ``Accept`` media-type parameter and is
+        validated instead (ADR 0143). Encoding changes no byte for any name this
+        repository passes, and *validate* above remains the namespace check.
         """
         _reject_unknown_uom_type("resource_type", resource_type)
         if validate:
@@ -847,7 +855,15 @@ class HMCClient(
                     f"{resource_type} defines no quick property named "
                     f"{property_name!r}. {detail}"
                 )
-        path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{property_name}"
+        # Before encoding, and as the path the segment occupies rather than as a
+        # bare one. Encoding hides a dot segment from the waist guard, and
+        # `_reject_dot_segments` parses what it is handed as a path: a value
+        # carrying `://` escapes through `urlparse`'s scheme branch when passed
+        # bare, and through its netloc branch when passed behind a lone `/`. A
+        # non-empty leading segment closes both (ADR 0146).
+        _reject_dot_segments("GET", f"/quick/{property_name}")
+        encoded_property = quote(property_name, safe="")
+        path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{encoded_property}"
         resp = await self._request_with_uuid_path_arguments(
             "GET",
             path,
