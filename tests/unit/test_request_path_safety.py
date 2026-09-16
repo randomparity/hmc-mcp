@@ -1292,9 +1292,7 @@ def test_an_over_long_search_value_is_refused_before_any_request(length):
     assert str(error.value).startswith("property_value is ")
 
 
-@pytest.mark.parametrize(
-    "length", [_MAX_UOM_PATH_VALUE_LENGTH + 1, 65_000]
-)
+@pytest.mark.parametrize("length", [_MAX_UOM_PATH_VALUE_LENGTH + 1, 65_000])
 def test_an_over_long_console_uuid_is_refused_before_any_request(length):
     client, requested = _recording_client()
 
@@ -1366,6 +1364,8 @@ def test_the_bound_is_its_wire_budget_divided_by_the_worst_case_expansion():
     characters one input character can become. Every other test here floats with
     the constant, so without this one the bound could be changed to any value
     and the suite would still pass -- and the derivation is the decision.
+
+    One assertion, not two: the equality below already admits exactly 256, so a
+    second `== 256` beside it could never fail on its own.
     """
     assert _MAX_UOM_PATH_VALUE_LENGTH * 12 == 3 * 1024
-    assert _MAX_UOM_PATH_VALUE_LENGTH == 256
