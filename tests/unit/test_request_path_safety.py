@@ -796,15 +796,27 @@ def test_every_group_query_interpolation_is_encoded():
 # which rule governs each. A name outside this table is a segment nobody has
 # decided a rule for, which is what the second assertion below refuses.
 _TYPE_SEGMENT_ARGUMENTS = frozenset({"resource_type", "parent_type", "child_type"})
-_KNOWN_UOM_SEGMENT_ARGUMENTS = _TYPE_SEGMENT_ARGUMENTS | {
-    "uuid",
-    "parent_uuid",
-    "child_uuid",
-    "property_name",
-    "job_id",
-    "encoded_property",
-    "encoded_value",
-}
+
+# Segments carrying *data* rather than a schema identifier, governed by
+# percent-encoding at the site that builds them: `search_uom`'s two search values
+# and `get_quick_property`'s name (ADR 0146). Membership is not self-certifying —
+# `test_every_encoded_uom_segment_is_quote_bound` holds each of these to a literal
+# `quote(..., safe="")` binding in its own function, so a name is in this class
+# because of what its site does and not because of what it is called. That is the
+# defect issue #818 found: `property_name` sat in the inventory below with no rule
+# behind it, which made the unclassified-segment assertion pass for it.
+_ENCODED_SEGMENT_ARGUMENTS = frozenset({"encoded_property", "encoded_value"})
+
+_KNOWN_UOM_SEGMENT_ARGUMENTS = (
+    _TYPE_SEGMENT_ARGUMENTS
+    | _ENCODED_SEGMENT_ARGUMENTS
+    | {
+        "uuid",
+        "parent_uuid",
+        "child_uuid",
+        "job_id",
+    }
+)
 
 
 def _is_boundary_check(node: ast.AST) -> bool:
@@ -820,25 +832,32 @@ def _is_boundary_check(node: ast.AST) -> bool:
     )
 
 
-def _uom_path_sites() -> tuple[list[tuple[str, str]], dict[str, set[str]]]:
+def _uom_path_sites() -> tuple[
+    list[tuple[str, str]], dict[str, set[str]], dict[str, set[str]]
+]:
     """Every `/rest/api/uom/` f-string interpolation in `core.py`, paired with
-    the type arguments each enclosing function hands the boundary predicate.
+    the type arguments each enclosing function hands the boundary predicate and
+    the names each binds through a literal `quote(..., safe="")`.
 
-    One parse and one walk for both, because the guard test needs them paired:
-    deriving the second per interpolation reparsed the whole module once per
-    site.
+    One parse and one walk for all three, because the guard tests need them
+    paired: deriving the others per interpolation reparsed the whole module once
+    per site.
     """
     from hmc_mcp.client import core as client_module
 
     tree = ast.parse(inspect.getsource(client_module))
     interpolations: list[tuple[str, str]] = []
     guarded: dict[str, set[str]] = {}
+    quote_bound: dict[str, set[str]] = {}
     for owner in ast.walk(tree):
         if not isinstance(owner, ast.AsyncFunctionDef | ast.FunctionDef):
             continue
         for node in ast.walk(owner):
             if _is_boundary_check(node):
                 guarded.setdefault(owner.name, set()).add(node.args[1].id)
+                continue
+            if (bound := _is_quote_binding(node)) is not None:
+                quote_bound.setdefault(owner.name, set()).add(bound)
                 continue
             if not isinstance(node, ast.JoinedStr) or not node.values:
                 continue
@@ -853,7 +872,7 @@ def _uom_path_sites() -> tuple[list[tuple[str, str]], dict[str, set[str]]]:
                 if isinstance(part, ast.FormattedValue)
                 and isinstance(part.value, ast.Name)
             )
-    return interpolations, guarded
+    return interpolations, guarded, quote_bound
 
 
 def test_every_uom_type_interpolation_is_guarded():
@@ -876,7 +895,7 @@ def test_every_uom_type_interpolation_is_guarded():
     adding an unguarded site in the idiom the module actually uses; it is not a
     proof that none can exist.
     """
-    interpolations, guarded = _uom_path_sites()
+    interpolations, guarded, _ = _uom_path_sites()
     unguarded = sorted(
         {
             (function, name)
@@ -895,9 +914,42 @@ def test_every_uom_path_interpolation_is_a_known_argument():
     catches a segment nobody has classified, that one catches a classified
     segment nobody guarded.
     """
-    interpolations, _ = _uom_path_sites()
+    interpolations, _, _ = _uom_path_sites()
     unknown = sorted({name for _, name in interpolations} - _KNOWN_UOM_SEGMENT_ARGUMENTS)
     assert not unknown, f"unclassified uom path segment arguments: {unknown}"
+
+
+def test_every_encoded_uom_segment_is_quote_bound():
+    """A segment classed as encoded must be encoded at its own site.
+
+    The third companion, and the one that stops the classification above from
+    certifying itself. `_KNOWN_UOM_SEGMENT_ARGUMENTS` says a name has a rule;
+    this says the rule is present in the function that interpolates it, so
+    `_ENCODED_SEGMENT_ARGUMENTS` cannot be satisfied by naming a local
+    `encoded_anything`. Issue #818 is what that costs: `property_name` sat in
+    the inventory with no rule behind it, and the unclassified-segment assertion
+    passed for exactly the case its docstring describes catching (ADR 0146).
+
+    **What this does not cover, stated rather than implied.** It matches a
+    literal `<name> = quote(<name>, safe="")` assignment in the same function,
+    and only where the `/rest/api/uom/` f-string interpolates a bare name.
+    Concatenation, `.format`, an interpolated attribute or subscript, a
+    differently-spelled encoder, a qualified `module.quote(...)` call, and a name
+    rebound between the assignment and the f-string are all invisible here — the
+    same stated limits the type-segment and `?group=` walks carry. This raises
+    the cost of adding an unencoded site in the idiom the module uses; it is not
+    a proof that none can exist.
+    """
+    interpolations, _, quote_bound = _uom_path_sites()
+    unbound = sorted(
+        {
+            (function, name)
+            for function, name in interpolations
+            if name in _ENCODED_SEGMENT_ARGUMENTS
+            and name not in quote_bound.get(function, set())
+        }
+    )
+    assert not unbound, f"encoded uom segments interpolated unbound: {unbound}"
 
 
 # ---------------------------------------------------------------------------
