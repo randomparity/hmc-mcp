@@ -27,6 +27,33 @@ from hmc_mcp.xmlutil import localname
 BASE = "https://hmc.test"
 
 
+@pytest.mark.parametrize("host", ["hmc.test\rX-Injected: yes", "[not-an-ip]"])
+def test_constructor_invalid_url_is_non_retryable_hmc_error(host):
+    config = make_config(host=host)
+    with pytest.raises(HMCError) as exc_info:
+        HMCClient(config)
+
+    error = exc_info.value
+    assert not isinstance(error, HMCTransportError)
+    assert isinstance(error.__cause__, httpx.InvalidURL)
+    assert host not in str(error)
+    assert "\r" not in str(error)
+    assert "\n" not in str(error)
+
+
+def test_constructor_does_not_translate_other_exception_families(monkeypatch):
+    failure = ValueError("unrelated construction failure")
+
+    def fail_new_client(self, port):
+        raise failure
+
+    monkeypatch.setattr(HMCClient, "_new_http_client", fail_new_client)
+    with pytest.raises(ValueError) as exc_info:
+        HMCClient(make_config())
+
+    assert exc_info.value is failure
+
+
 @pytest.mark.asyncio
 async def test_implicit_port_falls_back_to_12443_after_logon_transport_failure():
     with respx.mock(assert_all_called=False) as router:

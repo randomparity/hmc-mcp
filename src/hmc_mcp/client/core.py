@@ -384,7 +384,12 @@ class HMCClient(
         # If the transport ever moves to a persistent shared client, this header would
         # stale when HMC_AGENT_ID changes; re-evaluate effective_audit_memento per-request
         # in that case.
-        self._http = self._new_http_client(config.port)
+        try:
+            self._http = self._new_http_client(config.port)
+        except httpx.InvalidURL as exc:
+            raise HMCError(
+                "HMC client refused: the base URL could not be built."
+            ) from exc
         self._rest_base_url = str(self._http.base_url).rstrip("/")
 
     def _new_http_client(self, port: int) -> httpx.AsyncClient:
