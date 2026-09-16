@@ -29,9 +29,15 @@ segment, a `quote(..., safe="")` binding for data — and AST walks in
 - A guard or binding must be recognisable to the AST walks: call `quote` as a
   bare name, never as a qualified attribute. Each task's Interfaces block names
   the existing symbols it borrows and the signature assumed for each.
-- Expected implementation size: 70–110 changed lines (M) — derived from the file
-  map below: two production lines in `core.py`, one helper widened and four tests
-  added in `test_request_path_safety.py`.
+- Expected implementation size: 200–260 changed lines (M) — derived from the file
+  map below: two production lines plus a docstring paragraph in `core.py`, and in
+  `test_request_path_safety.py` one helper widened, one shared path-capture
+  helper, the classification sets restructured, and five tests carrying 17
+  parametrized cases between them. Corrected from an initial 70–110, which
+  counted the tests but not their parametrization, the capture helper, or the
+  stated-coverage-limit docstrings this module's existing AST tests all carry;
+  the scope audit then added a fifth test for the refusal this change moves. The
+  frozen `M` band and its 250-line denominator are unchanged and still hold.
 
 ## File map
 
