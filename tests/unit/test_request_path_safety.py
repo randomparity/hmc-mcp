@@ -16,7 +16,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import inspect
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import httpx
 import pytest
@@ -950,3 +950,143 @@ def test_the_length_branch_precedes_the_character_branch():
         _reject_unknown_uom_type("resource_type", value)
 
     assert f"a value of {len(value)} characters" in str(error.value)
+
+
+# ---------------------------------------------------------------------------
+# The quick-property name segment (ADR 0146)
+# ---------------------------------------------------------------------------
+
+# The six quick-property names this repository passes. `rg -n -o
+# "quick/[A-Za-z0-9_.%-]*" src/ tests/ docs/` returns exactly these, beside a
+# bare `quick/` and two prose artifacts (`quick/All.`, `quick/PartitionState.`).
+_QUICK_PROPERTY_NAMES = (
+    "PartitionState",
+    "PartitionID",
+    "SystemType",
+    "NoSuchProperty",
+    "all",
+    "All",
+)
+
+_QUICK_PREFIX = f"/rest/api/uom/LogicalPartition/{UUID_A}/quick/"
+
+
+def _quick_property_path(client: HMCClient, property_name: str) -> str:
+    """The path `get_quick_property` hands the transport for *property_name*.
+
+    Records at `build_request` rather than after `send`, because a value that
+    re-points the request does so while the URL is being built.
+    """
+    requested: list[str] = []
+
+    def _record(method, path, **kwargs):
+        requested.append(path)
+        return httpx.Request(method, f"https://hmc.test:12443{path}")
+
+    client._http.build_request = _record  # type: ignore[method-assign]
+
+    async def _send(request, **kwargs):
+        return httpx.Response(204, request=request)
+
+    client._http.send = _send  # type: ignore[method-assign]
+
+    assert (
+        asyncio.run(client.get_quick_property("LogicalPartition", UUID_A, property_name))
+        is None
+    )
+    assert len(requested) == 1
+    return requested[0]
+
+
+@pytest.mark.parametrize(
+    "property_name",
+    [
+        # The `?` and `#` reproduction issue #818 carries, on the same line
+        # ADR 0143 hardened for the type segment beside it.
+        "PartitionState?group=None",
+        "PartitionState#/rest/api/web/HmcUser/root",
+        # A second path segment: not a retarget out of the resource, but not the
+        # property the caller named either.
+        "PartitionState/extra",
+        "Partition State",
+        "Partitioñ",
+        # Raw, this raises httpx.InvalidURL, which is neither httpx.TransportError
+        # nor httpx.HTTPError and so escapes `_request`'s two handlers entirely.
+        "PartitionState\r\nX-Evil: 1",
+    ],
+)
+def test_a_quick_property_name_cannot_re_point_the_request(property_name):
+    """The whole name stays inside the last path segment (ADR 0146).
+
+    Not asserted by comparing against `quote(...)` alone, which would only say
+    the client called the function this test expects. The two assertions below
+    are the property itself: nothing structural survives into the segment, and
+    the segment still decodes to exactly what the caller passed — so neither a
+    truncation nor an addition can pass.
+    """
+    path = _quick_property_path(_client(), property_name)
+
+    assert path.startswith(_QUICK_PREFIX)
+    segment = path[len(_QUICK_PREFIX) :]
+    assert not set(segment) & set("?#/\r\n")
+    assert unquote(segment) == property_name
+
+
+@pytest.mark.parametrize("property_name", _QUICK_PROPERTY_NAMES)
+def test_encoding_is_a_no_op_on_the_quick_property_names_this_client_passes(
+    property_name,
+):
+    """No wire-format change for any name this repository passes (ADR 0146).
+
+    Asserted against the built path, not against `quote(n, safe="") == n`: that
+    comparison imports no client code and cannot go red for any edit to
+    `core.py`, the removal of the binding it exists to protect included.
+    """
+    assert _quick_property_path(_client(), property_name) == _QUICK_PREFIX + property_name
+
+
+@pytest.mark.parametrize("property_name", ["..", ".", "../../x"])
+def test_a_dot_segment_quick_property_name_is_still_refused(property_name):
+    """The refusal identity that does *not* move (ADR 0146).
+
+    `quote` leaves `.` alone and turns `../../x` into `..%2F..%2Fx`, which the
+    waist guard's percent-decoding arm still reads as dot segments. Asserted
+    against the transport as well as the exception: a refusal that still built a
+    request would leave the path in the HMC's audit log.
+    """
+    client = _client()
+
+    def _forbidden(*args, **kwargs):
+        raise AssertionError("a refused quick-property name reached the transport")
+
+    client._http.build_request = _forbidden  # type: ignore[method-assign]
+
+    with pytest.raises(HMCError, match="refused"):
+        asyncio.run(client.get_quick_property("LogicalPartition", UUID_A, property_name))
+
+
+@pytest.mark.parametrize(
+    "property_name, expected_segment",
+    [
+        (
+            "..%2f..%2fweb%2fHmcUser%2froot",
+            "..%252f..%252fweb%252fHmcUser%252froot",
+        ),
+        ("%2e%2e", "%252e%252e"),
+    ],
+)
+def test_a_caller_percent_encoded_quick_property_name_reaches_the_transport_as_data(
+    property_name, expected_segment
+):
+    """The one refusal this change does move, pinned rather than left to the record.
+
+    A name the caller already percent-encoded is double-encoded here, so the
+    waist's single decode resolves `..%252f..` to `..%2f..` rather than to a dot
+    segment. Before the encoding both values decoded straight to dot segments and
+    were refused, so this is red against the unfixed code. Nothing is retargeted:
+    one decode no longer yields a dot segment, so the resolution that would have
+    re-pointed the request cannot be reached (ADR 0146, "One refusal moves").
+    """
+    path = _quick_property_path(_client(), property_name)
+
+    assert path == _QUICK_PREFIX + expected_segment
