@@ -281,6 +281,8 @@ def test_platform_update_rejects_a_non_uuid_system_before_transport():
         "/rest/api/uom/jobs/j-1",
         "/rest/api/uom/Job/abcd-1234",
         "/jobs/j-1",
+        "/jobs/j%2D1",
+        "/rest/api/uom/LogicalPartition/lpar%2D1/do/PowerOn/Job/j-1",
         # The shape the suite's own fixture uses, so the anchored pattern cannot
         # tighten past what `submit_job` actually returns.
         "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/job-uuid-999",
