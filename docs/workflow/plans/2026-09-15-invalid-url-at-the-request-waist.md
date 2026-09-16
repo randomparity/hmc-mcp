@@ -12,9 +12,9 @@ holds the decision and its grounds.
 ## Global Constraints
 
 - Bootstrap or re-sync a worktree with `just setup` only; never a bare `uv sync`,
-  `uv run` or `uv add`, which prune the `app` extra (AGENTS.md).
-- `just verify` is the full pre-push gate; `uv run --no-sync prek run --all-files`
-  covers the hook step CI runs and `just verify` does not.
+  `uv run` or `uv add`, which prune the `app` extra (AGENTS.md). `just verify` is
+  the full pre-push gate; `uv run --no-sync prek run --all-files` covers the hook
+  step CI runs and `just verify` does not.
 - `hmc_mcp.api` exports exactly six names (ADR 0118) — add no seventh. ADR 0148's
   filename and H1 must both carry `0148`. Line length 100 (ruff). No dependency.
 
@@ -35,19 +35,21 @@ three comment corrections) — the whole change.
 - *The waist's exception contract for an unbuildable URL, at `_request` and
   through the public `get_uom_path`.* Mode: focused-test. Observable: the type
   and message each call raises. Test: the parametrized case added by step 3. Red
-  before the source edit: `httpx.InvalidURL` propagates, so
-  `pytest.raises(HMCError)` fails with it. Green:
+  before the source edit: `httpx.InvalidURL` propagates, so `pytest.raises` fails
+  with it. Green:
   `uv run --no-sync pytest tests/unit/test_request_path_safety.py -k httpx_refuses_to_build -q`
 - *The two existing handlers still translate timeouts and transport errors, and
   the encoders still keep ADR 0145's and ADR 0146's values off the new handler.*
   Mode: focused-test. The existing cases in `tests/unit/test_client.py` and
-  `tests/unit/test_response_limits.py`, and
+  `tests/unit/test_response_limits.py`, plus
   `test_a_group_value_reaches_the_query_string_percent_encoded` and
-  `test_a_quick_property_name_cannot_re_point_the_request`, all stay green with
-  their assertions unchanged. Green: `uv run --no-sync pytest
-  tests/unit/test_request_path_safety.py tests/unit/test_client.py tests/unit/test_response_limits.py -q`
+  `test_a_quick_property_name_cannot_re_point_the_request`, stay green unchanged.
+  Green: `uv run --no-sync pytest tests/unit/test_request_path_safety.py tests/unit/test_client.py tests/unit/test_response_limits.py -q`
 - *ADR 0148's number matches its filename and H1.* Mode: focused-test. Green:
   `just adr-numbering`, exit 0 with no filenames printed.
+- *No comment still says the exception escapes `_request`.* Mode: focused-test.
+  Green: `rg -c "escapes ._request" tests/unit/test_request_path_safety.py`
+  exits 1 with no matches; before step 7 it exits 0 reporting two.
 
 **Steps.**
 
@@ -61,7 +63,6 @@ three comment corrections) — the whole change.
    # ---------------------------------------------------------------------------
    # The unbuildable URL (ADR 0148)
    # ---------------------------------------------------------------------------
-
 
    # Exactly the raw values the encoding tests above describe in prose and, before
    # ADR 0148, could only describe: each carries a character httpx refuses.
@@ -114,27 +115,26 @@ three comment corrections) — the whole change.
    ```python
            except httpx.InvalidURL as exc:
                # Not the path: it holds the character httpx refused and this
-               # message reaches logs. httpx's reason names that character
-               # through `!r`, so it renders escaped (ADR 0148).
+               # message reaches logs. httpx's reason renders that character
+               # through `!r`, so it comes back escaped (ADR 0148).
                raise HMCError(
                    f"{method.upper()} refused: the request URL could not be built. {exc}"
                ) from exc
    ```
 6. Re-run the command from step 4 and confirm all eight cases pass.
-7. Correct the three comments that stated this gap in prose, leaving every
-   surrounding assertion untouched: each clause claiming the exception escapes
-   `_request`'s handlers becomes a pointer to the new section. The sites are the
-   comment above `_GROUP_VALUES`, the one inside
-   `test_a_group_value_reaches_the_query_string_percent_encoded`, and the one in
-   `test_a_quick_property_name_cannot_re_point_the_request`'s parameters.
+7. Correct the three comments that stated this gap in prose — above
+   `_GROUP_VALUES`, inside
+   `test_a_group_value_reaches_the_query_string_percent_encoded`, and in
+   `test_a_quick_property_name_cannot_re_point_the_request`'s parameters — so
+   each points at the new section instead of claiming the escape. Leave every
+   surrounding assertion untouched.
 8. Run `just lint`, `just typecheck` and `just test` — exit 0 from each — then
    commit: `fix(client): refuse an unbuildable request URL as HMCError`.
 
 **Acceptance criteria.** `_request` has three `except` branches, the
 `httpx.InvalidURL` one raising `HMCError` and interpolating no `path`, and its
 docstring names the refusal; the new test holds ADR 0148's contract over all four
-unbuildable paths through both calls; no comment in the test module still claims
-the exception escapes `_request`; `just verify` and
-`uv run --no-sync prek run --all-files` both exit 0.
-**Rollback.** Revert the commit; no state or dependency changes.
-**Deferrals.** None.
+unbuildable paths through both calls; the `rg` check above finds no match; and
+`just verify` and `uv run --no-sync prek run --all-files` both exit 0.
+**Rollback.** Revert the commit; no state or dependency changes. **Deferrals.**
+None.

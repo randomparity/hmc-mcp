@@ -6,10 +6,9 @@ Issue #826. Decision: [ADR 0148](../../adr/0148-unbuildable-request-urls-raise-h
 
 `httpx.InvalidURL` shares no base with the two httpx families `_request`
 translates, so a path or query value carrying a character httpx refuses escapes
-the waist as a third-party type — through entry points whose error contract is
-the six names `hmc_mcp.api` exports (ADR 0118). ADR 0148 holds the evidence; three
-comments in `tests/unit/test_request_path_safety.py` state the gap in prose and
-assert nothing about it.
+the waist as a third-party type, through entry points whose error contract is the
+six names `hmc_mcp.api` exports (ADR 0118). ADR 0148 holds the evidence; three
+comments in `tests/unit/test_request_path_safety.py` state the gap in prose.
 
 ## Scope
 
@@ -36,22 +35,22 @@ encoding (owned by the merged #819 and #818).
   the character, because `_request` holds a path it did not build — accepted, as
   httpx's reason names the character and its position. `httpx.InvalidURL` raised
   outside `_request`, including from `HMCClient.__init__` on a control character
-  in `HMC_HOST`, is untouched — accepted, bounded to the waist. An over-long URL
-  (past httpx's 65536-character limit) becomes an `HMCError` — accepted, a
-  refusal either way.
+  in `HMC_HOST`, is untouched — accepted as bounded to the waist, and reported as
+  a follow-up candidate, presently unowned. An over-long URL (past httpx's
+  65536-character limit) becomes an `HMCError` — accepted, a refusal either way.
 - **Covered elsewhere.** ADR 0145 and ADR 0146 keep `group`/`property_name` off
   this handler; ADR 0039's `_reject_dot_segments` covers dot segments and only
   those, so no other path-form class is credited to it here.
 
 ## Threat model
 
-- **Boundaries.** None added or widened. This is the failure edge of one existing
+- **Boundaries.** None added or widened: the failure edge of one existing
   boundary — caller-supplied path and query values entering `httpx.build_request`
   — plus one new destination, the exception message, which reaches logs.
 - **Actors.** The untrusted input is those argument values. The HMC is not an
-  input here: `follow_redirects` is `False`, and httpx converts an `InvalidURL`
-  from a `Location` header into `RemoteProtocolError`, which the existing handler
-  already catches.
+  input here: `follow_redirects` keeps httpx 0.28.1's `False` default, unset by
+  this client, and httpx maps an `InvalidURL` from a `Location` header to
+  `RemoteProtocolError`, which the existing handler catches.
 - **Control.** Refuse and translate; repair no value. The message omits the path
   and quotes only httpx's reason, which renders the rejected character escaped.
 - **Out of scope.** Whether a value should have been encoded before the waist
@@ -60,21 +59,22 @@ encoding (owned by the merged #819 and #818).
 ## Success
 
 1. `_request` raises `HMCError` — not `httpx.InvalidURL`, not
-   `HMCTransportError` — for a path or query value httpx refuses to build a URL
-   from, for each of CR, LF and tab.
+   `HMCTransportError` — for a path or query value httpx refuses, for CR, LF, tab.
 2. That message contains the HTTP method and httpx's reason, and neither the path
    nor a CR, LF or tab.
 3. The two existing handlers are unchanged and still cover timeouts and transport.
-4. The values ADR 0145 and ADR 0146 govern — the `_GROUP_VALUES` tuple and
+4. The values ADR 0145 and ADR 0146 govern — `_GROUP_VALUES` and
    `test_a_quick_property_name_cannot_re_point_the_request`'s parameters — still
    reach the wire encoded, unchanged by this branch.
 5. ADR 0148 exists and `just adr-numbering` passes.
+6. No comment in the test module still says the exception escapes `_request`.
 
 ## Validation
 
 Every criterion is machine-checkable; the plan's Verification inventory holds each
 one's mode, test, expected red, and green command. Criteria 1 and 2 are one new
 `tests/unit/test_request_path_safety.py` case parametrized over CR, LF and tab and
-over both `_request` and the public `get_uom_path`; criterion 3 is the existing
+over both `_request` and the public `get_uom_path`; criterion 3 the existing
 transport cases in `tests/unit/test_client.py` and
-`tests/unit/test_response_limits.py`; criterion 4 the two existing encoder tests.
+`tests/unit/test_response_limits.py`; criterion 4 the two existing encoder tests;
+criteria 5 and 6 `just adr-numbering` and an `rg` scan of the test module.

@@ -9,10 +9,10 @@ Accepted (2026-09-15)
 `HMCClient._request` is the waist every REST call passes through, and it
 translates exactly two httpx exception families: `httpx.TimeoutException` and
 `httpx.TransportError`, both to `HMCTransportError`. `httpx.InvalidURL` descends
-from neither — its MRO is `(InvalidURL, Exception,
-BaseException, object)` on the locked httpx 0.28.1 — so it escapes `_request`
-untranslated and a caller holding the six-name `hmc_mcp.api` contract (ADR 0118)
-sees a third-party type. Verified on that httpx, `build_request("GET",
+from neither — its MRO is `(InvalidURL, Exception, BaseException, object)` on the
+locked httpx 0.28.1 — so it escapes `_request` untranslated and a caller holding
+the six-name `hmc_mcp.api` contract (ADR 0118) sees a third-party type. Verified
+on that httpx, `build_request("GET",
 "/rest/api/uom/LogicalPartition?group=None\rX-Evil: 1")` raises `InvalidURL:
 Invalid non-printable ASCII character in URL, '\r' at position 41.` ADR 0143, ADR
 0145 and ADR 0146 each hardened one interpolated argument against this class and
@@ -37,9 +37,9 @@ fit, not a live defect.
 
 Never the path, because the value reaching this handler is the one httpx rejected
 as non-printable, and interpolating it would carry a caller's CR or LF into a
-message and from there into logs. httpx's reason is safe to quote: its
-non-printable branch renders the offending character through `!r`, and its other
-branches interpolate only httpx-internal component names.
+message and from there into logs. httpx's reason is safe to quote: it renders a
+rejected character, host or port through `!r` and otherwise interpolates only its
+own component names — never the path.
 
 ## Consequences
 
@@ -58,10 +58,10 @@ branches interpolate only httpx-internal component names.
 
 ## Considered & rejected
 
-- **Keep closing one argument at a time.** verified: at `c856827e`,
-  `get_uom_path` hands a caller-supplied whole path to `_get` unchanged, so
-  neither ADR 0145's nor ADR 0146's encoder covers it. judgment: an unbounded
-  series of per-argument guards compensating for one shared function.
+- **Keep closing one argument at a time.** verified: at `c856827e`, `get_uom_path`
+  hands a caller-supplied whole path to `_get` unchanged, so neither ADR 0145's
+  nor ADR 0146's encoder covers it. judgment: an unbounded series of per-argument
+  guards compensating for one shared function.
 - **Translate to `HMCTransportError`, whether as its own branch or by widening
   the existing handler to `except (httpx.TransportError, httpx.InvalidURL)`.**
   verified: the widened form additionally inherits that handler's interpolation
