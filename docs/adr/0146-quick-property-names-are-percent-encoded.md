@@ -79,7 +79,7 @@ The site binds the encoded result to a local, the shape `search_uom` already
 uses one method away for this same argument:
 
 ```python
-_reject_dot_segments("GET", property_name)
+_reject_dot_segments("GET", f"/{property_name}")
 encoded_property = quote(property_name, safe="")
 path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{encoded_property}"
 ```
@@ -91,9 +91,19 @@ segment — it would be sent where today it is refused. Encoding alone therefore
 trades a refusal for a claim about how many times the HMC's web stack decodes a
 path. That is the claim `_reject_dot_segments`' own body records having removed:
 "an assumption about how the HMC's own web stack decodes a path — untestable from
-here, and the wrong way round for a fail-closed check." Running the predicate on
-the argument first keeps the refusal exactly where it was, and it is a guard on
-path *form*, which is its stated contract rather than an extension of it.
+here, and the wrong way round for a fail-closed check." Running the predicate first keeps the refusal
+exactly where it was, and it is a guard on path *form*, which is its stated
+contract rather than an extension of it.
+
+The separator in `f"/{property_name}"` is load-bearing, and the security pass on
+this branch is what found it. `_reject_dot_segments` takes a path and opens with
+`urlparse(path).path if "://" in path else path`. Handed the bare segment
+`x://%2e%2e`, `urlparse` reads `x` as a scheme and `%2e%2e` as a netloc and
+returns an empty path, so both of the guard's arms scan an empty string and the
+call returns silently — while the raw form of that same name *was* refused at the
+waist before this change. Passing the path the segment forms keeps the value in
+the component the guard actually scans. The alternative, a segment mode on the
+shared predicate, is recorded below.
 
 Reusing `search_uom`'s `encoded_property` name is deliberate: the classification
 set in `tests/unit/test_request_path_safety.py` loses `property_name` and gains
@@ -181,6 +191,13 @@ called. The walk also reaches `search_uom`'s existing `encoded_property` and
   unchanged, so the escape is not specific to `property_name`. judgment: a
   transport-waist change outside this issue's surface, already reported as a
   follow-up candidate by ADR 0145 and not claimed here.
+- **Give `_reject_dot_segments` an explicit segment mode and call that.**
+  verified: the `"://"` branch is the only part of the predicate that is
+  path-specific, and bypassing it is what a segment mode would do. judgment:
+  a keyword on a guard every request passes through, to serve one call site, where
+  handing it the path the segment forms needs no change to a shared predicate and
+  no second contract to keep true. Reconsider if a second segment-level caller
+  appears — that is the point at which one path-shaped call site becomes a rule.
 - **Encode only, and accept that a pre-encoded dot segment stops being refused.**
   verified: `_reject_dot_segments("GET", v)` at `856e3aec` refuses
   `"..%2f..%2fweb%2fHmcUser%2froot"` and `"%2e%2e"` on its percent-decoding arm,

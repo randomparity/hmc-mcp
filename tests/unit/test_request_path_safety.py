@@ -1130,7 +1130,20 @@ def test_a_dot_segment_quick_property_name_is_still_refused(property_name):
 
 @pytest.mark.parametrize(
     "property_name",
-    ["..%2f..%2fweb%2fHmcUser%2froot", "%2e%2e", "%2E%2E", "..%2F..%2Fx"],
+    [
+        "..%2f..%2fweb%2fHmcUser%2froot",
+        "%2e%2e",
+        "%2E%2E",
+        "..%2F..%2Fx",
+        # Shaped like a URL. `_reject_dot_segments` takes a *path*, and its first
+        # statement is `urlparse(path).path if "://" in path else path` — handed a
+        # bare segment carrying `://`, that branch parses `x` as a scheme and
+        # `%2e%2e` as a netloc, leaving an empty path for both arms to scan. The
+        # segment is therefore handed to the predicate as the path it forms.
+        "x://%2e%2e",
+        "x://%2E%2E",
+        "x://%2e%2e/y",
+    ],
 )
 def test_a_caller_percent_encoded_dot_segment_name_is_refused_too(property_name):
     """Encoding must not buy a dot segment passage past the waist (ADR 0146).

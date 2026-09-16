@@ -21,7 +21,7 @@ record the decision as
 make the classification non-vacuous rather than merely renamed.
 
 - `src/hmc_mcp/client/core.py` — `get_quick_property` calls
-  `_reject_dot_segments("GET", property_name)`, then binds
+  `_reject_dot_segments("GET", f"/{property_name}")`, then binds
   `encoded_property = quote(property_name, safe="")` and interpolates that.
   Reuses the local name `search_uom` already uses for this same argument, so the
   segment inventory shrinks by one entry and gains none.
@@ -101,8 +101,10 @@ client's own legitimate paths).
    encoded-class segment interpolated into a `/rest/api/uom/` f-string in
    `core.py` is `quote(..., safe="")`-bound in its own function.
 4. Every name `_reject_dot_segments` refused before is still refused with
-   `HMCError` and no request built — `..`, `.`, `../../x`, and the pre-encoded
-   `..%2f..%2fweb` and `%2e%2e` that encoding alone would have let through.
+   `HMCError` and no request built — `..`, `.`, `../../x`, the pre-encoded
+   `..%2f..%2fweb` and `%2e%2e` that encoding alone would have let through, and
+   the URL-shaped `x://%2e%2e` that a bare-segment guard call would have let
+   through.
 5. Removing the `quote` binding turns items 1 and 3 red; removing the
    `_reject_dot_segments` call turns item 4 red.
 6. `just verify` and `uv run --no-sync prek run --all-files` exit 0.
@@ -125,8 +127,10 @@ client's own legitimate paths).
 - **Contract: encoding buys no dot segment a passage.** Mode: `focused-test`.
   `…::test_a_caller_percent_encoded_dot_segment_name_is_refused_too` — asserts
   `HMCError` and no request built for `..%2f..%2fweb%2fHmcUser%2froot`, `%2e%2e`,
-  `%2E%2E` and `..%2F..%2Fx`. Red with the site guard removed, where all four
-  reach the transport double-encoded. Same green command.
+  `%2E%2E`, `..%2F..%2Fx`, `x://%2e%2e`, `x://%2E%2E` and `x://%2e%2e/y`. Red with
+  the site guard removed (the first four reach the transport double-encoded) and
+  red again with the guard called on the bare segment instead of the path it forms
+  (the last three do). Same green command.
 - **Contract: the segment classification.** Mode: `focused-test`.
   `…::test_every_encoded_uom_segment_is_quote_bound` plus the existing
   `test_every_uom_path_interpolation_is_a_known_argument` — the first is red
