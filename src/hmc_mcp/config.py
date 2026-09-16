@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlsplit
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _logger = logging.getLogger(__name__)
@@ -169,15 +169,22 @@ class HMCConfig(BaseSettings):
     )
     audit_memento: str = Field(
         default="hmc-mcp",
-        description="Value sent in the X-Audit-Memento header (shows up in HMC audit logs)",
+        description=(
+            "Value sent in the X-Audit-Memento header (shows up in HMC audit "
+            "logs). Must be printable ASCII (U+0020 through U+007E); control "
+            "characters and non-ASCII values are refused at construction."
+        ),
     )
     schema_version: str = Field(
         default="",
         description=(
             "Schema version sent as X-HMC-Schema-Version request header "
             "(e.g. 'V1_0'). Empty string disables the header (default). "
-            "HMC V8/V9 targets do not need this; uom documents already declare "
-            "schemaVersion=V1_0. Set it only to pin negotiation explicitly."
+            "Must be printable ASCII (U+0020 through U+007E) when set; "
+            "control characters and non-ASCII values are refused at "
+            "construction. HMC V8/V9 targets do not need this; uom documents "
+            "already declare schemaVersion=V1_0. Set it only to pin "
+            "negotiation explicitly."
         ),
     )
     agent_id: str | None = Field(
@@ -302,6 +309,21 @@ class HMCConfig(BaseSettings):
     def iso_url_allowlist_entries(self) -> tuple[tuple[str, int | None], ...]:
         """The allowlist as ``(host, port_or_None)`` pairs; empty when unset."""
         return parse_iso_url_allowlist(self.iso_url_allowlist)
+
+    @field_validator("schema_version", "audit_memento")
+    @classmethod
+    def _validate_header_value(cls, v: str, info: ValidationInfo) -> str:
+        """Both fields reach HTTP request headers: reject non-printable ASCII
+        at construction instead of h11's later header refusal, which httpx
+        classifies as a retryable ``TransportError`` (issue #839, ADR 0153)."""
+        if not v.isascii() or any(
+            ord(character) < 0x20 or ord(character) == 0x7F for character in v
+        ):
+            raise ValueError(
+                f"{info.field_name} contains non-ASCII or non-printable characters; "
+                "use only printable ASCII (U+0020 through U+007E)"
+            )
+        return v
 
     @field_validator("agent_id")
     @classmethod

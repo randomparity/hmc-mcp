@@ -21,13 +21,24 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | `HMC_TIMEOUT` | float | `60.0` | HTTP request timeout in seconds |
 | `HMC_MAX_RESPONSE_BYTES` | positive integer | `33554432` (32 MiB) | Maximum HMC REST response size in bytes, including successful and error replies. Exact-boundary responses are accepted; larger declared or streamed bodies are refused. Raise for unusually large inventories only when memory permits: this bounds response bytes, not total process memory. Zero is invalid and cannot disable the ceiling. TOML profile key: `max_response_bytes`. Error-body diagnostics keep their separate 4096-byte cap |
 | `HMC_SSH_TIMEOUT` | float | `300.0` | SSH command timeout in seconds. SSH-backed HMC CLI operations (e.g. `bkprofdata`/`rstprofdata`) are significantly slower than REST calls |
-| `HMC_AUDIT_MEMENTO` | string | `hmc-mcp` | Value sent in the `X-Audit-Memento` request header; appears in HMC audit logs |
+| `HMC_AUDIT_MEMENTO` | string | `hmc-mcp` | Value sent in the `X-Audit-Memento` request header; appears in HMC audit logs. Must contain only printable ASCII (U+0020 through U+007E); an empty string is accepted. See header configuration note below |
 | `HMC_AGENT_ID` | string | _(none)_ | Per-agent identifier for multi-agent LPAR ownership. When set, the `X-Audit-Memento` header is sent as `hmc-mcp:<agent_id>` and new LPARs are stamped with `[hmc-mcp owner:<agent_id> created:<date>]` in their description field. Must be 1–64 printable ASCII characters; no commas, `=`, square brackets, forward slashes, colons, or spaces; must not be the reserved value `hmc-mcp` (the default fallback used when no agent_id is set). **Note:** when `HMC_AGENT_ID` is set, `HMC_AUDIT_MEMENTO` is ignored — the prefix `hmc-mcp` is always used. |
 | `HMC_AUTHORIZE_POWER_OPERATIONS` | bool | `false` | Enforce the ADR 0011 ownership guard on LPAR power operations. Off by default, so powering a partition another agent owns is permitted and ownership stays advisory on this path. When `true`, `power_lpar` (and everything that delegates to it: `hmc_power_on_lpar`, `hmc_power_off_lpar`, `hmc-mcp lpars power-on/power-off`) reads the ownership token before submitting the job, requires a managed-system selector, and refuses a foreign-owned partition unless the caller passes `ownership_override`. See the note below and ADR 0092 §4 |
 | `HMC_ISO_URL_ALLOWLIST` | string | _(empty — refuses every URL)_ | Comma-separated hosts that `hmc_upload_iso` / `hmc-mcp storage upload-iso` may download an ISO from, each written as `host` or `host:port` (no scheme, no path) — e.g. `iso.example.internal,localhost:18765`. An entry without a port permits any port on that host. **Empty is fail-closed: every URL is refused**, because the download runs from the MCP server's network position and there is no safe default destination. See the note below and ADR 0050 |
-| `HMC_SCHEMA_VERSION` | string | _(unset)_ | Pins the `X-HMC-Schema-Version` request header on `GET` requests only. **Leave unset for normal operation** — see note below. |
+| `HMC_SCHEMA_VERSION` | string | _(unset)_ | Pins the `X-HMC-Schema-Version` request header on `GET` requests only. Must contain only printable ASCII (U+0020 through U+007E); an empty string omits the header. **Leave unset for normal operation** — see note below. |
 
 ## Notes
+
+- **Header configuration** (`HMC_AUDIT_MEMENTO`, `HMC_SCHEMA_VERSION`): control
+  characters (including tabs and line breaks), DEL, and non-ASCII characters are
+  refused when `HMCConfig` is constructed, before a request is sent. The
+  validation error names the field and directs the caller to use printable ASCII.
+  This applies to environment and profile values, direct construction, and
+  `HMCConfig.from_mapping`. An audit memento is validated even when `HMC_AGENT_ID`
+  overrides its effective header value. Empty strings, spaces, and printable
+  punctuation remain accepted; this character-range check does not validate HMC
+  semantics or the full HTTP header grammar. `HMC_AGENT_ID` retains its separate
+  ownership-token restrictions listed above. See [ADR 0153](adr/0153-printable-ascii-header-configuration.md).
 
 - **REST port** (`HMC_PORT`): when omitted, logon starts on port 443 and retries
   once on port 12443 only after a transport failure. Any configured value is an
