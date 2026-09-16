@@ -16,6 +16,7 @@ from types import MappingProxyType
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 from hmc_mcp import config as config_module
 from hmc_mcp.config import (
@@ -531,6 +532,47 @@ def test_agent_id_from_env(monkeypatch):
     cfg = HMCConfig()
     assert cfg.agent_id == "env-agent"
     assert cfg.effective_audit_memento == "hmc-mcp:env-agent"
+
+
+# ---------------------------------------------------------------------------
+# Printable-ASCII header configuration (issue #839, ADR 0153)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", ["\x00", "\r", "\n", "\t", "\x1f", "\x7f", "V1_\u00e9"])
+@pytest.mark.parametrize("field", ["schema_version", "audit_memento"])
+@pytest.mark.parametrize("source", ["constructor", "mapping"])
+def test_header_config_rejects_non_printable_ascii(field, bad, source):
+    """Controls, DEL and non-ASCII are refused at construction.
+
+    The constructor path starts from the isolated defaults of
+    ``from_mapping({})`` so no ambient ``HMC_*`` variable supplies any other
+    field; the mapping path is isolated by construction (ADR 0096).
+    """
+    base = HMCConfig.from_mapping({}).model_dump()
+    with pytest.raises(ValidationError) as caught:
+        if source == "mapping":
+            HMCConfig.from_mapping({field: bad})
+        else:
+            HMCConfig(**{**base, field: bad})
+    errors = caught.value.errors()
+    assert [error["loc"] for error in errors] == [(field,)]
+    assert "printable ASCII" in errors[0]["msg"]
+
+
+def test_header_config_accepts_printable_ascii_and_empty():
+    accepted = "".join(chr(codepoint) for codepoint in range(0x20, 0x7F))
+    for field in ("schema_version", "audit_memento"):
+        assert HMCConfig.from_mapping({field: accepted}) is not None
+        assert HMCConfig.from_mapping({field: ""}) is not None
+
+
+def test_header_config_rejects_overridden_audit_memento():
+    # agent_id overrides the effective header value, but the stored field is
+    # still validated at construction: the defect is refused where introduced.
+    with pytest.raises(ValidationError) as caught:
+        HMCConfig.from_mapping({"agent_id": "alice", "audit_memento": "bad\rvalue"})
+    assert [error["loc"] for error in caught.value.errors()] == [("audit_memento",)]
 
 
 # ---------------------------------------------------------------------------
