@@ -1877,6 +1877,48 @@ async def test_a_non_job_href_is_refused_naming_job_href(mock_hmc, method):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get_job_entry", "delete_job"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/rest/api/uom/jobs/j%2D1",
+        "/rest/api/uom/Job/j%2D1",
+        "/rest/api/uom/LogicalPartition/lpar%2D1/do/PowerOn/Job/j-1",
+    ],
+)
+async def test_job_methods_preserve_non_structural_encoding(mock_hmc, method, path):
+    route = mock_hmc.route(url=f"https://hmc.test{path}", method__in=("GET", "DELETE")).mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        result = await getattr(hmc, method)(
+            "response-job-id", job_href=f"https://hmc.test{path}?group=None#self"
+        )
+
+    assert route.called
+    assert route.calls.last.request.url.raw_path.decode() == path
+    if method == "get_job_entry":
+        assert result["Resource"]["Status"] == "RUNNING"
+    else:
+        assert result is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get_job_entry", "delete_job"])
+async def test_job_methods_require_literal_collection_spelling(mock_hmc, method):
+    sent = mock_hmc.route(method__in=("GET", "DELETE")).mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match=r"^job_href refused:"):
+            await getattr(hmc, method)("j-1", job_href="/rest/api/uom/job%73/j-1")
+
+    assert not sent.called
+
+
+@pytest.mark.asyncio
 async def test_wait_for_job_uses_href_when_provided(mock_hmc):
     """wait_for_job passes job_href to get_job so polling uses the SELF link."""
     href_route = mock_hmc.get(_JOB_HREF).mock(

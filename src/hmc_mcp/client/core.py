@@ -228,13 +228,9 @@ def _reject_dot_segments(method: str, path: str) -> None:
 # *last two* segments rather than tested for membership: membership let
 # an unrelated `/rest/api/web/Logon/jobs` path through, because it contains the word.
 #
-# The identifier segment excludes `?` and `#` (ADR 0149). Both are `[^/]`, so an
-# identifier carrying one matched: httpx turns the first into a query and drops
-# the second, which made `delete_job("j#f")` delete job `j`. Only that segment is
-# narrowed — `urlparse` strips a query and a fragment before this sees a
-# `job_href`, and the `job_id` branch's prefix is a literal, so no earlier segment
-# can carry a raw one.
-_JOB_PATH = re.compile(r"^(?:/[^/]+)*/(?:Job|jobs)/[^/?#]+$")
+# Both raw and decoded forms use this grammar. A decoded query or fragment
+# delimiter is unsafe in a prefix too, not just in the identifier (ADR 0152).
+_JOB_PATH = re.compile(r"(?:/[^/?#]+)*/(?:Job|jobs)/[^/?#]+")
 
 
 def _reject_non_job_path(path: str, argument: str) -> None:
@@ -263,15 +259,17 @@ def _reject_non_job_path(path: str, argument: str) -> None:
     ``targets = "all-targets"`` grants them — a grant that means "any job".
     After this check the tool can reach exactly what that grant says.
 
-    A second residual is open and unowned (ADR 0149): the match is on the decoded
-    path, and ``unquote`` introduces ``/``, so a decode can *manufacture* the
-    trailing ``/Job/{id}`` this pattern looks for —
-    ``/rest/api/uom/HmcUser/root%2FJob%2Fx`` passes while httpx sends the raw
-    string. Its cost is bounded only for a server that splits the query before
-    percent-decoding the path; one that decodes first can be steered to the
-    addressed record on a single decode. The caller already holds the grant above.
+    Raw and once-decoded forms must agree on segment boundaries and both name
+    a job resource (ADR 0152). Decoding cannot remove a literal slash, so equal
+    slash counts rule out newly introduced separators without rewriting the
+    path. Non-structural percent-encoded data remains supported.
     """
-    if not _JOB_PATH.match(unquote(path)):
+    decoded = unquote(path)
+    if (
+        decoded.count("/") != path.count("/")
+        or not _JOB_PATH.fullmatch(path)
+        or not _JOB_PATH.fullmatch(decoded)
+    ):
         raise HMCError(
             f"{argument} refused: it does not address a job resource. Pass the "
             "UUID or JobID as job_id, or the SELF link returned when the job "
@@ -1479,8 +1477,9 @@ class HMCClient(
         the HMC (see issue #95).
 
         Either argument produces one path, and that path is refused as
-        :class:`HMCError` when it does not address a job — the same refusal
-        ``delete_job`` applies (ADR 0149).
+        :class:`HMCError` unless its raw and decoded forms preserve the job
+        resource and segment boundaries — the same refusal ``delete_job``
+        applies (ADR 0152).
         """
         path = urlparse(job_href).path if job_href else f"/rest/api/uom/jobs/{job_id}"
         _reject_non_job_path(path, "job_href" if job_href else "job_id")
@@ -1536,7 +1535,11 @@ class HMCClient(
         *,
         job_href: str | None = None,
     ) -> None:
-        """Delete a job, preferring its SELF link when available."""
+        """Delete a job, preferring its SELF link when available.
+
+        Refuse paths whose raw and decoded forms disagree on job-resource
+        structure, as ``get_job_entry`` does (ADR 0152).
+        """
         path = urlparse(job_href).path if job_href else f"/rest/api/uom/jobs/{job_id}"
         _reject_non_job_path(path, "job_href" if job_href else "job_id")
         await self._delete(path)
