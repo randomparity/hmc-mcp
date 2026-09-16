@@ -33,7 +33,7 @@ from hmc_mcp.client.core import (
     _reject_non_job_path,
 )
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCError
+from hmc_mcp.errors import HMCError, HMCTransportError
 
 UUID_A = "12345678-1234-1234-1234-1234567890ab"
 UUID_B = "ABCDEFAB-CDEF-CDEF-CDEF-ABCDEFABCDEF"
@@ -584,8 +584,8 @@ def test_uom_headers_passes_a_valid_type_through(resource_type, expected):
 # identity function on each — so for those rows the expected path below pins the
 # wire form as unchanged. The rest are the characters ADR 0145 governs: `&` and
 # `=` append a parameter this client did not name, `#` truncates the value, and
-# CR/LF raise `httpx.InvalidURL`, which is neither a `TransportError` nor an
-# `HTTPError` and so escapes `_request`'s handlers entirely.
+# CR/LF raise `httpx.InvalidURL`, which `_request` refuses as `HMCError`
+# (ADR 0148) — asserted under *The unbuildable URL* at the end of this module.
 _GROUP_VALUES = (
     "RemoteAccess",
     "ViosSCSIMapping",
@@ -635,7 +635,8 @@ def test_a_group_value_reaches_the_query_string_percent_encoded(
     asyncio.run(getattr(client, method)(*args, group=group))
 
     assert requested == [f"{prefix}?group={quote(group, safe='')}"]
-    # Raw, a CR or LF here raises httpx.InvalidURL rather than returning a URL.
+    # Raw, a CR or LF here raises httpx.InvalidURL rather than returning a URL;
+    # ADR 0148 translates that at the waist, asserted at the end of this module.
     params = httpx.URL(f"https://hmc.test:12443{requested[0]}").params
     assert params.get_list("group") == [group]
     assert len(params) == 1
@@ -1069,8 +1070,8 @@ def _quick_property_path(client: HMCClient, property_name: str) -> str:
         "PartitionState/extra",
         "Partition State",
         "Partitioñ",
-        # Raw, this raises httpx.InvalidURL, which is neither httpx.TransportError
-        # nor httpx.HTTPError and so escapes `_request`'s two handlers entirely.
+        # Raw, this raises httpx.InvalidURL; ADR 0148 translates it to HMCError
+        # at the waist, which encoding here keeps unreached.
         "PartitionState\r\nX-Evil: 1",
     ],
 )
@@ -1180,3 +1181,48 @@ def test_a_caller_percent_encoded_dot_segment_name_is_refused_too(property_name)
 
     with pytest.raises(HMCError, match="refused"):
         asyncio.run(client.get_quick_property("LogicalPartition", UUID_A, property_name))
+
+
+# ---------------------------------------------------------------------------
+# The unbuildable URL (ADR 0148)
+# ---------------------------------------------------------------------------
+
+# Exactly the raw values the encoding tests above describe in prose and, before
+# ADR 0148, could only describe: each carries a character httpx refuses.
+_UNBUILDABLE_PATHS = (
+    "/rest/api/uom/LogicalPartition?group=None\rX-Evil: 1",
+    "/rest/api/uom/LogicalPartition?group=None\nX-Evil: 1",
+    f"/rest/api/uom/LogicalPartition/{UUID_A}/quick/PartitionState\r\nX-Evil: 1",
+    f"/rest/api/uom/LogicalPartition/{UUID_A}\tX-Evil: 1",
+)
+
+# The waist, and the public method ADR 0145 and ADR 0146 recorded as still
+# reaching it: `get_uom_path` hands its path to `_get` unchanged.
+_UNBUILDABLE_CALLS = (
+    ("_request", lambda c, p: c._request("GET", p)),
+    ("get_uom_path", lambda c, p: c.get_uom_path(p, "LogicalPartition")),
+)
+
+
+@pytest.mark.parametrize(
+    "call", [c for _, c in _UNBUILDABLE_CALLS], ids=[n for n, _ in _UNBUILDABLE_CALLS]
+)
+@pytest.mark.parametrize("path", _UNBUILDABLE_PATHS)
+def test_a_url_httpx_refuses_to_build_is_refused_as_an_hmc_error(call, path):
+    """The waist's exception contract holds for a URL httpx will not build."""
+    client = _client()
+
+    with pytest.raises(HMCError) as error:
+        asyncio.run(call(client, path))
+
+    # `HMCTransportError` subclasses `HMCError`, so `pytest.raises` alone would
+    # accept the classification ADR 0148 rejects. httpx's reason is carried,
+    # and the cause chain with it, without pinning httpx's wording; the path is
+    # not, because this message reaches logs and the path holds the control
+    # character httpx rejected.
+    assert not isinstance(error.value, HMCTransportError)
+    message = str(error.value)
+    assert message.startswith("GET refused:")
+    assert str(error.value.__cause__) in message
+    assert path not in message
+    assert not set(message) & set("\r\n\t")

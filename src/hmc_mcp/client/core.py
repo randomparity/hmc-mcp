@@ -531,6 +531,10 @@ class HMCClient(
         This shared guard prevents interpolated resource identifiers from
         retargeting an authorized request when httpx resolves the path against
         ``base_url`` (ADR 0039).
+
+        A path httpx refuses to build a URL from is refused as
+        :class:`HMCError`, not :class:`HMCTransportError`: nothing was
+        transported, and no other route can build it either (ADR 0148).
         """
         _reject_dot_segments(method, path)
         try:
@@ -539,6 +543,13 @@ class HMCClient(
             request = self._http.build_request(method, path, headers=headers, **kwargs)
             response = await self._http.send(request, stream=True)
             return await _read_bounded_response(response, self.config.max_response_bytes)
+        except httpx.InvalidURL as exc:
+            # Not the path: it holds the character httpx refused and this
+            # message reaches logs. httpx's reason renders that character
+            # through `!r`, so it comes back escaped (ADR 0148).
+            raise HMCError(
+                f"{method.upper()} refused: the request URL could not be built. {exc}"
+            ) from exc
         except httpx.TimeoutException as exc:
             timeout = f"{self.config.timeout:g}"
             raise HMCTransportError(
