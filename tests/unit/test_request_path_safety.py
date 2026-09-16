@@ -287,7 +287,7 @@ def test_platform_update_rejects_a_non_uuid_system_before_transport():
     ],
 )
 def test_a_job_link_is_accepted(path):
-    assert _reject_non_job_path(path) is None
+    assert _reject_non_job_path(path, "job_href") is None
 
 
 @pytest.mark.parametrize(
@@ -311,7 +311,7 @@ def test_a_non_job_link_is_refused(path):
     this an href of `/rest/api/web/HmcUser/root` returns the root account record
     through a tool classified `read` on target kind `job`."""
     with pytest.raises(HMCError, match="does not address a job"):
-        _reject_non_job_path(path)
+        _reject_non_job_path(path, "job_href")
 
 
 # ---------------------------------------------------------------------------
