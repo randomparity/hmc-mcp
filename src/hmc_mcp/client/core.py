@@ -1100,6 +1100,7 @@ class HMCClient(
         # over-long value would otherwise pay a discovery request before being
         # refused. Cheap local argument checks go together (ADR 0150).
         _reject_over_long_path_value("property_value", property_value)
+        _reject_over_long_path_value("property_name", property_name)
         if validate:
             defined = await self._defined_search_parameter_names(resource_type)
             if defined is not None and property_name not in defined:

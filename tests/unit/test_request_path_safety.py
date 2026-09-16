@@ -1233,6 +1233,31 @@ def test_a_url_httpx_refuses_to_build_is_refused_as_an_hmc_error(call, path):
 
 
 
+@pytest.mark.parametrize("validate", [False, True])
+def test_over_long_search_property_name_is_refused_before_io(validate):
+    client, requested = _recording_client()
+    name = "A" * (_MAX_UOM_PATH_VALUE_LENGTH + 1)
+
+    with pytest.raises(ValueError) as error:
+        asyncio.run(client.search_uom("ManagedSystem", name, "value", validate=validate))
+
+    assert requested == []
+    assert "property_name" in str(error.value)
+    assert name not in str(error.value)
+
+
+@pytest.mark.parametrize("character", ["A", "\U0001f600"])
+def test_search_property_name_at_length_bound_is_accepted(character):
+    client, requested = _recording_client()
+    name = character * _MAX_UOM_PATH_VALUE_LENGTH
+
+    asyncio.run(client.search_uom("ManagedSystem", name, "value"))
+
+    assert requested == [
+        f"/rest/api/uom/ManagedSystem/search/({quote(name, safe='')}==value)"
+    ]
+
+
 def test_a_search_value_at_the_length_bound_is_accepted():
     """The bound is inclusive: exactly `_MAX_UOM_PATH_VALUE_LENGTH` is still sent."""
     client, requested = _recording_client()
