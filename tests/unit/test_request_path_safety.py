@@ -1143,6 +1143,13 @@ def test_a_dot_segment_quick_property_name_is_still_refused(property_name):
         "x://%2e%2e",
         "x://%2E%2E",
         "x://%2e%2e/y",
+        # And the other half of the same hazard: a name starting with `/` makes
+        # the prefixed value start `//`, which `urlparse` reads as a netloc
+        # rather than a path. Both halves are why the value is handed over as
+        # the path it actually occupies, with a non-empty first segment.
+        "/..%2f://",
+        "/..%2fx://",
+        "/..%2F://",
     ],
 )
 def test_a_caller_percent_encoded_dot_segment_name_is_refused_too(property_name):

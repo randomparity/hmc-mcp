@@ -862,12 +862,14 @@ class HMCClient(
         # times the HMC decodes a path — the assumption the guard's own body
         # records having removed (ADR 0146).
         #
-        # As the path the segment forms, not as a bare segment. The guard takes
-        # a *path*, and opens with `urlparse(path).path if "://" in path else
-        # path`; a bare `x://%2e%2e` parses as scheme `x` and netloc `%2e%2e`,
-        # leaving both arms scanning an empty string. The leading separator is
-        # what keeps the value in the path component, where it is scanned.
-        _reject_dot_segments("GET", f"/{property_name}")
+        # As the path the segment occupies, not as a bare segment. The guard
+        # takes a *path* and opens with `urlparse(path).path if "://" in path
+        # else path`, so a value carrying `://` has to reach it inside a path
+        # component or the parse throws the value away before either arm scans
+        # it: bare, `x://%2e%2e` reads as scheme `x` and netloc `%2e%2e`, and
+        # behind a lone `/`, a name starting with `/` makes `//…` whose first
+        # component reads as a netloc. A non-empty leading segment closes both.
+        _reject_dot_segments("GET", f"/quick/{property_name}")
         encoded_property = quote(property_name, safe="")
         path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{encoded_property}"
         resp = await self._request_with_uuid_path_arguments(

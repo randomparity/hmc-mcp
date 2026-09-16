@@ -125,16 +125,18 @@ makes the test suite able to see that it is present.
    with
 
    ```python
-   _reject_dot_segments("GET", f"/{property_name}")
+   _reject_dot_segments("GET", f"/quick/{property_name}")
    encoded_property = quote(property_name, safe="")
    path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{encoded_property}"
    ```
 
    The guard runs before encoding, because encoding a pre-encoded name
    double-encodes it past both of the waist guard's arms. It is passed the path
-   the segment forms, not the bare segment: the predicate opens with
-   `urlparse(path).path if "://" in path else path`, so a bare `x://%2e%2e`
-   parses as a scheme and netloc and leaves both arms scanning an empty string.
+   the segment occupies, with a non-empty leading segment: the predicate opens
+   with `urlparse(path).path if "://" in path else path`, so a bare `x://%2e%2e`
+   parses as scheme and netloc, and a lone `/` in front of a name that itself
+   starts with `/` makes `//…` whose first component parses as a netloc. Both
+   leave the arms scanning nothing.
 
    Leave the `validate` branch above it untouched: it checks the caller's name,
    not the encoded one.

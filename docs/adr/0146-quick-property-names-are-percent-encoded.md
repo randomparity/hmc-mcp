@@ -79,7 +79,7 @@ The site binds the encoded result to a local, the shape `search_uom` already
 uses one method away for this same argument:
 
 ```python
-_reject_dot_segments("GET", f"/{property_name}")
+_reject_dot_segments("GET", f"/quick/{property_name}")
 encoded_property = quote(property_name, safe="")
 path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{encoded_property}"
 ```
@@ -95,15 +95,24 @@ here, and the wrong way round for a fail-closed check." Running the predicate fi
 exactly where it was, and it is a guard on path *form*, which is its stated
 contract rather than an extension of it.
 
-The separator in `f"/{property_name}"` is load-bearing, and the security pass on
-this branch is what found it. `_reject_dot_segments` takes a path and opens with
-`urlparse(path).path if "://" in path else path`. Handed the bare segment
-`x://%2e%2e`, `urlparse` reads `x` as a scheme and `%2e%2e` as a netloc and
-returns an empty path, so both of the guard's arms scan an empty string and the
-call returns silently — while the raw form of that same name *was* refused at the
-waist before this change. Passing the path the segment forms keeps the value in
-the component the guard actually scans. The alternative, a segment mode on the
-shared predicate, is recorded below.
+The prefix in `f"/quick/{property_name}"` is load-bearing, and two review passes
+on this branch are what settled its shape. `_reject_dot_segments` takes a path
+and opens with `urlparse(path).path if "://" in path else path`, so a value
+carrying `://` has to arrive inside a path component or the parse discards it
+before either arm scans it. Bare, `x://%2e%2e` reads as scheme `x` and netloc
+`%2e%2e`, leaving an empty path. Behind a lone `/`, a name that itself starts
+with `/` makes `//..%2f://`, whose first component reads as a netloc — the same
+escape through the other branch. A non-empty leading segment closes both, and
+`quick/` is that segment because it is the one the value actually sits behind.
+Each of those names *was* refused at the waist before this change, so both were
+regressions rather than theoretical gaps.
+
+Verified by sweep rather than by cases: 8,017 names built from combinations of
+`..`, `.`, `%2e%2e`, `%2f`, `/`, `//`, `://`, `?`, `#`, `%252e` and literals were
+run through the base behaviour and this one. The `f"/quick/{...}"` form loses no
+refusal the unmodified code made and adds none it did not — the lone `/` form
+loses four. The alternative, a segment mode on the shared predicate, is recorded
+below.
 
 Reusing `search_uom`'s `encoded_property` name is deliberate: the classification
 set in `tests/unit/test_request_path_safety.py` loses `property_name` and gains
