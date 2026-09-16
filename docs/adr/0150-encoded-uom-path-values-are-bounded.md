@@ -111,6 +111,18 @@ trip before being refused. Cheap local argument checks go together, ahead of the
 - A legitimate resource name longer than 256 characters would now be refused locally. This is the
   same accepted unknown ADR 0143 and ADR 0147 record for the type grammar, with the same remedy —
   widen one constant in one place, with the refused name as the evidence.
+- **On one path that remedy has no evidence to act on, because the refusal is swallowed.**
+  `list_managed_systems`' firmware fallback re-resolves each HMC-supplied name through
+  `find_system_by_name` inside `except (HMCError, ValueError): continue`
+  (`client_systems.py:124-126`), a handler written for the per-system null-property 500. A name
+  over the bound now takes that branch, so the system is dropped from the returned list with no
+  error and no log record, where before it was encoded and sent. The trigger is a managed-system
+  name longer than 256 characters, which is inferred rather than constructed — no HMC observed
+  here produces one — so this is a latent trap rather than a live defect, and narrowing that
+  handler to `HMCError` alone is a follow-up candidate outside this change's surface. The sibling
+  fallback in `get_managed_system` (`:161-162`) does not have the problem: it binds the same
+  exception as `fallback_exc` and chains it into the `HMCError` it raises, so the refusal stays
+  attributable there.
 - **This bounds two arguments, not the paths they sit in.** `search_uom` encodes `property_name`
   on the line above and does not bound it, so the search path's total length is still a function
   of caller input. That is deliberate: ADR 0141 already checks a property *name* against the HMC's
