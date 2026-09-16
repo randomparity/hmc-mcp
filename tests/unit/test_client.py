@@ -1824,6 +1824,58 @@ async def test_delete_job_propagates_http_error(mock_hmc):
             await hmc.delete_job("job-uuid-999")
 
 
+# ---------------------------------------------------------------------------
+# Both job methods build one path and refuse it the same way (ADR 0149)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get_job_entry", "delete_job"])
+@pytest.mark.parametrize(
+    "job_id",
+    [
+        "",
+        "a/b",
+        "a%2Fb",
+        # `?` and `#` are both `[^/]`, so the identifier segment admitted them:
+        # httpx turned the first into a query and dropped the second, which made
+        # `delete_job("j#f")` delete job `j` (issue #825).
+        "j?x=1",
+        "j#f",
+        "j%3Fx=1",
+        "j%23f",
+    ],
+)
+async def test_a_job_id_that_leaves_the_job_path_is_refused(mock_hmc, method, job_id):
+    """`get_job_entry` sent every one of these; `delete_job` sent the last four."""
+    sent = mock_hmc.route(method__in=("GET", "DELETE")).mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match=r"^job_id refused: it does not address"):
+            await getattr(hmc, method)(job_id)
+
+    assert not sent.called, "a refused job path must not reach the wire"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get_job_entry", "delete_job"])
+async def test_a_non_job_href_is_refused_naming_job_href(mock_hmc, method):
+    """The refusal names the argument the path came from, not always `job_href`."""
+    sent = mock_hmc.route(method__in=("GET", "DELETE")).mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match=r"^job_href refused: it does not address"):
+            await getattr(hmc, method)(
+                "job-uuid-999", job_href="/rest/api/uom/HmcUser/root"
+            )
+
+    assert not sent.called, "a refused job path must not reach the wire"
+
+
 @pytest.mark.asyncio
 async def test_wait_for_job_uses_href_when_provided(mock_hmc):
     """wait_for_job passes job_href to get_job so polling uses the SELF link."""

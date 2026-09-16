@@ -227,16 +227,27 @@ def _reject_dot_segments(method: str, path: str) -> None:
 # response points at (`/rest/api/uom/jobs/{id}`, issue #95). Anchored on the
 # *last two* segments rather than tested for membership: membership let
 # an unrelated `/rest/api/web/Logon/jobs` path through, because it contains the word.
-_JOB_PATH = re.compile(r"^(?:/[^/]+)*/(?:Job|jobs)/[^/]+$")
+#
+# The identifier segment excludes `?` and `#` (ADR 0149). Both are `[^/]`, so an
+# identifier carrying one matched: httpx turns the first into a query and drops
+# the second, which made `delete_job("j#f")` delete job `j`. Only that segment is
+# narrowed — `urlparse` strips a query and a fragment before this sees a
+# `job_href`, and the `job_id` branch's prefix is a literal, so no earlier segment
+# can carry a raw one.
+_JOB_PATH = re.compile(r"^(?:/[^/]+)*/(?:Job|jobs)/[^/?#]+$")
 
 
-def _reject_non_job_path(path: str) -> None:
-    """Refuse a ``job_href`` that does not address a job.
+def _reject_non_job_path(path: str, argument: str = "job_href") -> None:
+    """Refuse a job path that does not address a job.
 
-    ``get_job_entry`` fetches the caller's ``job_href`` directly, so the path — not the
-    ``job_id`` argument — decides which resource is read. Without this, an
-    unrelated web-resource href could be fetched through a tool classified
-    ``read``/``job``.
+    ``get_job_entry`` and ``delete_job`` build one path expression from
+    ``job_href`` or ``job_id`` and both pass it here, so the check binds the path
+    the request will use rather than the argument that produced it (ADR 0149).
+    Without it, an unrelated web-resource href could be fetched through a tool
+    classified ``read``/``job``, and ``job_id = "a/b"`` would address
+    ``/rest/api/uom/jobs/a/b``. *argument* names which one supplied the path, so
+    the refusal does not tell a ``job_id`` caller to pass a SELF link; it defaults
+    to ``job_href``, the argument this guard was written for.
 
     The check binds the *resource class*, not the identifier. Binding the last
     segment to ``job_id`` would be tighter, and was rejected: ``jobs.job_identifier``
@@ -252,11 +263,20 @@ def _reject_non_job_path(path: str) -> None:
     ADR 0039 marks both job tools ``exhaustive_targets=False`` and only
     ``targets = "all-targets"`` grants them — a grant that means "any job".
     After this check the tool can reach exactly what that grant says.
+
+    A second residual is open and unowned (ADR 0149): the match is on the decoded
+    path, and ``unquote`` introduces ``/``, so a decode can *manufacture* the
+    trailing ``/Job/{id}`` this pattern looks for —
+    ``/rest/api/uom/HmcUser/root%2FJob%2Fx`` passes while httpx sends the raw
+    string. Its cost is bounded only for a server that splits the query before
+    percent-decoding the path; one that decodes first can be steered to the
+    addressed record on a single decode. The caller already holds the grant above.
     """
     if not _JOB_PATH.match(unquote(path)):
         raise HMCError(
-            "job_href refused: the link does not address a job resource. Pass "
-            "the SELF link returned when the job was submitted."
+            f"{argument} refused: it does not address a job resource. Pass the "
+            "UUID or JobID as job_id, or the SELF link returned when the job "
+            "was submitted as job_href."
         )
 
 
@@ -1454,12 +1474,13 @@ class HMCClient(
         the ``web+xml`` content type. When ``job_href`` is supplied, its job
         path remains preferred so per-operation SELF links work as returned by
         the HMC (see issue #95).
+
+        Either argument produces one path, and that path is refused as
+        :class:`HMCError` when it does not address a job — the same refusal
+        ``delete_job`` applies (ADR 0149).
         """
-        if job_href:
-            path = urlparse(job_href).path
-            _reject_non_job_path(path)
-        else:
-            path = f"/rest/api/uom/jobs/{job_id}"
+        path = urlparse(job_href).path if job_href else f"/rest/api/uom/jobs/{job_id}"
+        _reject_non_job_path(path, "job_href" if job_href else "job_id")
         xml = await self._web_get(path)
         if not xml:
             return None
@@ -1514,7 +1535,7 @@ class HMCClient(
     ) -> None:
         """Delete a job, preferring its SELF link when available."""
         path = urlparse(job_href).path if job_href else f"/rest/api/uom/jobs/{job_id}"
-        _reject_non_job_path(path)
+        _reject_non_job_path(path, "job_href" if job_href else "job_id")
         await self._delete(path)
 
     # Raw escape hatch
