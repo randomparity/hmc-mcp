@@ -37,14 +37,14 @@ three comment corrections) — the whole change.
   and message each call raises. Test: the parametrized case added by step 3. Red
   before the source edit: `httpx.InvalidURL` propagates, so `pytest.raises` fails
   with it. Green:
-  `uv run --no-sync pytest tests/unit/test_request_path_safety.py -k httpx_refuses_to_build -q`
+  `uv run --no-sync pytest tests/unit/test_request_path_safety.py -k httpx_refuses_to_build -q --no-cov`
 - *The two existing handlers still translate timeouts and transport errors, and
   the encoders still keep ADR 0145's and ADR 0146's values off the new handler.*
   Mode: focused-test. The existing cases in `tests/unit/test_client.py` and
   `tests/unit/test_response_limits.py`, plus
   `test_a_group_value_reaches_the_query_string_percent_encoded` and
   `test_a_quick_property_name_cannot_re_point_the_request`, stay green unchanged.
-  Green: `uv run --no-sync pytest tests/unit/test_request_path_safety.py tests/unit/test_client.py tests/unit/test_response_limits.py -q`
+  Green: `uv run --no-sync pytest tests/unit/test_request_path_safety.py tests/unit/test_client.py tests/unit/test_response_limits.py -q --no-cov`
 - *ADR 0148's number matches its filename and H1.* Mode: focused-test. Green:
   `just adr-numbering`, exit 0 with no filenames printed.
 - *No comment still says the exception escapes `_request`.* Mode: focused-test.
