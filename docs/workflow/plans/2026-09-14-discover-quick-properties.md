@@ -53,8 +53,10 @@ the `_PARENT_UUID` constant in `tests/unit/test_client.py`. Publishes
 `HMCClient.list_quick_properties(resource_type: str, *, parent_type: str | None = None,
 parent_uuid: str | None = None) -> tuple[list[str], str | None]`; no later task depends on them.
 
-**Verification.** Fifteen `focused-test` contracts plus one non-applicable. Each row is the test
-specification: write it with the fixture and assertion named. Before the method exists every
+**Verification.** Nineteen test functions are named below: fifteen covering
+`list_quick_properties` and four covering the XML helper and parser wrapper, plus one
+non-applicable changelog entry. These are function counts, not parametrized case counts.
+Each row is the test specification: write it with the fixture and assertion named. Before the method exists every
 `test_client.py` row fails with `AttributeError: 'HMCClient' object has no attribute
 'list_quick_properties'`. Focused green commands:
 `uv run --no-sync pytest tests/unit/test_client.py -k list_quick_properties -q --no-cov` for rows

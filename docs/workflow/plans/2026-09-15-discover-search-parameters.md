@@ -151,12 +151,15 @@ Produced:
 - `async def _defined_search_parameter_names(self, resource_type: str) -> frozenset[str] | None`
 - `search_uom`'s keyword-only `validate: bool = False`
 
-**Verification.** Every entry's green command is
+**Verification.** The named test functions' green command is
 `uv run --no-sync pytest tests/unit/test_client.py -k "search_uom or list_search_parameters" --no-cov -q`,
-and every test is in `tests/unit/test_client.py`. Twenty test functions are named below: eight
-covering `list_search_parameters` and twelve covering `search_uom`'s pre-flight. The table has twenty-three
-rows because two contracts share `::test_list_search_parameters_reads_both_anchors` and two carry no
-test. The red in each row
+and every named test function is in `tests/unit/test_client.py`. Twenty-three distinct test functions
+are named below: eleven covering `list_search_parameters` and twelve covering `search_uom`'s
+pre-flight, excluding superseded names struck through in the ADR 0144 annotations. These are
+function counts, not parametrized case counts. The table retains twenty-four physical rows:
+two share `::test_list_search_parameters_reads_both_anchors`, one names the four ADR 0144
+replacement functions, two are non-applicable, and one runs `just adr-numbering` rather than pytest.
+The red in each row
 is the one that appears **after** the name under test exists but its behaviour does not — which is
 the observation worth confirming. Before the name exists at all, a
 `list_search_parameters` test fails with
