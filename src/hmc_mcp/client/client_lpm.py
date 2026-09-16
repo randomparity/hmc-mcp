@@ -18,12 +18,25 @@ from ..jobs import (
 )
 from .client_contracts import LpmClient
 
+# The LPM job operations this client submits, and the whole of the namespace
+# `_lpar_job` accepts. Membership rather than a character grammar, because unlike
+# the uom *type* namespace (ADR 0143) this one is closed: `_lpar_job` is private
+# and every caller below passes one of these literals (ADR 0151).
+_LPAR_JOB_OPERATIONS = frozenset(
+    {"Migrate", "MigrateValidate", "MigrateAbort", "MigrateRecover", "RemoteRestart"}
+)
+
 
 class LpmMixin:
     # Live Partition Mobility (LPM)
     async def _lpar_job(
         self: LpmClient, lpar_uuid: str, operation: str, job_xml: str
     ) -> dict[str, Any] | None:
+        if operation not in _LPAR_JOB_OPERATIONS:
+            raise ValueError(
+                "LPM job operation must be one of: "
+                + ", ".join(sorted(_LPAR_JOB_OPERATIONS))
+            )
         return await self.submit_job(
             f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", job_xml
         )
