@@ -771,11 +771,17 @@ class HMCClient(
     async def list_uom(
         self, resource_type: str, group: str | None = None
     ) -> list[dict[str, Any]]:
-        """GET /rest/api/uom/{ResourceType} and parse the Atom feed."""
+        """GET /rest/api/uom/{ResourceType} and parse the Atom feed.
+
+        A *group* names an extended property group; it is percent-encoded
+        before it reaches the query string, so it names one group and cannot
+        append a second parameter (ADR 0145).
+        """
         _reject_unknown_uom_type("resource_type", resource_type)
         path = f"/rest/api/uom/{resource_type}"
         if group:
-            path += f"?group={group}"
+            encoded_group = quote(group, safe="")
+            path += f"?group={encoded_group}"
         xml = await self._get(path, resource_type)
         if not xml:
             return []
@@ -784,11 +790,16 @@ class HMCClient(
     async def get_uom(
         self, resource_type: str, uuid: str, group: str | None = None
     ) -> dict[str, Any] | None:
-        """GET /rest/api/uom/{ResourceType}/{uuid} and parse the entry."""
+        """GET /rest/api/uom/{ResourceType}/{uuid} and parse the entry.
+
+        *group* is percent-encoded before it reaches the query string, on the
+        same terms as ``list_uom`` (ADR 0145).
+        """
         _reject_unknown_uom_type("resource_type", resource_type)
         path = f"/rest/api/uom/{resource_type}/{uuid}"
         if group:
-            path += f"?group={group}"
+            encoded_group = quote(group, safe="")
+            path += f"?group={encoded_group}"
         xml = await self._get(path, resource_type, uuid_path_arguments={"uuid": uuid})
         if not xml:
             return None
