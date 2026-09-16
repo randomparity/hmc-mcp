@@ -71,6 +71,7 @@ class UsersMixin:
     async def get_hmc_user(
         self: UsersClient, console_uuid: str, user_profile_uuid: str
     ) -> dict[str, Any] | None:
+        _reject_over_long_path_value("user_profile_uuid", user_profile_uuid)
         profile_path_id = quote(user_profile_uuid, safe="")
         path = f"{self._child_path(console_uuid, 'UserProfile')}/{profile_path_id}"
         return self._first_entry(await self._get(path, "UserProfile"), path)
@@ -84,6 +85,7 @@ class UsersMixin:
     async def modify_hmc_user(
         self: UsersClient, console_uuid: str, user_profile_uuid: str, user_xml: str
     ) -> dict[str, Any] | None:
+        _reject_over_long_path_value("user_profile_uuid", user_profile_uuid)
         profile_path_id = quote(user_profile_uuid, safe="")
         path = f"{self._child_path(console_uuid, 'UserProfile')}/{profile_path_id}"
         return self._first_entry(await self._post(path, user_xml, "UserProfile"), path)
@@ -91,6 +93,7 @@ class UsersMixin:
     async def delete_hmc_user(
         self: UsersClient, console_uuid: str, user_profile_uuid: str
     ) -> None:
+        _reject_over_long_path_value("user_profile_uuid", user_profile_uuid)
         profile_path_id = quote(user_profile_uuid, safe="")
         path = f"{self._child_path(console_uuid, 'UserProfile')}/{profile_path_id}"
         await self._delete(path)
@@ -110,6 +113,7 @@ class UsersMixin:
     async def get_remote_access(
         self: UsersClient, console_uuid: str
     ) -> dict[str, Any] | None:
+        _reject_over_long_path_value("console_uuid", console_uuid)
         console_path_id = quote(console_uuid, safe="")
         path = f"/rest/api/uom/ManagementConsole/{console_path_id}?group=RemoteAccess"
         xml = await self._get_remote_access_xml(path)
@@ -131,6 +135,7 @@ class UsersMixin:
         values: dict[str, str | int | bool] | None,
         clear_fields: list[str] | None,
     ) -> dict[str, Any] | None:
+        _reject_over_long_path_value("console_uuid", console_uuid)
         console_path_id = quote(console_uuid, safe="")
         path = f"/rest/api/uom/ManagementConsole/{console_path_id}?group=RemoteAccess"
         current_xml = await self._get_remote_access_xml(path)
