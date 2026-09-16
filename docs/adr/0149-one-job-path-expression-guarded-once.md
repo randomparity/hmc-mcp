@@ -38,8 +38,9 @@ came from, and its message says what each argument takes.
 ## Consequences
 
 - `get_job_entry` now refuses, before any request, a `job_id` that is empty or
-  carries `/`, `?`, `#`, or a percent-encoding of one. It sent those before;
-  `delete_job` already refused all but `?` and `#`.
+  carries `/`, `?`, `#`, or a percent-encoding of one that does not itself decode
+  to a job path — `job_id = "x%2FJob%2Fy"` still passes, by the residual below.
+  It sent all of those before; `delete_job` already refused all but `?` and `#`.
 - A `job_href` is newly refused only when its identifier segment decodes to
   contain `?` or `#` — `/rest/api/uom/Job/a%3Fb`. Otherwise nothing about that
   branch moves: `_JOB_PATH` is still matched against `unquote(path)` alone, and
@@ -52,11 +53,15 @@ came from, and its message says what each argument takes.
   refusing choice it looks like: `unquote` introduces `/`, so a decode can
   *manufacture* the trailing `/Job/{id}` the pattern looks for.
   `/rest/api/uom/HmcUser/root%2FJob%2Fx` matches after decoding and is accepted,
-  while httpx puts the raw string on the wire. The bound is that neither
-  decoding behaviour reaches the `HmcUser` record — a server that decodes `%2F`
-  routes to `/rest/api/uom/HmcUser/root/Job/x`, one that does not sees a single
-  unknown segment — and the caller already holds the `all-targets` grant ADR 0039
-  requires. Closing it belongs to its own change, not this one.
+  while httpx puts the raw string on the wire; the same mechanism accepts
+  `job_id = "x%2FJob%2Fy"`. The cost is bounded **for a server that decodes the
+  path at most once**: it then routes to `/rest/api/uom/HmcUser/root/Job/x`, or,
+  decoding not at all, sees a single unknown segment, and neither reaches the
+  `HmcUser` record. Double decoding is outside that bound —
+  `/rest/api/uom/HmcUser/root%253Fq%2FJob%2Fy` passes the guard and decodes twice
+  to `/rest/api/uom/HmcUser/root` with query `q/Job/y`. The caller already holds
+  the `all-targets` grant ADR 0039 requires. Closing it belongs to its own
+  change, not this one.
 - Residual, unchanged: an `all-targets` grant still reaches a *different* job.
   ADR 0039 accepts that, and this does not revisit it.
 

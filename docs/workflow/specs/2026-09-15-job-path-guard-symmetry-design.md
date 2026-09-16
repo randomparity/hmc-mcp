@@ -39,15 +39,18 @@ path builders (no owner).
   destructive, so a path leaving that class, or silently truncated to a different
   job, is not recoverable.
 - **Accepted failure classes.** A `job_id` whose percent-encoding decodes to `/`,
-  `?` or `#` is refused although httpx would have sent it literally — accepted:
+  `?` or `#` is refused, unless that decode itself ends in a job tail, although
+  httpx would have sent it literally — accepted:
   `src/hmc_mcp/operations/jobs.py:38` already refuses `%` in a `job_id` and no
-  HMC-minted UUID or JobID carries one. A crafted `job_href` whose path is a job
-  path only after decoding (`/rest/api/uom/HmcUser/root%2FJob%2Fx`) is still
-  accepted by the guard while httpx sends the raw string — accepted here with its
-  cost bounded and stated: neither decoding behaviour reaches the `HmcUser`
-  record, and the caller already holds the `all-targets` grant ADR 0039 requires.
-  No completion criterion sources closing it, so it stays an open residual
-  recorded in ADR 0149 rather than work this change absorbs. A character in a
+  HMC-minted UUID or JobID carries one. A crafted `job_href` or `job_id` whose
+  path is a job path only after decoding (`/rest/api/uom/HmcUser/root%2FJob%2Fx`,
+  `x%2FJob%2Fy`) is still accepted by the guard while httpx sends the raw string —
+  accepted here with its cost bounded and stated: for a server that decodes the
+  path at most once, neither behaviour reaches the `HmcUser` record; double
+  decoding is outside that bound (ADR 0149 names the case), and the caller already
+  holds the `all-targets` grant ADR 0039 requires. No completion criterion sources
+  closing it, so it stays an open residual recorded in ADR 0149 rather than work
+  this change absorbs. A character in a
   `job_id` outside `/`, `?` and `#` still reaches `_request` (ADR 0148) —
   accepted: this closes a class boundary, not a character allowlist. Reaching a
   *different* job under an `all-targets` grant — accepted under ADR 0039.
