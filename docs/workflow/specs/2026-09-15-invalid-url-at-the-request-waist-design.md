@@ -6,9 +6,9 @@ Issue #826. Decision: [ADR 0148](../../adr/0148-unbuildable-request-urls-raise-h
 
 `httpx.InvalidURL` shares no base with the two httpx families `_request`
 translates, so a path or query value carrying a character httpx refuses escapes
-the waist as a third-party type, through entry points whose error contract is the
-six names `hmc_mcp.api` exports (ADR 0118). ADR 0148 holds the evidence; three
-comments in `tests/unit/test_request_path_safety.py` state the gap in prose.
+the waist as a third-party type, past the six-name `hmc_mcp.api` error contract
+(ADR 0118). ADR 0148 holds the evidence; three comments in
+`tests/unit/test_request_path_safety.py` state the gap in prose.
 
 ## Scope
 
@@ -25,36 +25,37 @@ encoding (owned by the merged #819 and #818).
 
 ## Failure model
 
-- **Actors and deployments.** A local operator through the `hmc-mcp` CLI; an MCP
-  client through the stdio server; a library consumer importing `hmc_mcp.api`.
-  Each reaches `_request` with argument values it supplies.
-- **Invariants and assets at stake.** The `hmc_mcp.api` error contract (ADR 0118).
-  The distinction `HMCTransportError` carries, since three catchers retry
-  elsewhere on it. No caller-supplied control character reaching a message or log.
+- **Actors and deployments.** A local operator through the `hmc-mcp` CLI, an MCP
+  client through the stdio server, and a library consumer importing `hmc_mcp.api`,
+  each supplying argument values; plus the HMC, whose Atom hrefs `fetch_json`
+  passes to `_request` as paths.
+- **Invariants and assets at stake.** The `hmc_mcp.api` error contract (ADR 0118);
+  the distinction `HMCTransportError` carries, since three catchers retry
+  elsewhere on it; no control character from any actor reaching a message or log.
 - **Accepted failure classes.** The message does not name which argument carried
   the character, because `_request` holds a path it did not build — accepted, as
   httpx's reason names the character and its position. `httpx.InvalidURL` raised
   outside `_request`, including from `HMCClient.__init__` on a control character
   in `HMC_HOST`, is untouched — accepted as bounded to the waist, and reported as
-  a follow-up candidate, presently unowned. An over-long URL (past httpx's
-  65536-character limit) becomes an `HMCError` — accepted, a refusal either way.
+  an unowned follow-up candidate. An over-long URL (past httpx's 65536-character
+  limit) becomes an `HMCError` — accepted, a refusal either way.
 - **Covered elsewhere.** ADR 0145 and ADR 0146 keep `group`/`property_name` off
   this handler; ADR 0039's `_reject_dot_segments` covers dot segments and only
-  those, so no other path-form class is credited to it here.
+  those, so no other path-form class is credited to it.
 
 ## Threat model
 
 - **Boundaries.** None added or widened: the failure edge of one existing
   boundary — caller-supplied path and query values entering `httpx.build_request`
   — plus one new destination, the exception message, which reaches logs.
-- **Actors.** The untrusted input is those argument values. The HMC is not an
-  input here: `follow_redirects` keeps httpx 0.28.1's `False` default, unset by
-  this client, and httpx maps an `InvalidURL` from a `Location` header to
-  `RemoteProtocolError`, which the existing handler catches.
+- **Actors.** Every actor above, the HMC included; the control is actor-agnostic,
+  so neither refusal nor message differs by origin. A `Location` header is no
+  further route: this client leaves httpx 0.28.1's `follow_redirects` default
+  `False`, and httpx maps that `InvalidURL` to the already-handled
+  `RemoteProtocolError`.
 - **Control.** Refuse and translate; repair no value. The message omits the path
-  and quotes only httpx's reason, which renders the rejected character escaped.
-- **Out of scope.** Whether a value should have been encoded before the waist
-  (ADR 0145, ADR 0146), and each httpx family excluded above.
+  and quotes only httpx's reason, which escapes the rejected character.
+- **Out of scope.** Encoding before the waist (ADR 0145, 0146) and each excluded httpx family.
 
 ## Success
 

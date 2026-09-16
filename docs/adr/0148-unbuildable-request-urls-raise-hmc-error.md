@@ -47,12 +47,11 @@ own component names — never the path.
   writes for this waist's other refusal, `_reject_dot_segments`; per-argument
   validators still raise `ValueError`. Nothing about the call changes: it escaped
   `_request` before and escapes it now, typed and worded anew.
-- This is a backstop, not a replacement: ADR 0145's `group` encoder and ADR
-  0146's `property_name` encoder still run first, so a value they encode never
-  reaches this handler at all.
-- The two `except HMCError` sites in `core.py` that degrade a discovery read to
+- This is a backstop, not a replacement: ADR 0145's and ADR 0146's encoders still
+  run first, so a value they encode never reaches this handler at all. The two
+  `except HMCError` sites in `core.py` that degrade a discovery read to
   `names = None` build their path from a `_reject_unknown_uom_type`-restricted
-  type, so neither is reachable by this class.
+  type, so neither is reachable by this class either.
 - Residual: the message does not name the offending argument, because `_request`
   holds a path it did not build — the trade `_reject_dot_segments` already makes.
 
