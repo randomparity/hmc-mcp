@@ -29,8 +29,13 @@ nothing is created, moved or removed; no caller migrates.
   exit status; the 90.5% `fail-under` gate otherwise exits 1 on a green selection.
 - No deferrals are carried into this plan.
 
-Expected implementation size: 45-65 changed lines (S) — ~10 changed lines in
-`src/hmc_mcp/client/core.py` and ~40 added lines in `tests/unit/test_client.py`.
+Expected implementation size: 90-115 changed lines (S) — ~38 added and ~18 removed
+in `src/hmc_mcp/client/core.py`, of which 8 are executable and the rest is the
+docstring and comment prose steps 3-5 require, plus ~52 added in
+`tests/unit/test_client.py`. Corrected after the build: the first estimate of
+45-65 counted the executable delta and the tests and omitted the prose the same
+steps mandate. No line of the diff is work the frozen scope or the reviewed
+design does not require, and the band stays `S`.
 
 ## Task 1 — one guarded job path expression
 
