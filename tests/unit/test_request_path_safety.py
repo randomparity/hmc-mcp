@@ -714,11 +714,16 @@ def test_a_caller_percent_encoded_group_now_reaches_the_transport_as_data():
 
 
 def _is_quote_binding(node: ast.AST) -> str | None:
-    """The name a literal `x = quote(x, safe="")` statement binds, or `None`.
+    """The name a literal `<target> = quote(<arg>, safe="")` statement binds, or `None`.
 
     The declaration form for a query value, as `_is_boundary_check` is the
     declaration form for a type segment: the assignment says at the call site
-    which rule governs the name the f-string below it interpolates.
+    which rule governs the name the f-string below it interpolates. Unlike
+    `_is_boundary_check`, this returns the *target* name without requiring it
+    to equal `<arg>` — a query value's encoded form is routinely bound to a
+    new name (e.g. `encoded_value = quote(property_value, safe="")`), so the
+    declaration form for a query value cannot require the same identifier on
+    both sides the way the type-segment form does.
     """
     if not isinstance(node, ast.Assign) or len(node.targets) != 1:
         return None
