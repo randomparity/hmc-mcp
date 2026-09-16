@@ -237,7 +237,7 @@ def _reject_dot_segments(method: str, path: str) -> None:
 _JOB_PATH = re.compile(r"^(?:/[^/]+)*/(?:Job|jobs)/[^/?#]+$")
 
 
-def _reject_non_job_path(path: str, argument: str = "job_href") -> None:
+def _reject_non_job_path(path: str, argument: str) -> None:
     """Refuse a job path that does not address a job.
 
     ``get_job_entry`` and ``delete_job`` build one path expression from
@@ -246,8 +246,7 @@ def _reject_non_job_path(path: str, argument: str = "job_href") -> None:
     Without it, an unrelated web-resource href could be fetched through a tool
     classified ``read``/``job``, and ``job_id = "a/b"`` would address
     ``/rest/api/uom/jobs/a/b``. *argument* names which one supplied the path, so
-    the refusal does not tell a ``job_id`` caller to pass a SELF link; it defaults
-    to ``job_href``, the argument this guard was written for.
+    the refusal does not tell a ``job_id`` caller to pass a SELF link.
 
     The check binds the *resource class*, not the identifier. Binding the last
     segment to ``job_id`` would be tighter, and was rejected: ``jobs.job_identifier``
