@@ -1,8 +1,9 @@
 # Plan: quick-property name path rule (issue #818)
 
-**Goal.** Percent-encode `property_name` where `get_quick_property` builds a uom
-path, and replace its vacuous pre-classification in the request-path-safety tests
-with a site-directed check that the encoding is actually present.
+**Goal.** Refuse a dot segment and percent-encode `property_name` where
+`get_quick_property` builds a uom path, and replace its vacuous pre-classification
+in the request-path-safety tests with a site-directed check that the encoding is
+actually present.
 
 **Architecture.** `HMCClient` is composed from mixins in `src/hmc_mcp/client/`.
 Request paths are built by f-string interpolation in `core.py` and handed to
@@ -36,13 +37,14 @@ segment, a `quote(..., safe="")` binding for data — and AST walks in
   parametrized cases between them. Corrected from an initial 70–110, which
   counted the tests but not their parametrization, the capture helper, or the
   stated-coverage-limit docstrings this module's existing AST tests all carry;
-  the scope audit then added a fifth test for the refusal this change moves. The
-  frozen `M` band and its 250-line denominator are unchanged and still hold.
+  the scope audit then added a fifth test for the pre-encoded dot-segment case.
+  The frozen `M` band and its 250-line denominator are unchanged and still hold.
 
 ## File map
 
-- `src/hmc_mcp/client/core.py` (modified, Task 1) — `get_quick_property`
-  interpolates `encoded_property` instead of raw `property_name`.
+- `src/hmc_mcp/client/core.py` (modified, Task 1) — `get_quick_property` refuses
+  a dot-segment `property_name`, then interpolates `encoded_property` instead of
+  the raw argument.
 - `tests/unit/test_request_path_safety.py` (modified, Tasks 1 and 2) — classifies
   and site-checks the encoded class instead of naming `property_name`, and gains
   the character, no-op and dot-segment cases.
@@ -96,16 +98,13 @@ makes the test suite able to see that it is present.
   `test_a_dot_segment_quick_property_name_is_still_refused`, asserting `HMCError`
   for `".."`, `"."` and `"../../x"` and that no request is built. Expected red if
   encoding had moved that refusal. Same green command.
-- Contract: *the one refusal that does move*. Mode: `focused-test`. Test
-  `test_a_caller_percent_encoded_quick_property_name_reaches_the_transport_as_data`,
-  asserting that `"..%2f..%2fweb%2fHmcUser%2froot"` and `"%2e%2e"` reach
-  `build_request` as `"..%252f..%252fweb%252fHmcUser%252froot"` and `"%252e%252e"`
-  in the last path segment. Expected red against the unfixed code, where
-  `_reject_dot_segments`' decode arm refuses both with `HMCError`. Same green
-  command. Mirror `test_a_caller_percent_encoded_group_now_reaches_the_transport_as_data`
-  (`tests/unit/test_request_path_safety.py:685`), which pins ADR 0145's identical
-  residual: record the path in `build_request` and return a real `httpx.Request`,
-  then stub `client._http.send` to answer 204.
+- Contract: *encoding buys no dot segment a passage*. Mode: `focused-test`. Test
+  `test_a_caller_percent_encoded_dot_segment_name_is_refused_too`, asserting
+  `HMCError` and that no request is built for `"..%2f..%2fweb%2fHmcUser%2froot"`,
+  `"%2e%2e"`, `"%2E%2E"` and `"..%2F..%2Fx"`. Expected red with the
+  `_reject_dot_segments` call removed from the site, where encoding double-encodes
+  each past both arms of the waist guard and all four reach the transport. Same
+  green command.
 
 **Steps.**
 
@@ -126,9 +125,13 @@ makes the test suite able to see that it is present.
    with
 
    ```python
+   _reject_dot_segments("GET", property_name)
    encoded_property = quote(property_name, safe="")
    path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{encoded_property}"
    ```
+
+   The guard runs on the argument, before encoding: encoding a pre-encoded name
+   double-encodes it past both of the waist guard's arms.
 
    Leave the `validate` branch above it untouched: it checks the caller's name,
    not the encoded one.

@@ -69,17 +69,31 @@ serves.
 
 ## Decision
 
-**`property_name` is percent-encoded with `quote(property_name, safe="")` before
-it is interpolated into the quick-property path. It is not validated against a
-grammar, it is not length-bounded, and `_reject_dot_segments` is not widened.**
+**`property_name` is refused by `_reject_dot_segments` and then percent-encoded
+with `quote(property_name, safe="")` before it is interpolated into the
+quick-property path. It is not validated against a grammar and it is not
+length-bounded, and the waist guard itself is not widened — the existing
+predicate is applied to the argument, where its contract already fits.**
 
-The site binds the result to a local, the shape `search_uom` already uses one
-method away for this same argument:
+The site binds the encoded result to a local, the shape `search_uom` already
+uses one method away for this same argument:
 
 ```python
+_reject_dot_segments("GET", property_name)
 encoded_property = quote(property_name, safe="")
 path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{encoded_property}"
 ```
+
+The order is the whole of why there are two lines. Encoding a name the caller had
+already encoded double-encodes it, so `"..%2f..%2fweb"` reaches the wire as
+`"..%252f..%252fweb"` and neither of the waist guard's two arms reads it as a dot
+segment — it would be sent where today it is refused. Encoding alone therefore
+trades a refusal for a claim about how many times the HMC's web stack decodes a
+path. That is the claim `_reject_dot_segments`' own body records having removed:
+"an assumption about how the HMC's own web stack decodes a path — untestable from
+here, and the wrong way round for a fail-closed check." Running the predicate on
+the argument first keeps the refusal exactly where it was, and it is a guard on
+path *form*, which is its stated contract rather than an extension of it.
 
 Reusing `search_uom`'s `encoded_property` name is deliberate: the classification
 set in `tests/unit/test_request_path_safety.py` loses `property_name` and gains
@@ -101,19 +115,14 @@ called. The walk also reaches `search_uom`'s existing `encoded_property` and
 - **No wire-format change for any name this repository passes**, so every test
   pinning a quick-property path is untouched and there is no firmware question
   to re-capture.
-- **One refusal moves, and the protection it stood for tightens.** Literal `..`,
-  `.` and `../../x` names are still refused by `_reject_dot_segments` with
-  `HMCError`: `quote` leaves `.` alone, and `"../../x"` becomes `"..%2F..%2Fx"`,
-  which the guard's percent-decoding arm still reads as dot segments. Only a name
-  the caller pre-encoded changes, in any of its forms (`%2e%2e` as well as
-  `..%2f`) — `"..%2f..%2fweb%2fHmcUser%2froot"` becomes
-  `"..%252f..%252fweb%252fHmcUser%252froot"`, which neither arm reads as a dot
-  segment, so it is sent rather than refused. It goes as one inert segment: a
-  single decode now yields `..%2f..%2f…` rather than dot segments, so the
-  decoding that would have reached the retargeting no longer does. What moves is
-  where the caller learns, and a test pins it rather than leaving it to this
-  record — the shape ADR 0145's implementation used for the identical residual it
-  opened for `group`.
+- **No refusal moves.** Every name `_reject_dot_segments` refused before is still
+  refused, with the same `HMCError` and still before any request is built:
+  literal `..`, `.` and `../../x`, and the pre-encoded forms `..%2f..%2fweb` and
+  `%2e%2e` that encoding alone would have let through. The refusal now fires at
+  the site rather than at the waist, one frame earlier, which is not observable
+  in the exception. This is the consequence an earlier draft of this record got
+  wrong: it accepted the pre-encoded case as "inert after one decode", which is
+  the decode-depth assumption the guard was explicitly changed to stop making.
 - **`property_name` stays unvalidated against a name namespace by default.** That
   is ADR 0141's decision, not a gap this record opens: `validate=True` checks the
   name against the HMC's own list, and this change leaves it untouched. An
@@ -172,6 +181,16 @@ called. The walk also reaches `search_uom`'s existing `encoded_property` and
   unchanged, so the escape is not specific to `property_name`. judgment: a
   transport-waist change outside this issue's surface, already reported as a
   follow-up candidate by ADR 0145 and not claimed here.
+- **Encode only, and accept that a pre-encoded dot segment stops being refused.**
+  verified: `_reject_dot_segments("GET", v)` at `856e3aec` refuses
+  `"..%2f..%2fweb%2fHmcUser%2froot"` and `"%2e%2e"` on its percent-decoding arm,
+  and `quote(v, safe="")` turns both into a single segment neither arm reads as a
+  dot segment. ADR 0145 accepted the identical residual for `group`, on the
+  ground that the value "sits after the `?`, where no path resolution applies" —
+  which is exactly what does not transfer to a path segment. judgment: it would
+  trade a live refusal for a guess about the HMC's decode depth, and the guard's
+  own body records that guess being removed as "the wrong way round for a
+  fail-closed check". One line of an existing predicate keeps the refusal.
 - **Do nothing and close the issue.** verified: the three behaviours above, and
   `_KNOWN_UOM_SEGMENT_ARGUMENTS` still listing `property_name`. judgment: distinct
   from recording raw as intended, which at least leaves a record; doing nothing

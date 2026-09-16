@@ -15,11 +15,13 @@ passes for exactly the case its docstring describes catching.
 
 ## Scope
 
-Percent-encode `property_name` at the one call site, record the decision as
+Refuse a dot segment and percent-encode `property_name` at the one call site,
+record the decision as
 **ADR 0146** (`docs/adr/0146-quick-property-names-are-percent-encoded.md`), and
 make the classification non-vacuous rather than merely renamed.
 
-- `src/hmc_mcp/client/core.py` — `get_quick_property` binds
+- `src/hmc_mcp/client/core.py` — `get_quick_property` calls
+  `_reject_dot_segments("GET", property_name)`, then binds
   `encoded_property = quote(property_name, safe="")` and interpolates that.
   Reuses the local name `search_uom` already uses for this same argument, so the
   segment inventory shrinks by one entry and gains none.
@@ -31,9 +33,9 @@ make the classification non-vacuous rather than merely renamed.
   vacuous in a new way — a name trusted for what it is called.
 - `docs/adr/0146-*.md` — new record.
 
-No transition of ownership: `get_quick_property` keeps the responsibility, and the
-guard stays a local binding rather than a new predicate. No production file outside
-`core.py` changes.
+No transition of ownership: `get_quick_property` keeps the responsibility, and
+neither control is a new predicate — one is a local binding, the other reuses
+`_reject_dot_segments` unchanged. No production file outside `core.py` changes.
 
 ### Failure model
 
@@ -55,10 +57,6 @@ class).
   held by ADR 0141's opt-in `validate=True` check against the HMC's own list.
 - An empty `property_name` addresses the `/quick/` container anchor; same
   resource, and refusing it is a grammar fragment, the option ADR 0146 declines.
-- A caller-pre-encoded dot segment in any form — `..%2f..%2f…` or `%2e%2e` —
-  stops being refused by `_reject_dot_segments` and is sent double-encoded as one
-  inert segment; a single decode no longer yields a dot segment, so the
-  retargeting is closed rather than opened.
 - A non-`str` raises `TypeError` from `quote`; the `str` signature forbids it.
 
 **Covered elsewhere.**
@@ -79,7 +77,8 @@ process that already imports `HMCClient` and holds HMC credentials. The design
 trusts `resource_type` and `uuid` to their existing guards and trusts the HMC to
 answer an unknown name; it does not trust `property_name`.
 
-**Control per boundary.** `quote(property_name, safe="")` — destination encoding,
+**Control per boundary.** `_reject_dot_segments` on the argument, then
+`quote(property_name, safe="")` — a path-form refusal plus destination encoding,
 which is the RFC 3986 control for a value with one destination. On a `str` it
 raises at most `UnicodeEncodeError` (a lone surrogate), which subclasses
 `ValueError` and so is already inside the client's exception contract; it leaks
@@ -101,10 +100,11 @@ client's own legitimate paths).
 3. `property_name` is absent from `_KNOWN_UOM_SEGMENT_ARGUMENTS`, and every
    encoded-class segment interpolated into a `/rest/api/uom/` f-string in
    `core.py` is `quote(..., safe="")`-bound in its own function.
-4. A caller-pre-encoded dot segment (`..%2f..%2f…`, `%2e%2e`) reaches the
-   transport double-encoded as one inert segment instead of being refused, while
-   `..`, `.` and `../../x` are still refused with `HMCError`.
-5. Removing the `quote` binding turns items 1, 3 and 4 red.
+4. Every name `_reject_dot_segments` refused before is still refused with
+   `HMCError` and no request built — `..`, `.`, `../../x`, and the pre-encoded
+   `..%2f..%2fweb` and `%2e%2e` that encoding alone would have let through.
+5. Removing the `quote` binding turns items 1 and 3 red; removing the
+   `_reject_dot_segments` call turns item 4 red.
 6. `just verify` and `uv run --no-sync prek run --all-files` exit 0.
 
 ## Validation
@@ -122,11 +122,11 @@ client's own legitimate paths).
 - **Contract: the dot-segment refusal identity.** Mode: `focused-test`.
   `…::test_a_dot_segment_quick_property_name_is_still_refused` — asserts
   `HMCError` for `..`, `.` and `../../x` after encoding. Same green command.
-- **Contract: the one refusal that moves.** Mode: `focused-test`.
-  `…::test_a_caller_percent_encoded_quick_property_name_reaches_the_transport_as_data`
-  — asserts that `..%2f..%2fweb%2fHmcUser%2froot` and `%2e%2e` now reach
-  `build_request` double-encoded rather than raising `HMCError`. Red against the
-  unfixed code, where both are refused. Same green command.
+- **Contract: encoding buys no dot segment a passage.** Mode: `focused-test`.
+  `…::test_a_caller_percent_encoded_dot_segment_name_is_refused_too` — asserts
+  `HMCError` and no request built for `..%2f..%2fweb%2fHmcUser%2froot`, `%2e%2e`,
+  `%2E%2E` and `..%2F..%2Fx`. Red with the site guard removed, where all four
+  reach the transport double-encoded. Same green command.
 - **Contract: the segment classification.** Mode: `focused-test`.
   `…::test_every_encoded_uom_segment_is_quote_bound` plus the existing
   `test_every_uom_path_interpolation_is_a_known_argument` — the first is red

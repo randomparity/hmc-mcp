@@ -931,8 +931,10 @@ def test_every_encoded_uom_segment_is_quote_bound():
     passed for exactly the case its docstring describes catching (ADR 0146).
 
     **What this does not cover, stated rather than implied.** It matches a
-    literal `<name> = quote(<name>, safe="")` assignment in the same function,
-    and only where the `/rest/api/uom/` f-string interpolates a bare name.
+    literal `<local> = quote(<some name>, safe="")` assignment in the same
+    function — the argument is not tied to the enclosing function's parameter, so
+    `encoded = quote(unrelated, safe="")` would satisfy it — and only where the
+    `/rest/api/uom/` f-string interpolates a bare name.
     Concatenation, `.format`, an interpolated attribute or subscript, a
     differently-spelled encoder, a qualified `module.quote(...)` call, and a name
     rebound between the assignment and the f-string are all invisible here — the
@@ -1082,6 +1084,12 @@ def test_a_quick_property_name_cannot_re_point_the_request(property_name):
     segment = path[len(_QUICK_PREFIX) :]
     assert not set(segment) & set("?#/\r\n")
     assert unquote(segment) == property_name
+    # Every case here holds a character outside RFC 3986's unreserved set, so
+    # each must actually be rewritten. Without this the space and non-ASCII
+    # cases assert nothing that can fail: httpx encodes both while building the
+    # URL, so their two assertions above hold whether or not the client encoded
+    # anything, and dropping the binding would leave them green.
+    assert segment != property_name
 
 
 @pytest.mark.parametrize("property_name", _QUICK_PROPERTY_NAMES)
@@ -1090,9 +1098,12 @@ def test_encoding_is_a_no_op_on_the_quick_property_names_this_client_passes(
 ):
     """No wire-format change for any name this repository passes (ADR 0146).
 
-    Asserted against the built path, not against `quote(n, safe="") == n`: that
-    comparison imports no client code and cannot go red for any edit to
-    `core.py`, the removal of the binding it exists to protect included.
+    Asserted against the built path rather than `quote(n, safe="") == n`, which
+    imports no client code at all. What the built-path form adds is coverage of
+    the path *template* — a segment reordered or a literal changed reddens this.
+    It is deliberately blind to the binding's removal, because `quote` is the
+    identity on all six names; `test_a_quick_property_name_cannot_re_point_the_request`
+    is what fails when the binding goes.
     """
     assert _quick_property_path(_client(), property_name) == _QUICK_PREFIX + property_name
 
@@ -1118,27 +1129,29 @@ def test_a_dot_segment_quick_property_name_is_still_refused(property_name):
 
 
 @pytest.mark.parametrize(
-    "property_name, expected_segment",
-    [
-        (
-            "..%2f..%2fweb%2fHmcUser%2froot",
-            "..%252f..%252fweb%252fHmcUser%252froot",
-        ),
-        ("%2e%2e", "%252e%252e"),
-    ],
+    "property_name",
+    ["..%2f..%2fweb%2fHmcUser%2froot", "%2e%2e", "%2E%2E", "..%2F..%2Fx"],
 )
-def test_a_caller_percent_encoded_quick_property_name_reaches_the_transport_as_data(
-    property_name, expected_segment
-):
-    """The one refusal this change does move, pinned rather than left to the record.
+def test_a_caller_percent_encoded_dot_segment_name_is_refused_too(property_name):
+    """Encoding must not buy a dot segment passage past the waist (ADR 0146).
 
-    A name the caller already percent-encoded is double-encoded here, so the
-    waist's single decode resolves `..%252f..` to `..%2f..` rather than to a dot
-    segment. Before the encoding both values decoded straight to dot segments and
-    were refused, so this is red against the unfixed code. Nothing is retargeted:
-    one decode no longer yields a dot segment, so the resolution that would have
-    re-pointed the request cannot be reached (ADR 0146, "One refusal moves").
+    This is the case the site guard exists for. Percent-encoding a name the
+    caller had already encoded double-encodes it, so `..%2f..` reaches the wire
+    as `..%252f..` and neither of the waist guard's two arms reads it as a dot
+    segment — it would be sent. Calling `_reject_dot_segments` on the *argument*,
+    before encoding, is what keeps it refused.
+
+    Reasoning that the double-encoded form "addresses nothing" is exactly the
+    argument `_reject_dot_segments`' own body records having removed: how many
+    times the HMC's web stack decodes a path is untestable from here, and
+    guessing low is the wrong direction for a fail-closed check.
     """
-    path = _quick_property_path(_client(), property_name)
+    client = _client()
 
-    assert path == _QUICK_PREFIX + expected_segment
+    def _forbidden(*args, **kwargs):
+        raise AssertionError("a pre-encoded dot segment reached the transport")
+
+    client._http.build_request = _forbidden  # type: ignore[method-assign]
+
+    with pytest.raises(HMCError, match="refused"):
+        asyncio.run(client.get_quick_property("LogicalPartition", UUID_A, property_name))

@@ -855,6 +855,13 @@ class HMCClient(
                     f"{resource_type} defines no quick property named "
                     f"{property_name!r}. {detail}"
                 )
+        # Before encoding, not after: encoding hides a dot segment from the
+        # waist guard, and `_reject_dot_segments` refuses the raw form and one
+        # percent-decoding of it. Running it on the argument keeps that refusal
+        # exactly where it was rather than trading it for an assumption about
+        # how many times the HMC decodes a path — the assumption the guard's own
+        # body records having removed (ADR 0146).
+        _reject_dot_segments("GET", property_name)
         encoded_property = quote(property_name, safe="")
         path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{encoded_property}"
         resp = await self._request_with_uuid_path_arguments(
