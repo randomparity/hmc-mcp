@@ -268,8 +268,9 @@ def _reject_non_job_path(path: str, argument: str = "job_href") -> None:
     path, and ``unquote`` introduces ``/``, so a decode can *manufacture* the
     trailing ``/Job/{id}`` this pattern looks for —
     ``/rest/api/uom/HmcUser/root%2FJob%2Fx`` passes while httpx sends the raw
-    string. Its cost is bounded: neither decoding behaviour reaches the
-    ``HmcUser`` record, and the caller already holds the grant above.
+    string. Its cost is bounded only for a server that splits the query before
+    percent-decoding the path; one that decodes first can be steered to the
+    addressed record on a single decode. The caller already holds the grant above.
     """
     if not _JOB_PATH.match(unquote(path)):
         raise HMCError(

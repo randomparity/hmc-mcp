@@ -54,14 +54,15 @@ came from, and its message says what each argument takes.
   *manufacture* the trailing `/Job/{id}` the pattern looks for.
   `/rest/api/uom/HmcUser/root%2FJob%2Fx` matches after decoding and is accepted,
   while httpx puts the raw string on the wire; the same mechanism accepts
-  `job_id = "x%2FJob%2Fy"`. The cost is bounded **for a server that decodes the
-  path at most once**: it then routes to `/rest/api/uom/HmcUser/root/Job/x`, or,
-  decoding not at all, sees a single unknown segment, and neither reaches the
-  `HmcUser` record. Double decoding is outside that bound —
-  `/rest/api/uom/HmcUser/root%253Fq%2FJob%2Fy` passes the guard and decodes twice
-  to `/rest/api/uom/HmcUser/root` with query `q/Job/y`. The caller already holds
-  the `all-targets` grant ADR 0039 requires. Closing it belongs to its own
-  change, not this one.
+  `job_id = "x%2FJob%2Fy"`. The cost is bounded **only for a server that splits
+  the query before percent-decoding the path**, which is the RFC 3986 order: it
+  then routes to `/rest/api/uom/HmcUser/root/Job/x` or sees one unknown segment,
+  and neither reaches the `HmcUser` record. A server that decodes first is
+  outside that bound on a single decode —
+  `/rest/api/uom/HmcUser/root%3Fx/Job/y` passes the guard and becomes
+  `/rest/api/uom/HmcUser/root` with query `x/Job/y`. The caller already holds the
+  `all-targets` grant ADR 0039 requires. Closing it belongs to its own change,
+  not this one.
 - Residual, unchanged: an `all-targets` grant still reaches a *different* job.
   ADR 0039 accepts that, and this does not revisit it.
 

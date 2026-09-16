@@ -45,10 +45,11 @@ path builders (no owner).
   HMC-minted UUID or JobID carries one. A crafted `job_href` or `job_id` whose
   path is a job path only after decoding (`/rest/api/uom/HmcUser/root%2FJob%2Fx`,
   `x%2FJob%2Fy`) is still accepted by the guard while httpx sends the raw string —
-  accepted here with its cost bounded and stated: for a server that decodes the
-  path at most once, neither behaviour reaches the `HmcUser` record; double
-  decoding is outside that bound (ADR 0149 names the case), and the caller already
-  holds the `all-targets` grant ADR 0039 requires. No completion criterion sources
+  accepted here with its cost bounded and stated: for a server that splits the
+  query before percent-decoding the path, neither shape reaches the `HmcUser`
+  record; a server that decodes first is outside that bound on a single decode
+  (ADR 0149 names the case), and the caller already holds the `all-targets` grant
+  ADR 0039 requires. No completion criterion sources
   closing it, so it stays an open residual recorded in ADR 0149 rather than work
   this change absorbs. A character in a
   `job_id` outside `/`, `?` and `#` still reaches `_request` (ADR 0148) —
